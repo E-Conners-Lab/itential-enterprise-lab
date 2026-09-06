@@ -226,8 +226,9 @@ def apply(eve: Eve, topo: dict, allow_missing: bool) -> None:
             if node in wiring:
                 wiring[node][iface_index(topo["nodes"][node]["platform"], iface)] = nid
     for name, mapping in wiring.items():
-        current = eve.interfaces(have[name]["id"]).get("ethernet", {})
-        cur = {int(k): int(v.get("network_id", 0)) for k, v in current.items()}
+        current = eve.interfaces(have[name]["id"]).get("ethernet") or {}
+        items = current.items() if isinstance(current, dict) else enumerate(current)  # list = index order
+        cur = {int(k): int((v or {}).get("network_id", 0) or 0) for k, v in items}
         if any(cur.get(k) != v for k, v in mapping.items()):
             eve.set_interfaces(have[name]["id"], mapping)
             print(f"wired {name}: {len(mapping)} interfaces")
