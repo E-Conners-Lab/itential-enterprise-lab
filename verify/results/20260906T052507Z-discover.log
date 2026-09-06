@@ -1,0 +1,273 @@
+# discovery 20260906T052507Z (read-only)
+
+=================== proxmox host 192.168.68.161 ===================
+homelab.local
+pve-manager/9.2.11/f6997e698c7933ea (running kernel: 7.0.2-6-pve)
+ 01:25:08 up 12:48,  1 user,  load average: 3.36, 3.24, 3.11
+CPU(s):                                  72
+Model name:                              Intel(R) Xeon(R) Gold 6154 CPU @ 3.00GHz
+Socket(s):                               2
+NUMA node(s):                            2
+               total        used        free      shared  buff/cache   available
+Mem:             314          38         261           0          15         275
+nested: vmx kvm_intel.nested=Y
+-- storage --
+Name             Type     Status     Total (KiB)      Used (KiB) Available (KiB)        %
+local             dir     active        98497780        17621232        75827000   17.89%
+local-lvm     lvmthin     active      1714282496        58457033      1655825462    3.41%
+  VG  #PV #LV #SN Attr   VSize VFree  
+  pve   1   6   0 wz--n- 1.74t <16.25g
+  data              <1.60t 3.41       
+  root              96.00g            
+  swap               8.00g            
+  vm-110-cloudinit   4.00m 9.38   data
+  vm-110-disk-0     64.00g 10.94  data
+  vm-300-disk-0    200.00g 24.34  data
+-- storage.cfg --
+dir: local
+	path /var/lib/vz
+	content iso,vztmpl,backup,import
+
+lvmthin: local-lvm
+	thinpool data
+	vgname pve
+	content rootdir,images
+-- isos --
+total 9005996
+drwxr-xr-x 2 root root       4096 Sep  6 00:23 .
+drwxr-xr-x 4 root root       4096 Sep  5 12:32 ..
+-rw-r--r-- 1 root root 8597288960 Sep  5 12:48 eve-pro-prod-bm-6.5.0-21-full.iso
+-rw-r--r-- 1 root root  624829952 Sep  6 00:24 noble-cloud.img
+-- staging /srv/images --
+ls: cannot access '/srv/images': No such file or directory
+-- nics --
+lo               UNKNOWN        00:00:00:00:00:00 <LOOPBACK,UP,LOWER_UP> 
+nic0             DOWN           b0:26:28:13:00:5a <BROADCAST,MULTICAST> 
+nic1             UP             b0:26:28:13:00:5b <BROADCAST,MULTICAST,UP,LOWER_UP> 
+nic2             DOWN           b0:26:28:13:00:5c <NO-CARRIER,BROADCAST,MULTICAST,UP> 
+nic3             DOWN           b0:26:28:13:00:5d <BROADCAST,MULTICAST> 
+vmbr0            UP             b0:26:28:13:00:5b <BROADCAST,MULTICAST,UP,LOWER_UP> 
+vmbr1            DOWN           b0:26:28:13:00:5c <NO-CARRIER,BROADCAST,MULTICAST,UP> 
+01:00.0 Ethernet controller: Broadcom Inc. and subsidiaries NetXtreme BCM5720 Gigabit Ethernet PCIe
+01:00.1 Ethernet controller: Broadcom Inc. and subsidiaries NetXtreme BCM5720 Gigabit Ethernet PCIe
+19:00.0 Ethernet controller: Broadcom Inc. and subsidiaries BCM57416 NetXtreme-E Dual-Media 10G RDMA Ethernet Controller (rev 01)
+19:00.1 Ethernet controller: Broadcom Inc. and subsidiaries BCM57416 NetXtreme-E Dual-Media 10G RDMA Ethernet Controller (rev 01)
+-- interfaces --
+auto lo
+iface lo inet loopback
+
+iface nic1 inet manual
+
+auto vmbr0
+iface vmbr0 inet static
+	address 192.168.68.161/22
+	gateway 192.168.68.1
+	bridge-ports nic1
+	bridge-stp off
+	bridge-fd 0
+
+iface nic2 inet manual
+
+iface nic3 inet manual
+
+iface nic0 inet manual
+
+
+source /etc/network/interfaces.d/*
+
+auto vmbr1
+iface vmbr1 inet manual
+	bridge-ports nic2
+	bridge-stp off
+	bridge-fd 0
+	bridge-vlan-aware yes
+	bridge-vids 2-4094
+#LAB-ISOLATED: no host IP = no routing to home LAN (air-gapped). Uplink nic2 (MAC b0:26:28:13:00:5c) to a dedicated lab switch, or leave unplugged.
+-- vms --
+      VMID NAME                 STATUS     MEM(MB)    BOOTDISK(GB) PID       
+       110 netbox-prod          running    8192              64.00 137936    
+       300 eve-ng               running    131072           200.00 33871     
+-- qm config 110 --
+agent: enabled=1
+boot: order=scsi0
+ciuser: root
+cores: 4
+cpu: host
+ide2: local-lvm:vm-110-cloudinit,media=cdrom
+ipconfig0: ip=192.168.68.110/22,gw=192.168.68.1
+machine: q35
+memory: 8192
+name: netbox-prod
+nameserver: 192.168.68.1
+net0: virtio=BC:24:11:F8:82:FB,bridge=vmbr0
+onboot: 1
+ostype: l26
+scsi0: local-lvm:vm-110-disk-0,iothread=1,size=64G
+scsihw: virtio-scsi-single
+-- qm config 300 --
+agent: enabled=1
+boot: order=virtio0
+cores: 24
+cpu: host
+ide2: none,media=cdrom
+machine: q35
+memory: 131072
+name: eve-ng
+net0: virtio=BC:24:11:7F:52:5B,bridge=vmbr0
+onboot: 1
+ostype: l26
+scsihw: virtio-scsi-single
+sockets: 1
+virtio0: local-lvm:vm-300-disk-0,iothread=1,size=200G
+-- users/tokens --
+root@pam enable= 1
+[]
+-- firewall/sdn --
+Status: disabled/running
+-- dns/time --
+nameserver 8.8.8.8
+                Time zone: America/New_York (EDT, -0400)
+System clock synchronized: yes
+-- selected packages --
+libguestfs-tools: not installed
+git: 
+python3-proxmoxer: not installed
+ansible: not installed
+
+=================== eve-ng 192.168.68.240 ===================
+eve-ng
+PRETTY_NAME="Ubuntu 22.04.5 LTS"
+6.7.5-eveng-6-ksm+
+24
+               total        used        free      shared  buff/cache   available
+Mem:             125          13         102           0          10         111
+/dev/mapper/ubuntu--vg-ubuntu--lv  195G   39G  148G  21% /
+eve-ng-dynamips 6.0.1-5
+eve-ng-pro 6.5.0-27
+eve-ng-pro-guacamole 6.5.0-16
+eve-ng-qemu 6.3.0-2
+eve-ng-schema 6.0.1-0
+eve-ng-vpcs 6.1-eve-ng
+nested: vmx kvm=/dev/kvm
+-- interfaces (physical + pnet) --
+lo               UNKNOWN        127.0.0.1/8 
+eth0             UP             
+pnet0            UP             192.168.68.240/22 
+pnet1            DOWN           
+pnet2            DOWN           
+pnet3            DOWN           
+pnet4            DOWN           
+pnet5            DOWN           
+pnet6            DOWN           
+pnet7            DOWN           
+pnet8            DOWN           
+pnet9            DOWN           
+nat0             UP             172.29.129.254/24 
+docker0          DOWN           172.17.0.1/16 
+wg0              UNKNOWN        172.29.130.254/24 
+-- images --
+/opt/unetlab/addons/qemu/c8000v-17.13.01a/
+    2033582080 virtioa.qcow2
+/opt/unetlab/addons/qemu/linux-ubuntu-24.04-server/
+    629014528 virtioa.qcow2
+/opt/unetlab/addons/qemu/linux-ubuntu-24.04-tools/
+    2908160000 virtioa.qcow2
+/opt/unetlab/addons/qemu/veos-4.33.1.1F/
+    6291456 cdrom.iso
+    610598912 hda.qcow2
+-- iol/dynamips --
+0
+0
+-- docker images --
+eve-wireshark:latest 4.25GB
+registry:2 25.4MB
+eve-gui-server:latest 7.07GB
+eve-desktop:latest 6.88GB
+eve-firefox:latest 4.69GB
+-- labs --
+/opt/unetlab/labs/Test.unl
+-- tools --
+qemu-img: qemu-img version 6.2.0 (Debian 1:6.2+dfsg-2ubuntu6.31)
+virt-customize: virt-customize 1.46.1
+python3: Python 3.10.12
+pip3: MISSING
+jq: jq-1.6
+qemu-guest-agent: active
+-- eve api (status, license expiry, node image lists) --
+login: success User logged in (90013).
+{'version': '6.5.0-27-PRO', 'qemu_version': '2.4.0', 'uksm': 'unsupported', 'ksm': 'enabled', 'vCPU': '24', 'memtotal': '131905060', 'disk': '24.2066', 'diskavailable': '203.7707', 'qemu': 4, 'docker': 0, 'iol': 0, 'dynamips': 0}
+license expires: 20270415 | user: admin admin
+c8000v images: ['c8000v-17.13.01a']
+veos images: ['veos-4.33.1.1F']
+paloalto images: []
+panorama images: []
+win images: []
+winserver images: []
+linux images: ['linux-ubuntu-24.04-server', 'linux-ubuntu-24.04-tools']
+SECURITY: EVE admin password is the factory default
+
+=================== netbox vm 192.168.68.110 ===================
+netbox-prod
+PRETTY_NAME="Ubuntu 24.04.4 LTS"
+4
+               total        used        free      shared  buff/cache   available
+Mem:               7           1           2           0           3           6
+/dev/sda1        61G  4.4G   57G   8% /
+eth0             UP             192.168.68.110/22 fe80::be24:11ff:fef8:82fb/64 
+Docker version 29.8.0, build 88096ef
+Docker Compose version v5.5.1
+netbox-docker-netbox-1 netboxcommunity/netbox:v4.7-5.1.0 Up 54 minutes (healthy)
+netbox-docker-postgres-1 postgres:18-alpine Up 54 minutes (healthy)
+netbox-docker-redis-1 valkey/valkey:9.1-alpine Up 54 minutes (healthy)
+netbox-docker-redis-cache-1 valkey/valkey:9.1-alpine Up 54 minutes (healthy)
+compose dir: /opt/netbox-docker  netbox-docker version: 5.1.0
+API_TOKEN_PEPPER: set
+qemu-guest-agent: inactive
+crontab: 0 lines
+
+=================== netbox api http://192.168.68.110:8080 ===================
+{'netbox-version': '4.7.0', 'django-version': '6.1', 'python-version': '3.14.4', 'plugins': {}}
+dcim/sites                           0
+dcim/regions                         0
+dcim/manufacturers                   0
+dcim/device-types                    0
+dcim/device-roles                    0
+dcim/platforms                       0
+dcim/devices                         0
+ipam/vrfs                            0
+ipam/prefixes                        0
+ipam/ip-ranges                       0
+ipam/ip-addresses                    0
+ipam/vlans                           0
+ipam/vlan-groups                     0
+ipam/asns                            0
+virtualization/clusters              0
+virtualization/virtual-machines      0
+tenancy/tenants                      0
+extras/tags                          0
+extras/custom-fields                 0
+extras/webhooks                      0
+extras/event-rules                   0
+users/users                          1
+users/tokens                         1
+token 4 user admin v2 expires None desc ''
+bogus token -> 403 (expect 403)
+
+=================== k3s ===================
+no k3s cluster (rebuild pending); stale kubeconfig on workstation:     server: https://192.168.68.101:6443
+
+=================== workstation ===================
+tofu          OpenTofu v1.12.6
+ansible       ansible [core 2.20.3]
+ansible-lint  ansible-lint [1;36m26.8.0[0m using[2m ansible-core:[1;36
+yamllint      yamllint 1.38.0
+gitleaks      gitleaks version 8.30.1
+pre-commit    pre-commit 4.6.2
+gh            gh version 2.92.0 (2026-04-28)
+jq            jq-1.8.1
+kubectl       Client Version: v1.35.1
+helm          v4.1.3+gc94d381
+  ✓ Logged in to github.com account E-Conners-Lab (keyring)
+  - Token scopes: 'gist', 'read:org', 'repo', 'workflow', 'write:packages'
+
+RESULT: discovery complete -> verify/results/20260906T052507Z-discover.log

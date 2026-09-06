@@ -6,7 +6,9 @@ repos:
     rev: v6.0.0
     hooks:
       - id: trailing-whitespace
+        exclude: ^verify/results/   # raw evidence is never rewritten
       - id: end-of-file-fixer
+        exclude: ^verify/results/
       - id: check-yaml
         args: [--allow-multiple-documents]
       - id: check-merge-conflict
