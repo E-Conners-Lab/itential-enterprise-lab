@@ -1,0 +1,273 @@
+# The one topology file (ADR 0002, 0034): eve/build.py renders it into the EVE-NG lab and
+# ansible/playbooks/netbox-topology.yml into NetBox. Management addresses must equal
+# topology/ipam.yaml; node sizes must equal docs/resource-budget.md §3 (tests/test_topology.py).
+# Interface index 0 of every node is management on pnet1 (Gi1 / Mgmt1 / mgmt / eth0).
+version: 1
+lab:
+  name: enterprise
+  path: /enterprise.unl
+  domain: lab.internal
+  mgmt_network: pnet1
+  mgmt_gateway: 10.100.0.1
+  dns: [10.100.0.1]
+  ntp: 10.100.0.1
+
+sites:
+  wan: {name: WAN, description: "Simulated provider core"}
+  dc1: {name: DC1, description: "Data centre: HA firewalls, EVPN-VXLAN fabric"}
+  br1: {name: Branch 1, description: "Branch: WAN router, firewall, switch, clients"}
+  br2: {name: Branch 2, description: "Branch: WAN router, firewall, switch, clients"}
+
+routing:
+  asn: {isp: 65000, dc1_edge: 65100, dc1_spine: 65101, dc1_leaf: 65102, br1: 65201, br2: 65202}
+
+# image = EVE-NG folder under /opt/unetlab/addons/qemu (manifest keys: c8000v, veos, pa-vm, ubuntu, win11)
+nodes:
+  isp-core01:
+    site: wan
+    role: isp-core
+    platform: c8000v
+    image: c8000v-17.13.01a
+    mgmt_ip: 10.100.0.148
+    cpu: 2
+    ram: 6144
+    ethernet: 8
+    eve: {left: 560, top: 60}
+  dc1-wan01:
+    site: dc1
+    role: wan-edge
+    platform: c8000v
+    image: c8000v-17.13.01a
+    mgmt_ip: 10.100.0.144
+    cpu: 2
+    ram: 6144
+    ethernet: 8
+    eve: {left: 420, top: 180}
+  dc1-wan02:
+    site: dc1
+    role: wan-edge
+    platform: c8000v
+    image: c8000v-17.13.01a
+    mgmt_ip: 10.100.0.145
+    cpu: 2
+    ram: 6144
+    ethernet: 8
+    eve: {left: 700, top: 180}
+  dc1-fw01:
+    site: dc1
+    role: firewall
+    platform: pa-vm
+    image: paloalto-11.1
+    mgmt_ip: 10.100.0.128
+    cpu: 4
+    ram: 8192
+    ethernet: 6
+    eve: {left: 420, top: 300}
+  dc1-fw02:
+    site: dc1
+    role: firewall
+    platform: pa-vm
+    image: paloalto-11.1
+    mgmt_ip: 10.100.0.129
+    cpu: 4
+    ram: 8192
+    ethernet: 6
+    eve: {left: 700, top: 300}
+  dc1-spine01:
+    site: dc1
+    role: spine
+    platform: veos
+    image: veos-4.33.1.1F
+    mgmt_ip: 10.100.0.160
+    cpu: 2
+    ram: 4096
+    ethernet: 9
+    eve: {left: 420, top: 420}
+  dc1-spine02:
+    site: dc1
+    role: spine
+    platform: veos
+    image: veos-4.33.1.1F
+    mgmt_ip: 10.100.0.161
+    cpu: 2
+    ram: 4096
+    ethernet: 9
+    eve: {left: 700, top: 420}
+  dc1-leaf01:
+    site: dc1
+    role: leaf
+    platform: veos
+    image: veos-4.33.1.1F
+    mgmt_ip: 10.100.0.162
+    cpu: 2
+    ram: 4096
+    ethernet: 9
+    eve: {left: 420, top: 540}
+  dc1-leaf02:
+    site: dc1
+    role: leaf
+    platform: veos
+    image: veos-4.33.1.1F
+    mgmt_ip: 10.100.0.163
+    cpu: 2
+    ram: 4096
+    ethernet: 9
+    eve: {left: 700, top: 540}
+  dc1-acc01:
+    site: dc1
+    role: access
+    platform: veos
+    image: veos-4.33.1.1F
+    mgmt_ip: 10.100.0.164
+    cpu: 2
+    ram: 4096
+    ethernet: 9
+    eve: {left: 560, top: 660}
+  dc1-srv01:
+    site: dc1
+    role: server
+    platform: ubuntu
+    image: linux-ubuntu-24.04-server
+    mgmt_ip: 10.100.0.192
+    cpu: 1
+    ram: 1024
+    ethernet: 2
+    eve: {left: 560, top: 780}
+  br1-wan01:
+    site: br1
+    role: wan-edge
+    platform: c8000v
+    image: c8000v-17.13.01a
+    mgmt_ip: 10.100.0.146
+    cpu: 2
+    ram: 6144
+    ethernet: 4
+    eve: {left: 140, top: 180}
+  br1-fw01:
+    site: br1
+    role: firewall
+    platform: pa-vm
+    image: paloalto-11.1
+    mgmt_ip: 10.100.0.130
+    cpu: 4
+    ram: 8192
+    ethernet: 4
+    eve: {left: 140, top: 300}
+  br1-sw01:
+    site: br1
+    role: branch-switch
+    platform: veos
+    image: veos-4.33.1.1F
+    mgmt_ip: 10.100.0.165
+    cpu: 2
+    ram: 4096
+    ethernet: 9
+    eve: {left: 140, top: 420}
+  br1-pc01:
+    site: br1
+    role: client
+    platform: win11
+    image: win-11-25h2
+    mgmt_ip: 10.100.0.193
+    cpu: 2
+    ram: 6144
+    ethernet: 2
+    eve: {left: 60, top: 540}
+  br1-host01:
+    site: br1
+    role: client
+    platform: ubuntu
+    image: linux-ubuntu-24.04-server
+    mgmt_ip: 10.100.0.195
+    cpu: 1
+    ram: 1024
+    ethernet: 2
+    eve: {left: 220, top: 540}
+  br2-wan01:
+    site: br2
+    role: wan-edge
+    platform: c8000v
+    image: c8000v-17.13.01a
+    mgmt_ip: 10.100.0.147
+    cpu: 2
+    ram: 6144
+    ethernet: 4
+    eve: {left: 980, top: 180}
+  br2-fw01:
+    site: br2
+    role: firewall
+    platform: pa-vm
+    image: paloalto-11.1
+    mgmt_ip: 10.100.0.131
+    cpu: 4
+    ram: 8192
+    ethernet: 4
+    eve: {left: 980, top: 300}
+  br2-sw01:
+    site: br2
+    role: branch-switch
+    platform: veos
+    image: veos-4.33.1.1F
+    mgmt_ip: 10.100.0.166
+    cpu: 2
+    ram: 4096
+    ethernet: 9
+    eve: {left: 980, top: 420}
+  br2-pc01:
+    site: br2
+    role: client
+    platform: win11
+    image: win-11-25h2
+    mgmt_ip: 10.100.0.194
+    cpu: 2
+    ram: 6144
+    ethernet: 2
+    eve: {left: 900, top: 540}
+  br2-host01:
+    site: br2
+    role: client
+    platform: ubuntu
+    image: linux-ubuntu-24.04-server
+    mgmt_ip: 10.100.0.196
+    cpu: 1
+    ram: 1024
+    ethernet: 2
+    eve: {left: 1060, top: 540}
+
+# Each link is one hidden EVE-NG bridge network and one NetBox cable. Data ports only.
+links:
+  # provider core to every site edge (10.103.0.0/24 /30s)
+  - {a: "isp-core01:Gi2", b: "dc1-wan01:Gi2", prefix: 10.103.0.0/30}
+  - {a: "isp-core01:Gi3", b: "dc1-wan02:Gi2", prefix: 10.103.0.4/30}
+  - {a: "isp-core01:Gi4", b: "br1-wan01:Gi2", prefix: 10.103.0.8/30}
+  - {a: "isp-core01:Gi5", b: "br2-wan01:Gi2", prefix: 10.103.0.12/30}
+  # DC edge routers to both firewalls (untrust 10.101.2.0/24 as one L2 domain via the firewalls' HA)
+  - {a: "dc1-wan01:Gi3", b: "dc1-fw01:eth1/1"}
+  - {a: "dc1-wan01:Gi4", b: "dc1-fw02:eth1/1"}
+  - {a: "dc1-wan02:Gi3", b: "dc1-fw01:eth1/2"}
+  - {a: "dc1-wan02:Gi4", b: "dc1-fw02:eth1/2"}
+  - {a: "dc1-wan01:Gi5", b: "dc1-wan02:Gi5", prefix: 10.101.2.248/30}
+  # firewall HA2
+  - {a: "dc1-fw01:eth1/3", b: "dc1-fw02:eth1/3"}
+  # fabric: spines to leaves (eBGP underlay /31s), MLAG peer links, access, firewall trust, server
+  - {a: "dc1-spine01:Eth1", b: "dc1-leaf01:Eth1", prefix: 10.101.255.0/31}
+  - {a: "dc1-spine01:Eth2", b: "dc1-leaf02:Eth1", prefix: 10.101.255.2/31}
+  - {a: "dc1-spine02:Eth1", b: "dc1-leaf01:Eth2", prefix: 10.101.255.4/31}
+  - {a: "dc1-spine02:Eth2", b: "dc1-leaf02:Eth2", prefix: 10.101.255.6/31}
+  - {a: "dc1-leaf01:Eth3", b: "dc1-leaf02:Eth3"}
+  - {a: "dc1-leaf01:Eth4", b: "dc1-leaf02:Eth4"}
+  - {a: "dc1-leaf01:Eth5", b: "dc1-acc01:Eth1"}
+  - {a: "dc1-leaf02:Eth5", b: "dc1-acc01:Eth2"}
+  - {a: "dc1-fw01:eth1/4", b: "dc1-leaf01:Eth6"}
+  - {a: "dc1-fw02:eth1/4", b: "dc1-leaf02:Eth6"}
+  - {a: "dc1-srv01:eth1", b: "dc1-acc01:Eth3"}
+  # branch 1
+  - {a: "br1-wan01:Gi3", b: "br1-fw01:eth1/1", prefix: 10.102.16.0/30}
+  - {a: "br1-fw01:eth1/2", b: "br1-sw01:Eth1"}
+  - {a: "br1-pc01:eth1", b: "br1-sw01:Eth2"}
+  - {a: "br1-host01:eth1", b: "br1-sw01:Eth3"}
+  # branch 2
+  - {a: "br2-wan01:Gi3", b: "br2-fw01:eth1/1", prefix: 10.102.32.0/30}
+  - {a: "br2-fw01:eth1/2", b: "br2-sw01:Eth1"}
+  - {a: "br2-pc01:eth1", b: "br2-sw01:Eth2"}
+  - {a: "br2-host01:eth1", b: "br2-sw01:Eth3"}

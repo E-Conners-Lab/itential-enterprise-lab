@@ -53,10 +53,10 @@ drill (PID E3) is what proves the CPU figure is survivable.
 | `dc1-wan01/02`, `br1-wan01`, `br2-wan01`, `isp-core01` | `c8000v` 17.18.4 | 5 | 2 | 6 | 10 | 30 |
 | `dc1-spine01/02`, `dc1-leaf01/02`, `dc1-acc01`, `br1-sw01`, `br2-sw01` | `veos` 4.35.6M | 7 | 2 | 4 | 14 | 28 |
 | `br1-pc01`, `br2-pc01` | `win11` 25H2 | 2 | 2 | 6 | 4 | 12 |
-| `dc1-srv01` | `ubuntu` 24.04 | 1 | 2 | 2 | 2 | 2 |
+| `dc1-srv01` | `ubuntu` 24.04 | 1 | 1 | 1 | 1 | 1 |
 | `br1-host01`, `br2-host01` | `ubuntu` 24.04 (Alpine deferred, ADR 0034) | 2 | 1 | 1 | 2 | 2 |
 | EVE-NG host OS, Docker, KSM | | | | | | ~6 |
-| **Total** | | **21 nodes** | | | **48** (2:1 on 24 vCPU) | **112** |
+| **Total** | | **21 nodes** | | | **47** (2:1 on 24 vCPU) | **111** |
 | Ceiling | | | | | | 115 |
 
 Adding a node inside EVE-NG is a change to this table and to `topology/`;

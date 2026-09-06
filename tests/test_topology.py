@@ -85,7 +85,7 @@ def test_interface_count_covers_links(topo: dict) -> None:
     for link in topo["links"]:
         for end in (link["a"], link["b"]):
             node, iface = end.split(":")
-            n = int(re.sub(r"\D", "", iface) or 0)
+            n = int((re.search(r"(\d+)$", iface) or re.search(r"(\d+)", iface)).group(1))  # eth1/4 -> 4, Gi2 -> 2
             plat = topo["nodes"][node]["platform"]
             idx = n - 1 if plat == "c8000v" else n  # Gi2 -> index 1; Eth1/eth1/1 -> index 1
             highest[node] = max(highest.get(node, 0), idx)
