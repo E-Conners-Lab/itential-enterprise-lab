@@ -156,3 +156,24 @@ this plan.
 - A VLAN ID for OOB is deliberately **not** used (untagged on `vmbr1`); if the
   topology phase needs tagged lab VLANs on `vmbr1`, they come from 10.101 -
   10.103 and never from the OOB /24.
+
+## 6. In-band allocation (Phase 4, ADR 0034)
+
+Seeded into NetBox by `ansible/playbooks/netbox-topology.yml` from `topology/*.yaml`.
+
+| Prefix | Site | Role |
+|---|---|---|
+| 10.103.0.0/24 | WAN | ISP-to-site /30s: dc1-wan01 .0/30, dc1-wan02 .4/30, br1 .8/30, br2 .12/30 |
+| 10.103.100.0/24 | WAN | GRE/IPsec tunnels, /30 per DC-edge-to-branch pair |
+| 10.103.255.0/24 | WAN | router loopbacks (isp .1, dc1-wan01 .11, dc1-wan02 .12, br1 .21, br2 .22) |
+| 10.101.255.0/24 | DC1 | fabric underlay /31s |
+| 10.101.254.0/24 | DC1 | fabric loopbacks (spine01 .1, spine02 .2, leaf01 .11, leaf02 .12) |
+| 10.101.253.0/24 | DC1 | VTEP loopbacks (leaf pair anycast .1) |
+| 10.101.252.0/30 | DC1 | MLAG peer link |
+| 10.101.2.0/24 | DC1 | firewall untrust to WAN edges (HSRP .1, wan01 .2, wan02 .3, fw .10) |
+| 10.101.1.0/24 | DC1 | firewall trust, VLAN 100 (fw .1, fabric anycast gateway .254) |
+| 10.101.10.0/24 | DC1 | server VLAN 10 (gateway .1 anycast, dc1-srv01 .10) |
+| 10.102.16.0/20 | br1 | branch 1: .16.0/30 wan-fw link, VLAN 10 users 10.102.17.0/24 (fw .1, pc .11, host .12) |
+| 10.102.32.0/20 | br2 | branch 2: .32.0/30 wan-fw link, VLAN 10 users 10.102.33.0/24 (fw .1, pc .11, host .12) |
+
+Autonomous systems: ISP 65000, DC1 edge 65100, DC1 spines 65101, DC1 leaves 65102, br1 65201, br2 65202.
