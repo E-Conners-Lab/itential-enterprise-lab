@@ -1,0 +1,9 @@
+iface nic1 inet manual
+
+auto vmbr0
+iface vmbr0 inet static
+	address 192.168.68.161/22
+	gateway 192.168.68.1
+	bridge-ports nic1
+	bridge-stp off
+	bridge-fd 0

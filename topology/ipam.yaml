@@ -1,0 +1,75 @@
+# Machine-readable IP plan. This file seeds NetBox (ADR 0002); docs/ip-plan.md is the
+# human-readable rendering and tests/test_ipam.py proves the two agree.
+# Nothing gets an address that is not in this file.
+version: 1
+domain: lab.internal
+supernet: 10.100.0.0/14
+
+home_lan:
+  # The only home-LAN address this repo ever assigns. Below the router's DHCP pool (A-19, 2026-09-06).
+  oob_gw_address: 192.168.68.120
+  dhcp_pool_start: 192.168.68.131
+  dhcp_pool_end: 192.168.71.250
+  gateway: 192.168.68.1
+  known_statics: [192.168.68.1, 192.168.68.110, 192.168.68.161, 192.168.68.240]
+
+prefixes:
+  - {prefix: 10.100.0.0/14, status: container, role: lab-supernet, description: "Everything this lab allocates (ADR 0003)"}
+  - {prefix: 10.100.0.0/24, status: active, role: oob-management, description: "OOB management: vmbr1 untagged, EVE-NG pnet1"}
+  - {prefix: 10.101.0.0/16, status: reserved, role: dc-inband, description: "DC1 in-band, detailed in phase 4"}
+  - {prefix: 10.102.0.0/16, status: reserved, role: branch-inband, description: "Branch in-band, one /20 per branch, phase 4"}
+  - {prefix: 10.103.0.0/16, status: reserved, role: wan-transit, description: "WAN / transit / loopbacks, phase 4"}
+
+ranges:
+  - {start: 10.100.0.32, end: 10.100.0.63, role: metallb-pool, status: reserved, description: "MetalLB L2 pool (phase 3)"}
+  - {start: 10.100.0.240, end: 10.100.0.254, role: dhcp-pool, status: active, description: "DHCP for first boot / ZTP (phase 6)"}
+
+# placement drives the block check in tests/test_ipam.py and the NetBox role/tag.
+addresses:
+  - {address: 10.100.0.1, hostname: oob-gw, placement: infrastructure, phase: 2, status: active, description: "OOB gateway + NAT"}
+  - {address: 10.100.0.2, hostname: eve, placement: infrastructure, phase: 2, status: active, description: "EVE-NG pnet1"}
+  - {address: 10.100.0.16, hostname: k3s-01, placement: k3s-node, phase: 3, status: reserved}
+  - {address: 10.100.0.17, hostname: k3s-02, placement: k3s-node, phase: 3, status: reserved}
+  - {address: 10.100.0.18, hostname: k3s-03, placement: k3s-node, phase: 3, status: reserved}
+  - {address: 10.100.0.19, hostname: k3s-api, placement: k3s-node, phase: 3, status: reserved, description: "kube-vip API VIP"}
+  - {address: 10.100.0.32, hostname: ingress, placement: k3s-vip, phase: 3, status: reserved}
+  - {address: 10.100.0.33, hostname: keycloak, placement: k3s-vip, phase: 7, status: reserved}
+  - {address: 10.100.0.34, hostname: tacacs, placement: k3s-vip, phase: 7, status: reserved}
+  - {address: 10.100.0.35, hostname: zabbix, placement: k3s-vip, phase: 8, status: reserved}
+  - {address: 10.100.0.36, hostname: grafana, placement: k3s-vip, phase: 8, status: reserved}
+  - {address: 10.100.0.37, hostname: prometheus, placement: k3s-vip, phase: 8, status: reserved}
+  - {address: 10.100.0.38, hostname: loki, placement: k3s-vip, phase: 8, status: reserved}
+  - {address: 10.100.0.39, hostname: gnmic, placement: k3s-vip, phase: 8, status: reserved}
+  - {address: 10.100.0.40, hostname: oxidized, placement: k3s-vip, phase: 9, status: reserved}
+  - {address: 10.100.0.41, hostname: vault, placement: k3s-vip, phase: 9, status: reserved}
+  - {address: 10.100.0.42, hostname: gitea, placement: k3s-vip, phase: 9, status: reserved}
+  - {address: 10.100.0.64, hostname: netbox, placement: proxmox-vm, phase: 2, status: active, description: "VM 110 second NIC"}
+  - {address: 10.100.0.65, hostname: itential, placement: proxmox-vm, phase: 5, status: reserved}
+  - {address: 10.100.0.66, hostname: iag, placement: proxmox-vm, phase: 5, status: reserved}
+  - {address: 10.100.0.67, hostname: nios, placement: proxmox-vm, phase: 6, status: reserved}
+  - {address: 10.100.0.68, hostname: ddi-fallback, placement: proxmox-vm, phase: 6, status: reserved}
+  - {address: 10.100.0.69, hostname: dc01, placement: proxmox-vm, phase: 7, status: reserved}
+  - {address: 10.100.0.70, hostname: panorama, placement: proxmox-vm, phase: 10, status: reserved}
+  - {address: 10.100.0.128, hostname: dc1-fw01, placement: eve-firewall, phase: 4, status: reserved}
+  - {address: 10.100.0.129, hostname: dc1-fw02, placement: eve-firewall, phase: 4, status: reserved}
+  - {address: 10.100.0.130, hostname: br1-fw01, placement: eve-firewall, phase: 4, status: reserved}
+  - {address: 10.100.0.131, hostname: br2-fw01, placement: eve-firewall, phase: 4, status: reserved}
+  - {address: 10.100.0.144, hostname: dc1-wan01, placement: eve-router, phase: 4, status: reserved}
+  - {address: 10.100.0.145, hostname: dc1-wan02, placement: eve-router, phase: 4, status: reserved}
+  - {address: 10.100.0.146, hostname: br1-wan01, placement: eve-router, phase: 4, status: reserved}
+  - {address: 10.100.0.147, hostname: br2-wan01, placement: eve-router, phase: 4, status: reserved}
+  - {address: 10.100.0.148, hostname: isp-core01, placement: eve-router, phase: 4, status: reserved}
+  - {address: 10.100.0.160, hostname: dc1-spine01, placement: eve-switch, phase: 4, status: reserved}
+  - {address: 10.100.0.161, hostname: dc1-spine02, placement: eve-switch, phase: 4, status: reserved}
+  - {address: 10.100.0.162, hostname: dc1-leaf01, placement: eve-switch, phase: 4, status: reserved}
+  - {address: 10.100.0.163, hostname: dc1-leaf02, placement: eve-switch, phase: 4, status: reserved}
+  - {address: 10.100.0.164, hostname: dc1-acc01, placement: eve-switch, phase: 4, status: reserved}
+  - {address: 10.100.0.165, hostname: br1-sw01, placement: eve-switch, phase: 4, status: reserved}
+  - {address: 10.100.0.166, hostname: br2-sw01, placement: eve-switch, phase: 4, status: reserved}
+  - {address: 10.100.0.192, hostname: dc1-srv01, placement: eve-endpoint, phase: 4, status: reserved}
+  - {address: 10.100.0.193, hostname: br1-pc01, placement: eve-endpoint, phase: 4, status: reserved}
+  - {address: 10.100.0.194, hostname: br2-pc01, placement: eve-endpoint, phase: 4, status: reserved}
+  - {address: 10.100.0.195, hostname: br1-host01, placement: eve-endpoint, phase: 4, status: reserved}
+  - {address: 10.100.0.196, hostname: br2-host01, placement: eve-endpoint, phase: 4, status: reserved}
+  - {address: 10.100.0.224, hostname: clab, placement: clab, phase: 11, status: reserved}
+  - {address: 10.100.0.239, hostname: verify-scratch, placement: clab, phase: 2, status: reserved, description: "Throw-away VM used by verify/ only"}
