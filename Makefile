@@ -27,7 +27,7 @@ test: ## Unit tests that need no lab access (ipam.yaml vs ip-plan.md, ...)
 
 # Every lab-touching target loads .env into the environment (never committed).
 define load_env
-	set -a; . ./.env; set +a;
+	set -a; . ./.env; set +a; export NETBOX_API=$$NETBOX_URL;
 endef
 
 plan-oob: ## Phase 2: show what tofu would change (read-only)

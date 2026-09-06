@@ -38,7 +38,7 @@
         netbox_url: "{{ nb.netbox_url }}"
         netbox_token: "{{ nb.netbox_token }}"
         validate_certs: false
-        data: {name: homelab, cluster_type: proxmox-ve, site: homelab, status: active}
+        data: {name: homelab, cluster_type: proxmox-ve, status: active}
 
     - name: Tags used as inventory groups
       netbox.netbox.netbox_tag:
@@ -93,15 +93,52 @@
       loop_control:
         label: "{{ item.name }}"
 
-    - name: Assign the OOB address to eth0 and make it primary
-      netbox.netbox.netbox_ip_address:
+    # The addresses already exist (seeded from ipam.yaml in phase 2), so they are attached to the
+    # interface with a PATCH instead of re-created (NetBox enforces global uniqueness).
+    - name: Look up each VM's eth0 interface id
+      ansible.builtin.uri:
+        url: "{{ nb.netbox_url }}/api/virtualization/interfaces/?virtual_machine={{ item.name }}&name=eth0"
+        headers: {Authorization: "Token {{ nb.netbox_token }}"}
+      register: vm_ifaces
+      loop: "{{ vms }}"
+      loop_control:
+        label: "{{ item.name }}"
+      failed_when: vm_ifaces.json.count != 1
+
+    - name: Look up each OOB address id
+      ansible.builtin.uri:
+        url: "{{ nb.netbox_url }}/api/ipam/ip-addresses/?address={{ item.ips[0] }}/24"
+        headers: {Authorization: "Token {{ nb.netbox_token }}"}
+      register: vm_ips
+      loop: "{{ vms }}"
+      loop_control:
+        label: "{{ item.name }} {{ item.ips[0] }}"
+      failed_when: vm_ips.json.count != 1
+
+    - name: Attach the address to eth0 (PATCH, idempotent)
+      ansible.builtin.uri:
+        url: "{{ nb.netbox_url }}/api/ipam/ip-addresses/{{ item.1.json.results[0].id }}/"
+        method: PATCH
+        headers: {Authorization: "Token {{ nb.netbox_token }}"}
+        body_format: json
+        body:
+          assigned_object_type: virtualization.vminterface
+          assigned_object_id: "{{ item.0.json.results[0].id }}"
+      loop: "{{ vm_ifaces.results | zip(vm_ips.results) | list }}"
+      loop_control:
+        label: "{{ item.0.item.name }}"
+      when: item.1.json.results[0].assigned_object_id != item.0.json.results[0].id
+      changed_when: true
+
+    - name: Primary IPv4 on the VM (what nb_inventory uses as ansible_host)
+      netbox.netbox.netbox_virtual_machine:
         netbox_url: "{{ nb.netbox_url }}"
         netbox_token: "{{ nb.netbox_token }}"
         validate_certs: false
         data:
-          address: "{{ item.ips[0] }}/24"
-          assigned_object: {virtual_machine: "{{ item.name }}", name: eth0}
-          primary_ip4: true
+          name: "{{ item.name }}"
+          cluster: homelab
+          primary_ip4: "{{ item.ips[0] }}/24"
       loop: "{{ vms }}"
       loop_control:
         label: "{{ item.name }} {{ item.ips[0] }}"

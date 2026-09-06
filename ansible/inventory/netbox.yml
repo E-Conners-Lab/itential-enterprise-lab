@@ -1,7 +1,7 @@
 ---
 # Dynamic inventory from NetBox (PID PIS-15 handoff contract). VMs registered by
 # ansible/playbooks/netbox-vms.yml appear here grouped by role tag and cluster.
-# Requires NETBOX_URL / NETBOX_TOKEN in the environment (make exports .env).
+# Requires NETBOX_API (= NETBOX_URL) and NETBOX_TOKEN in the environment; make exports both from .env.
 plugin: netbox.netbox.nb_inventory
 validate_certs: false
 config_context: false
@@ -9,6 +9,7 @@ vm_query_filters:
   - status: active
 device_query_filters:
   - status: active
+group_names_raw: true
 group_by:
   - tags
   - cluster
