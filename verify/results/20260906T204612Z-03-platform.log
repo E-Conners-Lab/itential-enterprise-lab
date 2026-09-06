@@ -1,0 +1,5 @@
+# test-03-platform 20260906T204714Z
+FAIL  kubeconfig /Users/elliotconner/.kube/lab-k3s.yaml missing (written by ansible/playbooks/k3s-cluster.yml)
+
+passed=0 failed=6
+RESULT: FAIL

@@ -14,7 +14,7 @@ help: ## Show targets
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-22s\033[0m %s\n", $$1, $$2}'
 
 bootstrap: ## Install local tooling checks, .venv (pytest, pynetbox) + pre-commit hooks
-	@for t in tofu ansible ansible-lint yamllint gitleaks pre-commit gh jq python3; do \
+	@for t in tofu ansible ansible-lint yamllint gitleaks pre-commit gh jq python3 helm kubectl cilium; do \
 	  command -v $$t >/dev/null || { echo "MISSING: $$t (see README: Bootstrap)"; exit 1; }; done
 	[ -d .venv ] || python3 -m venv .venv
 	.venv/bin/pip install -q -r requirements-dev.txt
