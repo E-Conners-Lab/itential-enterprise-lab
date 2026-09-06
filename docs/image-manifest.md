@@ -229,6 +229,28 @@ once verified).
 | Min / Lab | Server 1 vCPU / 2 GB / 10 GB; runner 4 vCPU / 8 GB / 20 GB; etcd 2 vCPU / 8 GB. **Lab: one Rocky 9 VM with server + runner + embedded store, 4 vCPU / 8 GB / 40 GB**, plus Ansible collections `paloaltonetworks.panos`, `arista.eos`, `cisco.ios`, `infoblox.nios_modules`, `netbox.netbox` pinned in Phase 5 |
 | Verified | 2026-09-06 |
 
+### 3.5 Itential container images (owner-verified 2026-09-06, supersedes the RPM path in 3.2/3.3 for Phase 5)
+
+The owner runs Itential's `itential-dev-stack` (Docker Compose) on a work laptop with images
+pulled from Itential's private ECR. The lab will run the same stack on a lab VM, pulling with
+the owner's ECR credentials, then `docker save` the images into `/srv/images/itential/` as the
+offline rebuild copy. ADR 0020 is amended in the Phase 5 PR; the Rocky template stays unused.
+
+| Image | Tag to pin | Role | Note |
+|---|---|---|---|
+| `497639811223.dkr.ecr.us-east-2.amazonaws.com/automation-platform-config-lcm-flowai` | `6.5.1` | Itential Platform 6.5.1 with the FlowAI bundle | 6.5.2 exists (3.2); pin what is proven on the laptop first |
+| `497639811223.dkr.ecr.us-east-2.amazonaws.com/automation-gateway5` | `5.5.1-amd64` | Gateway 5 (FlowAI agent tool-calling, device services) | 5.5.2 exists |
+| `497639811223.dkr.ecr.us-east-2.amazonaws.com/automation-gateway` | `4.3.15` | Gateway 4 (Golden Config / Configuration Manager compliance) | 4.3 receives no further security patches per Itential; 4.4 is the patched line. Both gateways are needed for the full lab |
+| `ghcr.io/itential/itential-mcp` | `v0.13.1` | MCP server (optional, later) | public |
+| `ghcr.io/itential/job-metrics-exporter` | pin a digest in Phase 5 | Prometheus exporter for jobs | laptop has `latest`; never pin `latest` |
+
+Do not pin: `automation-gateway5:5.1.0`, `automation-gateway:4.3.7`, `automation-platform-config-lcm:6`, `itential.jfrog.io/flow-ai-demo/itential_flowai:v0.1.4` (leftovers on the laptop).
+
+**Licensing, still open.** The running dev stack has no licence file, key or licensing env var
+anywhere (compose, `.env`, platform volume, container filesystem, logs). Whether this image is a
+demo build or whether a lab deployment needs a real licence is **UNVERIFIED**; the owner confirms
+with Itential before Phase 5, and confirms the account terms cover a personal lab.
+
 ### 3.4 ServiceNow Personal Developer Instance (external, no image)
 
 | | |
