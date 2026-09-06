@@ -33,7 +33,7 @@ check "S1.1 ping ${OOB_GW} and ssh oob-gw answers with hostname oob-gw" c1
 
 # --- S1.2 EVE-NG pnet1 has eth1 as a member and answers on the OOB address ---------------------
 c2() {
-  $SSH "root@${EVE_HOST}" 'ip -br addr show pnet1 | grep -q "10.100.0.2/24" && bridge link show | grep -q "eth1 .* master pnet1"' \
+  $SSH "root@${EVE_HOST}" 'ip -br addr show pnet1 | grep -q "10.100.0.2/24" && bridge link show | grep -q "eth1: .* master pnet1"' \
   && $SSH "ubuntu@${OOB_GW}" ping -c 2 -W 1 "$EVE_OOB" >/dev/null
 }
 check "S1.2 EVE-NG pnet1 = eth1 + ${EVE_OOB}, reachable from oob-gw" c2

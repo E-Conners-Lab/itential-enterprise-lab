@@ -44,14 +44,22 @@
       register: pnet1_cfg
 
     - name: Apply pnet1 (ifdown/ifup only pnet1; pnet0 untouched)
-      ansible.builtin.shell: ifdown pnet1 || true; ifup pnet1
+      ansible.builtin.shell: ifdown pnet1 || true; sleep 2; ifup pnet1
       when: pnet1_cfg is changed
       changed_when: true
+
+    - name: Bring pnet1 up if it is absent (ifup is idempotent for an already-up bridge)
+      ansible.builtin.shell: ip link show pnet1 >/dev/null 2>&1 || ifup pnet1
+      changed_when: false
 
     - name: Check pnet1 carries eth1 and the OOB address
       ansible.builtin.shell: |
         set -o pipefail
-        ip -br addr show pnet1 | grep -q '{{ eve_oob_ip }}/24' && bridge link show | grep -q 'eth1 .* master pnet1'
+        ip -br addr show pnet1 | grep -q '{{ eve_oob_ip }}/24' && bridge link show | grep -q 'eth1: .* master pnet1'
       args:
         executable: /bin/bash
       changed_when: false
+      retries: 3
+      delay: 2
+      register: pnet1_check
+      until: pnet1_check.rc == 0
