@@ -4,7 +4,7 @@ dns domain {{ lab.domain }}
 ip name-server vrf MGMT {{ lab.dns | join(' ') }}
 ntp server vrf MGMT {{ lab.ntp }}
 !
-username automation privilege 15 secret 0 {{ lookup_automation_password | default('ChangeMe123!') }}
+username automation privilege 15 secret 0 {{ automation_password }}
 aaa authorization exec default local
 !
 vrf instance MGMT

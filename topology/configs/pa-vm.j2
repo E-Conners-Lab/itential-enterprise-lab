@@ -12,4 +12,4 @@ set deviceconfig system ntp-servers primary-ntp-server ntp-server-address {{ lab
 set deviceconfig system service disable-telnet yes
 set deviceconfig system service disable-http yes
 set mgt-config users automation permissions role-based superuser yes
-set mgt-config users automation password-hash {{ pan_password_hash | default('$1$CHANGEME$placeholder') }}
+set mgt-config users automation password-hash {{ pan_password_hash }}

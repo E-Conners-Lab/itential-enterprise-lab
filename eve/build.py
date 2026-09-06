@@ -139,9 +139,17 @@ def render_config(platform: str, name: str, node: dict, topo: dict) -> str | Non
         return None
     from jinja2 import Environment, FileSystemLoader, StrictUndefined
 
+    import crypt  # noqa: DEP003 - md5-crypt is what PAN-OS accepts for password-hash
+
+    secret = os.environ.get("AUTOMATION_PASSWORD")
+    if not secret:
+        raise SystemExit("AUTOMATION_PASSWORD missing in .env (device-local automation account, moved to Vault in phase 9)")
     env = Environment(loader=FileSystemLoader(str(CONFIG_DIR)), undefined=StrictUndefined, keep_trailing_newline=True)
     links = [lk for lk in topo["links"] if lk["a"].startswith(name + ":") or lk["b"].startswith(name + ":")]
-    return env.get_template(f"{platform}.j2").render(name=name, node=node, lab=topo["lab"], routing=topo["routing"], links=links, nodes=topo["nodes"])
+    return env.get_template(f"{platform}.j2").render(
+        name=name, node=node, lab=topo["lab"], routing=topo["routing"], links=links, nodes=topo["nodes"],
+        automation_password=secret, pan_password_hash=crypt.crypt(secret, crypt.mksalt(crypt.METHOD_MD5)),
+    )
 
 
 def plan(eve: Eve, topo: dict) -> dict:

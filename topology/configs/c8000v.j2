@@ -2,8 +2,8 @@
 hostname {{ name }}
 ip domain name {{ lab.domain }}
 no ip domain lookup
-username automation privilege 15 secret 0 {{ lookup_automation_password | default('ChangeMe123!') }}
-enable secret 0 {{ lookup_automation_password | default('ChangeMe123!') }}
+username automation privilege 15 secret 0 {{ automation_password }}
+enable secret 0 {{ automation_password }}
 aaa new-model
 aaa authentication login default local
 aaa authorization exec default local
