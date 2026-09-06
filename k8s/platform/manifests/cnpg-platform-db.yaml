@@ -12,6 +12,7 @@ spec:
     s3Credentials:
       accessKeyId: {name: garage-s3, key: GARAGE_DEFAULT_ACCESS_KEY}
       secretAccessKey: {name: garage-s3, key: GARAGE_DEFAULT_SECRET_KEY}
+      region: {name: garage-s3, key: GARAGE_REGION}
     wal:
       compression: gzip
   retentionPolicy: "14d"

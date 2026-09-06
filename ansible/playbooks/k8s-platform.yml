@@ -151,6 +151,17 @@
       when: garage_secret.resources | length == 0
       no_log: true
 
+    # Garage rejects requests signed for any region but its own ("Bad request when accessing bucket").
+    - name: Region key on the S3 secret
+      kubernetes.core.k8s:
+        kubeconfig: "{{ kubeconfig }}"
+        state: patched
+        kind: Secret
+        namespace: garage
+        name: garage-s3
+        definition:
+          stringData: {GARAGE_REGION: garage}
+
     - name: Garage (S3 object store on Longhorn)
       kubernetes.core.k8s:
         kubeconfig: "{{ kubeconfig }}"
@@ -204,7 +215,7 @@
         state: present
         src: "{{ k8s_dir }}/manifests/cnpg-platform-db.yaml"
 
-    - name: Cluster healthy
+    - name: Cluster healthy with WAL archiving working
       kubernetes.core.k8s_info:
         kubeconfig: "{{ kubeconfig }}"
         api_version: postgresql.cnpg.io/v1
@@ -214,7 +225,47 @@
       register: pgc
       retries: 60
       delay: 10
-      until: pgc.resources | length == 1 and pgc.resources[0].status.phase | default('') == 'Cluster in healthy state'
+      until: >-
+        pgc.resources | length == 1 and pgc.resources[0].status.phase | default('') == 'Cluster in healthy state'
+        and (pgc.resources[0].status.conditions | default([]) | selectattr('type', 'equalto', 'ContinuousArchiving')
+             | map(attribute='status') | first | default('')) == 'True'
+
+    - name: Completed backups so far
+      kubernetes.core.k8s_info:
+        kubeconfig: "{{ kubeconfig }}"
+        api_version: postgresql.cnpg.io/v1
+        kind: Backup
+        namespace: cnpg-system
+      register: backups
+
+    - name: Initial on-demand backup (only when none has completed yet)
+      kubernetes.core.k8s:
+        kubeconfig: "{{ kubeconfig }}"
+        state: present
+        definition:
+          apiVersion: postgresql.cnpg.io/v1
+          kind: Backup
+          metadata: {name: platform-db-initial, namespace: cnpg-system}
+          spec:
+            cluster: {name: platform-db}
+            method: plugin
+            pluginConfiguration: {name: barman-cloud.cloudnative-pg.io}
+      when: >-
+        backups.resources | selectattr('status.phase', 'defined')
+        | selectattr('status.phase', 'equalto', 'completed') | list | length == 0
+
+    - name: A backup completed in the object store
+      kubernetes.core.k8s_info:
+        kubeconfig: "{{ kubeconfig }}"
+        api_version: postgresql.cnpg.io/v1
+        kind: Backup
+        namespace: cnpg-system
+      register: backups
+      retries: 30
+      delay: 10
+      until: >-
+        backups.resources | selectattr('status.phase', 'defined')
+        | selectattr('status.phase', 'equalto', 'completed') | list | length > 0
 
     - name: Traefik gets the ingress VIP
       kubernetes.core.k8s_info:
