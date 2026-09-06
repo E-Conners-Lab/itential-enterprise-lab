@@ -35,8 +35,8 @@ c1() {
   local want; want=$(python3 -c "import yaml;print(yaml.safe_load(open('k8s/platform/versions.yaml'))['components']['k3s']['app_version'])")
   kubectl get nodes -o jsonpath='{.items[*].status.nodeInfo.kubeletVersion}' | tr ' ' '\n' | grep -vqx "$want" && { echo "kubelet version != $want"; return 1; }
   cilium status --wait --wait-duration 2m >/dev/null || { cilium status; return 1; }
-  timeout 60 cilium hubble port-forward >/dev/null 2>&1 & local pf=$!; sleep 4
-  local flows; flows=$(hubble observe --last 20 -o json 2>/dev/null | wc -l | tr -d ' '); kill $pf 2>/dev/null
+  # Ask a Cilium agent directly (no hubble CLI needed on the workstation).
+  local flows; flows=$(kubectl -n kube-system exec ds/cilium -c cilium-agent -- hubble observe --last 20 -o json 2>/dev/null | wc -l | tr -d ' ')
   [ "${flows:-0}" -gt 0 ] || { echo "hubble observed no flows"; return 1; }
 }
 check "S2.1 three Ready nodes at k3s $(python3 -c "import yaml;print(yaml.safe_load(open('k8s/platform/versions.yaml'))['components']['k3s']['app_version'])" 2>/dev/null) via ${API_VIP}; cilium status ok; hubble observes flows" c1

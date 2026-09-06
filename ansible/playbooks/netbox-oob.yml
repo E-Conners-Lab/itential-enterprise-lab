@@ -50,6 +50,9 @@
                     via: {{ oob_gw_ip }}
                   # Dual-homed host: anything sourced from the OOB address must return through
                   # oob-gw, or replies leave via eth0 and the client sees an asymmetric flow.
+                  - to: {{ oob_prefix }}
+                    scope: link
+                    table: 100
                   - to: default
                     via: {{ oob_gw_ip }}
                     table: 100

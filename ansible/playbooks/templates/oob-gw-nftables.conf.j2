@@ -17,6 +17,7 @@ table inet filter {
     type filter hook forward priority 0; policy drop;
     ct state established,related accept
     iifname "{{ oob_iface }}" oifname "{{ lan_iface }}" accept comment "lab -> internet"
+    iifname "{{ oob_iface }}" oifname "{{ oob_iface }}" accept comment "lab -> lab hairpin (misrouted hosts)"
     iifname "{{ lan_iface }}" oifname "{{ oob_iface }}" ip saddr 192.168.68.0/22 accept comment "workstation -> lab via static route"
   }
   chain output {
