@@ -434,6 +434,7 @@ this PID. Vendor documentation is never trusted from memory.
 | k3s workloads | Helm values + Kustomize in `k8s/` | `kubectl apply` of unsaved manifests |
 | Device configuration after Phase 5 | Itential via IAG | direct Ansible against devices (except baseline in Phase 4) |
 | Verification | `verify/` scripts, read-only | any build tool |
+| Dual-homed hosts (home LAN + OOB) | Only NetBox and EVE-NG, each with the return-path rules of ADR 0030 | adding a second home-LAN leg to any other VM |
 
 **PIS-20 — Cascading failure gates.** `make up` runs phases in order and stops
 at the first failing phase target; a phase target begins by running the

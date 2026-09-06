@@ -51,7 +51,9 @@ c3() {
   curl -sk -m 20 -H "$H" -X PUT "${api}/${SCRATCH_ID}/config" --data-urlencode "ipconfig0=ip=${SCRATCH_IP}/24,gw=${OOB_GW}" --data-urlencode "nameserver=${OOB_GW}" --data-urlencode "net0=virtio,bridge=vmbr1" >/dev/null || return 1
   curl -sk -m 20 -H "$H" -X POST "${api}/${SCRATCH_ID}/status/start" >/dev/null || return 1
   local i rc=1
-  for i in $(seq 1 24); do sleep 5; if $SSH "ubuntu@${SCRATCH_IP}" 'hostname; getent hosts github.com >/dev/null && sudo apt-get -qq update >/dev/null' 2>/dev/null; then rc=0; break; fi; done
+  # Every clone has a fresh host key, so the throw-away VM uses a throw-away known_hosts.
+  local SSHS="ssh -o BatchMode=yes -o ConnectTimeout=8 -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -o LogLevel=ERROR"
+  for i in $(seq 1 24); do sleep 5; if $SSHS "ubuntu@${SCRATCH_IP}" 'hostname; getent hosts github.com >/dev/null && sudo apt-get -qq update >/dev/null' 2>/dev/null; then rc=0; break; fi; done
   curl -sk -m 20 -H "$H" -X POST "${api}/${SCRATCH_ID}/status/stop" >/dev/null; sleep 4
   curl -sk -m 30 -H "$H" -X DELETE "${api}/${SCRATCH_ID}?purge=1" >/dev/null
   return $rc
@@ -102,7 +104,7 @@ c7() { $SSH "root@${PVE_HOST}" 'awk "/^iface nic1 inet manual/{f=1} f{print} /^\
 check "S1.7 vmbr0/nic1 stanzas unchanged vs verify/fixtures/pve-interfaces-vmbr0.expected" c7
 
 # --- S1.8 client access: names resolve via the LAN leg, NetBox reachable by name over the route --
-c7b() { dig +short +time=3 @"${OOB_GW_LAN}" netbox.lab.internal | grep -qx "${NETBOX_OOB}" && curl -s -m 10 -o /dev/null -w "%{http_code}" "http://${NETBOX_OOB}:8080/api/status/" | grep -qx 200; }
+c7b() { dig +short +time=3 @"${OOB_GW_LAN}" netbox.lab.internal | grep -qx "${NETBOX_OOB}" && curl -s -m 10 -o /dev/null -w "%{http_code}" -H "Authorization: Token ${NETBOX_TOKEN}" "http://${NETBOX_OOB}:8080/api/status/" | grep -qx 200; }
 check "S1.8 dig @${OOB_GW_LAN} netbox.lab.internal = ${NETBOX_OOB} and NetBox answers over the route" c7b
 
 # --- S0 NetBox hardening ------------------------------------------------------------------------

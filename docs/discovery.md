@@ -93,8 +93,8 @@ Changes made by `phase-2/oob-network`, so §1-3 above now differ in these points
   token `tofu`; VMs 200 `oob-gw` (running), 9000 `tpl-ubuntu-2404` and 9001 `tpl-rocky-9`
   (templates). VM 300 and VM 110 each gained `net1` on `vmbr1` by hot-plug. `vmbr0`,
   `nic1` and `/etc/network/interfaces` unchanged (verified by `verify/test-02-oob.sh` S1.7).
-- EVE-NG: `pnet1` = `eth1`, static 10.100.0.2/24. Admin password rotated (value in `.env`).
-- NetBox: `oob0` at 10.100.0.64/24 with a route to 10.100.0.0/14 only; `qemu-guest-agent`
+- EVE-NG: `pnet1` = `eth1`, static 10.100.0.2/24 with a return-path policy route via `oob-gw` (ADR 0030). Admin password rotated (value in `.env`).
+- NetBox: `oob0` at 10.100.0.64/24 with a route to 10.100.0.0/14, a return-path policy route and conntrack marks (ADR 0030, unit `oob-return.service`); `qemu-guest-agent`
   running; nightly backup to `/var/backups/netbox/`; one API token (id 6, described,
   expires 2027-09-06); IPAM seeded from `topology/ipam.yaml`.
 - Home router: static route 10.100.0.0/14 via 192.168.68.120 (owner). Router DHCP pool is

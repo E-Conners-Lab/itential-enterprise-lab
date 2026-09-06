@@ -29,6 +29,35 @@
           - lan_iface != oob_iface
         fail_msg: "expected one interface on the home LAN and one holding {{ oob_gw_ip }}; got lan={{ lan_iface }} oob={{ oob_iface }}"
   tasks:
+    # Home-LAN clients reach the lab through the router's static route (Mac -> router -> oob-gw).
+    # Without this, oob-gw and the lab reply straight to the client, the router's stateful
+    # firewall never sees the return half of the flow and drops it after the TCP handshake.
+    # Sending lab-sourced traffic for the home LAN back via the router keeps both halves on
+    # the same path. Direct client -> .120 traffic is unaffected (source is not 10.100/14).
+    - name: "Policy route: lab-sourced traffic to the home LAN returns via the router"
+      ansible.builtin.copy:
+        dest: /etc/netplan/60-oob-return-path.yaml
+        mode: "0600"
+        content: |
+          network:
+            version: 2
+            ethernets:
+              {{ lan_iface }}:
+                routes:
+                  - to: 192.168.68.0/22
+                    via: {{ home_router }}
+                    table: 100
+                routing-policy:
+                  - from: {{ lab_supernet }}
+                    to: 192.168.68.0/22
+                    table: 100
+      register: return_path
+
+    - name: Apply netplan
+      ansible.builtin.command: netplan apply
+      when: return_path is changed
+      changed_when: true
+
     - name: Packages
       ansible.builtin.apt:
         name: [nftables, unbound, chrony, qemu-guest-agent]
@@ -36,12 +65,25 @@
         update_cache: true
         cache_valid_time: 3600
 
-    - name: IPv4 forwarding
+    - name: Router sysctls (forwarding on; never accept or send ICMP redirects, they break the symmetric return path)
       ansible.posix.sysctl:
-        name: net.ipv4.ip_forward
-        value: "1"
+        name: "{{ item.name }}"
+        value: "{{ item.value }}"
         sysctl_file: /etc/sysctl.d/90-oob-gw.conf
         reload: true
+      loop:
+        - {name: net.ipv4.ip_forward, value: "1"}
+        - {name: net.ipv4.conf.all.accept_redirects, value: "0"}
+        - {name: net.ipv4.conf.default.accept_redirects, value: "0"}
+        - {name: net.ipv4.conf.all.secure_redirects, value: "0"}
+        - {name: net.ipv4.conf.all.send_redirects, value: "0"}
+        - {name: net.ipv4.conf.default.send_redirects, value: "0"}
+      loop_control:
+        label: "{{ item.name }}={{ item.value }}"
+
+    - name: Flush learned redirect routes so the policy route takes effect now
+      ansible.builtin.command: ip route flush cache
+      changed_when: false
 
     - name: Nftables ruleset (NAT OOB -> LAN, no inbound from LAN except ssh/icmp)
       ansible.builtin.template:
