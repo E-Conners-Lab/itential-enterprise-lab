@@ -21,8 +21,8 @@ naming per <https://www.eve-ng.net/index.php/documentation/qemu-image-namings/>.
 | `pa-vm` | Palo Alto VM-Series (PAN-OS) | 11.1, latest KVM base image on the portal (>= 11.1.4-h7; 11.1.16-h1 is the current maintenance release) | EVE-NG | 4 / 8 GB / 60 GB | unlicensed mode, no expiry, ~1,230 sessions | 0010 |
 | `panorama` | Palo Alto Panorama | 11.1, same maintenance release as `pa-vm` | Proxmox | 8 / 32 GB / 81 GB + 100 GB log disk | eval or 180-day device-management grace: **UNVERIFIED**, see entry | 0011 |
 | `c8000v` | Cisco Catalyst 8000V (IOS XE) | **17.13.01a as loaded** (owner decision 2026-09-06, ADR 0032); upgrade target 17.18.4 | EVE-NG | 2 / 6 GB / 8 GB | Smart Licensing Using Policy, no registration needed, 10 Mbps default throughput (250 Mbps settable) | 0032 (0012 superseded) |
-| `veos` | Arista vEOS-lab | 4.35.6M | EVE-NG | 2 / 4 GB / 4 GB | free with arista.com account, no expiry | 0013 |
-| `ceos` | Arista cEOS-lab | 4.35.6M (parity with `veos`) | Containerlab (`clab` VM) | ~1 GB RAM per node | free with arista.com account | 0014 |
+| `veos` | Arista vEOS-lab | **4.33.1.1F as loaded** (owner decision 2026-09-06, ADR 0033); upgrade target 4.35.6M | EVE-NG | 2 / 4 GB / 4 GB | free with arista.com account, no expiry | 0033 (0013 superseded) |
+| `ceos` | Arista cEOS-lab | newest 4.33.x cEOS64-lab at Phase 11 (train parity with `veos`, ADR 0033) | Containerlab (`clab` VM) | ~1 GB RAM per node | free with arista.com account | 0014, 0033 |
 | `nios` | Infoblox NIOS (vNIOS IB-V825) | 9.0.8 | Proxmox | 2 / 16 GB / 150 GB (resizable image) | temp licence **60 days** | 0015 |
 | `winserver` | Windows Server 2025 Standard eval (Desktop Experience) | 2025 eval, build 26100 | Proxmox | 4 / 8 GB / 80 GB | **180 days**, activate within 10 days; rearm count **UNVERIFIED** | 0016 |
 | `win11` | Windows 11 Enterprise eval | 25H2 | EVE-NG | 2 / 6 GB / 64 GB | **90 days** | 0017 |
@@ -92,7 +92,7 @@ once verified).
 
 | | |
 |---|---|
-| Version | **EOS 4.35.6M** (2026-08-18). Replaces the loaded `veos-4.33.1.1F` (an early F build whose train has since had ~9 maintenance rebuilds; the `.1.1F` build itself is **UNVERIFIED** on public pages) |
+| Version | **Running: 4.33.1.1F**, the image already on EVE-NG (ADR 0033, owner decision 2026-09-06). Upgrade target: EOS 4.35.6M (2026-08-18); reasoning kept below |
 | Why | Newest train in M (fix-only) phase; 4.36 is still F-only. Same version as cEOS-lab so the Containerlab twin matches. EVE-NG's how-to lists 4.34.0F as tested, so 4.34.8M is the fallback. Sources: [Arista release notes feed](https://www.arista.com/en/support/release-notes), [EOS life-cycle policy](https://www.arista.com/en/support/product-documentation/eos-life-cycle-policy) |
 | Download | [arista.com software download](https://www.arista.com/en/support/software-download) (free registered account) |
 | Expected filename | `vEOS64-lab-4.35.6M.qcow2` (pattern from `vEOS64-lab-4.35.3F.qcow2`; exact name **UNVERIFIED**) + `Aboot-veos-serial-8.0.2.iso` (6 MB, MD5 `8d7e754efebca1930a93a2587ff7606c` per the GNS3 registry) |
