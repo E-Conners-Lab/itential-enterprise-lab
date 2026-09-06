@@ -83,3 +83,19 @@ Each one is a decision the PID (Phase 1) or a later PR should settle. Nothing be
 16. **Single SSD.** There is still no RAID1. Everything built here can be rebuilt from this repo plus staged images, which is the mitigation until a second drive arrives.
 17. **Sizing of the old netbox-prod VM** (4 vCPU / 8 GB) is kept; the resource budget counts it.
 18. **NetBox token hygiene.** The one existing v2 token has no description and no expiry. Phase 2 mints a described, scoped automation token and records the step in `docs/manual-steps.md` if it cannot be scripted.
+
+## 7. Amendment 2026-09-06 (Phase 2 applied)
+
+Changes made by `phase-2/oob-network`, so §1-3 above now differ in these points:
+
+- Proxmox: `local` storage content is `iso,vztmpl,backup,import,snippets`; thin LV
+  `pve/images` (200 GB) mounted at `/srv/images`; user `tofu@pve` with role `TofuLab` and
+  token `tofu`; VMs 200 `oob-gw` (running), 9000 `tpl-ubuntu-2404` and 9001 `tpl-rocky-9`
+  (templates). VM 300 and VM 110 each gained `net1` on `vmbr1` by hot-plug. `vmbr0`,
+  `nic1` and `/etc/network/interfaces` unchanged (verified by `verify/test-02-oob.sh` S1.7).
+- EVE-NG: `pnet1` = `eth1`, static 10.100.0.2/24. Admin password rotated (value in `.env`).
+- NetBox: `oob0` at 10.100.0.64/24 with a route to 10.100.0.0/14 only; `qemu-guest-agent`
+  running; nightly backup to `/var/backups/netbox/`; one API token (id 6, described,
+  expires 2027-09-06); IPAM seeded from `topology/ipam.yaml`.
+- Home router: static route 10.100.0.0/14 via 192.168.68.120 (owner). Router DHCP pool is
+  192.168.68.131-192.168.71.250.

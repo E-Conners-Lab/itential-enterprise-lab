@@ -583,7 +583,7 @@ the verify log path and any ADRs added.
 
 | # | Assumption | Resolution |
 |---|---|---|
-| 1 | Reviews on a solo repo | **Resolved:** owner merges with admin bypass; the PR description is the review record. No second account. |
+| 1 | Reviews on a solo repo | **Resolved (amended 2026-09-06):** the GitHub approving-review requirement was removed; the build agent posts a detailed change summary in chat and merges only after the owner's explicit approval in the conversation. CI, linear history and the force-push ban stay. |
 | 2 | `vmbr1` uplink stays unplugged | **Resolved:** yes, host-internal OOB (ADR 0003, 0004). |
 | 3 | OOB addressing | **Resolved:** 10.100.0.0/24 untagged, inside 10.100.0.0/14 (ADR 0003, `docs/ip-plan.md`). |
 | 4 | Proxmox API identity | **Resolved as planned:** `tofu@pve` + scoped token, created by the Phase 2 host play, stored in `.env`. |
@@ -601,7 +601,7 @@ the verify log path and any ADRs added.
 | 16 | Single SSD | **Carried forward** as an accepted risk (PIS-23); mitigation is rebuildability + off-host backups from Phase 9. |
 | 17 | NetBox VM sizing kept | **Resolved:** kept, counted in the budget. |
 | 18 | NetBox token hygiene | **Resolved:** Phase 2 mints a described token with a 1-year expiry; the old token is deleted after the new one is verified. |
-| 19 *(new)* | `oob-gw` home-LAN address | **Open for the owner:** proposal 192.168.68.245; must be confirmed free before Phase 2 `tofu apply`. |
+| 19 *(new)* | `oob-gw` home-LAN address | **Resolved 2026-09-06:** 192.168.68.120. The router's DHCP pool is 192.168.68.131-192.168.71.250, so the earlier proposal .245 was inside it; .120 is below the pool and was silent on ping, ARP and reverse DNS from two vantage points. Recorded in `topology/ipam.yaml` `home_lan` and enforced by `tests/test_ipam.py`. |
 
 ---
 
@@ -610,3 +610,4 @@ the verify log path and any ADRs added.
 | Version | Date | Change |
 |---|---|---|
 | 1.0 | 2026-09-06 | Initial PID (Phase 1) |
+| 1.1 | 2026-09-06 | Phase 2: A-19 resolved (.120), assumption 1 amended to the chat-approval process, S1 criterion 8 (client access) and S4 criterion 7 (Itential MCP reachability) added, Itential moves to the container path (manifest 3.5, ADR 0020 to be amended in Phase 5) |

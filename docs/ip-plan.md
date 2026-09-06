@@ -145,9 +145,14 @@ this plan.
 
 ## 5. Open items for Phase 2
 
-- `oob-gw` needs one address on the home LAN. Discovery did not record the home
-  DHCP scope, so the owner must pick a free static (proposal: `192.168.68.245`).
-  Recorded as PID assumption A-19.
+- `oob-gw` home-LAN address: **192.168.68.120** (resolved 2026-09-06, PID A-19).
+  The router's DHCP pool is 192.168.68.131-192.168.71.250; the Proxmox host
+  (.161) and EVE-NG (.240) sit inside it and would benefit from router
+  reservations, which is outside this repo's scope.
+- The home router carries a static route 10.100.0.0/14 via 192.168.68.120
+  (owner-configured 2026-09-06, manual step 1b). A workstation running a VPN
+  client that claims 10.0.0.0/8 (NordVPN on the Mac Mini does) needs the
+  more-specific route from `scripts/workstation-route.sh` as well.
 - A VLAN ID for OOB is deliberately **not** used (untagged on `vmbr1`); if the
   topology phase needs tagged lab VLANs on `vmbr1`, they come from 10.101 -
   10.103 and never from the OOB /24.
