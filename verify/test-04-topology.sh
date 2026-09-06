@@ -6,7 +6,7 @@ set -uo pipefail
 cd "$(dirname "$0")/.."
 [ -f .env ] || { echo "missing .env"; exit 1; }
 set -a; . ./.env; set +a
-: "${EVE_HOST:?}" "${EVE_USERNAME:?}" "${EVE_PASSWORD:?}" "${NETBOX_URL:?}" "${NETBOX_TOKEN:?}"
+: "${EVE_HOST:?}" "${EVE_USERNAME:?}" "${EVE_PASSWORD:?}" "${NETBOX_URL:?}" "${NETBOX_TOKEN:?}" "${AUTOMATION_PASSWORD:?}"
 LAB=${EVE_LAB:-/enterprise.unl}
 SSH="ssh -o BatchMode=yes -o ConnectTimeout=8 -o StrictHostKeyChecking=accept-new"
 ts=$(date -u +%Y%m%dT%H%M%SZ)
@@ -89,31 +89,28 @@ check "S3.3 NetBox devices, primary IPs and cable count equal the YAML; EVE-NG l
 
 # --- S3.4 routing state --------------------------------------------------------------------------
 c4() {
-  local errs=""
-  # ISP: five BGP neighbours established
-  local est; est=$($SSH "automation@10.100.0.148" "show bgp summary" 2>/dev/null | awk '/^10\.103\./ && $NF ~ /^[0-9]+$/ {c++} END{print c+0}')
+  local errs="" dev=".venv/bin/python verify/devcmd.py"
+  # ISP: five BGP neighbours established (state column is a number when up)
+  local est; est=$($dev 10.100.0.148 "show bgp summary" 2>/dev/null | awk '/^10\.103\./ && $NF ~ /^[0-9]+$/ {c++} END{print c+0}')
   [ "${est:-0}" -ge 5 ] || errs="$errs isp-bgp=${est:-0}/5"
-  # branches: two tunnels up each
-  for b in 146 147; do local up; up=$($SSH "automation@10.100.0.$b" "show ip interface brief | include Tunnel" 2>/dev/null | grep -c "up *up"); [ "${up:-0}" -ge 2 ] || errs="$errs br@.$b-tunnels=${up:-0}/2"; done
-  # leaves: EVPN peers + MLAG
-  for l in 162 163; do local ev; ev=$($SSH "automation@10.100.0.$l" "show bgp evpn summary | include Estab" 2>/dev/null | grep -c Estab); [ "${ev:-0}" -ge 2 ] || errs="$errs leaf@.$l-evpn=${ev:-0}/2"; $SSH "automation@10.100.0.$l" "show mlag | include State" 2>/dev/null | grep -qi active || errs="$errs leaf@.$l-mlag"; done
-  # firewalls: HA active / passive
-  local ha1 ha2; ha1=$($SSH "automation@10.100.0.128" "show high-availability state" 2>/dev/null | grep -m1 -oiE "state: *(active|passive)" ); ha2=$($SSH "automation@10.100.0.129" "show high-availability state" 2>/dev/null | grep -m1 -oiE "state: *(active|passive)")
-  echo "$ha1" | grep -qi active || errs="$errs fw01=$ha1"; echo "$ha2" | grep -qi passive || errs="$errs fw02=$ha2"
+  for b in 146 147; do local up; up=$($dev 10.100.0.$b "show ip interface brief | include Tunnel" 2>/dev/null | grep -c "up *up"); [ "${up:-0}" -ge 2 ] || errs="$errs br@.$b-tunnels=${up:-0}/2"; done
+  for l in 162 163; do local ev; ev=$($dev 10.100.0.$l "show bgp evpn summary" 2>/dev/null | grep -c Estab); [ "${ev:-0}" -ge 2 ] || errs="$errs leaf@.$l-evpn=${ev:-0}/2"; $dev 10.100.0.$l "show mlag" 2>/dev/null | grep -qiE "^ *state *: *active" || errs="$errs leaf@.$l-mlag"; done
+  local ha1 ha2; ha1=$($dev 10.100.0.128 "show high-availability state" 2>/dev/null | grep -m1 -oiE "state: *(active|passive)"); ha2=$($dev 10.100.0.129 "show high-availability state" 2>/dev/null | grep -m1 -oiE "state: *(active|passive)")
+  echo "$ha1" | grep -qi active || errs="$errs fw01=${ha1:-unreachable}"; echo "$ha2" | grep -qi passive || errs="$errs fw02=${ha2:-unreachable}"
   [ -z "$errs" ] || { echo "routing:$errs"; return 1; }
 }
 check "S3.4 ISP has 5 BGP peers; each branch 2 tunnels up; leaves 2 EVPN peers + MLAG active; fw01 active / fw02 passive" c4
 
 # --- S3.5 end-to-end path branch client -> DC server ---------------------------------------------
-c5() { $SSH "automation@10.100.0.195" "ping -c 3 -W 2 10.101.10.10 && traceroute -n -m 12 -w 2 10.101.10.10" 2>/dev/null | tee /tmp/verify04-trace.$$ | grep -q " 0% packet loss" || { cat /tmp/verify04-trace.$$ 2>/dev/null; rm -f /tmp/verify04-trace.$$; return 1; }; rm -f /tmp/verify04-trace.$$; }
+c5() { $SSH -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR "automation@10.100.0.195" "ping -c 3 -W 2 10.101.10.10 && traceroute -n -m 12 -w 2 10.101.10.10" 2>/dev/null | tee /tmp/verify04-trace.$$ | grep -q " 0% packet loss" || { cat /tmp/verify04-trace.$$ 2>/dev/null; rm -f /tmp/verify04-trace.$$; return 1; }; rm -f /tmp/verify04-trace.$$; }
 check "S3.5 br1-host01 reaches dc1-srv01 (10.101.10.10) through fw -> tunnel -> DC fw -> fabric" c5
 
 # --- S3.6 image versions equal the manifest ----------------------------------------------------
 c6() {
-  local errs=""
-  $SSH "automation@10.100.0.148" "show version | include Version" 2>/dev/null | grep -q "17.13.01a" || errs="$errs c8000v"
-  $SSH "automation@10.100.0.160" "show version | include Software image version" 2>/dev/null | grep -q "4.33.1.1F" || errs="$errs veos"
-  $SSH "automation@10.100.0.128" "show system info | match sw-version" 2>/dev/null | grep -q "11.1" || errs="$errs pa-vm"
+  local errs="" dev=".venv/bin/python verify/devcmd.py"
+  $dev 10.100.0.148 "show version | include Cisco IOS XE Software" 2>/dev/null | grep -q "17.13.01a" || errs="$errs c8000v"
+  $dev 10.100.0.160 "show version | include Software image version" 2>/dev/null | grep -q "4.33.1.1F" || errs="$errs veos"
+  $dev 10.100.0.128 "show system info | match sw-version" 2>/dev/null | grep -q "11.1" || errs="$errs pa-vm"
   [ -z "$errs" ] || { echo "version mismatch:$errs"; return 1; }
 }
 check "S3.6 show version on one node per vendor equals the manifest running version" c6

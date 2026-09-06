@@ -1,0 +1,31 @@
+#!/usr/bin/env python3
+"""Run one show command on a lab network device over SSH with the device-local 'automation'
+account (AUTOMATION_PASSWORD from .env). Used by verify/ scripts; never prints the password.
+
+  verify/devcmd.py <ip> "<command>"        # exit 0 and stdout = command output
+"""
+
+import os
+import sys
+
+import paramiko
+
+
+def run(ip: str, command: str, user: str = "automation", timeout: int = 20) -> str:
+    pw = os.environ.get("AUTOMATION_PASSWORD")
+    if not pw:
+        raise SystemExit("AUTOMATION_PASSWORD missing in .env")
+    c = paramiko.SSHClient()
+    c.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    c.connect(ip, username=user, password=pw, look_for_keys=False, allow_agent=False, timeout=timeout, banner_timeout=timeout, disabled_algorithms=None)
+    try:
+        _, out, err = c.exec_command(command, timeout=timeout)
+        return out.read().decode(errors="replace") + err.read().decode(errors="replace")
+    finally:
+        c.close()
+
+
+if __name__ == "__main__":
+    if len(sys.argv) != 3:
+        raise SystemExit(__doc__)
+    sys.stdout.write(run(sys.argv[1], sys.argv[2]))
