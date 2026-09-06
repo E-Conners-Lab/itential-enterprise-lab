@@ -1,0 +1,144 @@
+---
+# Register the VMs this repo creates as NetBox virtual machines (ADR 0002: NetBox is the
+# inventory; Ansible reads it back through inventory/netbox.yml). Idempotent, create/update only.
+- name: Register lab VMs in NetBox
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars_files:
+    - ../../topology/ipam.yaml
+    - ../../k8s/platform/versions.yaml
+  vars:
+    ansible_python_interpreter: "{{ playbook_dir }}/../../.venv/bin/python"
+    nb:
+      netbox_url: "{{ lookup('ansible.builtin.env', 'NETBOX_URL') }}"
+      netbox_token: "{{ lookup('ansible.builtin.env', 'NETBOX_TOKEN') }}"
+    vms:
+      - {name: oob-gw, vcpus: 1, memory: 1024, disk: 16, role: oob-gateway, ips: [10.100.0.1], tags: [phase-2]}
+      - {name: k3s-01, vcpus: 4, memory: 12288, disk: 80, role: k3s-server, ips: [10.100.0.16], tags: [phase-3, k3s]}
+      - {name: k3s-02, vcpus: 4, memory: 12288, disk: 80, role: k3s-server, ips: [10.100.0.17], tags: [phase-3, k3s]}
+      - {name: k3s-03, vcpus: 4, memory: 12288, disk: 80, role: k3s-server, ips: [10.100.0.18], tags: [phase-3, k3s]}
+  tasks:
+    - name: Site
+      netbox.netbox.netbox_site:
+        netbox_url: "{{ nb.netbox_url }}"
+        netbox_token: "{{ nb.netbox_token }}"
+        validate_certs: false
+        data: {name: homelab, slug: homelab, status: active, description: "Dell R640, Proxmox VE 9.2"}
+
+    - name: Cluster type and cluster
+      netbox.netbox.netbox_cluster_type:
+        netbox_url: "{{ nb.netbox_url }}"
+        netbox_token: "{{ nb.netbox_token }}"
+        validate_certs: false
+        data: {name: Proxmox VE, slug: proxmox-ve}
+
+    - name: Cluster homelab
+      netbox.netbox.netbox_cluster:
+        netbox_url: "{{ nb.netbox_url }}"
+        netbox_token: "{{ nb.netbox_token }}"
+        validate_certs: false
+        data: {name: homelab, cluster_type: proxmox-ve, status: active}
+
+    - name: Tags used as inventory groups
+      netbox.netbox.netbox_tag:
+        netbox_url: "{{ nb.netbox_url }}"
+        netbox_token: "{{ nb.netbox_token }}"
+        validate_certs: false
+        data: {name: "{{ item }}", slug: "{{ item }}"}
+      loop: [k3s, phase-3, oob-gateway, k3s-server]
+
+    - name: Device roles for VMs
+      netbox.netbox.netbox_device_role:
+        netbox_url: "{{ nb.netbox_url }}"
+        netbox_token: "{{ nb.netbox_token }}"
+        validate_certs: false
+        data: {name: "{{ item }}", slug: "{{ item }}", vm_role: true, color: "2196f3"}
+      loop: "{{ vms | map(attribute='role') | unique | list }}"
+
+    - name: Platform ubuntu-24.04
+      netbox.netbox.netbox_platform:
+        netbox_url: "{{ nb.netbox_url }}"
+        netbox_token: "{{ nb.netbox_token }}"
+        validate_certs: false
+        data: {name: ubuntu-24.04, slug: ubuntu-24-04}
+
+    - name: Virtual machines
+      netbox.netbox.netbox_virtual_machine:
+        netbox_url: "{{ nb.netbox_url }}"
+        netbox_token: "{{ nb.netbox_token }}"
+        validate_certs: false
+        data:
+          name: "{{ item.name }}"
+          cluster: homelab
+          site: homelab
+          status: active
+          vcpus: "{{ item.vcpus }}"
+          memory: "{{ item.memory }}"
+          disk: "{{ item.disk }}"
+          virtual_machine_role: "{{ item.role }}"
+          platform: ubuntu-24.04
+          tags: "{{ item.tags + [item.role] }}"
+      loop: "{{ vms }}"
+      loop_control:
+        label: "{{ item.name }}"
+
+    - name: VM interfaces (eth0 on vmbr1)
+      netbox.netbox.netbox_vm_interface:
+        netbox_url: "{{ nb.netbox_url }}"
+        netbox_token: "{{ nb.netbox_token }}"
+        validate_certs: false
+        data: {virtual_machine: "{{ item.name }}", name: eth0, enabled: true, description: vmbr1}
+      loop: "{{ vms }}"
+      loop_control:
+        label: "{{ item.name }}"
+
+    # The addresses already exist (seeded from ipam.yaml in phase 2), so they are attached to the
+    # interface with a PATCH instead of re-created (NetBox enforces global uniqueness).
+    - name: Look up each VM's eth0 interface id
+      ansible.builtin.uri:
+        url: "{{ nb.netbox_url }}/api/virtualization/interfaces/?virtual_machine={{ item.name }}&name=eth0"
+        headers: {Authorization: "Token {{ nb.netbox_token }}"}
+      register: vm_ifaces
+      loop: "{{ vms }}"
+      loop_control:
+        label: "{{ item.name }}"
+      failed_when: vm_ifaces.json.count != 1
+
+    - name: Look up each OOB address id
+      ansible.builtin.uri:
+        url: "{{ nb.netbox_url }}/api/ipam/ip-addresses/?address={{ item.ips[0] }}/24"
+        headers: {Authorization: "Token {{ nb.netbox_token }}"}
+      register: vm_ips
+      loop: "{{ vms }}"
+      loop_control:
+        label: "{{ item.name }} {{ item.ips[0] }}"
+      failed_when: vm_ips.json.count != 1
+
+    - name: Attach the address to eth0 (PATCH, idempotent)
+      ansible.builtin.uri:
+        url: "{{ nb.netbox_url }}/api/ipam/ip-addresses/{{ item.1.json.results[0].id }}/"
+        method: PATCH
+        headers: {Authorization: "Token {{ nb.netbox_token }}"}
+        body_format: json
+        body:
+          assigned_object_type: virtualization.vminterface
+          assigned_object_id: "{{ item.0.json.results[0].id }}"
+      loop: "{{ vm_ifaces.results | zip(vm_ips.results) | list }}"
+      loop_control:
+        label: "{{ item.0.item.name }}"
+      when: item.1.json.results[0].assigned_object_id != item.0.json.results[0].id
+      changed_when: true
+
+    - name: Primary IPv4 on the VM (what nb_inventory uses as ansible_host)
+      netbox.netbox.netbox_virtual_machine:
+        netbox_url: "{{ nb.netbox_url }}"
+        netbox_token: "{{ nb.netbox_token }}"
+        validate_certs: false
+        data:
+          name: "{{ item.name }}"
+          cluster: homelab
+          primary_ip4: "{{ item.ips[0] }}/24"
+      loop: "{{ vms }}"
+      loop_control:
+        label: "{{ item.name }} {{ item.ips[0] }}"

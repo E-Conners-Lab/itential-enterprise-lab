@@ -1,0 +1,10 @@
+# test-03-platform 20260906T215254Z
+PASS  S2.1 three Ready nodes at k3s v1.36.4+k3s1 via 10.100.0.19; cilium status ok; hubble observes flows
+PASS  S2.3 LoadBalancer Service gets 10.100.0.43 from MetalLB and answers from the Mac and from EVE-NG
+PASS  S2.4 ClusterIssuer lab-ca issues test.lab.internal chained to docs/lab-root-ca.crt
+PASS  S2.5 CNPG cluster healthy, pg_isready, at least one completed Backup in the object store
+PASS  S2.6 k3s node vCPU/RAM/disk on the host equal docs/resource-budget.md
+FAIL  S2.2 drill: stop one node; pod with a Longhorn PVC returns with its data within 5 min
+      pod with Longhorn PVC did not come back with data within 5 min after stopping k3s-03
+
+passed=5 failed=1

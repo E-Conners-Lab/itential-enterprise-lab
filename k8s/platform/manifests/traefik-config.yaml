@@ -1,0 +1,36 @@
+# k3s-bundled Traefik: pin its LoadBalancer IP to the "ingress" address from the IP plan and
+# serve *.lab.internal with a lab-CA certificate by default.
+apiVersion: helm.cattle.io/v1
+kind: HelmChartConfig
+metadata:
+  name: traefik
+  namespace: kube-system
+spec:
+  valuesContent: |-
+    service:
+      annotations:
+        metallb.io/loadBalancerIPs: 10.100.0.32
+    ports:
+      web:
+        redirections:
+          entryPoint:
+            to: websecure
+            scheme: https
+    tlsStore:
+      default:
+        defaultCertificate:
+          secretName: wildcard-lab-internal-tls
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: wildcard-lab-internal
+  namespace: kube-system
+spec:
+  secretName: wildcard-lab-internal-tls
+  dnsNames: ["*.lab.internal", "lab.internal"]
+  duration: 2160h
+  renewBefore: 360h
+  issuerRef:
+    name: lab-ca
+    kind: ClusterIssuer

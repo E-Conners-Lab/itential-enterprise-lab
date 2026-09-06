@@ -1,0 +1,16 @@
+# Cilium as CNI + kube-proxy replacement on k3s (ADR 0021). k8sServiceHost is the kube-vip VIP.
+kubeProxyReplacement: true
+k8sServiceHost: 10.100.0.19
+k8sServicePort: 6443
+ipam:
+  mode: kubernetes
+routingMode: tunnel
+tunnelProtocol: vxlan
+operator:
+  replicas: 1
+hubble:
+  enabled: true
+  relay:
+    enabled: true
+  ui:
+    enabled: false

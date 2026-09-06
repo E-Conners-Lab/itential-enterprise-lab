@@ -55,6 +55,7 @@
         marker: "    # {mark} ANSIBLE OOB RETURN PATH"
         block: |
               post-up ip rule add from {{ eve_oob_ip }}/32 table 100 priority 100 || true
+              post-up ip route replace {{ oob_prefix }} dev pnet1 table 100
               post-up ip route replace default via {{ oob_gw_ip }} dev pnet1 table 100
               pre-down ip rule del from {{ eve_oob_ip }}/32 table 100 priority 100 || true
       register: eve_return_path
@@ -62,6 +63,7 @@
     - name: Apply the return path now (same commands the post-up lines run at boot)
       ansible.builtin.shell: |
         ip rule show | grep -q 'from {{ eve_oob_ip }} lookup 100' || ip rule add from {{ eve_oob_ip }}/32 table 100 priority 100
+        ip route replace {{ oob_prefix }} dev pnet1 table 100
         ip route replace default via {{ oob_gw_ip }} dev pnet1 table 100
       changed_when: eve_return_path is changed
 

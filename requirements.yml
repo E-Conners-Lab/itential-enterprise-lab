@@ -7,3 +7,5 @@ collections:
     version: 12.4.0
   - name: netbox.netbox
     version: 3.22.0
+  - name: kubernetes.core
+    version: 6.3.0

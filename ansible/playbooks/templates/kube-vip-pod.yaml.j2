@@ -1,0 +1,47 @@
+# Managed by ansible/playbooks/k3s-cluster.yml. kube-vip {{ components.kube_vip.image_tag }} as a static pod:
+# control-plane VIP {{ cluster.api_vip }} in ARP mode, leader election through the local k3s
+# kubeconfig (no dependency on the ClusterIP, so it works before Cilium exists). Services stay
+# with MetalLB (svc_enable=false).
+apiVersion: v1
+kind: Pod
+metadata:
+  name: kube-vip
+  namespace: kube-system
+spec:
+  hostNetwork: true
+  priorityClassName: system-node-critical
+  containers:
+    - name: kube-vip
+      image: {{ components.kube_vip.image }}:{{ components.kube_vip.image_tag }}
+      imagePullPolicy: IfNotPresent
+      args: ["manager"]
+      env:
+        - {name: vip_arp, value: "true"}
+        - {name: port, value: "6443"}
+        - {name: vip_interface, value: "{{ cluster.api_vip_interface }}"}
+        - {name: vip_cidr, value: "32"}
+        - {name: cp_enable, value: "true"}
+        - {name: cp_namespace, value: "kube-system"}
+        - {name: svc_enable, value: "false"}
+        - {name: vip_leaderelection, value: "true"}
+        - {name: vip_leaseduration, value: "5"}
+        - {name: vip_renewdeadline, value: "3"}
+        - {name: vip_retryperiod, value: "1"}
+        - {name: address, value: "{{ cluster.api_vip }}"}
+      securityContext:
+        capabilities:
+          add: ["NET_ADMIN", "NET_RAW"]
+      volumeMounts:
+        - {name: kubeconfig, mountPath: /etc/kubernetes/admin.conf}
+        # kube-vip dials https://kubernetes:6443; mounting the node's /etc/hosts (which maps
+        # 'kubernetes' to 127.0.0.1) makes kubelet leave the pod's hosts file alone.
+        - {name: hosts, mountPath: /etc/hosts, readOnly: true}
+  volumes:
+    - name: kubeconfig
+      hostPath:
+        path: /etc/rancher/k3s/k3s.yaml
+        type: File
+    - name: hosts
+      hostPath:
+        path: /etc/hosts
+        type: File

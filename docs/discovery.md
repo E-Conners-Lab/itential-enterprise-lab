@@ -99,3 +99,18 @@ Changes made by `phase-2/oob-network`, so §1-3 above now differ in these points
   expires 2027-09-06); IPAM seeded from `topology/ipam.yaml`.
 - Home router: static route 10.100.0.0/14 via 192.168.68.120 (owner). Router DHCP pool is
   192.168.68.131-192.168.71.250.
+
+## 8. Amendment 2026-09-06 (Phase 3 applied)
+
+- Proxmox: VMs 201-203 `k3s-01..03` (4 vCPU / 12 GB / 80 GB each, `vmbr1` only, tofu-managed
+  in `tofu/platform`). Host allocation 42 vCPU / 173 GB (budget ceilings 108 / 280).
+- NetBox: site `homelab`, cluster `homelab` (type Proxmox VE), VM objects for `oob-gw` and the
+  three nodes with `eth0` and primary IPs; `ansible/inventory/netbox.yml` is the inventory from
+  here on (groups from tags: `k3s`, `k3s-server`, `phase-3`, ...).
+- k3s v1.36.4+k3s1, API VIP 10.100.0.19 (kube-vip), kubeconfig `~/.kube/lab-k3s.yaml` on the
+  workstation. Cilium 1.20.1 (kube-proxy replacement), MetalLB 0.16.1 pool 10.100.0.32-63,
+  Longhorn 1.12.1 (default StorageClass, 2 replicas), cert-manager 1.21.1 with ClusterIssuer
+  `lab-ca` (root in `docs/lab-root-ca.crt`), Traefik at 10.100.0.32 with a `*.lab.internal`
+  certificate, Garage 2.4.0 in namespace `garage`, CloudNativePG 1.30.0 with the Barman Cloud
+  plugin 0.15.0 and cluster `platform-db` archiving to Garage bucket `cnpg-backups`.
+- EVE-NG and NetBox return-path tables gained the on-link 10.100.0.0/24 route (ADR 0030).

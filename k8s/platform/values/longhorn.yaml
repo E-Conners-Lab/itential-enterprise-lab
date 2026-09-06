@@ -1,0 +1,20 @@
+# One physical SSD behind everything: 2 replicas survive a node loss, a third adds nothing
+# (docs/resource-budget.md section 4).
+defaultSettings:
+  defaultReplicaCount: 2
+  defaultDataPath: /var/lib/longhorn
+  storageMinimalAvailablePercentage: 15
+  # Thin volumes on one physical SSD: 200 % lets 2-replica volumes spread across all three
+  # 80 GB nodes (at 100 % two nodes filled up and every new replica landed on the third).
+  storageOverProvisioningPercentage: 200
+  guaranteedInstanceManagerCPU: 5
+  # Node loss (PID E5 / S2.2): force-delete pods on a dead node so the RWO volume can reattach
+  # elsewhere, and salvage a volume whose replicas all went away at once (single host, one disk).
+  nodeDownPodDeletionPolicy: delete-both-statefulset-and-deployment-pod
+  autoSalvage: true
+persistence:
+  defaultClass: true
+  defaultClassReplicaCount: 2
+  reclaimPolicy: Retain
+longhornUI:
+  replicas: 1

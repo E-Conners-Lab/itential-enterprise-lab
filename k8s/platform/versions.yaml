@@ -1,0 +1,68 @@
+# Single oracle for every version and address the phase-3 platform play uses.
+# Values come from docs/image-manifest.md section 4.1 (ADR 0021) and topology/ipam.yaml;
+# tests/test_platform_versions.py fails CI if this file drifts from either.
+cluster:
+  api_vip: 10.100.0.19
+  api_vip_interface: eth0
+  nodes:
+    - {name: k3s-01, ip: 10.100.0.16, vm_id: 201}
+    - {name: k3s-02, ip: 10.100.0.17, vm_id: 202}
+    - {name: k3s-03, ip: 10.100.0.18, vm_id: 203}
+  pod_cidr: 10.42.0.0/16
+  service_cidr: 10.43.0.0/16
+  cluster_domain: cluster.local
+
+metallb:
+  pool: 10.100.0.32-10.100.0.63
+  ingress_ip: 10.100.0.32
+
+lab_ca:
+  common_name: "itential-enterprise-lab root CA"
+  duration_hours: 87600 # 10 years
+  export_path: docs/lab-root-ca.crt
+
+components:
+  k3s:
+    app_version: v1.36.4+k3s1
+    install_url: https://get.k3s.io
+  cilium:
+    chart_repo: https://helm.cilium.io
+    chart_name: cilium
+    chart_version: 1.20.1
+    app_version: 1.20.1
+  metallb:
+    chart_repo: https://metallb.github.io/metallb
+    chart_name: metallb
+    chart_version: 0.16.1
+    app_version: v0.16.1
+  longhorn:
+    chart_repo: https://charts.longhorn.io
+    chart_name: longhorn
+    chart_version: 1.12.1
+    app_version: v1.12.1
+    default_replicas: 2
+  cert_manager:
+    chart_repo: https://charts.jetstack.io
+    chart_name: cert-manager
+    chart_version: v1.21.1
+    app_version: v1.21.1
+  cnpg:
+    chart_repo: https://cloudnative-pg.github.io/charts
+    chart_name: cloudnative-pg
+    chart_version: 0.29.0
+    app_version: 1.30.0
+    postgres_image: ghcr.io/cloudnative-pg/postgresql:18.6
+  traefik:
+    # bundled by k3s v1.36.4; configured through a HelmChartConfig, never installed separately
+    app_version: v3.7.8
+  kube_vip:
+    image: ghcr.io/kube-vip/kube-vip
+    image_tag: v1.2.3
+  garage:
+    image: docker.io/dxflrs/garage
+    image_tag: v2.4.0
+    bucket: cnpg-backups
+    data_gb: 20
+  barman_cloud_plugin:
+    app_version: v0.15.0
+    manifest_url: https://github.com/cloudnative-pg/plugin-barman-cloud/releases/download/v0.15.0/manifest.yaml

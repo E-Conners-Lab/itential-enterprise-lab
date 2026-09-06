@@ -1,0 +1,80 @@
+# Garage v2.4.0: single-node S3 object store on Longhorn for CNPG (and later Gitea/NetBox) backups.
+# Secrets (rpc secret, admin token, S3 keys) are created by the play, never stored here (ADR 0031).
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: garage
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: garage-config
+  namespace: garage
+data:
+  garage.toml: |
+    metadata_dir = "/var/lib/garage/meta"
+    data_dir = "/var/lib/garage/data"
+    db_engine = "lmdb"
+    replication_factor = 1
+    rpc_bind_addr = "[::]:3901"
+    rpc_secret_file = "/etc/garage/rpc_secret"
+    [s3_api]
+    s3_region = "garage"
+    api_bind_addr = "[::]:3900"
+    root_domain = ".s3.garage.svc"
+    [admin]
+    api_bind_addr = "[::]:3903"
+    admin_token_file = "/etc/garage/admin_token"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: garage
+  namespace: garage
+spec:
+  selector: {app: garage}
+  ports:
+    - {name: s3, port: 3900, targetPort: 3900}
+    - {name: admin, port: 3903, targetPort: 3903}
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: garage
+  namespace: garage
+spec:
+  serviceName: garage
+  replicas: 1
+  selector:
+    matchLabels: {app: garage}
+  template:
+    metadata:
+      labels: {app: garage}
+    spec:
+      containers:
+        - name: garage
+          image: docker.io/dxflrs/garage:v2.4.0
+          args: ["/garage", "server", "--single-node", "--default-bucket"]
+          envFrom:
+            - secretRef: {name: garage-s3}
+          ports:
+            - {containerPort: 3900, name: s3}
+            - {containerPort: 3903, name: admin}
+          volumeMounts:
+            - {name: config, mountPath: /etc/garage.toml, subPath: garage.toml}
+            - {name: secrets, mountPath: /etc/garage, readOnly: true}
+            - {name: meta, mountPath: /var/lib/garage/meta}
+            - {name: data, mountPath: /var/lib/garage/data}
+          resources:
+            requests: {cpu: 100m, memory: 256Mi}
+            limits: {memory: 1Gi}
+      volumes:
+        - name: config
+          configMap: {name: garage-config}
+        - name: secrets
+          secret: {secretName: garage-internal, defaultMode: 256} # garage refuses world-readable secrets
+  volumeClaimTemplates:
+    - metadata: {name: meta}
+      spec: {accessModes: [ReadWriteOnce], storageClassName: longhorn, resources: {requests: {storage: 2Gi}}}
+    - metadata: {name: data}
+      spec: {accessModes: [ReadWriteOnce], storageClassName: longhorn, resources: {requests: {storage: 20Gi}}}

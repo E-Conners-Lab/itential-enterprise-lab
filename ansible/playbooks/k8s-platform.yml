@@ -1,0 +1,279 @@
+---
+# Phase 3, slice C: platform workloads on the fresh k3s cluster, all from k8s/platform/.
+# Runs on the workstation with helm + kubectl against ~/.kube/lab-k3s.yaml. Idempotent.
+- name: Platform workloads (Cilium, MetalLB, Longhorn, cert-manager + lab CA, CNPG, Traefik config)
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars_files:
+    - ../../k8s/platform/versions.yaml
+  vars:
+    ansible_python_interpreter: "{{ playbook_dir }}/../../.venv/bin/python"
+    kubeconfig: >-
+      {{ lookup('ansible.builtin.env', 'KUBECONFIG_PATH')
+         | default(lookup('ansible.builtin.env', 'HOME') ~ '/.kube/lab-k3s.yaml', true) }}
+    k8s_dir: "{{ playbook_dir }}/../../k8s/platform"
+    # kubernetes.core 6.x drives Helm 3 only; the Mac's default helm is 4.x, so bootstrap installs helm@3.
+    helm_bin: "{{ lookup('ansible.builtin.env', 'HELM3_BIN') | default('/opt/homebrew/opt/helm@3/bin/helm', true) }}"
+    charts:
+      - {key: cilium, release: cilium, namespace: kube-system, values_file: cilium.yaml}
+      - {key: metallb, release: metallb, namespace: metallb-system, values_file: metallb.yaml}
+      - {key: longhorn, release: longhorn, namespace: longhorn-system, values_file: longhorn.yaml}
+      - {key: cert_manager, release: cert-manager, namespace: cert-manager, values_file: cert-manager.yaml}
+      - {key: cnpg, release: cnpg, namespace: cnpg-system, values_file: cnpg.yaml}
+  tasks:
+    - name: Kubeconfig must exist
+      ansible.builtin.stat:
+        path: "{{ kubeconfig }}"
+      register: kc
+      failed_when: not kc.stat.exists
+
+    - name: Helm repositories
+      kubernetes.core.helm_repository:
+        binary_path: "{{ helm_bin }}"
+        name: "{{ item.key | replace('_', '-') }}"
+        repo_url: "{{ components[item.key].chart_repo }}"
+      loop: "{{ charts }}"
+      loop_control:
+        label: "{{ item.key }}"
+
+    - name: Cilium first (nodes are NotReady until the CNI exists)
+      kubernetes.core.helm:
+        binary_path: "{{ helm_bin }}"
+        kubeconfig: "{{ kubeconfig }}"
+        name: cilium
+        chart_ref: cilium/cilium
+        chart_version: "{{ components.cilium.chart_version }}"
+        release_namespace: kube-system
+        values_files: ["{{ k8s_dir }}/values/cilium.yaml"]
+        wait: true
+        timeout: 10m
+
+    - name: All nodes Ready
+      kubernetes.core.k8s_info:
+        kubeconfig: "{{ kubeconfig }}"
+        kind: Node
+      register: nodes
+      retries: 40
+      delay: 10
+      until: >-
+        nodes.resources | length == cluster.nodes | length and
+        (nodes.resources | map(attribute='status.conditions') | map('selectattr', 'type', 'equalto', 'Ready')
+         | map('map', attribute='status') | map('first') | select('equalto', 'True') | list | length) == cluster.nodes | length
+
+    - name: Remaining charts
+      kubernetes.core.helm:
+        binary_path: "{{ helm_bin }}"
+        kubeconfig: "{{ kubeconfig }}"
+        name: "{{ item.release }}"
+        chart_ref: "{{ item.key | replace('_', '-') }}/{{ components[item.key].chart_name }}"
+        chart_version: "{{ components[item.key].chart_version }}"
+        release_namespace: "{{ item.namespace }}"
+        create_namespace: true
+        values_files: ["{{ k8s_dir }}/values/{{ item.values_file }}"]
+        wait: true
+        timeout: 15m
+      loop: "{{ charts | rejectattr('key', 'equalto', 'cilium') | list }}"
+      loop_control:
+        label: "{{ item.release }} {{ components[item.key].chart_version }}"
+
+    - name: MetalLB pool and L2 advertisement
+      kubernetes.core.k8s:
+        kubeconfig: "{{ kubeconfig }}"
+        state: present
+        src: "{{ k8s_dir }}/manifests/metallb-pool.yaml"
+      retries: 6
+      delay: 10
+      register: pool
+      until: pool is not failed
+
+    - name: Lab CA (bootstrap issuer, root certificate, ClusterIssuer)
+      kubernetes.core.k8s:
+        kubeconfig: "{{ kubeconfig }}"
+        state: present
+        src: "{{ k8s_dir }}/manifests/lab-ca.yaml"
+
+    - name: Root CA issued
+      kubernetes.core.k8s_info:
+        kubeconfig: "{{ kubeconfig }}"
+        kind: Secret
+        namespace: cert-manager
+        name: lab-root-ca
+      register: ca_secret
+      retries: 18
+      delay: 5
+      until: ca_secret.resources | length == 1 and 'tls.crt' in ca_secret.resources[0].data
+
+    - name: Export the root certificate (public material only) for client trust
+      ansible.builtin.copy:
+        dest: "{{ playbook_dir }}/../../{{ lab_ca.export_path }}"
+        content: "{{ ca_secret.resources[0].data['tls.crt'] | b64decode }}"
+        mode: "0644"
+
+    - name: Traefik configuration and wildcard certificate
+      kubernetes.core.k8s:
+        kubeconfig: "{{ kubeconfig }}"
+        state: present
+        src: "{{ k8s_dir }}/manifests/traefik-config.yaml"
+
+    - name: Garage secrets (generated once, kept in the cluster only)
+      kubernetes.core.k8s_info:
+        kubeconfig: "{{ kubeconfig }}"
+        kind: Secret
+        namespace: garage
+        name: garage-s3
+      register: garage_secret
+
+    - name: Namespace garage
+      kubernetes.core.k8s:
+        kubeconfig: "{{ kubeconfig }}"
+        state: present
+        definition: {apiVersion: v1, kind: Namespace, metadata: {name: garage}}
+
+    - name: Create Garage secrets
+      kubernetes.core.k8s:
+        kubeconfig: "{{ kubeconfig }}"
+        state: present
+        definition:
+          - apiVersion: v1
+            kind: Secret
+            metadata: {name: garage-internal, namespace: garage}
+            stringData:
+              rpc_secret: "{{ lookup('community.general.random_string', length=64, override_all='0123456789abcdef') }}"
+              admin_token: "{{ lookup('community.general.random_string', length=48, special=false) }}"
+          - apiVersion: v1
+            kind: Secret
+            metadata: {name: garage-s3, namespace: garage}
+            stringData:
+              GARAGE_DEFAULT_ACCESS_KEY: "GK{{ lookup('community.general.random_string', length=24, override_all='0123456789abcdef') }}"
+              GARAGE_DEFAULT_SECRET_KEY: "{{ lookup('community.general.random_string', length=64, override_all='0123456789abcdef') }}"
+              GARAGE_DEFAULT_BUCKET: "{{ components.garage.bucket }}"
+      when: garage_secret.resources | length == 0
+      no_log: true
+
+    # Garage rejects requests signed for any region but its own ("Bad request when accessing bucket").
+    - name: Region key on the S3 secret
+      kubernetes.core.k8s:
+        kubeconfig: "{{ kubeconfig }}"
+        state: patched
+        kind: Secret
+        namespace: garage
+        name: garage-s3
+        definition:
+          stringData: {GARAGE_REGION: garage}
+
+    - name: Garage (S3 object store on Longhorn)
+      kubernetes.core.k8s:
+        kubeconfig: "{{ kubeconfig }}"
+        state: present
+        src: "{{ k8s_dir }}/manifests/garage.yaml"
+        wait: true
+        wait_timeout: 300
+
+    - name: Copy the S3 credentials into cnpg-system for the ObjectStore
+      kubernetes.core.k8s_info:
+        kubeconfig: "{{ kubeconfig }}"
+        kind: Secret
+        namespace: garage
+        name: garage-s3
+      register: garage_s3
+      no_log: true
+
+    - name: Secret garage-s3 in cnpg-system
+      kubernetes.core.k8s:
+        kubeconfig: "{{ kubeconfig }}"
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Secret
+          metadata: {name: garage-s3, namespace: cnpg-system}
+          data: "{{ garage_s3.resources[0].data }}"
+      no_log: true
+
+    # Applied without waiting: the manifest's cert-manager Certificates come after the Deployment,
+    # and waiting per object would stall on the Deployment before its TLS secrets can exist.
+    - name: Barman Cloud plugin (release manifest into cnpg-system)
+      kubernetes.core.k8s:
+        kubeconfig: "{{ kubeconfig }}"
+        state: present
+        src: "{{ components.barman_cloud_plugin.manifest_url }}"
+
+    - name: Barman Cloud plugin ready
+      kubernetes.core.k8s_info:
+        kubeconfig: "{{ kubeconfig }}"
+        kind: Deployment
+        namespace: cnpg-system
+        name: barman-cloud
+      register: barman
+      retries: 30
+      delay: 10
+      until: barman.resources | length == 1 and (barman.resources[0].status.readyReplicas | default(0)) >= 1
+
+    - name: Platform database cluster with WAL archiving and nightly backups to Garage
+      kubernetes.core.k8s:
+        kubeconfig: "{{ kubeconfig }}"
+        state: present
+        src: "{{ k8s_dir }}/manifests/cnpg-platform-db.yaml"
+
+    - name: Cluster healthy with WAL archiving working
+      kubernetes.core.k8s_info:
+        kubeconfig: "{{ kubeconfig }}"
+        api_version: postgresql.cnpg.io/v1
+        kind: Cluster
+        namespace: cnpg-system
+        name: platform-db
+      register: pgc
+      retries: 60
+      delay: 10
+      until: >-
+        pgc.resources | length == 1 and pgc.resources[0].status.phase | default('') == 'Cluster in healthy state'
+        and (pgc.resources[0].status.conditions | default([]) | selectattr('type', 'equalto', 'ContinuousArchiving')
+             | map(attribute='status') | first | default('')) == 'True'
+
+    - name: Completed backups so far
+      kubernetes.core.k8s_info:
+        kubeconfig: "{{ kubeconfig }}"
+        api_version: postgresql.cnpg.io/v1
+        kind: Backup
+        namespace: cnpg-system
+      register: backups
+
+    - name: Initial on-demand backup (only when none has completed yet)
+      kubernetes.core.k8s:
+        kubeconfig: "{{ kubeconfig }}"
+        state: present
+        definition:
+          apiVersion: postgresql.cnpg.io/v1
+          kind: Backup
+          metadata: {name: platform-db-initial, namespace: cnpg-system}
+          spec:
+            cluster: {name: platform-db}
+            method: plugin
+            pluginConfiguration: {name: barman-cloud.cloudnative-pg.io}
+      when: >-
+        backups.resources | selectattr('status.phase', 'defined')
+        | selectattr('status.phase', 'equalto', 'completed') | list | length == 0
+
+    - name: A backup completed in the object store
+      kubernetes.core.k8s_info:
+        kubeconfig: "{{ kubeconfig }}"
+        api_version: postgresql.cnpg.io/v1
+        kind: Backup
+        namespace: cnpg-system
+      register: backups
+      retries: 30
+      delay: 10
+      until: >-
+        backups.resources | selectattr('status.phase', 'defined')
+        | selectattr('status.phase', 'equalto', 'completed') | list | length > 0
+
+    - name: Traefik gets the ingress VIP
+      kubernetes.core.k8s_info:
+        kubeconfig: "{{ kubeconfig }}"
+        kind: Service
+        namespace: kube-system
+        name: traefik
+      register: traefik_svc
+      retries: 24
+      delay: 5
+      until: (traefik_svc.resources[0].status.loadBalancer.ingress | default([]) | map(attribute='ip') | list) == [metallb.ingress_ip]

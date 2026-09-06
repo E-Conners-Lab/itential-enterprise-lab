@@ -85,9 +85,9 @@ Sum of requests must stay under ~24 GB so that one node can fail (PID E5).
 | **Total requests** | | **22.1** | of 36 GB; survives one node loss with ~2 GB to spare |
 
 Longhorn volumes (2 replicas each): Prometheus 30 GB, Loki 20 GB, three
-Postgres 10 GB each, Gitea 10 GB, Vault 2 GB, Oxidized 2 GB, backups bucket
-20 GB = 114 GB logical, 228 GB physical across the 150 GB of Longhorn disk on
-three nodes. **This does not fit at 2 replicas**; Phase 3 sets Prometheus and
+Postgres 10 GB each, Gitea 10 GB, Vault 2 GB, Oxidized 2 GB, Garage backups
+bucket 20 GB (+2 GB metadata) = 116 GB logical, 232 GB physical across the
+150 GB of Longhorn disk on three nodes (over-provisioning 200 %, ADR 0031). **This does not fit at 2 replicas**; Phase 3 sets Prometheus and
 Loki to 1 replica (they are rebuildable telemetry) which brings physical usage
 to 128 GB. Recorded here so that Phase 3 does not discover it.
 

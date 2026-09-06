@@ -32,6 +32,11 @@ same hops it came in on:
   table `oob_return` loaded by a dedicated oneshot unit that never flushes
   Docker's tables).
 - Every single-homed lab VM needs nothing: its default route is `oob-gw`.
+- Amendment 2026-09-06 (Phase 3): the return-path tables also carry the on-link
+  route for 10.100.0.0/24, otherwise a dual-homed host sends traffic for its
+  own segment (MetalLB VIPs, other OOB hosts) through `oob-gw`. `oob-gw` also
+  accepts OOB-to-OOB forwarding so a misrouted host degrades to a hairpin
+  instead of a silent drop.
 
 ## Consequences
 
