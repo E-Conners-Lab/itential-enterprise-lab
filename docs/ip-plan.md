@@ -141,6 +141,7 @@ this plan.
 | Authoritative | Infoblox NIOS (primary), BIND9 on `ddi-fallback` (secondary via AXFR) | Infoblox eval expiry cannot take DNS down (PID pre-mortem) |
 | Resolver for every VM / node | `10.100.0.67`, `10.100.0.68` in that order | |
 | Home-LAN name for the gateway | none | the home router's DNS is not touched |
+| Client resolver for `lab.internal` | 192.168.68.120 (`oob-gw` LAN leg) | macOS: `/etc/resolver/lab.internal`; Windows: NRPT rule or a conditional forwarder on the router if it supports one |
 
 ## 5. Open items for Phase 2
 

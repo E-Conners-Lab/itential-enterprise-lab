@@ -113,6 +113,7 @@ Conventions: **Placement** is Proxmox VM (OpenTofu + Ansible), k3s (Helm/Kustomi
   5. `/srv/images` is mounted from the thin LV with >= 150 GB free.
   6. The EVE-NG API rejects the factory password and accepts the one in `.env`.
   7. `vmbr0` and `nic1` stanzas in `/etc/network/interfaces` are byte-identical to the discovery snapshot.
+  8. Client access: from a home-LAN device with the route in place, `dig lab.internal` names resolve via 192.168.68.120 and `curl http://netbox.lab.internal:8080/api/status/` returns 200 (proves route + DNS + NAT-free return path).
 - **Verification:** `verify/test-02-oob.sh`.
 
 ### S2 — k3s platform (Phase 3)
@@ -162,6 +163,7 @@ Conventions: **Placement** is Proxmox VM (OpenTofu + Ansible), k3s (Helm/Kustomi
   4. First workflow (`wf-branch-vlan-v1`): given a branch and a VLAN name, reserves a VLAN in NetBox and configures it on the branch switch, with a manual approval task and a NetBox rollback on failure. Runs green twice; the second run is a no-op.
   5. Licence state and any expiry recorded in the manifest; expiry monitored by Zabbix from Phase 8.
   6. `itential` VM memory pressure measured after 24 h of normal use (`free`, MongoDB WiredTiger cache); if above 80 % the budget lever list is applied by PR.
+  7. Client reachability: from the Mac Mini on the home LAN, Claude Code lists the Itential MCP server's tools (`itential-mcp` container on OOB, name `mcp.lab.internal`) and runs a read-only tool call that returns the platform's version; the same works from the work laptop when it is on the home LAN.
 - **Verification:** `verify/test-05-itential.sh`.
 
 ### S4b — ServiceNow PDI adapter configuration (Phase 5)

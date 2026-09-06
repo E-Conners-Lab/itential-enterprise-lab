@@ -10,6 +10,8 @@ table inet filter {
     ip protocol icmp accept
     iifname "{{ oob_iface }}" accept comment "lab side: dns, ntp, ssh"
     iifname "{{ lan_iface }}" tcp dport 22 accept comment "workstation ssh"
+    iifname "{{ lan_iface }}" ip saddr 192.168.68.0/22 udp dport 53 accept comment "home-LAN clients resolve lab.internal"
+    iifname "{{ lan_iface }}" ip saddr 192.168.68.0/22 tcp dport 53 accept
   }
   chain forward {
     type filter hook forward priority 0; policy drop;

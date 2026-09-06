@@ -101,6 +101,10 @@ check "S1.6 EVE-NG API rejects factory password 'eve' and accepts EVE_PASSWORD" 
 c7() { $SSH "root@${PVE_HOST}" 'awk "/^iface nic1 inet manual/{f=1} f{print} /^\tbridge-fd 0/{if(f){exit}}" /etc/network/interfaces' | diff - verify/fixtures/pve-interfaces-vmbr0.expected; }
 check "S1.7 vmbr0/nic1 stanzas unchanged vs verify/fixtures/pve-interfaces-vmbr0.expected" c7
 
+# --- S1.8 client access: names resolve via the LAN leg, NetBox reachable by name over the route --
+c7b() { dig +short +time=3 @"${OOB_GW_LAN}" netbox.lab.internal | grep -qx "${NETBOX_OOB}" && curl -s -m 10 -o /dev/null -w "%{http_code}" "http://${NETBOX_OOB}:8080/api/status/" | grep -qx 200; }
+check "S1.8 dig @${OOB_GW_LAN} netbox.lab.internal = ${NETBOX_OOB} and NetBox answers over the route" c7b
+
 # --- S0 NetBox hardening ------------------------------------------------------------------------
 c8() { curl -s -m 10 -o /dev/null -w "%{http_code}" "http://${NETBOX_OOB}:8080/api/status/" | grep -qx 200; }
 check "S0.1 NetBox answers on its OOB leg ${NETBOX_OOB}" c8
