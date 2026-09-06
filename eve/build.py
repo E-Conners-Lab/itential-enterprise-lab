@@ -93,7 +93,9 @@ class Eve:
 
     # ---- networks
     def networks(self) -> dict[str, dict]:
-        data = self._req("GET", f"/labs{self.lab}/networks").get("data", {})
+        data = self._req("GET", f"/labs{self.lab}/networks").get("data") or {}
+        if isinstance(data, list):  # EVE-NG returns [] when the lab has no networks yet
+            data = {str(n.get("id", i)): n for i, n in enumerate(data)}
         return {n["name"]: {**n, "id": int(k)} for k, n in data.items()}
 
     def add_network(self, name: str, ntype: str, left: int, top: int, visible: int) -> None:
@@ -101,7 +103,9 @@ class Eve:
 
     # ---- nodes
     def nodes(self) -> dict[str, dict]:
-        data = self._req("GET", f"/labs{self.lab}/nodes").get("data", {})
+        data = self._req("GET", f"/labs{self.lab}/nodes").get("data") or {}
+        if isinstance(data, list):
+            data = {str(n.get("id", i)): n for i, n in enumerate(data)}
         return {n["name"]: {**n, "id": int(k)} for k, n in data.items()}
 
     def template_images(self, template: str) -> list[str]:
@@ -188,10 +192,13 @@ def apply(eve: Eve, topo: dict, allow_missing: bool) -> None:
     if mgmt not in nets:
         eve.add_network(mgmt, mgmt, 560, 20, 1)
         print(f"created network {mgmt}")
+    # Link networks are visible (visibility 1): EVE-NG Pro 6.5 acknowledges hidden bridges but
+    # does not persist them to the lab file. They sit in a grid below the topology.
     for i, lk in enumerate(topo["links"]):
         nm = link_network_name(lk)
         if nm not in nets:
-            eve.add_network(nm, "bridge", 20 + (i % 10) * 30, 900 + (i // 10) * 30, 0)
+            eve.add_network(nm, "bridge", 40 + (i % 10) * 110, 900 + (i // 10) * 70, 1)
+            print(f"created network {nm}")
     nets = eve.networks()
     # nodes
     skipped = {m.split(":")[0] for m in p["missing_images"]}
