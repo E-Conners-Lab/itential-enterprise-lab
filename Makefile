@@ -15,6 +15,7 @@ help: ## Show targets
 
 bootstrap: ## Install local tooling checks, .venv (pytest, pynetbox) + pre-commit hooks
 	@for t in tofu ansible ansible-lint yamllint gitleaks pre-commit gh jq python3 helm kubectl cilium; do \
+	  command -v $$t >/dev/null || { echo "MISSING: $$t (see README: Bootstrap)"; exit 1; }; done; [ -x /opt/homebrew/opt/helm@3/bin/helm ] || { echo "MISSING: helm@3 (brew install helm@3)"; exit 1; }; for t in true; do \
 	  command -v $$t >/dev/null || { echo "MISSING: $$t (see README: Bootstrap)"; exit 1; }; done
 	[ -d .venv ] || python3 -m venv .venv
 	.venv/bin/pip install -q -r requirements-dev.txt

@@ -72,7 +72,7 @@ spec:
         - name: config
           configMap: {name: garage-config}
         - name: secrets
-          secret: {secretName: garage-internal}
+          secret: {secretName: garage-internal, defaultMode: 256} # garage refuses world-readable secrets
   volumeClaimTemplates:
     - metadata: {name: meta}
       spec: {accessModes: [ReadWriteOnce], storageClassName: longhorn, resources: {requests: {storage: 2Gi}}}
