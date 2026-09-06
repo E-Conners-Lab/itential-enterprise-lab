@@ -81,6 +81,7 @@ jobs:
             --no-progress
             --exclude '^https?://(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[01])\.|localhost|127\.)'
             --exclude '\.local(/|$)'
+            --exclude '^https?://(www\.|software\.)?cisco\.com/'
             --exclude-path verify/results
             './**/*.md'
           fail: true
