@@ -106,7 +106,7 @@ c7b() { dig +short +time=3 @"${OOB_GW_LAN}" netbox.lab.internal | grep -qx "${NE
 check "S1.8 dig @${OOB_GW_LAN} netbox.lab.internal = ${NETBOX_OOB} and NetBox answers over the route" c7b
 
 # --- S0 NetBox hardening ------------------------------------------------------------------------
-c8() { curl -s -m 10 -o /dev/null -w "%{http_code}" "http://${NETBOX_OOB}:8080/api/status/" | grep -qx 200; }
+c8() { curl -s -m 10 -o /dev/null -w "%{http_code}" -H "Authorization: Token ${NETBOX_TOKEN}" "http://${NETBOX_OOB}:8080/api/status/" | grep -qx 200; }
 check "S0.1 NetBox answers on its OOB leg ${NETBOX_OOB}" c8
 c9() { $SSH "root@${NETBOX_VM}" 'f=$(ls -t /var/backups/netbox/*.sql.gz 2>/dev/null | head -1); [ -n "$f" ] && [ $(( $(date +%s) - $(stat -c %Y "$f") )) -lt 86400 ] && systemctl is-active qemu-guest-agent >/dev/null'; }
 check "S0.2 NetBox backup newer than 24 h exists and qemu-guest-agent is active" c9
