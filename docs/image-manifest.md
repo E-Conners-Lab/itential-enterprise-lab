@@ -236,11 +236,15 @@ pulled from Itential's private ECR. The lab will run the same stack on a lab VM,
 the owner's ECR credentials, then `docker save` the images into `/srv/images/itential/` as the
 offline rebuild copy. ADR 0020 is amended in the Phase 5 PR; the Rocky template stays unused.
 
-| Image | Tag to pin | Role | Note |
+Owner decision 2026-09-06: **pull the latest maintenance tag of each image at Phase 5 time**, not
+the laptop's tags. Phase 5 lists ECR tags with the owner's credentials (`aws ecr list-images`),
+records the exact tags chosen here and in ADR 0020, and saves them to `/srv/images/itential/`.
+
+| Image | Laptop today | Expected latest (docs.itential.com, 2026-09-06) | Role |
 |---|---|---|---|
-| `497639811223.dkr.ecr.us-east-2.amazonaws.com/automation-platform-config-lcm-flowai` | `6.5.1` | Itential Platform 6.5.1 with the FlowAI bundle | 6.5.2 exists (3.2); pin what is proven on the laptop first |
-| `497639811223.dkr.ecr.us-east-2.amazonaws.com/automation-gateway5` | `5.5.1-amd64` | Gateway 5 (FlowAI agent tool-calling, device services) | 5.5.2 exists |
-| `497639811223.dkr.ecr.us-east-2.amazonaws.com/automation-gateway` | `4.3.15` | Gateway 4 (Golden Config / Configuration Manager compliance) | 4.3 receives no further security patches per Itential; 4.4 is the patched line. Both gateways are needed for the full lab |
+| `497639811223.dkr.ecr.us-east-2.amazonaws.com/automation-platform-config-lcm-flowai` | `6.5.1` | `6.5.2` | Itential Platform with the FlowAI bundle |
+| `497639811223.dkr.ecr.us-east-2.amazonaws.com/automation-gateway5` | `5.5.1-amd64` | `5.5.2-amd64` | Gateway 5 (FlowAI agent tool-calling, device services) |
+| `497639811223.dkr.ecr.us-east-2.amazonaws.com/automation-gateway` | `4.3.15` | newest `4.4.x` if present in ECR, else newest `4.3.x` | Gateway 4 (Golden Config / Configuration Manager). 4.3 receives no further security patches per Itential; 4.4 is the patched line. Both gateways are needed for the full lab |
 | `ghcr.io/itential/itential-mcp` | `v0.13.1` | MCP server (optional, later) | public |
 | `ghcr.io/itential/job-metrics-exporter` | pin a digest in Phase 5 | Prometheus exporter for jobs | laptop has `latest`; never pin `latest` |
 
