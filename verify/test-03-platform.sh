@@ -26,7 +26,8 @@ cleanup(){
   # The default StorageClass retains PVs; a scratch namespace must not leave volumes behind.
   local pvs; pvs=$(kubectl get pv -o jsonpath="{range .items[?(@.spec.claimRef.namespace=='$ns')]}{.metadata.name} {end}" 2>/dev/null)
   kubectl delete ns "$ns" --ignore-not-found --wait=false >/dev/null 2>&1 || true
-  [ -n "$pvs" ] && ( sleep 20; kubectl delete pv $pvs --ignore-not-found >/dev/null 2>&1 ) &
+  # Retain keeps both the PV and the Longhorn volume; remove both for scratch data.
+  [ -n "$pvs" ] && ( sleep 20; kubectl delete pv $pvs --ignore-not-found >/dev/null 2>&1; kubectl -n longhorn-system delete volumes.longhorn.io $pvs --ignore-not-found >/dev/null 2>&1 ) &
   rm -f /tmp/verify03.$$
 }
 trap cleanup EXIT
