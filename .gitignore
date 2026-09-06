@@ -1,0 +1,82 @@
+# --- secrets / local env ---
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+id_*
+!id_*.pub
+.netbox_token
+*.token
+
+# --- OpenTofu / Terraform ---
+tofu/**/.terraform/
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.example.tfvars
+crash.log
+crash.*.log
+tofu/**/*.auto.tfvars
+.terraformrc
+terraform.rc
+
+# --- Ansible ---
+*.retry
+ansible/**/.vault_pass*
+ansible/**/inventory/*.local.yml
+ansible/collections/
+ansible/roles/external/
+
+# --- Kubernetes ---
+kubeconfig
+kubeconfig*
+*.kubeconfig
+k3s.yaml
+k8s/**/charts/
+k8s/**/*.tgz
+
+# --- vendor images / large binaries (never in git) ---
+*.qcow2
+*.qcow
+*.img
+*.iso
+*.ova
+*.ovf
+*.vmdk
+*.vhd
+*.vhdx
+*.vdi
+*.raw
+*.bin
+*.tar
+*.tar.gz
+*.tar.xz
+*.tgz
+*.zip
+*.7z
+*.exe
+*.msi
+*.rpm
+*.deb
+images/staging/
+images/cache/
+
+# --- python / tooling ---
+__pycache__/
+*.pyc
+.venv/
+venv/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.pre-commit-cache/
+
+# --- editors / OS ---
+.idea/
+.vscode/
+*.swp
+.DS_Store
