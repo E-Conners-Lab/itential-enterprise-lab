@@ -83,3 +83,4 @@ venv/
 
 # --- ansible-lint / galaxy local install ---
 .ansible/
+*.tfplan

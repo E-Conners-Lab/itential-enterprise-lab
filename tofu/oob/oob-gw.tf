@@ -35,7 +35,7 @@ resource "proxmox_virtual_environment_vm" "oob_gw" {
   disk {
     datastore_id = "local-lvm"
     interface    = "scsi0"
-    size         = 8
+    size         = 16 # must equal the template disk; a clone cannot shrink
     discard      = "on"
     iothread     = true
   }
