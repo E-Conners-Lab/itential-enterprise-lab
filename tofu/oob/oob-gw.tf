@@ -32,6 +32,10 @@ resource "proxmox_virtual_environment_vm" "oob_gw" {
     dedicated = 1024
   }
 
+  operating_system {
+    type = "l26"
+  }
+
   disk {
     datastore_id = "local-lvm"
     interface    = "scsi0"
@@ -82,6 +86,12 @@ resource "proxmox_virtual_environment_vm" "oob_gw" {
       username = "ubuntu"
       keys     = [var.ssh_public_key]
     }
+  }
+
+  lifecycle {
+    # VM 200 was imported after an interrupted apply; an imported VM carries no clone
+    # provenance, and bpg would otherwise force a replacement. Provider-documented pattern.
+    ignore_changes = [clone]
   }
 
   depends_on = [proxmox_virtual_environment_vm.template]

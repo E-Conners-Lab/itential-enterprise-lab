@@ -5,6 +5,7 @@
 - name: Configure the oob-gw gateway
   hosts: oob
   become: true
+  force_handlers: true # a failed task must not leave a changed config un-reloaded
   gather_facts: true
   vars_files:
     - ../../topology/ipam.yaml
@@ -58,6 +59,12 @@
         validate: unbound-checkconf %s
       notify: Restart unbound
 
+    - name: Ensure resolved.conf.d exists
+      ansible.builtin.file:
+        path: /etc/systemd/resolved.conf.d
+        state: directory
+        mode: "0755"
+
     - name: Disable systemd-resolved stub on the OOB address (unbound owns port 53)
       ansible.builtin.copy:
         dest: /etc/systemd/resolved.conf.d/no-stub.conf
@@ -67,12 +74,6 @@
           DNS=127.0.0.1
         mode: "0644"
       notify: Restart systemd-resolved
-
-    - name: Ensure resolved.conf.d exists
-      ansible.builtin.file:
-        path: /etc/systemd/resolved.conf.d
-        state: directory
-        mode: "0755"
 
     - name: Chrony serves the lab
       ansible.builtin.copy:
