@@ -33,8 +33,15 @@ spec:
           add: ["NET_ADMIN", "NET_RAW"]
       volumeMounts:
         - {name: kubeconfig, mountPath: /etc/kubernetes/admin.conf}
+        # kube-vip dials https://kubernetes:6443; mounting the node's /etc/hosts (which maps
+        # 'kubernetes' to 127.0.0.1) makes kubelet leave the pod's hosts file alone.
+        - {name: hosts, mountPath: /etc/hosts, readOnly: true}
   volumes:
     - name: kubeconfig
       hostPath:
         path: /etc/rancher/k3s/k3s.yaml
+        type: File
+    - name: hosts
+      hostPath:
+        path: /etc/hosts
         type: File

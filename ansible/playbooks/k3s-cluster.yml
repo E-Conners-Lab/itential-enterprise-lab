@@ -44,7 +44,7 @@
         name: "{{ item }}"
         state: present
         persistent: present
-      loop: [iscsi_tcp, dm_crypt, nvme_tcp]
+      loop: [iscsi_tcp, dm_crypt] # nvme_tcp only for the Longhorn v2 engine (not used; not in the cloud kernel)
 
     - name: No swap (k3s)
       ansible.builtin.command: swapoff -a
@@ -86,6 +86,16 @@
       --cluster-cidr {{ cluster.pod_cidr }} --service-cidr {{ cluster.service_cidr }}
       --write-kubeconfig-mode 0600
   tasks:
+    # kube-vip rewrites the kubeconfig server to https://kubernetes:6443; the name must resolve to
+    # the local API server (k3s's serving cert carries the 'kubernetes' SAN). Documented kube-vip
+    # static-pod requirement; without it leader election never starts and the VIP is never claimed.
+    - name: Resolve 'kubernetes' to the local API server for kube-vip
+      ansible.builtin.lineinfile:
+        path: /etc/hosts
+        line: "127.0.0.1 kubernetes"
+        regexp: '^127\.0\.0\.1 kubernetes$'
+      register: hosts_entry
+
     - name: Static pod directory read by the k3s kubelet
       ansible.builtin.file:
         path: /var/lib/rancher/k3s/agent/pod-manifests
