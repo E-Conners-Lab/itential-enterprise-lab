@@ -1,0 +1,32 @@
+#!/usr/sbin/nft -f
+# Managed by ansible/playbooks/oob-gw.yml. LAN = {{ lan_iface }}, OOB = {{ oob_iface }}.
+flush ruleset
+
+table inet filter {
+  chain input {
+    type filter hook input priority 0; policy drop;
+    ct state established,related accept
+    iif lo accept
+    ip protocol icmp accept
+    iifname "{{ oob_iface }}" accept comment "lab side: dns, ntp, ssh"
+    iifname "{{ lan_iface }}" tcp dport 22 accept comment "workstation ssh"
+    iifname "{{ lan_iface }}" ip saddr 192.168.68.0/22 udp dport 53 accept comment "home-LAN clients resolve lab.internal"
+    iifname "{{ lan_iface }}" ip saddr 192.168.68.0/22 tcp dport 53 accept
+  }
+  chain forward {
+    type filter hook forward priority 0; policy drop;
+    ct state established,related accept
+    iifname "{{ oob_iface }}" oifname "{{ lan_iface }}" accept comment "lab -> internet"
+    iifname "{{ lan_iface }}" oifname "{{ oob_iface }}" ip saddr 192.168.68.0/22 accept comment "workstation -> lab via static route"
+  }
+  chain output {
+    type filter hook output priority 0; policy accept;
+  }
+}
+
+table ip nat {
+  chain postrouting {
+    type nat hook postrouting priority 100; policy accept;
+    ip saddr {{ lab_supernet }} oifname "{{ lan_iface }}" masquerade
+  }
+}

@@ -6,9 +6,9 @@ end. Everything is code: OpenTofu for Proxmox, the EVE-NG REST API for the
 network topology, Helm/Kustomize for k3s, Ansible for guests, and NetBox as the
 network source of truth.
 
-> **Status: Phase 1 — PID, image manifest, IP plan, resource budget.** No
-> infrastructure has been changed by this repo yet. Phase 2 is the first phase
-> that touches the hypervisor.
+> **Status: Phase 2 — OOB management network.** First phase that changed the
+> hypervisor: `oob-gw`, cloud-init templates, EVE-NG `pnet1`, NetBox OOB leg and
+> seed. `vmbr0` is unchanged and a verify check proves it on every run.
 
 ## Architecture (target)
 
@@ -23,7 +23,7 @@ network source of truth.
 ## Bootstrap from zero
 
 1. Tooling on the workstation: `tofu`, `ansible`, `ansible-lint`, `yamllint`, `gitleaks`, `pre-commit`, `gh`, `jq`. On macOS: `brew install opentofu ansible ansible-lint yamllint gitleaks pre-commit gh jq`.
-2. `make bootstrap` (installs the pre-commit hooks and checks the tools).
+2. `make bootstrap` (checks the tools, creates `.venv`, installs the pinned Ansible collections and the pre-commit hooks).
 3. Copy `.env.example` to `.env` and fill it in (never committed).
 4. Stage vendor images at `/srv/images/` on the Proxmox host per `docs/image-manifest.md`.
 5. `make up` builds the lab in phase order. `make verify` runs every test in `verify/` and commits the results.
@@ -43,8 +43,8 @@ committed. Service specs and acceptance criteria are in `docs/PID.md`.
 | Phase | Branch | Delivers | Status |
 |---|---|---|---|
 | 0 | `phase-0/discovery` | Repo scaffold, CI, read-only discovery | merged (PR #1) |
-| 1 | `phase-1/pid` | PID, image manifest, IP plan, resource budget, ADRs, issues | in review |
-| 2 | `phase-2/oob-network` | OOB network (`vmbr1`, `pnet1`, `oob-gw`), Proxmox API token, image staging, NetBox seeded | planned |
+| 1 | `phase-1/pid` | PID, image manifest, IP plan, resource budget, ADRs, issues | merged (PR #13) |
+| 2 | `phase-2/oob-network` | OOB network (`vmbr1`, `pnet1`, `oob-gw`), Proxmox API token, image staging, NetBox seeded | in review |
 | 3 | `phase-3/platform` | 3-node k3s: Cilium, MetalLB, Longhorn, cert-manager, CloudNativePG | planned |
 | 4 | `phase-4/network-topology` | EVE-NG DC + 2 branches (PA-VM, C8000v, vEOS, endpoints) from `topology/` | planned |
 | 5 | `phase-5/itential` | Itential Platform + Automation Gateway, ServiceNow PDI adapter | planned |

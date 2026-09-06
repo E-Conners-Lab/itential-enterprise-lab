@@ -24,11 +24,12 @@ jobs:
           tofu_version: ${{ env.TOFU_VERSION }}
       - name: tofu fmt -check
         run: tofu fmt -check -recursive -diff tofu/
-      - name: tofu validate (no backend, no Proxmox access)
-        working-directory: tofu
+      - name: tofu validate every root module (no backend, no Proxmox access)
         run: |
-          tofu init -backend=false -input=false
-          tofu validate
+          set -euo pipefail
+          for d in tofu $(find tofu -mindepth 1 -maxdepth 1 -type d ! -name '.terraform'); do
+            echo "== $d"; (cd "$d" && tofu init -backend=false -input=false >/dev/null && tofu validate)
+          done
 
   ansible-lint:
     name: ansible-lint
@@ -39,7 +40,19 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install "ansible-lint==26.8.0"
+      - run: ansible-galaxy collection install -r requirements.yml
       - run: ansible-lint --version && ansible-lint ansible/
+
+  pytest:
+    name: pytest
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements-dev.txt
+      - run: python -m pytest -q tests/
 
   yamllint:
     name: yamllint

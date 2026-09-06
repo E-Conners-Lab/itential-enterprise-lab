@@ -169,7 +169,7 @@ once verified).
 |---|---|
 | Version | `noble-server-cloudimg-amd64.img`, serial **20260826** (24.04.4 point release; 24.04.5 not yet on releases.ubuntu.com) |
 | Why | Every service VM, k3s node, `oob-gw`, `clab`, `ddi-fallback`; the host already has an older copy at `/var/lib/vz/template/iso/noble-cloud.img` which Phase 2 replaces with this serial |
-| Download | <https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64.img> (no login) |
+| Download | <https://cloud-images.ubuntu.com/noble/20260826/noble-server-cloudimg-amd64.img> (pinned serial; `current` moves) (no login) |
 | Checksum | `d0fe84bb5f80853425fa6be28e2c106f30104c3cfe8611933f2e65c9b63f0e30` from [SHA256SUMS](https://cloud-images.ubuntu.com/noble/current/SHA256SUMS) (serial 20260826; re-check at download, `current` moves) |
 | Licence | Free; standard support to 2029-05-31 |
 | Resources | Per VM, see the budget |
@@ -228,6 +228,32 @@ once verified).
 | Licence | "Licensed access to Gateway Manager" ([requirements](https://docs.itential.com/itential-gateway/gateway-requirements)); same owner action as 3.2 |
 | Min / Lab | Server 1 vCPU / 2 GB / 10 GB; runner 4 vCPU / 8 GB / 20 GB; etcd 2 vCPU / 8 GB. **Lab: one Rocky 9 VM with server + runner + embedded store, 4 vCPU / 8 GB / 40 GB**, plus Ansible collections `paloaltonetworks.panos`, `arista.eos`, `cisco.ios`, `infoblox.nios_modules`, `netbox.netbox` pinned in Phase 5 |
 | Verified | 2026-09-06 |
+
+### 3.5 Itential container images (owner-verified 2026-09-06, supersedes the RPM path in 3.2/3.3 for Phase 5)
+
+The owner runs Itential's `itential-dev-stack` (Docker Compose) on a work laptop with images
+pulled from Itential's private ECR. The lab will run the same stack on a lab VM, pulling with
+the owner's ECR credentials, then `docker save` the images into `/srv/images/itential/` as the
+offline rebuild copy. ADR 0020 is amended in the Phase 5 PR; the Rocky template stays unused.
+
+Owner decision 2026-09-06: **pull the latest maintenance tag of each image at Phase 5 time**, not
+the laptop's tags. Phase 5 lists ECR tags with the owner's credentials (`aws ecr list-images`),
+records the exact tags chosen here and in ADR 0020, and saves them to `/srv/images/itential/`.
+
+| Image | Laptop today | Expected latest (docs.itential.com, 2026-09-06) | Role |
+|---|---|---|---|
+| `497639811223.dkr.ecr.us-east-2.amazonaws.com/automation-platform-config-lcm-flowai` | `6.5.1` | `6.5.2` | Itential Platform with the FlowAI bundle |
+| `497639811223.dkr.ecr.us-east-2.amazonaws.com/automation-gateway5` | `5.5.1-amd64` | `5.5.2-amd64` | Gateway 5 (FlowAI agent tool-calling, device services) |
+| `497639811223.dkr.ecr.us-east-2.amazonaws.com/automation-gateway` | `4.3.15` | newest `4.4.x` if present in ECR, else newest `4.3.x` | Gateway 4 (Golden Config / Configuration Manager). 4.3 receives no further security patches per Itential; 4.4 is the patched line. Both gateways are needed for the full lab |
+| `ghcr.io/itential/itential-mcp` | `v0.13.1` | MCP server (optional, later) | public |
+| `ghcr.io/itential/job-metrics-exporter` | pin a digest in Phase 5 | Prometheus exporter for jobs | laptop has `latest`; never pin `latest` |
+
+Do not pin: `automation-gateway5:5.1.0`, `automation-gateway:4.3.7`, `automation-platform-config-lcm:6`, `itential.jfrog.io/flow-ai-demo/itential_flowai:v0.1.4` (leftovers on the laptop).
+
+**Licensing, still open.** The running dev stack has no licence file, key or licensing env var
+anywhere (compose, `.env`, platform volume, container filesystem, logs). Whether this image is a
+demo build or whether a lab deployment needs a real licence is **UNVERIFIED**; the owner confirms
+with Itential before Phase 5, and confirms the account terms cover a personal lab.
 
 ### 3.4 ServiceNow Personal Developer Instance (external, no image)
 

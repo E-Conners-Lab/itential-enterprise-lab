@@ -1,0 +1,19 @@
+# test-02-oob 20260906T200045Z
+FAIL  S1.1 ping 10.100.0.1 and ssh oob-gw answers with hostname oob-gw
+      Connection timed out during banner exchange
+      Connection to 10.100.0.1 port 22 timed out
+FAIL  S1.2 EVE-NG pnet1 = eth1 + 10.100.0.2, reachable from oob-gw
+      Connection timed out during banner exchange
+      Connection to 10.100.0.1 port 22 timed out
+FAIL  S1.3 scratch VM 9990 from template 9000 boots on 10.100.0.239, resolves and apt-updates via oob-gw, then is destroyed
+PASS  S1.4 NetBox == topology/ipam.yaml (prefixes, ranges, addresses, dns_name) and tofu plan has no changes
+PASS  S1.5 /srv/images mounted from pve/images with >= 150 GB free
+PASS  S1.6 EVE-NG API rejects factory password 'eve' and accepts EVE_PASSWORD
+PASS  S1.7 vmbr0/nic1 stanzas unchanged vs verify/fixtures/pve-interfaces-vmbr0.expected
+FAIL  S1.8 dig @192.168.68.120 netbox.lab.internal = 10.100.0.64 and NetBox answers over the route
+FAIL  S0.1 NetBox answers on its OOB leg 10.100.0.64
+PASS  S0.2 NetBox backup newer than 24 h exists and qemu-guest-agent is active
+PASS  S0.3 every NetBox token has a description and an expiry (old token 4 deleted)
+
+passed=6 failed=5
+RESULT: FAIL

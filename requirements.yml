@@ -1,0 +1,9 @@
+---
+# Ansible collections, pinned. `make bootstrap` installs them; ansible-lint reads this file too.
+collections:
+  - name: ansible.posix
+    version: 2.1.0
+  - name: community.general
+    version: 12.4.0
+  - name: netbox.netbox
+    version: 3.22.0

@@ -6,3 +6,5 @@ exclude_paths:
   - tofu/
   - k8s/
   - verify/results/
+  - topology/
+  - tests/

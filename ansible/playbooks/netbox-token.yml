@@ -1,0 +1,80 @@
+---
+# Phase 2, slice F: replace the undescribed, non-expiring NetBox token (assumption 18).
+# Creates a described token with a 1-year expiry, writes it to .env, verifies it works,
+# then deletes every token that has no description. Secrets never hit the log.
+- name: NetBox token hygiene
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    nb_url: "{{ lookup('ansible.builtin.env', 'NETBOX_URL') }}"
+    nb_token: "{{ lookup('ansible.builtin.env', 'NETBOX_TOKEN') }}"
+    token_description: "automation (phase 2, this repo)"
+    env_file: "{{ playbook_dir }}/../../.env"
+  tasks:
+    - name: Existing tokens
+      ansible.builtin.uri:
+        url: "{{ nb_url }}/api/users/tokens/?limit=50"
+        headers: {Authorization: "Token {{ nb_token }}"}
+      register: tokens
+
+    - name: Token owner (the API requires an explicit user id)
+      ansible.builtin.uri:
+        url: "{{ nb_url }}/api/users/users/?brief=1&username=admin"
+        headers: {Authorization: "Token {{ nb_token }}"}
+      register: nb_users
+      failed_when: nb_users.json.count != 1
+
+    - name: Create the described token (only if none exists)
+      ansible.builtin.uri:
+        url: "{{ nb_url }}/api/users/tokens/"
+        method: POST
+        headers: {Authorization: "Token {{ nb_token }}"}
+        body_format: json
+        body:
+          user: "{{ nb_users.json.results[0].id }}"
+          description: "{{ token_description }}"
+          expires: "{{ '%Y-%m-%dT00:00:00Z' | strftime(now(utc=true).timestamp() + 365 * 86400) }}"
+          write_enabled: true
+        status_code: 201
+      register: created
+      when: tokens.json.results | selectattr('description', 'equalto', token_description) | list | length == 0
+      no_log: true
+
+    # A v2 credential is nbt_<key>.<secret>; the API returns key and secret as separate fields.
+    - name: Compose the v2 credential once
+      ansible.builtin.set_fact:
+        nb_new_token: >-
+          {{ created.json.token if created.json.token.startswith('nbt_')
+             else 'nbt_' ~ created.json.key ~ '.' ~ created.json.token }}
+      when: created is not skipped
+      no_log: true
+
+    - name: Use the new credential from here on (or keep the current one if nothing was created)
+      ansible.builtin.set_fact:
+        nb_active_token: "{{ nb_new_token | default(nb_token) }}"
+      no_log: true
+
+    - name: Write the new token to .env
+      ansible.builtin.lineinfile:
+        path: "{{ env_file }}"
+        regexp: "^NETBOX_TOKEN="
+        line: "NETBOX_TOKEN={{ nb_new_token }}"
+      when: created is not skipped
+      no_log: true
+
+    - name: New token works
+      ansible.builtin.uri:
+        url: "{{ nb_url }}/api/status/"
+        headers: {Authorization: "Token {{ nb_active_token }}"}
+      no_log: true
+
+    - name: Delete every undescribed token (the discovery-era token 4)
+      ansible.builtin.uri:
+        url: "{{ nb_url }}/api/users/tokens/{{ item.id }}/"
+        method: DELETE
+        headers: {Authorization: "Token {{ nb_active_token }}"}
+        status_code: 204
+      loop: "{{ tokens.json.results | rejectattr('description') | list }}"
+      loop_control:
+        label: "token id {{ item.id }}"

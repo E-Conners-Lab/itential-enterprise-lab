@@ -1,0 +1,30 @@
+# test-02-oob 20260906T170256Z
+FAIL  S1.1 ping 10.100.0.1 and ssh oob-gw answers with hostname oob-gw
+FAIL  S1.2 EVE-NG pnet1 = eth1 + 10.100.0.2, reachable from oob-gw
+FAIL  S1.3 scratch VM 9990 from template 9000 boots on 10.100.0.239, resolves and apt-updates via oob-gw, then is destroyed
+      Traceback (most recent call last):
+        File "<string>", line 1, in <module>
+          import sys,json;print(json.load(sys.stdin)['data'][0]['node'])
+                                ~~~~~~~~~^^^^^^^^^^^
+        File "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/__init__.py", line 298, in load
+          return loads(fp.read(),
+              cls=cls, object_hook=object_hook,
+              parse_float=parse_float, parse_int=parse_int,
+FAIL  S1.4 NetBox == topology/ipam.yaml (prefixes, ranges, addresses, dns_name) and tofu plan has no changes
+      Traceback (most recent call last):
+        File "<stdin>", line 2, in <module>
+      FileNotFoundError: [Errno 2] No such file or directory: 'topology/ipam.yaml'
+FAIL  S1.5 /srv/images mounted from pve/images with >= 150 GB free
+FAIL  S1.6 EVE-NG API rejects factory password 'eve' and accepts EVE_PASSWORD
+PASS  S1.7 vmbr0/nic1 stanzas unchanged vs verify/fixtures/pve-interfaces-vmbr0.expected
+FAIL  S0.1 NetBox answers on its OOB leg 10.100.0.64
+FAIL  S0.2 NetBox backup newer than 24 h exists and qemu-guest-agent is active
+FAIL  S0.3 every NetBox token has a description and an expiry (old token 4 deleted)
+      Traceback (most recent call last):
+        File "<string>", line 4, in <module>
+          assert mine, 'no described token'
+                 ^^^^
+      AssertionError: no described token
+
+passed=1 failed=9
+RESULT: FAIL

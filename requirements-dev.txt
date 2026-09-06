@@ -1,0 +1,4 @@
+# Workstation + CI test tooling. `make bootstrap` creates .venv from this.
+pytest==8.4.2
+pyyaml==6.0.3
+pynetbox==7.5.0

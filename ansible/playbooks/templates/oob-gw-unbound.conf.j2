@@ -1,0 +1,18 @@
+# Managed by ansible/playbooks/oob-gw.yml. Interim resolver until phase 6 (ADR 0008/0009).
+server:
+  interface: 127.0.0.1
+  interface: {{ oob_gw_ip }}
+  interface: {{ ansible_facts.default_ipv4.address }}
+  access-control: 127.0.0.0/8 allow
+  access-control: {{ lab_supernet }} allow
+  access-control: 192.168.68.0/22 allow
+  do-not-query-localhost: no
+  local-zone: "{{ domain }}." static
+{% for a in addresses %}
+  local-data: "{{ a.hostname }}.{{ domain }}. A {{ a.address }}"
+  local-data-ptr: "{{ a.address }} {{ a.hostname }}.{{ domain }}"
+{% endfor %}
+
+forward-zone:
+  name: "."
+  forward-addr: {{ home_router }}

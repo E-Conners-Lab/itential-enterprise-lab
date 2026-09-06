@@ -80,3 +80,7 @@ venv/
 .vscode/
 *.swp
 .DS_Store
+
+# --- ansible-lint / galaxy local install ---
+.ansible/
+*.tfplan

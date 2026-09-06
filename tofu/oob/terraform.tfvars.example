@@ -1,0 +1,2 @@
+# Copy to terraform.tfvars (gitignored). Only non-secret facts live here.
+ssh_public_key = "ssh-ed25519 AAAA... elliot@mac-mini"
