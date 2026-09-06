@@ -81,7 +81,8 @@ class Eve:
         except ValueError:
             raise SystemExit(f"{method} {path}: HTTP {r.status_code} non-JSON: {r.text[:200]}")
         if body.get("status") != "success" and not (method == "GET" and body.get("code") == 404):
-            raise SystemExit(f"{method} {path}: {body.get('code')} {body.get('message')}")
+            hint = "  (60061 = stale /opt/unetlab/labs/<lab>.unl.lock from an interrupted API call; remove it when nothing is running)" if body.get("code") == 400 and "lock" in str(body.get("message")) else ""
+            raise SystemExit(f"{method} {path}: {body.get('code')} {body.get('message')}{hint}")
         return body
 
     # ---- lab
@@ -122,15 +123,36 @@ class Eve:
     def interfaces(self, node_id: int) -> dict:
         return self._req("GET", f"/labs{self.lab}/nodes/{node_id}/interfaces").get("data", {})
 
-    def upload_config(self, node_id: int, text: str) -> None:
-        self._req("PUT", f"/labs{self.lab}/configs/{node_id}", json={"id": node_id, "data": text})
-        self._req("PUT", f"/labs{self.lab}/nodes/{node_id}", json={"id": node_id, "config": 1})
+    # EVE-NG Pro keeps startup configs in config *sets*; uploads need the set id in the body and
+    # answer 201 with a PHP array dump appended (non-JSON tail), so parse leniently here.
+    def config_set(self, name: str = "startup") -> int:
+        data = self._req("GET", f"/labs{self.lab}/configsets").get("data") or {}
+        sets = list(data.values()) if isinstance(data, dict) else list(data)
+        for cs in sets:
+            if cs.get("name") == name:
+                return int(cs["id"])
+        r = self.s.post(f"{self.base}/labs{self.lab}/configsets", json={"name": name}, timeout=60)
+        if r.status_code != 200 or '"success"' not in r.text:
+            raise SystemExit(f"create config set: HTTP {r.status_code} {r.text[:160]}")
+        return int(r.json()["id"])
+
+    def upload_config(self, node_id: int, text: str, cfsid: int) -> None:
+        r = self.s.put(f"{self.base}/labs{self.lab}/configs/{node_id}", json={"id": node_id, "cfsid": cfsid, "data": text}, timeout=60)
+        if r.status_code not in (200, 201) or '"success"' not in r.text[:200]:
+            raise SystemExit(f"upload config node {node_id}: HTTP {r.status_code} {r.text[:120]}")
+
+    def enable_config(self, node_id: int, cfsid: int) -> None:
+        # Pro stores the selected config set id in the node's 'config' field; answers 201
+        r = self.s.put(f"{self.base}/labs{self.lab}/nodes/{node_id}", json={"id": node_id, "config": cfsid}, timeout=60)
+        if r.status_code not in (200, 201) or '"success"' not in r.text:
+            raise SystemExit(f"enable config node {node_id}: HTTP {r.status_code} {r.text[:120]}")
 
     def start(self, node_id: int) -> None:
         self._req("GET", f"/labs{self.lab}/nodes/{node_id}/start")
 
     def stop(self, node_id: int) -> None:
-        self._req("GET", f"/labs{self.lab}/nodes/{node_id}/stop")
+        # EVE-NG Pro: plain /stop is "Request not valid"; stopmode=3 = hard stop, 1 = graceful
+        self._req("GET", f"/labs{self.lab}/nodes/{node_id}/stop/stopmode=3")
 
 
 def load_topology() -> dict:
@@ -232,14 +254,16 @@ def apply(eve: Eve, topo: dict, allow_missing: bool) -> None:
         if any(cur.get(k) != v for k, v in mapping.items()):
             eve.set_interfaces(have[name]["id"], mapping)
             print(f"wired {name}: {len(mapping)} interfaces")
-    # startup configs
+    # startup configs (config set "startup"); only for nodes that are stopped
+    cfsid = eve.config_set()
     for name, n in topo["nodes"].items():
         if name not in have or n["platform"] not in STARTUP_CONFIG_PLATFORMS:
             continue
         cfg = render_config(n["platform"], name, n, topo)
-        if cfg and have[name].get("config") in (0, "0", None):
-            eve.upload_config(have[name]["id"], cfg)
-            print(f"config {name}: {len(cfg)} bytes")
+        if cfg and str(have[name].get("config")) in ("0", "None") and have[name].get("status") != 2:
+            eve.upload_config(have[name]["id"], cfg, cfsid)
+            eve.enable_config(have[name]["id"], cfsid)
+            print(f"config {name}: {len(cfg)} bytes (set {cfsid})")
 
 
 def start(eve: Eve, topo: dict, waves: bool) -> None:
