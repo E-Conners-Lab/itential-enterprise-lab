@@ -9,6 +9,7 @@
   gather_facts: true
   vars_files:
     - ../../topology/ipam.yaml
+    - ../../topology/generated/eve-nodes.yaml # EVE-NG node ids/MACs (eve/build.py export)
   vars:
     lan_iface: "{{ ansible_facts.default_ipv4.interface }}"
     oob_iface: >-
@@ -60,7 +61,7 @@
 
     - name: Packages
       ansible.builtin.apt:
-        name: [nftables, unbound, chrony, qemu-guest-agent]
+        name: [nftables, unbound, chrony, qemu-guest-agent, dnsmasq]
         state: present
         update_cache: true
         cache_valid_time: 3600
@@ -117,6 +118,24 @@
         mode: "0644"
       notify: Restart systemd-resolved
 
+    # Interim DHCP for EVE-NG endpoints that cannot take a startup config (Linux/Windows nodes):
+    # reservations from the exported EVE-NG MAC table, pool .240-.254 from the IP plan.
+    # Replaced by NIOS/Kea in phase 6 (ADR 0009: never two active DHCP servers on the segment).
+    - name: "Dnsmasq: DHCP only (unbound owns DNS), reservations for EVE-NG endpoints"
+      ansible.builtin.template:
+        src: templates/oob-gw-dnsmasq.conf.j2
+        dest: /etc/dnsmasq.d/oob-dhcp.conf
+        mode: "0644"
+        validate: dnsmasq --test -C %s
+      notify: Restart dnsmasq
+
+    - name: Dnsmasq must not touch port 53
+      ansible.builtin.copy:
+        dest: /etc/dnsmasq.d/no-dns.conf
+        content: "port=0\n"
+        mode: "0644"
+      notify: Restart dnsmasq
+
     - name: Chrony serves the lab
       ansible.builtin.copy:
         dest: /etc/chrony/conf.d/lab.conf
@@ -131,7 +150,7 @@
         name: "{{ item }}"
         enabled: true
         state: started
-      loop: [nftables, unbound, chrony, qemu-guest-agent]
+      loop: [nftables, unbound, chrony, qemu-guest-agent, dnsmasq]
   handlers:
     - name: Reload nftables
       ansible.builtin.systemd:
@@ -148,4 +167,8 @@
     - name: Restart chrony
       ansible.builtin.systemd:
         name: chrony
+        state: restarted
+    - name: Restart dnsmasq
+      ansible.builtin.systemd:
+        name: dnsmasq
         state: restarted
