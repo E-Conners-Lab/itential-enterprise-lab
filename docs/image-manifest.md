@@ -20,7 +20,7 @@ naming per <https://www.eve-ng.net/index.php/documentation/qemu-image-namings/>.
 |---|---|---|---|---|---|---|
 | `pa-vm` | Palo Alto VM-Series (PAN-OS) | 11.1, latest KVM base image on the portal (>= 11.1.4-h7; 11.1.16-h1 is the current maintenance release) | EVE-NG | 4 / 8 GB / 60 GB | unlicensed mode, no expiry, ~1,230 sessions | 0010 |
 | `panorama` | Palo Alto Panorama | 11.1, same maintenance release as `pa-vm` | Proxmox | 8 / 32 GB / 81 GB + 100 GB log disk | eval or 180-day device-management grace: **UNVERIFIED**, see entry | 0011 |
-| `c8000v` | Cisco Catalyst 8000V (IOS XE) | 17.18.4 (Extended Maintenance) | EVE-NG | 2 / 6 GB / 8 GB | Smart Licensing Using Policy, no registration needed, 10 Mbps default throughput (250 Mbps settable) | 0012 |
+| `c8000v` | Cisco Catalyst 8000V (IOS XE) | **17.13.01a as loaded** (owner decision 2026-09-06, ADR 0032); upgrade target 17.18.4 | EVE-NG | 2 / 6 GB / 8 GB | Smart Licensing Using Policy, no registration needed, 10 Mbps default throughput (250 Mbps settable) | 0032 (0012 superseded) |
 | `veos` | Arista vEOS-lab | 4.35.6M | EVE-NG | 2 / 4 GB / 4 GB | free with arista.com account, no expiry | 0013 |
 | `ceos` | Arista cEOS-lab | 4.35.6M (parity with `veos`) | Containerlab (`clab` VM) | ~1 GB RAM per node | free with arista.com account | 0014 |
 | `nios` | Infoblox NIOS (vNIOS IB-V825) | 9.0.8 | Proxmox | 2 / 16 GB / 150 GB (resizable image) | temp licence **60 days** | 0015 |
@@ -76,7 +76,7 @@ once verified).
 
 | | |
 |---|---|
-| Version | **17.18.4** (Extended Maintenance, released as a rebuild of the 17.18 train; 17.18.1 GA 2025-08-08). Replaces the loaded `c8000v-17.13.01a` |
+| Version | **Running: 17.13.01a**, the image already on EVE-NG (ADR 0032, owner decision 2026-09-06). Upgrade target when wanted: 17.18.4 (Extended Maintenance; 17.18.1 GA 2025-08-08), reasoning kept below |
 | Why | 17.13 is a Standard-support release whose software maintenance ended 2024-11-30. 17.15.x is EM but its maintenance ends 2027-03-30 and Cisco's EOL notice says migrate to 17.18.1+. Cisco's recommended EM releases (doc updated 2026-09-04): 17.18.4 and 17.15.6. 26.1.x is the new numbering with no C8000V feature delta. gNMI (Get/Set/Subscribe), NETCONF and RESTCONF are all documented for 17.18. Sources: [17.18 release notes](https://www.cisco.com/c/en/us/td/docs/routers/C8000V/Release-Notes/c8000v-releasenotes-17-18.html), [17.15 EOL](https://www.cisco.com/c/en/us/products/collateral/ios-nx-os-software/ios-xe-17/ios-xe-17-15-x-eol.html), [recommended releases](https://www.cisco.com/c/en/us/support/docs/switches/catalyst-9300-series-switches/214814-recommended-releases-for-catalyst-9200-9.html), [endoflife.date](https://endoflife.date/cisco-ios-xe). The software.cisco.com "suggested" star is login-gated: **UNVERIFIED** |
 | Download | [software.cisco.com, Catalyst 8000V](https://software.cisco.com/download/home/286327102/type/282046477) (CCO login) |
 | Expected filename | `c8000v-universalk9_8G_serial.17.18.04.qcow2` (**pattern extrapolated from** `c8000v-universalk9_8G_serial.17.15.01a.qcow2`; use the `_8G_serial` variant, not the non-serial or EFI files), ~1.8 GB |

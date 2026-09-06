@@ -12,7 +12,7 @@ entry that says exactly what to fetch.
 | 1c | After every `tofu apply`, copy `tofu/*/terraform.tfstate` to the owner's backup location | No in-lab state backend until Phase 9 (ADR 0029) | 2+ | ADR 0029 |
 | 1d | Log into the EVE-NG web UI with the rotated password from `.env` (`EVE_PASSWORD`), never `eve` | Password rotation is automated; the human just needs to know | 2 | PID S1 criterion 6 |
 | 2 | Download PA-VM 11.1 KVM base image to `/srv/images/pa-vm/` | Palo Alto support portal login and EULA | 4 | manifest 2.1 |
-| 3 | Download C8000v 17.18.4 qcow2 to `/srv/images/c8000v/` | Cisco CCO login and EULA | 4 | manifest 2.3 |
+| 3 | ~~Download C8000v 17.18.4~~ Not needed: the loaded 17.13.01a is used (ADR 0032) | Cisco CCO login and EULA | 4 | manifest 2.3 |
 | 4 | Download vEOS64-lab 4.35.6M + Aboot ISO to `/srv/images/veos/` | Arista account login | 4 | manifest 2.4 |
 | 5 | Download Windows 11 Enterprise 25H2 eval ISO to `/srv/images/win11/` | Microsoft account and eval terms | 4 | manifest 2.8 |
 | 6 | Confirm Itential software-repository credentials (Nexus or JFrog) and licence terms; download Platform 6.5.2, Gateway 5.5.2 and Gateway Manager 1.1.1 to `/srv/images/itential/` | Account-managed repository, no public trial | 5 | manifest 3.2, 3.3 |
