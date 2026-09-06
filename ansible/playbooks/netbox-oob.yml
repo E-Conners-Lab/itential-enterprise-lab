@@ -1,0 +1,108 @@
+---
+# Phase 2, slice D: NetBox VM 110 gets an OOB leg, the guest agent, and a nightly backup (PID S0).
+- name: NetBox vNIC on vmbr1 (hot-plug)
+  hosts: proxmox
+  gather_facts: false
+  environment:
+    LC_ALL: C.UTF-8
+  tasks:
+    - name: Current config of VM {{ hostvars['netbox-vm'].netbox_vm_id }}
+      ansible.builtin.command: qm config {{ hostvars['netbox-vm'].netbox_vm_id }}
+      register: nb_cfg
+      changed_when: false
+
+    - name: Add net1 on vmbr1
+      ansible.builtin.command: qm set {{ hostvars['netbox-vm'].netbox_vm_id }} --net1 virtio,bridge=vmbr1
+      when: nb_cfg.stdout_lines | select('match', '^net1:') | list | length == 0
+      changed_when: true
+
+    - name: Read net1 MAC
+      ansible.builtin.shell: |
+        set -o pipefail
+        qm config {{ hostvars['netbox-vm'].netbox_vm_id }} | sed -n 's/^net1: virtio=\([^,]*\),bridge=vmbr1.*/\1/p'
+      args:
+        executable: /bin/bash
+      register: nb_mac
+      changed_when: false
+      failed_when: nb_mac.stdout | length != 17
+
+- name: "NetBox guest: OOB address, guest agent, backups"
+  hosts: netbox
+  gather_facts: false
+  vars:
+    oob_mac: "{{ hostvars['pve'].nb_mac.stdout | lower }}"
+  tasks:
+    - name: Netplan for the OOB leg (no gateway; default route stays on the home LAN)
+      ansible.builtin.copy:
+        dest: /etc/netplan/60-oob.yaml
+        mode: "0600"
+        content: |
+          network:
+            version: 2
+            ethernets:
+              oob0:
+                match:
+                  macaddress: "{{ oob_mac }}"
+                set-name: oob0
+                addresses: ["{{ netbox_oob_ip }}/24"]
+                routes:
+                  - to: {{ lab_supernet }}
+                    via: {{ oob_gw_ip }}
+      register: netplan
+
+    - name: Apply netplan
+      ansible.builtin.command: netplan apply
+      when: netplan is changed
+      changed_when: true
+
+    - name: Guest agent (assumption 11)
+      ansible.builtin.apt:
+        name: qemu-guest-agent
+        state: present
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Guest agent running
+      ansible.builtin.systemd:
+        name: qemu-guest-agent
+        enabled: true
+        state: started
+
+    - name: Backup directory
+      ansible.builtin.file:
+        path: /var/backups/netbox
+        state: directory
+        mode: "0700"
+
+    - name: Backup script (pg_dump + media, 7-day rotation)
+      ansible.builtin.copy:
+        dest: /usr/local/sbin/netbox-backup.sh
+        mode: "0700"
+        content: |
+          #!/usr/bin/env bash
+          # Nightly NetBox backup: database dump + media volume. Kept 7 days. Pulled off-host from phase 9.
+          set -euo pipefail
+          cd /opt/netbox-docker
+          set -a; . ./env/postgres.env; set +a
+          ts=$(date -u +%Y%m%dT%H%M%SZ)
+          docker compose exec -T postgres pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB" | gzip > "/var/backups/netbox/netbox-${ts}.sql.gz"
+          docker run --rm -v netbox-docker_netbox-media-files:/media:ro -v /var/backups/netbox:/out alpine:3.24.1 \
+            tar czf "/out/netbox-media-${ts}.tgz" -C /media .
+          find /var/backups/netbox -type f -mtime +7 -delete
+
+    - name: Nightly cron at 02:15
+      ansible.builtin.cron:
+        name: netbox-backup
+        minute: "15"
+        hour: "2"
+        job: /usr/local/sbin/netbox-backup.sh >> /var/log/netbox-backup.log 2>&1
+
+    - name: Run the backup once now (so S0.2 is provable today)
+      ansible.builtin.command: /usr/local/sbin/netbox-backup.sh
+      changed_when: true
+
+    - name: OOB leg answers
+      ansible.builtin.command: ip -br addr show oob0
+      register: oob0
+      changed_when: false
+      failed_when: netbox_oob_ip not in oob0.stdout

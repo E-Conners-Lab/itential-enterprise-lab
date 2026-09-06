@@ -1,0 +1,57 @@
+---
+# Phase 2, slice C: give EVE-NG (VM 300) a second vNIC on vmbr1 and put 10.100.0.2/24 on pnet1.
+# VM 300 is deliberately not managed by tofu (ADR 0028); the NIC is added with qm set, guarded.
+- name: EVE-NG vNIC on vmbr1 (hot-plug)
+  hosts: proxmox
+  gather_facts: false
+  environment:
+    LC_ALL: C.UTF-8
+  tasks:
+    - name: Current net devices of VM {{ eve_vm_id }}
+      ansible.builtin.command: qm config {{ eve_vm_id }}
+      register: eve_cfg
+      changed_when: false
+
+    - name: Add net1 on vmbr1 (hot-plug, no reboot; assumption 6)
+      ansible.builtin.command: qm set {{ eve_vm_id }} --net1 virtio,bridge=vmbr1
+      when: eve_cfg.stdout_lines | select('match', '^net1:') | list | length == 0
+      changed_when: true
+
+    - name: Net1 must be on vmbr1 and net0 unchanged
+      ansible.builtin.command: qm config {{ eve_vm_id }}
+      register: eve_cfg_after
+      changed_when: false
+      failed_when: >-
+        eve_cfg_after.stdout_lines | select('match', '^net1: virtio=.*,bridge=vmbr1') | list | length != 1
+        or eve_cfg_after.stdout_lines | select('match', '^net0:') | list != eve_cfg.stdout_lines | select('match', '^net0:') | list
+
+- name: EVE-NG pnet1 addressing
+  hosts: eve
+  gather_facts: false
+  tasks:
+    - name: Interface eth1 must exist (hot-plug worked)
+      ansible.builtin.command: ip -br link show eth1
+      register: eth1
+      changed_when: false
+      failed_when: eth1.rc != 0
+
+    - name: Set the pnet1 stanza to static with the OOB address
+      ansible.builtin.replace:
+        path: /etc/network/interfaces
+        regexp: '^iface pnet1 inet manual\n(\s+bridge_ports eth1\n\s+bridge_stp off\n)'
+        replace: 'iface pnet1 inet static\n\1    address {{ eve_oob_ip }}/24\n'
+        backup: true
+      register: pnet1_cfg
+
+    - name: Apply pnet1 (ifdown/ifup only pnet1; pnet0 untouched)
+      ansible.builtin.shell: ifdown pnet1 || true; ifup pnet1
+      when: pnet1_cfg is changed
+      changed_when: true
+
+    - name: Check pnet1 carries eth1 and the OOB address
+      ansible.builtin.shell: |
+        set -o pipefail
+        ip -br addr show pnet1 | grep -q '{{ eve_oob_ip }}/24' && bridge link show | grep -q 'eth1 .* master pnet1'
+      args:
+        executable: /bin/bash
+      changed_when: false

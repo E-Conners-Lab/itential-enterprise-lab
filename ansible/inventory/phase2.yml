@@ -1,0 +1,36 @@
+---
+# Bootstrap inventory for phase 2 only. NetBox cannot be the inventory source before it is
+# seeded (chicken and egg); from phase 3 on, inventory comes from netbox.netbox.nb_inventory.
+# Addresses are the discovery facts (docs/discovery.md) plus oob-gw's home-LAN static (A-19).
+all:
+  children:
+    proxmox:
+      hosts:
+        pve:
+          ansible_host: 192.168.68.161
+          ansible_user: root
+    eve:
+      hosts:
+        eve-ng:
+          ansible_host: 192.168.68.240
+          ansible_user: root
+    netbox:
+      hosts:
+        netbox-vm:
+          ansible_host: 192.168.68.110
+          ansible_user: root
+          netbox_vm_id: 110
+    oob:
+      hosts:
+        oob-gw:
+          ansible_host: 192.168.68.120
+          ansible_user: ubuntu
+  vars:
+    lab_domain: lab.internal
+    oob_prefix: 10.100.0.0/24
+    lab_supernet: 10.100.0.0/14
+    oob_gw_ip: 10.100.0.1
+    eve_oob_ip: 10.100.0.2
+    netbox_oob_ip: 10.100.0.64
+    eve_vm_id: 300
+    home_router: 192.168.68.1

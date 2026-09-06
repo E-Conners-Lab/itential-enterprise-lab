@@ -1,0 +1,108 @@
+---
+# Phase 2, slice B: oob-gw guest configuration (ADR 0004). Runs after tofu created the VM.
+# NAT from the OOB leg to the home-LAN leg, a forwarding resolver that also answers every
+# name in topology/ipam.yaml (until phase 6 replaces it), and NTP for the lab.
+- name: Configure the oob-gw gateway
+  hosts: oob
+  become: true
+  gather_facts: true
+  vars_files:
+    - ../../topology/ipam.yaml
+  vars:
+    lan_iface: "{{ ansible_facts.default_ipv4.interface }}"
+    oob_iface: >-
+      {{ ansible_facts.interfaces | map('regex_replace', '-', '_') | map('extract', ansible_facts)
+         | selectattr('ipv4', 'defined') | selectattr('ipv4.address', 'equalto', oob_gw_ip)
+         | map(attribute='device') | first }}
+  pre_tasks:
+    - name: Wait for cloud-init to finish
+      ansible.builtin.command: cloud-init status --wait
+      changed_when: false
+      failed_when: false
+
+    - name: Both legs must exist before anything else
+      ansible.builtin.assert:
+        that:
+          - lan_iface | length > 0
+          - oob_iface | length > 0
+          - lan_iface != oob_iface
+        fail_msg: "expected one interface on the home LAN and one holding {{ oob_gw_ip }}; got lan={{ lan_iface }} oob={{ oob_iface }}"
+  tasks:
+    - name: Packages
+      ansible.builtin.apt:
+        name: [nftables, unbound, chrony, qemu-guest-agent]
+        state: present
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: IPv4 forwarding
+      ansible.posix.sysctl:
+        name: net.ipv4.ip_forward
+        value: "1"
+        sysctl_file: /etc/sysctl.d/90-oob-gw.conf
+        reload: true
+
+    - name: Nftables ruleset (NAT OOB -> LAN, no inbound from LAN except ssh/icmp)
+      ansible.builtin.template:
+        src: templates/oob-gw-nftables.conf.j2
+        dest: /etc/nftables.conf
+        mode: "0644"
+        validate: nft -c -f %s
+      notify: Reload nftables
+
+    - name: "Unbound: forwarding resolver + lab names from ipam.yaml"
+      ansible.builtin.template:
+        src: templates/oob-gw-unbound.conf.j2
+        dest: /etc/unbound/unbound.conf.d/lab.conf
+        mode: "0644"
+        validate: unbound-checkconf %s
+      notify: Restart unbound
+
+    - name: Disable systemd-resolved stub on the OOB address (unbound owns port 53)
+      ansible.builtin.copy:
+        dest: /etc/systemd/resolved.conf.d/no-stub.conf
+        content: |
+          [Resolve]
+          DNSStubListener=no
+          DNS=127.0.0.1
+        mode: "0644"
+      notify: Restart systemd-resolved
+
+    - name: Ensure resolved.conf.d exists
+      ansible.builtin.file:
+        path: /etc/systemd/resolved.conf.d
+        state: directory
+        mode: "0755"
+
+    - name: Chrony serves the lab
+      ansible.builtin.copy:
+        dest: /etc/chrony/conf.d/lab.conf
+        content: |
+          allow {{ lab_supernet }}
+          local stratum 10
+        mode: "0644"
+      notify: Restart chrony
+
+    - name: Services enabled and running
+      ansible.builtin.systemd:
+        name: "{{ item }}"
+        enabled: true
+        state: started
+      loop: [nftables, unbound, chrony, qemu-guest-agent]
+  handlers:
+    - name: Reload nftables
+      ansible.builtin.systemd:
+        name: nftables
+        state: restarted
+    - name: Restart unbound
+      ansible.builtin.systemd:
+        name: unbound
+        state: restarted
+    - name: Restart systemd-resolved
+      ansible.builtin.systemd:
+        name: systemd-resolved
+        state: restarted
+    - name: Restart chrony
+      ansible.builtin.systemd:
+        name: chrony
+        state: restarted

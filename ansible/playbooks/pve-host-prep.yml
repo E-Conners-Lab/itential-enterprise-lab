@@ -1,0 +1,171 @@
+---
+# Phase 2, slice A: one-time Proxmox host preparation (PID S1, ADR 0007).
+# Additive only: an API user/role/token, the snippets content type, a thin LV for image
+# staging, and the two cloud images. Never touches /etc/network/interfaces (S1.7 guard).
+- name: Proxmox host preparation
+  hosts: proxmox
+  gather_facts: false
+  environment:
+    LC_ALL: C.UTF-8
+  vars:
+    tofu_user: tofu@pve
+    tofu_role: TofuLab
+    tofu_token_id: tofu
+    # bpg/proxmox documented role minus user/permission/realm management (least privilege).
+    tofu_privs: >-
+      Datastore.Allocate,Datastore.AllocateSpace,Datastore.AllocateTemplate,Datastore.Audit,
+      Pool.Allocate,Pool.Audit,SDN.Audit,SDN.Use,Sys.Audit,Sys.Console,Sys.Modify,
+      Mapping.Audit,Mapping.Use,
+      VM.Allocate,VM.Audit,VM.Backup,VM.Clone,VM.Config.CDROM,VM.Config.CPU,VM.Config.Cloudinit,
+      VM.Config.Disk,VM.Config.HWType,VM.Config.Memory,VM.Config.Network,VM.Config.Options,
+      VM.Console,VM.GuestAgent.Audit,VM.Migrate,VM.PowerMgmt,VM.Snapshot,VM.Snapshot.Rollback
+    images_lv_size: 200G
+    images_mount: /srv/images
+    # Manifest 2.9 and 3.1. Checksums are the manifest values; a mismatch fails loud.
+    cloud_images:
+      - key: ubuntu
+        url: https://cloud-images.ubuntu.com/noble/release-20260826/noble-server-cloudimg-amd64.img
+        file: noble-server-cloudimg-amd64-20260826.img
+        sha256: d0fe84bb5f80853425fa6be28e2c106f30104c3cfe8611933f2e65c9b63f0e30
+        import_name: noble-24.04-20260826.qcow2
+      - key: rocky
+        url: https://dl.rockylinux.org/pub/rocky/9/images/x86_64/Rocky-9-GenericCloud-Base-9.8-20260525.0.x86_64.qcow2
+        file: Rocky-9-GenericCloud-Base-9.8-20260525.0.x86_64.qcow2
+        sha256: 92c206cc6f790c61583247eefe87890f8828420662c17cacf247cec78ab4eec8
+        import_name: rocky-9.8-20260525.qcow2
+    staging_dirs: [pa-vm, panorama, c8000v, veos, ceos, nios, winserver, win11, ubuntu, rocky, alpine, itential]
+  tasks:
+    # ---------------------------------------------------------------- snippets on local
+    - name: Read storage.cfg
+      ansible.builtin.slurp:
+        src: /etc/pve/storage.cfg
+      register: storage_cfg
+
+    - name: Enable snippets content type on local (assumption 5)
+      ansible.builtin.command: pvesm set local --content iso,vztmpl,backup,import,snippets
+      when: "'snippets' not in (storage_cfg.content | b64decode | regex_search('dir: local\\n(?:\\t.*\\n)*') | default(''))"
+      changed_when: true
+
+    # ---------------------------------------------------------------- /srv/images thin LV (ADR 0007)
+    - name: Thin LV pve/images
+      community.general.lvol:
+        vg: pve
+        lv: images
+        size: "{{ images_lv_size }}"
+        thinpool: data
+        state: present
+        shrink: false
+
+    - name: Filesystem ext4 on pve/images
+      community.general.filesystem:
+        fstype: ext4
+        dev: /dev/pve/images
+
+    - name: Mount /srv/images (fstab, nofail so a broken LV never blocks host boot)
+      ansible.posix.mount:
+        path: "{{ images_mount }}"
+        src: /dev/pve/images
+        fstype: ext4
+        opts: defaults,nofail
+        state: mounted
+
+    - name: Staging directories per manifest key
+      ansible.builtin.file:
+        path: "{{ images_mount }}/{{ item }}"
+        state: directory
+        mode: "0755"
+      loop: "{{ staging_dirs }}"
+
+    # ---------------------------------------------------------------- cloud images
+    - name: Download cloud images to staging with checksum verification
+      ansible.builtin.get_url:
+        url: "{{ item.url }}"
+        dest: "{{ images_mount }}/{{ item.key }}/{{ item.file }}"
+        checksum: "sha256:{{ item.sha256 }}"
+        mode: "0644"
+        timeout: 120
+      loop: "{{ cloud_images }}"
+      loop_control:
+        label: "{{ item.file }}"
+
+    - name: Publish verified images into local:import/ for tofu import_from
+      ansible.builtin.copy:
+        src: "{{ images_mount }}/{{ item.key }}/{{ item.file }}"
+        dest: "/var/lib/vz/import/{{ item.import_name }}"
+        remote_src: true
+        mode: "0644"
+      loop: "{{ cloud_images }}"
+      loop_control:
+        label: "{{ item.import_name }}"
+
+    - name: Record staging checksums (owner appends vendor images to the same file)
+      ansible.builtin.shell: |
+        set -o pipefail
+        cd {{ images_mount }} && sha256sum ubuntu/* rocky/* > MANIFEST.sha256.tmp && \
+          { [ -f MANIFEST.sha256 ] && grep -vE '^[0-9a-f]{64}  (ubuntu|rocky)/' MANIFEST.sha256 || true; } >> MANIFEST.sha256.tmp && \
+          sort -k2 MANIFEST.sha256.tmp > MANIFEST.sha256 && rm MANIFEST.sha256.tmp
+      args:
+        executable: /bin/bash
+      changed_when: false
+
+    # ---------------------------------------------------------------- API identity for tofu (assumption 4)
+    - name: List roles
+      ansible.builtin.command: pveum role list --output-format json
+      register: pve_roles
+      changed_when: false
+
+    - name: Create role {{ tofu_role }}
+      ansible.builtin.command: pveum role add {{ tofu_role }} --privs "{{ tofu_privs | regex_replace('\\s', '') }}"
+      when: tofu_role not in (pve_roles.stdout | from_json | map(attribute='roleid') | list)
+      changed_when: true
+
+    - name: Pin role privileges to the list above
+      ansible.builtin.command: pveum role modify {{ tofu_role }} --privs "{{ tofu_privs | regex_replace('\\s', '') }}"
+      when: tofu_role in (pve_roles.stdout | from_json | map(attribute='roleid') | list)
+      changed_when: false
+
+    - name: List users
+      ansible.builtin.command: pveum user list --output-format json
+      register: users
+      changed_when: false
+
+    - name: Create user {{ tofu_user }}
+      ansible.builtin.command: pveum user add {{ tofu_user }} --comment "OpenTofu automation (phase 2)"
+      when: tofu_user not in (users.stdout | from_json | map(attribute='userid') | list)
+      changed_when: true
+
+    - name: Grant the role on / to the tofu user
+      ansible.builtin.command: pveum aclmod / -user {{ tofu_user }} -role {{ tofu_role }}
+      changed_when: false
+
+    - name: List tokens
+      ansible.builtin.command: pveum user token list {{ tofu_user }} --output-format json
+      register: tokens
+      changed_when: false
+
+    - name: Refuse to continue if the token exists on the host but not in .env (secret is unrecoverable)
+      ansible.builtin.fail:
+        msg: >-
+          Token {{ tofu_user }}!{{ tofu_token_id }} already exists but PROXMOX_VE_API_TOKEN is empty in .env.
+          Run `pveum user token remove {{ tofu_user }} {{ tofu_token_id }}` on the host and re-run this play.
+      when:
+        - tofu_token_id in (tokens.stdout | from_json | map(attribute='tokenid') | list)
+        - (lookup('ansible.builtin.env', 'PROXMOX_VE_API_TOKEN') | default('', true)) | length == 0
+
+    - name: Create API token (shown once; written straight into .env)
+      ansible.builtin.command: >-
+        pveum user token add {{ tofu_user }} {{ tofu_token_id }} --privsep 0
+        --comment "tofu (phase 2)" --output-format json
+      when: tofu_token_id not in (tokens.stdout | from_json | map(attribute='tokenid') | list)
+      register: new_token
+      changed_when: true
+      no_log: true
+
+    - name: Store the token in the workstation .env
+      ansible.builtin.lineinfile:
+        path: "{{ playbook_dir }}/../../.env"
+        regexp: "^PROXMOX_VE_API_TOKEN="
+        line: "PROXMOX_VE_API_TOKEN={{ (new_token.stdout | from_json)['full-tokenid'] }}={{ (new_token.stdout | from_json).value }}"
+      delegate_to: localhost
+      when: new_token is changed
+      no_log: true

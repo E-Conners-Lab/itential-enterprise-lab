@@ -1,0 +1,58 @@
+---
+# Phase 2, slice F: replace the undescribed, non-expiring NetBox token (assumption 18).
+# Creates a described token with a 1-year expiry, writes it to .env, verifies it works,
+# then deletes every token that has no description. Secrets never hit the log.
+- name: NetBox token hygiene
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    nb_url: "{{ lookup('ansible.builtin.env', 'NETBOX_URL') }}"
+    nb_token: "{{ lookup('ansible.builtin.env', 'NETBOX_TOKEN') }}"
+    token_description: "automation (phase 2, this repo)"
+    env_file: "{{ playbook_dir }}/../../.env"
+  tasks:
+    - name: Existing tokens
+      ansible.builtin.uri:
+        url: "{{ nb_url }}/api/users/tokens/?limit=50"
+        headers: {Authorization: "Token {{ nb_token }}"}
+      register: tokens
+
+    - name: Create the described token (only if none exists)
+      ansible.builtin.uri:
+        url: "{{ nb_url }}/api/users/tokens/"
+        method: POST
+        headers: {Authorization: "Token {{ nb_token }}"}
+        body_format: json
+        body:
+          description: "{{ token_description }}"
+          expires: "{{ '%Y-%m-%dT00:00:00Z' | strftime(now(utc=true).timestamp() + 365 * 86400) }}"
+          write_enabled: true
+        status_code: 201
+      register: created
+      when: tokens.json.results | selectattr('description', 'equalto', token_description) | list | length == 0
+      no_log: true
+
+    - name: Write the new token to .env
+      ansible.builtin.lineinfile:
+        path: "{{ env_file }}"
+        regexp: "^NETBOX_TOKEN="
+        line: "NETBOX_TOKEN={{ created.json.key }}"
+      when: created is not skipped
+      no_log: true
+
+    - name: New token works
+      ansible.builtin.uri:
+        url: "{{ nb_url }}/api/status/"
+        headers: {Authorization: "Token {{ created.json.key if created is not skipped else nb_token }}"}
+      no_log: true
+
+    - name: Delete every undescribed token (the discovery-era token 4)
+      ansible.builtin.uri:
+        url: "{{ nb_url }}/api/users/tokens/{{ item.id }}/"
+        method: DELETE
+        headers: {Authorization: "Token {{ created.json.key if created is not skipped else nb_token }}"}
+        status_code: 204
+      loop: "{{ tokens.json.results | rejectattr('description') | list }}"
+      loop_control:
+        label: "token id {{ item.id }}"

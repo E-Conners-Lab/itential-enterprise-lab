@@ -72,4 +72,4 @@ addresses:
   - {address: 10.100.0.195, hostname: br1-host01, placement: eve-endpoint, phase: 4, status: reserved}
   - {address: 10.100.0.196, hostname: br2-host01, placement: eve-endpoint, phase: 4, status: reserved}
   - {address: 10.100.0.224, hostname: clab, placement: clab, phase: 11, status: reserved}
-  - {address: 10.100.0.239, hostname: verify-scratch, placement: clab, phase: 2, status: reserved, description: "Throw-away VM used by verify/ only"}
+  - {address: 10.100.0.239, hostname: verify-scratch, placement: clab, phase: 2, status: reserved, description: "verify/ scratch VM only"}

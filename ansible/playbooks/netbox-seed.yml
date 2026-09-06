@@ -1,0 +1,110 @@
+---
+# Phase 2, slice E: seed NetBox from topology/ipam.yaml (ADR 0002, 0003). Idempotent.
+# Runs on the workstation with the .venv interpreter (pynetbox). Token from .env.
+- name: Seed NetBox IPAM from topology/ipam.yaml
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars_files:
+    - ../../topology/ipam.yaml
+  vars:
+    ansible_python_interpreter: "{{ playbook_dir }}/../../.venv/bin/python"
+    nb_url: "{{ lookup('ansible.builtin.env', 'NETBOX_URL') }}"
+    nb_token: "{{ lookup('ansible.builtin.env', 'NETBOX_TOKEN') }}"
+    nb_common:
+      netbox_url: "{{ nb_url }}"
+      netbox_token: "{{ nb_token }}"
+      validate_certs: false
+    placement_tags: [infrastructure, k3s-node, k3s-vip, proxmox-vm, eve-firewall, eve-router, eve-switch, eve-endpoint, clab]
+  tasks:
+    - name: .env must be loaded
+      ansible.builtin.assert:
+        that: [nb_url | length > 0, nb_token | length > 0]
+        fail_msg: "NETBOX_URL / NETBOX_TOKEN missing; run via make so .env is exported"
+
+    - name: Tags (placement + phase)
+      netbox.netbox.netbox_tag:
+        netbox_url: "{{ nb_url }}"
+        netbox_token: "{{ nb_token }}"
+        validate_certs: false
+        data:
+          name: "{{ item }}"
+          slug: "{{ item }}"
+        state: present
+      loop: >-
+        {{ placement_tags
+           + (addresses | map(attribute='phase') | unique | map('string') | map('regex_replace', '^', 'phase-') | list) }}
+
+    - name: Prefix/range roles
+      netbox.netbox.netbox_ipam_role:
+        netbox_url: "{{ nb_url }}"
+        netbox_token: "{{ nb_token }}"
+        validate_certs: false
+        data:
+          name: "{{ item }}"
+          slug: "{{ item }}"
+        state: present
+      loop: "{{ (prefixes | map(attribute='role') | list + ranges | map(attribute='role') | list) | unique }}"
+
+    - name: Prefixes
+      netbox.netbox.netbox_prefix:
+        netbox_url: "{{ nb_url }}"
+        netbox_token: "{{ nb_token }}"
+        validate_certs: false
+        data:
+          prefix: "{{ item.prefix }}"
+          status: "{{ item.status }}"
+          prefix_role: "{{ item.role }}"
+          description: "{{ item.description | default('') }}"
+          tags: [phase-2]
+        state: present
+      loop: "{{ prefixes }}"
+      loop_control:
+        label: "{{ item.prefix }}"
+
+    # netbox.netbox 3.22.0 has no ip-range module, so ranges go through the REST API.
+    - name: Existing IP ranges
+      ansible.builtin.uri:
+        url: "{{ nb_url }}/api/ipam/ip-ranges/?limit=100"
+        headers: {Authorization: "Token {{ nb_token }}"}
+      register: nb_ranges
+
+    - name: IP ranges (create when absent; existing ranges are left as they are)
+      ansible.builtin.uri:
+        url: "{{ nb_url }}/api/ipam/ip-ranges/"
+        method: POST
+        headers: {Authorization: "Token {{ nb_token }}"}
+        body_format: json
+        body:
+          start_address: "{{ item.start }}/24"
+          end_address: "{{ item.end }}/24"
+          status: "{{ item.status }}"
+          role: {slug: "{{ item.role }}"}
+          description: "{{ item.description | default('') }}"
+          tags: [{slug: phase-2}]
+        status_code: 201
+      loop: "{{ ranges }}"
+      loop_control:
+        label: "{{ item.start }}-{{ item.end }}"
+      when: >-
+        nb_ranges.json.results
+        | selectattr('start_address', 'equalto', item.start ~ '/24')
+        | selectattr('end_address', 'equalto', item.end ~ '/24')
+        | list | length == 0
+      changed_when: true
+
+    - name: Static addresses with DNS names
+      netbox.netbox.netbox_ip_address:
+        netbox_url: "{{ nb_url }}"
+        netbox_token: "{{ nb_token }}"
+        validate_certs: false
+        data:
+          address: "{{ item.address }}/24"
+          status: "{{ item.status }}"
+          dns_name: "{{ item.hostname }}.{{ domain }}"
+          description: "{{ item.description | default('') }}"
+          tags: ["{{ item.placement }}", "phase-{{ item.phase }}"]
+        state: present
+      loop: "{{ addresses }}"
+      loop_control:
+        label: "{{ item.address }} {{ item.hostname }}"
