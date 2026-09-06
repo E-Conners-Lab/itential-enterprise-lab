@@ -1,3 +1,610 @@
-# PID
+# Project Initiation Document — itential-enterprise-lab
 
-Delivered in Phase 1 (`phase-1/pid`). See `docs/adr/` for decisions made so far.
+| | |
+|---|---|
+| **Name** | itential-enterprise-lab |
+| **Version** | 1.0 |
+| **Date** | 2026-09-06 |
+| **Author** | Elliot Conner. Claude Code is the build agent; every action it takes is bounded by this document |
+| **Standard** | Project Initiation Standard PIS-01 - PIS-30 (`~/.claude/skills/project-initiation-standard`) |
+| **Companion docs** | `docs/discovery.md` (what exists), `docs/ip-plan.md`, `docs/resource-budget.md`, `docs/image-manifest.md`, `docs/adr/` (why), `docs/manual-steps.md` |
+
+**How to read the agent rules.** The PIS is written for AI-agent products. In
+this project the "agent" is **Claude Code driving OpenTofu, Ansible, the
+EVE-NG REST API and the NetBox API to build the lab**, and, from Phase 5, **Itential
+workflows acting on the lab network**. Every rule below is answered for both
+meanings where they differ.
+
+---
+
+## Domain 1 — Intent Specification
+
+**PIS-01 — One-sentence purpose**
+
+> Build, entirely from this repo, a rebuildable enterprise services layer around a multi-vendor EVE-NG lab network on one Proxmox host, so that Itential Platform can demonstrate end-to-end network automation (source of truth to ticket to device to monitoring) for Elliot's portfolio and teaching content.
+
+**PIS-02 — Capabilities at launch**
+
+The full, service-by-service capability list with acceptance criteria is
+section 2. In summary, at the end of Phase 11 the lab must:
+
+1. Bring up every Proxmox VM, bridge, template and k3s workload from `make up` with no manual step other than those in `docs/manual-steps.md` (vendor downloads and eval-license activation).
+2. Build the EVE-NG topology (DC with a PA-VM HA pair, two C8000v WAN edges, two vEOS spines, two leaves, one access switch; two branches each with a C8000v, a PA-VM, a vEOS and endpoints; one simulated ISP core) from `topology/*.yaml`, and populate NetBox from the same file.
+3. Address every service and device from NetBox (ADR 0002, ADR 0003) on the OOB network 10.100.0.0/24, resolvable in `lab.internal` (ADR 0005).
+4. Run Itential Platform + Automation Gateway with working adapters for NetBox, ServiceNow PDI, PAN-OS/Panorama, Infoblox, Cisco IOS XE, Arista EOS and Zabbix, and execute the golden-path workflow in PIS-05.
+5. Serve DNS/DHCP from Infoblox NIOS with a BIND9/Kea secondary that keeps serving through an eval expiry (ADR 0009).
+6. Authenticate humans with Keycloak (OIDC/SAML) backed by Active Directory, and network devices with tac_plus backed by the same directory.
+7. Monitor every service and device with Zabbix (availability, SNMP) and Prometheus/Grafana (metrics), stream gNMI telemetry through gNMIc, and centralise logs/syslog in Loki.
+8. Back up every device configuration to Oxidized -> Gitea on change, and hold every secret in Vault (no secret in `.env` after Phase 9).
+9. Manage all firewalls from Panorama (templates, device groups, commit/push driven by Itential).
+10. Validate fabric changes in a Containerlab cEOS twin of the DC before Itential pushes them to EVE-NG.
+11. Stay inside the ceilings in `docs/resource-budget.md`: 1.5:1 vCPU oversubscription (108 vCPU) and 280 GB RAM allocated.
+12. Prove every one of the above with a committed `verify/` result.
+
+**PIS-03 — Explicit exclusions**
+
+The lab will **not**:
+
+- Change the configuration of `vmbr0`, `nic1`, the home router, or the home DHCP/DNS. `oob-gw`, NetBox and EVE-NG have addresses *on* the home LAN; nothing *configures* it.
+- Expose any service to the internet (no port forwards, no public DNS, no public certificates). Remote access is the existing EVE-NG WireGuard or the workstation only.
+- Provide hypervisor high availability, a second disk, RAID, or off-host backups. Mitigation for the single SSD is rebuildability (Domain 4).
+- Attach a physical lab switch to `nic2`; the OOB network is host-internal.
+- Deploy Cisco SD-WAN/vManage, ISE, NSO, Catalyst Center, Nutanix, VMware, Infoblox BloxOne, Palo Alto Prisma, or any product not in the image manifest.
+- Use paid or perpetual licenses beyond the EVE-NG Pro license already owned. Every vendor image is an evaluation or a free lab edition, and their expiries are tracked (`docs/image-manifest.md`).
+- Move NetBox off VM 110 into k3s (discovery assumption 10).
+- Let any automation edit NetBox to match the network (ADR 0002). Sync is one-way: NetBox -> devices.
+- Design ITSM processes in ServiceNow. The PDI is used as an API endpoint for the Itential adapter (change requests and incidents via the Table API), nothing more.
+- Manage Windows clients beyond domain join and a test user; no GPO engineering, no Intune.
+- Run any CI job from GitHub-hosted runners against the lab. The Containerlab tier is self-hosted and reached only from the lab.
+- Store any secret, kubeconfig, token, image or `.tfstate` in git.
+
+**PIS-04 — Escalation path**
+
+Claude Code **stops and hands to Elliot** when any of these triggers fires:
+
+| Trigger | Handoff carries |
+|---|---|
+| The next action would modify `vmbr0`, `nic1`, or anything on the home LAN other than a VM's own guest config | The exact command, why it seemed necessary, the alternative that avoids it |
+| The next action is destructive: deleting a VM/LV/lab/NetBox object not created by the current phase, rebooting EVE-NG or the Proxmox host, wiping a Longhorn volume | Target object, what depends on it, the rollback |
+| A phase verification test fails twice after one fix attempt | Test output, hypothesis, what was tried, current infrastructure state |
+| A vendor login, EULA click, or eval-license activation is needed | The exact product/version/filename from the manifest, target path, expected checksum |
+| A resource-budget ceiling would be crossed | The line in `docs/resource-budget.md` that would go over, options to trim |
+| A decision arises that no ADR covers | A drafted ADR with the options and a recommendation |
+| The previous phase's PR is not merged | Nothing is started (`gh pr list --state all` is the gate) |
+
+Itential workflows (Phase 5+) escalate to a human approval task in the platform
+before any device commit, and post the pre/post diff to the ServiceNow change.
+
+**PIS-05 — Definition of functional correctness**
+
+"It worked" means all of the following are true and evidenced by committed
+`verify/results/` logs:
+
+1. **Rebuild test.** From a fresh clone plus `.env` plus staged images, `make up` reaches Phase 11 and `make verify` passes every test, with human involvement limited to `docs/manual-steps.md`.
+2. **Golden path.** An Itential workflow, triggered by a ServiceNow change request, (a) reserves a VLAN, prefix and gateway IP in NetBox, (b) pushes the VLAN to the DC leaf pair and branch switch, (c) adds the security policy and NAT to the branch firewall via Panorama, (d) creates the DHCP range and DNS records in Infoblox, (e) runs pre/post checks (BGP/EVPN state, ping from the branch client), (f) closes the change with the diff attached. Elapsed time under 10 minutes, zero manual steps, and the Containerlab twin validated the switch change first.
+3. **Cross-checks.** For every device, NetBox (intent), the EVE-NG API (what was built), and the device itself (`show` output via the Itential/Ansible path) agree on hostname, management IP, image version and interface count. Two independent sources must confirm every fact (`verify/` never trusts one API).
+4. **Budget.** Allocated vCPU <= 108 and allocated RAM <= 280 GB, measured from `qm config` on the host, not from the docs.
+5. **Security floor.** No secret in git (gitleaks), no default vendor password left on any node after its phase, every human-facing UI behind Keycloak or AD, TLS from the lab CA on every HTTP service.
+
+---
+
+## 2. Service specifications
+
+Conventions: **Placement** is Proxmox VM (OpenTofu + Ansible), k3s (Helm/Kustomize) or EVE-NG node (topology YAML). **Version** is always the pinned value in `docs/image-manifest.md`; this document never repeats a version number so that the manifest stays the single oracle. **IP / name** come from `docs/ip-plan.md`. **Resources** from `docs/resource-budget.md`. Each spec ends with the acceptance criteria that become the GitHub issue and the verification test that becomes `verify/test-NN-<name>.sh`.
+
+### S0 — NetBox (exists; hardened in Phase 2)
+
+- **Purpose:** network source of truth (ADR 0002). Sites, devices, interfaces, prefixes, IPs, VLANs, VMs, services, secrets *references* (not values).
+- **Placement:** existing Proxmox VM 110 (netbox-docker), stays (assumption 10).
+- **Phase 2 changes:** second vNIC on `vmbr1` at 10.100.0.64; qemu-guest-agent installed; nightly `pg_dump` + media tarball to Longhorn-backed MinIO once Phase 3 exists (until then to the VM's own disk with 7-day rotation); described, expiring automation token; HTTPS via the lab CA behind Traefik on the OOB address in Phase 7 when Keycloak SSO is added.
+- **Acceptance:** `GET /api/status/` on the OOB address returns 200; the IP plan's prefixes, ranges and reserved IPs exist; backup file newer than 24 h exists; token has description and expiry.
+- **Verification:** `verify/test-02-oob.sh` (shared with S1).
+
+### S1 — OOB management network (Phase 2)
+
+- **Purpose:** one flat, isolated management segment that every service and device is reachable on, independent of the lab's in-band network.
+- **Placement:** Proxmox `vmbr1` (untagged), EVE-NG `pnet1` via a hot-plugged `net1` on VM 300, `oob-gw` VM (ADR 0004).
+- **Components:** `oob-gw` (Ubuntu cloud image, nftables NAT, unbound forwarding resolver until Phase 6, sshd), Proxmox `tofu@pve` user + token (assumption 4), `snippets` on `local` (assumption 5), `/srv/images` LV (ADR 0007), Ubuntu cloud-init template, NetBox seed of `docs/ip-plan.md`, EVE-NG admin password rotation (assumption 12), workstation static route.
+- **Acceptance:**
+  1. From the workstation, `ping 10.100.0.1` and `ssh oob-gw` succeed via the static route.
+  2. EVE-NG shows `pnet1` with `eth1` as a member and 10.100.0.2 answers from `oob-gw`.
+  3. A throw-away VM cloned from the template boots with the IP NetBox reserved for it, resolves `github.com` through `oob-gw`, and can `apt update`.
+  4. NetBox holds 10.100.0.0/14, 10.100.0.0/24, the block ranges and every static in the IP plan; `tofu plan` on the OOB module is clean.
+  5. `/srv/images` is mounted from the thin LV with >= 150 GB free.
+  6. The EVE-NG API rejects the factory password and accepts the one in `.env`.
+  7. `vmbr0` and `nic1` stanzas in `/etc/network/interfaces` are byte-identical to the discovery snapshot.
+- **Verification:** `verify/test-02-oob.sh`.
+
+### S2 — k3s platform (Phase 3)
+
+- **Purpose:** the runtime for every containerised service (S6 tac_plus/Keycloak, S7, S8) with persistent storage and stable service IPs.
+- **Placement:** three Proxmox VMs `k3s-01..03`, each a server node (embedded etcd), on `vmbr1`.
+- **Components:** k3s (flannel, kube-proxy and ServiceLB disabled; the bundled Traefik kept as the ingress controller because ingress-nginx is retired), Cilium (kube-proxy replacement, Hubble), MetalLB L2 pool 10.100.0.32-63, Longhorn (2 replicas: the host has one disk, so a third replica adds cost without resilience; Prometheus and Loki volumes at 1 replica per the budget), cert-manager with a lab root CA issuer, CloudNativePG operator, Traefik at 10.100.0.32 with a wildcard `*.lab.internal` certificate, kube-vip for the API VIP 10.100.0.19. Kubeconfig lives only in an `.env`-referenced path, never in git.
+- **Acceptance:**
+  1. `kubectl get nodes` shows three Ready nodes via the VIP; `cilium status` reports OK; Hubble observes flows.
+  2. A test Deployment with a Longhorn PVC survives `tofu` stopping one node (data intact, pod rescheduled within 5 min).
+  3. A test Service of type LoadBalancer gets 10.100.0.43 and is reachable from the workstation and from an EVE-NG endpoint.
+  4. cert-manager issues a certificate for `test.lab.internal` chained to the lab root CA, and the root CA cert is exported to `docs/` for client trust (public material only).
+  5. A CloudNativePG cluster of one instance passes `pg_isready`, and its scheduled backup object lands in a Longhorn-backed bucket.
+  6. Cluster allocation in `docs/resource-budget.md` matches `qm config`.
+- **Verification:** `verify/test-03-platform.sh`.
+
+### S3 — Network topology (Phase 4)
+
+- **Purpose:** the network Itential automates. Realistic enough to demo enterprise workflows: DC with HA firewalls and an EVPN-VXLAN fabric, WAN over a simulated provider, two branches.
+- **Placement:** EVE-NG nodes, built by `eve/` from `topology/*.yaml`; NetBox populated from the same YAML (ADR 0002).
+- **Topology commitment (minimum):**
+  - `isp-core01` (C8000v): provider core, gives each site a /30 and a default route; no tunnels terminate here.
+  - DC1: `dc1-wan01/02` (C8000v, eBGP to ISP, IPsec/GRE tunnels to each branch, iBGP + HSRP inside), `dc1-fw01/02` (PA-VM active/passive HA, HA1/HA2 links, virtual routers north/south), `dc1-spine01/02` + `dc1-leaf01/02` (vEOS, eBGP underlay, EVPN-VXLAN overlay, leaf pair as MLAG), `dc1-acc01` (vEOS L2 access), `dc1-srv01` (Ubuntu).
+  - Branch 1 and 2: `brN-wan01` (C8000v, tunnels to both DC edges, BGP), `brN-fw01` (PA-VM, standalone, NAT + policy), `brN-sw01` (vEOS L2), `brN-pc01` (Windows 11), `brN-host01` (Alpine).
+  - Every node's first interface is management on `pnet1` with the static from the IP plan; management VRF/interface only, no in-band management.
+  - DNS domain on every node `lab.internal`; NTP from `oob-gw`; syslog/SNMP/gNMI/NETCONF/RESTCONF/eAPI/XML-API enabled with a local `automation` account whose password is in `.env` (moved to Vault in Phase 9); TACACS+ added in Phase 7.
+- **Acceptance:**
+  1. `eve/build.py topology/dc1.yaml` creates the lab idempotently (second run reports no changes) and every node reaches `running`.
+  2. Every node's management IP answers SSH within 20 minutes of a cold lab start (this is the PAN-OS boot-storm test: firewalls are started in two waves of two, 5 minutes apart, by the builder).
+  3. NetBox has one device, its interfaces, its cables and its primary IP for every node in the YAML, and the count of cables equals the count of EVE-NG links.
+  4. Routing: `isp-core01` has a BGP session to each of the five edge routers; each branch has two established tunnels; DC leaves show two EVPN peers and MLAG active; `dc1-fw01` is active and `dc1-fw02` passive.
+  5. `br1-pc01` reaches `dc1-srv01` through branch fw -> tunnel -> DC fw -> fabric (traceroute recorded).
+  6. Image versions reported by every node (`show version`, `show system info`) equal the manifest.
+  7. RAM allocated inside EVE-NG <= the EVE line in the resource budget.
+- **Verification:** `verify/test-04-topology.sh`.
+
+### S4 — Itential Platform + Automation Gateway (Phase 5)
+
+- **Purpose:** the automation brain. Workflows, JSON forms, pre/post checks, adapters to every other service.
+- **Placement:** two **Rocky 9** Proxmox VMs (Itential supports only RHEL/Rocky; Ubuntu is explicitly unsupported): `itential` (Platform 6 + MongoDB 7 + Redis 7 all-in-one, sized in the budget) and `iag` (Gateway 5 server + runner with the Ansible collections for PAN-OS, IOS XE, EOS, NIOS and NetBox).
+- **Components:** versions per manifest section 3; installed with Itential's `itential.deployer` and `itential.iag5` Ansible collections from the Itential software repository (credentials are an owner step). Adapters from the open-source library: NetBox, ServiceNow, Panorama, Infoblox, Zabbix, Vault (Phase 9), generic git for Gitea (Phase 9). **There is no adapter for Cisco IOS XE or Arista EOS**: those devices are reached through Gateway (netmiko/NETCONF/Ansible) and the vendor pre-built automations. Local admin account plus LDAP to Active Directory in Phase 7 (Platform supports SAML and LDAP for users, not OIDC).
+- **Licence risk:** Itential publishes no licence-file mechanism or trial terms; the owner confirms repository access and licence terms before this phase starts (PIS-04 trigger). If access cannot be obtained, this phase is blocked and the PID is amended, not worked around.
+- **Acceptance:**
+  1. Platform UI and API reachable on 10.100.0.65 over TLS from the lab CA; IAG registered as a gateway in the platform.
+  2. NetBox adapter: a workflow reads the device list and returns the same count as `GET /api/dcim/devices/`.
+  3. Device adapters: a workflow runs `show version` on one node of each vendor through IAG and the version string equals the manifest.
+  4. First workflow (`wf-branch-vlan-v1`): given a branch and a VLAN name, reserves a VLAN in NetBox and configures it on the branch switch, with a manual approval task and a NetBox rollback on failure. Runs green twice; the second run is a no-op.
+  5. Licence state and any expiry recorded in the manifest; expiry monitored by Zabbix from Phase 8.
+  6. `itential` VM memory pressure measured after 24 h of normal use (`free`, MongoDB WiredTiger cache); if above 80 % the budget lever list is applied by PR.
+- **Verification:** `verify/test-05-itential.sh`.
+
+### S4b — ServiceNow PDI adapter configuration (Phase 5)
+
+- **Purpose:** ticket-driven automation entry point.
+- **Placement:** external (ServiceNow Personal Developer Instance owned by Elliot). Only the adapter configuration and a keep-alive job live in this repo.
+- **Components:** Itential ServiceNow adapter pointed at the PDI over HTTPS with a dedicated integration user (basic auth, credentials in `.env`, later Vault); the `wf-branch-vlan-v1` workflow extended to open, update and close a change request; the PDI's Itential-related customisations exported as an update set into `servicenow/` in this repo so a reclaimed PDI can be rebuilt.
+- **Keep-alive is a human step.** ServiceNow reclaims a PDI that is 90+ days old with no *interactive* login in 10 days, and API traffic does not count (manifest 3.4). The owner logs in at least every 10 days (calendar reminder recorded in `docs/manual-steps.md`); `verify/` checks the PDI's last-login date and warns at 7 days.
+- **Acceptance:**
+  1. Adapter health check green in the platform.
+  2. A workflow creates a change request, writes the NetBox reservation into its work notes, and closes it; the change's state history shows all three transitions.
+  3. The update set export exists in the repo and re-imports cleanly into a fresh PDI (tested once).
+  4. The PDI instance name and release family are recorded in `.env` and the manifest, never the password.
+  5. `verify/` reports days since the last interactive login and fails the phase test if over 10.
+- **Verification:** part of `verify/test-05-itential.sh` (skips with a loud `HIBERNATED` message, not a pass, if the PDI is asleep).
+
+### S5 — DDI: Infoblox NIOS with BIND9 + Kea secondary (Phase 6)
+
+- **Purpose:** authoritative DNS and DHCP for `lab.internal` and the OOB/in-band segments, driven from NetBox, with an eval-proof fallback (ADR 0009).
+- **Placement:** Proxmox VMs `nios` (ADR 0006) and `ddi-fallback` (Ubuntu: BIND9 secondary, Kea standby).
+- **Components:** NIOS grid master with the temporary evaluation license, WAPI enabled; zone generator (`ddi/netbox_to_wapi.py`, later an Itential workflow) that renders every NetBox IP with a DNS name into A/PTR records and every reservation into DHCP fixed addresses; BIND9 as secondary for both zones with 4-week SOA expire; Kea with the same fixed addresses, disabled; `oob-gw` switches from forwarding resolver to forwarding to `nios`/`ddi-fallback`; every VM's cloud-init and every EVE node's config lists both resolvers.
+- **Acceptance:**
+  1. `dig @10.100.0.67 netbox.lab.internal` and `dig @10.100.0.68 netbox.lab.internal` return the same answer and the same SOA serial.
+  2. Every hostname in the IP plan resolves forward and reverse on both servers; the record count on NIOS equals the count of NetBox IPs with a DNS name.
+  3. A throw-away EVE node on `pnet1` gets an address from the `.240-.254` pool via NIOS DHCP.
+  4. Failover drill: stop `nios`; all names still resolve via `ddi-fallback`; start Kea; the throw-away node renews; stop Kea; start `nios`; serial on both servers matches within one refresh interval.
+  5. NIOS eval expiry date recorded in the manifest and alerted on 14 days before by Zabbix (Phase 8).
+  6. Redeploy drill: `tofu taint` + apply on `nios`, re-license, re-run generator: acceptance 1-2 pass again in under 45 minutes.
+- **Verification:** `verify/test-06-ddi.sh`.
+
+### S6 — Identity and AAA: Windows Server AD DS/DNS, tac_plus, Keycloak (Phase 7)
+
+- **Purpose:** one directory for humans, SSO for every web UI, TACACS+ for every network device.
+- **Placement:** `dc01` Proxmox VM (Windows Server eval, AD DS + AD-integrated DNS for `ad.lab.internal`); tac_plus and Keycloak in k3s with MetalLB VIPs 10.100.0.34 / .33.
+- **Components:** AD forest `ad.lab.internal`, OU structure (NetAdmins, NetOps, ReadOnly, ServiceAccounts), test users; `lab.internal` delegates `ad.` to `dc01` and `dc01` forwards everything else to NIOS; tac_plus with LDAP (AD) backend, three privilege profiles (admin/operator/read-only) mapped from AD groups, per-vendor command authorisation for PAN-OS, IOS XE, EOS; Keycloak with AD user federation, realm `lab`, OIDC clients for NetBox, Grafana and Gitea, SAML client for Zabbix; Itential authenticates users with LDAP straight to AD (its documented method; Keycloak-as-SAML-IdP for Itential is a stretch goal, not a criterion); all behind the lab CA.
+- **Acceptance:**
+  1. `dc01` promoted, `nslookup dc01.ad.lab.internal` works from NIOS, and `lab.internal` delegation resolves from `dc01`.
+  2. Windows eval expiry recorded; `slmgr /dlv` output stored in `verify/results/`; a rearm runbook exists in `docs/`.
+  3. A user in AD group NetAdmins logs in over SSH to one device of each vendor via TACACS+ and lands at privilege 15 / superuser / network-admin; a ReadOnly user cannot run `configure`; the tac_plus accounting log shows both sessions.
+  4. The same AD user logs into NetBox, Grafana and Gitea via Keycloak, and into Itential via LDAP, without a local password; a disabled AD user is refused everywhere within 5 minutes.
+  5. The `automation` local accounts on devices remain as break-glass and are excluded from TACACS+ by role.
+- **Verification:** `verify/test-07-identity.sh`.
+
+### S7 — Observability: Zabbix, Prometheus + Grafana, gNMIc, Loki (Phase 8)
+
+- **Purpose:** know the state of every service and device; feed Itential pre/post checks and expiry alerts.
+- **Placement:** k3s (VIPs .35-.39), all backed by CloudNativePG (Zabbix) and Longhorn.
+- **Components:** Zabbix server + web (SNMPv3 templates for PA-VM, IOS XE, EOS; agent on every Ubuntu VM; HTTP checks for every UI; calendar items for every eval/licence expiry from the manifest); kube-prometheus-stack (Prometheus, Alertmanager, Grafana, node-exporters; SNMP exporter for devices; blackbox exporter for VIPs); gNMIc subscribing to interface counters and BGP state from C8000v and vEOS, exporting to Prometheus; Loki with Alloy for k3s/VM logs and a syslog receiver on .38 for every device and Panorama; Grafana dashboards: "Lab health", "Fabric", "WAN", "Firewalls", "Expiries", all provisioned from git.
+- **Acceptance:**
+  1. Zabbix shows every host in the IP plan as monitored and green; the "Expiries" host has one item per manifest expiry with a trigger at 14 days.
+  2. Prometheus target count equals the number of exporters declared in git; no target is down.
+  3. gNMIc reports a BGP session count for `dc1-spine01` that equals `show bgp summary`.
+  4. Loki returns a syslog line from each vendor within 60 s of triggering a config change.
+  5. Grafana login via Keycloak; every provisioned dashboard renders with data.
+  6. Shutting down `br1-wan01` raises a Zabbix trigger and an Alertmanager alert within 3 minutes; starting it clears both.
+- **Verification:** `verify/test-08-observability.sh`.
+
+### S8 — Config, secrets, code: Oxidized, Vault, Gitea (Phase 9)
+
+- **Purpose:** configuration history for every device, a secrets store that replaces `.env`, and an in-lab git server for Oxidized output and Itential pre-built artefacts.
+- **Placement:** k3s (VIPs .40-.42).
+- **Components:** Gitea (CloudNativePG backend, Keycloak SSO, repos `oxidized-configs` and `itential-artifacts`); Oxidized with a NetBox source (device list read from NetBox tags), models for PAN-OS, IOS XE, EOS, NIOS, git output to Gitea, webhook on change; Vault (Raft storage on Longhorn, auto-unseal is out of scope so unseal keys are held by Elliot, KV v2 for device/service credentials, PKI secondary CA issued from the lab root, Kubernetes auth for workloads, AppRole for Itential and IAG). Migration: every `.env` secret except the Proxmox token and the Vault unseal material moves to Vault; `.env.example` is updated to reference Vault paths.
+- **Acceptance:**
+  1. Oxidized shows every device in NetBox with tag `oxidized` as `success`; a config change on `br2-sw01` appears as a Gitea commit within 15 minutes.
+  2. Vault is unsealed, `vault kv get lab/devices/automation` works with the Itential AppRole and fails with no token.
+  3. Itential reads device credentials from Vault (adapter config contains no password); IAG the same.
+  4. `.env` on the workstation contains only the Proxmox token, the Vault address and the Vault unseal reference; `gitleaks` still clean.
+  5. cert-manager issues certificates from the Vault PKI issuer.
+- **Verification:** `verify/test-09-config-secrets-code.sh`.
+
+### S9 — Panorama (Phase 10)
+
+- **Purpose:** central firewall management so Itential drives policy through one API and the firewalls get templates, device groups and a shared object model.
+- **Placement:** Proxmox VM `panorama` (ADR 0006), management-only mode.
+- **Components:** Panorama with its eval state per the manifest; templates `dc-fw`, `branch-fw`; device groups `dc`, `branch1`, `branch2`; log forwarding to Loki syslog; all four PA-VMs onboarded with local config migrated into templates; Itential Panorama adapter; `wf-branch-vlan-v1` extended to add the branch security policy and NAT via Panorama and commit-all with a manual approval.
+- **Acceptance:**
+  1. `show devices connected` on Panorama lists all four firewalls as connected and in sync.
+  2. A rule pushed from Panorama appears in `show running security-policy` on `br1-fw01`.
+  3. HA state of the DC pair is visible in Panorama; forcing failover keeps the pair managed.
+  4. The extended workflow closes its ServiceNow change with the Panorama commit job ID in the notes.
+  5. Panorama/PAN-OS licensing state and any expiry recorded in the manifest and alerted in Zabbix.
+- **Verification:** `verify/test-10-panorama.sh`.
+
+### S10 — Containerlab CI/test tier (Phase 11)
+
+- **Purpose:** a cheap, fast twin of the DC fabric (cEOS) where Itential validates switch changes before EVE-NG.
+- **Placement:** Proxmox VM `clab` (Ubuntu, Docker, Containerlab, nested KVM not required for cEOS).
+- **Components:** Containerlab topology generated from the same `topology/dc1.yaml` (spines, leaves, access as cEOS; firewalls and WAN replaced by Linux stubs), Gitea Actions runner on `clab` that, on every push to `oxidized-configs` or `itential-artifacts`, deploys the twin, applies the candidate config via eAPI, runs the fabric checks (BGP/EVPN/MLAG state, reachability), and reports; Itential calls the runner before pushing to EVE-NG.
+- **Acceptance:**
+  1. `containerlab deploy` from the generated topology brings up the twin in under 5 minutes; EVPN peers established.
+  2. A deliberately broken VLAN change fails the runner and the Itential workflow stops before touching EVE-NG.
+  3. A valid change passes the runner and proceeds; both outcomes visible in Gitea Actions and in the Itential job.
+  4. cEOS version equals the vEOS version in the manifest.
+  5. Twin RAM usage stays under the `clab` line in the budget.
+- **Verification:** `verify/test-11-containerlab.sh`.
+
+---
+
+## Domain 2 — Evaluation Design
+
+**PIS-06/07/08 — Eval cases.** The per-phase verification tests in section 2
+are the primary evals (written now, before any build code). The table lists
+the cross-cutting cases, including the required edge cases, that no single
+phase owns.
+
+| # | Input / scenario | Expected output | Pass condition (two people would agree) | Edge |
+|---|---|---|---|---|
+| E1 | Fresh clone + `.env` + staged images, run `make up` | Lab at the last merged phase | Every `verify/test-*.sh` for merged phases exits 0; only `docs/manual-steps.md` steps were manual | |
+| E2 | Golden-path workflow from a ServiceNow change (PIS-05 item 2) | VLAN, policy, DNS, DHCP delivered; change closed | All six sub-steps logged in the Itential job; `br1-pc01` pings the new gateway; elapsed < 10 min | |
+| E3 | Cold start of the whole EVE-NG lab (PAN-OS boot storm) | All nodes manageable | Every management IP answers SSH within 20 min; EVE host load average < 2x vCPU count for no more than 10 min | yes |
+| E4 | Stop `nios` (eval expiry simulation) | DNS continues, DHCP fails over | 100 % of IP-plan names resolve via `.68`; a client renews from Kea; after `nios` returns, serials match | yes |
+| E5 | Stop one k3s node with `tofu` | Services stay up | Every MetalLB VIP answers within 5 min; Longhorn volumes healthy with 2 replicas | yes |
+| E6 | NetBox unreachable during a workflow | Workflow fails closed | Itential job status `error`, no device touched (device config hash unchanged), ServiceNow change left in `implement` with an error note | yes |
+| E7 | Topology YAML says a leaf has 8 links, EVE-NG has 7 (drift) | Drift detected, not silently accepted | `verify/test-04` exits non-zero naming the device and the missing link; NetBox still shows 8 | yes (silent-failure eval, PIS-21) |
+| E8 | ServiceNow PDI hibernated | Loud skip | `verify/test-05` prints `HIBERNATED` and exits 2 (not 0, not 1) | yes |
+| E9 | A commit adds a string matching a token pattern | Blocked | pre-commit and CI gitleaks fail | |
+| E10 | `qm config` sum vs `docs/resource-budget.md` | They match | Allocated vCPU/RAM within 2 % of the budget doc and under ceilings | |
+| E11 | Wrong-image silent failure: a node boots an older qcow2 | Detected | `show version` string != manifest string -> `verify/test-04` fails | yes (PIS-21) |
+| E12 | Windows eval expiry approach | Alerted | Zabbix trigger fires 14 days before the date in the manifest | |
+
+**PIS-09 — Eval execution method.** `make verify` -> `verify/run.sh` runs every
+`verify/test-*.sh` (bash + `jq` + `curl` + `ssh`, Python only where a vendor
+SDK is needed), writes `verify/results/<UTC>-<test>.log`, and exits non-zero
+on any failure. Each test reads *intent* from NetBox and *state* from at least
+two of: the Proxmox API, the EVE-NG API, the device itself, the service's own
+API. Tests never write to NetBox or devices except to create and delete an
+object clearly named `verify-<timestamp>`. Results are committed in the phase
+PR. Drills that are disruptive (E3, E4, E5) run only when invoked with
+`VERIFY_DRILLS=1` and are recorded separately.
+
+**PIS-10 — Minimum pass threshold.** 100 % of a phase's tests must pass for
+its PR to merge; a phase PR is the only place a test may be added or changed.
+Zero-tolerance failures (the PR is blocked regardless of anything else): any
+diff to `vmbr0`/`nic1`, any secret in git, any verifier that writes to NetBox
+or a device outside its `verify-*` objects, any allocation above the ceilings.
+
+---
+
+## Domain 3 — Agent Decomposition
+
+**PIS-11 — Task breakdown.** Each phase is one task with one input and one
+output; inside a phase, each sub-task follows the same rule.
+
+| Phase | Input | Output |
+|---|---|---|
+| 2 OOB | `docs/ip-plan.md`, `.env`, discovery snapshot | `tofu/oob/` applied, NetBox seeded, `verify/test-02` green |
+| 3 platform | Template from Phase 2, `docs/resource-budget.md` | kubeconfig (local), `k8s/platform/` applied, `verify/test-03` green |
+| 4 topology | `topology/dc1.yaml`, `topology/branches.yaml`, staged images | EVE-NG lab + NetBox devices, `verify/test-04` green |
+| 5 itential | Itential artefacts, NetBox, PDI credentials | Platform + IAG + adapters + `wf-branch-vlan-v1`, `verify/test-05` green |
+| 6 ddi | NetBox IPs with DNS names, NIOS image | NIOS + `ddi-fallback` serving generated zones, `verify/test-06` green |
+| 7 identity | Windows ISO, AD design in this PID | `dc01`, tac_plus, Keycloak, SSO on four apps, `verify/test-07` green |
+| 8 observability | NetBox device list, manifest expiries | Zabbix/Prometheus/gNMIc/Loki + dashboards, `verify/test-08` green |
+| 9 config-secrets-code | `.env` secret inventory, NetBox tags | Oxidized/Vault/Gitea, `.env` reduced, `verify/test-09` green |
+| 10 panorama | Panorama image, four PA-VMs | Panorama managing all firewalls, workflow extended, `verify/test-10` green |
+| 11 containerlab | `topology/dc1.yaml`, cEOS image | `clab` runner gating Itential, `verify/test-11` green |
+
+Sub-task shape inside every phase: (1) preflight `make discover` diff, (2)
+NetBox objects, (3) `tofu plan` -> review -> `apply`, (4) Ansible, (5) service
+config, (6) verify, (7) results + docs + ADRs, (8) PR.
+
+**PIS-12 — Dependency graph.**
+
+```mermaid
+flowchart LR
+  P1[1 PID] --> P2[2 OOB]
+  P2 --> P3[3 k3s platform]
+  P2 --> P4[4 EVE topology]
+  P3 --> P5[5 Itential]
+  P4 --> P5
+  P4 --> P6[6 DDI]
+  P3 --> P6
+  P3 --> P7[7 Identity]
+  P6 --> P7
+  P3 --> P8[8 Observability]
+  P4 --> P8
+  P8 --> P9[9 Oxidized/Vault/Gitea]
+  P7 --> P9
+  P5 --> P10[10 Panorama]
+  P4 --> P10
+  P9 --> P10
+  P9 --> P11[11 Containerlab]
+  P5 --> P11
+```
+
+Merge order is strictly 2 -> 11 (ADR 0008) even where the graph would allow
+parallelism, because one host, one operator and one PR at a time is the rule.
+
+**PIS-13 — Planner vs single-shot.**
+
+| Work | Mode | Why |
+|---|---|---|
+| A phase build | Planner (Claude Code interactive session with plan mode, this PID and the phase issue as the spec) | Multi-step, stateful, needs approval gates |
+| Version/vendor research | Single-shot sub-agents with web access, one per vendor group | Independent, parallel, output is a report |
+| Lint/format fixes, ADR drafting, issue creation | Single-shot | One input, one output |
+| Itential workflows (Phase 5+) | Itential's own planner (workflow engine); Claude Code only authors the workflow JSON | The platform is the orchestrator; no LLM in the runtime path |
+
+**PIS-14 — Context sizing.** One phase per Claude Code session, started from a
+handoff message like the one that started this session (repo, phase, rules,
+read-list). Reading order at session start: `README.md`, this PID (section 2
+entry for the phase only), the phase issue, `docs/ip-plan.md`,
+`docs/resource-budget.md`, the manifest rows for the phase, the ADR index.
+Never re-run discovery to relearn facts already in `docs/discovery.md`; run
+it only as a preflight diff. Phases 4 and 5 are the largest; if a session
+exceeds roughly 60 % of its context, the agent writes `docs/handoff-phase-N.md`
+(state, next step, open questions) and the next session continues from it.
+
+**PIS-15 — Handoff contracts.**
+
+| From -> To | Format | Contract |
+|---|---|---|
+| `topology/*.yaml` -> `eve/build.py` and `netbox/seed.py` | YAML, schema `topology/schema.json` | Nodes: name, role, site, image (manifest key), vCPU/RAM (must equal budget), interfaces with peer; the schema is the oracle; builders never mutate it |
+| NetBox -> Ansible | `netbox.netbox.nb_inventory` dynamic inventory | Group by role/site/platform; primary IP is the OOB address; no static inventory files |
+| NetBox -> DDI generator | REST `ipam/ip-addresses/?dns_name__n=` | Every IP with `dns_name` becomes A + PTR; nothing else |
+| OpenTofu -> Ansible | `tofu output -json` consumed by a small script into inventory vars | VM IDs, MACs, OOB IPs |
+| `.env` -> every tool | `KEY=value`, loaded by `make` | Keys enumerated in `.env.example`; a missing key fails the target loudly |
+| verify -> repo | `verify/results/<UTC>-<test>.log` + exit code | 0 pass, 1 fail, 2 skipped-with-reason |
+| Itential -> devices | Adapter calls, never raw SSH from workflows | IAG holds the device access; workflows call IAG |
+| Phase N session -> Phase N+1 session | PR description (built / verified / deferred) + issue closure | The only carrier of "what is done" |
+
+---
+
+## Domain 4 — Failure Mode Pre-Mortem
+
+The named risks first, then the six PIS failure types.
+
+| Risk | What happens | Mitigation | Residual |
+|---|---|---|---|
+| **Single SSD** (assumption 16) | Disk dies; every VM, EVE-NG and NetBox are lost | Everything is rebuildable from this repo + `/srv/images` copy on the workstation + `.env`; nightly NetBox and Gitea backups are pulled to the workstation by a cron in Phase 9; `make up` is the restore procedure and E1 proves it | Rebuild takes a day; vendor evals may need re-activation |
+| **Nested virtualisation** | EVE-NG nodes (already nested) are slow to boot; Containerlab inside a VM adds another layer | Panorama and NIOS run natively on Proxmox (ADR 0006); cEOS is a container so `clab` needs no nested KVM; EVE nodes get `cpu host` and the wave start in S3 | PA-VM cold boot still 10-15 min |
+| **Windows / Infoblox eval expiry** | Windows Server shuts down hourly after 180 days (rearm count conflicting in Microsoft's own answers, and a known bug expires some 2025 evals at ~50 days), Windows 11 eval 90 days, NIOS temp licence 60 days and the software stops at expiry | Expiry dates in the manifest; Zabbix "Expiries" host alerts at 14 days; ADR 0009 keeps DNS alive; rearm/redeploy runbooks in `docs/`; AD is rebuilt from an Ansible play + a `dcpromo` answer file, so a redeploy is < 1 hour | Users must be recreated from the play; Keycloak federation reconnects by config |
+| **PAN-OS boot storms** | Four PA-VMs starting together saturate EVE-NG's 24 vCPU for 10+ minutes and can time out | Builder starts firewalls in waves; `verify/test-04` measures the 20-minute bound (E3); EVE-NG CPU allocation is reviewed if E3 fails | Slower lab start |
+| EVE-NG Pro license expiry 2027-04-15 | Lab stops | Zabbix expiry item; renewal is a manual step | |
+| RAM ceiling | Adding a service breaches 280 GB | Budget doc is a merge gate (E10); EVE-NG allocation can be trimmed from 128 GB because it uses far less at idle | |
+| Itential licence / repository access | Software cannot be downloaded, or a licence expires | No public trial or licence-file mechanism exists (manifest 3.2); the owner confirms Nexus/JFrog access and licence terms *before* Phase 5 starts; escalation trigger in PIS-04 | Depends on vendor; Phase 5 may slip |
+| Panorama licence | Unlicensed Panorama may refuse to manage devices, or commits may stop after a 180-day grace | Owner requests an evaluation Panorama licence via the support portal before Phase 10; the phase is planned last-but-one to leave time; firewalls stay Itential-managed directly if Panorama is unlicensed | Panorama phase may reduce to "onboarded, read-only" |
+| Itential all-in-one undersized | Platform slow or MongoDB OOM at 24 GB | Vendor publishes only 16/64 + 16/128 dev sizing; budget section 5 levers free up to 26 GB; measured in S4 criterion 6 | May need EVE-NG trim (restart) |
+| ServiceNow PDI hibernation / reclaim | Adapter fails | Keep-alive job (S4b); E8 makes the failure loud | Reclaim after long inactivity requires a new PDI and a config change |
+| Thin-pool exhaustion | All VMs pause | Budget tracks disk too; Longhorn 2 replicas; Zabbix monitors `local-lvm` usage at 80 % | |
+| Home-LAN address clash for `oob-gw` | Two hosts on one IP | Owner picks the static (A-19); NetBox records it; `arping` check in Phase 2 before assignment | |
+| k3s certificate rotation / etcd on one disk | API outage after a year; etcd loss | k3s auto-rotates on restart; etcd snapshots to Longhorn and to the workstation nightly | |
+
+**PIS-16 — Context degradation.** One phase per session; handoff documents when
+a session passes ~60 % context; the read-list in PIS-14 is the summary that
+must survive. Long tool outputs (`tofu plan`, discovery logs) are written to
+`verify/results/` and referenced, not pasted back into the conversation.
+
+**PIS-17 — Specification drift.** Every phase session starts by reading the
+phase's section-2 entry and its GitHub issue (acceptance criteria copied
+verbatim from here). The PR template's "verified" list must quote those
+criteria one by one. A criterion not listed is a criterion not met.
+
+**PIS-18 — Input data validation.** Ground truth accepted by the build agent:
+`docs/discovery.md` (validated by re-running `verify/discover.sh` as a
+preflight and diffing), NetBox (validated against the IP plan by
+`verify/test-02`), the image manifest (every version carries a source URL and
+a verification date; checksums verified in `/srv/images` before import), and
+this PID. Vendor documentation is never trusted from memory.
+
+**PIS-19 — Tool audit.** Each tool owns one layer; no overlap.
+
+| Layer | Owner | Never used for this layer |
+|---|---|---|
+| Proxmox bridges, VMs, templates, storage | OpenTofu (`bpg/proxmox`) | `qm` by hand, the web UI |
+| Host-level one-offs (LV, `snippets`, API user) | Ansible play against the host over SSH | ad-hoc SSH commands |
+| Guest OS and application config | Ansible | cloud-init beyond bootstrap |
+| EVE-NG lab nodes and links | `eve/` REST client from `topology/` | EVE-NG web UI |
+| IPAM and inventory | NetBox API via `netbox/seed.py` | hand-edited YAML inventories |
+| k3s workloads | Helm values + Kustomize in `k8s/` | `kubectl apply` of unsaved manifests |
+| Device configuration after Phase 5 | Itential via IAG | direct Ansible against devices (except baseline in Phase 4) |
+| Verification | `verify/` scripts, read-only | any build tool |
+
+**PIS-20 — Cascading failure gates.** `make up` runs phases in order and stops
+at the first failing phase target; a phase target begins by running the
+previous phase's verify script. NetBox seeding precedes any address use. Itential
+workflows have a NetBox-first, device-last ordering with rollback of the NetBox
+reservation on device failure, and the Containerlab twin (Phase 11) gates
+fabric changes.
+
+**PIS-21 — Silent failures.** Plausible-but-wrong outputs for this system and
+the eval that catches each: a VM that applied but never got its cloud-init
+address (E1/test-02 checks SSH + hostname from NetBox, not just `tofu` exit
+code); an EVE node running an older image (E11); a NetBox object that exists
+but is not what the YAML says (E7); a workflow that reports success while the
+device rejected the commit (E2 checks device state, not the job status); a
+verify test that "passes" because the target was unreachable and the script
+treated empty output as pass (every test asserts on a positive value and fails
+on empty).
+
+---
+
+## Domain 5 — Trust and Guardrail Design
+
+**PIS-22 — Action classification.**
+
+| Class | Actions | Gate |
+|---|---|---|
+| Read-only | Discovery, `tofu plan`, `kubectl get`, NetBox GET, EVE-NG GET, device `show` | None |
+| Reversible write | `tofu apply` on lab VMs/bridges other than `vmbr0`; Ansible on lab guests; NetBox objects created by the current phase; EVE-NG lab create/start/stop; Helm install/upgrade; Itential workflow runs on lab devices | PR review of the plan; verify test |
+| Irreversible write | Deleting VMs, LVs, Longhorn volumes, NetBox objects from earlier phases, EVE labs; rebooting EVE-NG or the host; anything on `vmbr0`/`nic1`/home LAN; rotating a credential that is not yet in `.env`; activating an eval licence | Explicit approval from Elliot in the session, recorded in the PR |
+
+**PIS-23 — Blast radius.** Worst case: a network change on the Proxmox host
+takes `vmbr0` down and the host is reachable only from its console. This is
+unacceptable, so nothing in this repo manages `vmbr0`, `nic1` or `/etc/network/interfaces`
+beyond an *additive* `vmbr1` stanza that already exists; verify checks the
+`vmbr0` stanza is unchanged (S1 criterion 7). Second worst: thin-pool
+exhaustion pauses every VM including NetBox and EVE-NG; mitigated by the
+budget and monitoring. Everything else is contained to the lab and is
+rebuildable. Accepted.
+
+**PIS-24 — Hard stops.** The build agent must never: modify `vmbr0`/`nic1`/home
+router; commit a secret or an image; force-push or bypass CI; report a step as
+done without a committed verification result; fabricate a version, checksum or
+URL (write UNVERIFIED instead); start a phase before the previous PR is merged;
+exceed the resource ceilings; let a verifier write to NetBox or a device; edit
+NetBox to match observed state. Itential workflows must never commit to a
+device without a completed approval task, and never touch a device that is not
+in NetBox.
+
+---
+
+## Domain 6 — Context Architecture
+
+**PIS-25 — Classification.**
+
+| Class | Sources |
+|---|---|
+| Persistent | This repo (PID, ADRs, IP plan, budget, manifest, discovery, manual steps), NetBox, the staged images and their checksums |
+| Per-session | The phase issue, the previous PR description, `verify/discover.sh` preflight diff, `.env`, `tofu` state, current `verify/results/` |
+| Ephemeral | `tofu plan` output, Ansible run output, EVE-NG API responses, device `show` output during a test, sub-agent research reports (distilled into the manifest, then discarded) |
+
+**PIS-26 — Retrieval strategy.** No vector or BM25 retrieval; the corpus is
+small and structured. Retrieval is (1) the fixed read-list in PIS-14, (2)
+NetBox REST filters for every network fact, (3) the Proxmox/EVE-NG APIs for
+current state, (4) web search restricted to vendor pages for versions, with the
+URL recorded. Sub-agents return reports; only distilled, sourced facts enter
+`docs/`.
+
+**PIS-27 — Dirty data risks.**
+
+| Risk | Mitigation |
+|---|---|
+| `docs/discovery.md` goes stale after Phase 2 changes the host | Preflight `make discover` at every phase start; the diff is attached to the PR; `docs/discovery.md` is amended with a dated section, never rewritten |
+| Vendor versions move | Manifest rows carry `verified` dates and URLs; a phase that imports an image re-checks the row and bumps via a new ADR |
+| EVE-NG default `lab.local` vs `lab.internal` | Topology builder sets the domain explicitly |
+| Stale kubeconfig on the workstation pointing at the dead cluster | Phase 3 writes a new kubeconfig to a path in `.env` and the old one is removed |
+| Two sources for an IP | Forbidden by ADR 0002; NetBox wins; `verify/test-02` diffs the plan against NetBox |
+| Research sub-agent reports "UNVERIFIED" | The manifest keeps the tag; the phase that needs the fact resolves it before use |
+
+---
+
+## Domain 7 — Cost and Token Economics
+
+The runtime system contains no LLM. Token cost is the cost of *building* the
+lab with Claude Code; the other costs are electricity and licences.
+
+**PIS-28 — Token budget per phase session (estimate, not yet measured).**
+Assumptions: Phase 0 and Phase 1 sessions are the prototype; a build phase
+reads ~40k tokens of docs, produces ~25k tokens of code/docs, and accumulates
+~150k tokens of tool output over a session. The one measured figure is the
+Phase 1 research fan-out (five sub-agents, token counts from their completion
+reports). Build-session values are to be added from the Claude Code usage view
+at the end of Phase 2 and this table amended.
+
+| Item | Tokens |
+|---|---|
+| System prompt + global rules + skills | 20,000 |
+| Context read per session (read-list) | 40,000 |
+| Tool output accumulated per session | 150,000 |
+| Output (code, docs, PR text) | 25,000 |
+| Total per phase session | 235,000 |
+| With 1.5x buffer | 352,500 |
+| Sub-agent research (Phase 1, measured): 5 agents, 125k + 146k + 118k + 159k + 171k | 719,000 |
+| Project total, 10 remaining build phases x 1.5 sessions each, plus Phase 1 | ~6.0 M |
+
+**PIS-29 — Model assignments.**
+
+| Task | Model | Why |
+|---|---|---|
+| Phase planning and build (interactive) | Fable 5.1 (this session's model) | Multi-step, stateful, high cost of a wrong infrastructure action |
+| Web research sub-agents | Same tier, delegated | Accuracy of version facts matters more than cost; parallel so wall-clock is short |
+| Lint fixes, boilerplate ADRs | Could be Sonnet 5 | Structured, low-risk; not worth a model switch inside a session |
+| Runtime automation (Itential) | No LLM | Deterministic workflows; an LLM in the change path would violate PIS-24 |
+
+**PIS-30 — Cost and value.**
+
+| Item | Estimate | Basis |
+|---|---|---|
+| Token cost | Covered by the existing Claude subscription; API-equivalent list-price cost for ~6 M tokens is recorded when Phase 2 measures real usage | PIS-28 |
+| Electricity | R640 at ~300 W average = ~216 kWh/month = ~$30/month at $0.14/kWh (assumption, owner to confirm the tariff) | |
+| Licences | $0 incremental: EVE-NG Pro already owned, all images are evals or free lab editions | Manifest |
+| Value | Portfolio and video content for a network automation audience; a reusable Itential demo environment; hands-on coverage of every product in the stack. Manual build estimate 120-160 hours; with this repo a rebuild is one command | |
+| ROI | Justified: **Yes**. Recurring cost is electricity; the alternative (cloud lab) exceeds $300/month for this footprint | |
+
+---
+
+## 3. Phased delivery plan
+
+| Phase | Branch | Exit test | Human steps (manual-steps.md) |
+|---|---|---|---|
+| 2 | `phase-2/oob-network` | `verify/test-02-oob.sh` | Confirm `oob-gw` home-LAN IP; nothing else |
+| 3 | `phase-3/platform` | `verify/test-03-platform.sh` | none |
+| 4 | `phase-4/network-topology` | `verify/test-04-topology.sh` | Download PA-VM, C8000v (if bumped), vEOS/Aboot, Windows 11 eval to `/srv/images` |
+| 5 | `phase-5/itential` | `verify/test-05-itential.sh` | Confirm Itential repository credentials and licence terms; download Platform/Gateway RPMs; create the PDI integration user; log into the PDI every 10 days from then on |
+| 6 | `phase-6/ddi` | `verify/test-06-ddi.sh` | Download NIOS eval, apply the temp licence on the console |
+| 7 | `phase-7/identity` | `verify/test-07-identity.sh` | Download Windows Server eval ISO |
+| 8 | `phase-8/observability` | `verify/test-08-observability.sh` | none |
+| 9 | `phase-9/config-secrets-code` | `verify/test-09-config-secrets-code.sh` | Hold Vault unseal keys |
+| 10 | `phase-10/panorama` | `verify/test-10-panorama.sh` | Download Panorama; request an evaluation Panorama licence |
+| 11 | `phase-11/containerlab` | `verify/test-11-containerlab.sh` | Download cEOS-lab |
+
+Each PR description is the phase report: **built / verified / deferred**, with
+the verify log path and any ADRs added.
+
+---
+
+## 4. Resolution of the Phase 0 assumptions (`docs/discovery.md` §6)
+
+| # | Assumption | Resolution |
+|---|---|---|
+| 1 | Reviews on a solo repo | **Resolved:** owner merges with admin bypass; the PR description is the review record. No second account. |
+| 2 | `vmbr1` uplink stays unplugged | **Resolved:** yes, host-internal OOB (ADR 0003, 0004). |
+| 3 | OOB addressing | **Resolved:** 10.100.0.0/24 untagged, inside 10.100.0.0/14 (ADR 0003, `docs/ip-plan.md`). |
+| 4 | Proxmox API identity | **Resolved as planned:** `tofu@pve` + scoped token, created by the Phase 2 host play, stored in `.env`. |
+| 5 | `snippets` on `local` | **Resolved:** enabled by the Phase 2 host play. |
+| 6 | EVE-NG second vNIC | **Resolved:** hot-plug `net1` on `vmbr1` in Phase 2; reboot fallback documented in that PR; EVE-NG reboot is an irreversible-class action needing approval. |
+| 7 | Image staging capacity | **Resolved:** 200 GB thin LV at `/srv/images` (ADR 0007). |
+| 8 | RAM budget | **Resolved:** fits with headroom shown in `docs/resource-budget.md`; EVE-NG stays at 128 GB for now, trim is the first lever if needed. |
+| 9 | k3s placement | **Resolved:** Phase 3, three server nodes, Cilium/MetalLB/Longhorn (ADR 0008; versions in the manifest ADRs). |
+| 10 | NetBox stays on VM 110 | **Resolved:** yes (S0). |
+| 11 | NetBox guest agent | **Resolved:** Phase 2 Ansible. |
+| 12 | EVE admin password | **Resolved:** rotated in Phase 2, stored in `.env`, moved to Vault in Phase 9. |
+| 13 | DNS domain | **Resolved:** `lab.internal`, AD `ad.lab.internal` (ADR 0005). |
+| 14 | Existing EVE images are candidates | **Resolved:** manifest decides per image with an ADR each. |
+| 15 | Workstation SSH key as automation identity | **Carried forward** to Phase 9: stays the identity until Vault issues SSH certificates or per-service keys. |
+| 16 | Single SSD | **Carried forward** as an accepted risk (PIS-23); mitigation is rebuildability + off-host backups from Phase 9. |
+| 17 | NetBox VM sizing kept | **Resolved:** kept, counted in the budget. |
+| 18 | NetBox token hygiene | **Resolved:** Phase 2 mints a described token with a 1-year expiry; the old token is deleted after the new one is verified. |
+| 19 *(new)* | `oob-gw` home-LAN address | **Open for the owner:** proposal 192.168.68.245; must be confirmed free before Phase 2 `tofu apply`. |
+
+---
+
+## 5. Amendments
+
+| Version | Date | Change |
+|---|---|---|
+| 1.0 | 2026-09-06 | Initial PID (Phase 1) |
