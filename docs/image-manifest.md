@@ -169,7 +169,7 @@ once verified).
 |---|---|
 | Version | `noble-server-cloudimg-amd64.img`, serial **20260826** (24.04.4 point release; 24.04.5 not yet on releases.ubuntu.com) |
 | Why | Every service VM, k3s node, `oob-gw`, `clab`, `ddi-fallback`; the host already has an older copy at `/var/lib/vz/template/iso/noble-cloud.img` which Phase 2 replaces with this serial |
-| Download | <https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64.img> (no login) |
+| Download | <https://cloud-images.ubuntu.com/noble/20260826/noble-server-cloudimg-amd64.img> (pinned serial; `current` moves) (no login) |
 | Checksum | `d0fe84bb5f80853425fa6be28e2c106f30104c3cfe8611933f2e65c9b63f0e30` from [SHA256SUMS](https://cloud-images.ubuntu.com/noble/current/SHA256SUMS) (serial 20260826; re-check at download, `current` moves) |
 | Licence | Free; standard support to 2029-05-31 |
 | Resources | Per VM, see the budget |

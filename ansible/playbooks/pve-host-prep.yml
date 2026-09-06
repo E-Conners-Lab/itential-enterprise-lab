@@ -24,7 +24,7 @@
     # Manifest 2.9 and 3.1. Checksums are the manifest values; a mismatch fails loud.
     cloud_images:
       - key: ubuntu
-        url: https://cloud-images.ubuntu.com/noble/release-20260826/noble-server-cloudimg-amd64.img
+        url: https://cloud-images.ubuntu.com/noble/20260826/noble-server-cloudimg-amd64.img
         file: noble-server-cloudimg-amd64-20260826.img
         sha256: d0fe84bb5f80853425fa6be28e2c106f30104c3cfe8611933f2e65c9b63f0e30
         import_name: noble-24.04-20260826.qcow2
