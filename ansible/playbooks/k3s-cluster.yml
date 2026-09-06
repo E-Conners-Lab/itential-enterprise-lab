@@ -1,0 +1,187 @@
+---
+# Phase 3, slice B: three k3s servers with embedded etcd behind a kube-vip API VIP.
+# Nodes come from the NetBox inventory (tag k3s); versions and addresses from versions.yaml.
+# Cilium replaces flannel and kube-proxy (installed by k8s-platform.yml right after this play).
+- name: Prepare k3s node operating systems
+  hosts: k3s
+  become: true
+  gather_facts: true
+  vars_files:
+    - ../../k8s/platform/versions.yaml
+  tasks:
+    - name: Wait for cloud-init
+      ansible.builtin.command: cloud-init status --wait
+      changed_when: false
+      failed_when: false
+
+    - name: Hostname equals the NetBox name
+      ansible.builtin.hostname:
+        name: "{{ inventory_hostname }}"
+
+    - name: Longhorn and k3s prerequisites
+      ansible.builtin.apt:
+        name: [open-iscsi, nfs-common, cryptsetup, dmsetup, chrony, qemu-guest-agent, apparmor, apparmor-utils]
+        state: present
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Services iscsid and guest agent running
+      ansible.builtin.systemd:
+        name: "{{ item }}"
+        enabled: true
+        state: started
+      loop: [iscsid, qemu-guest-agent]
+
+    - name: Time from oob-gw
+      ansible.builtin.copy:
+        dest: /etc/chrony/sources.d/lab.sources
+        content: "server 10.100.0.1 iburst prefer\n"
+        mode: "0644"
+      notify: Restart chrony
+
+    - name: Kernel modules for Longhorn and Cilium
+      community.general.modprobe:
+        name: "{{ item }}"
+        state: present
+        persistent: present
+      loop: [iscsi_tcp, dm_crypt, nvme_tcp]
+
+    - name: No swap (k3s)
+      ansible.builtin.command: swapoff -a
+      changed_when: false
+
+    - name: Sysctls for a Kubernetes node
+      ansible.posix.sysctl:
+        name: "{{ item.name }}"
+        value: "{{ item.value }}"
+        sysctl_file: /etc/sysctl.d/90-k3s.conf
+        reload: true
+      loop:
+        - {name: net.ipv4.ip_forward, value: "1"}
+        - {name: fs.inotify.max_user_instances, value: "8192"}
+        - {name: fs.inotify.max_user_watches, value: "524288"}
+      loop_control:
+        label: "{{ item.name }}"
+  handlers:
+    - name: Restart chrony
+      ansible.builtin.systemd:
+        name: chrony
+        state: restarted
+
+- name: Install kube-vip static pod and k3s
+  hosts: k3s
+  become: true
+  gather_facts: false
+  serial: 1 # the first node initialises the cluster; the others join it one at a time
+  vars_files:
+    - ../../k8s/platform/versions.yaml
+  vars:
+    first_node: "{{ (cluster.nodes | first).name }}"
+    k3s_version: "{{ components.k3s.app_version }}"
+    common_flags: >-
+      --flannel-backend=none --disable-network-policy --disable-kube-proxy
+      --disable=servicelb --disable=local-storage
+      --tls-san {{ cluster.api_vip }} --tls-san k3s-api.lab.internal
+      --node-ip {{ hostvars[inventory_hostname].ansible_host }}
+      --cluster-cidr {{ cluster.pod_cidr }} --service-cidr {{ cluster.service_cidr }}
+      --write-kubeconfig-mode 0600
+  tasks:
+    - name: Static pod directory read by the k3s kubelet
+      ansible.builtin.file:
+        path: /var/lib/rancher/k3s/agent/pod-manifests
+        state: directory
+        mode: "0755"
+
+    - name: Static pod for kube-vip (ARP, control-plane VIP only, local kubeconfig; no Cilium dependency)
+      ansible.builtin.template:
+        src: templates/kube-vip-pod.yaml.j2
+        dest: /var/lib/rancher/k3s/agent/pod-manifests/kube-vip.yaml
+        mode: "0644"
+
+    - name: Is k3s already installed at the pinned version?
+      ansible.builtin.command: /usr/local/bin/k3s --version
+      register: k3s_bin
+      changed_when: false
+      failed_when: false
+
+    - name: Cluster token (generated once on the first node, shared with the others)
+      ansible.builtin.slurp:
+        src: /var/lib/rancher/k3s/server/token
+      register: token_file
+      delegate_to: "{{ first_node }}"
+      when: inventory_hostname != first_node
+      no_log: true
+
+    - name: Install k3s server (first node initialises the cluster)
+      ansible.builtin.shell: |
+        set -o pipefail
+        curl -sfL {{ components.k3s.install_url }} | INSTALL_K3S_VERSION={{ k3s_version }} \
+          INSTALL_K3S_EXEC="server --cluster-init {{ common_flags }}" sh -
+      args:
+        executable: /bin/bash
+      when: inventory_hostname == first_node and k3s_version not in (k3s_bin.stdout | default(''))
+      changed_when: true
+
+    - name: Install k3s server (join via the first node's own IP; the VIP may not be up yet)
+      ansible.builtin.shell: |
+        set -o pipefail
+        curl -sfL {{ components.k3s.install_url }} | INSTALL_K3S_VERSION={{ k3s_version }} \
+          K3S_TOKEN='{{ token_file.content | b64decode | trim }}' \
+          INSTALL_K3S_EXEC="server --server https://{{ hostvars[first_node].ansible_host }}:6443 {{ common_flags }}" sh -
+      args:
+        executable: /bin/bash
+      when: inventory_hostname != first_node and k3s_version not in (k3s_bin.stdout | default(''))
+      changed_when: true
+      no_log: true
+
+    - name: Service k3s active
+      ansible.builtin.systemd:
+        name: k3s
+        enabled: true
+        state: started
+
+    - name: Node registered (NotReady is expected until Cilium is installed)
+      ansible.builtin.command: /usr/local/bin/k3s kubectl get node {{ inventory_hostname }} --no-headers
+      register: node_reg
+      retries: 30
+      delay: 5
+      until: node_reg.rc == 0
+      changed_when: false
+
+- name: Workstation kubeconfig via the VIP
+  hosts: k3s
+  become: true
+  gather_facts: false
+  run_once: true
+  vars_files:
+    - ../../k8s/platform/versions.yaml
+  vars:
+    first_node: "{{ (cluster.nodes | first).name }}"
+  tasks:
+    - name: Read the server kubeconfig from the first node
+      ansible.builtin.slurp:
+        src: /etc/rancher/k3s/k3s.yaml
+      register: kc
+      delegate_to: "{{ first_node }}"
+      no_log: true
+
+    - name: Rewrite it for the workstation (VIP as server, context named lab-k3s)
+      ansible.builtin.set_fact:
+        kubeconfig_text: >-
+          {{ kc.content | b64decode
+             | replace('https://127.0.0.1:6443', 'https://' ~ cluster.api_vip ~ ':6443')
+             | replace('name: default', 'name: lab-k3s') | replace('cluster: default', 'cluster: lab-k3s')
+             | replace('user: default', 'user: lab-k3s') | replace('current-context: default', 'current-context: lab-k3s') }}
+        kubeconfig_path: >-
+          {{ lookup('ansible.builtin.env', 'KUBECONFIG_PATH')
+             | default(lookup('ansible.builtin.env', 'HOME') ~ '/.kube/lab-k3s.yaml', true) }}
+      no_log: true
+
+    - name: Write the workstation kubeconfig (never committed)
+      ansible.builtin.copy:
+        dest: "{{ kubeconfig_path }}"
+        content: "{{ kubeconfig_text }}"
+        mode: "0600"
+      delegate_to: localhost
+      become: false
+      no_log: true

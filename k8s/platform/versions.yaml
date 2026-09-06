@@ -55,3 +55,14 @@ components:
   traefik:
     # bundled by k3s v1.36.4; configured through a HelmChartConfig, never installed separately
     app_version: v3.7.8
+  kube_vip:
+    image: ghcr.io/kube-vip/kube-vip
+    image_tag: v1.2.3
+  garage:
+    image: docker.io/dxflrs/garage
+    image_tag: v2.4.0
+    bucket: cnpg-backups
+    data_gb: 50
+  barman_cloud_plugin:
+    app_version: v0.15.0
+    manifest_url: https://github.com/cloudnative-pg/plugin-barman-cloud/releases/download/v0.15.0/manifest.yaml

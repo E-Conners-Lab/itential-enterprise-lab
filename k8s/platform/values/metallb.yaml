@@ -1,0 +1,4 @@
+# L2 mode only; pool and advertisement are CRs in manifests/metallb-pool.yaml.
+speaker:
+  frr:
+    enabled: false

@@ -1,0 +1,20 @@
+# Pool = topology/ipam.yaml range metallb-pool (10.100.0.32-63). Individual VIPs are pinned per
+# Service with the metallb.io/loadBalancerIPs annotation so the IP plan stays authoritative.
+apiVersion: metallb.io/v1beta1
+kind: IPAddressPool
+metadata:
+  name: oob-pool
+  namespace: metallb-system
+spec:
+  addresses:
+    - 10.100.0.32-10.100.0.63
+  autoAssign: false
+---
+apiVersion: metallb.io/v1beta1
+kind: L2Advertisement
+metadata:
+  name: oob-l2
+  namespace: metallb-system
+spec:
+  ipAddressPools:
+    - oob-pool

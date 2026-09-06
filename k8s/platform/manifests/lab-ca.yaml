@@ -1,0 +1,36 @@
+# Self-signed bootstrap issuer -> 10-year lab root CA -> ClusterIssuer "lab-ca" (ADR 0005).
+# The root certificate (public) is exported to docs/lab-root-ca.crt by the play.
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: selfsigned-bootstrap
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: lab-root-ca
+  namespace: cert-manager
+spec:
+  isCA: true
+  commonName: itential-enterprise-lab root CA
+  subject:
+    organizations: [itential-enterprise-lab]
+  secretName: lab-root-ca
+  duration: 87600h
+  renewBefore: 8760h
+  privateKey:
+    algorithm: ECDSA
+    size: 384
+  issuerRef:
+    name: selfsigned-bootstrap
+    kind: ClusterIssuer
+---
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: lab-ca
+spec:
+  ca:
+    secretName: lab-root-ca

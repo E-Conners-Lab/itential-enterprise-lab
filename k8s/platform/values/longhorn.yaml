@@ -1,0 +1,13 @@
+# One physical SSD behind everything: 2 replicas survive a node loss, a third adds nothing
+# (docs/resource-budget.md section 4).
+defaultSettings:
+  defaultReplicaCount: 2
+  defaultDataPath: /var/lib/longhorn
+  storageMinimalAvailablePercentage: 15
+  guaranteedInstanceManagerCPU: 5
+persistence:
+  defaultClass: true
+  defaultClassReplicaCount: 2
+  reclaimPolicy: Retain
+longhornUI:
+  replicas: 1
