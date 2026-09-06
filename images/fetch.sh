@@ -25,7 +25,7 @@ fetch_url() { # <key> <url> <name-hint>
     [ -n \"\$name\" ] || { echo 'could not resolve ${hint}'; exit 1; }
     if [ -s \"\$name\" ] && grep -q \" ${key}/\$name\$\" ${STAGING}/MANIFEST.sha256 2>/dev/null; then echo \"present: ${key}/\$name\"; exit 0; fi
     echo \"downloading ${hint} -> ${key}/\$name\"
-    curl -fL --retry 3 -o \"\$name.part\" \"\$final\" && mv \"\$name.part\" \"\$name\"
+    curl -fsSL --retry 3 -o \"\$name.part\" \"\$final\" && mv \"\$name.part\" \"\$name\"
     cd ${STAGING} && sha256sum \"${key}/\$name\" >> MANIFEST.sha256 && sort -u -k2 MANIFEST.sha256 -o MANIFEST.sha256
     echo \"done: \$(tail -1 MANIFEST.sha256 | cut -c1-16)... ${key}/\$name\""
 }
