@@ -6,7 +6,7 @@ SHELL := /bin/bash
 .SHELLFLAGS := -eu -o pipefail -c
 .DEFAULT_GOAL := help
 
-PHASES := oob-network itential ddi identity observability config-secrets-code panorama containerlab
+PHASES := oob-network platform network-topology itential ddi identity observability config-secrets-code panorama containerlab
 
 .PHONY: help bootstrap lint up verify discover $(addprefix phase-,$(PHASES))
 
