@@ -139,7 +139,8 @@ def render_config(platform: str, name: str, node: dict, topo: dict) -> str | Non
         return None
     from jinja2 import Environment, FileSystemLoader, StrictUndefined
 
-    import crypt  # noqa: DEP003 - md5-crypt is what PAN-OS accepts for password-hash
+    import secrets as _secrets
+    import subprocess
 
     secret = os.environ.get("AUTOMATION_PASSWORD")
     if not secret:
@@ -148,7 +149,9 @@ def render_config(platform: str, name: str, node: dict, topo: dict) -> str | Non
     links = [lk for lk in topo["links"] if lk["a"].startswith(name + ":") or lk["b"].startswith(name + ":")]
     return env.get_template(f"{platform}.j2").render(
         name=name, node=node, lab=topo["lab"], routing=topo["routing"], links=links, nodes=topo["nodes"],
-        automation_password=secret, pan_password_hash=crypt.crypt(secret, crypt.mksalt(crypt.METHOD_MD5)),
+        automation_password=secret,
+        # md5-crypt ($1$) is the phash format PAN-OS accepts; python's crypt module is gone in 3.13+
+        pan_password_hash=subprocess.run(["openssl", "passwd", "-1", "-salt", _secrets.token_hex(4), secret], capture_output=True, text=True, check=True).stdout.strip(),
     )
 
 
