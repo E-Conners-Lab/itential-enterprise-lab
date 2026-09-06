@@ -77,4 +77,4 @@ spec:
     - metadata: {name: meta}
       spec: {accessModes: [ReadWriteOnce], storageClassName: longhorn, resources: {requests: {storage: 2Gi}}}
     - metadata: {name: data}
-      spec: {accessModes: [ReadWriteOnce], storageClassName: longhorn, resources: {requests: {storage: 50Gi}}}
+      spec: {accessModes: [ReadWriteOnce], storageClassName: longhorn, resources: {requests: {storage: 20Gi}}}

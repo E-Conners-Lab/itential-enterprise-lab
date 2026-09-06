@@ -6,9 +6,9 @@ end. Everything is code: OpenTofu for Proxmox, the EVE-NG REST API for the
 network topology, Helm/Kustomize for k3s, Ansible for guests, and NetBox as the
 network source of truth.
 
-> **Status: Phase 2 — OOB management network.** First phase that changed the
-> hypervisor: `oob-gw`, cloud-init templates, EVE-NG `pnet1`, NetBox OOB leg and
-> seed. `vmbr0` is unchanged and a verify check proves it on every run.
+> **Status: Phase 3 — k3s platform.** Three-node k3s behind a kube-vip API VIP
+> with Cilium, MetalLB, Longhorn, cert-manager (lab CA in `docs/lab-root-ca.crt`),
+> CloudNativePG backing up to Garage. Inventory now comes from NetBox.
 
 ## Architecture (target)
 
@@ -22,7 +22,7 @@ network source of truth.
 
 ## Bootstrap from zero
 
-1. Tooling on the workstation: `tofu`, `ansible`, `ansible-lint`, `yamllint`, `gitleaks`, `pre-commit`, `gh`, `jq`. On macOS: `brew install opentofu ansible ansible-lint yamllint gitleaks pre-commit gh jq`.
+1. Tooling on the workstation: `tofu`, `ansible`, `ansible-lint`, `yamllint`, `gitleaks`, `pre-commit`, `gh`, `jq`, `helm` and `helm@3`, `kubectl`, `cilium`. On macOS: `brew install opentofu ansible ansible-lint yamllint gitleaks pre-commit gh jq helm helm@3 kubernetes-cli cilium-cli`.
 2. `make bootstrap` (checks the tools, creates `.venv`, installs the pinned Ansible collections and the pre-commit hooks).
 3. Copy `.env.example` to `.env` and fill it in (never committed).
 4. Stage vendor images at `/srv/images/` on the Proxmox host per `docs/image-manifest.md`.
@@ -44,8 +44,8 @@ committed. Service specs and acceptance criteria are in `docs/PID.md`.
 |---|---|---|---|
 | 0 | `phase-0/discovery` | Repo scaffold, CI, read-only discovery | merged (PR #1) |
 | 1 | `phase-1/pid` | PID, image manifest, IP plan, resource budget, ADRs, issues | merged (PR #13) |
-| 2 | `phase-2/oob-network` | OOB network (`vmbr1`, `pnet1`, `oob-gw`), Proxmox API token, image staging, NetBox seeded | in review |
-| 3 | `phase-3/platform` | 3-node k3s: Cilium, MetalLB, Longhorn, cert-manager, CloudNativePG | planned |
+| 2 | `phase-2/oob-network` | OOB network (`vmbr1`, `pnet1`, `oob-gw`), Proxmox API token, image staging, NetBox seeded | merged (PR #14) |
+| 3 | `phase-3/platform` | 3-node k3s: Cilium, MetalLB, Longhorn, cert-manager + lab CA, CloudNativePG + Garage backups | in review |
 | 4 | `phase-4/network-topology` | EVE-NG DC + 2 branches (PA-VM, C8000v, vEOS, endpoints) from `topology/` | planned |
 | 5 | `phase-5/itential` | Itential Platform + Automation Gateway, ServiceNow PDI adapter | planned |
 | 6 | `phase-6/ddi` | Infoblox NIOS primary, BIND9 + Kea secondary, zone generated from NetBox | planned |

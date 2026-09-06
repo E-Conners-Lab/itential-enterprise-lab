@@ -22,7 +22,13 @@ bad()  { echo "FAIL  $1"; fail=$((fail+1)); }
 skip() { echo "SKIP  $1"; }
 check(){ local name=$1; shift; if "$@" >/tmp/verify03.$$ 2>&1; then ok "$name"; else bad "$name"; sed 's/^/      /' /tmp/verify03.$$ | head -8; fi; }
 pve()  { curl -sk -m 20 -H "Authorization: PVEAPIToken=${PROXMOX_VE_API_TOKEN}" "${PROXMOX_VE_ENDPOINT%/}/api2/json/$1"; }
-cleanup(){ kubectl delete ns "$ns" --ignore-not-found --wait=false >/dev/null 2>&1 || true; rm -f /tmp/verify03.$$; }
+cleanup(){
+  # The default StorageClass retains PVs; a scratch namespace must not leave volumes behind.
+  local pvs; pvs=$(kubectl get pv -o jsonpath="{range .items[?(@.spec.claimRef.namespace=='$ns')]}{.metadata.name} {end}" 2>/dev/null)
+  kubectl delete ns "$ns" --ignore-not-found --wait=false >/dev/null 2>&1 || true
+  [ -n "$pvs" ] && ( sleep 20; kubectl delete pv $pvs --ignore-not-found >/dev/null 2>&1 ) &
+  rm -f /tmp/verify03.$$
+}
 trap cleanup EXIT
 echo "# test-03-platform ${ts}"
 [ -f "$KUBECONFIG" ] || { bad "kubeconfig ${KUBECONFIG} missing (written by ansible/playbooks/k3s-cluster.yml)"; echo; echo "passed=${pass} failed=$((fail+5))"; exit 1; }
@@ -50,8 +56,11 @@ c3() {
   kubectl -n "$ns" rollout status deploy/verify-web --timeout=120s >/dev/null || return 1
   local i lb=""; for i in $(seq 1 12); do lb=$(kubectl -n "$ns" get svc verify-web -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null); [ -n "$lb" ] && break; sleep 5; done
   [ "$lb" = "$TEST_LB_IP" ] || { echo "LB ip: '${lb}' expected ${TEST_LB_IP}"; return 1; }
-  curl -s -m 8 -o /dev/null -w "%{http_code}" "http://${TEST_LB_IP}/" | grep -qx 200 || { echo "workstation cannot reach ${TEST_LB_IP}"; return 1; }
-  $SSH "root@${EVE_OOB}" "curl -s -m 8 -o /dev/null -w '%{http_code}' http://${TEST_LB_IP}/" | grep -qx 200 || { echo "EVE-NG host cannot reach ${TEST_LB_IP}"; return 1; }
+  # MetalLB's first L2 announcement and neighbour refresh take a few seconds after the IP is assigned.
+  local ok=0; for i in $(seq 1 8); do curl -s -m 5 -o /dev/null -w "%{http_code}" "http://${TEST_LB_IP}/" | grep -qx 200 && { ok=1; break; }; sleep 5; done
+  [ $ok = 1 ] || { echo "workstation cannot reach ${TEST_LB_IP} after 40s"; return 1; }
+  ok=0; for i in $(seq 1 6); do $SSH "root@${EVE_OOB}" "curl -s -m 5 -o /dev/null -w '%{http_code}' http://${TEST_LB_IP}/" | grep -qx 200 && { ok=1; break; }; sleep 5; done
+  [ $ok = 1 ] || { echo "EVE-NG host cannot reach ${TEST_LB_IP} after 30s"; return 1; }
 }
 check "S2.3 LoadBalancer Service gets ${TEST_LB_IP} from MetalLB and answers from the Mac and from EVE-NG" c3
 
@@ -77,11 +86,13 @@ check "S2.4 ClusterIssuer lab-ca issues test.lab.internal chained to docs/lab-ro
 
 # --- S2.5 CloudNativePG cluster ready; scheduled backup lands in the object store -------------
 c5() {
-  local cl; cl=$(kubectl -n cnpg-system get cluster -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
+  local cl; cl=$(kubectl -n cnpg-system get clusters.postgresql.cnpg.io -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
   [ -n "$cl" ] || { echo "no CNPG Cluster in cnpg-system"; return 1; }
-  kubectl -n cnpg-system get cluster "$cl" -o jsonpath='{.status.phase}' | grep -q "healthy" || { kubectl -n cnpg-system get cluster "$cl"; return 1; }
+  kubectl -n cnpg-system get clusters.postgresql.cnpg.io "$cl" -o jsonpath='{.status.phase}' | grep -q "healthy" || { kubectl -n cnpg-system get clusters.postgresql.cnpg.io "$cl"; return 1; }
+  kubectl -n cnpg-system get clusters.postgresql.cnpg.io "$cl" -o jsonpath='{.status.conditions[?(@.type=="ContinuousArchiving")].status}' | grep -qx True || { echo "WAL archiving not working"; return 1; }
   kubectl -n cnpg-system exec "${cl}-1" -c postgres -- pg_isready -q || { echo "pg_isready failed"; return 1; }
-  kubectl -n cnpg-system get backup -o jsonpath='{range .items[*]}{.metadata.name} {.status.phase}{"\n"}{end}' | grep -q " completed" || { echo "no completed Backup object"; kubectl -n cnpg-system get backup; return 1; }
+  # full resource name: 'backup' alone is ambiguous once Longhorn's backups CRD exists
+  kubectl -n cnpg-system get backups.postgresql.cnpg.io -o jsonpath='{range .items[*]}{.metadata.name} {.status.phase}{"\n"}{end}' | grep -q " completed" || { echo "no completed Backup object"; kubectl -n cnpg-system get backups.postgresql.cnpg.io; return 1; }
 }
 check "S2.5 CNPG cluster healthy, pg_isready, at least one completed Backup in the object store" c5
 

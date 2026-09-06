@@ -85,6 +85,9 @@
       --node-ip {{ hostvars[inventory_hostname].ansible_host }}
       --cluster-cidr {{ cluster.pod_cidr }} --service-cidr {{ cluster.service_cidr }}
       --write-kubeconfig-mode 0600
+      --kube-controller-manager-arg node-monitor-grace-period=20s
+      --kube-apiserver-arg default-not-ready-toleration-seconds=30
+      --kube-apiserver-arg default-unreachable-toleration-seconds=30
   tasks:
     # kube-vip rewrites the kubeconfig server to https://kubernetes:6443; the name must resolve to
     # the local API server (k3s's serving cert carries the 'kubernetes' SAN). Documented kube-vip
@@ -114,6 +117,22 @@
       changed_when: false
       failed_when: false
 
+    # The installer writes the flags into k3s.service; re-run it when any flag is missing so a
+    # flag change here is applied (k3s restarts, one server at a time because of serial: 1).
+    - name: Current k3s unit
+      ansible.builtin.slurp:
+        src: /etc/systemd/system/k3s.service
+      register: k3s_unit
+      failed_when: false
+
+    - name: Flags present in the unit?
+      ansible.builtin.set_fact:
+        k3s_needs_install: >-
+          {{ (k3s_version | default('')) not in (k3s_bin.stdout | default(''))
+             or (common_flags.split()
+                 | difference((k3s_unit.content | default('') | b64decode).split())
+                 | length > 0) }}
+
     - name: Cluster token (generated once on the first node, shared with the others)
       ansible.builtin.slurp:
         src: /var/lib/rancher/k3s/server/token
@@ -129,7 +148,7 @@
           INSTALL_K3S_EXEC="server --cluster-init {{ common_flags }}" sh -
       args:
         executable: /bin/bash
-      when: inventory_hostname == first_node and k3s_version not in (k3s_bin.stdout | default(''))
+      when: inventory_hostname == first_node and (k3s_needs_install | bool)
       changed_when: true
 
     - name: Install k3s server (join via the first node's own IP; the VIP may not be up yet)
@@ -140,7 +159,7 @@
           INSTALL_K3S_EXEC="server --server https://{{ hostvars[first_node].ansible_host }}:6443 {{ common_flags }}" sh -
       args:
         executable: /bin/bash
-      when: inventory_hostname != first_node and k3s_version not in (k3s_bin.stdout | default(''))
+      when: inventory_hostname != first_node and (k3s_needs_install | bool)
       changed_when: true
       no_log: true
 

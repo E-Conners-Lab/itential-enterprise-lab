@@ -62,7 +62,7 @@ components:
     image: docker.io/dxflrs/garage
     image_tag: v2.4.0
     bucket: cnpg-backups
-    data_gb: 50
+    data_gb: 20
   barman_cloud_plugin:
     app_version: v0.15.0
     manifest_url: https://github.com/cloudnative-pg/plugin-barman-cloud/releases/download/v0.15.0/manifest.yaml

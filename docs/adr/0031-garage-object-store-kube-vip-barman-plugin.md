@@ -18,8 +18,9 @@ does not work until Cilium runs). Sources: `docs/image-manifest.md` 4.1.
 ## Decision
 
 - **Garage v2.4.0** (`docker.io/dxflrs/garage:v2.4.0`, AGPL-3.0) as a single-node
-  StatefulSet with `--single-node --default-bucket`, 2 GiB metadata and 50 GiB
-  data on Longhorn, secrets generated once by the play and held only in the
+  StatefulSet with `--single-node --default-bucket`, 2 GiB metadata and 20 GiB
+  data on Longhorn (50 GiB filled two nodes at 100 % over-provisioning and
+  forced every later replica onto the third; over-provisioning is now 200 %), secrets generated once by the play and held only in the
   cluster.
 - **Barman Cloud plugin v0.15.0** installed from its release manifest into
   `cnpg-system`; every CNPG `Cluster` archives WAL and takes scheduled base
