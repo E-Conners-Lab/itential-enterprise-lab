@@ -1,0 +1,81 @@
+{#- IOS XE baseline for every C8000v (ADR 0034). Rendered by eve/build.py; loaded at first boot. -#}
+hostname {{ name }}
+ip domain name {{ lab.domain }}
+no ip domain lookup
+username automation privilege 15 secret 0 {{ lookup_automation_password | default('ChangeMe123!') }}
+enable secret 0 {{ lookup_automation_password | default('ChangeMe123!') }}
+aaa new-model
+aaa authentication login default local
+aaa authorization exec default local
+ip ssh version 2
+crypto key generate rsa modulus 2048
+netconf-yang
+restconf
+ip http secure-server
+ip http authentication local
+ip name-server {{ lab.dns | join(' ') }}
+ntp server {{ lab.ntp }}
+!
+vrf definition MGMT
+ address-family ipv4
+!
+interface GigabitEthernet1
+ description OOB management (pnet1)
+ vrf forwarding MGMT
+ ip address {{ node.mgmt_ip }} 255.255.255.0
+ no shutdown
+!
+ip route vrf MGMT 0.0.0.0 0.0.0.0 {{ lab.mgmt_gateway }}
+!
+{%- set site = node.site %}
+{%- set lo = {'isp-core01': '10.103.255.1', 'dc1-wan01': '10.103.255.11', 'dc1-wan02': '10.103.255.12', 'br1-wan01': '10.103.255.21', 'br2-wan01': '10.103.255.22'}[name] %}
+{%- set asn = {'wan': routing.asn.isp, 'dc1': routing.asn.dc1_edge, 'br1': routing.asn.br1, 'br2': routing.asn.br2}[site] %}
+interface Loopback0
+ ip address {{ lo }} 255.255.255.255
+!
+{%- for lk in links %}
+{%- set mine = lk.a if lk.a.startswith(name + ':') else lk.b %}
+{%- set peer = lk.b if mine == lk.a else lk.a %}
+{%- set ifname = mine.split(':')[1] | replace('Gi', 'GigabitEthernet') %}
+interface {{ ifname }}
+ description to {{ peer }}
+{%- if lk.prefix is defined %}
+{%- set net = lk.prefix.split('/')[0] %}
+{%- set base = net.split('.') %}
+{%- set last = base[3] | int %}
+{%- set mask = '255.255.255.252' if lk.prefix.endswith('/30') else '255.255.255.254' %}
+{%- set my_last = (last + 1) if mine == lk.a else (last + 2) %}
+ ip address {{ base[0] }}.{{ base[1] }}.{{ base[2] }}.{{ my_last }} {{ mask }}
+{%- endif %}
+ no shutdown
+!
+{%- endfor %}
+router bgp {{ asn }}
+ bgp router-id {{ lo }}
+ bgp log-neighbor-changes
+{%- if name == 'isp-core01' %}
+ neighbor 10.103.0.2 remote-as {{ routing.asn.dc1_edge }}
+ neighbor 10.103.0.6 remote-as {{ routing.asn.dc1_edge }}
+ neighbor 10.103.0.10 remote-as {{ routing.asn.br1 }}
+ neighbor 10.103.0.14 remote-as {{ routing.asn.br2 }}
+ address-family ipv4
+  network 10.103.255.1 mask 255.255.255.255
+  neighbor 10.103.0.2 activate
+  neighbor 10.103.0.2 default-originate
+  neighbor 10.103.0.6 activate
+  neighbor 10.103.0.6 default-originate
+  neighbor 10.103.0.10 activate
+  neighbor 10.103.0.10 default-originate
+  neighbor 10.103.0.14 activate
+  neighbor 10.103.0.14 default-originate
+ exit-address-family
+{%- else %}
+{%- set isp_peer = {'dc1-wan01': '10.103.0.1', 'dc1-wan02': '10.103.0.5', 'br1-wan01': '10.103.0.9', 'br2-wan01': '10.103.0.13'}[name] %}
+ neighbor {{ isp_peer }} remote-as {{ routing.asn.isp }}
+ address-family ipv4
+  network {{ lo }} mask 255.255.255.255
+  neighbor {{ isp_peer }} activate
+ exit-address-family
+{%- endif %}
+!
+end

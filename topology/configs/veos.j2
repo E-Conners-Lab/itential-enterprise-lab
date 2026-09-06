@@ -1,0 +1,46 @@
+{#- EOS baseline for every vEOS (ADR 0034): management VRF on Ma1, eAPI, local automation user. -#}
+hostname {{ name }}
+dns domain {{ lab.domain }}
+ip name-server vrf MGMT {{ lab.dns | join(' ') }}
+ntp server vrf MGMT {{ lab.ntp }}
+!
+username automation privilege 15 secret 0 {{ lookup_automation_password | default('ChangeMe123!') }}
+aaa authorization exec default local
+!
+vrf instance MGMT
+!
+interface Management1
+   description OOB management (pnet1)
+   vrf MGMT
+   ip address {{ node.mgmt_ip }}/24
+   no shutdown
+!
+ip route vrf MGMT 0.0.0.0/0 {{ lab.mgmt_gateway }}
+!
+ip routing
+management api http-commands
+   protocol https
+   no shutdown
+   vrf MGMT
+      no shutdown
+!
+management ssh
+   vrf MGMT
+      no shutdown
+!
+{%- for lk in links %}
+{%- set mine = lk.a if lk.a.startswith(name + ':') else lk.b %}
+{%- set peer = lk.b if mine == lk.a else lk.a %}
+{%- set ifname = mine.split(':')[1] | replace('Eth', 'Ethernet') %}
+interface {{ ifname }}
+   description to {{ peer }}
+   no shutdown
+{%- if lk.prefix is defined %}
+{%- set base = lk.prefix.split('/')[0].split('.') %}
+{%- set my_last = (base[3] | int) + (0 if mine == lk.a else 1) %}
+   no switchport
+   ip address {{ base[0] }}.{{ base[1] }}.{{ base[2] }}.{{ my_last }}/31
+{%- endif %}
+!
+{%- endfor %}
+end
