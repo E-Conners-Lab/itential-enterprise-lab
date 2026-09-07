@@ -20,6 +20,7 @@ nb()   { curl -s -m 20 -H "Authorization: Token ${NETBOX_TOKEN}" "${NETBOX_URL}/
 C=$(mktemp); trap 'rm -f "$C" /tmp/verify04.$$' EXIT
 eve_login() { curl -sk -m 15 -c "$C" -H "Content-Type: application/json" -d "{\"username\":\"${EVE_USERNAME}\",\"password\":\"${EVE_PASSWORD}\",\"html5\":\"-1\"}" "https://${EVE_HOST}/api/auth/login" | python3 -c "import sys,json;sys.exit(0 if json.load(sys.stdin).get('status')=='success' else 1)"; }
 eve()  { curl -sk -m 30 -b "$C" "https://${EVE_HOST}/api/labs${LAB}/$1"; }
+mkdir -p verify/results; exec > >(tee "verify/results/${ts}-04-topology.log") 2>&1
 echo "# test-04-topology ${ts}"
 eve_login || { bad "EVE-NG login"; echo; echo "passed=0 failed=8"; exit 1; }
 [ -f topology/enterprise.yaml ] || { bad "topology/enterprise.yaml missing"; echo; echo "passed=0 failed=8"; exit 1; }
@@ -57,8 +58,9 @@ for n, v in t["nodes"].items():
     print(n, v["mgmt_ip"], v["platform"])
 PY
   local bad_hosts=""
-  while read -r name ip plat; do
-    case "$plat" in win11) nc -z -w 3 "$ip" 3389 >/dev/null 2>&1 || bad_hosts="$bad_hosts $name(rdp)";; *) nc -z -w 3 "$ip" 22 >/dev/null 2>&1 || bad_hosts="$bad_hosts $name(ssh)";; esac
+  # bash scopes `local` dynamically: do not reuse check()'s `name` here or the label goes blank
+  while read -r h_name h_ip h_plat; do
+    case "$h_plat" in win11) nc -z -w 3 "$h_ip" 3389 >/dev/null 2>&1 || bad_hosts="$bad_hosts $h_name(rdp)";; *) nc -z -w 3 "$h_ip" 22 >/dev/null 2>&1 || bad_hosts="$bad_hosts $h_name(ssh)";; esac
   done < /tmp/verify04-hosts.$$
   rm -f /tmp/verify04-hosts.$$
   [ -z "$bad_hosts" ] || { echo "unreachable:$bad_hosts"; return 1; }
@@ -82,12 +84,11 @@ for n, v in t["nodes"].items():
     ip = (d.get("primary_ip4") or {}).get("address", "")
     if ip.split("/")[0] != v["mgmt_ip"]: errs.append(f"{n}: primary ip {ip} != {v['mgmt_ip']}")
 cables = get("dcim/cables/?limit=500")["count"]
-design = [lk for lk in t["links"] if not lk.get("bypass")]
-if cables != len(design): errs.append(f"NetBox cables {cables} != yaml design links {len(design)}")
 eve = json.loads(sys.argv[1])
 bridges = [x for x in eve.get("data", {}).values() if x.get("type") == "bridge"]
 fw = t["lab"].get("firewalls", True)
-active = [lk for lk in t["links"] if not (lk.get("bypass") and fw)]
+active = [lk for lk in t["links"] if not (lk.get("bypass") and fw)]  # bypass cables exist only while firewalls are deferred
+if cables != len(active): errs.append(f"NetBox cables {cables} != active yaml links {len(active)}")
 if len(bridges) != len(active): errs.append(f"EVE-NG bridge networks {len(bridges)} != active yaml links {len(active)}")
 if errs: print("\n".join(errs)); sys.exit(1)
 print(f"NetBox: {len(t['nodes'])} devices, {cables} cables; EVE-NG: {len(bridges)} links")
