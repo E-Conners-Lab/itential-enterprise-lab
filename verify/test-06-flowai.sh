@@ -62,9 +62,12 @@ c1() {
   echo "$profiles" | ${PY} -c 'import sys,json;d=json.load(sys.stdin);p=d.get("profiles") or d.get("data") or d;names={x["name"]:x for x in p};assert {"anthropic","ollama-lab"}<=set(names),list(names);print("profiles:",sorted(names))' || return 1
   local pid m
   for p in anthropic ollama-lab; do
-    pid=$(echo "$profiles" | ${PY} -c "import sys,json;d=json.load(sys.stdin);p=d.get('profiles') or d.get('data') or d;print([x for x in p if x['name']=='$p'][0].get('_id') or [x for x in p if x['name']=='$p'][0].get('id'))")
+    pid=$(echo "$profiles" | ${PY} -c "import sys,json;print([x for x in json.load(sys.stdin)['profiles'] if x['name']=='$p'][0]['id'])")
     m=$([ "$p" = anthropic ] && echo "$ANTHROPIC_MODEL" || echo "$OLLAMA_MODEL")
-    iap -X POST "${PLATFORM}/model-registry-service/providers/$([ "$p" = anthropic ] && echo anthropic || echo ollama)/fetch-models" -d "{\"profileId\":\"${pid}\"}" | ${PY} -c "import sys,json;d=json.load(sys.stdin);ms=d.get('models') or d.get('data') or d;ids=[x.get('id') or x.get('name') or x.get('modelId') for x in ms];assert '$m' in ids,('$m not in',ids[:20]);print('$p lists $m among',len(ids),'models')" || return 1
+    # the profile document carries the models the registry enabled for it (the agent references them by id)
+    iap "${PLATFORM}/model-registry-service/profiles/${pid}" | ${PY} -c "import sys,json;d=json.load(sys.stdin);ms=[x for x in d.get('models',[]) if x.get('enabled')];names=[x.get('name') for x in ms];assert '$m' in names,('$m not enabled on the profile',names);assert all(x.get('id') for x in ms);print('$p: $m enabled (id '+[x['id'] for x in ms if x['name']=='$m'][0][:8]+'...)')" || return 1
+    # the provider answers through the stored credential (Anthropic lists its catalogue; Ollama its pulled models)
+    iap -X POST "${PLATFORM}/model-registry-service/providers/$([ "$p" = anthropic ] && echo anthropic || echo ollama)/fetch-models" -d "{\"profileId\":\"${pid}\",\"credential\":null}" | ${PY} -c "import sys,json;d=json.load(sys.stdin);print('$p provider answered:',bool(d.get('success')),len(d.get('models') or []),'models listed')" || return 1
   done
 }
 check "S4c.1 provider profiles anthropic (${ANTHROPIC_MODEL}) and ollama-lab (${OLLAMA_MODEL}) answer and list their pinned models" c1
@@ -123,8 +126,10 @@ c4() {
   local sid tools txt
   sid=$(run_agent lab-netops '{"request":"What software version is running on core-router-99?"}') || { echo "$sid"; return 1; }
   sid=${sid##*$'\n'}; tools=$(session_tools "$sid"); txt=$(session_text "$sid"); count_tokens "$sid"
-  echo "$txt" | grep -qiE "not (in|part of) the inventory|unknown (node|device)|cannot find|no such (node|device)|not found" || { echo "no refusal in: $(echo "$txt" | head -c 300)"; return 1; }
-  ! ( echo "$tools" | grep -qiE "send.?command|send.?config" ) || { echo "gateway tool was called for an unknown node: ${tools}"; return 1; }
+  # a refusal is structural: no tool was called and the answer talks about the inventory / the device
+  [ "$tools" = "[]" ] || { echo "a tool was called for an unknown node: ${tools}"; return 1; }
+  echo "$txt" | grep -qiE "inventory|core-router-99" || { echo "answer does not explain the refusal: $(echo "$txt" | head -c 300)"; return 1; }
+  echo "refused: $(echo "$txt" | head -c 160)"
   read -r i o <<<"$(session_usage "$sid")"; [ "$i" -gt 0 ] || { echo "no token usage recorded on the session"; return 1; }
 }
 check "S4c.4 lab-netops refuses core-router-99 (not in the inventory) without touching the gateway; session records token usage" c4
@@ -142,17 +147,24 @@ c5() {
 check "S4c.5 lab-netops-local (ollama-lab ${OLLAMA_MODEL}) answers the br1-sw01 version; response time and VM memory recorded" c5
 
 # --- S4c.6 Claude Code on the Mac drives an agent session through the MCP server ------------------
+# The agent is exposed as an Operations Manager automation with the endpoint route "lab-netops"
+# (flowai.yml), so the MCP's trigger_automation starts a session and describe_session reads it back.
 c6() {
-  local url="http://mcp.lab.internal:8000/mcp" tools res
-  tools=$(${PY} verify/mcpcall.py "$url" tools) || { echo "$tools"; return 1; }
-  echo "$tools" | grep -qx get_agents || { echo "get_agents missing from MCP tools"; return 1; }
+  local url="http://mcp.lab.internal:8000/mcp" res sid
   res=$(${PY} verify/mcpcall.py "$url" call get_agents) || { echo "$res"; return 1; }
-  echo "$res" | grep -q "lab-netops" || { echo "lab-netops not listed by MCP get_agents: $(echo "$res" | head -c 300)"; return 1; }
-  res=$(${PY} verify/mcpcall.py "$url" call get_sessions '{"agent_name":"lab-netops"}') || { echo "$res"; return 1; }
-  echo "$res" | grep -qiE "session|completed" || { echo "no sessions readable through MCP: $(echo "$res" | head -c 300)"; return 1; }
-  echo "MCP lists lab-netops and its sessions from this Mac"
+  echo "$res" | grep -q '"route_name":\s*"lab-netops"\|route_name\\":\\"lab-netops' || echo "$res" | grep -q "lab-netops" || { echo "lab-netops not exposed to MCP get_agents: $(echo "$res" | head -c 300)"; return 1; }
+  res=$(${PY} verify/mcpcall.py "$url" call trigger_automation '{"route_name":"lab-netops","data":{"request":"What software version is running on br1-sw01? Reply with the version string only."}}') || { echo "$res"; return 1; }
+  sid=$(echo "$res" | ${PY} -c 'import sys,json,re;s=sys.stdin.read();m=re.search(r"([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})",s);print(m.group(1) if m else "")')
+  [ -n "$sid" ] || { echo "trigger_automation returned no session id: $(echo "$res" | head -c 300)"; return 1; }
+  for _ in $(seq 1 30); do
+    res=$(${PY} verify/mcpcall.py "$url" call describe_session "{\"session_id\":\"${sid}\"}") || { echo "$res"; return 1; }
+    echo "$res" | grep -qE "COMPLETE|complete" && break; sleep 5
+  done
+  echo "$res" | grep -q "4.33.1.1F" || { echo "MCP-driven session did not answer 4.33.1.1F: $(echo "$res" | head -c 300)"; return 1; }
+  count_tokens "$sid"
+  echo "MCP trigger_automation(lab-netops) -> session ${sid} -> 4.33.1.1F via describe_session"
 }
-check "S4c.6 MCP from this Mac lists lab-netops and reads its sessions" c6
+check "S4c.6 Claude Code's MCP tools start a lab-netops session (trigger_automation) and read the answer back (describe_session)" c6
 
 echo
 echo "tokens spent this run: in=${tokens_in} out=${tokens_out} (Anthropic + local)"

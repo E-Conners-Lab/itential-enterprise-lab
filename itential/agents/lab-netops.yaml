@@ -4,6 +4,9 @@ project: lab-netops
 name: lab-netops
 description: Lab network operator over the EVE-NG topology through governed Itential tools
 profile: anthropic
+# Exposed as an Operations Manager automation with an endpoint trigger so MCP clients (Claude
+# Code) can start it with trigger_automation and read it with describe_session (PID S4c.6).
+expose_route: lab-netops
 input_schema:
   type: object
   additionalProperties: false
