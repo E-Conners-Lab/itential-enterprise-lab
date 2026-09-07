@@ -111,20 +111,20 @@ wait_job() { local id=$1 s; for _ in $(seq 1 60); do s=$(job_status "$id"); case
 nb_vlan() { nb "${NETBOX_URL}/api/ipam/vlans/?site=br1&name=${VLAN_NAME}"; }
 c4() {
   local id vid
-  id=$(run_job wf-branch-vlan-v1 "{\"branch\":\"br1\",\"vlan_name\":\"${VLAN_NAME}\",\"switch_override\":\"\"}" nowait) || { echo "$id"; return 1; }
+  id=$(run_job wf-branch-vlan-v1 "{\"branch\":\"br1\",\"vlan_name\":\"${VLAN_NAME}\",\"switch_override\":\"\",\"change_request\":false}" nowait) || { echo "$id"; return 1; }
   approve_pending_task "$id" || return 1
   wait_job "$id" || return 1
   vid=$(nb_vlan | ${PY} -c 'import sys,json;d=json.load(sys.stdin);assert d["count"]==1,d["count"];v=d["results"][0];assert v["status"]["value"]=="active",v["status"];print(v["vid"])') || { echo "NetBox VLAN ${VLAN_NAME} not active in br1"; return 1; }
   ${PY} verify/devcmd.py 10.100.0.165 "show vlan ${vid}" | grep -q "$VLAN_NAME" || { echo "br1-sw01 has no VLAN ${vid} ${VLAN_NAME}"; return 1; }
   echo "run 1: VLAN ${vid} ${VLAN_NAME} in NetBox and on br1-sw01"
   # run 2 must be a no-op: same VID, still exactly one NetBox object, job reports no change
-  id=$(run_job wf-branch-vlan-v1 "{\"branch\":\"br1\",\"vlan_name\":\"${VLAN_NAME}\",\"switch_override\":\"\"}" nowait) || { echo "$id"; return 1; }
+  id=$(run_job wf-branch-vlan-v1 "{\"branch\":\"br1\",\"vlan_name\":\"${VLAN_NAME}\",\"switch_override\":\"\",\"change_request\":false}" nowait) || { echo "$id"; return 1; }
   wait_job "$id" || return 1
   job_vars "$id" | ${PY} -c 'import sys,json;v=json.load(sys.stdin);assert v.get("changed") is False, v' || { echo "run 2 was not a no-op"; return 1; }
   nb_vlan | ${PY} -c 'import sys,json;d=json.load(sys.stdin);assert d["count"]==1 and d["results"][0]["vid"]=='"$vid"',d' || { echo "run 2 changed NetBox"; return 1; }
   echo "run 2: no-op"
   # rollback: a switch that is not in the inventory makes the device step fail; the reservation must go
-  id=$(run_job wf-branch-vlan-v1 "{\"branch\":\"br1\",\"vlan_name\":\"${VLAN_NAME}-rb\",\"switch_override\":\"no-such-switch\"}" nowait) || { echo "$id"; return 1; }
+  id=$(run_job wf-branch-vlan-v1 "{\"branch\":\"br1\",\"vlan_name\":\"${VLAN_NAME}-rb\",\"switch_override\":\"no-such-switch\",\"change_request\":false}" nowait) || { echo "$id"; return 1; }
   approve_pending_task "$id" || return 1
   wait_job "$id" >/dev/null 2>&1 && { echo "rollback run unexpectedly succeeded"; return 1; }
   nb "${NETBOX_URL}/api/ipam/vlans/?site=br1&name=${VLAN_NAME}-rb" | ${PY} -c 'import sys,json;assert json.load(sys.stdin)["count"]==0,"reservation survived the failure"' || return 1
@@ -207,10 +207,16 @@ end" >/dev/null 2>&1 || true; fi
     }
     check "S4b.2 wf-branch-vlan-v1 with change_request=true opens a standard change, work-notes the NetBox reservation, walks New->Scheduled->Implement->Review->Closed" c9
     # --- S4b.3 update set exported ---
-    c10() { ls servicenow/*.xml >/dev/null 2>&1 && ${PY} -c 'import glob,xml.etree.ElementTree as E;[E.parse(f) for f in glob.glob("servicenow/*.xml")];assert any("sys_remote_update_set" in open(f).read() for f in glob.glob("servicenow/*.xml"))'; }
-    check "S4b.3 Itential update set exported to servicenow/ (well-formed, contains sys_remote_update_set)" c10
+    # No PDI customisation exists (stock template, stock group, one user): servicenow/README.md is the
+    # rebuild record (PID 1.5) and the two stock records it names must be present on the instance.
+    c10() {
+      [ -s servicenow/README.md ] || { echo "servicenow/README.md missing"; return 1; }
+      snow "${SNOW_URL}/api/sn_chg_rest/change/standard/template?sysparm_query=sys_id=b1c8d15147810200e90d87e8dee490f7" | ${PY} -c 'import sys,json;r=json.load(sys.stdin)["result"];assert r and r[0]["sys_name"]["value"]=="Change VLAN on a Cisco switchport",r' || { echo "standard change template missing on the PDI"; return 1; }
+      snow "${SNOW_URL}/api/now/table/sys_user_group/287ebd7da9fe198100f92cc8d1d2154e?sysparm_fields=name" | ${PY} -c 'import sys,json;assert json.load(sys.stdin)["result"]["name"]=="Network"' || { echo "assignment group Network missing on the PDI"; return 1; }
+    }
+    check "S4b.3 servicenow/README.md is the PDI rebuild record; the stock VLAN change template and the Network group exist on the instance" c10
     # --- S4b.4 instance name + release family recorded, never the password ---
-    c11() { grep -q "^SNOW_INSTANCE=${SNOW_INSTANCE}" .env && grep -q "\`${SNOW_INSTANCE}\`" docs/image-manifest.md && grep -Eq "Release family.*(Zurich|Australia)" docs/image-manifest.md && ! grep -rq "${SNOW_PASSWORD}" docs itential servicenow ansible; }
+    c11() { grep -q "^SNOW_INSTANCE=${SNOW_INSTANCE}" .env && grep -q "${SNOW_INSTANCE}.service-now.com" docs/image-manifest.md && grep -Eq "Release family.*(Zurich|Australia)" docs/image-manifest.md && ! grep -rqF "${SNOW_PASSWORD}" docs itential servicenow ansible verify/results; }
     check "S4b.4 SNOW_INSTANCE in .env and the manifest with its release family; password nowhere in the repo" c11
     # --- S4b.5 interactive login age ---
     c12() {

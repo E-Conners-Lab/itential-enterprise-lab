@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Name** | itential-enterprise-lab |
-| **Version** | 1.4 |
+| **Version** | 1.5 |
 | **Date** | 2026-09-06 |
 | **Author** | Elliot Conner. Claude Code is the build agent; every action it takes is bounded by this document |
 | **Standard** | Project Initiation Standard PIS-01 - PIS-30 (`~/.claude/skills/project-initiation-standard`) |
@@ -170,7 +170,7 @@ Conventions: **Placement** is Proxmox VM (OpenTofu + Ansible), k3s (Helm/Kustomi
 
 - **Purpose:** ticket-driven automation entry point.
 - **Placement:** external (ServiceNow Personal Developer Instance owned by Elliot). Only the adapter configuration and a keep-alive job live in this repo.
-- **Components:** Itential ServiceNow adapter pointed at the PDI over HTTPS with a dedicated integration user (basic auth, credentials in `.env`, later Vault); the `wf-branch-vlan-v1` workflow extended to open, update and close a change request; the PDI's Itential-related customisations exported as an update set into `servicenow/` in this repo so a reclaimed PDI can be rebuilt.
+- **Components:** Itential ServiceNow adapter pointed at the PDI over HTTPS with a dedicated integration user (basic auth, credentials in `.env`, later Vault); the `wf-branch-vlan-v1` workflow extended to open, update and close a change request; ~~the PDI's Itential-related customisations exported as an update set into `servicenow/`~~ (amended 1.5: the PDI is used stock, `servicenow/README.md` is the rebuild record).
 - **Keep-alive is a human step.** ServiceNow reclaims a PDI that is 90+ days old with no *interactive* login in 10 days, and API traffic does not count (manifest 3.4). The owner logs in at least every 10 days (calendar reminder recorded in `docs/manual-steps.md`); `verify/` checks the PDI's last-login date and warns at 7 days.
 - **Acceptance:**
   1. Adapter health check green in the platform.
@@ -615,3 +615,4 @@ the verify log path and any ADRs added.
 | 1.2 | 2026-09-06 | Phase 3: object store is Garage, CNPG backups via the Barman Cloud plugin, kube-vip 1.2.3 (ADR 0031); S2.2 drill recorded separately per PIS-09; NetBox is the Ansible inventory from Phase 3 on (PIS-15 contract honoured) |
 | 1.3 | 2026-09-07 | Phase 4: design amended after vendor research (ADR 0034: routed eBGP edge/firewall handoff, NGE IKEv2 + front-door VRF, AVD tenant VRF); firewalls deferred behind `lab.firewalls` with bypass links, S3.4/S3.5/S3.6 firewall checks deferred until the PA-VM image is staged; Windows 11 built UEFI/TPM; C8000v needs a licence boot level + reload |
 | 1.4 | 2026-09-07 | Phase 5: S4 placement is one Ubuntu VM with the itential-dev-stack containers (ADR 0035, ADR 0020 amended), `iag` VM and 10.100.0.66 dropped, licence risk closed by owner decision (none needed), images from the private ECR via company SSO; budget 73 vCPU / 263 GB |
+| 1.5 | 2026-09-07 | Phase 5 (S4b): Gateway 5 is the only gateway (Gateway 4 staged, not deployed); the PDI needs no customisation (stock standard-change template + Network group + one integration user), so S4b.3 is a rebuild record `servicenow/README.md` instead of an update set; S4b.2 evidence is the states ServiceNow returns to the workflow plus the change read back (`sys_audit` is admin-only on a PDI); PDI `dev409097`, Australia; basic auth needs `snc_basic_auth_api_access` on 2026 instances |
