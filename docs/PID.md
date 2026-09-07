@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Name** | itential-enterprise-lab |
-| **Version** | 1.5 |
+| **Version** | 1.6 |
 | **Date** | 2026-09-06 |
 | **Author** | Elliot Conner. Claude Code is the build agent; every action it takes is bounded by this document |
 | **Standard** | Project Initiation Standard PIS-01 - PIS-30 (`~/.claude/skills/project-initiation-standard`) |
@@ -180,7 +180,21 @@ Conventions: **Placement** is Proxmox VM (OpenTofu + Ansible), k3s (Helm/Kustomi
   5. `verify/` reports days since the last interactive login and fails the phase test if over 10.
 - **Verification:** part of `verify/test-05-itential.sh` (skips with a loud `HIBERNATED` message, not a pass, if the PDI is asleep).
 
-### S5 — DDI: Infoblox NIOS with BIND9 + Kea secondary (Phase 6)
+### S4c — FlowAI agents over the lab topology (Phase 6, ADR 0037)
+
+- **Purpose:** the reason the lab exists: agents that operate the EVE-NG topology through the Platform's governed tools, with a human approval where the network changes.
+- **Placement:** the FlowAI applications inside the Platform image on VM 205 (Agent Projects, Agent Execution Engine, Agent Session Manager, Tool Registry, Model Registry); an `ollama` container on the same VM for local models; the owner's Mac Mini Ollama as an optional fast endpoint.
+- **Components:** Model Registry provider profiles (Anthropic `claude-sonnet-5` default; Ollama in-lab with pinned small instruct models; Ollama on the Mac, optional), tools registered from the NetBox adapter, Gateway 5 device services on the `lab` inventory and the `wf-*` workflows, one agent project `lab-netops` generated from `itential/agents/` by `ansible/playbooks/flowai.yml`, the ServiceNow Integration Model for agent tool use, and the MCP server already reachable from Claude Code (S4.7). Everything is created through the API and held in the repo; provider keys stay in `.env`.
+- **Acceptance:**
+  1. Two provider profiles exist and answer: Anthropic and the in-lab Ollama; the model list of each is fetched through the Model Registry and the pinned models are present.
+  2. The agent, asked for the software version of a named node, answers with the string the device itself returns over direct SSH (both vendors, one node each), using the Gateway 5 tool; the session shows the tool call.
+  3. The agent, asked to add a named VLAN to a branch, runs `wf-branch-vlan-v1`; the job pauses on the approval task in Work Center, the VLAN is reserved in NetBox and configured on the switch only after approval, and the second identical request is a no-op.
+  4. The agent refuses (does not call the gateway) for a node that is not in the inventory, and every session records its token usage per model.
+  5. The same question in criterion 2 answered by the in-lab Ollama model; response time and VM memory recorded in the manifest.
+  6. Claude Code on the Mac drives criterion 2 through the MCP server (an agent session started and read back via MCP tools).
+- **Verification:** `verify/test-06-flowai.sh`; a criterion that spends provider tokens records the cost in the log.
+
+### S5 — DDI: Infoblox NIOS with BIND9 + Kea secondary (Phase 7)
 
 - **Purpose:** authoritative DNS and DHCP for `lab.internal` and the OOB/in-band segments, driven from NetBox, with an eval-proof fallback (ADR 0009).
 - **Placement:** Proxmox VMs `nios` (ADR 0006) and `ddi-fallback` (Ubuntu: BIND9 secondary, Kea standby).
@@ -568,12 +582,13 @@ at the end of Phase 2 and this table amended.
 | 3 | `phase-3/platform` | `verify/test-03-platform.sh` | none |
 | 4 | `phase-4/network-topology` | `verify/test-04-topology.sh` | Download PA-VM to `/srv/images/pa-vm` (Customer Support Portal); C8000v/vEOS reused (ADR 0032/0033); Windows 11 automated (`images/fetch.sh`, `images/build-win11.sh`) |
 | 5 | `phase-5/itential` | `verify/test-05-itential.sh` | `aws sso login` before image pulls (manual step 6); create the PDI integration user; log into the PDI every 10 days from then on |
-| 6 | `phase-6/ddi` | `verify/test-06-ddi.sh` | Download NIOS eval, apply the temp licence on the console |
-| 7 | `phase-7/identity` | `verify/test-07-identity.sh` | Download Windows Server eval ISO |
-| 8 | `phase-8/observability` | `verify/test-08-observability.sh` | none |
-| 9 | `phase-9/config-secrets-code` | `verify/test-09-config-secrets-code.sh` | Hold Vault unseal keys |
-| 10 | `phase-10/panorama` | `verify/test-10-panorama.sh` | Download Panorama; request an evaluation Panorama licence |
-| 11 | `phase-11/containerlab` | `verify/test-11-containerlab.sh` | Download cEOS-lab |
+| 6 | `phase-6/flowai` | `verify/test-06-flowai.sh` | Provider key in `.env`; Ollama on the Mac Mini optional (ADR 0037) |
+| 7 | `phase-6/ddi` | `verify/test-06-ddi.sh` | Download NIOS eval, apply the temp licence on the console |
+| 8 | `phase-7/identity` | `verify/test-07-identity.sh` | Download Windows Server eval ISO |
+| 9 | `phase-8/observability` | `verify/test-08-observability.sh` | none |
+| 10 | `phase-9/config-secrets-code` | `verify/test-09-config-secrets-code.sh` | Hold Vault unseal keys |
+| 11 | `phase-10/panorama` | `verify/test-10-panorama.sh` | Download Panorama; request an evaluation Panorama licence |
+| 12 | `phase-11/containerlab` | `verify/test-11-containerlab.sh` | Download cEOS-lab |
 
 Each PR description is the phase report: **built / verified / deferred**, with
 the verify log path and any ADRs added.
@@ -615,4 +630,5 @@ the verify log path and any ADRs added.
 | 1.2 | 2026-09-06 | Phase 3: object store is Garage, CNPG backups via the Barman Cloud plugin, kube-vip 1.2.3 (ADR 0031); S2.2 drill recorded separately per PIS-09; NetBox is the Ansible inventory from Phase 3 on (PIS-15 contract honoured) |
 | 1.3 | 2026-09-07 | Phase 4: design amended after vendor research (ADR 0034: routed eBGP edge/firewall handoff, NGE IKEv2 + front-door VRF, AVD tenant VRF); firewalls deferred behind `lab.firewalls` with bypass links, S3.4/S3.5/S3.6 firewall checks deferred until the PA-VM image is staged; Windows 11 built UEFI/TPM; C8000v needs a licence boot level + reload |
 | 1.4 | 2026-09-07 | Phase 5: S4 placement is one Ubuntu VM with the itential-dev-stack containers (ADR 0035, ADR 0020 amended), `iag` VM and 10.100.0.66 dropped, licence risk closed by owner decision (none needed), images from the private ECR via company SSO; budget 73 vCPU / 263 GB |
+| 1.6 | 2026-09-07 | Phase order reordered (ADR 0037): Phase 6 is FlowAI agents (new S4c with criteria 1-6), DDI/identity/observability/config/Panorama/Containerlab move to 7-12, Windows Server deferred with identity; local LLMs (Ollama in-lab + optional Mac Mini) alongside Anthropic; ServiceNow Integration Model joins Phase 6 |
 | 1.5 | 2026-09-07 | Phase 5 (S4b): Gateway 5 is the only gateway (Gateway 4 staged, not deployed); the PDI needs no customisation (stock standard-change template + Network group + one integration user), so S4b.3 is a rebuild record `servicenow/README.md` instead of an update set; S4b.2 evidence is the states ServiceNow returns to the workflow plus the change read back (`sys_audit` is admin-only on a PDI); PDI `dev409097`, Australia; basic auth needs `snc_basic_auth_api_access` on 2026 instances |

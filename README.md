@@ -53,12 +53,13 @@ committed. Service specs and acceptance criteria are in `docs/PID.md`.
 | 3 | `phase-3/platform` | 3-node k3s: Cilium, MetalLB, Longhorn, cert-manager + lab CA, CloudNativePG + Garage backups | merged (PR #15) |
 | 4 | `phase-4/network-topology` | EVE-NG DC + 2 branches (C8000v, vEOS, endpoints; PA-VM deferred behind `lab.firewalls`) from `topology/` | merged (PR #16) |
 | 5 | `phase-5/itential` | Itential Platform 6.5.2 + Gateway 5.5.2 as the dev-stack containers on VM 205 (ADR 0035), NetBox adapter, Inventory Manager from NetBox, generated workflows incl. `wf-branch-vlan-v1`, MCP for Claude Code; ServiceNow PDI adapter | in progress |
-| 6 | `phase-6/ddi` | Infoblox NIOS primary, BIND9 + Kea secondary, zone generated from NetBox | planned |
-| 7 | `phase-7/identity` | Windows Server AD DS/DNS, tac_plus, Keycloak SSO | planned |
-| 8 | `phase-8/observability` | Zabbix, Prometheus + Grafana, gNMIc, Loki | planned |
-| 9 | `phase-9/config-secrets-code` | Oxidized, Vault, Gitea | planned |
-| 10 | `phase-10/panorama` | Panorama, firewall onboarding | planned |
-| 11 | `phase-11/containerlab` | Containerlab CI/test tier (cEOS mirror of the DC fabric) | planned |
+| 6 | `phase-6/flowai` | FlowAI agents over the topology: Anthropic + in-lab Ollama provider profiles, tools from NetBox/Gateway 5/workflows, agent project as code, ServiceNow Integration Model (ADR 0037) | planned |
+| 7 | `phase-6/ddi` | Infoblox NIOS primary, BIND9 + Kea secondary, zone generated from NetBox | planned |
+| 8 | `phase-7/identity` | Windows Server AD DS/DNS, tac_plus, Keycloak SSO | planned |
+| 9 | `phase-8/observability` | Zabbix, Prometheus + Grafana, gNMIc, Loki | planned |
+| 10 | `phase-9/config-secrets-code` | Oxidized, Vault, Gitea | planned |
+| 11 | `phase-10/panorama` | Panorama, firewall onboarding | planned |
+| 12 | `phase-11/containerlab` | Containerlab CI/test tier (cEOS mirror of the DC fabric) | planned |
 
 ## Repo layout
 
