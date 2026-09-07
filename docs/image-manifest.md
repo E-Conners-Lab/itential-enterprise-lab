@@ -267,7 +267,7 @@ from Phase 8. Supporting images: MongoDB `7.0.40`, Redis `7.4.11` (Docker Hub, 2
 | Instance | `dev409097.service-now.com` over HTTPS (owner's PDI, recorded 2026-09-07; `.env` `SNOW_INSTANCE=dev409097`, never the password). Release family: **Australia** |
 | Hibernation | After roughly 6 hours idle; wake takes 3-20 minutes from the developer site |
 | Reclamation (policy effective 2026-07-11) | Reclaimed when the PDI is >= 90 days old **and** has had no interactive login in the last 10 days. **Background jobs and API integrations do not count as activity**, so the keep-alive is a human login at least every 10 days (calendar reminder is a manual step) plus exporting the Itential-related update set to the repo ([reclamation rules](https://www.servicenow.com/community/developer-articles/servicenow-pdi-reclamation-rules-avoid-losing-access/ta-p/3572371)) |
-| Adapter auth | Basic auth with a dedicated integration user is the documented method for `adapter-servicenow`; OAuth (`request_token`) is **UNVERIFIED** for this adapter |
+| Adapter auth | Basic auth with a dedicated integration user (`itential.integration`, roles `itil`, `snc_platform_rest_api_access`, `rest_api_explorer` **and `snc_basic_auth_api_access`**: PDIs provisioned in 2026 ship with Basic Authentication Account Security, which answers 401 "User is not authenticated" to any basic-auth API call from a user without that role, even with the right password; observed 2026-09-07 on the Australia release). OAuth (`request_token`) is **UNVERIFIED** for this adapter |
 | Verified | 2026-09-06 |
 
 ## 4. k3s container images and charts
