@@ -1,0 +1,246 @@
+---
+# Phase 4, slice A: NetBox receives the whole topology BEFORE EVE-NG is built (ADR 0002, 0034):
+# sites, manufacturers, device types (interface templates from the YAML), roles, platforms,
+# devices, interfaces, cables, in-band prefixes (docs/ip-plan.md §6) and primary IPs.
+# Idempotent; create/update only.
+- name: Seed the network topology into NetBox
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars_files:
+    - ../../topology/enterprise.yaml
+  vars:
+    ansible_python_interpreter: "{{ playbook_dir }}/../../.venv/bin/python"
+    nb_url: "{{ lookup('ansible.builtin.env', 'NETBOX_URL') }}"
+    nb_token: "{{ lookup('ansible.builtin.env', 'NETBOX_TOKEN') }}"
+    manufacturer_of: {c8000v: Cisco, veos: Arista, pa-vm: Palo Alto Networks, ubuntu: Canonical, win11: Microsoft}
+    model_of: {c8000v: "Catalyst 8000V", veos: "vEOS-lab", pa-vm: "VM-Series", ubuntu: "Ubuntu 24.04 VM", win11: "Windows 11 VM"}
+    platform_of: {c8000v: ios-xe, veos: eos, pa-vm: panos, ubuntu: ubuntu-24.04, win11: windows-11}
+    mgmt_iface_of: {c8000v: GigabitEthernet1, veos: Management1, pa-vm: management, ubuntu: eth0, win11: eth0}
+    inband_prefixes:
+      - {prefix: 10.103.0.0/24, site: wan, role: wan-transit, description: "ISP-to-site /30s"}
+      - {prefix: 10.103.100.0/24, site: wan, role: wan-transit, description: "GRE/IPsec tunnels"}
+      - {prefix: 10.103.255.0/24, site: wan, role: wan-transit, description: "router loopbacks"}
+      - {prefix: 10.101.255.0/24, site: dc1, role: dc-inband, description: "fabric underlay /31s"}
+      - {prefix: 10.101.254.0/24, site: dc1, role: dc-inband, description: "fabric loopbacks"}
+      - {prefix: 10.101.253.0/24, site: dc1, role: dc-inband, description: "VTEP loopbacks"}
+      - {prefix: 10.101.252.0/30, site: dc1, role: dc-inband, description: "MLAG peer link"}
+      - {prefix: 10.101.2.0/24, site: dc1, role: dc-inband, description: "WAN edge to firewall routed /30s"}
+      - {prefix: 10.101.3.0/24, site: dc1, role: dc-inband, description: "firewall bypass /30s (lab.firewalls false)"}
+      - {prefix: 10.101.1.0/24, site: dc1, role: dc-inband, description: "VLAN 100 transit, VRF PROD", vlan: 100}
+      - {prefix: 10.101.10.0/24, site: dc1, role: dc-inband, description: "server VLAN 10", vlan: 10}
+      - {prefix: 10.102.16.0/20, site: br1, role: branch-inband, description: "branch 1"}
+      - {prefix: 10.102.17.0/24, site: br1, role: branch-inband, description: "branch 1 users VLAN 10", vlan: 10}
+      - {prefix: 10.102.32.0/20, site: br2, role: branch-inband, description: "branch 2"}
+      - {prefix: 10.102.33.0/24, site: br2, role: branch-inband, description: "branch 2 users VLAN 10", vlan: 10}
+  tasks:
+    - name: Sites
+      netbox.netbox.netbox_site:
+        netbox_url: "{{ nb_url }}"
+        netbox_token: "{{ nb_token }}"
+        validate_certs: false
+        data: {name: "{{ item.value.name }}", slug: "{{ item.key }}", status: active, description: "{{ item.value.description }}"}
+      loop: "{{ sites | dict2items }}"
+      loop_control:
+        label: "{{ item.key }}"
+
+    - name: Manufacturers
+      netbox.netbox.netbox_manufacturer:
+        netbox_url: "{{ nb_url }}"
+        netbox_token: "{{ nb_token }}"
+        validate_certs: false
+        data: {name: "{{ item }}"}
+      loop: "{{ manufacturer_of.values() | unique | list }}"
+
+    - name: Platforms
+      netbox.netbox.netbox_platform:
+        netbox_url: "{{ nb_url }}"
+        netbox_token: "{{ nb_token }}"
+        validate_certs: false
+        data: {name: "{{ item }}", slug: "{{ item }}"}
+      loop: "{{ platform_of.values() | unique | list }}"
+
+    - name: Device roles
+      netbox.netbox.netbox_device_role:
+        netbox_url: "{{ nb_url }}"
+        netbox_token: "{{ nb_token }}"
+        validate_certs: false
+        data: {name: "{{ item }}", slug: "{{ item }}", color: "9e9e9e"}
+      loop: "{{ nodes.values() | map(attribute='role') | unique | list }}"
+
+    - name: Device types (one per platform)
+      netbox.netbox.netbox_device_type:
+        netbox_url: "{{ nb_url }}"
+        netbox_token: "{{ nb_token }}"
+        validate_certs: false
+        data:
+          model: "{{ model_of[item] }}"
+          slug: "{{ model_of[item] | lower | regex_replace('[^a-z0-9]+', '-') }}"
+          manufacturer: "{{ manufacturer_of[item] }}"
+          u_height: 0
+          is_full_depth: false
+      loop: "{{ nodes.values() | map(attribute='platform') | unique | list }}"
+
+    - name: Devices
+      netbox.netbox.netbox_device:
+        netbox_url: "{{ nb_url }}"
+        netbox_token: "{{ nb_token }}"
+        validate_certs: false
+        data:
+          name: "{{ item.key }}"
+          device_type: "{{ model_of[item.value.platform] }}"
+          device_role: "{{ item.value.role }}"
+          platform: "{{ platform_of[item.value.platform] }}"
+          site: "{{ item.value.site }}"
+          status: planned
+          tags: [phase-4]
+      loop: "{{ nodes | dict2items }}"
+      loop_control:
+        label: "{{ item.key }}"
+
+    - name: Management interfaces
+      netbox.netbox.netbox_device_interface:
+        netbox_url: "{{ nb_url }}"
+        netbox_token: "{{ nb_token }}"
+        validate_certs: false
+        data:
+          device: "{{ item.key }}"
+          name: "{{ mgmt_iface_of[item.value.platform] }}"
+          type: virtual
+          mgmt_only: true
+          description: "OOB on pnet1"
+      loop: "{{ nodes | dict2items }}"
+      loop_control:
+        label: "{{ item.key }}"
+
+    - name: Data interfaces used by links
+      netbox.netbox.netbox_device_interface:
+        netbox_url: "{{ nb_url }}"
+        netbox_token: "{{ nb_token }}"
+        validate_certs: false
+        data:
+          device: "{{ item.split(':')[0] }}"
+          name: "{{ item.split(':')[1] }}"
+          type: 1000base-t
+      loop: "{{ (links | map(attribute='a') | list) + (links | map(attribute='b') | list) }}"
+
+    - name: Cables (one per link)
+      netbox.netbox.netbox_cable:
+        netbox_url: "{{ nb_url }}"
+        netbox_token: "{{ nb_token }}"
+        validate_certs: false
+        data:
+          termination_a_type: dcim.interface
+          termination_a: {device: "{{ item.a.split(':')[0] }}", name: "{{ item.a.split(':')[1] }}"}
+          termination_b_type: dcim.interface
+          termination_b: {device: "{{ item.b.split(':')[0] }}", name: "{{ item.b.split(':')[1] }}"}
+          status: planned
+      loop: "{{ links if not (lab.firewalls | default(true)) else (links | rejectattr('bypass', 'defined') | list) }}"
+      loop_control:
+        label: "{{ item.a }} <-> {{ item.b }}"
+
+    - name: Bypass cables go away once the firewalls are built (lab.firewalls true)
+      netbox.netbox.netbox_cable:
+        netbox_url: "{{ nb_url }}"
+        netbox_token: "{{ nb_token }}"
+        validate_certs: false
+        state: absent
+        data:
+          termination_a_type: dcim.interface
+          termination_a: {device: "{{ item.a.split(':')[0] }}", name: "{{ item.a.split(':')[1] }}"}
+          termination_b_type: dcim.interface
+          termination_b: {device: "{{ item.b.split(':')[0] }}", name: "{{ item.b.split(':')[1] }}"}
+      loop: "{{ links | selectattr('bypass', 'defined') | list if (lab.firewalls | default(true)) else [] }}"
+      loop_control:
+        label: "{{ item.a }} <-> {{ item.b }}"
+
+    - name: Prefix roles for in-band
+      netbox.netbox.netbox_ipam_role:
+        netbox_url: "{{ nb_url }}"
+        netbox_token: "{{ nb_token }}"
+        validate_certs: false
+        data: {name: "{{ item }}", slug: "{{ item }}"}
+      loop: "{{ inband_prefixes | map(attribute='role') | unique | list }}"
+
+    - name: In-band prefixes
+      netbox.netbox.netbox_prefix:
+        netbox_url: "{{ nb_url }}"
+        netbox_token: "{{ nb_token }}"
+        validate_certs: false
+        data:
+          prefix: "{{ item.prefix }}"
+          # NetBox 4.2+ prefixes are scoped (site is one scope type); the legacy `site` key is
+          # accepted on create but not on update, which broke the second run.
+          scope_type: dcim.site
+          scope: "{{ item.site }}"
+          status: reserved
+          prefix_role: "{{ item.role }}"
+          description: "{{ item.description }}"
+          tags: [phase-4]
+      loop: "{{ inband_prefixes }}"
+      loop_control:
+        label: "{{ item.prefix }}"
+
+    # The management addresses exist since phase 2; attach them to the management interface (PATCH).
+    - name: Look up management interface ids
+      ansible.builtin.uri:
+        url: "{{ nb_url }}/api/dcim/interfaces/?device={{ item.key }}&name={{ mgmt_iface_of[item.value.platform] }}"
+        headers: {Authorization: "Token {{ nb_token }}"}
+      register: mgmt_ifaces
+      loop: "{{ nodes | dict2items }}"
+      loop_control:
+        label: "{{ item.key }}"
+      failed_when: mgmt_ifaces.json.count != 1
+
+    - name: Look up management address ids
+      ansible.builtin.uri:
+        url: "{{ nb_url }}/api/ipam/ip-addresses/?address={{ item.value.mgmt_ip }}/24"
+        headers: {Authorization: "Token {{ nb_token }}"}
+      register: mgmt_ips
+      loop: "{{ nodes | dict2items }}"
+      loop_control:
+        label: "{{ item.key }}"
+      failed_when: mgmt_ips.json.count != 1
+
+    - name: Attach management addresses to their interface
+      ansible.builtin.uri:
+        url: "{{ nb_url }}/api/ipam/ip-addresses/{{ item.1.json.results[0].id }}/"
+        method: PATCH
+        headers: {Authorization: "Token {{ nb_token }}"}
+        body_format: json
+        body: {assigned_object_type: dcim.interface, assigned_object_id: "{{ item.0.json.results[0].id }}"}
+      loop: "{{ mgmt_ifaces.results | zip(mgmt_ips.results) | list }}"
+      loop_control:
+        label: "{{ item.0.item.key }}"
+      when: item.1.json.results[0].assigned_object_id != item.0.json.results[0].id
+      changed_when: true
+
+    - name: Primary IPv4 on each device
+      netbox.netbox.netbox_device:
+        netbox_url: "{{ nb_url }}"
+        netbox_token: "{{ nb_token }}"
+        validate_certs: false
+        data: {name: "{{ item.key }}", primary_ip4: "{{ item.value.mgmt_ip }}/24"}
+      loop: "{{ nodes | dict2items }}"
+      loop_control:
+        label: "{{ item.key }}"
+
+    # Lifecycle: a device is "planned" until the EVE-NG builder has exported it
+    # (topology/generated/eve-nodes.yaml lists what actually exists on EVE-NG).
+    - name: Read the builder export (nodes that exist on EVE-NG)
+      ansible.builtin.set_fact:
+        built_nodes: >-
+          {{ (lookup('ansible.builtin.file', playbook_dir ~ '/../../topology/generated/eve-nodes.yaml', errors='ignore') or '{}')
+             | from_yaml }}
+
+    - name: Devices that exist on EVE-NG are active (others stay planned)
+      netbox.netbox.netbox_device:
+        netbox_url: "{{ nb_url }}"
+        netbox_token: "{{ nb_token }}"
+        validate_certs: false
+        data:
+          name: "{{ item.key }}"
+          status: "{{ 'active' if item.key in (built_nodes.nodes | default({})) else 'planned' }}"
+      loop: "{{ nodes | dict2items }}"
+      loop_control:
+        label: "{{ item.key }}"

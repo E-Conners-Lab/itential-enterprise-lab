@@ -1,0 +1,13 @@
+# Managed by ansible/playbooks/oob-gw.yml. DHCP for the OOB segment only; DNS is unbound.
+interface={{ oob_iface }}
+bind-interfaces
+dhcp-range={{ oob_iface }},10.100.0.240,10.100.0.254,255.255.255.0,12h
+dhcp-option=option:router,{{ oob_gw_ip }}
+dhcp-option=option:dns-server,{{ oob_gw_ip }}
+dhcp-option=option:domain-name,{{ domain }}
+dhcp-option=option:ntp-server,{{ oob_gw_ip }}
+dhcp-authoritative
+# EVE-NG endpoints (platforms without a startup-config script) get their IP-plan address by MAC
+{% for name, n in nodes.items() if n.platform in ['ubuntu', 'win11'] %}
+dhcp-host={{ n.mac0 }},{{ n.mgmt_ip }},{{ name }}
+{% endfor %}

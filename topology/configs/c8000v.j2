@@ -1,0 +1,230 @@
+{#- IOS XE baseline for every C8000v (ADR 0034, amended after vendor research 2026-09-06):
+    management VRF, NETCONF/RESTCONF, automation user.
+    isp-core01 (AS 65000): eBGP hub with default-originate to every site (simulated provider).
+    site routers: ISP peering sits in front-door VRF WAN (Cisco FlexVPN/IWAN transport pattern);
+      IKEv2 tunnels (routing.wan_tunnel_mode: gre = GRE-over-IPsec with tunnel protection,
+      ipsec = FlexVPN static VTI) with NGE ciphers (aes-gcm-256 / prf sha384 / group 19, esp-gcm 256)
+      terminate in global with BGP inside the tunnels.
+    dc1-wan01/02 (AS 65100): iBGP between them; per-router routed /30 + eBGP to each firewall
+      (GR helper, BFD) - or, while lab.firewalls is false, to a leaf in VRF PROD (bypass links).
+    brN-wan01 (AS 6520N): tunnels to both DC edges; the firewall is the LAN gateway - or, while
+      bypassed, the router's spare port is the VLAN 10 gateway with a DHCP pool. -#}
+{%- set site = node.site %}
+{%- set lo = {'isp-core01': '10.103.255.1', 'dc1-wan01': '10.103.255.11', 'dc1-wan02': '10.103.255.12', 'br1-wan01': '10.103.255.21', 'br2-wan01': '10.103.255.22'}[name] %}
+{%- set asn = {'wan': routing.asn.isp, 'dc1': routing.asn.dc1_edge, 'br1': routing.asn.br1, 'br2': routing.asn.br2}[site] %}
+{%- set isp_peer = {'dc1-wan01': '10.103.0.1', 'dc1-wan02': '10.103.0.5', 'br1-wan01': '10.103.0.9', 'br2-wan01': '10.103.0.13'}.get(name) %}
+{%- set wan_ip = {'dc1-wan01': '10.103.0.2', 'dc1-wan02': '10.103.0.6', 'br1-wan01': '10.103.0.10', 'br2-wan01': '10.103.0.14'}.get(name) %}
+{%- set lan = {'br1': {'net': '10.102.17.0', 'gw': '10.102.17.1', 'agg': '10.102.16.0'}, 'br2': {'net': '10.102.33.0', 'gw': '10.102.33.1', 'agg': '10.102.32.0'}}.get(site) %}
+{#- tunnel plan: DC edge x branch; 10.103.100.0/30 dc1-wan01<->br1, .4/30 dc1-wan01<->br2, .8/30 dc1-wan02<->br1, .12/30 dc1-wan02<->br2 -#}
+{%- set tunnels = {
+  'dc1-wan01': [{'id': 1, 'peer': 'br1-wan01', 'dst': '10.103.0.10', 'ip': '10.103.100.1', 'nbr': '10.103.100.2', 'ras': routing.asn.br1},
+                {'id': 2, 'peer': 'br2-wan01', 'dst': '10.103.0.14', 'ip': '10.103.100.5', 'nbr': '10.103.100.6', 'ras': routing.asn.br2}],
+  'dc1-wan02': [{'id': 1, 'peer': 'br1-wan01', 'dst': '10.103.0.10', 'ip': '10.103.100.9', 'nbr': '10.103.100.10', 'ras': routing.asn.br1},
+                {'id': 2, 'peer': 'br2-wan01', 'dst': '10.103.0.14', 'ip': '10.103.100.13', 'nbr': '10.103.100.14', 'ras': routing.asn.br2}],
+  'br1-wan01': [{'id': 1, 'peer': 'dc1-wan01', 'dst': '10.103.0.2', 'ip': '10.103.100.2', 'nbr': '10.103.100.1', 'ras': routing.asn.dc1_edge},
+                {'id': 2, 'peer': 'dc1-wan02', 'dst': '10.103.0.6', 'ip': '10.103.100.10', 'nbr': '10.103.100.9', 'ras': routing.asn.dc1_edge}],
+  'br2-wan01': [{'id': 1, 'peer': 'dc1-wan01', 'dst': '10.103.0.2', 'ip': '10.103.100.6', 'nbr': '10.103.100.5', 'ras': routing.asn.dc1_edge},
+                {'id': 2, 'peer': 'dc1-wan02', 'dst': '10.103.0.6', 'ip': '10.103.100.14', 'nbr': '10.103.100.13', 'ras': routing.asn.dc1_edge}],
+}.get(name, []) %}
+{#- routed eBGP neighbours on this router's links: firewalls (AS from routing) and leaf bypass (AS dc1_leaf) -#}
+{%- set ns = namespace(ebgp=[], links=[]) %}
+{%- set ns.links = [] %}
+{%- for lk in links %}
+{%- set other = (lk.b if lk.a.startswith(name + ':') else lk.a).split(':')[0] %}
+{%- if firewalls or nodes[other].role != 'firewall' %}{% set ns.links = ns.links + [lk] %}{% endif %}
+{%- endfor %}
+{%- for lk in ns.links if lk.prefix is defined %}
+{%- set mine = lk.a if lk.a.startswith(name + ':') else lk.b %}
+{%- set peer = (lk.b if mine == lk.a else lk.a).split(':')[0] %}
+{%- set base = lk.prefix.split('/')[0].split('.') %}
+{%- set last = base[3] | int %}
+{%- set nbr_ip = base[0] ~ '.' ~ base[1] ~ '.' ~ base[2] ~ '.' ~ ((last + 2) if mine == lk.a else (last + 1)) %}
+{%- if peer.startswith('dc1-fw') %}{% set ns.ebgp = ns.ebgp + [{'ip': nbr_ip, 'as': routing.asn.dc1_fw, 'desc': peer}] %}
+{%- elif peer.startswith('dc1-leaf') %}{% set ns.ebgp = ns.ebgp + [{'ip': nbr_ip, 'as': routing.asn.dc1_leaf, 'desc': peer ~ ' (firewall bypass)'}] %}
+{%- endif %}
+{%- endfor %}
+hostname {{ name }}
+{#- the image boots with an empty licence level, which hides every crypto/IKEv2 command; the level
+    takes effect on the next boot, so eve/build.py push-configs reloads the routers once (ADR 0034). -#}
+license boot level network-advantage addon dna-advantage
+ip domain name {{ lab.domain }}
+no ip domain lookup
+username automation privilege 15 secret 0 {{ automation_password }}
+enable secret 0 {{ automation_password }}
+aaa new-model
+aaa authentication login default local
+aaa authorization exec default local
+ip ssh version 2
+ip ssh server algorithm hostkey rsa-sha2-512 rsa-sha2-256
+crypto key generate rsa modulus 2048
+netconf-yang
+restconf
+ip http secure-server
+ip http authentication local
+ip name-server vrf MGMT {{ lab.dns | join(' ') }}
+ntp server vrf MGMT {{ lab.ntp }}
+!
+vrf definition MGMT
+ address-family ipv4
+!
+{%- if site != 'wan' %}
+vrf definition WAN
+ description front-door VRF: provider transport only
+ rd {{ asn }}:1
+ address-family ipv4
+!
+{%- endif %}
+interface GigabitEthernet1
+ description OOB management (pnet1)
+ vrf forwarding MGMT
+ ip address {{ node.mgmt_ip }} 255.255.255.0
+ no shutdown
+!
+ip route vrf MGMT 0.0.0.0 0.0.0.0 {{ lab.mgmt_gateway }}
+!
+interface Loopback0
+ ip address {{ lo }} 255.255.255.255
+!
+{%- if lan and not firewalls %}
+ip dhcp excluded-address {{ lan.gw }} {{ lan.net[:-1] }}99
+ip dhcp pool USERS
+ network {{ lan.net }} 255.255.255.0
+ default-router {{ lan.gw }}
+ dns-server {{ lab.dns | join(' ') }}
+ domain-name {{ lab.domain }}
+!
+{%- endif %}
+{%- for lk in ns.links %}
+{%- set mine = lk.a if lk.a.startswith(name + ':') else lk.b %}
+{%- set peer = lk.b if mine == lk.a else lk.a %}
+{%- set ifname = mine.split(':')[1] | replace('Gi', 'GigabitEthernet') %}
+{%- set pname = peer.split(':')[0] %}
+interface {{ ifname }}
+ description to {{ peer }}{{ ' (firewall bypass)' if lk.get('bypass') else '' }}
+{%- if lk.prefix is defined %}
+{%- set base = lk.prefix.split('/')[0].split('.') %}
+{%- set last = base[3] | int %}
+{%- set my_last = (last + 1) if mine == lk.a else (last + 2) %}
+{%- if pname == 'isp-core01' %}
+ vrf forwarding WAN
+{%- endif %}
+ ip address {{ base[0] }}.{{ base[1] }}.{{ base[2] }}.{{ my_last }} 255.255.255.252
+{%- if pname.startswith('dc1-fw') or pname.startswith('dc1-leaf') %}
+ bfd interval 300 min_rx 300 multiplier 3
+{%- endif %}
+{%- elif lk.vlan is defined %}
+ ip address {{ lan.gw }} 255.255.255.0
+{%- endif %}
+ no shutdown
+!
+{%- endfor %}
+{%- if tunnels %}
+crypto ikev2 proposal LAB
+ encryption aes-gcm-256
+ prf sha384
+ group 19
+!
+crypto ikev2 policy LAB
+ match fvrf WAN
+ proposal LAB
+!
+crypto ikev2 keyring LAB
+{%- for t in tunnels %}
+ peer {{ t.peer }}
+  address {{ t.dst }}
+  pre-shared-key {{ automation_password }}
+{%- endfor %}
+!
+crypto ikev2 profile LAB
+ match fvrf WAN
+ match identity remote address 0.0.0.0
+ authentication remote pre-share
+ authentication local pre-share
+ keyring local LAB
+ dpd 30 5 on-demand
+!
+crypto ipsec transform-set LAB esp-gcm 256
+ mode {{ 'tunnel' if routing.wan_tunnel_mode == 'ipsec' else 'transport' }}
+!
+crypto ipsec profile LAB
+ set transform-set LAB
+ set ikev2-profile LAB
+!
+{%- for t in tunnels %}
+interface Tunnel{{ t.id }}
+ description {{ 'FlexVPN sVTI' if routing.wan_tunnel_mode == 'ipsec' else 'GRE-over-IPsec' }} to {{ t.peer }}
+ ip address {{ t.ip }} 255.255.255.252
+ ip mtu 1400
+ ip tcp adjust-mss 1360
+ tunnel source {{ wan_ip }}
+{%- if routing.wan_tunnel_mode == 'ipsec' %}
+ tunnel mode ipsec ipv4
+{%- endif %}
+ tunnel destination {{ t.dst }}
+ tunnel vrf WAN
+ tunnel protection ipsec profile LAB
+!
+{%- endfor %}
+{%- endif %}
+router bgp {{ asn }}
+ bgp router-id {{ lo }}
+ bgp log-neighbor-changes
+ bgp graceful-restart
+{%- if name == 'isp-core01' %}
+ neighbor 10.103.0.2 remote-as {{ routing.asn.dc1_edge }}
+ neighbor 10.103.0.6 remote-as {{ routing.asn.dc1_edge }}
+ neighbor 10.103.0.10 remote-as {{ routing.asn.br1 }}
+ neighbor 10.103.0.14 remote-as {{ routing.asn.br2 }}
+ address-family ipv4
+  network 10.103.255.1 mask 255.255.255.255
+{%- for n in ['10.103.0.2', '10.103.0.6', '10.103.0.10', '10.103.0.14'] %}
+  neighbor {{ n }} activate
+  neighbor {{ n }} default-originate
+{%- endfor %}
+ exit-address-family
+{%- else %}
+{%- for t in tunnels %}
+ neighbor {{ t.nbr }} remote-as {{ t.ras }}
+ neighbor {{ t.nbr }} description {{ t.peer }} via Tunnel{{ t.id }}
+ neighbor {{ t.nbr }} timers 20 60
+{%- endfor %}
+{%- for e in ns.ebgp %}
+ neighbor {{ e.ip }} remote-as {{ e.as }}
+ neighbor {{ e.ip }} description {{ e.desc }}
+ neighbor {{ e.ip }} fall-over bfd
+{%- endfor %}
+{%- if site == 'dc1' %}
+{%- set ibgp = '10.101.2.250' if name == 'dc1-wan01' else '10.101.2.249' %}
+ neighbor {{ ibgp }} remote-as {{ routing.asn.dc1_edge }}
+ neighbor {{ ibgp }} description iBGP dc1 edge peer
+{%- endif %}
+ address-family ipv4
+  network {{ lo }} mask 255.255.255.255
+{%- if site == 'dc1' %}
+  network 10.101.0.0 mask 255.255.0.0
+  neighbor {{ ibgp }} activate
+  neighbor {{ ibgp }} next-hop-self
+{%- else %}
+  network {{ lan.agg }} mask 255.255.240.0
+{%- endif %}
+{%- for t in tunnels %}
+  neighbor {{ t.nbr }} activate
+{%- endfor %}
+{%- for e in ns.ebgp %}
+  neighbor {{ e.ip }} activate
+{%- endfor %}
+ exit-address-family
+ address-family ipv4 vrf WAN
+  neighbor {{ isp_peer }} remote-as {{ routing.asn.isp }}
+  neighbor {{ isp_peer }} description provider (transport only)
+  neighbor {{ isp_peer }} activate
+ exit-address-family
+{%- endif %}
+!
+{%- if site == 'dc1' %}
+ip route 10.101.0.0 255.255.0.0 Null0 250
+{%- elif lan %}
+ip route {{ lan.agg }} 255.255.240.0 Null0 250
+{%- endif %}
+!
+end

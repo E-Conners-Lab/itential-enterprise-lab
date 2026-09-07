@@ -6,9 +6,13 @@ end. Everything is code: OpenTofu for Proxmox, the EVE-NG REST API for the
 network topology, Helm/Kustomize for k3s, Ansible for guests, and NetBox as the
 network source of truth.
 
-> **Status: Phase 3 — k3s platform.** Three-node k3s behind a kube-vip API VIP
-> with Cilium, MetalLB, Longhorn, cert-manager (lab CA in `docs/lab-root-ca.crt`),
-> CloudNativePG backing up to Garage. Inventory now comes from NetBox.
+> **Status: Phase 4 — network topology (in progress, firewall-less).** The EVE-NG
+> lab `/enterprise.unl` runs 17 of 21 nodes: ISP core, two DC WAN edges, an
+> EVPN-VXLAN spine/leaf fabric with an access switch, two branches with routers,
+> switches, Ubuntu hosts and Windows 11 clients. Branch-to-DC and branch-to-branch
+> traffic flows over IKEv2/GRE tunnels into the fabric's tenant VRF. The four
+> PA-VM firewalls wait on the Customer Support Portal download; `lab.firewalls`
+> in `topology/enterprise.yaml` swaps the bypass links for them (ADR 0034).
 
 ## Architecture (target)
 
@@ -46,7 +50,7 @@ committed. Service specs and acceptance criteria are in `docs/PID.md`.
 | 1 | `phase-1/pid` | PID, image manifest, IP plan, resource budget, ADRs, issues | merged (PR #13) |
 | 2 | `phase-2/oob-network` | OOB network (`vmbr1`, `pnet1`, `oob-gw`), Proxmox API token, image staging, NetBox seeded | merged (PR #14) |
 | 3 | `phase-3/platform` | 3-node k3s: Cilium, MetalLB, Longhorn, cert-manager + lab CA, CloudNativePG + Garage backups | in review |
-| 4 | `phase-4/network-topology` | EVE-NG DC + 2 branches (PA-VM, C8000v, vEOS, endpoints) from `topology/` | planned |
+| 4 | `phase-4/network-topology` | EVE-NG DC + 2 branches (C8000v, vEOS, endpoints; PA-VM deferred behind `lab.firewalls`) from `topology/` | in progress |
 | 5 | `phase-5/itential` | Itential Platform + Automation Gateway, ServiceNow PDI adapter | planned |
 | 6 | `phase-6/ddi` | Infoblox NIOS primary, BIND9 + Kea secondary, zone generated from NetBox | planned |
 | 7 | `phase-7/identity` | Windows Server AD DS/DNS, tac_plus, Keycloak SSO | planned |

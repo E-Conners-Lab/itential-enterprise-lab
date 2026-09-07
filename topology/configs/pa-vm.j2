@@ -1,0 +1,15 @@
+{#- PAN-OS bootstrap for every PA-VM (ADR 0034): management address, DNS/NTP, automation admin.
+    EVE-NG's config_paloalto.py types these lines at the console. Data-plane, HA and policy are
+    pushed by Ansible/Itential after boot. -#}
+set deviceconfig system hostname {{ name }}
+set deviceconfig system domain {{ lab.domain }}
+set deviceconfig system type static
+set deviceconfig system ip-address {{ node.mgmt_ip }}
+set deviceconfig system netmask 255.255.255.0
+set deviceconfig system default-gateway {{ lab.mgmt_gateway }}
+set deviceconfig system dns-setting servers primary {{ lab.dns[0] }}
+set deviceconfig system ntp-servers primary-ntp-server ntp-server-address {{ lab.ntp }}
+set deviceconfig system service disable-telnet yes
+set deviceconfig system service disable-http yes
+set mgt-config users automation permissions role-based superuser yes
+set mgt-config users automation password-hash {{ pan_password_hash }}

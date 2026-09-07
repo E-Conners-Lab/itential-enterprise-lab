@@ -566,7 +566,7 @@ at the end of Phase 2 and this table amended.
 |---|---|---|---|
 | 2 | `phase-2/oob-network` | `verify/test-02-oob.sh` | Confirm `oob-gw` home-LAN IP; nothing else |
 | 3 | `phase-3/platform` | `verify/test-03-platform.sh` | none |
-| 4 | `phase-4/network-topology` | `verify/test-04-topology.sh` | Download PA-VM, C8000v (if bumped), vEOS/Aboot, Windows 11 eval to `/srv/images` |
+| 4 | `phase-4/network-topology` | `verify/test-04-topology.sh` | Download PA-VM to `/srv/images/pa-vm` (Customer Support Portal); C8000v/vEOS reused (ADR 0032/0033); Windows 11 automated (`images/fetch.sh`, `images/build-win11.sh`) |
 | 5 | `phase-5/itential` | `verify/test-05-itential.sh` | Confirm Itential repository credentials and licence terms; download Platform/Gateway RPMs; create the PDI integration user; log into the PDI every 10 days from then on |
 | 6 | `phase-6/ddi` | `verify/test-06-ddi.sh` | Download NIOS eval, apply the temp licence on the console |
 | 7 | `phase-7/identity` | `verify/test-07-identity.sh` | Download Windows Server eval ISO |
@@ -613,3 +613,4 @@ the verify log path and any ADRs added.
 | 1.0 | 2026-09-06 | Initial PID (Phase 1) |
 | 1.1 | 2026-09-06 | Phase 2: A-19 resolved (.120), assumption 1 amended to the chat-approval process, S1 criterion 8 (client access) and S4 criterion 7 (Itential MCP reachability) added, Itential moves to the container path (manifest 3.5, ADR 0020 to be amended in Phase 5) |
 | 1.2 | 2026-09-06 | Phase 3: object store is Garage, CNPG backups via the Barman Cloud plugin, kube-vip 1.2.3 (ADR 0031); S2.2 drill recorded separately per PIS-09; NetBox is the Ansible inventory from Phase 3 on (PIS-15 contract honoured) |
+| 1.3 | 2026-09-07 | Phase 4: design amended after vendor research (ADR 0034: routed eBGP edge/firewall handoff, NGE IKEv2 + front-door VRF, AVD tenant VRF); firewalls deferred behind `lab.firewalls` with bypass links, S3.4/S3.5/S3.6 firewall checks deferred until the PA-VM image is staged; Windows 11 built UEFI/TPM; C8000v needs a licence boot level + reload |

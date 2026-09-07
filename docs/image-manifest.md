@@ -20,9 +20,9 @@ naming per <https://www.eve-ng.net/index.php/documentation/qemu-image-namings/>.
 |---|---|---|---|---|---|---|
 | `pa-vm` | Palo Alto VM-Series (PAN-OS) | 11.1, latest KVM base image on the portal (>= 11.1.4-h7; 11.1.16-h1 is the current maintenance release) | EVE-NG | 4 / 8 GB / 60 GB | unlicensed mode, no expiry, ~1,230 sessions | 0010 |
 | `panorama` | Palo Alto Panorama | 11.1, same maintenance release as `pa-vm` | Proxmox | 8 / 32 GB / 81 GB + 100 GB log disk | eval or 180-day device-management grace: **UNVERIFIED**, see entry | 0011 |
-| `c8000v` | Cisco Catalyst 8000V (IOS XE) | 17.18.4 (Extended Maintenance) | EVE-NG | 2 / 6 GB / 8 GB | Smart Licensing Using Policy, no registration needed, 10 Mbps default throughput (250 Mbps settable) | 0012 |
-| `veos` | Arista vEOS-lab | 4.35.6M | EVE-NG | 2 / 4 GB / 4 GB | free with arista.com account, no expiry | 0013 |
-| `ceos` | Arista cEOS-lab | 4.35.6M (parity with `veos`) | Containerlab (`clab` VM) | ~1 GB RAM per node | free with arista.com account | 0014 |
+| `c8000v` | Cisco Catalyst 8000V (IOS XE) | **17.13.01a as loaded** (owner decision 2026-09-06, ADR 0032); upgrade target 17.18.4 | EVE-NG | 2 / 6 GB / 8 GB | Smart Licensing Using Policy, no registration needed, 10 Mbps default throughput (250 Mbps settable) | 0032 (0012 superseded) |
+| `veos` | Arista vEOS-lab | **4.33.1.1F as loaded** (owner decision 2026-09-06, ADR 0033); upgrade target 4.35.6M | EVE-NG | 2 / 4 GB / 4 GB | free with arista.com account, no expiry | 0033 (0013 superseded) |
+| `ceos` | Arista cEOS-lab | newest 4.33.x cEOS64-lab at Phase 11 (train parity with `veos`, ADR 0033) | Containerlab (`clab` VM) | ~1 GB RAM per node | free with arista.com account | 0014, 0033 |
 | `nios` | Infoblox NIOS (vNIOS IB-V825) | 9.0.8 | Proxmox | 2 / 16 GB / 150 GB (resizable image) | temp licence **60 days** | 0015 |
 | `winserver` | Windows Server 2025 Standard eval (Desktop Experience) | 2025 eval, build 26100 | Proxmox | 4 / 8 GB / 80 GB | **180 days**, activate within 10 days; rearm count **UNVERIFIED** | 0016 |
 | `win11` | Windows 11 Enterprise eval | 25H2 | EVE-NG | 2 / 6 GB / 64 GB | **90 days** | 0017 |
@@ -76,7 +76,7 @@ once verified).
 
 | | |
 |---|---|
-| Version | **17.18.4** (Extended Maintenance, released as a rebuild of the 17.18 train; 17.18.1 GA 2025-08-08). Replaces the loaded `c8000v-17.13.01a` |
+| Version | **Running: 17.13.01a**, the image already on EVE-NG (ADR 0032, owner decision 2026-09-06). Upgrade target when wanted: 17.18.4 (Extended Maintenance; 17.18.1 GA 2025-08-08), reasoning kept below |
 | Why | 17.13 is a Standard-support release whose software maintenance ended 2024-11-30. 17.15.x is EM but its maintenance ends 2027-03-30 and Cisco's EOL notice says migrate to 17.18.1+. Cisco's recommended EM releases (doc updated 2026-09-04): 17.18.4 and 17.15.6. 26.1.x is the new numbering with no C8000V feature delta. gNMI (Get/Set/Subscribe), NETCONF and RESTCONF are all documented for 17.18. Sources: [17.18 release notes](https://www.cisco.com/c/en/us/td/docs/routers/C8000V/Release-Notes/c8000v-releasenotes-17-18.html), [17.15 EOL](https://www.cisco.com/c/en/us/products/collateral/ios-nx-os-software/ios-xe-17/ios-xe-17-15-x-eol.html), [recommended releases](https://www.cisco.com/c/en/us/support/docs/switches/catalyst-9300-series-switches/214814-recommended-releases-for-catalyst-9200-9.html), [endoflife.date](https://endoflife.date/cisco-ios-xe). The software.cisco.com "suggested" star is login-gated: **UNVERIFIED** |
 | Download | [software.cisco.com, Catalyst 8000V](https://software.cisco.com/download/home/286327102/type/282046477) (CCO login) |
 | Expected filename | `c8000v-universalk9_8G_serial.17.18.04.qcow2` (**pattern extrapolated from** `c8000v-universalk9_8G_serial.17.15.01a.qcow2`; use the `_8G_serial` variant, not the non-serial or EFI files), ~1.8 GB |
@@ -92,7 +92,7 @@ once verified).
 
 | | |
 |---|---|
-| Version | **EOS 4.35.6M** (2026-08-18). Replaces the loaded `veos-4.33.1.1F` (an early F build whose train has since had ~9 maintenance rebuilds; the `.1.1F` build itself is **UNVERIFIED** on public pages) |
+| Version | **Running: 4.33.1.1F**, the image already on EVE-NG (ADR 0033, owner decision 2026-09-06). Upgrade target: EOS 4.35.6M (2026-08-18); reasoning kept below |
 | Why | Newest train in M (fix-only) phase; 4.36 is still F-only. Same version as cEOS-lab so the Containerlab twin matches. EVE-NG's how-to lists 4.34.0F as tested, so 4.34.8M is the fallback. Sources: [Arista release notes feed](https://www.arista.com/en/support/release-notes), [EOS life-cycle policy](https://www.arista.com/en/support/product-documentation/eos-life-cycle-policy) |
 | Download | [arista.com software download](https://www.arista.com/en/support/software-download) (free registered account) |
 | Expected filename | `vEOS64-lab-4.35.6M.qcow2` (pattern from `vEOS64-lab-4.35.3F.qcow2`; exact name **UNVERIFIED**) + `Aboot-veos-serial-8.0.2.iso` (6 MB, MD5 `8d7e754efebca1930a93a2587ff7606c` per the GNS3 registry) |
@@ -159,8 +159,8 @@ once verified).
 | Checksum | Microsoft publishes `Windows11EnterpriseHashValues.pdf` from the download page (SHA256) |
 | Licence / eval | **90 days**; black desktop + hourly shutdown at expiry |
 | Min / Lab | 2 cores, 4 GB, 64 GB, TPM 2.0 + Secure Boot. **Lab: 2 vCPU / 6144 MB / 64 GB** |
-| EVE-NG folder | `win-11-25h2/virtioa.qcow2`; EVE-NG template 4 vCPU / 8 GB ([how-to](https://www.eve-ng.net/index.php/documentation/howtos/howto-create-own-windows-host-on-the-eve/)) |
-| Quirks | EVE-NG has no swtpm/OVMF in its templates through 7.2.0-4, so the install uses the documented `LabConfig` registry bypass for TPM/Secure Boot/RAM; 25H2 needs POPCNT/SSE4.2 (Xeon Gold 6154 has both) |
+| EVE-NG folder | `win-11-25h2/hda.qcow2` (SATA) + `OVMF_CODE_4M.fd`/`OVMF_VARS_4M.fd`; node runs QEMU 5.2.0, q35, pflash OVMF, e1000 NIC (`topology/enterprise.yaml` `eve.*`); template default 4 vCPU / 8 GB ([how-to](https://www.eve-ng.net/index.php/documentation/howtos/howto-create-own-windows-host-on-the-eve/)) |
+| Quirks | 25H2 setup refuses a BIOS/MBR disk even with the `LabConfig` bypass, so `images/build-win11.sh` installs under OVMF + Secure Boot + swtpm TPM 2.0 on Proxmox (built image sha256 `223991ef…` in `/srv/images/MANIFEST.sha256`); EVE-NG runs it without a TPM (not needed after install); 25H2 needs POPCNT/SSE4.2 (Xeon Gold 6154 has both) |
 | Verified | 2026-09-06 |
 
 ### 2.9 `ubuntu` — Ubuntu 24.04 LTS cloud image
