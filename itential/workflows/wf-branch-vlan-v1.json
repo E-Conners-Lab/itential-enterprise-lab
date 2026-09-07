@@ -3,6 +3,52 @@
   "type": "automation",
   "description": "Reserves a VLAN in NetBox for a branch, asks for approval, configures the branch switch through Gateway 5, activates the NetBox VLAN; rolls the reservation back on rejection or device failure (PID S4.4)",
   "tasks": {
+    "0a": {
+      "name": "evaluation",
+      "canvasName": "evaluation",
+      "summary": "override given?",
+      "description": "override given?",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": -300,
+        "y": -200
+      },
+      "variables": {
+        "incoming": {
+          "all_true_flag": true,
+          "evaluation_groups": [
+            {
+              "all_true_flag": true,
+              "evaluations": [
+                {
+                  "query": "",
+                  "operand_1": {
+                    "variable": "switch_override",
+                    "task": "job"
+                  },
+                  "operator": "!=",
+                  "operand_2": {
+                    "variable": "",
+                    "task": "static"
+                  }
+                }
+              ]
+            }
+          ],
+          "options": {}
+        },
+        "outgoing": {
+          "return_value": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
     "1a": {
       "name": "replace",
       "canvasName": "replace",
@@ -25,7 +71,37 @@
           "newSubstr": "$var.job.branch"
         },
         "outgoing": {
-          "replacedString": null
+          "replacedString": "$var.job.switch"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "0b": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "switch = override",
+      "description": "switch = override",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 0,
+        "y": -600
+      },
+      "variables": {
+        "incoming": {
+          "input": "$var.job.switch_override",
+          "outputType": "string",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.switch"
         },
         "error": "",
         "decorators": []
@@ -52,7 +128,7 @@
         "incoming": {
           "str": "[{\"inventory\": \"lab\", \"nodeNames\": [\"__D__\"]}]",
           "substr": "__D__",
-          "newSubstr": "$var.1a.replacedString"
+          "newSubstr": "$var.job.switch"
         },
         "outgoing": {
           "replacedString": null
@@ -892,13 +968,7 @@
   },
   "transitions": {
     "workflow_start": {
-      "1a": {
-        "state": "success",
-        "type": "standard"
-      }
-    },
-    "1a": {
-      "1b": {
+      "0a": {
         "state": "success",
         "type": "standard"
       }
@@ -923,6 +993,28 @@
     },
     "2a": {
       "2b": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "0a": {
+      "0b": {
+        "state": "success",
+        "type": "standard"
+      },
+      "1a": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "0b": {
+      "1b": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "1a": {
+      "1b": {
         "state": "success",
         "type": "standard"
       }
@@ -1092,6 +1184,10 @@
         "type": "string",
         "required": true,
         "description": "VLAN name to reserve and configure"
+      },
+      "switch_override": {
+        "type": "string",
+        "description": "Inventory node to configure instead of <branch>-sw01 (empty = default; used by verify to force a device failure)"
       }
     },
     "required": [

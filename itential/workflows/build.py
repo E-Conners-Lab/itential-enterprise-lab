@@ -186,9 +186,12 @@ VLAN_BODY = '{"site": {"slug": "__B__"}, "group": {"slug": "__G__"}, "vid": __V_
 
 def branch_vlan() -> dict:
     tasks = {
-        # names and selectors
+        # names and selectors: the switch is <branch>-sw01 unless switch_override names another node
+        "0a": evaluate("override given?", "job", "switch_override", "", "!=", "", x=-300, y=-200),
         "1a": replace("switch = <branch>-sw01", "__B__-sw01", "__B__", "$var.job.branch", x=0, y=-200),
-        "1b": replace("selector JSON", '[{"inventory": "%s", "nodeNames": ["__D__"]}]' % INVENTORY, "__D__", "$var.1a.replacedString", x=300, y=-200),
+        "0b": task("makeData", "WorkFlowEngine", "switch = override", {"input": "$var.job.switch_override", "outputType": "string", "variables": ""},
+                   {"output": "$var.job.switch"}, display="Tools", x=0, y=-600),
+        "1b": replace("selector JSON", '[{"inventory": "%s", "nodeNames": ["__D__"]}]' % INVENTORY, "__D__", "$var.job.switch", x=300, y=-200),
         "1c": parse("selector", "$var.1b.replacedString", x=600, y=-200),
         "1d": replace("group slug = <branch>-user", "__B__-user", "__B__", "$var.job.branch", x=0, y=-400),
         # idempotency: does the VLAN already exist in the branch?
@@ -225,12 +228,17 @@ def branch_vlan() -> dict:
         "8a": nb("deleteIpamVlansId", "rollback: delete the NetBox reservation", {"id": "$var.a2.return_data"}, x=6300, y=400),
         "8b": flag("rolled_back = true", "true", "rolled_back", x=6600, y=400),
     }
-    order = ["1a", "1b", "1c", "1d", "2a", "2b"]
+    tasks["1a"]["variables"]["outgoing"] = {"replacedString": "$var.job.switch"}
+    order = ["1b", "1c", "1d", "2a", "2b"]
     reserve = ["3a", "3b", "a1", "b2", "3e", "3f", "c1", "c2", "c3", "3d", "a2", "4b", "4a"]
     apply = ["5a", "5b", "5c", "5d", "6a", "7a"]
     tr = {}
     for a, b in zip(["workflow_start", *order], order):
         tr[a] = t("", b)
+    tr["workflow_start"] = t("", "0a")
+    tr["0a"] = {"0b": {"state": "success", "type": "standard"}, "1a": {"state": "failure", "type": "standard"}}
+    tr["0b"] = t("", "1b")
+    tr["1a"] = t("", "1b")
     tr["2b"] = {"9a": {"state": "success", "type": "standard"}, "3a": {"state": "failure", "type": "standard"}}
     tr["9a"] = t("", "workflow_end")
     for a, b in zip(reserve, reserve[1:]):
@@ -246,7 +254,8 @@ def branch_vlan() -> dict:
     return workflow("wf-branch-vlan-v1", "Reserves a VLAN in NetBox for a branch, asks for approval, configures the branch switch through Gateway 5, "
                     "activates the NetBox VLAN; rolls the reservation back on rejection or device failure (PID S4.4)",
                     {"branch": {"type": "string", "required": True, "description": "Branch site slug, e.g. br1"},
-                     "vlan_name": {"type": "string", "required": True, "description": "VLAN name to reserve and configure"}},
+                     "vlan_name": {"type": "string", "required": True, "description": "VLAN name to reserve and configure"},
+                     "switch_override": {"type": "string", "description": "Inventory node to configure instead of <branch>-sw01 (empty = default; used by verify to force a device failure)"}},
                     tasks, tr, {"changed": {"type": "boolean"}, "vid": {"type": "number"}, "vlan_id": {"type": "number"},
                                 "reservation": {"type": "object"}, "config_result": {"type": "object"}, "rolled_back": {"type": "boolean"}})
 
