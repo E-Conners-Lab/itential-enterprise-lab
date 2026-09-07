@@ -179,13 +179,18 @@ nodes:
     cpu: 2
     ram: 6144
     ethernet: 2
-    # UEFI/GPT Windows 11 image (images/build-win11.sh): boots with QEMU 9.2.2, q35 and OVMF on EVE-NG
+    # UEFI/GPT Windows 11 image (images/build-win11.sh): QEMU 5.2.0 (the version the vEOS nodes prove inside the EVE-NG chroot; 9.2.2 exits
+    # silently there), q35, OVMF. QEMU runs chrooted in the
+    # node directory, into which EVE-NG copies every file of the image folder, so the firmware ships in the
+    # image folder (images/import-eve.sh puts OVMF_CODE_4M.fd + OVMF_VARS_4M.fd next to virtioa.qcow2) as pflash;
+    # the split 4M firmware does not load through -bios, and each node gets its own copy of the vars file.
     eve:
       left: 60
       top: 540
-      qemu_version: "9.2.2"
+      qemu_version: "5.2.0"
+      qemu_arch: x86_64
       qemu_nic: virtio-net-pci
-      qemu_options: "-machine type=q35,accel=kvm -cpu host,+pcid,+kvm_pv_unhalt,+kvm_pv_eoi,hv_spinlocks=0x1fff,hv_vapic,hv_time,hv_reset,hv_vpindex,hv_runtime,hv_relaxed,hv_synic,hv_stimer -bios /usr/share/OVMF/OVMF_CODE_4M.fd -vga std -usb -device usb-tablet"
+      qemu_options: "-machine type=q35,accel=kvm -cpu host,+pcid,+kvm_pv_unhalt,+kvm_pv_eoi,hv_spinlocks=0x1fff,hv_vapic,hv_time,hv_reset,hv_vpindex,hv_runtime,hv_relaxed,hv_synic,hv_stimer -drive if=pflash,format=raw,readonly=on,file=OVMF_CODE_4M.fd -drive if=pflash,format=raw,file=OVMF_VARS_4M.fd -vga std -usb -device usb-tablet"
   br1-host01:
     site: br1
     role: client
@@ -235,13 +240,18 @@ nodes:
     cpu: 2
     ram: 6144
     ethernet: 2
-    # UEFI/GPT Windows 11 image (images/build-win11.sh): boots with QEMU 9.2.2, q35 and OVMF on EVE-NG
+    # UEFI/GPT Windows 11 image (images/build-win11.sh): QEMU 5.2.0 (the version the vEOS nodes prove inside the EVE-NG chroot; 9.2.2 exits
+    # silently there), q35, OVMF. QEMU runs chrooted in the
+    # node directory, into which EVE-NG copies every file of the image folder, so the firmware ships in the
+    # image folder (images/import-eve.sh puts OVMF_CODE_4M.fd + OVMF_VARS_4M.fd next to virtioa.qcow2) as pflash;
+    # the split 4M firmware does not load through -bios, and each node gets its own copy of the vars file.
     eve:
       left: 900
       top: 540
-      qemu_version: "9.2.2"
+      qemu_version: "5.2.0"
+      qemu_arch: x86_64
       qemu_nic: virtio-net-pci
-      qemu_options: "-machine type=q35,accel=kvm -cpu host,+pcid,+kvm_pv_unhalt,+kvm_pv_eoi,hv_spinlocks=0x1fff,hv_vapic,hv_time,hv_reset,hv_vpindex,hv_runtime,hv_relaxed,hv_synic,hv_stimer -bios /usr/share/OVMF/OVMF_CODE_4M.fd -vga std -usb -device usb-tablet"
+      qemu_options: "-machine type=q35,accel=kvm -cpu host,+pcid,+kvm_pv_unhalt,+kvm_pv_eoi,hv_spinlocks=0x1fff,hv_vapic,hv_time,hv_reset,hv_vpindex,hv_runtime,hv_relaxed,hv_synic,hv_stimer -drive if=pflash,format=raw,readonly=on,file=OVMF_CODE_4M.fd -drive if=pflash,format=raw,file=OVMF_VARS_4M.fd -vga std -usb -device usb-tablet"
   br2-host01:
     site: br2
     role: client

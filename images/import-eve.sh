@@ -29,6 +29,9 @@ else
   $SSH_PVE "rsync -a --partial --info=progress2 -e 'ssh -o StrictHostKeyChecking=accept-new' ${STAGING}/${key}/${file} root@${EVE_HOST}:/opt/unetlab/addons/qemu/${folder}/${disk}" 2>&1 | tail -2
   $SSH_EVE "sha256sum /opt/unetlab/addons/qemu/${folder}/${disk} | grep -q '^${sum}'" && echo "copied, checksum ok"
 fi
+# Windows 11 is a UEFI install; EVE-NG runs QEMU chrooted in the node directory (a copy of the image
+# folder), and /usr/share/OVMF is not visible there, so the firmware travels with the image.
+[ "$key" = win11 ] && $SSH_EVE "cp -f /usr/share/OVMF/OVMF_CODE_4M.fd /usr/share/OVMF/OVMF_VARS_4M.fd /opt/unetlab/addons/qemu/${folder}/ && echo 'OVMF firmware (pflash code+vars) placed in the image folder'"
 $SSH_EVE "/opt/unetlab/wrappers/unl_wrapper -a fixpermissions >/dev/null 2>&1 && ls -la /opt/unetlab/addons/qemu/${folder}/"
 echo "== record"
 mkdir -p verify/results && printf '%s import-eve %s/%s -> %s/%s sha256=%s\n' "$(date -u +%Y%m%dT%H%M%SZ)" "$key" "$file" "$folder" "$disk" "$sum" >> verify/results/image-imports.log && tail -1 verify/results/image-imports.log

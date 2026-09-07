@@ -7,6 +7,7 @@ account (AUTOMATION_PASSWORD from .env). Used by verify/ scripts; never prints t
 
 import os
 import sys
+import time
 
 import paramiko
 
@@ -21,6 +22,21 @@ def run(ip: str, command: str, user: str = "automation", timeout: int = 20) -> s
     try:
         _, out, err = c.exec_command(command, timeout=timeout)
         return out.read().decode(errors="replace") + err.read().decode(errors="replace")
+    finally:
+        c.close()
+
+
+def reload(ip: str, user: str = "automation", timeout: int = 20) -> None:
+    """IOS XE `reload` needs an interactive confirm; use a shell channel and drop the session."""
+    c = paramiko.SSHClient()
+    c.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    c.connect(ip, username=user, password=os.environ["AUTOMATION_PASSWORD"], look_for_keys=False, allow_agent=False, timeout=timeout)
+    try:
+        sh = c.invoke_shell()
+        sh.send("reload\n")
+        time.sleep(2)
+        sh.send("\n")
+        time.sleep(2)
     finally:
         c.close()
 

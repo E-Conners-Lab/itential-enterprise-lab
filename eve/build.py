@@ -251,7 +251,7 @@ def apply(eve: Eve, topo: dict, allow_missing: bool) -> None:
             "left": n["eve"]["left"], "top": n["eve"]["top"], "config": 0, "delay": 0,
         }
         # per-node QEMU overrides (Windows 11 needs q35 + OVMF: the image is a UEFI/GPT install)
-        payload.update({k: n["eve"][k] for k in ("qemu_version", "qemu_options", "qemu_nic") if k in n["eve"]})
+        payload.update({k: n["eve"][k] for k in ("qemu_version", "qemu_arch", "qemu_options", "qemu_nic") if k in n["eve"]})
         nid = eve.add_node(payload)
         print(f"created node {name} (id {nid})")
     have = eve.nodes()
@@ -318,6 +318,31 @@ def push_configs(eve: Eve, topo: dict, only: list[str] | None) -> None:
     for name in targets:
         eve.start(have[name]["id"])
         print(f"start {name}")
+    # C8000v: the bootstrap sets the licence boot level, which only applies on the next boot and
+    # gates the crypto feature set; save and reload each router once it answers on management.
+    routers = [n for n in targets if topo["nodes"][n]["platform"] == "c8000v"]
+    if routers:
+        sys.path.insert(0, str(ROOT / "verify"))
+        import devcmd
+
+        deadline = time.time() + 900
+        pending = set(routers)
+        while pending and time.time() < deadline:
+            for name in sorted(pending):
+                ip = topo["nodes"][name]["mgmt_ip"]
+                try:
+                    out = devcmd.run(ip, "show run | include license boot", timeout=10)
+                except Exception:
+                    continue
+                if "license boot level" not in out:
+                    continue
+                devcmd.run(ip, "write memory", timeout=30)
+                devcmd.reload(ip)
+                print(f"reload {name} (licence level applies on this boot)")
+                pending.discard(name)
+            time.sleep(15)
+        if pending:
+            raise SystemExit(f"routers never answered on management for the licence reload: {sorted(pending)}")
 
 
 def export_nodes(eve: Eve, topo: dict) -> Path:

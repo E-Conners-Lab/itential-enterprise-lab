@@ -44,6 +44,9 @@
 {%- endif %}
 {%- endfor %}
 hostname {{ name }}
+{#- the image boots with an empty licence level, which hides every crypto/IKEv2 command; the level
+    takes effect on the next boot, so eve/build.py push-configs reloads the routers once (ADR 0034). -#}
+license boot level network-advantage addon dna-advantage
 ip domain name {{ lab.domain }}
 no ip domain lookup
 username automation privilege 15 secret 0 {{ automation_password }}
@@ -67,6 +70,7 @@ vrf definition MGMT
 {%- if site != 'wan' %}
 vrf definition WAN
  description front-door VRF: provider transport only
+ rd {{ asn }}:1
  address-family ipv4
 !
 {%- endif %}
@@ -76,7 +80,7 @@ interface GigabitEthernet1
  ip address {{ node.mgmt_ip }} 255.255.255.0
  no shutdown
 !
-ip route vrf MGMT 0.0.0.0/0 {{ lab.mgmt_gateway }}
+ip route vrf MGMT 0.0.0.0 0.0.0.0 {{ lab.mgmt_gateway }}
 !
 interface Loopback0
  ip address {{ lo }} 255.255.255.255
