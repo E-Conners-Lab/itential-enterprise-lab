@@ -13,7 +13,9 @@ set -a; . ./.env; set +a
 PVE_HOST=${PVE_HOST:-192.168.68.161}
 STAGING=${IMAGE_STAGING:-/srv/images}
 key=${1:?key (manifest section, e.g. pa-vm)}; file=${2:?file name under ${STAGING}/<key>/}; folder=${3:?EVE-NG folder, e.g. paloalto-11.1}
-case "$key" in pa-vm|panorama|c8000v|nios|win11|winserver|ubuntu|alpine) disk=virtioa.qcow2 ;; veos) disk=hda.qcow2 ;; *) echo "unknown key $key"; exit 1 ;; esac
+# EVE-NG picks the bus from the file name: virtioa = virtio-blk, hda = IDE/SATA (AHCI on q35).
+# Windows is installed on SATA (images/build-win11.sh) and has no boot-start virtio driver, so hda.
+case "$key" in pa-vm|panorama|c8000v|nios|winserver|ubuntu|alpine) disk=virtioa.qcow2 ;; veos|win11) disk=hda.qcow2 ;; *) echo "unknown key $key"; exit 1 ;; esac
 SSH_PVE="ssh -o BatchMode=yes -o ConnectTimeout=8 root@${PVE_HOST}"
 SSH_EVE="ssh -o BatchMode=yes -o ConnectTimeout=8 root@${EVE_HOST}"
 echo "== verify ${key}/${file} against ${STAGING}/MANIFEST.sha256 on ${PVE_HOST}"

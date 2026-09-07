@@ -37,6 +37,9 @@
           network:
             version: 2
             ethernets:
+              # the golden image's 50-eve-dhcp.yaml matches en* for DHCP; networkd applies the lexically
+              # first matching unit (all-en beats ens4), so narrow that definition to the management port
+              all-en: {match: {name: ens3}, dhcp4: true}
               ens4:
                 mtu: 1400
           {% if data[site].static is defined %}

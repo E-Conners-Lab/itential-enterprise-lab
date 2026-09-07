@@ -135,7 +135,22 @@
           termination_b_type: dcim.interface
           termination_b: {device: "{{ item.b.split(':')[0] }}", name: "{{ item.b.split(':')[1] }}"}
           status: planned
-      loop: "{{ links }}"
+      loop: "{{ links if not (lab.firewalls | default(true)) else (links | rejectattr('bypass', 'defined') | list) }}"
+      loop_control:
+        label: "{{ item.a }} <-> {{ item.b }}"
+
+    - name: Bypass cables go away once the firewalls are built (lab.firewalls true)
+      netbox.netbox.netbox_cable:
+        netbox_url: "{{ nb_url }}"
+        netbox_token: "{{ nb_token }}"
+        validate_certs: false
+        state: absent
+        data:
+          termination_a_type: dcim.interface
+          termination_a: {device: "{{ item.a.split(':')[0] }}", name: "{{ item.a.split(':')[1] }}"}
+          termination_b_type: dcim.interface
+          termination_b: {device: "{{ item.b.split(':')[0] }}", name: "{{ item.b.split(':')[1] }}"}
+      loop: "{{ links | selectattr('bypass', 'defined') | list if (lab.firewalls | default(true)) else [] }}"
       loop_control:
         label: "{{ item.a }} <-> {{ item.b }}"
 

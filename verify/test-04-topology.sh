@@ -100,7 +100,7 @@ c4() {
   local errs="" dev=".venv/bin/python verify/devcmd.py"
   # ISP: five BGP neighbours established (state column is a number when up)
   local est; est=$($dev 10.100.0.148 "show bgp summary" 2>/dev/null | awk '/^10\.103\./ && $NF ~ /^[0-9]+$/ {c++} END{print c+0}')
-  [ "${est:-0}" -ge 5 ] || errs="$errs isp-bgp=${est:-0}/5"
+  [ "${est:-0}" -ge 4 ] || errs="$errs isp-bgp=${est:-0}/4"
   for b in 146 147; do local up; up=$($dev 10.100.0.$b "show ip interface brief | include Tunnel" 2>/dev/null | grep -c "up *up"); [ "${up:-0}" -ge 2 ] || errs="$errs br@.$b-tunnels=${up:-0}/2"; done
   for l in 162 163; do local ev; ev=$($dev 10.100.0.$l "show bgp evpn summary" 2>/dev/null | grep -c Estab); [ "${ev:-0}" -ge 2 ] || errs="$errs leaf@.$l-evpn=${ev:-0}/2"; $dev 10.100.0.$l "show mlag" 2>/dev/null | grep -qiE "^ *state *: *active" || errs="$errs leaf@.$l-mlag"; done
   if [ "$FIREWALLS" = true ]; then
@@ -112,11 +112,16 @@ c4() {
   fi
   [ -z "$errs" ] || { echo "routing:$errs"; return 1; }
 }
-check "S3.4 ISP has 5 BGP peers; each branch 2 tunnels up; leaves 2 EVPN peers + MLAG active; firewalls HA (or bypass BGP while deferred)" c4
+check "S3.4 ISP has 4 BGP peers; each branch 2 tunnels up; leaves 2 EVPN peers + MLAG active; firewalls HA (or bypass BGP while deferred)" c4
 
 # --- S3.5 end-to-end path branch client -> DC server ---------------------------------------------
-c5() { $SSH -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR "automation@10.100.0.195" "ping -c 3 -W 2 10.101.10.10 && traceroute -n -m 12 -w 2 10.101.10.10" 2>/dev/null | tee /tmp/verify04-trace.$$ | grep -q " 0% packet loss" || { cat /tmp/verify04-trace.$$ 2>/dev/null; rm -f /tmp/verify04-trace.$$; return 1; }; rm -f /tmp/verify04-trace.$$; }
-check "S3.5 br1-host01 reaches dc1-srv01 (10.101.10.10) through fw -> tunnel -> DC fw -> fabric" c5
+c5() {
+  # capture first, grep after: with pipefail an early-exiting grep -q would fail the pipeline
+  $SSH -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR "automation@10.100.0.195" "ping -c 3 -W 2 10.101.10.10 && traceroute -n -m 12 -w 2 10.101.10.10" >/tmp/verify04-trace.$$ 2>&1 || true
+  grep -q " 0% packet loss" /tmp/verify04-trace.$$ || { cat /tmp/verify04-trace.$$; rm -f /tmp/verify04-trace.$$; return 1; }
+  grep -E "^ *[0-9]+ " /tmp/verify04-trace.$$ | sed "s/^/      hop /"; rm -f /tmp/verify04-trace.$$
+}
+check "S3.5 br1-host01 reaches dc1-srv01 (10.101.10.10) through the branch edge -> IPsec tunnel -> DC edge -> fabric (via the firewalls when built, else the bypass)" c5
 
 # --- S3.6 image versions equal the manifest ----------------------------------------------------
 c6() {

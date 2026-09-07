@@ -318,8 +318,10 @@ def push_configs(eve: Eve, topo: dict, only: list[str] | None) -> None:
     for name in targets:
         eve.start(have[name]["id"])
         print(f"start {name}")
-    # C8000v: the bootstrap sets the licence boot level, which only applies on the next boot and
-    # gates the crypto feature set; save and reload each router once it answers on management.
+    # C8000v: the startup config sets the licence boot level that gates the crypto feature set.
+    # With the config.iso bootstrap it applies on the first boot; if a router still shows an
+    # empty level once it answers on management (a wiped node that kept old nvram), save and
+    # reload it once. Either way, fail loud if a router never answers.
     routers = [n for n in targets if topo["nodes"][n]["platform"] == "c8000v"]
     if routers:
         sys.path.insert(0, str(ROOT / "verify"))
@@ -331,18 +333,21 @@ def push_configs(eve: Eve, topo: dict, only: list[str] | None) -> None:
             for name in sorted(pending):
                 ip = topo["nodes"][name]["mgmt_ip"]
                 try:
-                    out = devcmd.run(ip, "show run | include license boot", timeout=10)
+                    out = devcmd.run(ip, "show version | include License Level", timeout=10)
                 except Exception:
                     continue
-                if "license boot level" not in out:
+                if "License Level: network-advantage" in out:
+                    print(f"{name}: licence level active")
+                elif "License Level:" in out:
+                    devcmd.run(ip, "write memory", timeout=30)
+                    devcmd.reload(ip)
+                    print(f"reload {name} (licence level applies on the next boot)")
+                else:
                     continue
-                devcmd.run(ip, "write memory", timeout=30)
-                devcmd.reload(ip)
-                print(f"reload {name} (licence level applies on this boot)")
                 pending.discard(name)
             time.sleep(15)
         if pending:
-            raise SystemExit(f"routers never answered on management for the licence reload: {sorted(pending)}")
+            raise SystemExit(f"routers never answered on management: {sorted(pending)}")
 
 
 def export_nodes(eve: Eve, topo: dict) -> Path:

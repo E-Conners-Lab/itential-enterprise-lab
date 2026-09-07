@@ -114,3 +114,18 @@ Changes made by `phase-2/oob-network`, so §1-3 above now differ in these points
   certificate, Garage 2.4.0 in namespace `garage`, CloudNativePG 1.30.0 with the Barman Cloud
   plugin 0.15.0 and cluster `platform-db` archiving to Garage bucket `cnpg-backups`.
 - EVE-NG and NetBox return-path tables gained the on-link 10.100.0.0/24 route (ADR 0030).
+
+## 9. Amendment 2026-09-07 (Phase 4 applied, firewalls deferred)
+
+- EVE-NG: lab `/enterprise.unl` with 17 nodes (ids in `topology/generated/eve-nodes.yaml`),
+  33 visible bridge networks (29 design links minus 8 firewall links, plus 4 bypass links) and the
+  `pnet1` management cloud. Startup configs live in config set `startup` (rendered from
+  `topology/configs/*.j2` by `eve/build.py push-configs`). New image folder `win-11-25h2`
+  (`hda.qcow2` + OVMF pflash files); `linux-ubuntu-24.04-server` carries the automation user.
+- Routers: C8000v licence level `network-advantage` + `dna-advantage` (set by the startup config,
+  applied by the reload in `push-configs`). All 8 tunnels up, IKEv2 AES-GCM-256/SHA-384/group 19.
+- NetBox: 21 devices (17 `active`, 4 firewalls `planned`), 33 cables, 15 in-band prefixes
+  (10.101.3.0/24 bypass added); device-role groups in the Ansible inventory (`server`, `client`,
+  `isp-core`, ...).
+- oob-gw: DHCP reservations for the five EVE-NG endpoints (10.100.0.192-.196).
+- Proxmox: build VM 9902 is created and destroyed by `images/build-win11.sh`; nothing persists.

@@ -21,7 +21,8 @@ def run(ip: str, command: str, user: str = "automation", timeout: int = 20) -> s
     c.connect(ip, username=user, password=pw, look_for_keys=False, allow_agent=False, timeout=timeout, banner_timeout=timeout, disabled_algorithms=None)
     try:
         _, out, err = c.exec_command(command, timeout=timeout)
-        return out.read().decode(errors="replace") + err.read().decode(errors="replace")
+        # IOS XE / EOS terminate lines with CRLF; strip CR so shell checks can anchor on $NF
+        return (out.read().decode(errors="replace") + err.read().decode(errors="replace")).replace("\r", "")
     finally:
         c.close()
 

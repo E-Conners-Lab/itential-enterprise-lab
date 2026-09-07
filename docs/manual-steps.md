@@ -11,7 +11,7 @@ entry that says exactly what to fetch.
 | 1b | ~~Add a static route on the home router~~ Done 2026-09-06: 10.100.0.0/14 via 192.168.68.120, LAN interface. Workstations with a VPN client that captures 10/8 also run `sudo scripts/workstation-route.sh` | The home router is owned by the owner and is never touched by this repo | 2 | PID S1 criterion 8 |
 | 1c | After every `tofu apply`, copy `tofu/*/terraform.tfstate` to the owner's backup location | No in-lab state backend until Phase 9 (ADR 0029) | 2+ | ADR 0029 |
 | 1d | Log into the EVE-NG web UI with the rotated password from `.env` (`EVE_PASSWORD`), never `eve` | Password rotation is automated; the human just needs to know | 2 | PID S1 criterion 6 |
-| 2 | Download PA-VM 11.1 KVM base image to `/srv/images/pa-vm/` | Palo Alto support portal login and EULA | 4 | manifest 2.1 |
+| 2 | Download PA-VM 11.1 KVM base image to `/srv/images/pa-vm/` (Customer Support Portal asks for a device registration / auth code at account setup); then `images/import-eve.sh pa-vm`, set `lab.firewalls: true`, `eve/build.py apply` + `push-configs` | Palo Alto support portal login and EULA | 4 (deferred, lab runs firewall-less) | manifest 2.1, ADR 0034 amendment |
 | 3 | ~~Download C8000v 17.18.4~~ Not needed: the loaded 17.13.01a is used (ADR 0032) | Cisco CCO login and EULA | 4 | manifest 2.3 |
 | 4 | ~~Download vEOS64-lab 4.35.6M + Aboot ISO~~ Not needed: the loaded 4.33.1.1F is used (ADR 0033). Later upgrades run `images/fetch.sh arista` with `ARISTA_TOKEN` in `.env` | Arista account login | 4 | manifest 2.4 |
 | 5 | ~~Download Windows 11 Enterprise 25H2 eval ISO~~ Automated: `images/fetch.sh microsoft` (Evaluation Center links need no login) | eval terms accepted at install | 4 | manifest 2.8 |

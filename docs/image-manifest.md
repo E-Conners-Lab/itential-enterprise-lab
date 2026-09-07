@@ -159,8 +159,8 @@ once verified).
 | Checksum | Microsoft publishes `Windows11EnterpriseHashValues.pdf` from the download page (SHA256) |
 | Licence / eval | **90 days**; black desktop + hourly shutdown at expiry |
 | Min / Lab | 2 cores, 4 GB, 64 GB, TPM 2.0 + Secure Boot. **Lab: 2 vCPU / 6144 MB / 64 GB** |
-| EVE-NG folder | `win-11-25h2/virtioa.qcow2`; EVE-NG template 4 vCPU / 8 GB ([how-to](https://www.eve-ng.net/index.php/documentation/howtos/howto-create-own-windows-host-on-the-eve/)) |
-| Quirks | EVE-NG has no swtpm/OVMF in its templates through 7.2.0-4, so the install uses the documented `LabConfig` registry bypass for TPM/Secure Boot/RAM; 25H2 needs POPCNT/SSE4.2 (Xeon Gold 6154 has both) |
+| EVE-NG folder | `win-11-25h2/hda.qcow2` (SATA) + `OVMF_CODE_4M.fd`/`OVMF_VARS_4M.fd`; node runs QEMU 5.2.0, q35, pflash OVMF (`topology/enterprise.yaml` `eve.qemu_options`); template default 4 vCPU / 8 GB ([how-to](https://www.eve-ng.net/index.php/documentation/howtos/howto-create-own-windows-host-on-the-eve/)) |
+| Quirks | 25H2 setup refuses a BIOS/MBR disk even with the `LabConfig` bypass, so `images/build-win11.sh` installs under OVMF + Secure Boot + swtpm TPM 2.0 on Proxmox (built image sha256 `223991ef…` in `/srv/images/MANIFEST.sha256`); EVE-NG runs it without a TPM (not needed after install); 25H2 needs POPCNT/SSE4.2 (Xeon Gold 6154 has both) |
 | Verified | 2026-09-06 |
 
 ### 2.9 `ubuntu` — Ubuntu 24.04 LTS cloud image
