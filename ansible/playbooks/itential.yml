@@ -142,6 +142,16 @@
       register: up
       changed_when: "'Started' in up.stderr or 'Created' in up.stderr"
 
+    # Services outside the active profiles are not orphans to Compose; Gateway 4 is deployed only
+    # when its profile is enabled (ADR 0035), so a container left from another profile set goes.
+    - name: Containers of disabled profiles removed
+      ansible.builtin.command:
+        cmd: "docker rm -f {{ item }}"
+      loop: "{{ ['gateway4'] if 'gateway4' not in stack.profiles and 'full' not in stack.profiles else [] }}"
+      register: rm_disabled
+      changed_when: "item in rm_disabled.stdout"
+      failed_when: false
+
     - name: Platform answers /health/status (up to 5 min on first boot; /health itself redirects to the UI)
       ansible.builtin.uri:
         url: "{{ platform_local }}/health/status"
