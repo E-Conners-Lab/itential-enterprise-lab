@@ -1,8 +1,18 @@
-{#- EOS baseline for every vEOS (ADR 0034): management VRF on Ma1, eAPI, local automation user. -#}
+{#- EOS baseline (ADR 0034): management VRF, eAPI, automation user, and the fabric/branch design.
+    spines: eBGP underlay (AS 65101) + iBGP EVPN route-server role
+    leaves: MLAG pair (AS 65102), eBGP underlay to both spines, EVPN overlay, anycast VTEP,
+            VLAN 10 (servers) + VLAN 100 (firewall transit) with anycast gateways
+    access / branch switches: plain L2 -#}
+{%- set role = node.role %}
+{%- set lo = {'dc1-spine01': '10.101.254.1', 'dc1-spine02': '10.101.254.2', 'dc1-leaf01': '10.101.254.11', 'dc1-leaf02': '10.101.254.12'}.get(name) %}
+{%- set vtep = '10.101.253.1' %}
+{%- set asn = routing.asn.dc1_spine if role == 'spine' else routing.asn.dc1_leaf %}
 hostname {{ name }}
 dns domain {{ lab.domain }}
 ip name-server vrf MGMT {{ lab.dns | join(' ') }}
 ntp server vrf MGMT {{ lab.ntp }}
+!
+service routing protocols model multi-agent
 !
 username automation privilege 15 secret 0 {{ automation_password }}
 aaa authorization exec default local
@@ -17,7 +27,6 @@ interface Management1
 !
 ip route vrf MGMT 0.0.0.0/0 {{ lab.mgmt_gateway }}
 !
-ip routing
 management api http-commands
    protocol https
    no shutdown
@@ -28,10 +37,74 @@ management ssh
    vrf MGMT
       no shutdown
 !
+{%- if role in ['spine', 'leaf'] %}
+ip routing
+!
+interface Loopback0
+   description router-id
+   ip address {{ lo }}/32
+!
+{%- endif %}
+{%- if role == 'leaf' %}
+interface Loopback1
+   description anycast VTEP
+   ip address {{ vtep }}/32
+!
+vlan 10
+   name servers
+!
+vlan 100
+   name fw-transit
+!
+vlan 4094
+   name mlag-peer
+   trunk group MLAG
+!
+no spanning-tree vlan-id 4094
+!
+interface Port-Channel1
+   description MLAG peer link
+   switchport mode trunk
+   switchport trunk group MLAG
+!
+interface Port-Channel10
+   description dc1-acc01 (MLAG)
+   switchport mode trunk
+   switchport trunk allowed vlan 10
+   mlag 10
+!
+interface Vlan4094
+   description MLAG peer
+   ip address {{ '10.101.252.1/30' if name == 'dc1-leaf01' else '10.101.252.2/30' }}
+!
+mlag configuration
+   domain-id dc1-leafs
+   local-interface Vlan4094
+   peer-address {{ '10.101.252.2' if name == 'dc1-leaf01' else '10.101.252.1' }}
+   peer-link Port-Channel1
+!
+ip virtual-router mac-address 00:1c:73:00:00:99
+!
+interface Vlan10
+   description servers
+   ip address virtual 10.101.10.1/24
+!
+interface Vlan100
+   description firewall transit
+   ip address virtual 10.101.1.254/24
+!
+interface Vxlan1
+   vxlan source-interface Loopback1
+   vxlan udp-port 4789
+   vxlan vlan 10 vni 10010
+   vxlan vlan 100 vni 10100
+!
+{%- endif %}
 {%- for lk in links %}
 {%- set mine = lk.a if lk.a.startswith(name + ':') else lk.b %}
 {%- set peer = lk.b if mine == lk.a else lk.a %}
 {%- set ifname = mine.split(':')[1] | replace('Eth', 'Ethernet') %}
+{%- set pname = peer.split(':')[0] %}
 interface {{ ifname }}
    description to {{ peer }}
    no shutdown
@@ -40,7 +113,103 @@ interface {{ ifname }}
 {%- set my_last = (base[3] | int) + (0 if mine == lk.a else 1) %}
    no switchport
    ip address {{ base[0] }}.{{ base[1] }}.{{ base[2] }}.{{ my_last }}/31
+{%- elif role == 'leaf' and pname.startswith('dc1-leaf') %}
+   channel-group 1 mode active
+{%- elif role == 'leaf' and pname == 'dc1-acc01' %}
+   channel-group 10 mode active
+{%- elif role == 'leaf' and pname.endswith('fw01') or (role == 'leaf' and pname.endswith('fw02')) %}
+   switchport mode access
+   switchport access vlan 100
+{%- elif role == 'access' and pname.startswith('dc1-leaf') %}
+   channel-group 10 mode active
+{%- elif role == 'access' %}
+   switchport mode access
+   switchport access vlan 10
+{%- elif role == 'branch-switch' %}
+   switchport mode access
+   switchport access vlan 10
 {%- endif %}
 !
 {%- endfor %}
+{%- if role == 'access' %}
+vlan 10
+   name servers
+!
+interface Port-Channel10
+   description uplink to leaf pair (MLAG)
+   switchport mode trunk
+   switchport trunk allowed vlan 10
+!
+{%- elif role == 'branch-switch' %}
+vlan 10
+   name users
+!
+{%- endif %}
+{%- if role in ['spine', 'leaf'] %}
+router bgp {{ asn }}
+   router-id {{ lo }}
+   maximum-paths 4 ecmp 4
+   bgp advertise-inactive
+{%- if role == 'spine' %}
+   neighbor LEAVES peer group
+   neighbor LEAVES remote-as {{ routing.asn.dc1_leaf }}
+   neighbor LEAVES send-community extended
+   neighbor LEAVES maximum-routes 12000
+   neighbor EVPN peer group
+   neighbor EVPN remote-as {{ routing.asn.dc1_leaf }}
+   neighbor EVPN update-source Loopback0
+   neighbor EVPN ebgp-multihop 3
+   neighbor EVPN send-community extended
+   neighbor 10.101.254.11 peer group EVPN
+   neighbor 10.101.254.12 peer group EVPN
+{%- for lk in links if lk.prefix is defined %}
+{%- set base = lk.prefix.split('/')[0].split('.') %}
+   neighbor {{ base[0] }}.{{ base[1] }}.{{ base[2] }}.{{ (base[3] | int) + 1 }} peer group LEAVES
+{%- endfor %}
+   redistribute connected route-map RM-LOOPBACKS
+   address-family evpn
+      neighbor EVPN activate
+   address-family ipv4
+      neighbor LEAVES activate
+      no neighbor EVPN activate
+{%- else %}
+   neighbor SPINES peer group
+   neighbor SPINES remote-as {{ routing.asn.dc1_spine }}
+   neighbor SPINES send-community extended
+   neighbor SPINES maximum-routes 12000
+   neighbor EVPN peer group
+   neighbor EVPN remote-as {{ routing.asn.dc1_spine }}
+   neighbor EVPN update-source Loopback0
+   neighbor EVPN ebgp-multihop 3
+   neighbor EVPN send-community extended
+   neighbor 10.101.254.1 peer group EVPN
+   neighbor 10.101.254.2 peer group EVPN
+{%- for lk in links if lk.prefix is defined %}
+{%- set base = lk.prefix.split('/')[0].split('.') %}
+   neighbor {{ base[0] }}.{{ base[1] }}.{{ base[2] }}.{{ base[3] | int }} peer group SPINES
+{%- endfor %}
+   redistribute connected route-map RM-LOOPBACKS
+   vlan 10
+      rd {{ lo }}:10010
+      route-target both 10010:10010
+      redistribute learned
+   vlan 100
+      rd {{ lo }}:10100
+      route-target both 10100:10100
+      redistribute learned
+   address-family evpn
+      neighbor EVPN activate
+   address-family ipv4
+      neighbor SPINES activate
+      no neighbor EVPN activate
+{%- endif %}
+!
+ip prefix-list PL-LOOPBACKS
+   seq 10 permit 10.101.254.0/24 eq 32
+   seq 20 permit 10.101.253.0/24 eq 32
+!
+route-map RM-LOOPBACKS permit 10
+   match ip address prefix-list PL-LOOPBACKS
+!
+{%- endif %}
 end

@@ -95,7 +95,19 @@ def test_interface_count_covers_links(topo: dict) -> None:
 
 def test_link_and_node_counts_match_adr(topo: dict) -> None:
     assert len(topo["nodes"]) == 21
-    assert len(topo["links"]) == 29
+    design = [lk for lk in topo["links"] if not lk.get("bypass")]
+    bypass = [lk for lk in topo["links"] if lk.get("bypass")]
+    assert len(design) == 29
+    assert len(bypass) == 4
+    # a bypass link must not touch a firewall port and must carry a prefix
+    for lk in bypass:
+        assert lk.get("prefix"), lk
+        for end in (lk["a"], lk["b"]):
+            assert topo["nodes"][end.split(":")[0]]["role"] != "firewall", lk
+
+
+def test_firewall_flag_present(topo: dict) -> None:
+    assert isinstance(topo["lab"]["firewalls"], bool)
 
 
 def _budget_eve_rows() -> dict[str, tuple[int, int]]:

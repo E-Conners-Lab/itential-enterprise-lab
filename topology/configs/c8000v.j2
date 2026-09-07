@@ -1,4 +1,24 @@
-{#- IOS XE baseline for every C8000v (ADR 0034). Rendered by eve/build.py; loaded at first boot. -#}
+{#- IOS XE baseline for every C8000v (ADR 0034): management VRF, NETCONF/RESTCONF, automation user.
+    isp-core01: eBGP hub (AS 65000) with default-originate to every site.
+    dc1-wan01/02 (AS 65100): eBGP to ISP, iBGP + HSRP towards the firewalls (10.101.2.0/24),
+            GRE-over-IPsec tunnels to both branches (10.103.100.0/24) with BGP inside.
+    brN-wan01 (AS 6520N): eBGP to ISP, tunnels to both DC edges, static LAN via the firewall. -#}
+{%- set site = node.site %}
+{%- set lo = {'isp-core01': '10.103.255.1', 'dc1-wan01': '10.103.255.11', 'dc1-wan02': '10.103.255.12', 'br1-wan01': '10.103.255.21', 'br2-wan01': '10.103.255.22'}[name] %}
+{%- set asn = {'wan': routing.asn.isp, 'dc1': routing.asn.dc1_edge, 'br1': routing.asn.br1, 'br2': routing.asn.br2}[site] %}
+{%- set isp_peer = {'dc1-wan01': '10.103.0.1', 'dc1-wan02': '10.103.0.5', 'br1-wan01': '10.103.0.9', 'br2-wan01': '10.103.0.13'}.get(name) %}
+{%- set wan_ip = {'dc1-wan01': '10.103.0.2', 'dc1-wan02': '10.103.0.6', 'br1-wan01': '10.103.0.10', 'br2-wan01': '10.103.0.14'}.get(name) %}
+{#- tunnel plan: DC edge x branch; 10.103.100.0/30 dc1-wan01<->br1, .4/30 dc1-wan01<->br2, .8/30 dc1-wan02<->br1, .12/30 dc1-wan02<->br2 -#}
+{%- set tunnels = {
+  'dc1-wan01': [{'id': 1, 'peer': 'br1-wan01', 'dst': '10.103.0.10', 'ip': '10.103.100.1', 'nbr': '10.103.100.2', 'ras': routing.asn.br1},
+                {'id': 2, 'peer': 'br2-wan01', 'dst': '10.103.0.14', 'ip': '10.103.100.5', 'nbr': '10.103.100.6', 'ras': routing.asn.br2}],
+  'dc1-wan02': [{'id': 1, 'peer': 'br1-wan01', 'dst': '10.103.0.10', 'ip': '10.103.100.9', 'nbr': '10.103.100.10', 'ras': routing.asn.br1},
+                {'id': 2, 'peer': 'br2-wan01', 'dst': '10.103.0.14', 'ip': '10.103.100.13', 'nbr': '10.103.100.14', 'ras': routing.asn.br2}],
+  'br1-wan01': [{'id': 1, 'peer': 'dc1-wan01', 'dst': '10.103.0.2', 'ip': '10.103.100.2', 'nbr': '10.103.100.1', 'ras': routing.asn.dc1_edge},
+                {'id': 2, 'peer': 'dc1-wan02', 'dst': '10.103.0.6', 'ip': '10.103.100.10', 'nbr': '10.103.100.9', 'ras': routing.asn.dc1_edge}],
+  'br2-wan01': [{'id': 1, 'peer': 'dc1-wan01', 'dst': '10.103.0.2', 'ip': '10.103.100.6', 'nbr': '10.103.100.5', 'ras': routing.asn.dc1_edge},
+                {'id': 2, 'peer': 'dc1-wan02', 'dst': '10.103.0.6', 'ip': '10.103.100.14', 'nbr': '10.103.100.13', 'ras': routing.asn.dc1_edge}],
+}.get(name, []) %}
 hostname {{ name }}
 ip domain name {{ lab.domain }}
 no ip domain lookup
@@ -8,13 +28,14 @@ aaa new-model
 aaa authentication login default local
 aaa authorization exec default local
 ip ssh version 2
+ip ssh server algorithm hostkey rsa-sha2-512 rsa-sha2-256
 crypto key generate rsa modulus 2048
 netconf-yang
 restconf
 ip http secure-server
 ip http authentication local
-ip name-server {{ lab.dns | join(' ') }}
-ntp server {{ lab.ntp }}
+ip name-server vrf MGMT {{ lab.dns | join(' ') }}
+ntp server vrf MGMT {{ lab.ntp }}
 !
 vrf definition MGMT
  address-family ipv4
@@ -25,11 +46,8 @@ interface GigabitEthernet1
  ip address {{ node.mgmt_ip }} 255.255.255.0
  no shutdown
 !
-ip route vrf MGMT 0.0.0.0 0.0.0.0 {{ lab.mgmt_gateway }}
+ip route vrf MGMT 0.0.0.0/0 {{ lab.mgmt_gateway }}
 !
-{%- set site = node.site %}
-{%- set lo = {'isp-core01': '10.103.255.1', 'dc1-wan01': '10.103.255.11', 'dc1-wan02': '10.103.255.12', 'br1-wan01': '10.103.255.21', 'br2-wan01': '10.103.255.22'}[name] %}
-{%- set asn = {'wan': routing.asn.isp, 'dc1': routing.asn.dc1_edge, 'br1': routing.asn.br1, 'br2': routing.asn.br2}[site] %}
 interface Loopback0
  ip address {{ lo }} 255.255.255.255
 !
@@ -37,19 +55,65 @@ interface Loopback0
 {%- set mine = lk.a if lk.a.startswith(name + ':') else lk.b %}
 {%- set peer = lk.b if mine == lk.a else lk.a %}
 {%- set ifname = mine.split(':')[1] | replace('Gi', 'GigabitEthernet') %}
+{%- set pname = peer.split(':')[0] %}
 interface {{ ifname }}
  description to {{ peer }}
 {%- if lk.prefix is defined %}
-{%- set net = lk.prefix.split('/')[0] %}
-{%- set base = net.split('.') %}
+{%- set base = lk.prefix.split('/')[0].split('.') %}
 {%- set last = base[3] | int %}
-{%- set mask = '255.255.255.252' if lk.prefix.endswith('/30') else '255.255.255.254' %}
 {%- set my_last = (last + 1) if mine == lk.a else (last + 2) %}
- ip address {{ base[0] }}.{{ base[1] }}.{{ base[2] }}.{{ my_last }} {{ mask }}
+ ip address {{ base[0] }}.{{ base[1] }}.{{ base[2] }}.{{ my_last }} 255.255.255.252
+{%- elif site == 'dc1' and pname.startswith('dc1-fw') %}
+ ip address {{ '10.101.2.2' if name == 'dc1-wan01' else '10.101.2.3' }} 255.255.255.0
+ standby version 2
+ standby 1 ip 10.101.2.1
+ standby 1 priority {{ 110 if name == 'dc1-wan01' else 100 }}
+ standby 1 preempt
 {%- endif %}
  no shutdown
 !
 {%- endfor %}
+{%- if tunnels %}
+crypto ikev2 proposal LAB
+ encryption aes-cbc-256
+ integrity sha256
+ group 14
+!
+crypto ikev2 policy LAB
+ proposal LAB
+!
+crypto ikev2 keyring LAB
+{%- for t in tunnels %}
+ peer {{ t.peer }}
+  address {{ t.dst }}
+  pre-shared-key {{ automation_password }}
+{%- endfor %}
+!
+crypto ikev2 profile LAB
+ match identity remote address 0.0.0.0
+ authentication remote pre-share
+ authentication local pre-share
+ keyring local LAB
+!
+crypto ipsec transform-set LAB esp-aes 256 esp-sha256-hmac
+ mode transport
+!
+crypto ipsec profile LAB
+ set transform-set LAB
+ set ikev2-profile LAB
+!
+{%- for t in tunnels %}
+interface Tunnel{{ t.id }}
+ description to {{ t.peer }}
+ ip address {{ t.ip }} 255.255.255.252
+ ip mtu 1400
+ ip tcp adjust-mss 1360
+ tunnel source {{ wan_ip }}
+ tunnel destination {{ t.dst }}
+ tunnel protection ipsec profile LAB
+!
+{%- endfor %}
+{%- endif %}
 router bgp {{ asn }}
  bgp router-id {{ lo }}
  bgp log-neighbor-changes
@@ -60,22 +124,42 @@ router bgp {{ asn }}
  neighbor 10.103.0.14 remote-as {{ routing.asn.br2 }}
  address-family ipv4
   network 10.103.255.1 mask 255.255.255.255
-  neighbor 10.103.0.2 activate
-  neighbor 10.103.0.2 default-originate
-  neighbor 10.103.0.6 activate
-  neighbor 10.103.0.6 default-originate
-  neighbor 10.103.0.10 activate
-  neighbor 10.103.0.10 default-originate
-  neighbor 10.103.0.14 activate
-  neighbor 10.103.0.14 default-originate
+{%- for n in ['10.103.0.2', '10.103.0.6', '10.103.0.10', '10.103.0.14'] %}
+  neighbor {{ n }} activate
+  neighbor {{ n }} default-originate
+{%- endfor %}
  exit-address-family
 {%- else %}
-{%- set isp_peer = {'dc1-wan01': '10.103.0.1', 'dc1-wan02': '10.103.0.5', 'br1-wan01': '10.103.0.9', 'br2-wan01': '10.103.0.13'}[name] %}
  neighbor {{ isp_peer }} remote-as {{ routing.asn.isp }}
+{%- for t in tunnels %}
+ neighbor {{ t.nbr }} remote-as {{ t.ras }}
+ neighbor {{ t.nbr }} description {{ t.peer }} via Tunnel{{ t.id }}
+{%- endfor %}
+{%- if site == 'dc1' %}
+ neighbor {{ '10.101.2.3' if name == 'dc1-wan01' else '10.101.2.2' }} remote-as {{ routing.asn.dc1_edge }}
+ neighbor {{ '10.101.2.3' if name == 'dc1-wan01' else '10.101.2.2' }} description iBGP dc1 edge peer
+{%- endif %}
  address-family ipv4
   network {{ lo }} mask 255.255.255.255
+{%- if site == 'dc1' %}
+  network 10.101.0.0 mask 255.255.0.0
+  network 10.101.2.0 mask 255.255.255.0
+  neighbor {{ '10.101.2.3' if name == 'dc1-wan01' else '10.101.2.2' }} activate
+  neighbor {{ '10.101.2.3' if name == 'dc1-wan01' else '10.101.2.2' }} next-hop-self
+{%- else %}
+  network {{ '10.102.16.0' if site == 'br1' else '10.102.32.0' }} mask 255.255.240.0
+{%- endif %}
   neighbor {{ isp_peer }} activate
+{%- for t in tunnels %}
+  neighbor {{ t.nbr }} activate
+{%- endfor %}
  exit-address-family
+{%- endif %}
+!
+{%- if site == 'dc1' %}
+ip route 10.101.0.0 255.255.0.0 10.101.2.10
+{%- elif site in ['br1', 'br2'] %}
+ip route {{ '10.102.16.0' if site == 'br1' else '10.102.32.0' }} 255.255.240.0 {{ '10.102.16.2' if site == 'br1' else '10.102.32.2' }}
 {%- endif %}
 !
 end

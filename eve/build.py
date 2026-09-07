@@ -172,9 +172,10 @@ def render_config(platform: str, name: str, node: dict, topo: dict) -> str | Non
     if not secret:
         raise SystemExit("AUTOMATION_PASSWORD missing in .env (device-local automation account, moved to Vault in phase 9)")
     env = Environment(loader=FileSystemLoader(str(CONFIG_DIR)), undefined=StrictUndefined, keep_trailing_newline=True)
-    links = [lk for lk in topo["links"] if lk["a"].startswith(name + ":") or lk["b"].startswith(name + ":")]
+    firewalls = bool(topo["lab"].get("firewalls", True))
+    links = [lk for lk in topo["links"] if (lk["a"].startswith(name + ":") or lk["b"].startswith(name + ":")) and not (lk.get("bypass") and firewalls)]
     return env.get_template(f"{platform}.j2").render(
-        name=name, node=node, lab=topo["lab"], routing=topo["routing"], links=links, nodes=topo["nodes"],
+        name=name, node=node, lab=topo["lab"], routing=topo["routing"], links=links, nodes=topo["nodes"], firewalls=firewalls,
         automation_password=secret,
         # md5-crypt ($1$) is the phash format PAN-OS accepts; python's crypt module is gone in 3.13+
         pan_password_hash=subprocess.run(["openssl", "passwd", "-1", "-salt", _secrets.token_hex(4), secret], capture_output=True, text=True, check=True).stdout.strip(),
@@ -187,6 +188,8 @@ def plan(eve: Eve, topo: dict) -> dict:
     for plat in sorted({n["platform"] for n in topo["nodes"].values()}):
         have = eve.template_images(TEMPLATE[plat])
         for name, n in topo["nodes"].items():
+            if n["role"] == "firewall" and not topo["lab"].get("firewalls", True):
+                continue
             if n["platform"] == plat and n["image"] not in have:
                 missing_images.append(f"{name}: {n['image']} (template {TEMPLATE[plat]} has {have or 'none'})")
     have_nodes = eve.nodes() if eve.lab_exists() else {}
@@ -216,11 +219,20 @@ def apply(eve: Eve, topo: dict, allow_missing: bool) -> None:
         print(f"created network {mgmt}")
     # Link networks are visible (visibility 1): EVE-NG Pro 6.5 acknowledges hidden bridges but
     # does not persist them to the lab file. They sit in a grid below the topology.
-    for i, lk in enumerate(topo["links"]):
+    firewalls = bool(topo["lab"].get("firewalls", True))
+    # bypass links exist only while the firewalls are deferred (ADR 0034 amendment)
+    active_links = [lk for lk in topo["links"] if not (lk.get("bypass") and firewalls)]
+    for i, lk in enumerate(active_links):
         nm = link_network_name(lk)
         if nm not in nets:
             eve.add_network(nm, "bridge", 40 + (i % 10) * 110, 900 + (i // 10) * 70, 1)
             print(f"created network {nm}")
+    # firewalls back in: bypass bridges go away
+    if firewalls:
+        for lk in topo["links"]:
+            if lk.get("bypass") and link_network_name(lk) in nets:
+                eve._req("DELETE", f"/labs{eve.lab}/networks/{nets[link_network_name(lk)]['id']}")
+                print(f"removed bypass network {link_network_name(lk)}")
     nets = eve.networks()
     # nodes
     skipped = {m.split(":")[0] for m in p["missing_images"]}
@@ -228,6 +240,8 @@ def apply(eve: Eve, topo: dict, allow_missing: bool) -> None:
     for name, n in topo["nodes"].items():
         if name in have:
             continue
+        if n["role"] == "firewall" and not firewalls:
+            continue  # deferred until lab.firewalls is true
         if name in skipped:
             print(f"SKIP {name}: image {n['image']} not on EVE-NG")
             continue
@@ -241,7 +255,7 @@ def apply(eve: Eve, topo: dict, allow_missing: bool) -> None:
     have = eve.nodes()
     # interfaces: index 0 -> mgmt cloud; link ends -> their bridge
     wiring: dict[str, dict[int, int]] = {name: {0: nets[mgmt]["id"]} for name in have if name in topo["nodes"]}
-    for lk in topo["links"]:
+    for lk in active_links:
         nid = nets[link_network_name(lk)]["id"]
         for end in (lk["a"], lk["b"]):
             node, iface = end.split(":")

@@ -10,7 +10,9 @@ set -a; . ./.env; set +a
 LAB=${EVE_LAB:-/enterprise.unl}
 SSH="ssh -o BatchMode=yes -o ConnectTimeout=8 -o StrictHostKeyChecking=accept-new"
 ts=$(date -u +%Y%m%dT%H%M%SZ)
-fail=0; pass=0
+fail=0; pass=0; deferred=0
+FIREWALLS=$(python3 -c "import yaml;print(str(yaml.safe_load(open('topology/enterprise.yaml'))['lab'].get('firewalls', True)).lower())" 2>/dev/null || echo true)
+defer(){ echo "DEFER $1 (lab.firewalls=false: firewalls not built yet)"; deferred=$((deferred+1)); }
 ok()   { echo "PASS  $1"; pass=$((pass+1)); }
 bad()  { echo "FAIL  $1"; fail=$((fail+1)); }
 check(){ local name=$1; shift; if "$@" >/tmp/verify04.$$ 2>&1; then ok "$name"; else bad "$name"; sed 's/^/      /' /tmp/verify04.$$ | head -10; fi; }
@@ -27,7 +29,8 @@ c1() {
   local nodes; nodes=$(eve nodes) || return 1
   python3 - "$nodes" <<'PY'
 import json, sys, yaml
-want = yaml.safe_load(open("topology/enterprise.yaml"))["nodes"]
+t = yaml.safe_load(open("topology/enterprise.yaml"))
+want = {n: v for n, v in t["nodes"].items() if t["lab"].get("firewalls", True) or v["role"] != "firewall"}
 raw = json.loads(sys.argv[1])
 if raw.get("status") != "success": print("EVE-NG:", raw.get("message")); sys.exit(1)
 have = {n["name"]: n for n in raw["data"].values()}
@@ -49,6 +52,8 @@ c2() {
 import yaml
 t = yaml.safe_load(open("topology/enterprise.yaml"))
 for n, v in t["nodes"].items():
+    if v["role"] == "firewall" and not t["lab"].get("firewalls", True):
+        continue
     print(n, v["mgmt_ip"], v["platform"])
 PY
   local bad_hosts=""
@@ -77,10 +82,13 @@ for n, v in t["nodes"].items():
     ip = (d.get("primary_ip4") or {}).get("address", "")
     if ip.split("/")[0] != v["mgmt_ip"]: errs.append(f"{n}: primary ip {ip} != {v['mgmt_ip']}")
 cables = get("dcim/cables/?limit=500")["count"]
-if cables != len(t["links"]): errs.append(f"NetBox cables {cables} != yaml links {len(t['links'])}")
+design = [lk for lk in t["links"] if not lk.get("bypass")]
+if cables != len(design): errs.append(f"NetBox cables {cables} != yaml design links {len(design)}")
 eve = json.loads(sys.argv[1])
 bridges = [x for x in eve.get("data", {}).values() if x.get("type") == "bridge"]
-if len(bridges) != len(t["links"]): errs.append(f"EVE-NG bridge networks {len(bridges)} != yaml links {len(t['links'])}")
+fw = t["lab"].get("firewalls", True)
+active = [lk for lk in t["links"] if not (lk.get("bypass") and fw)]
+if len(bridges) != len(active): errs.append(f"EVE-NG bridge networks {len(bridges)} != active yaml links {len(active)}")
 if errs: print("\n".join(errs)); sys.exit(1)
 print(f"NetBox: {len(t['nodes'])} devices, {cables} cables; EVE-NG: {len(bridges)} links")
 PY
@@ -95,11 +103,16 @@ c4() {
   [ "${est:-0}" -ge 5 ] || errs="$errs isp-bgp=${est:-0}/5"
   for b in 146 147; do local up; up=$($dev 10.100.0.$b "show ip interface brief | include Tunnel" 2>/dev/null | grep -c "up *up"); [ "${up:-0}" -ge 2 ] || errs="$errs br@.$b-tunnels=${up:-0}/2"; done
   for l in 162 163; do local ev; ev=$($dev 10.100.0.$l "show bgp evpn summary" 2>/dev/null | grep -c Estab); [ "${ev:-0}" -ge 2 ] || errs="$errs leaf@.$l-evpn=${ev:-0}/2"; $dev 10.100.0.$l "show mlag" 2>/dev/null | grep -qiE "^ *state *: *active" || errs="$errs leaf@.$l-mlag"; done
-  local ha1 ha2; ha1=$($dev 10.100.0.128 "show high-availability state" 2>/dev/null | grep -m1 -oiE "state: *(active|passive)"); ha2=$($dev 10.100.0.129 "show high-availability state" 2>/dev/null | grep -m1 -oiE "state: *(active|passive)")
-  echo "$ha1" | grep -qi active || errs="$errs fw01=${ha1:-unreachable}"; echo "$ha2" | grep -qi passive || errs="$errs fw02=${ha2:-unreachable}"
+  if [ "$FIREWALLS" = true ]; then
+    local ha1 ha2; ha1=$($dev 10.100.0.128 "show high-availability state" 2>/dev/null | grep -m1 -oiE "state: *(active|passive)"); ha2=$($dev 10.100.0.129 "show high-availability state" 2>/dev/null | grep -m1 -oiE "state: *(active|passive)")
+    echo "$ha1" | grep -qi active || errs="$errs fw01=${ha1:-unreachable}"; echo "$ha2" | grep -qi passive || errs="$errs fw02=${ha2:-unreachable}"
+  else
+    # bypass in place of the firewalls: the DC edges must have BGP to the leaves
+    for e in 144 145; do local lb; lb=$($dev 10.100.0.$e "show bgp summary" 2>/dev/null | awk '/^10\.101\.3\./ && $NF ~ /^[0-9]+$/ {c++} END{print c+0}'); [ "${lb:-0}" -ge 1 ] || errs="$errs edge@.$e-leaf-bgp=${lb:-0}/1"; done
+  fi
   [ -z "$errs" ] || { echo "routing:$errs"; return 1; }
 }
-check "S3.4 ISP has 5 BGP peers; each branch 2 tunnels up; leaves 2 EVPN peers + MLAG active; fw01 active / fw02 passive" c4
+check "S3.4 ISP has 5 BGP peers; each branch 2 tunnels up; leaves 2 EVPN peers + MLAG active; firewalls HA (or bypass BGP while deferred)" c4
 
 # --- S3.5 end-to-end path branch client -> DC server ---------------------------------------------
 c5() { $SSH -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR "automation@10.100.0.195" "ping -c 3 -W 2 10.101.10.10 && traceroute -n -m 12 -w 2 10.101.10.10" 2>/dev/null | tee /tmp/verify04-trace.$$ | grep -q " 0% packet loss" || { cat /tmp/verify04-trace.$$ 2>/dev/null; rm -f /tmp/verify04-trace.$$; return 1; }; rm -f /tmp/verify04-trace.$$; }
@@ -110,7 +123,7 @@ c6() {
   local errs="" dev=".venv/bin/python verify/devcmd.py"
   $dev 10.100.0.148 "show version | include Cisco IOS XE Software" 2>/dev/null | grep -q "17.13.01a" || errs="$errs c8000v"
   $dev 10.100.0.160 "show version | include Software image version" 2>/dev/null | grep -q "4.33.1.1F" || errs="$errs veos"
-  $dev 10.100.0.128 "show system info | match sw-version" 2>/dev/null | grep -q "11.1" || errs="$errs pa-vm"
+  if [ "$FIREWALLS" = true ]; then $dev 10.100.0.128 "show system info | match sw-version" 2>/dev/null | grep -q "11.1" || errs="$errs pa-vm"; fi
   [ -z "$errs" ] || { echo "version mismatch:$errs"; return 1; }
 }
 check "S3.6 show version on one node per vendor equals the manifest running version" c6
@@ -128,5 +141,6 @@ PY
 }
 check "S3.7 summed node RAM in EVE-NG within the 115 GB internal ceiling" c7
 
-echo; echo "passed=${pass} failed=${fail}"
+[ "$FIREWALLS" = true ] || defer "S3.4-fw HA active/passive, S3.6-fw PAN-OS version, S3.5 path via firewalls (bypass path checked instead)"
+echo; echo "passed=${pass} failed=${fail} deferred=${deferred}"
 [ "$fail" -eq 0 ]

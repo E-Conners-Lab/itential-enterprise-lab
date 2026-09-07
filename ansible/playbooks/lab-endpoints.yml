@@ -1,0 +1,42 @@
+---
+# Phase 4: the Linux endpoints in EVE-NG (dc1-srv01, br*-host01) have no startup-config mechanism.
+# eth0 is management (DHCP reservation from oob-gw); this play brings up eth1 (data VLAN) by DHCP
+# from the site gateway and installs the tools the verify script uses. Inventory: NetBox devices
+# with role server/client and platform ubuntu-24.04 (tag phase-4).
+- name: Configure EVE-NG Linux endpoints
+  hosts: server:client
+  become: true
+  gather_facts: false
+  vars:
+    ansible_user: automation
+  pre_tasks:
+    - name: Only Ubuntu endpoints (Windows clients are handled by their golden image)
+      ansible.builtin.meta: end_host
+      when: platforms is defined and 'ubuntu-24-04' not in (platforms | map(attribute='slug') | list)
+  tasks:
+    - name: Data interface eth1 by DHCP from the site gateway (no default route; management keeps it)
+      ansible.builtin.copy:
+        dest: /etc/netplan/60-data.yaml
+        mode: "0600"
+        content: |
+          network:
+            version: 2
+            ethernets:
+              eth1:
+                dhcp4: true
+                dhcp4-overrides:
+                  use-routes: true
+                  route-metric: 50
+      register: np
+
+    - name: Apply netplan
+      ansible.builtin.command: netplan apply
+      when: np is changed
+      changed_when: true
+
+    - name: Tools for verification
+      ansible.builtin.apt:
+        name: [traceroute, iputils-ping, curl]
+        state: present
+        update_cache: true
+        cache_valid_time: 3600

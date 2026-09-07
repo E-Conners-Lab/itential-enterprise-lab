@@ -11,6 +11,10 @@ lab:
   mgmt_gateway: 10.100.0.1
   dns: [10.100.0.1]
   ntp: 10.100.0.1
+  # false = PA-VM image not staged: bypass links below are built and the firewall nodes are not.
+  # Flip to true, run eve/build.py apply, and the bypass links are removed while the firewall
+  # nodes and their (already existing) links come up (ADR 0034 amendment).
+  firewalls: false
 
 sites:
   wan: {name: WAN, description: "Simulated provider core"}
@@ -271,3 +275,8 @@ links:
   - {a: "br2-fw01:eth1/2", b: "br2-sw01:Eth1"}
   - {a: "br2-pc01:eth1", b: "br2-sw01:Eth2"}
   - {a: "br2-host01:eth1", b: "br2-sw01:Eth3"}
+  # ---- firewall bypass (only while lab.firewalls is false): spare ports, routed /30s ----
+  - {a: "dc1-wan01:Gi6", b: "dc1-leaf01:Eth7", prefix: 10.101.3.0/30, bypass: true}
+  - {a: "dc1-wan02:Gi6", b: "dc1-leaf02:Eth7", prefix: 10.101.3.4/30, bypass: true}
+  - {a: "br1-wan01:Gi4", b: "br1-sw01:Eth4", prefix: 10.102.16.4/30, bypass: true}
+  - {a: "br2-wan01:Gi4", b: "br2-sw01:Eth4", prefix: 10.102.32.4/30, bypass: true}
