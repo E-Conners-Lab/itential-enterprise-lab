@@ -1,22 +1,29 @@
 #!/usr/bin/env bash
-# Per-host access to the lab from the home LAN when the home router has no static route.
-# Adds: route 10.100.0.0/14 via oob-gw's LAN leg, and (macOS) a scoped resolver for lab.internal.
-# Idempotent. Needs sudo. Not persistent across reboot on macOS: re-run after a reboot, or put the
-# route on the router (docs/manual-steps.md 1b) which is the recommended way.
+# Per-host access to the lab from a workstation on the home LAN: a route for 10.100.0.0/14 that
+# beats a VPN client's 10/8 capture, and (macOS) a scoped resolver for lab.internal.
+#
+# The route points at the HOME ROUTER (which carries the static route to oob-gw, manual step 1b),
+# NOT at oob-gw's LAN leg: oob-gw returns every reply through the router (ADR 0030) so the
+# router's stateful firewall sees both halves of a flow. A route straight to oob-gw makes the
+# path asymmetric and the router drops replies intermittently (observed 2026-09-07).
+# Idempotent. Needs sudo. Not persistent across reboot on macOS: re-run after a reboot.
 set -euo pipefail
-GW=${OOB_GW_LAN:-192.168.68.120}
+GW=${LAB_NEXT_HOP:-192.168.68.1}   # home router
+DNS=${OOB_GW_LAN:-192.168.68.120}  # oob-gw answers lab.internal
 NET=10.100.0.0/14
 case "$(uname -s)" in
   Darwin)
-    if netstat -rn -f inet | grep -q '^10.100/14 '; then echo "route $NET present"; else sudo route -n add -net "$NET" "$GW" >/dev/null && echo "route $NET via $GW added"; fi
+    cur=$(netstat -rn -f inet | awk '$1=="10.100/14"{print $2}')
+    if [ "$cur" = "$GW" ]; then echo "route $NET via $GW present"
+    else [ -n "$cur" ] && sudo route -n delete -net "$NET" >/dev/null; sudo route -n add -net "$NET" "$GW" >/dev/null && echo "route $NET via $GW added"; fi
     sudo mkdir -p /etc/resolver
-    printf 'nameserver %s\n' "$GW" | sudo tee /etc/resolver/lab.internal >/dev/null && echo "resolver for lab.internal -> $GW"
+    printf 'nameserver %s\n' "$DNS" | sudo tee /etc/resolver/lab.internal >/dev/null && echo "resolver for lab.internal -> $DNS"
     ;;
   Linux)
     ip route show "$NET" | grep -q . && echo "route $NET present" || { sudo ip route add "$NET" via "$GW" && echo "route $NET via $GW added"; }
-    echo "DNS: add 'DNS=$GW' + 'Domains=~lab.internal' to a systemd-resolved drop-in, or use resolvectl"
+    echo "DNS: add 'DNS=$DNS' + 'Domains=~lab.internal' to a systemd-resolved drop-in, or use resolvectl"
     ;;
-  *) echo "Windows (admin PowerShell): route -p add 10.100.0.0 mask 255.252.0.0 $GW ; Add-DnsClientNrptRule -Namespace .lab.internal -NameServers $GW"; exit 1 ;;
+  *) echo "Windows (admin PowerShell): route -p add 10.100.0.0 mask 255.252.0.0 $GW ; Add-DnsClientNrptRule -Namespace .lab.internal -NameServers $DNS"; exit 1 ;;
 esac
 # the first packets after a route change can be lost while ARP for the gateway settles: retry
 # macOS ping -W is milliseconds, Linux ping -W is seconds

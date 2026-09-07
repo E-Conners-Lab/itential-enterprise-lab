@@ -549,6 +549,29 @@
 
     # Adapter instances (NetBox through the open-source adapter). Gateway 5 is not an adapter: it
     # is registered with Gateway Manager above. Gateway 4 is deferred (owner decision 2026-09-07).
+    # The ServiceNow instance (S4b) is configured only once the PDI details are in .env
+    # (SNOW_INSTANCE, SNOW_USER, SNOW_PASSWORD, manual step 7); basic auth is the documented method.
+    - name: ServiceNow adapter instance (when the PDI details are in .env)
+      ansible.builtin.set_fact:
+        snow_instances: >-
+          {{ [] if not snow_host else [{
+            'name': 'ServiceNow', 'model': '@itentialopensource/adapter-servicenow', 'type': adapters.servicenow.export,
+            'properties': {
+              'host': snow_host ~ '.service-now.com', 'port': 443, 'protocol': 'https', 'base_path': '/api', 'version': '', 'stub': false,
+              'authentication': {'auth_method': 'basic user_password',
+                                 'username': lookup('ansible.builtin.env', 'SNOW_USER'),
+                                 'password': lookup('ansible.builtin.env', 'SNOW_PASSWORD'),
+                                 'token_timeout': 180000, 'token_cache': 'local', 'invalid_token_error': 401,
+                                 'auth_field': 'header.headers.Authorization',
+                                 'auth_field_format': 'Basic {b64}{username}:{password}{/b64}', 'auth_logging': false},
+              'healthcheck': {'type': 'startup', 'frequency': 300000, 'query_object': {}, 'addlHeaders': {}},
+              'request': {'number_redirects': 0, 'number_retries': 3, 'limit_retry_error': 401, 'attempt_timeout': 15000,
+                          'healthcheck_on_timeout': true, 'return_raw': false, 'archiving': false},
+              'ssl': {'enabled': true, 'accept_invalid_cert': false}}}] }}
+      vars:
+        snow_host: "{{ lookup('ansible.builtin.env', 'SNOW_INSTANCE') }}"
+      no_log: true
+
     - name: Adapter instances
       ansible.builtin.set_fact:
         adapter_instances:
@@ -581,6 +604,11 @@
                 return_raw: false
                 archiving: false
               ssl: {enabled: false, accept_invalid_cert: false}
+      no_log: true
+
+    - name: Adapter instances including ServiceNow when configured
+      ansible.builtin.set_fact:
+        adapter_instances: "{{ adapter_instances + snow_instances }}"
       no_log: true
 
     - name: Existing adapter instances
