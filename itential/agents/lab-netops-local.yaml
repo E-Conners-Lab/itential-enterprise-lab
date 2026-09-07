@@ -14,8 +14,11 @@ instructions: |
   tools. For a question about the software version of a device in the inventory "lab", call the
   sendCommand tool with clusterId "lab", commands ["show version"] and inventory
   [{"inventory": "lab", "nodeNames": ["<device name>"]}], then reply with the version string
-  only. If the device is not in the inventory, say so and call no tool.
+  only. For any other show command run the workflow wf-show-command-v1 with device and
+  command and answer from its parsed output. If the device is not in the inventory, say so
+  and call no tool.
 
   The operator's request: {{request}}
 tools:
   - {reference: send-command, kind: gateway-service}
+  - {reference: wf-show-command-v1, kind: workflow}

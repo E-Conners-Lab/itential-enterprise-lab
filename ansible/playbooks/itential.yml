@@ -58,6 +58,39 @@
     # NetBox platform slug -> netmiko device_type for Gateway 5's device services
     platform_map: {ios-xe: cisco_ios, eos: arista_eos}
   tasks:
+    # --- Gateway 5 runner on glibc (ADR 0038): the stock image is Alpine/Python 3.14, where
+    # Cisco pyATS/Genie cannot install; the runner is the same iagctl binary on Debian/Python 3.12.
+    - name: Runner build directory
+      ansible.builtin.file:
+        path: "{{ stack_dir }}/gateway5-runner"
+        state: directory
+        owner: ubuntu
+        group: ubuntu
+        mode: "0755"
+
+    - name: Runner build context
+      ansible.builtin.copy:
+        src: ../../itential/gateway5-runner/Dockerfile
+        dest: "{{ stack_dir }}/gateway5-runner/Dockerfile"
+        owner: ubuntu
+        group: ubuntu
+        mode: "0644"
+      register: runner_dockerfile
+
+    - name: Runner base image pulled by digest
+      ansible.builtin.command: docker pull {{ images.runner_base.repository }}@{{ images.runner_base.digest }}
+      register: runner_base_pull
+      changed_when: "'Downloaded' in runner_base_pull.stdout"
+
+    - name: Runner image built from the pinned gateway and Python images
+      ansible.builtin.command:
+        cmd: >-
+          docker build --build-arg GATEWAY5_IMAGE={{ images.gateway5.repository }}:{{ images.gateway5.tag }}
+          --build-arg PYTHON_IMAGE={{ images.runner_base.repository }}@{{ images.runner_base.digest }}
+          -t {{ stack.runner_image }} {{ stack_dir }}/gateway5-runner
+      register: runner_build
+      changed_when: "'CACHED' not in runner_build.stderr or runner_dockerfile.changed"
+
     - name: Vendored Compose file and the lab override
       ansible.builtin.copy:
         src: "../../itential/{{ item }}"
@@ -93,6 +126,8 @@
           REDIS_VERSION={{ images.redis.tag }}
           MCP_VERSION={{ images.mcp.tag }}
           OLLAMA_IMAGE={{ images.ollama.repository }}:{{ images.ollama.tag }}
+          ETCD_IMAGE={{ images.etcd.repository }}:{{ images.etcd.tag }}
+          GATEWAY5_RUNNER_IMAGE={{ stack.runner_image }}
           MCP_TRANSPORT=http
           BIND_ADDRESS=127.0.0.1:
           OOB_ADDRESS={{ oob_address }}
@@ -461,6 +496,14 @@
       until: stack.gateway5_cluster_id in (conns.json | to_json)
       retries: 24
       delay: 5
+
+    - name: Runner registered in the cluster store (the server hands every execution to it)
+      ansible.builtin.command: docker logs gateway5-runner
+      register: runner_log
+      until: "'registered runner with database' in runner_log.stdout or 'registered runner with database' in runner_log.stderr"
+      retries: 12
+      delay: 5
+      changed_when: false
 
     # --- open-source adapters: package into the custom mount, then instances via the API ------
     # The custom directory is bind-mounted read-only into the platform; npm runs in a throw-away

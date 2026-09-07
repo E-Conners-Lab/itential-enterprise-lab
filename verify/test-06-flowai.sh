@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Phase 6 verification: FlowAI agents over the lab topology (PID S4c criteria 1-6, ADR 0037).
+# Phase 6 verification: FlowAI agents over the lab topology (PID S4c criteria 1-7, ADR 0037/0038).
 # Intent: itential/versions.yaml (llm section), itential/agents/*.yaml. State: the Platform API
 # over TLS (Model Registry, Agent Projects, Agent Session Manager), the devices over direct SSH
 # (second source), NetBox, the VM (memory), the MCP server from this Mac. Spends provider tokens:
@@ -22,7 +22,8 @@ ts=$(date -u +%Y%m%dT%H%M%SZ)
 fail=0; pass=0; tokens_in=0; tokens_out=0
 ok()    { echo "PASS  $1"; pass=$((pass+1)); }
 bad()   { echo "FAIL  $1"; fail=$((fail+1)); }
-check() { local name=$1; shift; if "$@" >/tmp/verify06.$$ 2>&1; then ok "$name"; sed 's/^/      /' /tmp/verify06.$$; else bad "$name"; sed 's/^/      /' /tmp/verify06.$$ | head -14; fi; }
+# ONLY="S4c.2 S4c.4" runs a subset while iterating (every criterion still runs by default)
+check() { local name=$1; shift; if [ -n "${ONLY:-}" ] && ! echo " ${ONLY} " | grep -q " ${name%% *} "; then echo "SKIP  $name"; return; fi; if "$@" >/tmp/verify06.$$ 2>&1; then ok "$name"; sed 's/^/      /' /tmp/verify06.$$; else bad "$name"; sed 's/^/      /' /tmp/verify06.$$ | head -14; fi; }
 nb()    { curl -s -m 20 -H "Authorization: Token ${NETBOX_TOKEN}" "$@"; }
 JAR=$(mktemp); trap 'rm -f "$JAR" /tmp/verify06.$$' EXIT
 iap()   { curl -s -m 120 --cacert "$CA" --resolve "${IT_HOST}:443:${IT_IP}" -b "$JAR" -H "Content-Type: application/json" "$@"; }
@@ -126,8 +127,9 @@ c4() {
   local sid tools txt
   sid=$(run_agent lab-netops '{"request":"What software version is running on core-router-99?"}') || { echo "$sid"; return 1; }
   sid=${sid##*$'\n'}; tools=$(session_tools "$sid"); txt=$(session_text "$sid"); count_tokens "$sid"
-  # a refusal is structural: no tool was called and the answer talks about the inventory / the device
-  [ "$tools" = "[]" ] || { echo "a tool was called for an unknown node: ${tools}"; return 1; }
+  # a refusal is structural: no gateway or workflow tool ran (a NetBox read to check the source of
+  # truth is allowed, PID S4c.4 says "does not call the gateway") and the answer explains itself
+  echo "$tools" | grep -qiE "send.?command|send.?config|wf-" && { echo "a gateway/workflow tool was called for an unknown node: ${tools}"; return 1; }
   echo "$txt" | grep -qiE "inventory|core-router-99" || { echo "answer does not explain the refusal: $(echo "$txt" | head -c 300)"; return 1; }
   echo "refused: $(echo "$txt" | head -c 160)"
   read -r i o <<<"$(session_usage "$sid")"; [ "$i" -gt 0 ] || { echo "no token usage recorded on the session"; return 1; }
@@ -165,6 +167,45 @@ c6() {
   echo "MCP trigger_automation(lab-netops) -> session ${sid} -> 4.33.1.1F via describe_session"
 }
 check "S4c.6 Claude Code's MCP tools start a lab-netops session (trigger_automation) and read the answer back (describe_session)" c6
+
+# --- S4c.7 structured output: Genie (Cisco) and TextFSM (Arista) through the Gateway 5 runner -----
+# wf-show-command-v1 parses on the glibc runner (ADR 0038); the parsed version field must equal the
+# device's own 'show version' over direct SSH and the parser name must follow the vendor.
+run_job() {
+  local wf=$1 vars=$2 id status
+  id=$(iap -X POST "${PLATFORM}/operations-manager/jobs/start" -d "{\"workflow\":\"${wf}\",\"options\":{\"type\":\"automation\",\"description\":\"verify ${ts}\",\"variables\":${vars}}}" | ${PY} -c 'import sys,json;d=json.load(sys.stdin).get("data");print(d.get("_id","") if isinstance(d,dict) else "")')
+  [ -n "$id" ] || { echo "job start failed for ${wf}"; return 1; }
+  for _ in $(seq 1 48); do
+    status=$(iap "${PLATFORM}/operations-manager/jobs/${id}" | ${PY} -c 'import sys,json;print(json.load(sys.stdin)["data"]["status"])')
+    case "$status" in complete) echo "$id"; return 0;; error|canceled|cancelled) echo "job ${id} ${status}"; return 1;; esac
+    sleep 5
+  done
+  echo "job ${id} timeout (${status})"; return 1
+}
+job_vars() { iap "${PLATFORM}/operations-manager/jobs/$1" | ${PY} -c 'import sys,json;print(json.dumps(json.load(sys.stdin)["data"].get("variables",{})))'; }
+c7() {
+  local errs="" id vars got direct
+  # device, ip, expected version, parser, json path of the version in the parsed object
+  for row in "br1-wan01:10.100.0.146:17.13.01a:genie:version.xe_version" "br1-sw01:10.100.0.165:4.33.1.1F:textfsm:0.image"; do
+    IFS=: read -r dev_name dev_ip want parser path <<<"$row"
+    id=$(run_job wf-show-command-v1 "{\"device\":\"${dev_name}\",\"command\":\"show version\"}") || { errs+="${dev_name}: ${id}\n"; continue; }
+    vars=$(job_vars "${id##*$'\n'}")
+    got=$(echo "$vars" | ${PY} -c "
+import sys,json
+v=json.load(sys.stdin); p=v.get('parsed')
+for k in '${path}'.split('.'):
+    p=p[int(k)] if isinstance(p,list) else p[k]
+print(v.get('parser'), p, v.get('parse_error'))")
+    read -r used version perr <<<"$got"
+    [ "$used" = "$parser" ] || { errs+="${dev_name}: parser ${used}, wanted ${parser} (${perr})\n"; continue; }
+    [ "$version" = "$want" ] || { errs+="${dev_name}: parsed version ${version}, wanted ${want}\n"; continue; }
+    direct=$(${PY} verify/devcmd.py "$dev_ip" "show version" 2>/dev/null) || { errs+="${dev_name}: direct ssh failed\n"; continue; }
+    echo "$direct" | grep -q "$want" || errs+="${dev_name}: device itself lacks ${want}\n"
+    echo "${dev_name}: ${parser} -> ${path} = ${version}; matches direct SSH"
+  done
+  [ -z "$errs" ] || { printf "%b" "$errs"; return 1; }
+}
+check "S4c.7 wf-show-command-v1 returns structured 'show version': Genie on br1-wan01, TextFSM on br1-sw01, equal to direct SSH" c7
 
 echo
 echo "tokens spent this run: in=${tokens_in} out=${tokens_out} (Anthropic + local)"

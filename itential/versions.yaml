@@ -32,6 +32,15 @@ images:
   ollama: {repository: docker.io/ollama/ollama, tag: 0.33.3}
   # upstream dev-stack OpenLDAP: admin@itential and the group membership Gateway Manager needs (until Phase 7 AD)
   ldap: {repository: docker.io/osixia/openldap, tag: 1.4.0}
+  # Gateway 5 distributed execution (ADR 0038): etcd is the shared store a runner node needs
+  # (Gateway requires etcd v3.5); the runner is built on the VM from runner_base + the iagctl
+  # binary of images.gateway5 (itential/gateway5-runner/Dockerfile). quay.io / Docker Hub 2026-09-07
+  etcd: {repository: quay.io/coreos/etcd, tag: v3.5.21, digest: "sha256:a3ccd299377af4b9968d8cbaaf9722fe354297f11908f74a846075e1e5f4ee89"}
+  # glibc base for the runner: pyATS ships no musl (Alpine) or Python 3.14 wheels
+  runner_base:
+    repository: docker.io/library/python
+    tag: 3.12.14-slim-trixie
+    digest: "sha256:78387bc3881b8273120a12ebe6c1ab22b018ccc2c9adf565ae1ac9b536e184ea"
 
 vm:
   name: itential
@@ -50,6 +59,20 @@ stack:
   gateway5_cluster_id: lab
   inventory: lab # Inventory Manager inventory holding the NetBox network devices
   mongo_cache_gb: 4
+  runner_image: gateway5-runner:5.5.2-py3.12.14 # local build tag on the VM (ADR 0038)
+
+# Structured CLI output (PID S4c.7, ADR 0038): the parse step of wf-show-command-v1 is a Gateway 5
+# runCode task whose pip packages are exactly these (one cached venv on the runner, ~790 MB). The
+# NetBox platform slug of the node picks the engine. Versions from PyPI on 2026-09-07.
+parsers:
+  cisco:
+    engine: genie # Cisco pyATS/Genie parsers, glibc + Python <= 3.13 only
+    packages: ["pyats==26.8", "genie==26.8"]
+    netbox_platforms: {ios-xe: iosxe, ios: ios, nx-os: nxos, ios-xr: iosxr}
+  arista:
+    engine: textfsm # ntc-templates through TextFSM
+    packages: ["textfsm==2.1.0", "ntc-templates==9.2.0"]
+    netbox_platforms: {eos: arista_eos, junos: juniper_junos}
 
 # Open-source adapters (GitLab itentialopensource/adapters, manifest 3.2), installed into the
 # platform's custom services mount from the tag's commit; npm deps resolved at install time.

@@ -16,6 +16,8 @@ the itentialopensource pre-built automations:
 from __future__ import annotations
 
 import json
+
+import yaml
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -152,9 +154,10 @@ def parse(summary: str, text_ref: str, x: int, y: int = 0) -> dict:
     return task("parse", "WorkFlowEngine", summary, {"text": text_ref}, {"textObject": None}, display="Tools", x=x, y=y)
 
 
-def jq(summary: str, obj_ref: str, path: str, x: int, y: int = 0, to_job: str | None = None) -> dict:
-    """Tools.query (json-query) extracts a nested value; optionally also published as a job variable."""
-    return task("query", "WorkFlowEngine", summary, {"pass_on_null": False, "query": path, "obj": obj_ref},
+def jq(summary: str, obj_ref: str, path: str, x: int, y: int = 0, to_job: str | None = None, optional: bool = False) -> dict:
+    """Tools.query (json-query) extracts a nested value; optionally also published as a job variable.
+    optional=True lets a missing value pass as null instead of failing the task."""
+    return task("query", "WorkFlowEngine", summary, {"pass_on_null": optional, "query": path, "obj": obj_ref},
                 {"return_data": f"$var.job.{to_job}" if to_job else None}, kind="operation", display="WorkFlowEngine", x=x, y=y)
 
 
@@ -323,8 +326,72 @@ def branch_vlan() -> dict:
                                 "change_state_review": {"type": "string"}, "change_state_closed": {"type": "string"}})
 
 
+# --- wf-show-command-v1 (S4c.7): one show command -> raw text + structured data per vendor --------
+# Gateway 5 send-command returns text; a runCode task on the glibc runner (ADR 0038) parses it
+# with Genie (Cisco) or TextFSM/ntc-templates (Arista). The engine is chosen from the node's NetBox
+# platform slug, which the workflow substitutes into the code (a top-level string input resolves
+# `$var`; the nested `data` object would not), and the sendCommand result is the script's stdin.
+VERSIONS = yaml.safe_load((HERE.parent / "versions.yaml").read_text())
+PARSER_PACKAGES = VERSIONS["parsers"]["cisco"]["packages"] + VERSIONS["parsers"]["arista"]["packages"]
+PARSE_CODE = """import json, sys
+PLATFORM = "__P__"  # NetBox platform slug of the node (the workflow replaces it)
+GENIE = __GENIE__
+TEXTFSM = __TEXTFSM__
+d = json.loads(sys.stdin.read() or "{}")
+r = ((d.get("result") or {}).get("results") or [{}])[0]
+command, output = r.get("command", ""), r.get("output", "")
+out = {"parser": "none", "platform": PLATFORM, "command": command, "device": r.get("name"), "parsed": None, "error": ""}
+try:
+    if PLATFORM in GENIE:
+        from genie.conf.base import Device
+        dev = Device(name="x", os=GENIE[PLATFORM])
+        dev.custom.setdefault("abstraction", {"order": ["os"]})
+        out["parsed"], out["parser"] = dev.parse(command, output=output), "genie"
+    elif PLATFORM in TEXTFSM:
+        from ntc_templates.parse import parse_output
+        out["parsed"], out["parser"] = parse_output(platform=TEXTFSM[PLATFORM], command=command, data=output), "textfsm"
+    else:
+        out["error"] = "no parser for platform " + PLATFORM
+except Exception as e:  # unsupported command or empty output: report, keep the raw text usable
+    out["error"] = type(e).__name__ + ": " + str(e)[:300]
+print(json.dumps(out))
+""".replace("__GENIE__", json.dumps(VERSIONS["parsers"]["cisco"]["netbox_platforms"])).replace(
+    "__TEXTFSM__", json.dumps(VERSIONS["parsers"]["arista"]["netbox_platforms"]))
+
+
+def show_command() -> dict:
+    tasks = {
+        # the command list is built from the input (a list literal would not resolve $var inside it)
+        "1a": replace("commands JSON", '["__C__"]', "__C__", "$var.job.command", x=0, y=-300),
+        "1b": parse("commands list", "$var.1a.replacedString", x=300, y=-300),
+        "2a": task("sendCommand", "GatewayManager", "run the command through Gateway 5",
+                   {"clusterId": CLUSTER, "commands": "$var.1b.textObject", "inventory": "$var.0b.textObject"},
+                   {"result": "$var.job.raw"}, x=600),
+        # the parser engine follows the node's NetBox platform
+        "3a": nb("getDcimDevices", "the node in NetBox", {"name": "$var.job.device", "limit": 1}, x=0, y=300),
+        "3b": jq("platform slug", "$var.3a.result", "response.results[0].platform.slug", x=300, y=300),
+        "3c": replace("parse code for this platform", PARSE_CODE, "__P__", "$var.3b.return_data", x=600, y=300),
+        "4a": task("runCode", "GatewayManager", "parse (Genie for Cisco, TextFSM for Arista) on the runner",
+                   {"clusterId": CLUSTER, "language": "python", "code": "$var.3c.replacedString", "data": "$var.2a.result",
+                    "safety": {"timeout": 180}, "packages": PARSER_PACKAGES},
+                   {"result": None}, x=900),
+        "4b": jq("structured result", "$var.4a.result", "stdout_json.parsed", x=1200, to_job="parsed"),
+        "4c": jq("parser used", "$var.4a.result", "stdout_json.parser", x=1200, y=200, to_job="parser"),
+        "4d": jq("parse error, if any", "$var.4a.result", "stdout_json.error", x=1200, y=400, to_job="parse_error"),
+    }
+    tasks["0a"], tasks["0b"] = selector("$var.job.device", x=-600)
+    return workflow("wf-show-command-v1",
+                    "Runs one show command on an inventory node through Gateway 5 and returns the raw output plus structured data: "
+                    "Genie for Cisco platforms, TextFSM (ntc-templates) for Arista, chosen from the node's NetBox platform (PID S4c.7, ADR 0038)",
+                    {"device": {"type": "string", "required": True, "description": "Inventory node name, e.g. br1-wan01"},
+                     "command": {"type": "string", "required": True, "description": "One show command, e.g. show ip interface brief"}},
+                    tasks, chain("0a", "0b", "1a", "1b", "2a", "3a", "3b", "3c", "4a", "4b", "4c", "4d"),
+                    {"raw": {"type": "object"}, "parsed": {"type": ["object", "array", "null"]}, "parser": {"type": "string"},
+                     "parse_error": {"type": "string"}})  # "" when the parse succeeded
+
+
 if __name__ == "__main__":
-    for wf in (device_count(), show_version(), branch_vlan()):
+    for wf in (device_count(), show_version(), show_command(), branch_vlan()):
         out = HERE / f"{wf['name']}.json"
         out.write_text(json.dumps(wf, indent=2) + "\n")
         print(out.relative_to(HERE.parent.parent), len(wf["tasks"]) - 2, "tasks")

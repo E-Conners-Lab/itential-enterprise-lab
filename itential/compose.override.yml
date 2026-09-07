@@ -31,9 +31,55 @@ services:
       automation_gateway_logging_level: "INFO"
       automation_gateway_http_logging_level: "INFO"
 
+  # Gateway 5 as a distributed execution cluster (ADR 0038): the stock server keeps the Gateway
+  # Manager connection and the gRPC listener; etcd is the shared store; every execution (native
+  # send-command/send-config and runCode) runs on the glibc runner so Genie can install there.
+  etcd:
+    container_name: etcd
+    image: ${ETCD_IMAGE}
+    profiles: ["gateway5", "full"]
+    command: ["etcd", "--name", "lab", "--data-dir", "/etcd-data",
+              "--listen-client-urls", "http://0.0.0.0:2379", "--advertise-client-urls", "http://etcd:2379"]
+    volumes:
+      - etcd-data:/etcd-data
+    restart: unless-stopped
+
   gateway5:
     ports:
       - "${OOB_ADDRESS}:50051:50051"
+    depends_on:
+      - etcd
+    environment:
+      GATEWAY_STORE_BACKEND: etcd
+      GATEWAY_STORE_ETCD_HOSTS: etcd:2379
+      GATEWAY_STORE_ETCD_USE_TLS: "false" # Docker network only; TLS to etcd with the lab CA is a Phase 9 item
+      GATEWAY_SERVER_DISTRIBUTED_EXECUTION: "true"
+
+  gateway5-runner:
+    container_name: gateway5-runner
+    image: ${GATEWAY5_RUNNER_IMAGE}
+    profiles: ["gateway5", "full"]
+    depends_on:
+      - etcd
+      - gateway5
+    environment:
+      GATEWAY_APPLICATION_MODE: runner
+      GATEWAY_APPLICATION_CLUSTER_ID: ${GATEWAY5_CLUSTER_ID:-lab}
+      GATEWAY_LOG_LEVEL: ${LOG_LEVEL:-info}
+      GATEWAY_STORE_BACKEND: etcd
+      GATEWAY_STORE_ETCD_HOSTS: etcd:2379
+      GATEWAY_STORE_ETCD_USE_TLS: "false"
+      GATEWAY_RUNNER_LISTEN_ADDRESS: 0.0.0.0
+      GATEWAY_RUNNER_PORT: "50051"
+      GATEWAY_RUNNER_ANNOUNCEMENT_ADDRESS: gateway5-runner # the server dials this name on the Docker network
+      GATEWAY_RUNNER_USE_TLS: "false"
+    volumes:
+      - gateway5-runner-data:/var/lib/gateway # cached venvs (Genie ~790 MB), pex, task workspaces
+    deploy:
+      resources:
+        limits:
+          memory: 3g
+    restart: unless-stopped
 
   # In-lab local models (ADR 0037): CPU inference on the VM, models on a named volume, reachable
   # only on the Docker network (the Model Registry profile uses http://ollama:11434) and loopback.
@@ -67,4 +113,8 @@ services:
 
 volumes:
   ollama-models:
+    driver: local
+  etcd-data:
+    driver: local
+  gateway5-runner-data:
     driver: local
