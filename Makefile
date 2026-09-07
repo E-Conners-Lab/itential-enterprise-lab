@@ -80,6 +80,7 @@ phase-itential: ## Phase 5: NetBox VM -> tofu apply -> resolver alias -> host (D
 	$(load_env) cd ansible && ansible-playbook playbooks/oob-gw.yml --tags dns
 	$(load_env) cd ansible && ansible-playbook -i inventory/netbox.yml playbooks/itential-host.yml
 	images/fetch.sh itential
+	images/fetch.sh itential-load
 	$(load_env) cd ansible && ansible-playbook -i inventory/netbox.yml playbooks/itential.yml
 	verify/run.sh
 

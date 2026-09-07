@@ -237,14 +237,15 @@ the owner's ECR credentials, then `docker save` the images into `/srv/images/ite
 offline rebuild copy. ADR 0020 is amended in the Phase 5 PR; the Rocky template stays unused.
 
 Owner decision 2026-09-06: **pull the latest maintenance tag of each image at Phase 5 time**, not
-the laptop's tags. Phase 5 lists ECR tags with the owner's credentials (`aws ecr list-images`),
-records the exact tags chosen here and in ADR 0020, and saves them to `/srv/images/itential/`.
+the laptop's tags. Listed on 2026-09-07 with `aws ecr describe-images` under the owner's company
+SSO profile (`ECR_AWS_PROFILE`; `ecr:ListImages` is denied, `DescribeImages` works). Exact tags and
+digests are in `itential/versions.yaml` and the ADR 0020 amendment; tarballs in `/srv/images/itential/`.
 
 | Image | Laptop 2026-09-06 | Expected latest (docs.itential.com, 2026-09-06) | Pinned (Phase 5) | Role |
 |---|---|---|---|---|
-| `497639811223.dkr.ecr.us-east-2.amazonaws.com/automation-platform-config-lcm-flowai` | `6.5.1` | `6.5.2` | pending ECR listing | Itential Platform with the FlowAI bundle |
-| `497639811223.dkr.ecr.us-east-2.amazonaws.com/automation-gateway5` | `5.5.1-amd64` | `5.5.2-amd64` | pending ECR listing | Gateway 5 (FlowAI agent tool-calling, device services) |
-| `497639811223.dkr.ecr.us-east-2.amazonaws.com/automation-gateway` | `4.3.15` | newest `4.4.x` if present in ECR, else newest `4.3.x` | pending ECR listing | Gateway 4 (Golden Config / Configuration Manager). 4.3 receives no further security patches per Itential; 4.4 is the patched line. Both gateways are needed for the full lab |
+| `497639811223.dkr.ecr.us-east-2.amazonaws.com/automation-platform-config-lcm-flowai` | `6.5.1` | `6.5.2` | `6.5.2` (pushed 2026-09-03, alias of `6.5.2-ecm-6.5.2-fai-1.1.0-gm-1.2.3-lcm-6.5.2-2`) | Itential Platform with the FlowAI bundle |
+| `497639811223.dkr.ecr.us-east-2.amazonaws.com/automation-gateway5` | `5.5.1-amd64` | `5.5.2-amd64` | `5.5.2-amd64` (pushed 2026-09-02) | Gateway 5 (FlowAI agent tool-calling, device services) |
+| `497639811223.dkr.ecr.us-east-2.amazonaws.com/automation-gateway` | `4.3.15` | newest `4.4.x` if present in ECR, else newest `4.3.x` | `4.4.1` (pushed 2026-09-02; 4.4.0 and 4.3.15 also present) | Gateway 4 (Golden Config / Configuration Manager). 4.3 receives no further security patches per Itential; 4.4 is the patched line. Both gateways are needed for the full lab |
 | `ghcr.io/itential/itential-mcp` | `v0.13.1` | `v0.14.0` (release 2026-08-13) | `v0.14.0` | MCP server, streamable HTTP on `mcp.lab.internal:8000` (S4.7); public image |
 | `ghcr.io/itential/job-metrics-exporter` | `latest` | pin a digest when Phase 8 scrapes it | deferred to Phase 8 | Prometheus exporter for jobs; never pin `latest` |
 

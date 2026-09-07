@@ -1,0 +1,313 @@
+---
+# Phase 5, slice B: the itential-dev-stack on the prepared VM (ADR 0035). Runs after
+# itential-host.yml and `images/fetch.sh itential-load`. Secrets are generated once on the
+# workstation and persisted to the repo .env before anything uses them (lab-build-lessons).
+# Order: secrets -> stack files + env on the VM -> Gateway 5 client cert -> compose up -> health
+# -> admin password off admin/admin -> Gateway Manager registration -> MCP account.
+- name: Phase 5 secrets, persisted before use
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    env_file: "{{ playbook_dir }}/../../.env"
+  tasks:
+    - name: Current values
+      ansible.builtin.set_fact:
+        cur_key: "{{ lookup('ansible.builtin.env', 'ITENTIAL_ENCRYPTION_KEY') }}"
+        cur_admin: "{{ lookup('ansible.builtin.env', 'ITENTIAL_ADMIN_PASSWORD') }}"
+        cur_mcp: "{{ lookup('ansible.builtin.env', 'ITENTIAL_MCP_PASSWORD') }}"
+      no_log: true
+
+    # The encryption key protects every stored adapter secret; it is generated exactly once.
+    - name: Encryption key (64 hex) generated once
+      ansible.builtin.set_fact:
+        enc_key: >-
+          {{ cur_key if cur_key | length == 64
+             else lookup('ansible.builtin.password', '/dev/null', length=64, chars=['hexdigits']) | lower }}
+      no_log: true
+
+    - name: Admin and MCP passwords generated once
+      ansible.builtin.set_fact:
+        admin_pw: >-
+          {{ cur_admin if cur_admin | length >= 16
+             else lookup('ansible.builtin.password', '/dev/null', length=24, chars=['ascii_letters', 'digits']) }}
+        mcp_pw: >-
+          {{ cur_mcp if cur_mcp | length >= 16
+             else lookup('ansible.builtin.password', '/dev/null', length=24, chars=['ascii_letters', 'digits']) }}
+      no_log: true
+
+    - name: Persist to .env before use
+      ansible.builtin.lineinfile:
+        path: "{{ env_file }}"
+        regexp: "^{{ item.key }}="
+        line: "{{ item.key }}={{ item.value }}"
+      loop:
+        - {key: ITENTIAL_ENCRYPTION_KEY, value: "{{ enc_key }}"}
+        - {key: ITENTIAL_ADMIN_PASSWORD, value: "{{ admin_pw }}"}
+        - {key: ITENTIAL_MCP_PASSWORD, value: "{{ mcp_pw }}"}
+      loop_control:
+        label: "{{ item.key }}"
+      no_log: true
+
+- name: Bring up the Itential dev stack
+  hosts: itential-host
+  become: true
+  gather_facts: false
+  vars_files:
+    - ../../itential/versions.yaml
+  vars:
+    stack_dir: /opt/itential
+    oob_address: "{{ vm.ip }}"
+    enc_key: "{{ hostvars['localhost'].enc_key }}"
+    admin_pw: "{{ hostvars['localhost'].admin_pw }}"
+    mcp_pw: "{{ hostvars['localhost'].mcp_pw }}"
+    profiles: "{{ stack.profiles | map('regex_replace', '^', '--profile ') | join(' ') }}"
+    compose: "docker compose -f docker-compose.yml -f compose.override.yml {{ profiles }}"
+    platform_local: http://127.0.0.1:3000
+  tasks:
+    - name: Vendored Compose file and the lab override
+      ansible.builtin.copy:
+        src: "../../itential/{{ item }}"
+        dest: "{{ stack_dir }}/{{ item }}"
+        owner: ubuntu
+        group: ubuntu
+        mode: "0644"
+      loop: [docker-compose.yml, compose.override.yml]
+      notify: Compose up
+
+    # Compose interpolates from .env in the project dir; the platform service also loads it
+    # as container environment (upstream design for the Vault variables), so keep it minimal.
+    - name: Stack .env from versions.yaml and the repo secrets
+      ansible.builtin.copy:
+        dest: "{{ stack_dir }}/.env"
+        owner: ubuntu
+        group: ubuntu
+        mode: "0600"
+        content: |
+          # Rendered by ansible/playbooks/itential.yml from itential/versions.yaml; do not edit.
+          PLATFORM_IMAGE={{ images.platform.repository }}:{{ images.platform.tag }}
+          GATEWAY4_IMAGE={{ images.gateway4.repository }}:{{ images.gateway4.tag }}
+          GATEWAY5_IMAGE={{ images.gateway5.repository }}:{{ images.gateway5.tag }}
+          MONGO_VERSION={{ images.mongodb.tag }}
+          REDIS_VERSION={{ images.redis.tag }}
+          MCP_VERSION={{ images.mcp.tag }}
+          MCP_TRANSPORT=http
+          BIND_ADDRESS=127.0.0.1:
+          OOB_ADDRESS={{ oob_address }}
+          GATEWAY5_CLUSTER_ID={{ stack.gateway5_cluster_id }}
+          LOG_LEVEL=info
+          MCP_PLATFORM_USER=mcp
+          MCP_PLATFORM_PASSWORD={{ mcp_pw }}
+          ITENTIAL_ENCRYPTION_KEY={{ enc_key }}
+      no_log: true
+      notify: Compose up
+
+    # Gateway 5 authenticates to Gateway Manager with a client certificate it presents over an
+    # insecure-TLS gRPC link on the Docker network; self-signed like upstream (5 years).
+    - name: Gateway 5 client certificate
+      ansible.builtin.command:
+        cmd: >-
+          openssl req -x509 -newkey rsa:4096 -nodes -days 1825
+          -keyout {{ stack_dir }}/volumes/gateway5/certificates/gw-manager-key.pem
+          -out {{ stack_dir }}/volumes/gateway5/certificates/gw-manager.pem
+          -subj /CN=gateway5 -addext subjectAltName=DNS:gateway5,DNS:localhost,IP:127.0.0.1
+          -addext basicConstraints=CA:FALSE -addext keyUsage=digitalSignature,keyEncipherment
+          -addext extendedKeyUsage=clientAuth,serverAuth
+        creates: "{{ stack_dir }}/volumes/gateway5/certificates/gw-manager.pem"
+
+    - name: Gateway 5 certificate ownership (container uid 100)
+      ansible.builtin.file:
+        path: "{{ stack_dir }}/volumes/gateway5/certificates/{{ item }}"
+        owner: "100"
+        group: "101"
+        mode: "0644"
+      loop: [gw-manager.pem, gw-manager-key.pem]
+
+    - name: Images present (fetch.sh itential-load)
+      ansible.builtin.command: docker image inspect {{ item.repository }}:{{ item.tag }}
+      loop: "{{ [images.platform, images.gateway4, images.gateway5] }}"
+      loop_control:
+        label: "{{ item.repository | basename }}:{{ item.tag }}"
+      changed_when: false
+
+    - name: Stack up
+      ansible.builtin.command:
+        cmd: "{{ compose }} up -d --remove-orphans"
+        chdir: "{{ stack_dir }}"
+      register: up
+      changed_when: "'Started' in up.stderr or 'Created' in up.stderr"
+
+    - name: Platform answers /health (up to 5 min on first boot)
+      ansible.builtin.uri:
+        url: "{{ platform_local }}/health"
+        status_code: 200
+      register: health
+      until: health.status == 200
+      retries: 60
+      delay: 5
+
+    # --- admin password off admin/admin (persist-before-use: the new value is already in .env) ---
+    - name: Factory login still works?
+      ansible.builtin.uri:
+        url: "{{ platform_local }}/login"
+        method: POST
+        body_format: json
+        body: {username: admin, password: admin}
+        status_code: [200, 401, 403]
+      register: factory
+      no_log: true
+
+    - name: Rotate the admin password
+      ansible.builtin.uri:
+        url: "{{ platform_local }}/authorization/accounts/000000000000000000000000"
+        method: PATCH
+        headers: {Cookie: "{{ factory.cookies_string }}"}
+        body_format: json
+        body: {updates: {password: "{{ admin_pw }}"}}
+        status_code: 200
+      when: factory.status == 200
+      no_log: true
+
+    - name: Login with the rotated password
+      ansible.builtin.uri:
+        url: "{{ platform_local }}/login"
+        method: POST
+        body_format: json
+        body: {username: admin, password: "{{ admin_pw }}"}
+        status_code: 200
+      register: login
+      no_log: true
+
+    - name: Factory password must now be rejected
+      ansible.builtin.uri:
+        url: "{{ platform_local }}/login"
+        method: POST
+        body_format: json
+        body: {username: admin, password: admin}
+        status_code: [401, 403]
+      no_log: true
+
+    # --- Gateway Manager: certificate, admin group with every role, gateway cluster ---------
+    - name: Gateway Manager API ready
+      ansible.builtin.uri:
+        url: "{{ platform_local }}/gateway_manager/v1/certificates"
+        headers: {Cookie: "{{ login.cookies_string }}"}
+        status_code: 200
+      register: gm_certs
+      until: gm_certs.status == 200
+      retries: 20
+      delay: 3
+
+    - name: Read the Gateway 5 client certificate
+      ansible.builtin.slurp:
+        src: "{{ stack_dir }}/volumes/gateway5/certificates/gw-manager.pem"
+      register: gw_cert
+
+    - name: Upload the Gateway 5 client certificate once
+      ansible.builtin.uri:
+        url: "{{ platform_local }}/gateway_manager/v1/certificates"
+        method: POST
+        headers: {Cookie: "{{ login.cookies_string }}"}
+        body_format: json
+        body:
+          raw_certificate: "{{ gw_cert.content | b64decode }}"
+          contract_id: "gateway5-{{ stack.gateway5_cluster_id }}"
+          alias: "gateway5-{{ stack.gateway5_cluster_id }}"
+        status_code: [200, 201]
+      when: gm_certs.json.results | selectattr('alias', 'equalto', 'gateway5-' ~ stack.gateway5_cluster_id) | list | length == 0
+
+    - name: Certificate id
+      ansible.builtin.uri:
+        url: "{{ platform_local }}/gateway_manager/v1/certificates"
+        headers: {Cookie: "{{ login.cookies_string }}"}
+      register: gm_certs2
+
+    - name: Every role id (the admin group carries all of them, as upstream does)
+      ansible.builtin.uri:
+        url: "{{ platform_local }}/authorization/roles?limit=200"
+        headers: {Cookie: "{{ login.cookies_string }}"}
+      register: role_list
+
+    - name: Existing groups
+      ansible.builtin.uri:
+        url: "{{ platform_local }}/authorization/groups?limit=100"
+        headers: {Cookie: "{{ login.cookies_string }}"}
+      register: existing_groups
+
+    - name: Group admin_group with every role
+      ansible.builtin.uri:
+        url: "{{ platform_local }}/authorization/groups{{ '/' ~ existing[0]._id if existing else '' }}"
+        method: "{{ 'PATCH' if existing else 'POST' }}"
+        headers: {Cookie: "{{ login.cookies_string }}"}
+        body_format: json
+        body: >-
+          {{ {'updates': {'assignedRoles': role_ids}} if existing else
+             {'group': {'name': 'admin_group', 'provenance': 'Pronghorn', 'description': 'Admin group with full permissions',
+                        'assignedRoles': role_ids, 'memberOf': [], 'inactive': false}} }}
+        status_code: [200, 201]
+      vars:
+        existing: "{{ existing_groups.json.results | selectattr('name', 'equalto', 'admin_group') | list }}"
+        role_ids: "{{ role_list.json.results | map(attribute='_id') | map('community.general.dict_kv', 'roleId') | list }}"
+      changed_when: not existing
+
+    - name: Group id
+      ansible.builtin.uri:
+        url: "{{ platform_local }}/authorization/groups?limit=100"
+        headers: {Cookie: "{{ login.cookies_string }}"}
+      register: groups2
+
+    - name: Built-in admin is a member of admin_group with every role
+      ansible.builtin.uri:
+        url: "{{ platform_local }}/authorization/accounts/000000000000000000000000"
+        method: PATCH
+        headers: {Cookie: "{{ login.cookies_string }}"}
+        body_format: json
+        body:
+          updates:
+            memberOf:
+              - aaaManaged: false
+                groupId: "{{ (groups2.json.results | selectattr('name', 'equalto', 'admin_group') | first)._id }}"
+            assignedRoles: "{{ role_list.json.results | map(attribute='_id') | map('community.general.dict_kv', 'roleId') | list }}"
+        status_code: 200
+      changed_when: false
+
+    - name: Existing gateways
+      ansible.builtin.uri:
+        url: "{{ platform_local }}/gateway_manager/v1/gateways"
+        headers: {Cookie: "{{ login.cookies_string }}"}
+      register: gateways
+
+    - name: Gateway cluster {{ stack.gateway5_cluster_id }}
+      ansible.builtin.uri:
+        url: "{{ platform_local }}/gateway_manager/v1/gateways"
+        method: POST
+        headers: {Cookie: "{{ login.cookies_string }}"}
+        body_format: json
+        body:
+          gateway:
+            gateway_name: "{{ stack.gateway5_cluster_id }}"
+            cluster_id: "{{ stack.gateway5_cluster_id }}"
+            description: "Lab Gateway 5 (ADR 0035)"
+            enabled: true
+            readonly: false
+            certificates:
+              - "{{ (gm_certs2.json.results | selectattr('alias', 'equalto', 'gateway5-' ~ stack.gateway5_cluster_id) | first)._id }}"
+            groups: [admin_group]
+        status_code: [200, 201]
+      when: gateways.json.results | default([]) | selectattr('cluster_id', 'equalto', stack.gateway5_cluster_id) | list | length == 0
+
+    - name: Gateway 5 connected to Gateway Manager (up to 2 min)
+      ansible.builtin.uri:
+        url: "{{ platform_local }}/gateway_manager/v1/connections"
+        headers: {Cookie: "{{ login.cookies_string }}"}
+      register: conns
+      until: stack.gateway5_cluster_id in (conns.json | to_json)
+      retries: 24
+      delay: 5
+
+  handlers:
+    - name: Compose up
+      ansible.builtin.command:
+        cmd: "{{ compose }} up -d --remove-orphans"
+        chdir: "{{ stack_dir }}"
+      changed_when: true
