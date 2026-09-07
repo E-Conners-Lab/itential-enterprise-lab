@@ -18,4 +18,6 @@ case "$(uname -s)" in
     ;;
   *) echo "Windows (admin PowerShell): route -p add 10.100.0.0 mask 255.252.0.0 $GW ; Add-DnsClientNrptRule -Namespace .lab.internal -NameServers $GW"; exit 1 ;;
 esac
-ping -c 1 -W 2 10.100.0.1 >/dev/null && echo "oob-gw 10.100.0.1 reachable" || { echo "10.100.0.1 unreachable: is oob-gw up?"; exit 1; }
+# the first packets after a route change can be lost while ARP for the gateway settles: retry
+for _ in 1 2 3 4 5; do ping -c 1 -W 2 10.100.0.1 >/dev/null 2>&1 && { echo "oob-gw 10.100.0.1 reachable"; exit 0; }; sleep 1; done
+echo "10.100.0.1 unreachable after 5 tries: is oob-gw up?"; exit 1
