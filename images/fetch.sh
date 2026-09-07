@@ -97,7 +97,7 @@ itential_load() { # staged tarballs -> the itential VM's Docker, through this wo
     if $VM "docker image inspect ${image} >/dev/null 2>&1" </dev/null; then echo "present on vm: ${image}"; continue; fi
     $SSH "cd ${STAGING} && grep ' itential/${tar}\$' MANIFEST.sha256 | sha256sum -c --quiet" </dev/null || { echo "checksum failed for ${tar}"; exit 1; }
     echo "loading ${tar} into ${vm_ip}"
-    $SSH "cat ${STAGING}/itential/${tar}" | $VM "docker load" >/dev/null
+    $SSH "cat ${STAGING}/itential/${tar}" </dev/null | $VM "docker load" >/dev/null
   done < <(ecr_images)
   $VM "docker images --format '{{.Repository}}:{{.Tag}} {{.Size}}' | grep ecr"
 }
