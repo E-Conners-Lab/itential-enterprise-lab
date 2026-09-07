@@ -1,0 +1,83 @@
+---
+# One agent from itential/agents/<name>.yaml: resolve its tool references to Tool Registry
+# referenceIds, then create or update it in the project. Included by flowai.yml per document.
+# referenceId formats (Tool Registry): application:<App>:<method>, adapter:<Export>:<Instance>:<method>,
+# workflow:<workflow uuid> (the document's uuid field, not its _id; the current import of that name).
+- name: "Agent current workflow ids for {{ agent.name }}"
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/automation-studio/workflows?limit=100"
+    headers: {Cookie: "{{ login.cookies_string }}"}
+  register: wf_list
+
+- name: "Agent start with no tools for {{ agent.name }}"
+  ansible.builtin.set_fact:
+    agent_tool_ids: []
+
+- name: "Agent resolve each tool for {{ agent.name }}"
+  ansible.builtin.set_fact:
+    agent_tool_ids: >-
+      {{ agent_tool_ids + [
+           ('application:GatewayManager:' ~ gateway_methods[item.reference]) if item.kind == 'gateway-service'
+           else ('adapter:' ~ adapter_exports[item.adapter] ~ ':' ~ item.adapter ~ ':' ~ item.reference) if item.kind == 'adapter'
+           else ('workflow:' ~ (wf_list.json['items'] | selectattr('name', 'equalto', item.reference) | map(attribute='uuid') | first))
+         ] }}
+  vars:
+    gateway_methods: {send-command: sendCommand, send-config: sendConfig, run-service: runService}
+    adapter_exports: {NetBox: Netbox, ServiceNow: Servicenow}
+  loop: "{{ agent.tools }}"
+  loop_control:
+    label: "{{ item.kind }} {{ item.reference }}"
+
+- name: "Agent tools exist in the registry for {{ agent.name }}"
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/{{ tool_registry_base }}/bulk"
+    method: POST
+    headers: {Cookie: "{{ login.cookies_string }}"}
+    body_format: json
+    body: {referenceIds: "{{ agent_tool_ids }}", queryOptions: {limit: 100}}
+    status_code: 200
+  register: tools_found
+  failed_when: (tools_found.json.data | default(tools_found.json.results | default([]))) | length != agent_tool_ids | length
+
+- name: "Agent existing definition for {{ agent.name }}"
+  ansible.builtin.set_fact:
+    existing_agent: "{{ agents_now.json.data['items'] | selectattr('name', 'equalto', agent.name) | list }}"
+    agent_project_id: "{{ (projects2.json.data['items'] | selectattr('name', 'equalto', agent.project) | first)._id }}"
+
+- name: "Agent create for {{ agent.name }}"
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/agent-project-service/projects/{{ agent_project_id }}/agents"
+    method: POST
+    headers: {Cookie: "{{ login.cookies_string }}"}
+    body_format: json
+    body:
+      name: "{{ agent.name }}"
+      description: "{{ agent.description }}"
+      instructions: "{{ agent.instructions }}"
+      inputSchema: "{{ agent.input_schema }}"
+      provider: {profile: "{{ profile_ids[agent.profile] }}", model: "{{ model_ids[agent.profile] }}"}
+      tools: "{{ agent_tool_ids | map('community.general.dict_kv', 'referenceId') | list }}"
+      operators: ["{{ admin_group_id }}"]
+    status_code: [200, 201]
+  when: existing_agent | length == 0
+
+- name: "Agent update in place for {{ agent.name }}"
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/agent-project-service/agents/{{ existing_agent[0]._id | default(existing_agent[0].id) }}"
+    method: PATCH
+    headers: {Cookie: "{{ login.cookies_string }}"}
+    body_format: json
+    body: >-
+      {{ {'description': agent.description,
+          'prompt': {'instructions': agent.instructions, 'inputSchema': agent.input_schema},
+          'provider': {'profile': profile_ids[agent.profile], 'model': model_ids[agent.profile]},
+          'operators': [admin_group_id]}
+         | combine({'addTools': new_tools | map('community.general.dict_kv', 'referenceId') | list} if new_tools else {})
+         | combine({'removeTools': gone_tools | map('community.general.dict_kv', 'referenceId') | list} if gone_tools else {}) }}
+    status_code: 200
+  vars:
+    have_tools: "{{ existing_agent[0].tools | default([]) | map(attribute='referenceId') | list }}"
+    new_tools: "{{ agent_tool_ids | reject('in', have_tools) | list }}"
+    gone_tools: "{{ have_tools | reject('in', agent_tool_ids) | list }}"
+  when: existing_agent | length > 0
+  changed_when: true

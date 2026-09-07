@@ -28,6 +28,8 @@ images:
   mongodb: {repository: docker.io/library/mongo, tag: "7.0.40"} # Platform 6 fully supports 7.0 (manifest 3.2); Docker Hub 2026-09-07
   redis: {repository: docker.io/library/redis, tag: "7.4.11"}
   mcp: {repository: ghcr.io/itential/itential-mcp, tag: v0.14.0} # release 2026-08-13; streamable HTTP transport
+  # in-lab local models on VM 205, CPU inference (ADR 0037); Docker Hub 2026-09-07
+  ollama: {repository: docker.io/ollama/ollama, tag: 0.33.3}
   # upstream dev-stack OpenLDAP: admin@itential and the group membership Gateway Manager needs (until Phase 7 AD)
   ldap: {repository: docker.io/osixia/openldap, tag: 1.4.0}
 
@@ -42,7 +44,7 @@ vm:
 stack:
   # platform + mongodb + redis + gateway5 + mcp + openldap. Gateway 4 deferred (owner decision
   # 2026-09-07: Gateway 5 is the gateway; Golden Config is not in S4), openbao off (Vault in Phase 9)
-  profiles: [platform, gateway5, mcp, ldap]
+  profiles: [platform, gateway5, mcp, ldap, ollama]
   # itential/ldap/openldap.ldif, vendored from the same upstream commit
   ldif_sha256: 4d22e7a2a80dc5f3b6fabccf35b68e34fe6d6c9fd4c87842c2a6deca53f97cbc
   gateway5_cluster_id: lab
@@ -65,3 +67,26 @@ workflows:
   device_count: wf-netbox-device-count-v1
   show_version: wf-show-version-v1
   branch_vlan: wf-branch-vlan-v1
+
+# --- Phase 6: FlowAI (PID S4c, ADR 0037). Provider keys live in .env only; profiles are created
+# by ansible/playbooks/flowai.yml through the Model Registry (write-only credentials).
+llm:
+  default_profile: anthropic
+  profiles:
+    - name: anthropic
+      provider: anthropic
+      model: claude-sonnet-5 # Model Registry listed 11 Claude models for the key on 2026-09-07
+      env_key: ANTHROPIC_API_KEY
+    - name: ollama-lab
+      provider: ollama
+      base_url: http://ollama:11434 # the Compose service on VM 205
+      model: qwen2.5:7b # Ollama library tag (Q4_K_M, ~4.7 GB, tool calling); pulled by the play
+    - name: ollama-mac # the owner's Mac Mini (M4 Pro, 64 GB), optional fast endpoint: no criterion depends on it
+      provider: ollama
+      base_url: http://192.168.68.142:11434 # scripts/mac-ollama.sh (LaunchAgent, OLLAMA_HOST=0.0.0.0)
+      model: qwen3:30b-a3b # Ollama library, MoE 30B/3B active, 18 GB; pulled by scripts/mac-ollama.sh
+      optional: true
+
+agents:
+  project: lab-netops
+  documents: itential/agents

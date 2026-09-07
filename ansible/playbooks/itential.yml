@@ -92,6 +92,7 @@
           MONGO_VERSION={{ images.mongodb.tag }}
           REDIS_VERSION={{ images.redis.tag }}
           MCP_VERSION={{ images.mcp.tag }}
+          OLLAMA_IMAGE={{ images.ollama.repository }}:{{ images.ollama.tag }}
           MCP_TRANSPORT=http
           BIND_ADDRESS=127.0.0.1:
           OOB_ADDRESS={{ oob_address }}

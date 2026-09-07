@@ -1,0 +1,225 @@
+---
+# Phase 6: FlowAI agents over the lab topology (PID S4c, ADR 0037). Runs after itential.yml.
+# Order: in-lab Ollama + pinned model -> Model Registry provider profiles (keys from .env, stored
+# write-only) -> tool discovery -> agent project and agents from itential/agents/*.yaml.
+# Everything is created through the API; re-runs update in place.
+- name: FlowAI on the itential VM
+  hosts: itential-host
+  become: true
+  gather_facts: false
+  vars_files:
+    - ../../itential/versions.yaml
+  vars:
+    stack_dir: /opt/itential
+    profiles: "{{ stack.profiles | map('regex_replace', '^', '--profile ') | join(' ') }}"
+    compose: "docker compose -f docker-compose.yml -f compose.override.yml {{ profiles }}"
+    platform_local: http://127.0.0.1:3000
+    tool_registry_base: tools # app-tool_registry mounts under its pronghorn title
+    admin_user: "{{ lookup('ansible.builtin.env', 'ITENTIAL_ADMIN_USER') | default('admin@itential', true) }}"
+    admin_pw: "{{ lookup('ansible.builtin.env', 'ITENTIAL_ADMIN_PASSWORD') }}"
+    required_profiles: "{{ llm.profiles | rejectattr('optional', 'defined') | list }}"
+    optional_profiles: "{{ llm.profiles | selectattr('optional', 'defined') | list }}"
+    agent_docs: "{{ lookup('ansible.builtin.fileglob', playbook_dir ~ '/../../' ~ agents.documents ~ '/*.yaml', wantlist=True) | sort }}"
+  tasks:
+    # --- in-lab local models -------------------------------------------------------------------
+    - name: Compose files current (itential.yml renders the stack .env incl. OLLAMA_IMAGE)
+      ansible.builtin.copy:
+        src: "../../itential/{{ item }}"
+        dest: "{{ stack_dir }}/{{ item }}"
+        owner: ubuntu
+        group: ubuntu
+        mode: "0644"
+      loop: [docker-compose.yml, compose.override.yml]
+
+    - name: Stack env carries the Ollama image (run itential.yml first otherwise)
+      ansible.builtin.lineinfile:
+        path: "{{ stack_dir }}/.env"
+        regexp: "^OLLAMA_IMAGE="
+        line: "OLLAMA_IMAGE={{ images.ollama.repository }}:{{ images.ollama.tag }}"
+
+    - name: Ollama up (profile ollama)
+      ansible.builtin.command:
+        cmd: "{{ compose }} up -d ollama"
+        chdir: "{{ stack_dir }}"
+      register: ollama_up
+      changed_when: "'Started' in ollama_up.stderr or 'Created' in ollama_up.stderr"
+
+    - name: Ollama answers
+      ansible.builtin.uri:
+        url: http://127.0.0.1:11434/api/tags
+      register: ollama_tags
+      until: ollama_tags.status == 200
+      retries: 20
+      delay: 3
+
+    - name: Pinned local models pulled (first pull downloads a few GB through oob-gw)
+      ansible.builtin.command:
+        cmd: "docker exec ollama ollama pull {{ item }}"
+      loop: "{{ required_profiles | selectattr('provider', 'equalto', 'ollama') | map(attribute='model') | unique | list }}"
+      when: item not in (ollama_tags.json.models | default([]) | map(attribute='name') | list)
+      changed_when: true
+
+    # Optional endpoints (the owner's Mac) join only when they answer from the VM right now.
+    - name: Optional Ollama endpoints reachable?
+      ansible.builtin.uri:
+        url: "{{ item.base_url }}/api/tags"
+        timeout: 5
+      loop: "{{ optional_profiles }}"
+      loop_control:
+        label: "{{ item.name }} {{ item.base_url }}"
+      register: optional_probe
+      failed_when: false
+
+    - name: Profiles to manage this run
+      ansible.builtin.set_fact:
+        llm_profiles: >-
+          {{ required_profiles + (optional_probe.results | selectattr('status', 'defined')
+                                  | selectattr('status', 'equalto', 200) | map(attribute='item') | list) }}
+
+    - name: Profiles this run
+      ansible.builtin.debug:
+        msg: "{{ llm_profiles | map(attribute='name') | list }}"
+
+    # --- Model Registry provider profiles ----------------------------------------------------
+    - name: Login as {{ admin_user }}
+      ansible.builtin.uri:
+        url: "{{ platform_local }}/login"
+        method: POST
+        body_format: json
+        body: {username: "{{ admin_user }}", password: "{{ admin_pw }}"}
+        status_code: 200
+      register: login
+      no_log: true
+
+    - name: Operator group (admin_group builds and operates the agents)
+      ansible.builtin.uri:
+        url: "{{ platform_local }}/authorization/groups?limit=100"
+        headers: {Cookie: "{{ login.cookies_string }}"}
+      register: auth_groups
+
+    - name: Group id
+      ansible.builtin.set_fact:
+        admin_group_id: "{{ (auth_groups.json.results | selectattr('name', 'equalto', 'admin_group') | first)._id }}"
+
+    - name: Existing provider profiles
+      ansible.builtin.uri:
+        url: "{{ platform_local }}/model-registry-service/profiles"
+        headers: {Cookie: "{{ login.cookies_string }}"}
+      register: mr_profiles
+
+    - name: Provider credential bodies (keys from .env, never logged)
+      ansible.builtin.set_fact:
+        profile_bodies: >-
+          {{ profile_bodies | default([]) + [{
+               'name': item.name, 'provider': item.provider, 'model': item.model,
+               'credential': ({'type': 'anthropic',
+                               'apiKey': lookup('ansible.builtin.env', item.env_key | default('ANTHROPIC_API_KEY'))}
+                              if item.provider == 'anthropic' else {'type': 'ollama', 'baseURL': item.base_url}) }] }}
+      loop: "{{ llm_profiles }}"
+      loop_control:
+        label: "{{ item.name }}"
+      no_log: true
+
+    - name: Provider profiles created once (credentials are write-only in the platform)
+      ansible.builtin.uri:
+        url: "{{ platform_local }}/model-registry-service/profiles"
+        method: POST
+        headers: {Cookie: "{{ login.cookies_string }}"}
+        body_format: json
+        body:
+          profile:
+            category: direct
+            name: "{{ item.name }}"
+            provider: "{{ item.provider }}"
+            credential: "{{ item.credential }}"
+            models: [{name: "{{ item.model }}"}]
+            builderGroups: [{id: "{{ admin_group_id }}", provenance: Pronghorn, name: admin_group}]
+        status_code: [200, 201]
+      loop: "{{ profile_bodies }}"
+      loop_control:
+        label: "{{ item.name }}"
+      when: item.name not in ((mr_profiles.json.profiles | default(mr_profiles.json.data | default([]))) | map(attribute='name') | list)
+      no_log: true
+
+    - name: Provider profiles now
+      ansible.builtin.uri:
+        url: "{{ platform_local }}/model-registry-service/profiles"
+        headers: {Cookie: "{{ login.cookies_string }}"}
+      register: mr_profiles2
+
+    - name: Profile ids by name
+      ansible.builtin.set_fact:
+        profile_ids: >-
+          {{ dict(mr_profiles2.json.profiles | map(attribute='name')
+                  | zip(mr_profiles2.json.profiles | map(attribute='id'))) }}
+
+    - name: Each profile with its enabled models
+      ansible.builtin.uri:
+        url: "{{ platform_local }}/model-registry-service/profiles/{{ profile_ids[item.name] }}"
+        headers: {Cookie: "{{ login.cookies_string }}"}
+      loop: "{{ llm_profiles }}"
+      loop_control:
+        label: "{{ item.name }}"
+      register: profile_docs
+
+    - name: Pinned model id per profile (the model must be enabled on the profile)
+      ansible.builtin.set_fact:
+        model_ids: >-
+          {{ model_ids | default({}) | combine({item.item.name:
+             (item.json.models | selectattr('name', 'equalto', item.item.model) | map(attribute='id') | first)}) }}
+      loop: "{{ profile_docs.results }}"
+      loop_control:
+        label: "{{ item.item.name }} -> {{ item.item.model }}"
+
+    # --- Agent project and agents from itential/agents/*.yaml ----------------------------------
+    - name: Agent documents
+      ansible.builtin.set_fact:
+        agent_defs: "{{ agent_defs | default([]) + [lookup('ansible.builtin.file', item) | from_yaml] }}"
+      loop: "{{ agent_docs }}"
+      loop_control:
+        label: "{{ item | basename }}"
+
+    - name: Existing projects
+      ansible.builtin.uri:
+        url: "{{ platform_local }}/agent-project-service/projects"
+        headers: {Cookie: "{{ login.cookies_string }}"}
+      register: projects
+
+    - name: Project {{ agents.project }}
+      ansible.builtin.uri:
+        url: "{{ platform_local }}/agent-project-service/projects"
+        method: POST
+        headers: {Cookie: "{{ login.cookies_string }}"}
+        body_format: json
+        body: {name: "{{ agents.project }}", description: "Lab network operations agents (ADR 0037); documents in itential/agents/"}
+        status_code: [200, 201]
+      when: agents.project not in (projects.json.data['items'] | map(attribute='name') | list)
+
+    - name: Project id
+      ansible.builtin.uri:
+        url: "{{ platform_local }}/agent-project-service/projects"
+        headers: {Cookie: "{{ login.cookies_string }}"}
+      register: projects2
+
+    - name: Tool discovery (creates registry entries for platform assets)
+      ansible.builtin.uri:
+        url: "{{ platform_local }}/{{ tool_registry_base }}/discover"
+        method: POST
+        headers: {Cookie: "{{ login.cookies_string }}"}
+        body_format: json
+        body: {}
+        status_code: 200
+      changed_when: false
+
+    - name: Existing agents
+      ansible.builtin.uri:
+        url: "{{ platform_local }}/agent-project-service/operable-agents"
+        headers: {Cookie: "{{ login.cookies_string }}"}
+      register: agents_now
+
+    - name: Agents created or updated from the documents
+      ansible.builtin.include_tasks: tasks/flowai-agent.yml
+      loop: "{{ agent_defs | selectattr('profile', 'in', llm_profiles | map(attribute='name') | list) | list }}"
+      loop_control:
+        loop_var: agent
+        label: "{{ agent.name }}"

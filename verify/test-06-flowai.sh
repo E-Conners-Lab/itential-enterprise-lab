@@ -27,26 +27,27 @@ nb()    { curl -s -m 20 -H "Authorization: Token ${NETBOX_TOKEN}" "$@"; }
 JAR=$(mktemp); trap 'rm -f "$JAR" /tmp/verify06.$$' EXIT
 iap()   { curl -s -m 120 --cacert "$CA" --resolve "${IT_HOST}:443:${IT_IP}" -b "$JAR" -H "Content-Type: application/json" "$@"; }
 iap_login() { iap -c "$JAR" -X POST "${PLATFORM}/login" -d "{\"username\":\"${ADMIN_USER}\",\"password\":\"${ITENTIAL_ADMIN_PASSWORD}\"}" -o /dev/null -w '%{http_code}' | grep -qx 200; }
-agent_id() { iap "${PLATFORM}/agent-project-service/operable-agents" | ${PY} -c "import sys,json;d=json.load(sys.stdin);a=[x for x in (d.get('data') or d.get('results') or d) if x.get('name')=='$1'];print(a[0]['_id'] if a else a[0]['id'] if a else '')"; }
+agent_id() { iap "${PLATFORM}/agent-project-service/operable-agents" | ${PY} -c "import sys,json;a=[x for x in json.load(sys.stdin)['data']['items'] if x.get('name')=='$1'];print(a[0]['_id'] if a else '')"; }
 # run_agent <agent name> <inputs json> -> prints the session id; waits for a terminal state
 run_agent() {
   local name=$1 inputs=$2 aid sid state
   aid=$(agent_id "$name"); [ -n "$aid" ] || { echo "agent ${name} not found"; return 1; }
-  sid=$(iap -X POST "${PLATFORM}/agent-session-manager/sessions" -d "{\"agentDefinitionId\":\"${aid}\",\"inputs\":${inputs}}" | ${PY} -c 'import sys,json;d=json.load(sys.stdin);d=d.get("data",d);print(d.get("sessionId") or d.get("_id") or d.get("id") or "")')
+  sid=$(iap -X POST "${PLATFORM}/agent-session-manager/sessions" -d "{\"agentDefinitionId\":\"${aid}\",\"inputs\":${inputs}}" | ${PY} -c 'import sys,json;print(json.load(sys.stdin).get("sessionId",""))')
   [ -n "$sid" ] || { echo "session start failed for ${name}"; return 1; }
   echo "$sid"
   for _ in $(seq 1 60); do
-    state=$(iap "${PLATFORM}/agent-session-manager/sessions/${sid}" | ${PY} -c 'import sys,json;d=json.load(sys.stdin);d=d.get("data",d);print((d.get("state") or d.get("status") or "").lower())')
-    case "$state" in completed|complete|succeeded|success) return 0;; failed|error|canceled|cancelled) echo "session ${sid} ${state}"; return 1;; esac
+    state=$(iap "${PLATFORM}/agent-session-manager/sessions/${sid}" | ${PY} -c 'import sys,json;print((json.load(sys.stdin).get("status") or "").lower())')
+    case "$state" in complete|completed) return 0;; failed|error|canceled|cancelled) echo "session ${sid} ${state}"; return 1;; esac
     sleep 5
   done
   echo "session ${sid} did not finish (${state})"; return 1
 }
 # session_text <session id> -> the final assistant text; session_tools -> tool names called; session_usage -> "in out"
 session_msgs() { iap "${PLATFORM}/agent-session-manager/sessions/$1/messages?limit=100&sortBy=eventId&sortOrder=asc"; }
-session_text()  { session_msgs "$1" | ${PY} -c 'import sys,json;d=json.load(sys.stdin);m=d.get("data") or d.get("messages") or d.get("results") or d;txt=[x for x in m if isinstance(x,dict) and (x.get("role")=="assistant" or x.get("type") in ("assistant","final","text"))];print(json.dumps(txt[-1])[:4000] if txt else json.dumps(m)[:4000])'; }
-session_tools() { session_msgs "$1" | ${PY} -c 'import sys,json;d=json.load(sys.stdin);s=json.dumps(d);import re;print(sorted(set(re.findall(r"\"(?:toolName|tool_name|name)\":\s*\"([A-Za-z0-9_.:-]+)\"",s))))'; }
-session_usage() { session_msgs "$1" | ${PY} -c 'import sys,json,re;s=json.dumps(json.load(sys.stdin));i=sum(int(x) for x in re.findall(r"\"(?:input_tokens|inputTokens|prompt_tokens|promptTokens)\":\s*(\d+)",s));o=sum(int(x) for x in re.findall(r"\"(?:output_tokens|outputTokens|completion_tokens|completionTokens)\":\s*(\d+)",s));print(i,o)'; }
+# messages: a list of events (category AGENT_REASONING/TOOL_CALLED/AGENT_STATUS, type, text, data.tokenUsage)
+session_text()  { session_msgs "$1" | ${PY} -c 'import sys,json;m=json.load(sys.stdin);m=sorted([x for x in m if x.get("type")=="inference-succeeded" and x.get("text")],key=lambda x:x.get("timestamp",0));print(m[-1]["text"] if m else "")'; }
+session_tools() { session_msgs "$1" | ${PY} -c 'import sys,json;m=json.load(sys.stdin);print(sorted({x["data"].get("toolName","") for x in m if x.get("category")=="TOOL_CALLED"}))'; }
+session_usage() { session_msgs "$1" | ${PY} -c 'import sys,json;m=json.load(sys.stdin);u=[x["data"]["tokenUsage"] for x in m if x.get("type")=="inference-succeeded" and x.get("data",{}).get("tokenUsage")];print(sum(t.get("inputTokens",0) for t in u),sum(t.get("outputTokens",0) for t in u))'; }
 count_tokens() { read -r i o <<<"$(session_usage "$1")"; tokens_in=$((tokens_in+i)); tokens_out=$((tokens_out+o)); echo "tokens in=${i} out=${o}"; }
 mkdir -p verify/results; exec > >(tee "verify/results/${ts}-06-flowai.log") 2>&1
 echo "# test-06-flowai ${ts}"

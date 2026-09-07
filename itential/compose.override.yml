@@ -35,6 +35,26 @@ services:
     ports:
       - "${OOB_ADDRESS}:50051:50051"
 
+  # In-lab local models (ADR 0037): CPU inference on the VM, models on a named volume, reachable
+  # only on the Docker network (the Model Registry profile uses http://ollama:11434) and loopback.
+  ollama:
+    container_name: ollama
+    image: ${OLLAMA_IMAGE}
+    profiles: ["ollama"]
+    ports:
+      - "127.0.0.1:11434:11434"
+    volumes:
+      - ollama-models:/root/.ollama
+    environment:
+      OLLAMA_KEEP_ALIVE: "30m"
+      OLLAMA_NUM_PARALLEL: "1"
+      OLLAMA_MAX_LOADED_MODELS: "1"
+    deploy:
+      resources:
+        limits:
+          memory: 10g
+    restart: unless-stopped
+
   mcp:
     ports:
       - "${OOB_ADDRESS}:8000:8000"
@@ -44,3 +64,7 @@ services:
       ITENTIAL_MCP_SERVER_LOG_LEVEL: "INFO" # itential-mcp rejects lowercase levels; the platform wants lowercase
       ITENTIAL_MCP_PLATFORM_USER: ${MCP_PLATFORM_USER}
       ITENTIAL_MCP_PLATFORM_PASSWORD: ${MCP_PLATFORM_PASSWORD}
+
+volumes:
+  ollama-models:
+    driver: local
