@@ -76,9 +76,16 @@ def nb(name: str, summary: str, incoming: dict, x: int) -> dict:
     return task(name, "NetBox", summary, incoming, {"result": None}, location="Adapter", location_type="Netbox", x=x)
 
 
-def query(summary: str, obj: str, q: str, to_job: str, x: int) -> dict:
-    return task("query", "WorkFlowEngine", summary, {"job_id": "", "pass_on_null": False, "query": q, "obj": obj},
-                {"return_data": f"$var.job.{to_job}"}, kind="operation", display="WorkFlowEngine", x=x)
+def selector(device_ref: str, x: int) -> tuple[dict, dict]:
+    """Two tasks that render the Gateway Manager inventory selector for one node. $var references
+    are substituted only at the top level of a task's inputs, so the node name is spliced into a
+    JSON string with Tools.replace and the string is parsed with Tools.parse."""
+    template = '[{"inventory": "%s", "nodeNames": ["__DEVICE__"]}]' % INVENTORY
+    rep = task("replace", "WorkFlowEngine", "selector JSON with the node name",
+               {"str": template, "substr": "__DEVICE__", "newSubstr": device_ref}, {"replacedString": None}, display="Tools", x=x)
+    par = task("parse", "WorkFlowEngine", "selector JSON -> object", {"text": "$var.0a.replacedString"}, {"textObject": None},
+               display="Tools", x=x + 300)
+    return rep, par
 
 
 def chain(*ids: str) -> dict:
@@ -91,24 +98,23 @@ def chain(*ids: str) -> dict:
 def device_count() -> dict:
     tasks = {
         "1a": nb("getDcimDevices", "One page of devices (count comes with it)", {"limit": 1, "offset": 0}, x=0),
-        "2b": query("device_count = response.count", "$var.1a.result", "count", "device_count", x=600),
     }
+    tasks["1a"]["variables"]["outgoing"] = {"result": "$var.job.devices"}
     return workflow("wf-netbox-device-count-v1", "Reads the NetBox device list through the NetBox adapter and returns its count (PID S4.2)",
-                    {}, tasks, chain("1a", "2b"), {"device_count": {"type": "number"}})
+                    {}, tasks, chain("1a"), {"devices": {"type": "object"}})
 
 
 # --- wf-show-version-v1 (S4.3): Gateway 5 send-command on one inventory node -> job variable output --
 def show_version() -> dict:
     tasks = {
         "1a": task("sendCommand", "GatewayManager", "show version through Gateway 5",
-                   {"clusterId": CLUSTER, "commands": ["show version"], "inventory": [{"inventory": INVENTORY, "nodeNames": ["$var.job.device"]}]},
-                   {"result": None}, x=0),
-        "2b": query("output = results[0].output", "$var.1a.result", "results[0].output", "output", x=600),
-        "3c": query("success = results[0].success", "$var.1a.result", "results[0].success", "success", x=1200),
+                   {"clusterId": CLUSTER, "commands": ["show version"], "inventory": "$var.0b.textObject"},
+                   {"result": "$var.job.show_version"}, x=600),
     }
+    tasks["0a"], tasks["0b"] = selector("$var.job.device", x=-300)
     return workflow("wf-show-version-v1", "Runs 'show version' on one inventory node through Gateway 5 and returns the raw output (PID S4.3)",
                     {"device": {"type": "string", "required": True, "description": "Inventory node name, e.g. br1-sw01"}},
-                    tasks, chain("1a", "2b", "3c"), {"output": {"type": "string"}, "success": {"type": "boolean"}})
+                    tasks, chain("0a", "0b", "1a"), {"show_version": {"type": "object"}})
 
 
 if __name__ == "__main__":

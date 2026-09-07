@@ -15,7 +15,7 @@
       "displayName": "GatewayManager",
       "groups": [],
       "nodeLocation": {
-        "x": 0,
+        "x": 600,
         "y": 0
       },
       "variables": {
@@ -24,17 +24,10 @@
           "commands": [
             "show version"
           ],
-          "inventory": [
-            {
-              "inventory": "lab",
-              "nodeNames": [
-                "$var.job.device"
-              ]
-            }
-          ]
+          "inventory": "$var.0b.textObject"
         },
         "outgoing": {
-          "result": null
+          "result": "$var.job.show_version"
         },
         "error": "",
         "decorators": []
@@ -42,63 +35,63 @@
       "actor": "Pronghorn",
       "scheduled": false
     },
-    "2b": {
-      "name": "query",
-      "canvasName": "query",
-      "summary": "output = results[0].output",
-      "description": "output = results[0].output",
+    "0a": {
+      "name": "replace",
+      "canvasName": "replace",
+      "summary": "selector JSON with the node name",
+      "description": "selector JSON with the node name",
       "location": "Application",
       "locationType": null,
       "app": "WorkFlowEngine",
-      "type": "operation",
-      "displayName": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 600,
+        "x": -300,
         "y": 0
       },
       "variables": {
         "incoming": {
-          "job_id": "",
-          "pass_on_null": false,
-          "query": "results[0].output",
-          "obj": "$var.1a.result"
+          "str": "[{\"inventory\": \"lab\", \"nodeNames\": [\"__DEVICE__\"]}]",
+          "substr": "__DEVICE__",
+          "newSubstr": "$var.job.device"
         },
         "outgoing": {
-          "return_data": "$var.job.output"
+          "replacedString": null
         },
         "error": "",
         "decorators": []
-      }
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
     },
-    "3c": {
-      "name": "query",
-      "canvasName": "query",
-      "summary": "success = results[0].success",
-      "description": "success = results[0].success",
+    "0b": {
+      "name": "parse",
+      "canvasName": "parse",
+      "summary": "selector JSON -> object",
+      "description": "selector JSON -> object",
       "location": "Application",
       "locationType": null,
       "app": "WorkFlowEngine",
-      "type": "operation",
-      "displayName": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 1200,
+        "x": 0,
         "y": 0
       },
       "variables": {
         "incoming": {
-          "job_id": "",
-          "pass_on_null": false,
-          "query": "results[0].success",
-          "obj": "$var.1a.result"
+          "text": "$var.0a.replacedString"
         },
         "outgoing": {
-          "return_data": "$var.job.success"
+          "textObject": null
         },
         "error": "",
         "decorators": []
-      }
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
     },
     "workflow_start": {
       "name": "workflow_start",
@@ -121,24 +114,24 @@
   },
   "transitions": {
     "workflow_start": {
+      "0a": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "0a": {
+      "0b": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "0b": {
       "1a": {
         "state": "success",
         "type": "standard"
       }
     },
     "1a": {
-      "2b": {
-        "state": "success",
-        "type": "standard"
-      }
-    },
-    "2b": {
-      "3c": {
-        "state": "success",
-        "type": "standard"
-      }
-    },
-    "3c": {
       "workflow_end": {
         "state": "success",
         "type": "standard"
@@ -164,11 +157,8 @@
   "outputSchema": {
     "type": "object",
     "properties": {
-      "output": {
-        "type": "string"
-      },
-      "success": {
-        "type": "boolean"
+      "show_version": {
+        "type": "object"
       }
     }
   },

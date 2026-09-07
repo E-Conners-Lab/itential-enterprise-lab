@@ -24,42 +24,13 @@
           "offset": 0
         },
         "outgoing": {
-          "result": null
+          "result": "$var.job.devices"
         },
         "error": "",
         "decorators": []
       },
       "actor": "Pronghorn",
       "scheduled": false
-    },
-    "2b": {
-      "name": "query",
-      "canvasName": "query",
-      "summary": "device_count = response.count",
-      "description": "device_count = response.count",
-      "location": "Application",
-      "locationType": null,
-      "app": "WorkFlowEngine",
-      "type": "operation",
-      "displayName": "WorkFlowEngine",
-      "groups": [],
-      "nodeLocation": {
-        "x": 600,
-        "y": 0
-      },
-      "variables": {
-        "incoming": {
-          "job_id": "",
-          "pass_on_null": false,
-          "query": "count",
-          "obj": "$var.1a.result"
-        },
-        "outgoing": {
-          "return_data": "$var.job.device_count"
-        },
-        "error": "",
-        "decorators": []
-      }
     },
     "workflow_start": {
       "name": "workflow_start",
@@ -88,12 +59,6 @@
       }
     },
     "1a": {
-      "2b": {
-        "state": "success",
-        "type": "standard"
-      }
-    },
-    "2b": {
       "workflow_end": {
         "state": "success",
         "type": "standard"
@@ -111,8 +76,8 @@
   "outputSchema": {
     "type": "object",
     "properties": {
-      "device_count": {
-        "type": "number"
+      "devices": {
+        "type": "object"
       }
     }
   },
