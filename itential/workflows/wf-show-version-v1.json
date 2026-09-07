@@ -1,0 +1,180 @@
+{
+  "name": "wf-show-version-v1",
+  "type": "automation",
+  "description": "Runs 'show version' on one inventory node through Gateway 5 and returns the raw output (PID S4.3)",
+  "tasks": {
+    "1a": {
+      "name": "sendCommand",
+      "canvasName": "sendCommand",
+      "summary": "show version through Gateway 5",
+      "description": "show version through Gateway 5",
+      "location": "Application",
+      "locationType": null,
+      "app": "GatewayManager",
+      "type": "automatic",
+      "displayName": "GatewayManager",
+      "groups": [],
+      "nodeLocation": {
+        "x": 0,
+        "y": 0
+      },
+      "variables": {
+        "incoming": {
+          "clusterId": "lab",
+          "commands": [
+            "show version"
+          ],
+          "inventory": [
+            {
+              "inventory": "lab",
+              "nodeNames": [
+                "$var.job.device"
+              ]
+            }
+          ]
+        },
+        "outgoing": {
+          "result": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "2b": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "output = results[0].output",
+      "description": "output = results[0].output",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 600,
+        "y": 0
+      },
+      "variables": {
+        "incoming": {
+          "job_id": "",
+          "pass_on_null": false,
+          "query": "results[0].output",
+          "obj": "$var.1a.result"
+        },
+        "outgoing": {
+          "return_data": "$var.job.output"
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "3c": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "success = results[0].success",
+      "description": "success = results[0].success",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 1200,
+        "y": 0
+      },
+      "variables": {
+        "incoming": {
+          "job_id": "",
+          "pass_on_null": false,
+          "query": "results[0].success",
+          "obj": "$var.1a.result"
+        },
+        "outgoing": {
+          "return_data": "$var.job.success"
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "workflow_start": {
+      "name": "workflow_start",
+      "summary": "workflow_start",
+      "groups": [],
+      "nodeLocation": {
+        "x": -600,
+        "y": 0
+      }
+    },
+    "workflow_end": {
+      "name": "workflow_end",
+      "summary": "workflow_end",
+      "groups": [],
+      "nodeLocation": {
+        "x": 1800,
+        "y": 0
+      }
+    }
+  },
+  "transitions": {
+    "workflow_start": {
+      "1a": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "1a": {
+      "2b": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "2b": {
+      "3c": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "3c": {
+      "workflow_end": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "workflow_end": {}
+  },
+  "groups": [],
+  "canvasVersion": 3,
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "device": {
+        "type": "string",
+        "required": true,
+        "description": "Inventory node name, e.g. br1-sw01"
+      }
+    },
+    "required": [
+      "device"
+    ]
+  },
+  "outputSchema": {
+    "type": "object",
+    "properties": {
+      "output": {
+        "type": "string"
+      },
+      "success": {
+        "type": "boolean"
+      }
+    }
+  },
+  "tags": [],
+  "preAutomationTime": 300000,
+  "sla": 600000,
+  "font_size": 12,
+  "decorators": []
+}

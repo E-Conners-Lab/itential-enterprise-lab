@@ -62,10 +62,10 @@ c1() {
   [ "$ver" = "$PLATFORM_VER" ] || { echo "platform reports ${ver}, versions.yaml pins ${PLATFORM_VER}"; return 1; }
   local conns; conns=$(iap "${PLATFORM}/gateway_manager/v1/connections")
   echo "$conns" | ${PY} -c 'import sys,json;d=json.load(sys.stdin);c=d.get("data",d);assert any(v for v in c.values()),"no gateway5 connections"' || { echo "$conns" | head -c 300; return 1; }
-  # Gateway 4 is reached through the built-in IAG adapter; it must be running.
-  iap "${PLATFORM}/health/adapters" | ${PY} -c 'import sys,json;a=json.load(sys.stdin);a=a.get("results",a);r=[x for x in a if "gateway4" in (x.get("id") or x.get("_id") or "").lower() or "iag" in (x.get("id") or x.get("_id") or "").lower()];assert r,"no IAG4 adapter";assert all(x.get("state")=="RUNNING" for x in r),r' || return 1
+  # Gateway 4 is deferred (owner decision 2026-09-07); Gateway 5 is the registered gateway.
+  iap "${PLATFORM}/gateway_manager/v1/gateways" | ${PY} -c 'import sys,json;g=json.load(sys.stdin)["results"];assert any(x["enabled"] for x in g),g'
 }
-check "S4.1 ${PLATFORM} serves a lab-CA cert for ${IT_HOST}, runs Platform ${PLATFORM_VER}, Gateway 5 connected, Gateway 4 adapter RUNNING" c1
+check "S4.1 ${PLATFORM} serves a lab-CA cert for ${IT_HOST}, runs Platform ${PLATFORM_VER}, Gateway 5 registered and connected" c1
 
 # --- S4.2 NetBox adapter: workflow device count == GET /api/dcim/devices/ --------------------------
 c2() {

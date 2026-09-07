@@ -53,6 +53,10 @@
     profiles: "{{ stack.profiles | map('regex_replace', '^', '--profile ') | join(' ') }}"
     compose: "docker compose -f docker-compose.yml -f compose.override.yml {{ profiles }}"
     platform_local: http://127.0.0.1:3000
+    netbox_oob_host: 10.100.0.64
+    netbox_port: 8080
+    # NetBox platform slug -> netmiko device_type for Gateway 5's device services
+    platform_map: {ios-xe: cisco_ios, eos: arista_eos}
   tasks:
     - name: Vendored Compose file and the lab override
       ansible.builtin.copy:
@@ -149,14 +153,30 @@
 
     # Platform 6 has one built-in local account (admin); other users come from an AAA provider
     # (AD LDAP in Phase 7). Owner decision 2026-09-07: admin keeps the dev-stack password from .env.
-    - name: Login as admin
+    - name: LDAP login, active from the second run on, as {{ admin_user }}
+      ansible.builtin.uri:
+        url: "{{ platform_local }}/login"
+        method: POST
+        body_format: json
+        body: {username: "{{ admin_user }}", password: "{{ admin_pw }}"}
+        status_code: [200, 401, 403]
+      register: ldap_first
+      no_log: true
+
+    - name: Otherwise login as the built-in admin (fresh stack, LDAP not configured yet)
       ansible.builtin.uri:
         url: "{{ platform_local }}/login"
         method: POST
         body_format: json
         body: {username: admin, password: "{{ admin_pw }}"}
         status_code: 200
-      register: login
+      register: local_first
+      when: ldap_first.status != 200
+      no_log: true
+
+    - name: Working session
+      ansible.builtin.set_fact:
+        login: "{{ ldap_first if ldap_first.status == 200 else local_first }}"
       no_log: true
 
     # --- Gateway Manager: certificate, admin group with every role, gateway cluster ---------
@@ -430,6 +450,322 @@
       until: stack.gateway5_cluster_id in (conns.json | to_json)
       retries: 24
       delay: 5
+
+    # --- open-source adapters: package into the custom mount, then instances via the API ------
+    # The custom directory is bind-mounted read-only into the platform; npm runs in a throw-away
+    # container from the platform image (node 20, npm 10) as uid 1001 so the files stay readable.
+    - name: Git trusts the adapter checkouts (owned by uid 1001, managed as root)
+      community.general.git_config:
+        name: safe.directory
+        scope: global
+        value: "*"
+
+    - name: Adapter sources at the pinned tags
+      ansible.builtin.git:
+        repo: "{{ item.value.repo }}"
+        dest: "{{ stack_dir }}/volumes/platform/adapters/adapter-{{ item.key }}"
+        version: "{{ item.value.tag }}"
+        depth: 1
+        force: true
+      loop: "{{ adapters | dict2items }}"
+      loop_control:
+        label: "adapter-{{ item.key }} {{ item.value.tag }}"
+      register: adapter_src
+
+    - name: Adapter files owned by the platform uid (npm runs as 1001, the platform reads as 1001)
+      ansible.builtin.file:
+        path: "{{ stack_dir }}/volumes/platform/adapters"
+        owner: "1001"
+        group: "1001"
+        recurse: true
+      changed_when: false
+
+    - name: Adapter dependencies (npm in the platform image, as uid 1001)
+      ansible.builtin.command:
+        argv:
+          - docker
+          - run
+          - --rm
+          - -u
+          - "1001:1001"
+          - -e
+          - HOME=/tmp
+          - -v
+          - "{{ stack_dir }}/volumes/platform/adapters/adapter-{{ item.key }}:/w"
+          - -w
+          - /w
+          - --entrypoint
+          - npm
+          - "{{ images.platform.repository }}:{{ images.platform.tag }}"
+          - install
+          - --omit=dev
+          - --no-audit
+          - --no-fund
+        creates: >-
+          {{ stack_dir }}/volumes/platform/adapters/adapter-{{ item.key }}/node_modules/@itentialopensource/adapter-utils/package.json
+      loop: "{{ adapters | dict2items }}"
+      loop_control:
+        label: "adapter-{{ item.key }}"
+      register: adapter_npm
+
+    - name: Platform reloads the custom services after a package change
+      ansible.builtin.command:
+        cmd: "{{ compose }} restart platform"
+        chdir: "{{ stack_dir }}"
+      when: adapter_src is changed or adapter_npm is changed
+      changed_when: true
+
+    - name: Platform back (after a reload)
+      ansible.builtin.uri:
+        url: "{{ platform_local }}/health/status"
+        status_code: 200
+      register: health2
+      until: health2.status == 200
+      retries: 60
+      delay: 5
+
+    - name: Login after the reload as {{ admin_user }}
+      ansible.builtin.uri:
+        url: "{{ platform_local }}/login"
+        method: POST
+        body_format: json
+        body: {username: "{{ admin_user }}", password: "{{ admin_pw }}"}
+        status_code: 200
+      register: login
+      retries: 10
+      delay: 5
+      until: login.status == 200
+      no_log: true
+
+    # Adapter instances (NetBox through the open-source adapter). Gateway 5 is not an adapter: it
+    # is registered with Gateway Manager above. Gateway 4 is deferred (owner decision 2026-09-07).
+    - name: Adapter instances
+      ansible.builtin.set_fact:
+        adapter_instances:
+          - name: NetBox
+            model: "@itentialopensource/adapter-netbox"
+            type: "{{ adapters.netbox.export }}"
+            properties:
+              host: "{{ netbox_oob_host }}"
+              port: "{{ netbox_port }}"
+              protocol: http
+              base_path: /api
+              version: ""
+              stub: false
+              authentication:
+                auth_method: static_token
+                token: "{{ lookup('ansible.builtin.env', 'NETBOX_TOKEN') }}"
+                token_timeout: 1800000
+                token_cache: local
+                invalid_token_error: 401
+                auth_field: header.headers.Authorization
+                auth_field_format: "Token {token}"
+                auth_logging: false
+              healthcheck: {type: startup, frequency: 300000, query_object: {}, addlHeaders: {}}
+              request:
+                number_redirects: 0
+                number_retries: 3
+                limit_retry_error: 401
+                attempt_timeout: 10000
+                healthcheck_on_timeout: true
+                return_raw: false
+                archiving: false
+              ssl: {enabled: false, accept_invalid_cert: false}
+      no_log: true
+
+    - name: Existing adapter instances
+      ansible.builtin.uri:
+        url: "{{ platform_local }}/adapters/{{ item.name }}"
+        headers: {Cookie: "{{ login.cookies_string }}"}
+        status_code: [200, 404, 500]
+      loop: "{{ adapter_instances }}"
+      loop_control:
+        label: "{{ item.name }}"
+      register: adapter_exists
+
+    - name: Create adapter instances
+      ansible.builtin.uri:
+        url: "{{ platform_local }}/adapters"
+        method: POST
+        headers: {Cookie: "{{ login.cookies_string }}"}
+        body_format: json
+        body:
+          properties:
+            name: "{{ item.item.name }}"
+            model: "{{ item.item.model }}"
+            type: Adapter
+            properties: {id: "{{ item.item.name }}", type: "{{ item.item.type }}"}
+        status_code: [200, 201]
+      loop: "{{ adapter_exists.results }}"
+      loop_control:
+        label: "{{ item.item.name }}"
+      when: item.status != 200
+
+    - name: Configure adapter instances (activates them)
+      ansible.builtin.uri:
+        url: "{{ platform_local }}/adapters/{{ item.name }}/properties"
+        method: PUT
+        headers: {Cookie: "{{ login.cookies_string }}"}
+        body_format: json
+        body: {properties: "{{ item.properties }}"}
+        status_code: 200
+      loop: "{{ adapter_instances }}"
+      loop_control:
+        label: "{{ item.name }}"
+      no_log: true
+      changed_when: true
+
+    - name: Adapter instances RUNNING (up to 2 min)
+      ansible.builtin.uri:
+        url: "{{ platform_local }}/health/adapters"
+        headers: {Cookie: "{{ login.cookies_string }}"}
+      register: adapters_health
+      until: >-
+        (adapters_health.json.results | default(adapters_health.json))
+        | selectattr('id', 'in', adapter_instances | map(attribute='name') | list)
+        | selectattr('state', 'equalto', 'RUNNING') | list | length == adapter_instances | length
+      retries: 24
+      delay: 5
+
+    # Adapter packages register new roles (their methods); upstream's sync-admin-roles.sh does the
+    # same re-sync. Without it the admin gets 403 on the new adapter's routes.
+    - name: After the adapters loaded, re-sync every role to admin_group and {{ admin_user }}
+      ansible.builtin.command:
+        argv:
+          - docker
+          - exec
+          - mongodb
+          - mongosh
+          - --quiet
+          - itential
+          - --eval
+          - >-
+            const roles = db.roles.find({}, {_id: 1}).toArray().map(r => ({roleId: r._id}));
+            const g = db.groups.findOne({name: 'admin_group'}, {_id: 1});
+            const u = {username: '{{ admin_user }}', provenance: 'LDAP'};
+            let changed = 0;
+            if (db.accounts.findOne(u, {assignedRoles: 1}).assignedRoles.length !== roles.length) {
+              db.accounts.updateOne(u, {$set: {assignedRoles: roles}}); changed++; }
+            if (db.groups.findOne({_id: g._id}, {assignedRoles: 1}).assignedRoles.length !== roles.length) {
+              db.groups.updateOne({_id: g._id}, {$set: {assignedRoles: roles}}); changed++; }
+            print(changed ? 'CHANGED ' + roles.length : 'OK ' + roles.length);
+      register: role_resync
+      changed_when: "'CHANGED' in role_resync.stdout"
+      failed_when: "'OK' not in role_resync.stdout and 'CHANGED' not in role_resync.stdout"
+
+    - name: Fresh session with the adapter roles as {{ admin_user }}
+      ansible.builtin.uri:
+        url: "{{ platform_local }}/login"
+        method: POST
+        body_format: json
+        body: {username: "{{ admin_user }}", password: "{{ admin_pw }}"}
+        status_code: 200
+      register: login
+      no_log: true
+
+    - name: NetBox adapter answers through the platform (a device page with NetBox's own count)
+      ansible.builtin.uri:
+        url: "{{ platform_local }}/NetBox/getDcimDevices"
+        method: POST
+        headers: {Cookie: "{{ login.cookies_string }}"}
+        body_format: json
+        body: {query: {limit: 1}}
+        status_code: 200
+      register: nb_devices
+      failed_when: (nb_devices.json.response | default(nb_devices.json)).count is not defined
+
+    # --- Inventory Manager: the lab devices from NetBox (ADR 0002) for Gateway 5's device services ---
+    # Gateway 5's native send-command/send-config run against Inventory Manager nodes. Nodes are
+    # generated from NetBox (routers -> cisco_ios, switches -> arista_eos; firewalls wait for PA-VM,
+    # endpoints are not network devices). Device credentials are the lab automation account, stored
+    # in the inventory until Vault (Phase 9): accepted SEC exception recorded in the PR.
+    - name: Network devices from NetBox (active, with a management address, by platform)
+      ansible.builtin.uri:
+        url: >-
+          http://{{ netbox_oob_host }}:{{ netbox_port }}/api/dcim/devices/?limit=0&status=active&has_primary_ip=true&platform={{ item }}
+        headers: {Authorization: "Token {{ lookup('ansible.builtin.env', 'NETBOX_TOKEN') }}"}
+      loop: "{{ platform_map.keys() | list }}"
+      register: nb_platforms
+      no_log: true
+
+    - name: Inventory nodes
+      ansible.builtin.set_fact:
+        inv_nodes: >-
+          {{ inv_nodes | default([]) + [{'name': item.name, 'tags': [item.site.slug, item.role.slug, item.platform.slug],
+             'attributes': {'itential_host': item.primary_ip4.address | ansible.utils.ipaddr('address'),
+                            'itential_platform': platform_map[item.platform.slug],
+                            'itential_user': 'automation',
+                            'itential_password': lookup('ansible.builtin.env', 'AUTOMATION_PASSWORD'),
+                            'cluster_id': stack.gateway5_cluster_id}}] }}
+      loop: "{{ nb_platforms.results | map(attribute='json.results') | flatten | list }}"
+      loop_control:
+        label: "{{ item.name }}"
+      no_log: true
+
+    - name: Inventory exists?
+      ansible.builtin.uri:
+        url: "{{ platform_local }}/inventory_manager/v1/inventories/{{ stack.inventory }}"
+        headers: {Cookie: "{{ login.cookies_string }}"}
+        status_code: [200, 404]
+      register: inv_state
+
+    - name: Inventory with the built-in broker actions on cluster {{ stack.gateway5_cluster_id }}
+      ansible.builtin.uri:
+        url: "{{ platform_local }}/inventory_manager/v1/inventories"
+        method: POST
+        headers: {Cookie: "{{ login.cookies_string }}"}
+        body_format: json
+        body:
+          name: "{{ stack.inventory }}"
+          description: "Lab network devices from NetBox (ansible/playbooks/itential.yml)"
+          groups: [admin_group]
+          createBrokerActions: true
+          defaultClusterId: "{{ stack.gateway5_cluster_id }}"
+        status_code: [200, 201]
+      when: inv_state.status != 200
+
+    - name: Existing nodes
+      ansible.builtin.uri:
+        url: "{{ platform_local }}/inventory_manager/v1/inventories/{{ stack.inventory }}/nodes"
+        headers: {Cookie: "{{ login.cookies_string }}"}
+      register: inv_existing
+      no_log: true
+
+    # /nodes/bulk is populateInventory: it REPLACES the node set, so always send the full list.
+    - name: Inventory nodes populated from NetBox (replaces the set when it differs)
+      ansible.builtin.uri:
+        url: "{{ platform_local }}/inventory_manager/v1/nodes/bulk"
+        method: POST
+        headers: {Cookie: "{{ login.cookies_string }}"}
+        body_format: json
+        body:
+          inventory_identifier: "{{ stack.inventory }}"
+          nodes: "{{ inv_nodes }}"
+        status_code: 200
+      vars:
+        have: "{{ inv_existing.json.result.data | map(attribute='name') | sort }}"
+        want: "{{ inv_nodes | map(attribute='name') | sort }}"
+      when: have != want
+      no_log: true
+
+    - name: Gateway 5 answers show version on one switch through the inventory (S4.3 building block)
+      ansible.builtin.uri:
+        url: "{{ platform_local }}/gateway_manager/v1/services/run"
+        method: POST
+        headers: {Cookie: "{{ login.cookies_string }}"}
+        body_format: json
+        body:
+          serviceName: send-command
+          clusterId: "{{ stack.gateway5_cluster_id }}"
+          params: {commands: ["show version"]}
+          inventory:
+            - inventory: "{{ stack.inventory }}"
+              nodeNames: ["{{ (inv_nodes | selectattr('attributes.itential_platform', 'equalto', 'arista_eos') | first).name }}"]
+        status_code: 200
+        timeout: 120
+      register: sv
+      failed_when: not (sv.json.result.results | map(attribute='success') | list | min)
+      changed_when: false
 
   handlers:
     - name: Compose up

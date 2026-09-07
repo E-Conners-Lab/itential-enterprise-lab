@@ -129,9 +129,8 @@ def test_override_pins_images_ports_and_mongo_cache(versions: dict) -> None:
     assert "--wiredTigerCacheSizeGB" in cmd
     cache_gb = float(re.search(r"--wiredTigerCacheSizeGB[= ]([\d.]+)", cmd).group(1))
     assert cache_gb <= versions["vm"]["memory_mb"] / 1024 * 0.25
-    # Gateway 4 needs netmiko for show commands through IAG (S4.3)
-    env = svc["gateway4"]["environment"]
-    assert str(env["automation_gateway_netmiko_enabled"]).lower() == "true"
+    # Gateway 4 is deferred (owner decision 2026-09-07): staged image, not in the running profiles
+    assert "gateway4" not in versions["stack"]["profiles"] and "full" not in versions["stack"]["profiles"]
     # MCP over streamable HTTP for Claude Code (S4.7)
     assert svc["mcp"]["environment"]["ITENTIAL_MCP_SERVER_TRANSPORT"] == "http"
 

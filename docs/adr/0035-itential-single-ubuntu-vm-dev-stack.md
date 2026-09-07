@@ -26,8 +26,8 @@ Docker host.
   `itential/versions.yaml`), Compose v2 plugin.
 - The upstream `docker-compose.yml` is **vendored unchanged** at the pinned
   commit (sha256 in `versions.yaml`, checked by `tests/test_itential.py`); every
-  lab change is in `itential/compose.override.yml`. Profiles `full` + `mcp`:
-  Platform, MongoDB 7.0 (cache capped at 4 GB), Redis 7, Gateway 5, Gateway 4,
+  lab change is in `itential/compose.override.yml`. Profiles `platform` + `gateway5`
+  + `mcp` + `ldap`: Platform, MongoDB 7.0 (cache capped at 4 GB), Redis 7, Gateway 5,
   MCP, plus the upstream OpenLDAP (`osixia/openldap:1.4.0`, profile `ldap`) because
   Gateway Manager only honours group membership for AAA-provisioned users: the
   built-in local `admin` is never in a group (observed 2026-09-07, even with the
@@ -48,6 +48,11 @@ Docker host.
   MCP account password live in the repo `.env` (persisted before first use,
   lab-build-lessons) and are rendered into the stack `.env` on the VM (mode
   0600).
+
+- **Gateway 5 is the gateway.** Gateway 4 (Golden Config / Configuration Manager)
+  is not needed by any S4 criterion; the owner chose Gateway 5 as the main gateway
+  on 2026-09-07. The 4.4.1 image stays staged and pinned so the profile can be
+  enabled later without a new pull.
 
 ## Consequences
 
