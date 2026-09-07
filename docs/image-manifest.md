@@ -247,6 +247,7 @@ digests are in `itential/versions.yaml` and the ADR 0020 amendment; tarballs in 
 | `497639811223.dkr.ecr.us-east-2.amazonaws.com/automation-gateway5` | `5.5.1-amd64` | `5.5.2-amd64` | `5.5.2-amd64` (pushed 2026-09-02) | Gateway 5 (FlowAI agent tool-calling, device services) |
 | `497639811223.dkr.ecr.us-east-2.amazonaws.com/automation-gateway` | `4.3.15` | newest `4.4.x` if present in ECR, else newest `4.3.x` | `4.4.1` (pushed 2026-09-02; 4.4.0 and 4.3.15 also present) | Gateway 4 (Golden Config / Configuration Manager). 4.3 receives no further security patches per Itential; 4.4 is the patched line. Both gateways are needed for the full lab |
 | `ghcr.io/itential/itential-mcp` | `v0.13.1` | `v0.14.0` (release 2026-08-13) | `v0.14.0` | MCP server, streamable HTTP on `mcp.lab.internal:8000` (S4.7); public image |
+| `docker.io/osixia/openldap` | `1.4.0` | `1.4.0` (upstream dev-stack default) | `1.4.0` | OpenLDAP with the dev-stack LDIF: `admin@itential`, the login Gateway Manager needs (ADR 0035); replaced by AD in Phase 7 |
 | `ghcr.io/itential/job-metrics-exporter` | `latest` | pin a digest when Phase 8 scrapes it | deferred to Phase 8 | Prometheus exporter for jobs; never pin `latest` |
 
 Do not pin: `automation-gateway5:5.1.0`, `automation-gateway:4.3.7`, `automation-platform-config-lcm:6`, `itential.jfrog.io/flow-ai-demo/itential_flowai:v0.1.4` (leftovers on the laptop).

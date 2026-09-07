@@ -121,6 +121,7 @@
         - {path: volumes/gateway4/ssl}
         - {path: volumes/gateway5/certificates, owner: "100", group: "101"}
         - {path: volumes/mcp/logs}
+        - {path: volumes/ldap}
       loop_control:
         label: "{{ item.path | default('.') }}"
 

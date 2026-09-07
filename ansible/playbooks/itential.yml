@@ -3,7 +3,7 @@
 # itential-host.yml and `images/fetch.sh itential-load`. Secrets are generated once on the
 # workstation and persisted to the repo .env before anything uses them (lab-build-lessons).
 # Order: secrets -> stack files + env on the VM -> Gateway 5 client cert -> compose up -> health
-# -> admin password off admin/admin -> Gateway Manager registration -> MCP account.
+# -> Gateway Manager registration. Platform login stays admin/<ITENTIAL_ADMIN_PASSWORD> (owner decision).
 - name: Phase 5 secrets, persisted before use
   hosts: localhost
   connection: local
@@ -14,9 +14,14 @@
     - name: Current values
       ansible.builtin.set_fact:
         cur_key: "{{ lookup('ansible.builtin.env', 'ITENTIAL_ENCRYPTION_KEY') }}"
-        cur_admin: "{{ lookup('ansible.builtin.env', 'ITENTIAL_ADMIN_PASSWORD') }}"
-        cur_mcp: "{{ lookup('ansible.builtin.env', 'ITENTIAL_MCP_PASSWORD') }}"
+        admin_pw: "{{ lookup('ansible.builtin.env', 'ITENTIAL_ADMIN_PASSWORD') }}"
       no_log: true
+
+    - name: Admin password must be set in .env (owner decision 2026-09-07, the built-in admin keeps the dev-stack password)
+      ansible.builtin.assert:
+        that: admin_pw | length > 0
+        fail_msg: ITENTIAL_ADMIN_PASSWORD missing from .env
+        quiet: true
 
     # The encryption key protects every stored adapter secret; it is generated exactly once.
     - name: Encryption key (64 hex) generated once
@@ -26,27 +31,11 @@
              else lookup('ansible.builtin.password', '/dev/null', length=64, chars=['hexdigits']) | lower }}
       no_log: true
 
-    - name: Admin and MCP passwords generated once
-      ansible.builtin.set_fact:
-        admin_pw: >-
-          {{ cur_admin if cur_admin | length >= 16
-             else lookup('ansible.builtin.password', '/dev/null', length=24, chars=['ascii_letters', 'digits']) }}
-        mcp_pw: >-
-          {{ cur_mcp if cur_mcp | length >= 16
-             else lookup('ansible.builtin.password', '/dev/null', length=24, chars=['ascii_letters', 'digits']) }}
-      no_log: true
-
     - name: Persist to .env before use
       ansible.builtin.lineinfile:
         path: "{{ env_file }}"
-        regexp: "^{{ item.key }}="
-        line: "{{ item.key }}={{ item.value }}"
-      loop:
-        - {key: ITENTIAL_ENCRYPTION_KEY, value: "{{ enc_key }}"}
-        - {key: ITENTIAL_ADMIN_PASSWORD, value: "{{ admin_pw }}"}
-        - {key: ITENTIAL_MCP_PASSWORD, value: "{{ mcp_pw }}"}
-      loop_control:
-        label: "{{ item.key }}"
+        regexp: "^ITENTIAL_ENCRYPTION_KEY="
+        line: "ITENTIAL_ENCRYPTION_KEY={{ enc_key }}"
       no_log: true
 
 - name: Bring up the Itential dev stack
@@ -60,7 +49,7 @@
     oob_address: "{{ vm.ip }}"
     enc_key: "{{ hostvars['localhost'].enc_key }}"
     admin_pw: "{{ hostvars['localhost'].admin_pw }}"
-    mcp_pw: "{{ hostvars['localhost'].mcp_pw }}"
+    admin_user: "{{ lookup('ansible.builtin.env', 'ITENTIAL_ADMIN_USER') | default('admin@itential', true) }}"
     profiles: "{{ stack.profiles | map('regex_replace', '^', '--profile ') | join(' ') }}"
     compose: "docker compose -f docker-compose.yml -f compose.override.yml {{ profiles }}"
     platform_local: http://127.0.0.1:3000
@@ -74,6 +63,14 @@
         mode: "0644"
       loop: [docker-compose.yml, compose.override.yml]
       notify: Compose up
+
+    - name: OpenLDAP bootstrap (admin@itential and the admins group, upstream LDIF)
+      ansible.builtin.copy:
+        src: ../../itential/ldap/openldap.ldif
+        dest: "{{ stack_dir }}/volumes/ldap/openldap.ldif"
+        owner: ubuntu
+        group: ubuntu
+        mode: "0644"
 
     # Compose interpolates from .env in the project dir; the platform service also loads it
     # as container environment (upstream design for the Vault variables), so keep it minimal.
@@ -96,11 +93,15 @@
           OOB_ADDRESS={{ oob_address }}
           GATEWAY5_CLUSTER_ID={{ stack.gateway5_cluster_id }}
           LOG_LEVEL=info
-          MCP_PLATFORM_USER=mcp
-          MCP_PLATFORM_PASSWORD={{ mcp_pw }}
+          MCP_PLATFORM_USER={{ admin_user }}
+          MCP_PLATFORM_PASSWORD={{ admin_pw }}
+          LDAP_ADMIN_PASSWORD=admin
           ITENTIAL_ENCRYPTION_KEY={{ enc_key }}
       no_log: true
       notify: Compose up
+
+    - name: Apply file/env changes now, before anything talks to the stack
+      ansible.builtin.meta: flush_handlers
 
     # Gateway 5 authenticates to Gateway Manager with a client certificate it presents over an
     # insecure-TLS gRPC link on the Docker network; self-signed like upstream (5 years).
@@ -137,38 +138,18 @@
       register: up
       changed_when: "'Started' in up.stderr or 'Created' in up.stderr"
 
-    - name: Platform answers /health (up to 5 min on first boot)
+    - name: Platform answers /health/status (up to 5 min on first boot; /health itself redirects to the UI)
       ansible.builtin.uri:
-        url: "{{ platform_local }}/health"
+        url: "{{ platform_local }}/health/status"
         status_code: 200
       register: health
       until: health.status == 200
       retries: 60
       delay: 5
 
-    # --- admin password off admin/admin (persist-before-use: the new value is already in .env) ---
-    - name: Factory login still works?
-      ansible.builtin.uri:
-        url: "{{ platform_local }}/login"
-        method: POST
-        body_format: json
-        body: {username: admin, password: admin}
-        status_code: [200, 401, 403]
-      register: factory
-      no_log: true
-
-    - name: Rotate the admin password
-      ansible.builtin.uri:
-        url: "{{ platform_local }}/authorization/accounts/000000000000000000000000"
-        method: PATCH
-        headers: {Cookie: "{{ factory.cookies_string }}"}
-        body_format: json
-        body: {updates: {password: "{{ admin_pw }}"}}
-        status_code: 200
-      when: factory.status == 200
-      no_log: true
-
-    - name: Login with the rotated password
+    # Platform 6 has one built-in local account (admin); other users come from an AAA provider
+    # (AD LDAP in Phase 7). Owner decision 2026-09-07: admin keeps the dev-stack password from .env.
+    - name: Login as admin
       ansible.builtin.uri:
         url: "{{ platform_local }}/login"
         method: POST
@@ -176,15 +157,6 @@
         body: {username: admin, password: "{{ admin_pw }}"}
         status_code: 200
       register: login
-      no_log: true
-
-    - name: Factory password must now be rejected
-      ansible.builtin.uri:
-        url: "{{ platform_local }}/login"
-        method: POST
-        body_format: json
-        body: {username: admin, password: admin}
-        status_code: [401, 403]
       no_log: true
 
     # --- Gateway Manager: certificate, admin group with every role, gateway cluster ---------
@@ -222,11 +194,28 @@
         headers: {Cookie: "{{ login.cookies_string }}"}
       register: gm_certs2
 
-    - name: Every role id (the admin group carries all of them, as upstream does)
+    # The roles endpoint pages at 100; the admin group carries every role (as upstream does).
+    - name: Every role id, page by page
       ansible.builtin.uri:
-        url: "{{ platform_local }}/authorization/roles?limit=200"
+        url: "{{ platform_local }}/authorization/roles?limit=100&skip={{ item }}"
         headers: {Cookie: "{{ login.cookies_string }}"}
-      register: role_list
+      register: role_pages
+      loop: [0, 100, 200, 300]
+      loop_control:
+        label: "skip={{ item }}"
+
+    - name: Role list complete
+      ansible.builtin.set_fact:
+        role_ids: >-
+          {{ role_pages.results | map(attribute='json.results') | flatten | map(attribute='_id') | unique
+             | map('community.general.dict_kv', 'roleId') | list }}
+        role_total: "{{ role_pages.results[0].json.total }}"
+
+    - name: All roles collected
+      ansible.builtin.assert:
+        that: role_ids | length == role_total | int
+        fail_msg: "collected {{ role_ids | length }} of {{ role_total }} roles"
+        quiet: true
 
     - name: Existing groups
       ansible.builtin.uri:
@@ -247,7 +236,6 @@
         status_code: [200, 201]
       vars:
         existing: "{{ existing_groups.json.results | selectattr('name', 'equalto', 'admin_group') | list }}"
-        role_ids: "{{ role_list.json.results | map(attribute='_id') | map('community.general.dict_kv', 'roleId') | list }}"
       changed_when: not existing
 
     - name: Group id
@@ -256,7 +244,18 @@
         headers: {Cookie: "{{ login.cookies_string }}"}
       register: groups2
 
-    - name: Built-in admin is a member of admin_group with every role
+    # Two PATCHes: a combined memberOf + assignedRoles update leaves memberOf untouched (observed).
+    - name: Built-in admin holds every role directly
+      ansible.builtin.uri:
+        url: "{{ platform_local }}/authorization/accounts/000000000000000000000000"
+        method: PATCH
+        headers: {Cookie: "{{ login.cookies_string }}"}
+        body_format: json
+        body: {updates: {assignedRoles: "{{ role_ids }}"}}
+        status_code: 200
+      changed_when: false
+
+    - name: Built-in admin is a member of admin_group
       ansible.builtin.uri:
         url: "{{ platform_local }}/authorization/accounts/000000000000000000000000"
         method: PATCH
@@ -267,10 +266,137 @@
             memberOf:
               - aaaManaged: false
                 groupId: "{{ (groups2.json.results | selectattr('name', 'equalto', 'admin_group') | first)._id }}"
-            assignedRoles: "{{ role_list.json.results | map(attribute='_id') | map('community.general.dict_kv', 'roleId') | list }}"
         status_code: 200
       changed_when: false
 
+    - name: Membership and roles are visible on the account
+      ansible.builtin.uri:
+        url: "{{ platform_local }}/authorization/accounts/000000000000000000000000"
+        headers: {Cookie: "{{ login.cookies_string }}"}
+      register: admin_acct
+      failed_when: >-
+        (admin_acct.json.data | default(admin_acct.json)).memberOf | length == 0 or
+        (admin_acct.json.data | default(admin_acct.json)).assignedRoles | length != role_total | int
+
+    # --- LDAP: the dev stack's OpenLDAP gives admin@itential, whose group membership Gateway
+    # Manager honours (the built-in local admin's memberOf is ignored by the session; observed).
+    # Same calls as upstream configure-ldap.sh. Phase 7 points this adapter at Active Directory.
+    - name: LDAP adapter exists?
+      ansible.builtin.uri:
+        url: "{{ platform_local }}/adapters/LDAP"
+        headers: {Cookie: "{{ login.cookies_string }}"}
+        status_code: [200, 404, 500]
+      register: ldap_adapter
+
+    - name: Create the LDAP adapter
+      ansible.builtin.uri:
+        url: "{{ platform_local }}/adapters"
+        method: POST
+        headers: {Cookie: "{{ login.cookies_string }}"}
+        body_format: json
+        body: {properties: {name: LDAP, type: Adapter, properties: {id: LDAP, type: LDAP}}}
+        status_code: [200, 201]
+      when: ldap_adapter.status != 200
+
+    - name: LDAP adapter properties (activates it)
+      ansible.builtin.uri:
+        url: "{{ platform_local }}/adapters/LDAP/properties"
+        method: PUT
+        headers: {Cookie: "{{ login.cookies_string }}"}
+        body_format: json
+        body:
+          properties:
+            url: ldap://openldap:389
+            domain: "cn={0},dc=itential,dc=io"
+            bindUsername: cn=admin,dc=itential,dc=io
+            bindPassword: admin
+            baseDN: dc=itential,dc=io
+            baseUserDN: dc=itential,dc=io
+            baseGroupDN: dc=itential,dc=io
+            userSearchFilter: cn
+            groupSearchFilter: "(objectClass=groupOfNames)"
+            userMembershipAttribute: memberOf
+            healthCheckInterval: 5000
+            timeout: 5000
+            connectTimeout: 5000
+            idleTimeout: 5000
+            timeLimit: 10
+            reconnect: true
+            activeDirectory: false
+            tlsOptions: {requestCert: false}
+        status_code: 200
+      when: ldap_adapter.status != 200 or not (ldap_adapter.json.metadata.isActive | default(false))
+      changed_when: true
+
+    - name: LDAP adapter active
+      ansible.builtin.uri:
+        url: "{{ platform_local }}/adapters/LDAP"
+        headers: {Cookie: "{{ login.cookies_string }}"}
+      register: ldap_state
+      until: ldap_state.json.metadata.isActive | default(false)
+      retries: 20
+      delay: 3
+
+    - name: First LDAP login provisions the account for {{ admin_user }}
+      ansible.builtin.uri:
+        url: "{{ platform_local }}/login"
+        method: POST
+        body_format: json
+        body: {username: "{{ admin_user }}", password: "{{ admin_pw }}"}
+        status_code: 200
+      register: ldap_login
+      retries: 5
+      delay: 3
+      until: ldap_login.status == 200
+      no_log: true
+
+    # Upstream does these two through the database as well: the accounts API does not persist them.
+    - name: LDAP admin holds every role and is a member of admin_group (database, idempotent)
+      ansible.builtin.command:
+        argv:
+          - docker
+          - exec
+          - mongodb
+          - mongosh
+          - --quiet
+          - itential
+          - --eval
+          - >-
+            const roles = db.roles.find({}, {_id: 1}).toArray().map(r => ({roleId: r._id}));
+            const g = db.groups.findOne({name: 'admin_group'}, {_id: 1});
+            const u = {username: '{{ admin_user }}', provenance: 'LDAP'};
+            const a = db.accounts.findOne(u, {assignedRoles: 1, memberOf: 1});
+            if (!a) { print('NOUSER'); quit(1); }
+            let changed = 0;
+            if ((a.assignedRoles || []).length !== roles.length) { db.accounts.updateOne(u, {$set: {assignedRoles: roles}}); changed++; }
+            if (!(a.memberOf || []).some(m => String(m.groupId) === String(g._id))) {
+              db.accounts.updateOne(u, {$push: {memberOf: {aaaManaged: false, groupId: g._id}}}); changed++; }
+            const grp = db.groups.findOne({_id: g._id}, {assignedRoles: 1});
+            if ((grp.assignedRoles || []).length !== roles.length) {
+              db.groups.updateOne({_id: g._id}, {$set: {assignedRoles: roles}}); changed++; }
+            print(changed ? 'CHANGED' : 'OK');
+      register: ldap_admin_db
+      changed_when: "'CHANGED' in ldap_admin_db.stdout"
+      failed_when: "'OK' not in ldap_admin_db.stdout and 'CHANGED' not in ldap_admin_db.stdout"
+
+    - name: Login again with the roles and group as {{ admin_user }}
+      ansible.builtin.uri:
+        url: "{{ platform_local }}/login"
+        method: POST
+        body_format: json
+        body: {username: "{{ admin_user }}", password: "{{ admin_pw }}"}
+        status_code: 200
+      register: login
+      no_log: true
+
+    - name: Every application and the group are visible in whoami for {{ admin_user }}
+      ansible.builtin.uri:
+        url: "{{ platform_local }}/whoami"
+        headers: {Cookie: "{{ login.cookies_string }}"}
+      register: whoami
+      failed_when: whoami.json.groups | length == 0 or whoami.json.routes | length < 20
+
+    # --- Gateway cluster, created as the LDAP admin ---------------------------------------------
     - name: Existing gateways
       ansible.builtin.uri:
         url: "{{ platform_local }}/gateway_manager/v1/gateways"

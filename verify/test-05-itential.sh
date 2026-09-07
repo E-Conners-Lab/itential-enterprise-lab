@@ -10,6 +10,7 @@ cd "$(dirname "$0")/.."
 [ -f .env ] || { echo "missing .env"; exit 1; }
 set -a; . ./.env; set +a
 : "${NETBOX_URL:?}" "${NETBOX_TOKEN:?}" "${AUTOMATION_PASSWORD:?}" "${ITENTIAL_ADMIN_PASSWORD:?}"
+ADMIN_USER=${ITENTIAL_ADMIN_USER:-admin@itential}
 PY=.venv/bin/python
 V=itential/versions.yaml
 IT_IP=$(${PY} -c "import yaml;print(yaml.safe_load(open('$V'))['vm']['ip'])")
@@ -28,7 +29,7 @@ nb()    { curl -s -m 20 -H "Authorization: Token ${NETBOX_TOKEN}" "$@"; }
 JAR=$(mktemp); trap 'rm -f "$JAR" /tmp/verify05.$$' EXIT
 # Every call to the Platform goes through the lab CA and the real name: no -k anywhere.
 iap()   { curl -s -m 60 --cacert "$CA" --resolve "${IT_HOST}:443:${IT_IP}" -b "$JAR" -H "Content-Type: application/json" "$@"; }
-iap_login() { iap -c "$JAR" -X POST "${PLATFORM}/login" -d "{\"username\":\"admin\",\"password\":\"${ITENTIAL_ADMIN_PASSWORD}\"}" -o /dev/null -w '%{http_code}' | grep -qx 200; }
+iap_login() { iap -c "$JAR" -X POST "${PLATFORM}/login" -d "{\"username\":\"${ADMIN_USER}\",\"password\":\"${ITENTIAL_ADMIN_PASSWORD}\"}" -o /dev/null -w '%{http_code}' | grep -qx 200; }
 # run_job <workflow> <variables-json> -> prints the job id; waits for a terminal status unless $3=nowait
 run_job() {
   local wf=$1 vars=$2 mode=${3:-wait} id status
@@ -50,7 +51,7 @@ echo "# test-05-itential ${ts}"
 PLATFORM_TAG=$(${PY} -c "import yaml;print(yaml.safe_load(open('$V'))['images']['platform']['tag'])")
 PLATFORM_VER=${PLATFORM_TAG%%-*}
 [ -s "$CA" ] || { bad "$CA missing"; echo; echo "passed=0 failed=12"; exit 1; }
-iap_login || { bad "S4.1 login to ${PLATFORM} as admin through the lab CA"; echo; echo "passed=0 failed=12"; exit 1; }
+iap_login || { bad "S4.1 login to ${PLATFORM} as ${ADMIN_USER} through the lab CA"; echo; echo "passed=0 failed=12"; exit 1; }
 
 # --- S4.1 TLS from the lab CA on 10.100.0.65; version equals the pin; both gateways registered ---
 c1() {

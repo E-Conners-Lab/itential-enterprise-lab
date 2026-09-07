@@ -28,6 +28,8 @@ images:
   mongodb: {repository: docker.io/library/mongo, tag: "7.0.40"} # Platform 6 fully supports 7.0 (manifest 3.2); Docker Hub 2026-09-07
   redis: {repository: docker.io/library/redis, tag: "7.4.11"}
   mcp: {repository: ghcr.io/itential/itential-mcp, tag: v0.14.0} # release 2026-08-13; streamable HTTP transport
+  # upstream dev-stack OpenLDAP: admin@itential and the group membership Gateway Manager needs (until Phase 7 AD)
+  ldap: {repository: docker.io/osixia/openldap, tag: 1.4.0}
 
 vm:
   name: itential
@@ -38,7 +40,10 @@ vm:
   disk_gb: 160
 
 stack:
-  profiles: [full, mcp] # platform + mongodb + redis + gateway4 + gateway5 + mcp; ldap/openbao off (Phase 7/9)
+  # platform + mongodb + redis + gateway4 + gateway5 + mcp + openldap; openbao off (Vault in Phase 9)
+  profiles: [full, mcp, ldap]
+  # itential/ldap/openldap.ldif, vendored from the same upstream commit
+  ldif_sha256: 4d22e7a2a80dc5f3b6fabccf35b68e34fe6d6c9fd4c87842c2a6deca53f97cbc
   gateway5_cluster_id: lab
   mongo_cache_gb: 4
 

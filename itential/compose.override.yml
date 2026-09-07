@@ -28,8 +28,8 @@ services:
     environment:
       automation_gateway_netmiko_enabled: "true"
       automation_gateway_http_requests_enabled: "true"
-      automation_gateway_logging_level: ${LOG_LEVEL:-INFO}
-      automation_gateway_http_logging_level: ${LOG_LEVEL:-INFO}
+      automation_gateway_logging_level: "INFO"
+      automation_gateway_http_logging_level: "INFO"
 
   gateway5:
     ports:
@@ -41,5 +41,6 @@ services:
     environment:
       ITENTIAL_MCP_SERVER_TRANSPORT: "http"
       ITENTIAL_MCP_SERVER_PATH: "/mcp"
+      ITENTIAL_MCP_SERVER_LOG_LEVEL: "INFO" # itential-mcp rejects lowercase levels; the platform wants lowercase
       ITENTIAL_MCP_PLATFORM_USER: ${MCP_PLATFORM_USER}
       ITENTIAL_MCP_PLATFORM_PASSWORD: ${MCP_PLATFORM_PASSWORD}

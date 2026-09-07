@@ -28,7 +28,12 @@ Docker host.
   commit (sha256 in `versions.yaml`, checked by `tests/test_itential.py`); every
   lab change is in `itential/compose.override.yml`. Profiles `full` + `mcp`:
   Platform, MongoDB 7.0 (cache capped at 4 GB), Redis 7, Gateway 5, Gateway 4,
-  MCP. LDAP and OpenBao profiles are off (AD arrives in Phase 7, Vault in 9).
+  MCP, plus the upstream OpenLDAP (`osixia/openldap:1.4.0`, profile `ldap`) because
+  Gateway Manager only honours group membership for AAA-provisioned users: the
+  built-in local `admin` is never in a group (observed 2026-09-07, even with the
+  membership written to Mongo), so the gateway cluster is created as the LDAP user
+  `admin@itential`, which is also the login the owner asked for. Phase 7 points the
+  LDAP adapter at Active Directory and drops OpenLDAP. OpenBao is off (Vault in 9).
 - **Exposure:** upstream mappings bind to 127.0.0.1; 10.100.0.65 gets 443
   (Platform, lab-CA certificate from ClusterIssuer `lab-ca`), 8083 (Gateway 4),
   50051 (Gateway 5) and 8000 (MCP over streamable HTTP, plain HTTP on the OOB

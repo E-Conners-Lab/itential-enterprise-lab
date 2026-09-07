@@ -43,7 +43,7 @@ def versions() -> dict:
 
 def test_every_image_is_pinned(versions: dict) -> None:
     images = versions["images"]
-    for role in ("platform", "gateway5", "gateway4", "mongodb", "redis", "mcp"):
+    for role in ("platform", "gateway5", "gateway4", "mongodb", "redis", "mcp", "ldap"):
         assert role in images, f"images.{role} missing"
     for name, spec in images.items():
         assert spec["repository"] and spec["tag"], f"{name}: repository/tag missing"
@@ -246,7 +246,7 @@ def test_verify_script_covers_every_criterion() -> None:
 
 def test_env_example_lists_phase5_secrets() -> None:
     text = ENV_EXAMPLE.read_text()
-    for key in ("ECR_AWS_PROFILE", "ITENTIAL_ENCRYPTION_KEY", "ITENTIAL_ADMIN_PASSWORD", "SNOW_INSTANCE", "SNOW_USER", "SNOW_PASSWORD"):
+    for key in ("ECR_AWS_PROFILE", "ITENTIAL_ENCRYPTION_KEY", "ITENTIAL_ADMIN_USER", "ITENTIAL_ADMIN_PASSWORD", "SNOW_INSTANCE", "SNOW_USER", "SNOW_PASSWORD"):
         assert re.search(rf"^{key}=", text, re.M), f"{key} missing from .env.example"
 
 
