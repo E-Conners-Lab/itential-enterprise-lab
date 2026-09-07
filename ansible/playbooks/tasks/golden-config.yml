@@ -1,0 +1,269 @@
+---
+# Element 1 of PID S4d (ADR 0040). Needs: login, gc_devices (name, site, role, tree, mgmt_ip, mgmt_if).
+# Detection only: nothing here ever pushes configuration to a device.
+# --- device groups by site and role ------------------------------------------------------------
+- name: Existing device groups
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/configuration_manager/deviceGroups"
+    headers: {Cookie: "{{ login.cookies_string }}"}
+  register: dg_now
+
+- name: Wanted device groups
+  ansible.builtin.set_fact:
+    dg_wanted: >-
+      {{ dg_wanted | default({}) | combine({item.0 ~ '-' ~ item.1:
+           (gc_devices | selectattr(item.0, 'equalto', item.1) | map(attribute='name') | sort)}) }}
+  loop: >-
+    {{ (['site'] | product(golden_config.device_groups.site) | list)
+       + (['role'] | product(golden_config.device_groups.role) | list) }}
+  loop_control:
+    label: "{{ item.0 }}-{{ item.1 }}"
+
+- name: Device groups created (deviceNames is a comma-separated string)
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/configuration_manager/devicegroup"
+    method: POST
+    headers: {Cookie: "{{ login.cookies_string }}"}
+    body_format: json
+    body:
+      groupName: "{{ item.key }}"
+      groupDescription: "Lab devices by {{ item.key.split('-')[0] }} from NetBox (ansible/playbooks/platform.yml)"
+      deviceNames: "{{ item.value | join(', ') }}"
+    status_code: [200, 201]
+  loop: "{{ dg_wanted | dict2items }}"
+  loop_control:
+    label: "{{ item.key }} ({{ item.value | length }})"
+  when: item.key not in (dg_now.json | map(attribute='name') | list)
+
+- name: Device groups updated to the NetBox membership
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/configuration_manager/deviceGroups/{{ dg_id }}"
+    method: PUT
+    headers: {Cookie: "{{ login.cookies_string }}"}
+    body_format: json
+    body:
+      name: "{{ item.key }}"
+      devices: "{{ item.value }}"
+      description: "Lab devices by {{ item.key.split('-')[0] }} from NetBox (ansible/playbooks/platform.yml)"
+    status_code: 200
+  loop: "{{ dg_wanted | dict2items }}"
+  loop_control:
+    label: "{{ item.key }} ({{ item.value | length }})"
+  vars:
+    dg_id: "{{ ((dg_now.json | selectattr('name', 'equalto', item.key) | first) | default({'id': ''})).id }}"
+  when: >-
+    item.key in (dg_now.json | map(attribute='name') | list) and
+    ((dg_now.json | selectattr('name', 'equalto', item.key) | first).devices | sort) != item.value
+  changed_when: true
+
+# --- Golden Config trees: one per OS, base/<site>/<device> --------------------------------------
+- name: Existing trees
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/configuration_manager/configs"
+    headers: {Cookie: "{{ login.cookies_string }}"}
+  register: gc_trees_now
+
+- name: Trees created (deviceType selects the parser; the inventory keeps its netmiko names)
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/configuration_manager/configs"
+    method: POST
+    headers: {Cookie: "{{ login.cookies_string }}"}
+    body_format: json
+    body:
+      name: "{{ item.value.name }}"
+      deviceType: "{{ item.key }}"
+      description: "Lab baseline for {{ item.key }} from itential/golden-config/{{ item.key }}/ (PID S4d.1, ADR 0040)"
+    status_code: [200, 201]
+  loop: "{{ golden_config.trees | dict2items }}"
+  loop_control:
+    label: "{{ item.value.name }}"
+  when: item.value.name not in (gc_trees_now.json | map(attribute='name') | list)
+
+- name: Tree ids
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/configuration_manager/configs"
+    headers: {Cookie: "{{ login.cookies_string }}"}
+  register: gc_trees
+
+- name: Leaf nodes collected per tree (filled by tasks/golden-config-tree.yml)
+  ansible.builtin.set_fact:
+    plan_nodes: []
+
+- name: Each tree - base template, site nodes, device leaves
+  ansible.builtin.include_tasks: tasks/golden-config-tree.yml
+  loop: "{{ golden_config.trees | dict2items }}"
+  loop_control:
+    loop_var: tree
+    label: "{{ tree.value.name }}"
+
+# --- one compliance plan: one node entry per device leaf --------------------------------------------
+- name: Existing plan
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/configuration_manager/search/compliance_plans"
+    method: POST
+    headers: {Cookie: "{{ login.cookies_string }}"}
+    body_format: json
+    body: {name: "", options: {start: 0, limit: 100}}  # the name filter is a pattern; exact names miss, so filter below
+  register: plan_search
+
+- name: Plan match
+  ansible.builtin.set_fact:
+    plan_have: >-
+      {{ (plan_search.json.plans | default(plan_search.json.list | default(plan_search.json.data | default([]))))
+         | selectattr('name', 'equalto', golden_config.plan) | list }}
+
+- name: Plan created
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/configuration_manager/compliance_plans"
+    method: POST
+    headers: {Cookie: "{{ login.cookies_string }}"}
+    body_format: json
+    body:
+      name: "{{ golden_config.plan }}"
+      options:
+        description: "Every lab device against its OS baseline and its NetBox intent, nightly (PID S4d.1)"
+        nodes: "{{ plan_nodes }}"
+    status_code: [200, 201]
+  when: plan_have | length == 0
+
+- name: Plan nodes updated when the device set or the leaves changed
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/configuration_manager/compliance_plans"
+    method: PUT
+    headers: {Cookie: "{{ login.cookies_string }}"}
+    body_format: json
+    body:
+      planId: "{{ plan_have[0].id }}"
+      options: {nodes: "{{ plan_nodes }}"}
+    status_code: 200
+  when: plan_have | length > 0 and (plan_have[0].nodes | map(attribute='nodeId') | sort) != (plan_nodes | map(attribute='nodeId') | sort)
+  changed_when: true
+
+- name: Plan id
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/configuration_manager/search/compliance_plans"
+    method: POST
+    headers: {Cookie: "{{ login.cookies_string }}"}
+    body_format: json
+    body: {name: "", options: {start: 0, limit: 100}}  # the name filter is a pattern; exact names miss, so filter below
+  register: plan_search2
+
+- name: Plan id fact
+  ansible.builtin.set_fact:
+    plan_id: >-
+      {{ ((plan_search2.json.plans | default(plan_search2.json.list | default(plan_search2.json.data | default([]))))
+          | selectattr('name', 'equalto', golden_config.plan) | first).id }}
+
+# --- nightly run: Operations Manager automation on wf-compliance-run-v1 + a schedule trigger --------
+- name: Workflow id (changes on every itential.yml import) of {{ workflows.compliance_run }}
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/automation-studio/workflows?limit=100"
+    headers: {Cookie: "{{ login.cookies_string }}"}
+  register: wf_list
+
+- name: Workflow automations
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/operations-manager/automations?equalsField=componentType&equals=workflows&limit=100"
+    headers: {Cookie: "{{ login.cookies_string }}"}
+  register: wf_automations
+
+- name: Automation wrapping the workflow
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/operations-manager/automations"
+    method: POST
+    headers: {Cookie: "{{ login.cookies_string }}"}
+    body_format: json
+    body:
+      name: "{{ golden_config.schedule.name }}"
+      description: "Runs compliance plan {{ golden_config.plan }} (ansible/playbooks/platform.yml)"
+      componentType: workflows
+      componentId: "{{ wf_id }}"
+      componentName: "{{ workflows.compliance_run }}"
+    status_code: [200, 201]
+  vars:
+    wf_id: "{{ (wf_list.json['items'] | selectattr('name', 'equalto', workflows.compliance_run) | first)._id }}"
+  when: golden_config.schedule.name not in (wf_automations.json.data | map(attribute='name') | list)
+
+- name: Automation follows the current workflow id
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/operations-manager/automations/{{ have._id }}"
+    method: PATCH
+    headers: {Cookie: "{{ login.cookies_string }}"}
+    body_format: json
+    body: {componentId: "{{ wf_id }}", componentName: "{{ workflows.compliance_run }}"}
+    status_code: 200
+  vars:
+    wf_id: "{{ (wf_list.json['items'] | selectattr('name', 'equalto', workflows.compliance_run) | first)._id }}"
+    have: "{{ (wf_automations.json.data | selectattr('name', 'equalto', golden_config.schedule.name) | first) | default({}) }}"
+  when: have | length > 0 and have.componentId != wf_id
+  changed_when: true
+
+- name: Automation id
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/operations-manager/automations?equalsField=componentType&equals=workflows&limit=100"
+    headers: {Cookie: "{{ login.cookies_string }}"}
+  register: wf_automations2
+
+- name: Seconds after midnight UTC of the nightly run
+  ansible.builtin.set_fact:
+    at_seconds: >-
+      {{ (golden_config.schedule.at_utc.split(':')[0] | int) * 3600
+         + (golden_config.schedule.at_utc.split(':')[1] | int) * 60 }}
+
+- name: Schedule triggers
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/operations-manager/triggers?equalsField=type&equals=schedule&limit=100"
+    headers: {Cookie: "{{ login.cookies_string }}"}
+  register: sched_now
+
+# first run: the next occurrence of at_utc; repeats daily (legacy repeatUnit/repeatFrequency form of the
+# schedule-trigger-create schema); missed runs are not replayed. No formData: 6.5.2 does not persist it
+# on schedule triggers (measured), so wf-compliance-run-v1 finds the plan by name itself.
+- name: Nightly schedule trigger
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/operations-manager/triggers"
+    method: POST
+    headers: {Cookie: "{{ login.cookies_string }}"}
+    body_format: json
+    body:
+      name: "{{ golden_config.schedule.name }}"
+      description: "Nightly compliance of every lab device (PID S4d.1)"
+      type: schedule
+      actionType: automations
+      actionId: "{{ (wf_automations2.json.data | selectattr('name', 'equalto', golden_config.schedule.name) | first)._id }}"
+      enabled: true
+      firstRunAt: "{{ first_run_ms | int }}"
+      repeatUnit: "{{ golden_config.schedule.repeat_unit | regex_replace('s$', '') }}"
+      repeatFrequency: "{{ golden_config.schedule.repeat_interval | int }}"
+      processMissedRuns: none
+    status_code: [200, 201]
+  vars:
+    first_run_ms: "{{ (((lookup('ansible.builtin.pipe', 'date -u +%s') | int) // 86400 + 1) * 86400 + (at_seconds | int)) * 1000 }}"
+  when: golden_config.schedule.name not in (sched_now.json.data | map(attribute='name') | list)
+
+- name: Schedule trigger time of day corrected to the next occurrence of {{ golden_config.schedule.at_utc }}
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/operations-manager/triggers/{{ have._id }}"
+    method: PATCH
+    headers: {Cookie: "{{ login.cookies_string }}"}
+    body_format: json
+    body: {firstRunAt: "{{ first_run_ms | int }}"}
+    status_code: 200
+  vars:
+    have: "{{ (sched_now.json.data | selectattr('name', 'equalto', golden_config.schedule.name) | first) | default({}) }}"
+    first_run_ms: "{{ (((lookup('ansible.builtin.pipe', 'date -u +%s') | int) // 86400 + 1) * 86400 + (at_seconds | int)) * 1000 }}"
+  when: have | length > 0 and ((have.firstRunAt | int) // 1000) % 86400 != (at_seconds | int)
+  changed_when: true
+
+- name: Schedule trigger enabled
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/operations-manager/triggers/{{ have._id }}"
+    method: PATCH
+    headers: {Cookie: "{{ login.cookies_string }}"}
+    body_format: json
+    body: {enabled: true}
+    status_code: 200
+  vars:
+    have: "{{ (sched_now.json.data | selectattr('name', 'equalto', golden_config.schedule.name) | first) | default({}) }}"
+  when: have | length > 0 and not have.enabled
+  changed_when: true

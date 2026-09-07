@@ -90,6 +90,23 @@ workflows:
   device_count: wf-netbox-device-count-v1
   show_version: wf-show-version-v1
   branch_vlan: wf-branch-vlan-v1
+  show_command: wf-show-command-v1 # S4c.7 (ADR 0038)
+  config_push: wf-config-push-v1 # S4d: the only write path, Work Center approval (ADR 0040/0041)
+  compliance_run: wf-compliance-run-v1 # S4d.1: target of the nightly schedule trigger
+
+# --- Phase 6b: Platform coverage of the EVE-NG lab (PID S4d, ADR 0040). Built by
+# ansible/playbooks/platform.yml from itential/golden-config/<deviceType>/{base.gc,device.j2};
+# the tree deviceType selects the parser, the inventory keeps its netmiko names (measured 2026-09-07).
+golden_config:
+  documents: itential/golden-config
+  trees:
+    cisco-ios: {name: lab-cisco-ios, netmiko: cisco_ios, netbox_platform: ios-xe, mgmt_if: GigabitEthernet1}
+    arista-eos: {name: lab-arista-eos, netmiko: arista_eos, netbox_platform: eos, mgmt_if: Management1}
+  device_groups:
+    site: [dc1, br1, br2, wan]
+    role: [wan-edge, isp-core, spine, leaf, access, branch-switch]
+  plan: lab-baseline
+  schedule: {name: nightly compliance lab-baseline, at_utc: "03:00", repeat_unit: days, repeat_interval: 1}
 
 # --- Phase 6: FlowAI (PID S4c, ADR 0037). Provider keys live in .env only; profiles are created
 # by ansible/playbooks/flowai.yml through the Model Registry (write-only credentials).

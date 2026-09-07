@@ -10,7 +10,7 @@ the itentialopensource pre-built automations:
   - automatic tasks carry actor Pronghorn; manual tasks carry a view and groups
   - transitions: {taskId: {nextId: {state: success|failure|error, type: standard}}}
 
-  itential/workflows/build.py            # writes the three workflow files
+  itential/workflows/build.py            # writes every workflow file
 """
 
 from __future__ import annotations
@@ -390,8 +390,62 @@ def show_command() -> dict:
                      "parse_error": {"type": "string"}})  # "" when the parse succeeded
 
 
+# --- wf-config-push-v1 (S4d, ADR 0040/0041): the one governed write path ---------------------
+# Inputs: device, config (CLI lines), reason. The operator sees device, reason and the exact lines in
+# a Work Center approval; on approval Gateway 5 pushes them with send-config and saves the running
+# configuration with "write memory" (IOS-XE and EOS both accept it). A rejection ends the job in
+# error with nothing touched. The compliance/remediation agents get this workflow as their only
+# write tool; Golden Config never remediates on its own (ADR 0040).
+def config_push() -> dict:
+    tasks = {
+        "1a": replace("summary: device", "Push to __D__ (__R__):", "__D__", "$var.job.device", x=0, y=-200),
+        "1b": replace("summary: reason", "$var.1a.replacedString", "__R__", "$var.job.reason", x=300, y=-200),
+        "2a": view("approval", "Approve configuration push", "$var.1b.replacedString", "$var.job.config", "Approve", "Reject", x=600),
+        "3a": task("sendConfig", "GatewayManager", "push the lines through Gateway 5",
+                   {"clusterId": CLUSTER, "config": "$var.job.config", "inventory": "$var.0b.textObject"},
+                   {"result": "$var.job.config_result"}, x=900),
+        "3b": evaluate("config applied?", "3a", "result", "result.results[0].success", "==", True, x=1200),
+        "4a": task("sendCommand", "GatewayManager", "save the running configuration",
+                   {"clusterId": CLUSTER, "commands": ["write memory"], "inventory": "$var.0b.textObject"},
+                   {"result": "$var.job.save_result"}, x=1500),
+        "5a": flag("changed = true", "true", "changed", x=1800),
+        "9a": flag("changed = false (rejected)", "false", "changed", x=900, y=400),
+    }
+    tasks["0a"], tasks["0b"] = selector("$var.job.device", x=-600)
+    tr = chain("0a", "0b", "1a", "1b", "2a", "3a", "3b", "4a", "5a")
+    tr["2a"] = {"3a": {"state": "success", "type": "standard"}, "9a": {"state": "failure", "type": "standard"}}
+    tr["3b"] = {"4a": {"state": "success", "type": "standard"}}  # failure: no transition, the job ends in error
+    tr["9a"] = {}  # rejected: no transition to the end, the job ends in error with nothing pushed
+    return workflow("wf-config-push-v1",
+                    "Pushes operator-supplied configuration lines to one inventory node through Gateway 5 after a Work Center "
+                    "approval and saves the running configuration; the only write path for compliance remediation (PID S4d, ADR 0040)",
+                    {"device": {"type": "string", "required": True, "description": "Inventory node name, e.g. br1-wan01"},
+                     "config": {"type": "string", "required": True, "description": "Configuration lines to push, one per line"},
+                     "reason": {"type": "string", "required": True, "description": "Why, shown to the approver (ticket, compliance report id)"}},
+                    tasks, tr, {"changed": {"type": "boolean"}, "config_result": {"type": "object"}, "save_result": {"type": "object"}})
+
+
+# --- wf-compliance-run-v1 (S4d.1, ADR 0040): the nightly schedule trigger's target ------------------
+# No inputs: Operations Manager schedule triggers on 6.5.2 do not persist formData (measured 2026-09-07,
+# PATCH echoes it, GET returns null), so the plan is found by its name from versions.yaml. The search
+# matches a regex (an unescaped "-" misses, anchors work). The run is asynchronous; the plan instance
+# id and the plan id are published as job variables for the verify script and the agents.
+PLAN_NAME = VERSIONS["golden_config"]["plan"]
+
+
+def compliance_run() -> dict:
+    tasks = {
+        "1a": task("searchCompliancePlans", "ConfigurationManager", "the plan by name",
+                   {"name": "^" + PLAN_NAME + "$", "options": {"start": 0, "limit": 10}}, {"compliancePlans": None}, x=0),
+        "1b": jq("plan id", "$var.1a.compliancePlans", "plans[0].id", x=300, to_job="plan_id"),
+        "2a": task("runCompliancePlan", "ConfigurationManager", "run the compliance plan (asynchronous)",
+                   {"planId": "$var.1b.return_data", "options": {}}, {"response": "$var.job.run"}, x=600),
+    }
+    return workflow("wf-compliance-run-v1", "Runs the Configuration Manager compliance plan %s; scheduled nightly by Operations Manager (PID S4d.1, ADR 0040)" % PLAN_NAME,
+                    {}, tasks, chain("1a", "1b", "2a"), {"plan_id": {"type": "string"}, "run": {"type": "object"}})
+
 if __name__ == "__main__":
-    for wf in (device_count(), show_version(), show_command(), branch_vlan()):
+    for wf in (device_count(), show_version(), show_command(), branch_vlan(), config_push(), compliance_run()):
         out = HERE / f"{wf['name']}.json"
         out.write_text(json.dumps(wf, indent=2) + "\n")
         print(out.relative_to(HERE.parent.parent), len(wf["tasks"]) - 2, "tasks")

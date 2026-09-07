@@ -6,7 +6,7 @@ SHELL := /bin/bash
 .SHELLFLAGS := -eu -o pipefail -c
 .DEFAULT_GOAL := help
 
-PHASES := oob-network platform network-topology itential ddi identity observability config-secrets-code panorama containerlab
+PHASES := oob-network platform network-topology itential flowai ddi identity observability config-secrets-code panorama containerlab
 
 .PHONY: help bootstrap lint test up verify discover plan-oob plan-platform plan-itential $(addprefix phase-,$(PHASES))
 
@@ -84,6 +84,15 @@ phase-itential: ## Phase 5: NetBox VM -> tofu apply -> resolver alias -> host (D
 	$(load_env) cd ansible && ansible-playbook -i inventory/netbox.yml playbooks/itential.yml
 	verify/run.sh
 
+# Phase 6 (PID S4c + S4d): after itential.yml re-imports the workflows, platform.yml wires Configuration
+# Manager (Golden Config, compliance, device groups; more elements as they land) and flowai.yml re-resolves
+# the agents' tool references (ADR 0038 rule). Order matters: itential -> platform -> flowai.
+phase-flowai: ## Phase 6: workflows re-imported -> Platform applications wired to the lab -> Ollama + provider profiles + agents -> verify
+	$(load_env) cd ansible && ansible-playbook -i inventory/netbox.yml playbooks/itential.yml
+	$(load_env) cd ansible && ansible-playbook -i inventory/netbox.yml playbooks/platform.yml
+	$(load_env) cd ansible && ansible-playbook -i inventory/netbox.yml playbooks/flowai.yml
+	verify/run.sh
+
 # Later phases are wired in as each lands. Until then they fail loud.
-$(addprefix phase-,$(filter-out oob-network platform itential,$(PHASES))):
+$(addprefix phase-,$(filter-out oob-network platform itential flowai,$(PHASES))):
 	@echo "phase '$@' is not implemented yet (see docs/PID.md delivery plan)"; exit 1

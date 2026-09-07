@@ -1,0 +1,19 @@
+# test-06b-platform 20260907T230740Z
+PASS  S4d.1 Golden Config: plan clean on 12 devices; hostname drift on br1-wan01 and br1-sw01 flagged with no false positive; restored through wf-config-push-v1
+      schedule: nightly compliance lab-baseline every 1 day first run 1788836400000
+      run 1: 12 reports, 0 errors, 0 warnings (passes: 251)
+      pushed to br1-wan01 (job 7fbb3ac63335472a80d2e402)
+      pushed to br1-sw01 (job 21d2eefe5f3f4264bb87aea7)
+      run 2: exactly br1-wan01 and br1-sw01 flagged:
+      br1-wan01 1 0 24 | hostname br1-wan01
+      br1-sw01 1 0 17 | hostname br1-sw01
+      pushed to br1-wan01 (job 0064c4346ba042a88e46ca50)
+      pushed to br1-sw01 (job 482d3a979cc04e858f2373a8)
+      run 3: clean again on 12 devices; hostnames restored and confirmed over direct SSH
+      run 4: wf-compliance-run-v1 (the schedule trigger's target) found plan 6a9f3a4d0e7c935f1ff4e233 and started instance 6a9f452a0e7c935f1ff4e27f
+DEFER S4d.2 command templates + nightly backups (element 2, not built yet)
+DEFER S4d.3 Lifecycle Manager + JSON Forms (element 3, not built yet)
+DEFER S4d.4 Integration Models (element 4, not built yet)
+DEFER S4d.6 hosts and firewalls (element 6, not built yet)
+
+passed=1 failed=0 deferred=4

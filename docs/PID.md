@@ -3,8 +3,8 @@
 | | |
 |---|---|
 | **Name** | itential-enterprise-lab |
-| **Version** | 1.6 |
-| **Date** | 2026-09-06 |
+| **Version** | 1.8 |
+| **Date** | 2026-09-07 |
 | **Author** | Elliot Conner. Claude Code is the build agent; every action it takes is bounded by this document |
 | **Standard** | Project Initiation Standard PIS-01 - PIS-30 (`~/.claude/skills/project-initiation-standard`) |
 | **Companion docs** | `docs/discovery.md` (what exists), `docs/ip-plan.md`, `docs/resource-budget.md`, `docs/image-manifest.md`, `docs/adr/` (why), `docs/manual-steps.md` |
@@ -195,6 +195,22 @@ Conventions: **Placement** is Proxmox VM (OpenTofu + Ansible), k3s (Helm/Kustomi
   7. Structured device data (amendment 1.7, ADR 0038): `wf-show-command-v1` returns the raw text and a parsed object for one show command per vendor, Genie for the Cisco node and TextFSM (ntc-templates) for the Arista node, chosen from the node's NetBox platform; the parse runs as Gateway 5 inline code on a glibc runner node (etcd store) and the parsed values equal the device's own output over direct SSH.
 - **Verification:** `verify/test-06-flowai.sh`; a criterion that spends provider tokens records the cost in the log.
 
+### S4d — Platform coverage of the EVE-NG lab (Phase 6, amendment 1.8, ADR 0040)
+
+- **Purpose:** every Platform application operates the lab devices, so the agents in S4c have governed tools for configuration standards, checks, backups, service lifecycle and tickets, not only ad-hoc show commands.
+- **Placement:** the Platform on VM 205; devices through the InventoryBroker adapter (ADR 0039) and Gateway 5 only. No new VM, no Gateway 4.
+- **Components:** `ansible/playbooks/platform.yml` creates everything from documents in `itential/` through the API and re-runs idempotently, in the order `itential.yml`, `platform.yml`, `flowai.yml`. Device groups by site (dc1, br1, br2, wan) and role from the NetBox tags already on the inventory nodes. One Golden Config tree per OS (`cisco-ios`, `arista-eos`) rendered from `itential/golden-config/<os>.j2`: base node = OS baseline (management VRF, AAA and the automation user, DNS/NTP/logging, SSH/eAPI), site nodes with the site device group attached, one leaf per device carrying the NetBox intent (hostname, management interface and primary IP); every inventory node attached at its leaf. One compliance plan with one node entry per device leaf, run nightly by an Operations Manager schedule trigger on a generated workflow. Command templates, backup schedule, Lifecycle Manager model, JSON Form, Integration Models, the agent fleet and the host inventory follow as elements 2 to 6 (acceptance below). Remediation is never automatic: a violation becomes a config push (`wf-config-push-v1`) behind a Work Center approval (Platform 7 removes auto-remediation).
+- **Finding at the start of S4d (ADR 0041):** all five IOS-XE routers ran and booted as `hostname Router` since Phase 4 (the config.iso bootstrap skipped line one of the template; verify 04 reached devices by IP and never checked). Restored through `wf-config-push-v1` with the approval before criterion 1 is measured; the Phase 4 root cause is a follow-up issue.
+- **Acceptance:**
+  1. Golden Config: the plan runs against all 12 devices with zero violations; after a deliberate hostname change on one device per vendor the next run flags exactly those two with no other issue; the names are restored through the governed push and the plan is clean again. Second source: `verify/devcmd.py`.
+  2. Command templates and backups: each pre/post template (version, interfaces up, BGP/OSPF neighbours) runs on one device per vendor with pass/fail rules evaluated; the nightly schedule trigger exists and a backup per device equals the running config over direct SSH.
+  3. Lifecycle Manager and JSON Forms: resource model `branch-vlan` with create (`wf-branch-vlan-v1`) and delete (new workflow) actions; a create, instance, delete round trip with the Work Center approval, form fields branch, VLAN, switch and NetBox reservation shown on the approval task; instance history recorded.
+  4. Integration Models: ServiceNow (OpenAPI upload, instance with `itential.integration`) and NetBox registered; an agent reads an incident and a device through them, the session shows the integration tool, not the adapter.
+  5. Agent fleet (memory `work-laptop-agent-fleet`): netbox-sot, device-ops, compliance, diagnostics, remediation, each on Claude and a local twin; one acceptance per agent in `verify/test-06-flowai.sh` with token usage; every write behind an approval.
+  6. Hosts and firewalls: the three Ubuntu hosts as inventory nodes with reachability and uptime checks; PA-VM firewalls when the image is staged (deferred with S3.4).
+- **Deferred (not built in S4d):** Gateway 4, observability and job metrics (Phase 9), node-credential secrets (Phase 10), Windows endpoints.
+- **Verification:** `verify/test-06b-platform.sh` (S4d.1 to S4d.4 and S4d.6); S4d.5 in `verify/test-06-flowai.sh`.
+
 ### S5 — DDI: Infoblox NIOS with BIND9 + Kea secondary (Phase 7)
 
 - **Purpose:** authoritative DNS and DHCP for `lab.internal` and the OOB/in-band segments, driven from NetBox, with an eval-proof fallback (ADR 0009).
@@ -298,6 +314,7 @@ phase owns.
 | E10 | `qm config` sum vs `docs/resource-budget.md` | They match | Allocated vCPU/RAM within 2 % of the budget doc and under ceilings | |
 | E11 | Wrong-image silent failure: a node boots an older qcow2 | Detected | `show version` string != manifest string -> `verify/test-04` fails | yes (PIS-21) |
 | E12 | Windows eval expiry approach | Alerted | Zabbix trigger fires 14 days before the date in the manifest | |
+| E13 | Hostname drift on one device per vendor (S4d.1) | Exactly those two flagged | The next compliance plan run reports an error on those two devices and zero issues on the other ten; `verify/test-06b` compares the report with direct SSH | yes (silent-failure eval, PIS-21) |
 
 **PIS-09 — Eval execution method.** `make verify` -> `verify/run.sh` runs every
 `verify/test-*.sh` (bash + `jq` + `curl` + `ssh`, Python only where a vendor
@@ -583,7 +600,7 @@ at the end of Phase 2 and this table amended.
 | 3 | `phase-3/platform` | `verify/test-03-platform.sh` | none |
 | 4 | `phase-4/network-topology` | `verify/test-04-topology.sh` | Download PA-VM to `/srv/images/pa-vm` (Customer Support Portal); C8000v/vEOS reused (ADR 0032/0033); Windows 11 automated (`images/fetch.sh`, `images/build-win11.sh`) |
 | 5 | `phase-5/itential` | `verify/test-05-itential.sh` | `aws sso login` before image pulls (manual step 6); create the PDI integration user; log into the PDI every 10 days from then on |
-| 6 | `phase-6/flowai` | `verify/test-06-flowai.sh` | Provider key in `.env`; Ollama on the Mac Mini optional (ADR 0037) |
+| 6 | `phase-6/flowai` | `verify/test-06-flowai.sh`, `verify/test-06b-platform.sh` | Provider key in `.env`; Ollama on the Mac Mini optional (ADR 0037) |
 | 7 | `phase-6/ddi` | `verify/test-06-ddi.sh` | Download NIOS eval, apply the temp licence on the console |
 | 8 | `phase-7/identity` | `verify/test-07-identity.sh` | Download Windows Server eval ISO |
 | 9 | `phase-8/observability` | `verify/test-08-observability.sh` | none |
@@ -633,4 +650,5 @@ the verify log path and any ADRs added.
 | 1.4 | 2026-09-07 | Phase 5: S4 placement is one Ubuntu VM with the itential-dev-stack containers (ADR 0035, ADR 0020 amended), `iag` VM and 10.100.0.66 dropped, licence risk closed by owner decision (none needed), images from the private ECR via company SSO; budget 73 vCPU / 263 GB |
 | 1.7 | 2026-09-07 | S4c gains criterion 7 (structured CLI output: Genie for Cisco, TextFSM for Arista, owner request 2026-09-07); Gateway 5 becomes a distributed execution cluster (etcd + glibc runner) because the stock Alpine image cannot install pyATS (ADR 0038) |
 | 1.6 | 2026-09-07 | Phase order reordered (ADR 0037): Phase 6 is FlowAI agents (new S4c with criteria 1-6), DDI/identity/observability/config/Panorama/Containerlab move to 7-12, Windows Server deferred with identity; local LLMs (Ollama in-lab + optional Mac Mini) alongside Anthropic; ServiceNow Integration Model joins Phase 6 |
+| 1.8 | 2026-09-07 | Phase 6 continued: S4d (Platform coverage of the EVE-NG lab) added with six acceptance criteria and `verify/test-06b-platform.sh` (ADR 0040); the five IOS-XE routers were found running as `hostname Router` since Phase 4 and are restored through the governed push before S4d.1 (ADR 0041); E13 added |
 | 1.5 | 2026-09-07 | Phase 5 (S4b): Gateway 5 is the only gateway (Gateway 4 staged, not deployed); the PDI needs no customisation (stock standard-change template + Network group + one integration user), so S4b.3 is a rebuild record `servicenow/README.md` instead of an update set; S4b.2 evidence is the states ServiceNow returns to the workflow plus the change read back (`sys_audit` is admin-only on a PDI); PDI `dev409097`, Australia; basic auth needs `snc_basic_auth_api_access` on 2026 instances |

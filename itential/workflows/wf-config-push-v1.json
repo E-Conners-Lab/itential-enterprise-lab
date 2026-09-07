@@ -1,0 +1,455 @@
+{
+  "name": "wf-config-push-v1",
+  "type": "automation",
+  "description": "Pushes operator-supplied configuration lines to one inventory node through Gateway 5 after a Work Center approval and saves the running configuration; the only write path for compliance remediation (PID S4d, ADR 0040)",
+  "tasks": {
+    "1a": {
+      "name": "replace",
+      "canvasName": "replace",
+      "summary": "summary: device",
+      "description": "summary: device",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 0,
+        "y": -200
+      },
+      "variables": {
+        "incoming": {
+          "str": "Push to __D__ (__R__):",
+          "substr": "__D__",
+          "newSubstr": "$var.job.device"
+        },
+        "outgoing": {
+          "replacedString": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "1b": {
+      "name": "replace",
+      "canvasName": "replace",
+      "summary": "summary: reason",
+      "description": "summary: reason",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 300,
+        "y": -200
+      },
+      "variables": {
+        "incoming": {
+          "str": "$var.1a.replacedString",
+          "substr": "__R__",
+          "newSubstr": "$var.job.reason"
+        },
+        "outgoing": {
+          "replacedString": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "2a": {
+      "name": "ViewData",
+      "canvasName": "ViewData",
+      "summary": "approval",
+      "description": "approval",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "manual",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 600,
+        "y": 0
+      },
+      "variables": {
+        "incoming": {
+          "header": "Approve configuration push",
+          "message": "$var.1b.replacedString",
+          "body": "$var.job.config",
+          "variables": {},
+          "btn_success": "Approve",
+          "btn_failure": "Reject"
+        },
+        "outgoing": {},
+        "error": "",
+        "decorators": []
+      },
+      "view": "/workflow_engine/task/ViewData"
+    },
+    "3a": {
+      "name": "sendConfig",
+      "canvasName": "sendConfig",
+      "summary": "push the lines through Gateway 5",
+      "description": "push the lines through Gateway 5",
+      "location": "Application",
+      "locationType": null,
+      "app": "GatewayManager",
+      "type": "automatic",
+      "displayName": "GatewayManager",
+      "groups": [],
+      "nodeLocation": {
+        "x": 900,
+        "y": 0
+      },
+      "variables": {
+        "incoming": {
+          "clusterId": "lab",
+          "config": "$var.job.config",
+          "inventory": "$var.0b.textObject"
+        },
+        "outgoing": {
+          "result": "$var.job.config_result"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "3b": {
+      "name": "evaluation",
+      "canvasName": "evaluation",
+      "summary": "config applied?",
+      "description": "config applied?",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 1200,
+        "y": 0
+      },
+      "variables": {
+        "incoming": {
+          "all_true_flag": true,
+          "evaluation_groups": [
+            {
+              "all_true_flag": true,
+              "evaluations": [
+                {
+                  "query": "result.results[0].success",
+                  "operand_1": {
+                    "variable": "result",
+                    "task": "3a"
+                  },
+                  "operator": "==",
+                  "operand_2": {
+                    "variable": true,
+                    "task": "static"
+                  }
+                }
+              ]
+            }
+          ],
+          "options": {}
+        },
+        "outgoing": {
+          "return_value": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "4a": {
+      "name": "sendCommand",
+      "canvasName": "sendCommand",
+      "summary": "save the running configuration",
+      "description": "save the running configuration",
+      "location": "Application",
+      "locationType": null,
+      "app": "GatewayManager",
+      "type": "automatic",
+      "displayName": "GatewayManager",
+      "groups": [],
+      "nodeLocation": {
+        "x": 1500,
+        "y": 0
+      },
+      "variables": {
+        "incoming": {
+          "clusterId": "lab",
+          "commands": [
+            "write memory"
+          ],
+          "inventory": "$var.0b.textObject"
+        },
+        "outgoing": {
+          "result": "$var.job.save_result"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "5a": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "changed = true",
+      "description": "changed = true",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 1800,
+        "y": 0
+      },
+      "variables": {
+        "incoming": {
+          "input": "true",
+          "outputType": "boolean",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.changed"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "9a": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "changed = false (rejected)",
+      "description": "changed = false (rejected)",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 900,
+        "y": 400
+      },
+      "variables": {
+        "incoming": {
+          "input": "false",
+          "outputType": "boolean",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.changed"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "0a": {
+      "name": "replace",
+      "canvasName": "replace",
+      "summary": "selector JSON with the node name",
+      "description": "selector JSON with the node name",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": -600,
+        "y": 0
+      },
+      "variables": {
+        "incoming": {
+          "str": "[{\"inventory\": \"lab\", \"nodeNames\": [\"__DEVICE__\"]}]",
+          "substr": "__DEVICE__",
+          "newSubstr": "$var.job.device"
+        },
+        "outgoing": {
+          "replacedString": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "0b": {
+      "name": "parse",
+      "canvasName": "parse",
+      "summary": "selector JSON -> object",
+      "description": "selector JSON -> object",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": -300,
+        "y": 0
+      },
+      "variables": {
+        "incoming": {
+          "text": "$var.0a.replacedString"
+        },
+        "outgoing": {
+          "textObject": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "workflow_start": {
+      "name": "workflow_start",
+      "summary": "workflow_start",
+      "groups": [],
+      "nodeLocation": {
+        "x": -600,
+        "y": 0
+      }
+    },
+    "workflow_end": {
+      "name": "workflow_end",
+      "summary": "workflow_end",
+      "groups": [],
+      "nodeLocation": {
+        "x": 1800,
+        "y": 0
+      }
+    }
+  },
+  "transitions": {
+    "workflow_start": {
+      "0a": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "0a": {
+      "0b": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "0b": {
+      "1a": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "1a": {
+      "1b": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "1b": {
+      "2a": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "2a": {
+      "3a": {
+        "state": "success",
+        "type": "standard"
+      },
+      "9a": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "3a": {
+      "3b": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "3b": {
+      "4a": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "4a": {
+      "5a": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "5a": {
+      "workflow_end": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "9a": {},
+    "workflow_end": {}
+  },
+  "groups": [],
+  "canvasVersion": 3,
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "device": {
+        "type": "string",
+        "required": true,
+        "description": "Inventory node name, e.g. br1-wan01"
+      },
+      "config": {
+        "type": "string",
+        "required": true,
+        "description": "Configuration lines to push, one per line"
+      },
+      "reason": {
+        "type": "string",
+        "required": true,
+        "description": "Why, shown to the approver (ticket, compliance report id)"
+      }
+    },
+    "required": [
+      "device",
+      "config",
+      "reason"
+    ]
+  },
+  "outputSchema": {
+    "type": "object",
+    "properties": {
+      "changed": {
+        "type": "boolean"
+      },
+      "config_result": {
+        "type": "object"
+      },
+      "save_result": {
+        "type": "object"
+      }
+    }
+  },
+  "tags": [],
+  "preAutomationTime": 300000,
+  "sla": 600000,
+  "font_size": 12,
+  "decorators": []
+}

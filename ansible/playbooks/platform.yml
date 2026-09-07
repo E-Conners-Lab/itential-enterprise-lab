@@ -1,0 +1,86 @@
+---
+# Phase 6b: Platform coverage of the EVE-NG lab (PID S4d, ADR 0040). Runs after itential.yml (which
+# imports every wf-*, including wf-config-push-v1 and wf-compliance-run-v1) and before flowai.yml.
+# Element 1: device groups by site and role, one Golden Config tree per OS from
+# itential/golden-config/<deviceType>/, one compliance plan on a nightly schedule trigger.
+# Everything is created through the API from the repo documents and NetBox; re-runs update in place.
+- name: Platform applications wired to the lab
+  hosts: itential-host
+  become: true
+  gather_facts: false
+  vars_files:
+    - ../../itential/versions.yaml
+  vars:
+    platform_local: http://127.0.0.1:3000
+    admin_user: "{{ lookup('ansible.builtin.env', 'ITENTIAL_ADMIN_USER') | default('admin@itential', true) }}"
+    admin_pw: "{{ lookup('ansible.builtin.env', 'ITENTIAL_ADMIN_PASSWORD') }}"
+    netbox_oob_host: 10.100.0.64
+    netbox_port: 8080
+    netbox_url: "http://{{ netbox_oob_host }}:{{ netbox_port }}"
+    netbox_headers: {Authorization: "Token {{ lookup('ansible.builtin.env', 'NETBOX_TOKEN') }}"}
+    gc_dir: "{{ playbook_dir }}/../../{{ golden_config.documents }}"
+  tasks:
+    - name: Login as {{ admin_user }}
+      ansible.builtin.uri:
+        url: "{{ platform_local }}/login"
+        method: POST
+        body_format: json
+        body: {username: "{{ admin_user }}", password: "{{ admin_pw }}"}
+        status_code: 200
+      register: login
+      no_log: true
+
+    # --- NetBox intent: the same active network devices itential.yml puts in the inventory ---------
+    - name: Network devices from NetBox, per Golden Config tree
+      ansible.builtin.uri:
+        url: "{{ netbox_url }}/api/dcim/devices/?limit=0&status=active&has_primary_ip=true&platform={{ item.value.netbox_platform }}"
+        headers: "{{ netbox_headers }}"
+      loop: "{{ golden_config.trees | dict2items }}"
+      loop_control:
+        label: "{{ item.key }}"
+      register: nb_by_tree
+      no_log: true
+
+    - name: Primary addresses with their interfaces
+      ansible.builtin.uri:
+        url: "{{ netbox_url }}/api/ipam/ip-addresses/?limit=0&device={{ item.name }}"
+        headers: "{{ netbox_headers }}"
+      loop: "{{ nb_by_tree.results | map(attribute='json.results') | flatten }}"
+      loop_control:
+        label: "{{ item.name }}"
+      register: nb_ips
+      no_log: true
+
+    # one flat list: name, site, role, tree (deviceType), mgmt_ip, mgmt_if
+    - name: Device intent
+      ansible.builtin.set_fact:
+        gc_devices: >-
+          {{ gc_devices | default([]) + [{
+               'name': item.0.name, 'site': item.0.site.slug, 'role': item.0.role.slug,
+               'tree': (golden_config.trees | dict2items
+                        | selectattr('value.netbox_platform', 'equalto', item.0.platform.slug) | first).key,
+               'mgmt_ip': item.0.primary_ip4.address | ansible.utils.ipaddr('address'),
+               'mgmt_if': (item.1.json.results | selectattr('address', 'equalto', item.0.primary_ip4.address)
+                           | map(attribute='assigned_object.name') | first)}] }}
+      loop: "{{ (nb_by_tree.results | map(attribute='json.results') | flatten) | zip(nb_ips.results) | list }}"
+      loop_control:
+        label: "{{ item.0.name }}"
+
+    - name: Intent summary
+      ansible.builtin.debug:
+        msg: "{{ gc_devices | map(attribute='name') | list }}"
+
+    - name: Configuration Manager sees every device (InventoryBroker, ADR 0039)
+      ansible.builtin.uri:
+        url: "{{ platform_local }}/configuration_manager/devices"
+        method: POST
+        headers: {Cookie: "{{ login.cookies_string }}"}
+        body_format: json
+        body: {options: {start: 0, limit: 200}}
+      register: cm_devices
+      failed_when: >-
+        (gc_devices | map(attribute='name') | difference(cm_devices.json.list | map(attribute='name'))) | length > 0
+      no_log: true
+
+    - name: Element 1 - device groups, Golden Config trees, compliance plan, nightly schedule
+      ansible.builtin.include_tasks: tasks/golden-config.yml

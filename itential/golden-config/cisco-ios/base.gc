@@ -1,0 +1,21 @@
+<i/>version {/17\.\d+/}
+service timestamps debug datetime msec
+service timestamps log datetime msec
+<e/>vrf definition MGMT
+<e/>aaa new-model
+<e/>aaa authentication login default local
+<e/>aaa authorization exec default local
+<e/>username automation privilege 15 {/.*/}
+<e/>ip domain name lab.internal
+<e/>ip name-server vrf MGMT 10.100.0.1
+no ip domain lookup
+<e/>ip ssh server algorithm hostkey rsa-sha2-512 rsa-sha2-256
+netconf-yang
+restconf
+<e/>ip http secure-server
+ip http authentication local
+<e/>ntp server vrf MGMT 10.100.0.1
+<e/>ip route vrf MGMT 0.0.0.0 0.0.0.0 10.100.0.1
+{d/}<e/>ip http server
+{d/}<e/>username admin {/.*/}
+{d/}<e/>no aaa new-model

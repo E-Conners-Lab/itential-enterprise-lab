@@ -1,0 +1,87 @@
+---
+# One Golden Config tree (loop_var tree: key = deviceType, value = name/netmiko/netbox_platform/mgmt_if).
+# base node <- itential/golden-config/<deviceType>/base.gc; one child per site with the site device group
+# attached; one leaf per device (tasks/golden-config-device.yml). Appends the leaves to plan_nodes.
+- name: "Tree id for {{ tree.value.name }}"
+  ansible.builtin.set_fact:
+    tree_id: "{{ (gc_trees.json | selectattr('name', 'equalto', tree.value.name) | first).id }}"
+    tree_devices: "{{ gc_devices | selectattr('tree', 'equalto', tree.key) | list }}"
+
+- name: "Tree version document for {{ tree.value.name }}"
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/configuration_manager/configs/{{ tree_id }}/initial"
+    headers: {Cookie: "{{ login.cookies_string }}"}
+  register: tree_doc
+
+- name: "Current base spec for {{ tree.value.name }}"
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/configuration_manager/config_specs/{{ tree_doc.json.root.attributes.configId }}"
+    headers: {Cookie: "{{ login.cookies_string }}"}
+  register: base_spec
+
+- name: "Base template from base.gc for {{ tree.value.name }}"
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/configuration_manager/node/config"
+    method: PUT
+    headers: {Cookie: "{{ login.cookies_string }}"}
+    body_format: json
+    body:
+      treeId: "{{ tree_id }}"
+      treeVersion: initial
+      nodePath: "{{ tree_doc.json.root.name }}"
+      data: {template: "{{ base_text }}", variables: {}}
+      updateVariables: false
+    status_code: 200
+  vars:
+    base_text: "{{ lookup('ansible.builtin.file', gc_dir ~ '/' ~ tree.key ~ '/base.gc') }}"
+  when: (base_spec.json.template | default('')) | trim != base_text | trim
+  changed_when: true
+
+- name: "Site nodes under base for {{ tree.value.name }}"
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/configuration_manager/configs/{{ tree_id }}/initial/{{ tree_doc.json.root.name }}"
+    method: POST
+    headers: {Cookie: "{{ login.cookies_string }}"}
+    body_format: json
+    body: {name: "{{ item }}"}
+    status_code: [200, 201]
+  loop: "{{ tree_devices | map(attribute='site') | unique | sort }}"
+  when: item not in (tree_doc.json.root.children | map(attribute='name') | list)
+
+- name: "Tree version document again for {{ tree.value.name }}"
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/configuration_manager/configs/{{ tree_id }}/initial"
+    headers: {Cookie: "{{ login.cookies_string }}"}
+  register: tree_doc
+
+- name: "Device groups now (ids for the site nodes)"
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/configuration_manager/deviceGroups"
+    headers: {Cookie: "{{ login.cookies_string }}"}
+  register: dg_all
+
+- name: "Site device group attached to each site node of {{ tree.value.name }}"
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/configuration_manager/configs/devices/groups"
+    method: POST
+    headers: {Cookie: "{{ login.cookies_string }}"}
+    body_format: json
+    body:
+      treeId: "{{ tree_id }}"
+      version: initial
+      nodePath: "{{ tree_doc.json.root.name }}/{{ item }}"
+      deviceGroups: ["{{ (dg_all.json | selectattr('name', 'equalto', 'site-' ~ item) | first).id }}"]
+    status_code: [200, 201]
+  loop: "{{ tree_devices | map(attribute='site') | unique | sort }}"
+  when: >-
+    (dg_all.json | selectattr('name', 'equalto', 'site-' ~ item) | first).id not in
+    ((tree_doc.json.root.children | selectattr('name', 'equalto', item) | first).attributes.deviceGroups | default([])
+     | map(attribute='id') | list)
+  changed_when: true
+
+- name: "Device leaves of {{ tree.value.name }}"
+  ansible.builtin.include_tasks: tasks/golden-config-device.yml
+  loop: "{{ tree_devices | sort(attribute='name') }}"
+  loop_control:
+    loop_var: dev
+    label: "{{ dev.name }}"

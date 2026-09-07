@@ -1,0 +1,22 @@
+# test-06b-platform 20260907T230052Z
+FAIL  S4d.1 Golden Config: plan clean on 12 devices; hostname drift on br1-wan01 and br1-sw01 flagged with no false positive; restored through wf-config-push-v1
+      schedule: nightly compliance lab-baseline every 1 day first run 1788836400000
+      run 1:       12 reports, wanted 12
+      br1-wan01 2 0 23 | ip ssh version 2; ntp server vrf MGMT 10.100.0.1
+      br2-wan01 2 0 23 | ip ssh version 2; ntp server vrf MGMT 10.100.0.1
+      dc1-wan01 2 0 23 | ip ssh version 2; ntp server vrf MGMT 10.100.0.1
+      dc1-wan02 2 0 23 | ip ssh version 2; ntp server vrf MGMT 10.100.0.1
+      isp-core01 2 0 23 | ip ssh version 2; ntp server vrf MGMT 10.100.0.1
+      br1-sw01 0 0 18 | 
+      br2-sw01 0 0 18 | 
+      dc1-acc01 0 0 18 | 
+      dc1-leaf01 0 0 18 | 
+      dc1-leaf02 0 0 18 | 
+      dc1-spine01 0 0 18 | 
+      dc1-spine02 0 0 18 | 
+DEFER S4d.2 command templates + nightly backups (element 2, not built yet)
+DEFER S4d.3 Lifecycle Manager + JSON Forms (element 3, not built yet)
+DEFER S4d.4 Integration Models (element 4, not built yet)
+DEFER S4d.6 hosts and firewalls (element 6, not built yet)
+
+passed=0 failed=1 deferred=4

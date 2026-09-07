@@ -1,0 +1,75 @@
+---
+# One device leaf base/<site>/<device> in the current tree (tree_id, tree, gc_dir): the leaf holds the NetBox
+# intent rendered from itential/golden-config/<deviceType>/device.j2 and carries the device itself.
+- name: "Tree version document for {{ dev.name }}"
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/configuration_manager/configs/{{ tree_id }}/initial"
+    headers: {Cookie: "{{ login.cookies_string }}"}
+  register: leaf_doc
+
+- name: "Leaf node for {{ dev.name }}"
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/configuration_manager/configs/{{ tree_id }}/initial/{{ leaf_doc.json.root.name }}/{{ dev.site }}"
+    method: POST
+    headers: {Cookie: "{{ login.cookies_string }}"}
+    body_format: json
+    body: {name: "{{ dev.name }}"}
+    status_code: [200, 201]
+  when: >-
+    dev.name not in ((leaf_doc.json.root.children | selectattr('name', 'equalto', dev.site) | first).children
+                     | map(attribute='name') | list)
+
+- name: "Tree version document again for {{ dev.name }}"
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/configuration_manager/configs/{{ tree_id }}/initial"
+    headers: {Cookie: "{{ login.cookies_string }}"}
+  register: leaf_doc
+
+- name: "Leaf attributes for {{ dev.name }}"
+  ansible.builtin.set_fact:
+    leaf: >-
+      {{ (leaf_doc.json.root.children | selectattr('name', 'equalto', dev.site) | first).children
+         | selectattr('name', 'equalto', dev.name) | first }}
+    leaf_path: "{{ leaf_doc.json.root.name }}/{{ dev.site }}/{{ dev.name }}"
+    leaf_text: >-
+      {{ lookup('ansible.builtin.template', gc_dir ~ '/' ~ tree.key ~ '/device.j2',
+                template_vars={'device': dev, 'mgmt_ip': dev.mgmt_ip, 'mgmt_if': dev.mgmt_if}) }}
+
+- name: "Current leaf spec for {{ dev.name }}"
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/configuration_manager/config_specs/{{ leaf.attributes.configId }}"
+    headers: {Cookie: "{{ login.cookies_string }}"}
+  register: leaf_spec
+
+- name: "Leaf template from device.j2 for {{ dev.name }}"
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/configuration_manager/node/config"
+    method: PUT
+    headers: {Cookie: "{{ login.cookies_string }}"}
+    body_format: json
+    body:
+      treeId: "{{ tree_id }}"
+      treeVersion: initial
+      nodePath: "{{ leaf_path }}"
+      data: {template: "{{ leaf_text }}", variables: {}}
+      updateVariables: false
+    status_code: 200
+  when: (leaf_spec.json.template | default('')) | trim != leaf_text | trim
+  changed_when: true
+
+- name: "Device attached to its leaf for {{ dev.name }}"
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/configuration_manager/configs/{{ tree_id }}/initial/{{ leaf_path }}/devices"
+    method: POST
+    headers: {Cookie: "{{ login.cookies_string }}"}
+    body_format: json
+    body: {devices: ["{{ dev.name }}"]}
+    status_code: [200, 201]
+  when: dev.name not in (leaf.attributes.devices | default([]))
+  changed_when: true
+
+- name: "Plan node for {{ dev.name }}"
+  ansible.builtin.set_fact:
+    plan_nodes: >-
+      {{ plan_nodes + [{'treeId': tree_id, 'version': 'initial', 'nodeId': leaf.attributes.configId,
+                        'devices': [dev.name], 'deviceGroups': [], 'variables': {}}] }}
