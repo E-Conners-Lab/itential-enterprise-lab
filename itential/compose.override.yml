@@ -108,6 +108,10 @@ services:
       ITENTIAL_MCP_SERVER_TRANSPORT: "http"
       ITENTIAL_MCP_SERVER_PATH: "/mcp"
       ITENTIAL_MCP_SERVER_LOG_LEVEL: "INFO" # itential-mcp rejects lowercase levels; the platform wants lowercase
+      # Every tool carries its own name as a tag. describe_inventory and get_devices return the node
+      # attributes, itential_password included, to any MCP client (ADR 0039 amendment 2026-09-07); they
+      # stay hidden until the credentials become references (Phase 10). Keep the upstream defaults.
+      ITENTIAL_MCP_SERVER_EXCLUDE_TAGS: "experimental,beta,describe_inventory,get_devices"
       ITENTIAL_MCP_PLATFORM_USER: ${MCP_PLATFORM_USER}
       ITENTIAL_MCP_PLATFORM_PASSWORD: ${MCP_PLATFORM_PASSWORD}
 

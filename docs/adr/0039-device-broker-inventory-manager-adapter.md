@@ -42,5 +42,13 @@ the Gateway 5 runner (ADR 0038).
   can be built against the lab devices (S4d, PID 1.8) without any new gateway.
 - Node credentials are visible in Device Broker output (as they are in Inventory
   Manager): Phase 10 (secrets) moves them to OpenBao-backed references.
+  **Amended 2026-09-07:** a read through Claude Desktop showed that the MCP server's
+  `describe_inventory` (and Configuration Manager's `get_devices`) return `itential_password`
+  in cleartext to any MCP client, a wider surface than the admin-only UI the exception assumed.
+  Interim control, owner decision: the MCP server excludes those two tools by tag
+  (`ITENTIAL_MCP_SERVER_EXCLUDE_TAGS` in `itential/compose.override.yml`, checked by
+  `tests/test_itential.py` and verify 05 S4.7); the agents' read paths (`run_command`,
+  `get_device_configuration`, the workflows) are unaffected. The exception itself stays open
+  until Phase 10.
 - Rejected: enabling the `gateway4` profile (second gateway, netmiko device
   sync, the 4.x security-patch line) only to feed Configuration Manager.

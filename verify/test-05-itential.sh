@@ -165,6 +165,8 @@ c7() {
   ${PY} -c "import socket;assert socket.gethostbyname('${MCP_HOST}')=='${IT_IP}','${MCP_HOST} resolves elsewhere'" || return 1
   tools=$(${PY} verify/mcpcall.py "$url" tools) || { echo "$tools"; return 1; }
   echo "$tools" | grep -qx get_health || { echo "get_health not in tools: $(echo "$tools" | tr '\n' ' ')"; return 1; }
+  # ADR 0039 amendment: the tools that return node attributes (itential_password) are hidden from MCP clients
+  for hidden in describe_inventory get_devices; do echo "$tools" | grep -qx "$hidden" && { echo "${hidden} is exposed to MCP clients (returns node credentials)"; return 1; }; done
   res=$(${PY} verify/mcpcall.py "$url" call get_health) || { echo "$res"; return 1; }
   echo "$res" | grep -q "$PLATFORM_VER" || { echo "get_health did not return platform ${PLATFORM_VER}: $(echo "$res" | head -c 300)"; return 1; }
   echo "$(echo "$tools" | wc -l | tr -d ' ') tools; get_health reports ${PLATFORM_VER}"

@@ -235,6 +235,16 @@ def test_mcp_client_config_points_at_lab_mcp() -> None:
     assert srv["type"] == "http" and srv["url"] == "http://mcp.lab.internal:8000/mcp"
 
 
+def test_mcp_server_hides_the_tools_that_return_node_credentials() -> None:
+    """ADR 0039 amendment: describe_inventory and get_devices return itential_password to any MCP
+    client; the server excludes them by tag until the credentials become references (Phase 10)."""
+    ov = yaml.safe_load(OVERRIDE.read_text())
+    tags = str(ov["services"]["mcp"]["environment"]["ITENTIAL_MCP_SERVER_EXCLUDE_TAGS"]).split(",")
+    assert {"describe_inventory", "get_devices"} <= set(tags), tags
+    assert {"experimental", "beta"} <= set(tags), "keep the upstream defaults when overriding the list"
+    assert "describe_inventory" in VERIFY.read_text(), "verify 05 S4.7 must prove the tool is hidden"
+
+
 def test_verify_script_covers_every_criterion() -> None:
     assert VERIFY.exists() and VERIFY.stat().st_mode & 0o111, "verify/test-05-itential.sh missing or not executable"
     text = VERIFY.read_text()
