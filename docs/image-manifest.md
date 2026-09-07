@@ -264,7 +264,7 @@ from Phase 8. Supporting images: MongoDB `7.0.40`, Redis `7.4.11` (Docker Hub, 2
 | | |
 |---|---|
 | Release | Current families: **Zurich** (2025) and **Australia** (GA 2026-05-05; PDI pools were wait-listed in July 2026). Request Zurich if Australia is unavailable; the Itential ServiceNow store app 3.1.13 is certified on Zurich ([release family FAQ](https://developer.servicenow.com/print_page.do?release=australia&category=now-platform&identifier=pdi_faq&module=guide)) |
-| Instance | `devNNNNNN.service-now.com` over HTTPS; the instance name is recorded in `.env` as `SNOW_INSTANCE`, never the password |
+| Instance | `dev409097.service-now.com` over HTTPS (owner's PDI, recorded 2026-09-07; `.env` `SNOW_INSTANCE=dev409097`, never the password). Release family: **Australia** |
 | Hibernation | After roughly 6 hours idle; wake takes 3-20 minutes from the developer site |
 | Reclamation (policy effective 2026-07-11) | Reclaimed when the PDI is >= 90 days old **and** has had no interactive login in the last 10 days. **Background jobs and API integrations do not count as activity**, so the keep-alive is a human login at least every 10 days (calendar reminder is a manual step) plus exporting the Itential-related update set to the repo ([reclamation rules](https://www.servicenow.com/community/developer-articles/servicenow-pdi-reclamation-rules-avoid-losing-access/ta-p/3572371)) |
 | Adapter auth | Basic auth with a dedicated integration user is the documented method for `adapter-servicenow`; OAuth (`request_token`) is **UNVERIFIED** for this adapter |
