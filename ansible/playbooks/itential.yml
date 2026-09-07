@@ -767,6 +767,87 @@
       failed_when: not (sv.json.result.results | map(attribute='success') | list | min)
       changed_when: false
 
+    # --- NetBox prerequisites for wf-branch-vlan-v1: one VLAN group per branch (VID 11-99) ------
+    # NetBox allocates the next free VID (POST vlan-groups/{id}/available-vlans/), so the workflow
+    # never guesses; groups are scoped to the branch site.
+    - name: Branch sites
+      ansible.builtin.uri:
+        url: "http://{{ netbox_oob_host }}:{{ netbox_port }}/api/dcim/sites/?slug=br1&slug=br2"
+        headers: {Authorization: "Token {{ lookup('ansible.builtin.env', 'NETBOX_TOKEN') }}"}
+      register: nb_sites
+      no_log: true
+
+    - name: Existing VLAN groups
+      ansible.builtin.uri:
+        url: "http://{{ netbox_oob_host }}:{{ netbox_port }}/api/ipam/vlan-groups/?limit=0"
+        headers: {Authorization: "Token {{ lookup('ansible.builtin.env', 'NETBOX_TOKEN') }}"}
+      register: nb_vlan_groups
+      no_log: true
+
+    - name: VLAN group per branch
+      ansible.builtin.uri:
+        url: "http://{{ netbox_oob_host }}:{{ netbox_port }}/api/ipam/vlan-groups/"
+        method: POST
+        headers: {Authorization: "Token {{ lookup('ansible.builtin.env', 'NETBOX_TOKEN') }}"}
+        body_format: json
+        body:
+          name: "{{ item.slug }}-user"
+          slug: "{{ item.slug }}-user"
+          scope_type: dcim.site
+          scope_id: "{{ item.id }}"
+          vid_ranges: [[11, 99]]
+          description: "User VLANs reserved by wf-branch-vlan-v1 (Phase 5)"
+        status_code: 201
+      loop: "{{ nb_sites.json.results }}"
+      loop_control:
+        label: "{{ item.slug }}-user"
+      when: (item.slug ~ '-user') not in (nb_vlan_groups.json.results | map(attribute='slug') | list)
+
+    # --- workflows: the documents in itential/workflows/ are code; every run replaces them ------
+    # (Automation Studio import; workflow_builder/import expects an encoded payload). Exported
+    # copies never drift from the generator because tests/test_itential.py checks the files.
+    - name: Workflow documents
+      ansible.builtin.set_fact:
+        wf_docs: "{{ lookup('ansible.builtin.fileglob', playbook_dir ~ '/../../itential/workflows/wf-*.json', wantlist=True) | sort }}"
+
+    - name: Workflow documents parsed
+      ansible.builtin.set_fact:
+        wf_bodies: "{{ wf_bodies | default([]) + [lookup('ansible.builtin.file', item) | from_json] }}"
+      loop: "{{ wf_docs }}"
+      loop_control:
+        label: "{{ item | basename }}"
+
+    - name: Existing workflows
+      ansible.builtin.uri:
+        url: "{{ platform_local }}/automation-studio/workflows?limit=100"
+        headers: {Cookie: "{{ login.cookies_string }}"}
+      register: wf_existing
+
+    - name: Remove the previous copies
+      ansible.builtin.uri:
+        url: "{{ platform_local }}/workflow_builder/workflows/delete/{{ item | basename | regex_replace('\\.json$', '') }}"
+        method: DELETE
+        headers: {Cookie: "{{ login.cookies_string }}"}
+        status_code: [200, 404]
+      loop: "{{ wf_docs }}"
+      loop_control:
+        label: "{{ item | basename }}"
+      when: (item | basename | regex_replace('\\.json$', '')) in (wf_existing.json['items'] | map(attribute='name') | list)
+      changed_when: true
+
+    - name: Import the workflows
+      ansible.builtin.uri:
+        url: "{{ platform_local }}/automation-studio/automations/import"
+        method: POST
+        headers: {Cookie: "{{ login.cookies_string }}"}
+        body_format: json
+        body:
+          automations: "{{ wf_bodies }}"
+        status_code: 200
+      register: wf_import
+      failed_when: wf_import.json.imported | rejectattr('success') | list | length > 0
+      changed_when: true
+
   handlers:
     - name: Compose up
       ansible.builtin.command:

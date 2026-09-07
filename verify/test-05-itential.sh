@@ -33,8 +33,9 @@ iap_login() { iap -c "$JAR" -X POST "${PLATFORM}/login" -d "{\"username\":\"${AD
 # run_job <workflow> <variables-json> -> prints the job id; waits for a terminal status unless $3=nowait
 run_job() {
   local wf=$1 vars=$2 mode=${3:-wait} id status
-  id=$(iap -X POST "${PLATFORM}/operations-manager/jobs/start" -d "{\"workflow\":\"${wf}\",\"options\":{\"type\":\"automation\",\"description\":\"verify ${ts}\",\"variables\":${vars}}}" | ${PY} -c 'import sys,json;d=json.load(sys.stdin);print(d.get("data",{}).get("_id") or d.get("_id") or "")')
-  [ -n "$id" ] || { echo "job start failed for ${wf}"; return 1; }
+  local resp; resp=$(iap -X POST "${PLATFORM}/operations-manager/jobs/start" -d "{\"workflow\":\"${wf}\",\"options\":{\"type\":\"automation\",\"description\":\"verify ${ts}\",\"variables\":${vars}}}")
+  id=$(echo "$resp" | ${PY} -c 'import sys,json;d=json.load(sys.stdin);x=d.get("data");print(x.get("_id","") if isinstance(x,dict) else "")')
+  [ -n "$id" ] || { echo "job start failed for ${wf}: $(echo "$resp" | head -c 300)"; return 1; }
   echo "$id"
   [ "$mode" = nowait ] && return 0
   for _ in $(seq 1 60); do
@@ -71,11 +72,11 @@ check "S4.1 ${PLATFORM} serves a lab-CA cert for ${IT_HOST}, runs Platform ${PLA
 c2() {
   local want got id; want=$(nb "${NETBOX_URL}/api/dcim/devices/?limit=1" | ${PY} -c 'import sys,json;print(json.load(sys.stdin)["count"])')
   id=$(run_job wf-netbox-device-count-v1 '{}') || { echo "$id"; return 1; }
-  got=$(job_vars "${id##*$'\n'}" | ${PY} -c 'import sys,json;print(json.load(sys.stdin).get("device_count"))')
+  got=$(job_vars "${id##*$'\n'}" | ${PY} -c 'import sys,json;print(((json.load(sys.stdin).get("devices") or {}).get("response") or {}).get("count"))')
   [ "$got" = "$want" ] || { echo "workflow ${got} vs NetBox API ${want}"; return 1; }
   echo "device_count=${got}"
 }
-check "S4.2 wf-netbox-device-count-v1 through the NetBox adapter equals GET /api/dcim/devices/" c2
+check "S4.2 wf-netbox-device-count-v1 through the NetBox adapter returns NetBox's count == GET /api/dcim/devices/" c2
 
 # --- S4.3 show version through IAG on one node per vendor equals the manifest and the device itself ---
 c3() {
@@ -84,7 +85,7 @@ c3() {
   for row in "br1-wan01:10.100.0.146:17.13.01a:show version" "br1-sw01:10.100.0.165:4.33.1.1F:show version"; do
     IFS=: read -r name ip want cmd <<<"$row"
     id=$(run_job wf-show-version-v1 "{\"device\":\"${name}\"}") || { errs+="${name}: ${id}\n"; continue; }
-    out=$(job_vars "${id##*$'\n'}" | ${PY} -c 'import sys,json;print(json.load(sys.stdin).get("output",""))')
+    out=$(job_vars "${id##*$'\n'}" | ${PY} -c 'import sys,json;r=(json.load(sys.stdin).get("show_version") or {}).get("result",{}).get("results",[{}]);print(r[0].get("output","") if r and r[0].get("success") else "")')
     echo "$out" | grep -q "$want" || { errs+="${name}: IAG output lacks ${want}\n"; continue; }
     direct=$($dev "$ip" "$cmd" 2>/dev/null) || { errs+="${name}: direct ssh failed\n"; continue; }
     echo "$direct" | grep -q "$want" || errs+="${name}: device itself lacks ${want}\n"
@@ -96,15 +97,14 @@ check "S4.3 wf-show-version-v1 via IAG: br1-wan01 = 17.13.01a, br1-sw01 = 4.33.1
 # --- S4.4 wf-branch-vlan-v1: reserve in NetBox + configure br1-sw01, approval task, idempotent, rollback ---
 VLAN_NAME="verify-${ts,,}"
 approve_pending_task() {
-  # the workflow parks on a manual task; claim and finish it as admin (that is the approval)
-  local job=$1 task
+  # the workflow parks on the ViewData task (4a); finishing it with success is the approval
+  local job=$1 decision=${2:-success} task
   for _ in $(seq 1 24); do
-    task=$(iap "${PLATFORM}/operations-manager/jobs/${job}" | ${PY} -c 'import sys,json;d=json.load(sys.stdin)["data"];t=[k for k,v in d.get("tasks",{}).items() if v.get("type")=="manual" and v.get("status") in ("running","paused","incomplete")];print(t[0] if t else "")')
+    task=$(iap "${PLATFORM}/operations-manager/jobs/${job}" | ${PY} -c 'import sys,json;d=json.load(sys.stdin)["data"];t=[k for k,v in d.get("tasks",{}).items() if v.get("type")=="manual" and v.get("status")=="running"];print(t[0] if t else "")')
     [ -n "$task" ] && break; sleep 5
   done
   [ -n "$task" ] || { echo "no pending manual task on job ${job}"; return 1; }
-  iap -X POST "${PLATFORM}/workflow_engine/tasks/${task}/claim" -d "{\"jobId\":\"${job}\"}" -o /dev/null
-  iap -X POST "${PLATFORM}/workflow_engine/tasks/${task}/finish" -d "{\"jobId\":\"${job}\",\"variables\":{\"approved\":true}}" -o /dev/null
+  iap -X POST "${PLATFORM}/operations-manager/jobs/${job}/tasks/${task}/finish" -d "{\"taskData\":{\"finish_state\":\"${decision}\",\"variables\":{}}}" -o /dev/null -w '%{http_code}' | grep -qx 200
 }
 wait_job() { local id=$1 s; for _ in $(seq 1 60); do s=$(job_status "$id"); case "$s" in complete) return 0;; error|canceled|cancelled) echo "job ${id} ${s}"; return 1;; esac; sleep 5; done; echo "job ${id} timeout (${s})"; return 1; }
 nb_vlan() { nb "${NETBOX_URL}/api/ipam/vlans/?site=br1&name=${VLAN_NAME}"; }

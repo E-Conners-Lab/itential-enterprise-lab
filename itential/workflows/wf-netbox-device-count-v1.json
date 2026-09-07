@@ -10,9 +10,9 @@
       "description": "One page of devices (count comes with it)",
       "location": "Adapter",
       "locationType": "Netbox",
-      "app": "NetBox",
+      "app": "Netbox",
       "type": "automatic",
-      "displayName": "NetBox",
+      "displayName": "Netbox",
       "groups": [],
       "nodeLocation": {
         "x": 0,
@@ -20,6 +20,7 @@
       },
       "variables": {
         "incoming": {
+          "adapter_id": "NetBox",
           "limit": 1,
           "offset": 0
         },
