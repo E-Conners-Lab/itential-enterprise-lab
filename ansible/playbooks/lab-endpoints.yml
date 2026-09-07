@@ -12,6 +12,8 @@
   gather_facts: false
   vars:
     ansible_user: automation
+    # EVE-NG guests are re-cloned from the golden image (fresh host keys); lab-only relaxation
+    ansible_ssh_common_args: -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/dev/null
     site: "{{ inventory_hostname.split('-')[0] }}"
     data:
       dc1: {gateway: 10.101.10.1, static: 10.101.10.10/24}
@@ -21,7 +23,7 @@
   pre_tasks:
     - name: Only Ubuntu endpoints (Windows clients are handled by their golden image)
       ansible.builtin.meta: end_host
-      when: platforms is defined and 'ubuntu-24-04' not in (platforms | map(attribute='slug') | list)
+      when: platforms is defined and 'ubuntu-24-04' not in platforms  # group_names_raw: slugs
   tasks:
     - name: Hostname from NetBox
       ansible.builtin.hostname:

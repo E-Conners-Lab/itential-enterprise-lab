@@ -179,7 +179,13 @@ nodes:
     cpu: 2
     ram: 6144
     ethernet: 2
-    eve: {left: 60, top: 540}
+    # UEFI/GPT Windows 11 image (images/build-win11.sh): boots with QEMU 9.2.2, q35 and OVMF on EVE-NG
+    eve:
+      left: 60
+      top: 540
+      qemu_version: "9.2.2"
+      qemu_nic: virtio-net-pci
+      qemu_options: "-machine type=q35,accel=kvm -cpu host,+pcid,+kvm_pv_unhalt,+kvm_pv_eoi,hv_spinlocks=0x1fff,hv_vapic,hv_time,hv_reset,hv_vpindex,hv_runtime,hv_relaxed,hv_synic,hv_stimer -bios /usr/share/OVMF/OVMF_CODE_4M.fd -vga std -usb -device usb-tablet"
   br1-host01:
     site: br1
     role: client
@@ -229,7 +235,13 @@ nodes:
     cpu: 2
     ram: 6144
     ethernet: 2
-    eve: {left: 900, top: 540}
+    # UEFI/GPT Windows 11 image (images/build-win11.sh): boots with QEMU 9.2.2, q35 and OVMF on EVE-NG
+    eve:
+      left: 900
+      top: 540
+      qemu_version: "9.2.2"
+      qemu_nic: virtio-net-pci
+      qemu_options: "-machine type=q35,accel=kvm -cpu host,+pcid,+kvm_pv_unhalt,+kvm_pv_eoi,hv_spinlocks=0x1fff,hv_vapic,hv_time,hv_reset,hv_vpindex,hv_runtime,hv_relaxed,hv_synic,hv_stimer -bios /usr/share/OVMF/OVMF_CODE_4M.fd -vga std -usb -device usb-tablet"
   br2-host01:
     site: br2
     role: client

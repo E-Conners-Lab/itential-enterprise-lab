@@ -250,6 +250,8 @@ def apply(eve: Eve, topo: dict, allow_missing: bool) -> None:
             "cpu": n["cpu"], "ram": n["ram"], "ethernet": n["ethernet"], "console": CONSOLE[n["platform"]],
             "left": n["eve"]["left"], "top": n["eve"]["top"], "config": 0, "delay": 0,
         }
+        # per-node QEMU overrides (Windows 11 needs q35 + OVMF: the image is a UEFI/GPT install)
+        payload.update({k: n["eve"][k] for k in ("qemu_version", "qemu_options", "qemu_nic") if k in n["eve"]})
         nid = eve.add_node(payload)
         print(f"created node {name} (id {nid})")
     have = eve.nodes()

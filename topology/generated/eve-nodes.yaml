@@ -6,6 +6,11 @@ nodes:
     mac0: 50:00:00:0c:00:00
     mgmt_ip: 10.100.0.195
     platform: ubuntu
+  br1-pc01:
+    id: 16
+    mac0: '50:00:00:10:00:00'
+    mgmt_ip: 10.100.0.193
+    platform: win11
   br1-sw01:
     id: 11
     mac0: 50:00:00:0b:00:00
@@ -21,6 +26,11 @@ nodes:
     mac0: 50:00:00:0f:00:00
     mgmt_ip: 10.100.0.196
     platform: ubuntu
+  br2-pc01:
+    id: 17
+    mac0: '50:00:00:11:00:00'
+    mgmt_ip: 10.100.0.194
+    platform: win11
   br2-sw01:
     id: 14
     mac0: 50:00:00:0e:00:00
