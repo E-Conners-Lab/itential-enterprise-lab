@@ -8,7 +8,7 @@ SHELL := /bin/bash
 
 PHASES := oob-network platform network-topology itential ddi identity observability config-secrets-code panorama containerlab
 
-.PHONY: help bootstrap lint test up verify discover plan-oob plan-platform $(addprefix phase-,$(PHASES))
+.PHONY: help bootstrap lint test up verify discover plan-oob plan-platform plan-itential $(addprefix phase-,$(PHASES))
 
 help: ## Show targets
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-22s\033[0m %s\n", $$1, $$2}'
@@ -36,6 +36,9 @@ plan-oob: ## Phase 2: show what tofu would change (read-only)
 
 plan-platform: ## Phase 3: show what tofu would change (read-only)
 	@$(load_env) cd tofu/platform && tofu init -input=false >/dev/null && tofu plan -input=false
+
+plan-itential: ## Phase 5: show what tofu would change (read-only)
+	@$(load_env) cd tofu/itential && tofu init -input=false >/dev/null && tofu plan -input=false
 
 lint: ## Run every CI check locally
 	pre-commit run --all-files
@@ -69,6 +72,17 @@ phase-platform: ## Phase 3: NetBox VMs -> tofu apply -> k3s cluster -> Cilium/Me
 	$(load_env) cd ansible && ansible-playbook playbooks/k8s-platform.yml
 	verify/run.sh
 
+# Phase 5. NetBox registration first (inventory source), then the VM, then the images (needs an
+# SSO session: `aws sso login --profile itential-ecr`), then the stack, adapters and workflows.
+phase-itential: ## Phase 5: NetBox VM -> tofu apply -> resolver alias -> host (Docker, lab-CA cert) -> images from ECR -> dev-stack + gateways + adapters + workflows -> verify
+	$(load_env) cd ansible && ansible-playbook playbooks/netbox-vms.yml
+	$(load_env) cd tofu/itential && tofu init -input=false >/dev/null && tofu apply -input=false -auto-approve
+	$(load_env) cd ansible && ansible-playbook playbooks/oob-gw.yml --tags dns
+	$(load_env) cd ansible && ansible-playbook -i inventory/netbox.yml playbooks/itential-host.yml
+	images/fetch.sh itential
+	$(load_env) cd ansible && ansible-playbook -i inventory/netbox.yml playbooks/itential.yml
+	verify/run.sh
+
 # Later phases are wired in as each lands. Until then they fail loud.
-$(addprefix phase-,$(filter-out oob-network platform,$(PHASES))):
+$(addprefix phase-,$(filter-out oob-network platform itential,$(PHASES))):
 	@echo "phase '$@' is not implemented yet (see docs/PID.md delivery plan)"; exit 1

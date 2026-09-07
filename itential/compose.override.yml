@@ -1,0 +1,45 @@
+# Lab override for the vendored itential-dev-stack docker-compose.yml (ADR 0035). The upstream
+# file is byte-for-byte the pinned commit (itential/versions.yaml records its sha256); everything
+# the lab changes lives here so the diff against upstream is this file. Rendered values
+# (image tags, ports, BIND_ADDRESS) come from the stack .env that ansible/playbooks/itential.yml
+# writes from itential/versions.yaml and the repo .env.
+#
+# Exposure model: the upstream port mappings bind to 127.0.0.1 only (BIND_ADDRESS=127.0.0.1: in
+# the stack .env); the OOB address 10.100.0.65 gets exactly four listeners:
+#   443   Platform HTTPS with the lab-CA certificate (S4.1)
+#   8083  Gateway 4 (Golden Config / netmiko show commands)
+#   50051 Gateway 5 gRPC (iagctl)
+#   8000  MCP server, streamable HTTP for Claude Code on the Mac (S4.7)
+# Gateway Manager (8080) stays on the Docker network: Gateway 5 reaches it as platform:8080.
+services:
+  mongodb:
+    # WiredTiger would take half the VM otherwise; 4 GB of 24 GB (S4.6 measures the result).
+    command: ["mongod", "--wiredTigerCacheSizeGB", "4", "--bind_ip_all"]
+
+  platform:
+    ports:
+      - "${OOB_ADDRESS}:443:3443"
+    environment:
+      ITENTIAL_LOG_LEVEL: ${LOG_LEVEL:-info}
+
+  gateway4:
+    ports:
+      - "${OOB_ADDRESS}:8083:8083"
+    environment:
+      automation_gateway_netmiko_enabled: "true"
+      automation_gateway_http_requests_enabled: "true"
+      automation_gateway_logging_level: ${LOG_LEVEL:-INFO}
+      automation_gateway_http_logging_level: ${LOG_LEVEL:-INFO}
+
+  gateway5:
+    ports:
+      - "${OOB_ADDRESS}:50051:50051"
+
+  mcp:
+    ports:
+      - "${OOB_ADDRESS}:8000:8000"
+    environment:
+      ITENTIAL_MCP_SERVER_TRANSPORT: "http"
+      ITENTIAL_MCP_SERVER_PATH: "/mcp"
+      ITENTIAL_MCP_PLATFORM_USER: ${MCP_PLATFORM_USER}
+      ITENTIAL_MCP_PLATFORM_PASSWORD: ${MCP_PLATFORM_PASSWORD}

@@ -18,6 +18,7 @@
       - {name: k3s-01, vcpus: 4, memory: 12288, disk: 80, role: k3s-server, ips: [10.100.0.16], tags: [phase-3, k3s]}
       - {name: k3s-02, vcpus: 4, memory: 12288, disk: 80, role: k3s-server, ips: [10.100.0.17], tags: [phase-3, k3s]}
       - {name: k3s-03, vcpus: 4, memory: 12288, disk: 80, role: k3s-server, ips: [10.100.0.18], tags: [phase-3, k3s]}
+      - {name: itential, vcpus: 8, memory: 24576, disk: 160, role: itential-host, ips: [10.100.0.65], tags: [phase-5, itential]}
   tasks:
     - name: Site
       netbox.netbox.netbox_site:
@@ -46,7 +47,7 @@
         netbox_token: "{{ nb.netbox_token }}"
         validate_certs: false
         data: {name: "{{ item }}", slug: "{{ item }}"}
-      loop: [k3s, phase-3, oob-gateway, k3s-server]
+      loop: [k3s, phase-3, oob-gateway, k3s-server, itential, phase-5, itential-host]
 
     - name: Device roles for VMs
       netbox.netbox.netbox_device_role:

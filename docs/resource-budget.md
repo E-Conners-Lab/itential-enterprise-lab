@@ -27,19 +27,19 @@ disk (VM 110 NetBox and VM 300 EVE-NG).
 | `k3s-01` | 3 | Ubuntu 24.04 cloud | 4 | 12 | 80 | 30 GB OS + 50 GB Longhorn |
 | `k3s-02` | 3 | Ubuntu 24.04 cloud | 4 | 12 | 80 | |
 | `k3s-03` | 3 | Ubuntu 24.04 cloud | 4 | 12 | 80 | |
-| `itential` | 5 | Rocky 9.8 cloud | 8 | 24 | 160 | Platform + MongoDB 7 + Redis 7 all-in-one; 40 root, 60 `/opt/itential`, 60 `/var/lib/mongo`. Sizing **unverified** (manifest 3.2); first lever if short is section 5 |
-| `iag` | 5 | Rocky 9.8 cloud | 4 | 8 | 40 | Gateway 5 server + runner |
+| 205 `itential` | 5 | Ubuntu 24.04 cloud | 8 | 24 | 160 | Docker host for the itential-dev-stack: Platform, MongoDB 7 (WiredTiger cache capped at 4 GB), Redis 7, Gateway 5, Gateway 4, MCP (ADR 0035; the separate `iag` VM and the Rocky template are dropped). Measured after 24 h by `verify/test-05-itential.sh` S4.6; grows to 32 GB by PR only if above 80 % |
 | `nios` | 6 | NIOS 9.0.8 IB-V825 | 2 | 16 | 150 | vendor minimum for IB-V825 with the resizable image |
 | `ddi-fallback` | 6 | Ubuntu 24.04 cloud | 2 | 2 | 20 | BIND9 + Kea containers, host networking |
 | `dc01` | 7 | Windows Server 2025 eval | 4 | 8 | 80 | AD DS + DNS |
 | `panorama` | 10 | Panorama 11.1 | 8 | 24 | 141 | 81 system + 60 log disk; Management Only mode accepted. Vendor floor is 16/64, EVE-NG and community run 8/16 (manifest 2.2) |
 | `clab` | 11 | Ubuntu 24.04 cloud | 8 | 16 | 60 | Docker + Containerlab, 5 cEOS nodes at ~1.5 GB + runner |
-| **Total** | | | **77** | **271** | **1,171** | |
+| **Total** | | | **73** | **263** | **1,131** | |
 | Ceiling | | | 108 | 280 | 1,400 (with the 200 GB `/srv/images` LV: 1,363) | |
-| **Headroom** | | | **31 vCPU** | **9 GB** | ~37 GB | |
+| **Headroom** | | | **35 vCPU** | **17 GB** | ~232 GB | |
 
-RAM is the binding constraint. The 9 GB of headroom is deliberately not
-pre-assigned; section 5 lists the levers in the order they are pulled.
+RAM is the binding constraint. The 17 GB of headroom (9 GB before Phase 5 merged
+the two Itential VMs into one) is deliberately not pre-assigned; section 5
+lists the levers in the order they are pulled.
 
 ## 3. EVE-NG internal budget (inside VM 300: 24 vCPU / 128 GB)
 

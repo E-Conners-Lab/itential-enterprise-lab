@@ -240,20 +240,22 @@ Owner decision 2026-09-06: **pull the latest maintenance tag of each image at Ph
 the laptop's tags. Phase 5 lists ECR tags with the owner's credentials (`aws ecr list-images`),
 records the exact tags chosen here and in ADR 0020, and saves them to `/srv/images/itential/`.
 
-| Image | Laptop today | Expected latest (docs.itential.com, 2026-09-06) | Role |
-|---|---|---|---|
-| `497639811223.dkr.ecr.us-east-2.amazonaws.com/automation-platform-config-lcm-flowai` | `6.5.1` | `6.5.2` | Itential Platform with the FlowAI bundle |
-| `497639811223.dkr.ecr.us-east-2.amazonaws.com/automation-gateway5` | `5.5.1-amd64` | `5.5.2-amd64` | Gateway 5 (FlowAI agent tool-calling, device services) |
-| `497639811223.dkr.ecr.us-east-2.amazonaws.com/automation-gateway` | `4.3.15` | newest `4.4.x` if present in ECR, else newest `4.3.x` | Gateway 4 (Golden Config / Configuration Manager). 4.3 receives no further security patches per Itential; 4.4 is the patched line. Both gateways are needed for the full lab |
-| `ghcr.io/itential/itential-mcp` | `v0.13.1` | MCP server (optional, later) | public |
-| `ghcr.io/itential/job-metrics-exporter` | pin a digest in Phase 5 | Prometheus exporter for jobs | laptop has `latest`; never pin `latest` |
+| Image | Laptop 2026-09-06 | Expected latest (docs.itential.com, 2026-09-06) | Pinned (Phase 5) | Role |
+|---|---|---|---|---|
+| `497639811223.dkr.ecr.us-east-2.amazonaws.com/automation-platform-config-lcm-flowai` | `6.5.1` | `6.5.2` | pending ECR listing | Itential Platform with the FlowAI bundle |
+| `497639811223.dkr.ecr.us-east-2.amazonaws.com/automation-gateway5` | `5.5.1-amd64` | `5.5.2-amd64` | pending ECR listing | Gateway 5 (FlowAI agent tool-calling, device services) |
+| `497639811223.dkr.ecr.us-east-2.amazonaws.com/automation-gateway` | `4.3.15` | newest `4.4.x` if present in ECR, else newest `4.3.x` | pending ECR listing | Gateway 4 (Golden Config / Configuration Manager). 4.3 receives no further security patches per Itential; 4.4 is the patched line. Both gateways are needed for the full lab |
+| `ghcr.io/itential/itential-mcp` | `v0.13.1` | `v0.14.0` (release 2026-08-13) | `v0.14.0` | MCP server, streamable HTTP on `mcp.lab.internal:8000` (S4.7); public image |
+| `ghcr.io/itential/job-metrics-exporter` | `latest` | pin a digest when Phase 8 scrapes it | deferred to Phase 8 | Prometheus exporter for jobs; never pin `latest` |
 
 Do not pin: `automation-gateway5:5.1.0`, `automation-gateway:4.3.7`, `automation-platform-config-lcm:6`, `itential.jfrog.io/flow-ai-demo/itential_flowai:v0.1.4` (leftovers on the laptop).
 
-**Licensing, still open.** The running dev stack has no licence file, key or licensing env var
-anywhere (compose, `.env`, platform volume, container filesystem, logs). Whether this image is a
-demo build or whether a lab deployment needs a real licence is **UNVERIFIED**; the owner confirms
-with Itential before Phase 5, and confirms the account terms cover a personal lab.
+**Licence: none required (owner decision 2026-09-07).** The running dev stack has no licence file,
+key or licensing env var anywhere (compose, `.env`, platform volume, container filesystem, logs);
+the owner confirmed on 2026-09-07 that the lab needs none and that ECR access through the company
+AWS SSO is the sanctioned path. No expiry to monitor (S4.5); Zabbix watches only the TLS certificate
+from Phase 8. Supporting images: MongoDB `7.0.40`, Redis `7.4.11` (Docker Hub, 2026-09-07), Docker CE
+`29.8.0` on the VM (ADR 0035).
 
 ### 3.4 ServiceNow Personal Developer Instance (external, no image)
 

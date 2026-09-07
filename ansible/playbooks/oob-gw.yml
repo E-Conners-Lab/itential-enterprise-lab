@@ -101,6 +101,7 @@
         mode: "0644"
         validate: unbound-checkconf %s
       notify: Restart unbound
+      tags: [dns] # `--tags dns` re-renders names alone (phase 5 adds aliases)
 
     - name: Ensure resolved.conf.d exists
       ansible.builtin.file:

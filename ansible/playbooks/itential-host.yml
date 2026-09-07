@@ -1,0 +1,224 @@
+---
+# Phase 5, slice A: the itential VM as a Docker host (ADR 0035). Runs after tofu created VM 205.
+# OS baseline like the k3s nodes, Docker CE pinned from download.docker.com, the lab root CA
+# trusted system-wide, the dev-stack directory tree with the ownerships the containers expect,
+# and a lab-CA server certificate for itential.lab.internal issued by cert-manager on k3s
+# (ClusterIssuer lab-ca, S4.1). Inventory: NetBox tag itential-host (netbox-vms.yml).
+- name: Prepare the itential Docker host
+  hosts: itential-host
+  become: true
+  gather_facts: true
+  vars_files:
+    - ../../itential/versions.yaml
+  vars:
+    stack_dir: /opt/itential
+    docker_apt_version: "5:{{ docker_ce }}"
+  tasks:
+    - name: Wait for cloud-init
+      ansible.builtin.command: cloud-init status --wait
+      changed_when: false
+      failed_when: false
+
+    - name: Hostname equals the NetBox name
+      ansible.builtin.hostname:
+        name: "{{ inventory_hostname }}"
+
+    - name: Baseline packages
+      ansible.builtin.apt:
+        name: [chrony, qemu-guest-agent, ca-certificates, curl, gnupg, jq, apparmor, apparmor-utils]
+        state: present
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Guest agent running
+      ansible.builtin.systemd:
+        name: qemu-guest-agent
+        enabled: true
+        state: started
+
+    - name: Time from oob-gw
+      ansible.builtin.copy:
+        dest: /etc/chrony/sources.d/lab.sources
+        content: "server 10.100.0.1 iburst prefer\n"
+        mode: "0644"
+      notify: Restart chrony
+
+    - name: Lab root CA trusted system-wide (curl/wget on the VM verify the Platform's own cert)
+      ansible.builtin.copy:
+        src: ../../docs/lab-root-ca.crt
+        dest: /usr/local/share/ca-certificates/lab-root-ca.crt
+        mode: "0644"
+      notify: Update CA trust
+
+    # --- Docker CE, pinned (versions.yaml docker_ce) ---------------------------------------
+    - name: Docker apt key
+      ansible.builtin.get_url:
+        url: https://download.docker.com/linux/ubuntu/gpg
+        dest: /etc/apt/keyrings/docker.asc
+        mode: "0644"
+
+    - name: Docker apt repository
+      ansible.builtin.apt_repository:
+        repo: >-
+          deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.asc]
+          https://download.docker.com/linux/ubuntu {{ ansible_facts.distribution_release }} stable
+        filename: docker
+        state: present
+
+    - name: Docker CE + Compose plugin at {{ docker_ce }}
+      ansible.builtin.apt:
+        name:
+          - "docker-ce={{ docker_apt_version }}"
+          - "docker-ce-cli={{ docker_apt_version }}"
+          - containerd.io
+          - docker-compose-plugin
+        state: present
+        allow_downgrade: true
+
+    - name: Hold the Docker packages at the pin
+      ansible.builtin.dpkg_selections:
+        name: "{{ item }}"
+        selection: hold
+      loop: [docker-ce, docker-ce-cli]
+
+    - name: Docker daemon settings (log rotation; default bridge left alone, ADR 0003 forbids nothing here)
+      ansible.builtin.copy:
+        dest: /etc/docker/daemon.json
+        content: "{{ {'log-driver': 'json-file', 'log-opts': {'max-size': '20m', 'max-file': '5'}} | to_nice_json }}\n"
+        mode: "0644"
+      notify: Restart docker
+
+    - name: Docker running
+      ansible.builtin.systemd:
+        name: docker
+        enabled: true
+        state: started
+
+    - name: Operator user in the docker group (fetch.sh and the stack play run as ubuntu)
+      ansible.builtin.user:
+        name: ubuntu
+        groups: docker
+        append: true
+
+    # --- dev-stack directory tree with container ownerships --------------------------------
+    # platform runs as 1001:1001, gateway5 as 100:101 (upstream generate-certificates.sh);
+    # gateway4 and mongodb data are handled by their init containers / the image itself.
+    - name: Stack directories
+      ansible.builtin.file:
+        path: "{{ stack_dir }}/{{ item.path }}"
+        state: directory
+        owner: "{{ item.owner | default('ubuntu') }}"
+        group: "{{ item.group | default('ubuntu') }}"
+        mode: "0755"
+      loop:
+        - {path: ""}
+        - {path: dependencies/mongodb-data}
+        - {path: volumes/platform/adapters}
+        - {path: volumes/platform/ssl, owner: "1001", group: "1001"}
+        - {path: volumes/platform/vault}
+        - {path: volumes/gateway4/scripts}
+        - {path: volumes/gateway4/playbooks}
+        - {path: volumes/gateway4/ssl}
+        - {path: volumes/gateway5/certificates, owner: "100", group: "101"}
+        - {path: volumes/mcp/logs}
+      loop_control:
+        label: "{{ item.path | default('.') }}"
+
+  handlers:
+    - name: Restart chrony
+      ansible.builtin.systemd:
+        name: chrony
+        state: restarted
+
+    - name: Update CA trust
+      ansible.builtin.command: update-ca-certificates
+      changed_when: true
+
+    - name: Restart docker
+      ansible.builtin.systemd:
+        name: docker
+        state: restarted
+
+# --- lab-CA certificate for the Platform (S4.1) from cert-manager on k3s ----------------------
+- name: Issue the Platform certificate from the lab CA
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars_files:
+    - ../../itential/versions.yaml
+  vars:
+    ansible_python_interpreter: "{{ playbook_dir }}/../../.venv/bin/python"
+    kubeconfig: >-
+      {{ lookup('ansible.builtin.env', 'KUBECONFIG_PATH')
+         | default(lookup('ansible.builtin.env', 'HOME') ~ '/.kube/lab-k3s.yaml', true) }}
+  tasks:
+    - name: Namespace itential (holds only this certificate)
+      kubernetes.core.k8s:
+        kubeconfig: "{{ kubeconfig }}"
+        definition: {apiVersion: v1, kind: Namespace, metadata: {name: itential}}
+
+    - name: Certificate itential.lab.internal (+ mcp alias, + the OOB address) from ClusterIssuer lab-ca
+      kubernetes.core.k8s:
+        kubeconfig: "{{ kubeconfig }}"
+        definition:
+          apiVersion: cert-manager.io/v1
+          kind: Certificate
+          metadata: {name: itential-platform, namespace: itential}
+          spec:
+            secretName: itential-platform-tls
+            duration: 8760h # one year; re-run this play to refresh the VM copy after renewal
+            renewBefore: 720h
+            commonName: itential.lab.internal
+            dnsNames: [itential.lab.internal, mcp.lab.internal]
+            ipAddresses: ["{{ vm.ip }}"]
+            usages: [server auth, digital signature, key encipherment]
+            issuerRef: {name: lab-ca, kind: ClusterIssuer}
+        wait: true
+        wait_condition: {type: Ready, status: "True"}
+        wait_timeout: 120
+
+    - name: Read the issued secret
+      kubernetes.core.k8s_info:
+        kubeconfig: "{{ kubeconfig }}"
+        kind: Secret
+        namespace: itential
+        name: itential-platform-tls
+      register: tls_secret
+      failed_when: tls_secret.resources | length != 1
+
+    - name: Hand the PEMs to the VM play
+      ansible.builtin.set_fact:
+        platform_cert_pem: >-
+          {{ tls_secret.resources[0].data['tls.crt'] | b64decode }}{{ tls_secret.resources[0].data['ca.crt'] | b64decode }}
+        platform_key_pem: "{{ tls_secret.resources[0].data['tls.key'] | b64decode }}"
+      no_log: true
+
+- name: Install the Platform certificate on the VM
+  hosts: itential-host
+  become: true
+  gather_facts: false
+  vars:
+    ssl_dir: /opt/itential/volumes/platform/ssl
+  tasks:
+    - name: Server certificate + CA chain (platform reads it as uid 1001)
+      ansible.builtin.copy:
+        content: "{{ hostvars['localhost'].platform_cert_pem }}"
+        dest: "{{ ssl_dir }}/cert.pem"
+        owner: "1001"
+        group: "1001"
+        mode: "0644"
+
+    - name: Private key
+      ansible.builtin.copy:
+        content: "{{ hostvars['localhost'].platform_key_pem }}"
+        dest: "{{ ssl_dir }}/key.pem"
+        owner: "1001"
+        group: "1001"
+        mode: "0600"
+      no_log: true
+
+    - name: Certificate names itential.lab.internal
+      ansible.builtin.command: openssl x509 -in {{ ssl_dir }}/cert.pem -noout -ext subjectAltName
+      register: san
+      changed_when: false
+      failed_when: "'itential.lab.internal' not in san.stdout"

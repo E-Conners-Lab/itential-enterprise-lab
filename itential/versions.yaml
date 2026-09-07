@@ -1,0 +1,38 @@
+# Single oracle for Phase 5 (PID S4, ADR 0035). Read by ansible/playbooks/itential-host.yml,
+# itential.yml, images/fetch.sh itential and verify/test-05-itential.sh; tests/test_itential.py
+# holds it to docs/image-manifest.md 3.5, docs/resource-budget.md, topology/ipam.yaml and
+# tofu/itential. Never 'latest'.
+upstream:
+  dev_stack_repo: https://github.com/itential/itential-dev-stack
+  dev_stack_commit: 2db4b448db683d80f16e532357972e3f3004c0cb # main on 2026-06-24, vendored 2026-09-07
+  compose_sha256: f1107f418ebd8ffcc48da903fc425777774717bc00379a8d90535fb6127f5bf4 # itential/docker-compose.yml
+
+docker_ce: 29.8.0-1~ubuntu.24.04~noble # download.docker.com stable, 2026-09-03
+
+images:
+  # Private ECR: tags listed with the owner's SSO session on the pull date (manifest 3.5, ADR 0020 amendment)
+  platform: {repository: 497639811223.dkr.ecr.us-east-2.amazonaws.com/automation-platform-config-lcm-flowai, tag: PENDING-ecr-listing}
+  gateway5: {repository: 497639811223.dkr.ecr.us-east-2.amazonaws.com/automation-gateway5, tag: PENDING-ecr-listing}
+  gateway4: {repository: 497639811223.dkr.ecr.us-east-2.amazonaws.com/automation-gateway, tag: PENDING-ecr-listing}
+  # Public
+  mongodb: {repository: docker.io/library/mongo, tag: "7.0.40"} # Platform 6 fully supports 7.0 (manifest 3.2); Docker Hub 2026-09-07
+  redis: {repository: docker.io/library/redis, tag: "7.4.11"}
+  mcp: {repository: ghcr.io/itential/itential-mcp, tag: v0.14.0} # release 2026-08-13; streamable HTTP transport
+
+vm:
+  name: itential
+  vm_id: 205
+  ip: 10.100.0.65
+  cores: 8
+  memory_mb: 24576
+  disk_gb: 160
+
+stack:
+  profiles: [full, mcp] # platform + mongodb + redis + gateway4 + gateway5 + mcp; ldap/openbao off (Phase 7/9)
+  gateway5_cluster_id: lab
+  mongo_cache_gb: 4
+
+workflows:
+  device_count: wf-netbox-device-count-v1
+  show_version: wf-show-version-v1
+  branch_vlan: wf-branch-vlan-v1
