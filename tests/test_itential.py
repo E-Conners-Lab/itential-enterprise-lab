@@ -253,3 +253,14 @@ def test_makefile_wires_the_phase() -> None:
     mk = (ROOT / "Makefile").read_text()
     assert re.search(r"^phase-itential:.*##", mk, re.M), "Makefile phase-itential target still the stub"
     assert "test: " in mk
+
+
+def test_play_registers_inventory_as_configuration_manager_provider(versions: dict) -> None:
+    """ADR 0039: Configuration Manager, Golden Config, compliance and MCP run_command consume
+    devices through Device Broker; the built-in Inventory Manager adapter is the provider on a
+    Gateway 5-only stack (no Gateway 4)."""
+    text = (ROOT / "ansible" / "playbooks" / "itential.yml").read_text()
+    assert "InventoryBroker" in text and 'type: InventoryManager' in text
+    assert f'inventories: ["{{{{ stack.inventory }}}}"]' in text
+    assert "prepend_inventory_name: false" in text
+    assert "configuration_manager/devices" in text, "the play must prove the devices reach Configuration Manager"

@@ -831,6 +831,63 @@
       when: have != want
       no_log: true
 
+    # --- Device Broker (ADR 0039): the built-in Inventory Manager adapter publishes the inventory's
+    # nodes to Device Broker, which is where Configuration Manager (backups, Golden Config,
+    # compliance), command templates and the MCP device tools read devices. Gateway 5 only.
+    # The instance cannot be called "InventoryManager" (that is the application's own name).
+    - name: Device Broker adapter exists?
+      ansible.builtin.uri:
+        url: "{{ platform_local }}/adapters/InventoryBroker"
+        headers: {Cookie: "{{ login.cookies_string }}"}
+        status_code: [200, 404, 500]
+      register: broker_adapter
+
+    - name: Device Broker adapter (built-in Inventory Manager adapter)
+      ansible.builtin.uri:
+        url: "{{ platform_local }}/adapters"
+        method: POST
+        headers: {Cookie: "{{ login.cookies_string }}"}
+        body_format: json
+        body: {properties: {name: InventoryBroker, type: Adapter, properties: {id: InventoryBroker, type: InventoryManager}}}
+        status_code: [200, 201]
+      when: broker_adapter.status != 200
+
+    - name: Device Broker adapter exposes the inventory under plain node names
+      ansible.builtin.uri:
+        url: "{{ platform_local }}/adapters/InventoryBroker/properties"
+        method: PUT
+        headers: {Cookie: "{{ login.cookies_string }}"}
+        body_format: json
+        body:
+          properties:
+            inventories: ["{{ stack.inventory }}"]
+            prepend_inventory_name: false
+        status_code: 200
+      when: broker_adapter.status != 200 or (broker_adapter.json.data.properties.properties.inventories | default([])) != [stack.inventory]
+      changed_when: true
+
+    - name: Device Broker adapter active
+      ansible.builtin.uri:
+        url: "{{ platform_local }}/adapters/InventoryBroker"
+        headers: {Cookie: "{{ login.cookies_string }}"}
+      register: broker_state
+      until: broker_state.json.metadata.isActive | default(false)
+      retries: 20
+      delay: 3
+
+    - name: Configuration Manager sees every inventory node through the broker
+      ansible.builtin.uri:
+        url: "{{ platform_local }}/configuration_manager/devices"
+        method: POST
+        headers: {Cookie: "{{ login.cookies_string }}"}
+        body_format: json
+        body: {options: {start: 0, limit: 200}}
+      register: cm_devices
+      until: (cm_devices.json.total | default(0)) | int == inv_nodes | length
+      retries: 10
+      delay: 3
+      no_log: true
+
     - name: Gateway 5 answers show version on one switch through the inventory (S4.3 building block)
       ansible.builtin.uri:
         url: "{{ platform_local }}/gateway_manager/v1/services/run"
