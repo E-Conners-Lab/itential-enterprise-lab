@@ -189,7 +189,7 @@ nodes:
       top: 540
       qemu_version: "5.2.0"
       qemu_arch: x86_64
-      qemu_nic: virtio-net-pci
+      qemu_nic: e1000  # inbox Windows driver; the image sends nothing on virtio-net
       qemu_options: "-machine type=q35,accel=kvm -cpu host,+pcid,+kvm_pv_unhalt,+kvm_pv_eoi,hv_spinlocks=0x1fff,hv_vapic,hv_time,hv_reset,hv_vpindex,hv_runtime,hv_relaxed,hv_synic,hv_stimer -drive if=pflash,format=raw,readonly=on,file=OVMF_CODE_4M.fd -drive if=pflash,format=raw,file=OVMF_VARS_4M.fd -vga std -usb -device usb-tablet"
   br1-host01:
     site: br1
@@ -250,7 +250,7 @@ nodes:
       top: 540
       qemu_version: "5.2.0"
       qemu_arch: x86_64
-      qemu_nic: virtio-net-pci
+      qemu_nic: e1000  # inbox Windows driver; the image sends nothing on virtio-net
       qemu_options: "-machine type=q35,accel=kvm -cpu host,+pcid,+kvm_pv_unhalt,+kvm_pv_eoi,hv_spinlocks=0x1fff,hv_vapic,hv_time,hv_reset,hv_vpindex,hv_runtime,hv_relaxed,hv_synic,hv_stimer -drive if=pflash,format=raw,readonly=on,file=OVMF_CODE_4M.fd -drive if=pflash,format=raw,file=OVMF_VARS_4M.fd -vga std -usb -device usb-tablet"
   br2-host01:
     site: br2

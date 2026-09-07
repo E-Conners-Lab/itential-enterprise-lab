@@ -129,7 +129,8 @@ below was read on the cited page that day).
   TPM 2.0 (requirements genuinely met). On EVE-NG the node runs QEMU 5.2.0 with
   q35 and OVMF as pflash; the firmware files ship in the image folder because
   QEMU runs chrooted in the node directory, and the disk is `hda.qcow2` (SATA)
-  because Windows was installed on AHCI and has no boot-start virtio driver.
+  because Windows was installed on AHCI and has no boot-start virtio driver;
+  the NIC is `e1000` (inbox driver) because the image sent nothing on virtio-net.
   EVE-NG's node PUT does not persist `qemu_options`; nodes are re-created
   instead.
 - Linux endpoints: the golden image's netplan matches `en*` for DHCP and
