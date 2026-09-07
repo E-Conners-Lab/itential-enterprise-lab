@@ -1,20 +1,33 @@
 ---
 # Phase 4: the Linux endpoints in EVE-NG (dc1-srv01, br*-host01) have no startup-config mechanism.
-# eth0 is management (DHCP reservation from oob-gw); this play brings up eth1 (data VLAN) by DHCP
-# from the site gateway and installs the tools the verify script uses. Inventory: NetBox devices
-# with role server/client and platform ubuntu-24.04 (tag phase-4).
+# ens3 (EVE-NG interface 0) is management with a DHCP reservation from oob-gw; this play sets the
+# hostname and brings up ens4 (interface 1, the site data VLAN): DHCP from the site gateway at the
+# branches, static in the DC (no relay in the fabric). Management keeps the default route; the
+# in-band lab prefixes are routed via the site gateway. MTU 1400 keeps VXLAN + IPsec below the
+# 1500-byte fabric/WAN links (vEOS-lab runs at 1500, AVD guidance). Inventory: NetBox devices with
+# role server/client (active = built).
 - name: Configure EVE-NG Linux endpoints
   hosts: server:client
   become: true
   gather_facts: false
   vars:
     ansible_user: automation
+    site: "{{ inventory_hostname.split('-')[0] }}"
+    data:
+      dc1: {gateway: 10.101.10.1, static: 10.101.10.10/24}
+      br1: {gateway: 10.102.17.1}
+      br2: {gateway: 10.102.33.1}
+    lab_prefixes: [10.101.0.0/16, 10.102.0.0/16, 10.103.0.0/16]
   pre_tasks:
     - name: Only Ubuntu endpoints (Windows clients are handled by their golden image)
       ansible.builtin.meta: end_host
       when: platforms is defined and 'ubuntu-24-04' not in (platforms | map(attribute='slug') | list)
   tasks:
-    - name: Data interface eth1 by DHCP from the site gateway (no default route; management keeps it)
+    - name: Hostname from NetBox
+      ansible.builtin.hostname:
+        name: "{{ inventory_hostname }}"
+
+    - name: Data interface ens4
       ansible.builtin.copy:
         dest: /etc/netplan/60-data.yaml
         mode: "0600"
@@ -22,11 +35,18 @@
           network:
             version: 2
             ethernets:
-              eth1:
+              ens4:
+                mtu: 1400
+          {% if data[site].static is defined %}
+                addresses: [{{ data[site].static }}]
+          {% else %}
                 dhcp4: true
-                dhcp4-overrides:
-                  use-routes: true
-                  route-metric: 50
+                dhcp4-overrides: {use-routes: false, use-dns: false}
+          {% endif %}
+                routes:
+          {% for p in lab_prefixes %}
+                  - {to: {{ p }}, via: {{ data[site].gateway }}}
+          {% endfor %}
       register: np
 
     - name: Apply netplan

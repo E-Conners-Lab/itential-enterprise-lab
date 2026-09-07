@@ -1,12 +1,22 @@
-{#- EOS baseline (ADR 0034): management VRF, eAPI, automation user, and the fabric/branch design.
-    spines: eBGP underlay (AS 65101) + iBGP EVPN route-server role
+{#- EOS baseline (ADR 0034, amended after vendor research 2026-09-06 to the AVD L3LS pattern):
+    management VRF, eAPI, automation user, and the fabric/branch design.
+    spines: eBGP underlay (AS 65101) + eBGP EVPN route servers (next-hop-unchanged)
     leaves: MLAG pair (AS 65102), eBGP underlay to both spines, EVPN overlay, anycast VTEP,
-            VLAN 10 (servers) + VLAN 100 (firewall transit) with anycast gateways
-    access / branch switches: plain L2 -#}
+            tenant VRF PROD (L3VNI 50001): VLAN 10 servers (anycast gateway), VLAN 100 transit with
+            per-leaf addresses for eBGP to the firewalls - or, while lab.firewalls is false, a routed
+            bypass port (Eth7) with eBGP to a DC WAN edge.
+    access / branch switches: plain L2 (the router or firewall is the branch gateway) -#}
 {%- set role = node.role %}
 {%- set lo = {'dc1-spine01': '10.101.254.1', 'dc1-spine02': '10.101.254.2', 'dc1-leaf01': '10.101.254.11', 'dc1-leaf02': '10.101.254.12'}.get(name) %}
 {%- set vtep = '10.101.253.1' %}
 {%- set asn = routing.asn.dc1_spine if role == 'spine' else routing.asn.dc1_leaf %}
+{%- set transit_ip = {'dc1-leaf01': '10.101.1.252', 'dc1-leaf02': '10.101.1.253'}.get(name) %}
+{#- ports facing a deferred firewall are left unconfigured -#}
+{%- set ns = namespace(links=[], bypass=[]) %}
+{%- for lk in links %}
+{%- set other = (lk.b if lk.a.startswith(name + ':') else lk.a).split(':')[0] %}
+{%- if firewalls or nodes[other].role != 'firewall' %}{% set ns.links = ns.links + [lk] %}{% endif %}
+{%- endfor %}
 hostname {{ name }}
 dns domain {{ lab.domain }}
 ip name-server vrf MGMT {{ lab.dns | join(' ') }}
@@ -56,6 +66,10 @@ vlan 10
 vlan 100
    name fw-transit
 !
+vrf instance PROD
+!
+ip routing vrf PROD
+!
 vlan 4094
    name mlag-peer
    trunk group MLAG
@@ -82,33 +96,51 @@ mlag configuration
    local-interface Vlan4094
    peer-address {{ '10.101.252.2' if name == 'dc1-leaf01' else '10.101.252.1' }}
    peer-link Port-Channel1
+   reload-delay mlag 300
+   reload-delay non-mlag 330
+   dual-primary detection delay 5 action errdisable all-interfaces
 !
 ip virtual-router mac-address 00:1c:73:00:00:99
 !
 interface Vlan10
    description servers
+   vrf PROD
    ip address virtual 10.101.10.1/24
 !
 interface Vlan100
-   description firewall transit
-   ip address virtual 10.101.1.254/24
+   description transit to the firewalls (eBGP per leaf)
+   vrf PROD
+   ip address {{ transit_ip }}/24
+   ip virtual-router address 10.101.1.254
 !
 interface Vxlan1
    vxlan source-interface Loopback1
    vxlan udp-port 4789
    vxlan vlan 10 vni 10010
    vxlan vlan 100 vni 10100
+   vxlan vrf PROD vni 50001
 !
 {%- endif %}
-{%- for lk in links %}
+{%- for lk in ns.links %}
 {%- set mine = lk.a if lk.a.startswith(name + ':') else lk.b %}
 {%- set peer = lk.b if mine == lk.a else lk.a %}
 {%- set ifname = mine.split(':')[1] | replace('Eth', 'Ethernet') %}
 {%- set pname = peer.split(':')[0] %}
 interface {{ ifname }}
-   description to {{ peer }}
+   description to {{ peer }}{{ ' (firewall bypass)' if lk.get('bypass') else '' }}
    no shutdown
-{%- if lk.prefix is defined %}
+{%- if lk.get('bypass') and lk.prefix is defined %}
+{%- set base = lk.prefix.split('/')[0].split('.') %}
+{%- set my_ip = base[0] ~ '.' ~ base[1] ~ '.' ~ base[2] ~ '.' ~ ((base[3] | int) + (1 if mine == lk.a else 2)) %}
+{%- set nbr_ip = base[0] ~ '.' ~ base[1] ~ '.' ~ base[2] ~ '.' ~ ((base[3] | int) + (2 if mine == lk.a else 1)) %}
+{%- set ns.bypass = ns.bypass + [{'ip': nbr_ip, 'peer': pname}] %}
+   no switchport
+   vrf PROD
+   ip address {{ my_ip }}/30
+{%- elif lk.get('bypass') and lk.vlan is defined %}
+   switchport mode access
+   switchport access vlan {{ lk.vlan }}
+{%- elif lk.prefix is defined %}
 {%- set base = lk.prefix.split('/')[0].split('.') %}
 {%- set my_last = (base[3] | int) + (0 if mine == lk.a else 1) %}
    no switchport
@@ -157,12 +189,13 @@ router bgp {{ asn }}
    neighbor LEAVES maximum-routes 12000
    neighbor EVPN peer group
    neighbor EVPN remote-as {{ routing.asn.dc1_leaf }}
+   neighbor EVPN next-hop-unchanged
    neighbor EVPN update-source Loopback0
    neighbor EVPN ebgp-multihop 3
    neighbor EVPN send-community extended
    neighbor 10.101.254.11 peer group EVPN
    neighbor 10.101.254.12 peer group EVPN
-{%- for lk in links if lk.prefix is defined %}
+{%- for lk in ns.links if lk.prefix is defined and not lk.get('bypass') %}
 {%- set base = lk.prefix.split('/')[0].split('.') %}
    neighbor {{ base[0] }}.{{ base[1] }}.{{ base[2] }}.{{ (base[3] | int) + 1 }} peer group LEAVES
 {%- endfor %}
@@ -184,7 +217,7 @@ router bgp {{ asn }}
    neighbor EVPN send-community extended
    neighbor 10.101.254.1 peer group EVPN
    neighbor 10.101.254.2 peer group EVPN
-{%- for lk in links if lk.prefix is defined %}
+{%- for lk in ns.links if lk.prefix is defined and not lk.get('bypass') %}
 {%- set base = lk.prefix.split('/')[0].split('.') %}
    neighbor {{ base[0] }}.{{ base[1] }}.{{ base[2] }}.{{ base[3] | int }} peer group SPINES
 {%- endfor %}
@@ -202,6 +235,21 @@ router bgp {{ asn }}
    address-family ipv4
       neighbor SPINES activate
       no neighbor EVPN activate
+   vrf PROD
+      rd {{ lo }}:50001
+      route-target import evpn 50001:50001
+      route-target export evpn 50001:50001
+      router-id {{ lo }}
+{%- for b in ns.bypass %}
+      neighbor {{ b.ip }} remote-as {{ routing.asn.dc1_edge }}
+      neighbor {{ b.ip }} description {{ b.peer }} (firewall bypass)
+      neighbor {{ b.ip }} bfd
+{%- endfor %}
+{%- if firewalls %}
+      neighbor 10.101.1.1 remote-as {{ routing.asn.dc1_fw }}
+      neighbor 10.101.1.1 description firewall pair (active) on the transit VLAN
+{%- endif %}
+      redistribute connected
 {%- endif %}
 !
 ip prefix-list PL-LOOPBACKS

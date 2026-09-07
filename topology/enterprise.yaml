@@ -23,7 +23,10 @@ sites:
   br2: {name: Branch 2, description: "Branch: WAN router, firewall, switch, clients"}
 
 routing:
-  asn: {isp: 65000, dc1_edge: 65100, dc1_spine: 65101, dc1_leaf: 65102, br1: 65201, br2: 65202}
+  asn: {isp: 65000, dc1_edge: 65100, dc1_spine: 65101, dc1_leaf: 65102, dc1_fw: 65103, br1: 65201, br2: 65202}
+  # WAN tunnels: gre = GRE-over-IPsec (IKEv2, tunnel protection; carries multicast/IPv6 later),
+  # ipsec = FlexVPN static VTI (tunnel mode ipsec ipv4). Same IKEv2 policy, ciphers and BGP either way.
+  wan_tunnel_mode: gre
 
 # image = EVE-NG folder under /opt/unetlab/addons/qemu (manifest keys: c8000v, veos, pa-vm, ubuntu, win11)
 nodes:
@@ -245,11 +248,11 @@ links:
   - {a: "isp-core01:Gi3", b: "dc1-wan02:Gi2", prefix: 10.103.0.4/30}
   - {a: "isp-core01:Gi4", b: "br1-wan01:Gi2", prefix: 10.103.0.8/30}
   - {a: "isp-core01:Gi5", b: "br2-wan01:Gi2", prefix: 10.103.0.12/30}
-  # DC edge routers to both firewalls (untrust 10.101.2.0/24 as one L2 domain via the firewalls' HA)
-  - {a: "dc1-wan01:Gi3", b: "dc1-fw01:eth1/1"}
-  - {a: "dc1-wan01:Gi4", b: "dc1-fw02:eth1/1"}
-  - {a: "dc1-wan02:Gi3", b: "dc1-fw01:eth1/2"}
-  - {a: "dc1-wan02:Gi4", b: "dc1-fw02:eth1/2"}
+  # DC edge routers to both firewalls: routed /30s from 10.101.2.0/24, eBGP with GR (ADR 0034 amendment)
+  - {a: "dc1-wan01:Gi3", b: "dc1-fw01:eth1/1", prefix: 10.101.2.0/30}
+  - {a: "dc1-wan01:Gi4", b: "dc1-fw02:eth1/1", prefix: 10.101.2.4/30}
+  - {a: "dc1-wan02:Gi3", b: "dc1-fw01:eth1/2", prefix: 10.101.2.8/30}
+  - {a: "dc1-wan02:Gi4", b: "dc1-fw02:eth1/2", prefix: 10.101.2.12/30}
   - {a: "dc1-wan01:Gi5", b: "dc1-wan02:Gi5", prefix: 10.101.2.248/30}
   # firewall HA2
   - {a: "dc1-fw01:eth1/3", b: "dc1-fw02:eth1/3"}
@@ -275,8 +278,10 @@ links:
   - {a: "br2-fw01:eth1/2", b: "br2-sw01:Eth1"}
   - {a: "br2-pc01:eth1", b: "br2-sw01:Eth2"}
   - {a: "br2-host01:eth1", b: "br2-sw01:Eth3"}
-  # ---- firewall bypass (only while lab.firewalls is false): spare ports, routed /30s ----
+  # ---- firewall bypass (only while lab.firewalls is false) ----
+  # DC: routed /30 + eBGP from each WAN edge into the leaf tenant VRF, the same pattern the
+  # firewalls use later. Branch: the router's spare port is the VLAN 10 gateway until the firewall is.
   - {a: "dc1-wan01:Gi6", b: "dc1-leaf01:Eth7", prefix: 10.101.3.0/30, bypass: true}
   - {a: "dc1-wan02:Gi6", b: "dc1-leaf02:Eth7", prefix: 10.101.3.4/30, bypass: true}
-  - {a: "br1-wan01:Gi4", b: "br1-sw01:Eth4", prefix: 10.102.16.4/30, bypass: true}
-  - {a: "br2-wan01:Gi4", b: "br2-sw01:Eth4", prefix: 10.102.32.4/30, bypass: true}
+  - {a: "br1-wan01:Gi4", b: "br1-sw01:Eth4", vlan: 10, bypass: true}
+  - {a: "br2-wan01:Gi4", b: "br2-sw01:Eth4", vlan: 10, bypass: true}

@@ -14,6 +14,9 @@ group_by:
   - tags
   - cluster
   - platforms
+  - device_roles
 ansible_host_dns_name: false
 compose:
-  ansible_user: "'ubuntu'"
+  # Proxmox VMs (cloud-init) log in as ubuntu; EVE-NG endpoints carry the automation user baked
+  # into the golden image; network devices use AUTOMATION_PASSWORD via verify/devcmd.py.
+  ansible_user: "'automation' if device_roles is defined else 'ubuntu'"

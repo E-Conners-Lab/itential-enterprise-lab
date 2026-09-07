@@ -296,6 +296,28 @@ def start(eve: Eve, topo: dict, waves: bool) -> None:
             time.sleep(300)
 
 
+def push_configs(eve: Eve, topo: dict, only: list[str] | None) -> None:
+    """Re-render every network node's startup config into the config set, wipe the node so the
+    new config is what boots, and start it. Stops running nodes first (hard stop; the running
+    config is disposable, the template is the source of truth). Endpoints are untouched."""
+    have = eve.nodes()
+    cfsid = eve.config_set()
+    targets = [n for n, v in topo["nodes"].items() if v["platform"] in ("c8000v", "veos", "pa-vm") and n in have and (not only or n in only)]
+    for name in targets:
+        node = have[name]
+        cfg = render_config(topo["nodes"][name]["platform"], name, topo["nodes"][name], topo)
+        if node.get("status") == 2:
+            eve.stop(node["id"])
+        eve.upload_config(node["id"], cfg, cfsid)
+        eve.enable_config(node["id"], cfsid)
+        eve._req("GET", f"/labs{eve.lab}/nodes/{node['id']}/wipe")
+        print(f"pushed {name}: {len(cfg)} bytes, wiped")
+    time.sleep(3)
+    for name in targets:
+        eve.start(have[name]["id"])
+        print(f"start {name}")
+
+
 def export_nodes(eve: Eve, topo: dict) -> Path:
     """Write topology/generated/eve-nodes.yaml: EVE-NG node ids and management MACs
     (EVE-NG derives MAC 50:00:00:<node id>:00:<interface index>). Consumed by the oob-gw
@@ -313,7 +335,8 @@ def export_nodes(eve: Eve, topo: dict) -> Path:
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("action", choices=["plan", "apply", "start", "stop", "status", "export"])
+    ap.add_argument("action", choices=["plan", "apply", "start", "stop", "status", "export", "push-configs"])
+    ap.add_argument("--only", nargs="*", help="push-configs: limit to these node names")
     ap.add_argument("--allow-missing", action="store_true", help="apply: skip nodes whose image is absent (loud)")
     ap.add_argument("--waves", action="store_true", help="start: firewalls last, in two waves 300 s apart")
     a = ap.parse_args()
@@ -330,6 +353,8 @@ def main() -> None:
         for name, n in eve.nodes().items():
             eve.stop(n["id"])
             print(f"stop {name}")
+    elif a.action == "push-configs":
+        push_configs(eve, topo, a.only)
     elif a.action == "export":
         print(export_nodes(eve, topo))
     elif a.action == "status":

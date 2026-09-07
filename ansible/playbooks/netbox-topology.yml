@@ -25,8 +25,9 @@
       - {prefix: 10.101.254.0/24, site: dc1, role: dc-inband, description: "fabric loopbacks"}
       - {prefix: 10.101.253.0/24, site: dc1, role: dc-inband, description: "VTEP loopbacks"}
       - {prefix: 10.101.252.0/30, site: dc1, role: dc-inband, description: "MLAG peer link"}
-      - {prefix: 10.101.2.0/24, site: dc1, role: dc-inband, description: "firewall untrust / WAN edge"}
-      - {prefix: 10.101.1.0/24, site: dc1, role: dc-inband, description: "firewall trust VLAN 100", vlan: 100}
+      - {prefix: 10.101.2.0/24, site: dc1, role: dc-inband, description: "WAN edge to firewall routed /30s"}
+      - {prefix: 10.101.3.0/24, site: dc1, role: dc-inband, description: "firewall bypass /30s (lab.firewalls false)"}
+      - {prefix: 10.101.1.0/24, site: dc1, role: dc-inband, description: "VLAN 100 transit, VRF PROD", vlan: 100}
       - {prefix: 10.101.10.0/24, site: dc1, role: dc-inband, description: "server VLAN 10", vlan: 10}
       - {prefix: 10.102.16.0/20, site: br1, role: branch-inband, description: "branch 1"}
       - {prefix: 10.102.17.0/24, site: br1, role: branch-inband, description: "branch 1 users VLAN 10", vlan: 10}
@@ -153,7 +154,10 @@
         validate_certs: false
         data:
           prefix: "{{ item.prefix }}"
-          site: "{{ item.site }}"
+          # NetBox 4.2+ prefixes are scoped (site is one scope type); the legacy `site` key is
+          # accepted on create but not on update, which broke the second run.
+          scope_type: dcim.site
+          scope: "{{ item.site }}"
           status: reserved
           prefix_role: "{{ item.role }}"
           description: "{{ item.description }}"
@@ -202,6 +206,26 @@
         netbox_token: "{{ nb_token }}"
         validate_certs: false
         data: {name: "{{ item.key }}", primary_ip4: "{{ item.value.mgmt_ip }}/24"}
+      loop: "{{ nodes | dict2items }}"
+      loop_control:
+        label: "{{ item.key }}"
+
+    # Lifecycle: a device is "planned" until the EVE-NG builder has exported it
+    # (topology/generated/eve-nodes.yaml lists what actually exists on EVE-NG).
+    - name: Read the builder export (nodes that exist on EVE-NG)
+      ansible.builtin.set_fact:
+        built_nodes: >-
+          {{ (lookup('ansible.builtin.file', playbook_dir ~ '/../../topology/generated/eve-nodes.yaml', errors='ignore') or '{}')
+             | from_yaml }}
+
+    - name: Devices that exist on EVE-NG are active (others stay planned)
+      netbox.netbox.netbox_device:
+        netbox_url: "{{ nb_url }}"
+        netbox_token: "{{ nb_token }}"
+        validate_certs: false
+        data:
+          name: "{{ item.key }}"
+          status: "{{ 'active' if item.key in (built_nodes.nodes | default({})) else 'planned' }}"
       loop: "{{ nodes | dict2items }}"
       loop_control:
         label: "{{ item.key }}"

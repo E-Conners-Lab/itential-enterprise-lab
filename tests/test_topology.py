@@ -99,9 +99,9 @@ def test_link_and_node_counts_match_adr(topo: dict) -> None:
     bypass = [lk for lk in topo["links"] if lk.get("bypass")]
     assert len(design) == 29
     assert len(bypass) == 4
-    # a bypass link must not touch a firewall port and must carry a prefix
+    # a bypass link must not touch a firewall port and must be routed (prefix) or a VLAN access port
     for lk in bypass:
-        assert lk.get("prefix"), lk
+        assert lk.get("prefix") or lk.get("vlan"), lk
         for end in (lk["a"], lk["b"]):
             assert topo["nodes"][end.split(":")[0]]["role"] != "firewall", lk
 
