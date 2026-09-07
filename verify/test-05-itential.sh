@@ -80,22 +80,23 @@ check "S4.2 wf-netbox-device-count-v1 through the NetBox adapter returns NetBox'
 
 # --- S4.3 show version through IAG on one node per vendor equals the manifest and the device itself ---
 c3() {
-  local errs="" dev="${PY} verify/devcmd.py" id out direct
+  local errs="" id out direct dev_name dev_ip want cmd
   # (device, expected version string from ADR 0032/0033, direct command)
   for row in "br1-wan01:10.100.0.146:17.13.01a:show version" "br1-sw01:10.100.0.165:4.33.1.1F:show version"; do
-    IFS=: read -r name ip want cmd <<<"$row"
-    id=$(run_job wf-show-version-v1 "{\"device\":\"${name}\"}") || { errs+="${name}: ${id}\n"; continue; }
+    IFS=: read -r dev_name dev_ip want cmd <<<"$row"
+    id=$(run_job wf-show-version-v1 "{\"device\":\"${dev_name}\"}") || { errs+="${dev_name}: ${id}\n"; continue; }
     out=$(job_vars "${id##*$'\n'}" | ${PY} -c 'import sys,json;r=(json.load(sys.stdin).get("show_version") or {}).get("result",{}).get("results",[{}]);print(r[0].get("output","") if r and r[0].get("success") else "")')
-    echo "$out" | grep -q "$want" || { errs+="${name}: IAG output lacks ${want}\n"; continue; }
-    direct=$($dev "$ip" "$cmd" 2>/dev/null) || { errs+="${name}: direct ssh failed\n"; continue; }
-    echo "$direct" | grep -q "$want" || errs+="${name}: device itself lacks ${want}\n"
+    echo "$out" | grep -q "$want" || { errs+="${dev_name}: IAG output lacks ${want}\n"; continue; }
+    direct=$(${PY} verify/devcmd.py "$dev_ip" "$cmd" 2>/dev/null) || { errs+="${dev_name}: direct ssh failed\n"; continue; }
+    echo "$direct" | grep -q "$want" || errs+="${dev_name}: device itself lacks ${want}\n"
+    echo "${dev_name}: ${want} via Gateway 5 and over direct SSH"
   done
   [ -z "$errs" ] || { printf "%b" "$errs"; return 1; }
 }
 check "S4.3 wf-show-version-v1 via IAG: br1-wan01 = 17.13.01a, br1-sw01 = 4.33.1.1F, cross-checked over direct SSH" c3
 
 # --- S4.4 wf-branch-vlan-v1: reserve in NetBox + configure br1-sw01, approval task, idempotent, rollback ---
-VLAN_NAME="verify-${ts,,}"
+VLAN_NAME="verify-$(echo "$ts" | tr "A-Z" "a-z")"
 approve_pending_task() {
   # the workflow parks on the ViewData task (4a); finishing it with success is the approval
   local job=$1 decision=${2:-success} task
@@ -149,7 +150,7 @@ c6() {
   up=$($SSH "ubuntu@${IT_IP}" "cut -d. -f1 /proc/uptime") || { echo "ssh to ${IT_IP} failed"; return 1; }
   read -r total used <<<"$($SSH "ubuntu@${IT_IP}" "free -m | awk '/^Mem:/{print \$2, \$3}'")"
   pct=$((used * 100 / total))
-  cache=$($SSH "ubuntu@${IT_IP}" "sudo docker exec mongodb mongosh --quiet --eval 'JSON.stringify(db.serverStatus().wiredTiger.cache)' 2>/dev/null" | ${PY} -c 'import sys,json;c=json.load(sys.stdin);print(round(int(c["bytes currently in the cache"])/2**20), "MB in cache of", round(int(c["maximum bytes configured"])/2**20), "MB max")' 2>/dev/null || echo "wiredTiger cache: n/a")
+  cache=$($SSH "ubuntu@${IT_IP}" "docker exec mongodb mongosh --quiet --eval 'const c=db.serverStatus().wiredTiger.cache; print(Math.round(c[\"bytes currently in the cache\"]/1048576)+\" MB in cache of \"+Math.round(c[\"maximum bytes configured\"]/1048576)+\" MB max\")' 2>/dev/null" || echo "cache: n/a")
   echo "uptime ${up}s; RAM used ${used}/${total} MB (${pct}%); wiredTiger ${cache}"
   [ "$pct" -lt 80 ] || { echo "memory above 80%: apply the budget levers by PR"; return 1; }
   [ "$up" -ge 86400 ] || { echo "MEASURE-EARLY: uptime under 24 h, re-run after $(( (86400 - up) / 3600 )) h"; return 2; }
