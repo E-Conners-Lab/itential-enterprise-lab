@@ -78,9 +78,17 @@ SNOW_TEMPLATE = "b1c8d15147810200e90d87e8dee490f7"  # PDI standard change templa
 SNOW_GROUP = "287ebd7da9fe198100f92cc8d1d2154e"     # PDI assignment group "Network" (the change model requires one)
 
 
-def snow(name: str, summary: str, incoming: dict, x: int, y: int = 0, outgoing: dict | None = None) -> dict:
-    return task(name, SNOW_EXPORT, summary, {"adapter_id": SNOW_INSTANCE_ID, **incoming}, outgoing or {"result": None},
-                location="Adapter", location_type=SNOW_EXPORT, x=x, y=y)
+def snow_call(summary: str, method: str, path_ref: str, body, x: int, y: int = 0, query: dict | None = None) -> dict:
+    """adapter-servicenow genericAdapterRequest: the adapter's own change methods return normalised or
+    empty documents, the generic request returns ServiceNow's raw result (sys_id.value,
+    state.display_value, ...) so the workflow can read ids and states back."""
+    return task("genericAdapterRequest", SNOW_EXPORT, summary,
+                {"adapter_id": SNOW_INSTANCE_ID, "uriPath": path_ref, "restMethod": method, "queryData": query or {}, "requestBody": body, "addlHeaders": {}},
+                {"result": None}, location="Adapter", location_type=SNOW_EXPORT, x=x, y=y)
+
+
+def snow_state(summary: str, state: str, x: int, y: int, extra: dict | None = None) -> dict:
+    return snow_call(summary, "PATCH", "$var.job.change_path", {"state": state, **(extra or {})}, x=x, y=y)
 
 
 NETBOX_EXPORT = "Netbox"   # the adapter model's pronghorn export (task app / locationType)
@@ -203,15 +211,15 @@ def branch_vlan() -> dict:
         # reservation, and Review -> Closed after it. Every state ServiceNow reports is collected
         # in the job variable change_states (sys_audit is not readable by the integration user).
         "d0": evaluate("change request wanted?", "job", "change_request", "", "==", True, x=-600, y=-800),
-        "d1": snow("changeStandardTemplateById", "create the standard change", {"standardChangeTemplateId": SNOW_TEMPLATE}, x=-300, y=-800),
+        "d1": snow_call("create the standard change (PDI VLAN template, Network group)", "POST", "/sn_chg_rest/change/standard/" + SNOW_TEMPLATE,
+                        {"short_description": "wf-branch-vlan-v1: branch VLAN change (itential-enterprise-lab)", "assignment_group": SNOW_GROUP}, x=-300, y=-800),
         "d2": jq("change sys_id", "$var.d1.result", "response.result.sys_id.value", x=0, y=-800, to_job="change_sys_id"),
         "d3": jq("change number", "$var.d1.result", "response.result.number.value", x=0, y=-1000, to_job="change_number"),
-        "d4": snow("updateStandardChangeRequestById", "assignment group + description",
-                   {"sysId": "$var.d2.return_data", "body": {"assignment_group": SNOW_GROUP, "short_description": "wf-branch-vlan-v1: branch VLAN change (itential-enterprise-lab)"}},
-                   x=300, y=-800),
-        "d5": snow("updateStandardChangeRequestById", "state: Scheduled", {"sysId": "$var.d2.return_data", "body": {"state": "-2"}}, x=600, y=-800),
+        "d4": replace("change API path", "/sn_chg_rest/change/standard/__S__", "__S__", "$var.d2.return_data", x=300, y=-800),
+        "d9": replace("change table path", "/now/table/change_request/__S__", "__S__", "$var.d2.return_data", x=300, y=-1000),
+        "d5": snow_state("state: Scheduled", "-2", x=600, y=-800),
         "d6": jq("state after scheduled", "$var.d5.result", "response.result.state.display_value", x=900, y=-800, to_job="change_state_scheduled"),
-        "d7": snow("updateStandardChangeRequestById", "state: Implement", {"sysId": "$var.d2.return_data", "body": {"state": "-1"}}, x=1200, y=-800),
+        "d7": snow_state("state: Implement", "-1", x=1200, y=-800),
         "d8": jq("state after implement", "$var.d7.result", "response.result.state.display_value", x=1500, y=-800, to_job="change_state_implement"),
         # names and selectors: the switch is <branch>-sw01 unless switch_override names another node
         "0a": evaluate("override given?", "job", "switch_override", "", "!=", "", x=-300, y=-200),
@@ -245,7 +253,7 @@ def branch_vlan() -> dict:
         "e3": replace("work note text (id)", "$var.e1.replacedString", "__I__", "$var.e2.numToString", x=5000, y=-800),
         "e4": replace("work note body", '{"work_notes": "__N__"}', "__N__", "$var.e3.replacedString", x=5150, y=-800),
         "e5": parse("work note body object", "$var.e4.replacedString", x=5300, y=-800),
-        "e6": snow("updateChangeRequestById", "work note: the NetBox reservation", {"sysId": "$var.job.change_sys_id", "body": "$var.e5.textObject"}, x=5450, y=-800),
+        "e6": snow_call("work note: the NetBox reservation", "PATCH", "$var.job.change_table_path", "$var.e5.textObject", x=5450, y=-800, query={"sysparm_fields": "number,state"}),
         # approval
         "4b": replace("summary line", "Reserved VLAN __V__ in NetBox; apply it to the branch switch?", "__V__", "$var.b2.numToString", x=4800, y=-200),
         "4a": view("approval", "Approve VLAN change", "$var.4b.replacedString", "$var.4b.replacedString", "Approve", "Reject", x=5100, y=-200),
@@ -258,11 +266,9 @@ def branch_vlan() -> dict:
         "5d": evaluate("config applied?", "5c", "result", "result.results[0].success", "==", True, x=6300, y=-200),
         "6a": nb("patchIpamVlansId", "NetBox VLAN active", {"id": "$var.a2.return_data", "data": {"status": "active"}}, x=6600, y=-200),
         "f0": evaluate("change request wanted? (close)", "job", "change_request", "", "==", True, x=6750, y=-600),
-        "f1": snow("updateStandardChangeRequestById", "state: Review", {"sysId": "$var.job.change_sys_id", "body": {"state": "0"}}, x=6900, y=-800),
+        "f1": snow_state("state: Review", "0", x=6900, y=-800),
         "f2": jq("state after review", "$var.f1.result", "response.result.state.display_value", x=7050, y=-800, to_job="change_state_review"),
-        "f3": snow("updateStandardChangeRequestById", "state: Closed",
-                   {"sysId": "$var.job.change_sys_id", "body": {"state": "3", "close_code": "successful", "close_notes": "VLAN configured by wf-branch-vlan-v1; NetBox VLAN active"}},
-                   x=7200, y=-800),
+        "f3": snow_state("state: Closed", "3", x=7200, y=-800, extra={"close_code": "successful", "close_notes": "VLAN configured by wf-branch-vlan-v1; NetBox VLAN active"}),
         "f4": jq("state after close", "$var.f3.result", "response.result.state.display_value", x=7350, y=-800, to_job="change_state_closed"),
         "7a": flag("changed = true", "true", "changed", x=6900, y=-200),
         # rollback: remove the reservation; no transition to the end, so the job ends in error
@@ -270,6 +276,8 @@ def branch_vlan() -> dict:
         "8b": flag("rolled_back = true", "true", "rolled_back", x=6600, y=400),
     }
     tasks["1a"]["variables"]["outgoing"] = {"replacedString": "$var.job.switch"}
+    tasks["d4"]["variables"]["outgoing"] = {"replacedString": "$var.job.change_path"}
+    tasks["d9"]["variables"]["outgoing"] = {"replacedString": "$var.job.change_table_path"}
     order = ["1b", "1c", "1d", "2a", "2b"]
     reserve = ["3a", "3b", "a1", "b2", "3e", "3f", "c1", "c2", "c3", "3d", "a2", "e0"]
     apply = ["5a", "5b", "5c", "5d", "6a", "f0"]
@@ -278,7 +286,7 @@ def branch_vlan() -> dict:
         tr[a] = t("", b)
     tr["workflow_start"] = t("", "d0")
     tr["d0"] = {"d1": {"state": "success", "type": "standard"}, "0a": {"state": "failure", "type": "standard"}}
-    for a, b in zip(["d1", "d2", "d3", "d4", "d5", "d6", "d7", "d8"], ["d2", "d3", "d4", "d5", "d6", "d7", "d8", "0a"]):
+    for a, b in zip(["d1", "d2", "d3", "d4", "d9", "d5", "d6", "d7", "d8"], ["d2", "d3", "d4", "d9", "d5", "d6", "d7", "d8", "0a"]):
         tr[a] = t("", b)
     tr["0a"] = {"0b": {"state": "success", "type": "standard"}, "1a": {"state": "failure", "type": "standard"}}
     tr["0b"] = t("", "1b")

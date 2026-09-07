@@ -50,10 +50,10 @@
       }
     },
     "d1": {
-      "name": "changeStandardTemplateById",
-      "canvasName": "changeStandardTemplateById",
-      "summary": "create the standard change",
-      "description": "create the standard change",
+      "name": "genericAdapterRequest",
+      "canvasName": "genericAdapterRequest",
+      "summary": "create the standard change (PDI VLAN template, Network group)",
+      "description": "create the standard change (PDI VLAN template, Network group)",
       "location": "Adapter",
       "locationType": "Servicenow",
       "app": "Servicenow",
@@ -67,7 +67,14 @@
       "variables": {
         "incoming": {
           "adapter_id": "ServiceNow",
-          "standardChangeTemplateId": "b1c8d15147810200e90d87e8dee490f7"
+          "uriPath": "/sn_chg_rest/change/standard/b1c8d15147810200e90d87e8dee490f7",
+          "restMethod": "POST",
+          "queryData": {},
+          "requestBody": {
+            "short_description": "wf-branch-vlan-v1: branch VLAN change (itential-enterprise-lab)",
+            "assignment_group": "287ebd7da9fe198100f92cc8d1d2154e"
+          },
+          "addlHeaders": {}
         },
         "outgoing": {
           "result": null
@@ -135,15 +142,15 @@
       }
     },
     "d4": {
-      "name": "updateStandardChangeRequestById",
-      "canvasName": "updateStandardChangeRequestById",
-      "summary": "assignment group + description",
-      "description": "assignment group + description",
-      "location": "Adapter",
-      "locationType": "Servicenow",
-      "app": "Servicenow",
+      "name": "replace",
+      "canvasName": "replace",
+      "summary": "change API path",
+      "description": "change API path",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
       "type": "automatic",
-      "displayName": "Servicenow",
+      "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
         "x": 300,
@@ -151,15 +158,42 @@
       },
       "variables": {
         "incoming": {
-          "adapter_id": "ServiceNow",
-          "sysId": "$var.d2.return_data",
-          "body": {
-            "assignment_group": "287ebd7da9fe198100f92cc8d1d2154e",
-            "short_description": "wf-branch-vlan-v1: branch VLAN change (itential-enterprise-lab)"
-          }
+          "str": "/sn_chg_rest/change/standard/__S__",
+          "substr": "__S__",
+          "newSubstr": "$var.d2.return_data"
         },
         "outgoing": {
-          "result": null
+          "replacedString": "$var.job.change_path"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "d9": {
+      "name": "replace",
+      "canvasName": "replace",
+      "summary": "change table path",
+      "description": "change table path",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 300,
+        "y": -1000
+      },
+      "variables": {
+        "incoming": {
+          "str": "/now/table/change_request/__S__",
+          "substr": "__S__",
+          "newSubstr": "$var.d2.return_data"
+        },
+        "outgoing": {
+          "replacedString": "$var.job.change_table_path"
         },
         "error": "",
         "decorators": []
@@ -168,8 +202,8 @@
       "scheduled": false
     },
     "d5": {
-      "name": "updateStandardChangeRequestById",
-      "canvasName": "updateStandardChangeRequestById",
+      "name": "genericAdapterRequest",
+      "canvasName": "genericAdapterRequest",
       "summary": "state: Scheduled",
       "description": "state: Scheduled",
       "location": "Adapter",
@@ -185,10 +219,13 @@
       "variables": {
         "incoming": {
           "adapter_id": "ServiceNow",
-          "sysId": "$var.d2.return_data",
-          "body": {
+          "uriPath": "$var.job.change_path",
+          "restMethod": "PATCH",
+          "queryData": {},
+          "requestBody": {
             "state": "-2"
-          }
+          },
+          "addlHeaders": {}
         },
         "outgoing": {
           "result": null
@@ -228,8 +265,8 @@
       }
     },
     "d7": {
-      "name": "updateStandardChangeRequestById",
-      "canvasName": "updateStandardChangeRequestById",
+      "name": "genericAdapterRequest",
+      "canvasName": "genericAdapterRequest",
       "summary": "state: Implement",
       "description": "state: Implement",
       "location": "Adapter",
@@ -245,10 +282,13 @@
       "variables": {
         "incoming": {
           "adapter_id": "ServiceNow",
-          "sysId": "$var.d2.return_data",
-          "body": {
+          "uriPath": "$var.job.change_path",
+          "restMethod": "PATCH",
+          "queryData": {},
+          "requestBody": {
             "state": "-1"
-          }
+          },
+          "addlHeaders": {}
         },
         "outgoing": {
           "result": null
@@ -1108,8 +1148,8 @@
       "scheduled": false
     },
     "e6": {
-      "name": "updateChangeRequestById",
-      "canvasName": "updateChangeRequestById",
+      "name": "genericAdapterRequest",
+      "canvasName": "genericAdapterRequest",
       "summary": "work note: the NetBox reservation",
       "description": "work note: the NetBox reservation",
       "location": "Adapter",
@@ -1125,8 +1165,13 @@
       "variables": {
         "incoming": {
           "adapter_id": "ServiceNow",
-          "sysId": "$var.job.change_sys_id",
-          "body": "$var.e5.textObject"
+          "uriPath": "$var.job.change_table_path",
+          "restMethod": "PATCH",
+          "queryData": {
+            "sysparm_fields": "number,state"
+          },
+          "requestBody": "$var.e5.textObject",
+          "addlHeaders": {}
         },
         "outgoing": {
           "result": null
@@ -1412,8 +1457,8 @@
       }
     },
     "f1": {
-      "name": "updateStandardChangeRequestById",
-      "canvasName": "updateStandardChangeRequestById",
+      "name": "genericAdapterRequest",
+      "canvasName": "genericAdapterRequest",
       "summary": "state: Review",
       "description": "state: Review",
       "location": "Adapter",
@@ -1429,10 +1474,13 @@
       "variables": {
         "incoming": {
           "adapter_id": "ServiceNow",
-          "sysId": "$var.job.change_sys_id",
-          "body": {
+          "uriPath": "$var.job.change_path",
+          "restMethod": "PATCH",
+          "queryData": {},
+          "requestBody": {
             "state": "0"
-          }
+          },
+          "addlHeaders": {}
         },
         "outgoing": {
           "result": null
@@ -1472,8 +1520,8 @@
       }
     },
     "f3": {
-      "name": "updateStandardChangeRequestById",
-      "canvasName": "updateStandardChangeRequestById",
+      "name": "genericAdapterRequest",
+      "canvasName": "genericAdapterRequest",
       "summary": "state: Closed",
       "description": "state: Closed",
       "location": "Adapter",
@@ -1489,12 +1537,15 @@
       "variables": {
         "incoming": {
           "adapter_id": "ServiceNow",
-          "sysId": "$var.job.change_sys_id",
-          "body": {
+          "uriPath": "$var.job.change_path",
+          "restMethod": "PATCH",
+          "queryData": {},
+          "requestBody": {
             "state": "3",
             "close_code": "successful",
             "close_notes": "VLAN configured by wf-branch-vlan-v1; NetBox VLAN active"
-          }
+          },
+          "addlHeaders": {}
         },
         "outgoing": {
           "result": null
@@ -1701,6 +1752,12 @@
       }
     },
     "d4": {
+      "d9": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "d9": {
       "d5": {
         "state": "success",
         "type": "standard"
