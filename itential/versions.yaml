@@ -59,7 +59,7 @@ adapters:
   servicenow:
     repo: https://gitlab.com/itentialopensource/adapters/adapter-servicenow.git
     tag: v3.0.11 # commit 7af088d9, 2026-08-31
-    export: ServiceNow
+    export: Servicenow # pronghorn.json export (adapter tasks: app/locationType)
 
 workflows:
   device_count: wf-netbox-device-count-v1

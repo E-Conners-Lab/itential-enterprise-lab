@@ -72,6 +72,17 @@ def workflow(name: str, description: str, inputs: dict, tasks: dict, transitions
     }
 
 
+SNOW_EXPORT = "Servicenow"      # adapter-servicenow pronghorn export
+SNOW_INSTANCE_ID = "ServiceNow"  # the adapter instance the play creates
+SNOW_TEMPLATE = "b1c8d15147810200e90d87e8dee490f7"  # PDI standard change template "Change VLAN on a Cisco switchport"
+SNOW_GROUP = "287ebd7da9fe198100f92cc8d1d2154e"     # PDI assignment group "Network" (the change model requires one)
+
+
+def snow(name: str, summary: str, incoming: dict, x: int, y: int = 0, outgoing: dict | None = None) -> dict:
+    return task(name, SNOW_EXPORT, summary, {"adapter_id": SNOW_INSTANCE_ID, **incoming}, outgoing or {"result": None},
+                location="Adapter", location_type=SNOW_EXPORT, x=x, y=y)
+
+
 NETBOX_EXPORT = "Netbox"   # the adapter model's pronghorn export (task app / locationType)
 NETBOX_INSTANCE = "NetBox"  # the adapter instance the play creates (task input adapter_id)
 
@@ -186,6 +197,22 @@ VLAN_BODY = '{"site": {"slug": "__B__"}, "group": {"slug": "__G__"}, "vid": __V_
 
 def branch_vlan() -> dict:
     tasks = {
+        # optional ServiceNow change (S4b): a standard change from the PDI's VLAN template, assigned to
+        # the Network group (the change model refuses every state move without one), moved
+        # New -> Scheduled -> Implement before the device work, work-noted with the NetBox
+        # reservation, and Review -> Closed after it. Every state ServiceNow reports is collected
+        # in the job variable change_states (sys_audit is not readable by the integration user).
+        "d0": evaluate("change request wanted?", "job", "change_request", "", "==", True, x=-600, y=-800),
+        "d1": snow("changeStandardTemplateById", "create the standard change", {"standardChangeTemplateId": SNOW_TEMPLATE}, x=-300, y=-800),
+        "d2": jq("change sys_id", "$var.d1.result", "response.result.sys_id.value", x=0, y=-800, to_job="change_sys_id"),
+        "d3": jq("change number", "$var.d1.result", "response.result.number.value", x=0, y=-1000, to_job="change_number"),
+        "d4": snow("updateStandardChangeRequestById", "assignment group + description",
+                   {"sysId": "$var.d2.return_data", "body": {"assignment_group": SNOW_GROUP, "short_description": "wf-branch-vlan-v1: branch VLAN change (itential-enterprise-lab)"}},
+                   x=300, y=-800),
+        "d5": snow("updateStandardChangeRequestById", "state: Scheduled", {"sysId": "$var.d2.return_data", "body": {"state": "-2"}}, x=600, y=-800),
+        "d6": jq("state after scheduled", "$var.d5.result", "response.result.state.display_value", x=900, y=-800, to_job="change_state_scheduled"),
+        "d7": snow("updateStandardChangeRequestById", "state: Implement", {"sysId": "$var.d2.return_data", "body": {"state": "-1"}}, x=1200, y=-800),
+        "d8": jq("state after implement", "$var.d7.result", "response.result.state.display_value", x=1500, y=-800, to_job="change_state_implement"),
         # names and selectors: the switch is <branch>-sw01 unless switch_override names another node
         "0a": evaluate("override given?", "job", "switch_override", "", "!=", "", x=-300, y=-200),
         "1a": replace("switch = <branch>-sw01", "__B__-sw01", "__B__", "$var.job.branch", x=0, y=-200),
@@ -212,6 +239,13 @@ def branch_vlan() -> dict:
         "c3": parse("body object", "$var.c2.replacedString", x=3900, y=-400),
         "3d": nb("postIpamVlans", "reserve the VLAN in NetBox", {"data": "$var.c3.textObject"}, x=4200, y=-200, outgoing={"result": "$var.job.reservation"}),
         "a2": jq("vlan id", "$var.3d.result", "response.id", x=4500, y=-200, to_job="vlan_id"),
+        "e0": evaluate("change request wanted? (work note)", "job", "change_request", "", "==", True, x=4600, y=-600),
+        "e1": replace("work note text", "NetBox reservation: VLAN __V__ (VLAN object id __I__) reserved by wf-branch-vlan-v1", "__V__", "$var.b2.numToString", x=4700, y=-800),
+        "e2": num2str("vlan id as string", "$var.a2.return_data", x=4850, y=-1000),
+        "e3": replace("work note text (id)", "$var.e1.replacedString", "__I__", "$var.e2.numToString", x=5000, y=-800),
+        "e4": replace("work note body", '{"work_notes": "__N__"}', "__N__", "$var.e3.replacedString", x=5150, y=-800),
+        "e5": parse("work note body object", "$var.e4.replacedString", x=5300, y=-800),
+        "e6": snow("updateChangeRequestById", "work note: the NetBox reservation", {"sysId": "$var.job.change_sys_id", "body": "$var.e5.textObject"}, x=5450, y=-800),
         # approval
         "4b": replace("summary line", "Reserved VLAN __V__ in NetBox; apply it to the branch switch?", "__V__", "$var.b2.numToString", x=4800, y=-200),
         "4a": view("approval", "Approve VLAN change", "$var.4b.replacedString", "$var.4b.replacedString", "Approve", "Reject", x=5100, y=-200),
@@ -223,6 +257,13 @@ def branch_vlan() -> dict:
                    {"result": "$var.job.config_result"}, x=6000, y=-200),
         "5d": evaluate("config applied?", "5c", "result", "result.results[0].success", "==", True, x=6300, y=-200),
         "6a": nb("patchIpamVlansId", "NetBox VLAN active", {"id": "$var.a2.return_data", "data": {"status": "active"}}, x=6600, y=-200),
+        "f0": evaluate("change request wanted? (close)", "job", "change_request", "", "==", True, x=6750, y=-600),
+        "f1": snow("updateStandardChangeRequestById", "state: Review", {"sysId": "$var.job.change_sys_id", "body": {"state": "0"}}, x=6900, y=-800),
+        "f2": jq("state after review", "$var.f1.result", "response.result.state.display_value", x=7050, y=-800, to_job="change_state_review"),
+        "f3": snow("updateStandardChangeRequestById", "state: Closed",
+                   {"sysId": "$var.job.change_sys_id", "body": {"state": "3", "close_code": "successful", "close_notes": "VLAN configured by wf-branch-vlan-v1; NetBox VLAN active"}},
+                   x=7200, y=-800),
+        "f4": jq("state after close", "$var.f3.result", "response.result.state.display_value", x=7350, y=-800, to_job="change_state_closed"),
         "7a": flag("changed = true", "true", "changed", x=6900, y=-200),
         # rollback: remove the reservation; no transition to the end, so the job ends in error
         "8a": nb("deleteIpamVlansId", "rollback: delete the NetBox reservation", {"id": "$var.a2.return_data"}, x=6300, y=400),
@@ -230,12 +271,15 @@ def branch_vlan() -> dict:
     }
     tasks["1a"]["variables"]["outgoing"] = {"replacedString": "$var.job.switch"}
     order = ["1b", "1c", "1d", "2a", "2b"]
-    reserve = ["3a", "3b", "a1", "b2", "3e", "3f", "c1", "c2", "c3", "3d", "a2", "4b", "4a"]
-    apply = ["5a", "5b", "5c", "5d", "6a", "7a"]
+    reserve = ["3a", "3b", "a1", "b2", "3e", "3f", "c1", "c2", "c3", "3d", "a2", "e0"]
+    apply = ["5a", "5b", "5c", "5d", "6a", "f0"]
     tr = {}
     for a, b in zip(["workflow_start", *order], order):
         tr[a] = t("", b)
-    tr["workflow_start"] = t("", "0a")
+    tr["workflow_start"] = t("", "d0")
+    tr["d0"] = {"d1": {"state": "success", "type": "standard"}, "0a": {"state": "failure", "type": "standard"}}
+    for a, b in zip(["d1", "d2", "d3", "d4", "d5", "d6", "d7", "d8"], ["d2", "d3", "d4", "d5", "d6", "d7", "d8", "0a"]):
+        tr[a] = t("", b)
     tr["0a"] = {"0b": {"state": "success", "type": "standard"}, "1a": {"state": "failure", "type": "standard"}}
     tr["0b"] = t("", "1b")
     tr["1a"] = t("", "1b")
@@ -243,11 +287,18 @@ def branch_vlan() -> dict:
     tr["9a"] = t("", "workflow_end")
     for a, b in zip(reserve, reserve[1:]):
         tr[a] = t("", b)
+    tr["e0"] = {"e1": {"state": "success", "type": "standard"}, "4b": {"state": "failure", "type": "standard"}}
+    for a, b in zip(["e1", "e2", "e3", "e4", "e5", "e6"], ["e2", "e3", "e4", "e5", "e6", "4b"]):
+        tr[a] = t("", b)
+    tr["4b"] = t("", "4a")
     tr["4a"] = {"5a": {"state": "success", "type": "standard"}, "8a": {"state": "failure", "type": "standard"}}
     for a, b in zip(apply, apply[1:]):
         tr[a] = t("", b)
     tr["5c"] = {"5d": {"state": "success", "type": "standard"}, "8a": {"state": "error", "type": "standard"}}
     tr["5d"] = {"6a": {"state": "success", "type": "standard"}, "8a": {"state": "failure", "type": "standard"}}
+    tr["f0"] = {"f1": {"state": "success", "type": "standard"}, "7a": {"state": "failure", "type": "standard"}}
+    for a, b in zip(["f1", "f2", "f3", "f4"], ["f2", "f3", "f4", "7a"]):
+        tr[a] = t("", b)
     tr["7a"] = t("", "workflow_end")
     tr["8a"] = t("", "8b")
     tr["8b"] = {}
@@ -255,9 +306,13 @@ def branch_vlan() -> dict:
                     "activates the NetBox VLAN; rolls the reservation back on rejection or device failure (PID S4.4)",
                     {"branch": {"type": "string", "required": True, "description": "Branch site slug, e.g. br1"},
                      "vlan_name": {"type": "string", "required": True, "description": "VLAN name to reserve and configure"},
-                     "switch_override": {"type": "string", "description": "Inventory node to configure instead of <branch>-sw01 (empty = default; used by verify to force a device failure)"}},
+                     "switch_override": {"type": "string", "description": "Inventory node to configure instead of <branch>-sw01 (empty = default; used by verify to force a device failure)"},
+                     "change_request": {"type": "boolean", "description": "Open, work-note and close a ServiceNow standard change around the work (S4b)"}},
                     tasks, tr, {"changed": {"type": "boolean"}, "vid": {"type": "number"}, "vlan_id": {"type": "number"},
-                                "reservation": {"type": "object"}, "config_result": {"type": "object"}, "rolled_back": {"type": "boolean"}})
+                                "reservation": {"type": "object"}, "config_result": {"type": "object"}, "rolled_back": {"type": "boolean"},
+                                "change_number": {"type": "string"}, "change_sys_id": {"type": "string"},
+                                "change_state_scheduled": {"type": "string"}, "change_state_implement": {"type": "string"},
+                                "change_state_review": {"type": "string"}, "change_state_closed": {"type": "string"}})
 
 
 if __name__ == "__main__":

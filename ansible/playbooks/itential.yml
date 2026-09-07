@@ -567,7 +567,8 @@
               'healthcheck': {'type': 'startup', 'frequency': 300000, 'query_object': {}, 'addlHeaders': {}},
               'request': {'number_redirects': 0, 'number_retries': 3, 'limit_retry_error': 401, 'attempt_timeout': 15000,
                           'healthcheck_on_timeout': true, 'return_raw': false, 'archiving': false},
-              'ssl': {'enabled': true, 'accept_invalid_cert': false}}}] }}
+              'ssl': {'ecdhCurve': '', 'enabled': true, 'accept_invalid_cert': false, 'ca_file': '', 'ca_file_content': '',
+                      'key_file': '', 'cert_file': '', 'secure_protocol': '', 'ciphers': ''}}}] }}
       vars:
         snow_host: "{{ lookup('ansible.builtin.env', 'SNOW_INSTANCE') }}"
       no_log: true

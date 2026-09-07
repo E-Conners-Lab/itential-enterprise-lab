@@ -3,6 +3,290 @@
   "type": "automation",
   "description": "Reserves a VLAN in NetBox for a branch, asks for approval, configures the branch switch through Gateway 5, activates the NetBox VLAN; rolls the reservation back on rejection or device failure (PID S4.4)",
   "tasks": {
+    "d0": {
+      "name": "evaluation",
+      "canvasName": "evaluation",
+      "summary": "change request wanted?",
+      "description": "change request wanted?",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": -600,
+        "y": -800
+      },
+      "variables": {
+        "incoming": {
+          "all_true_flag": true,
+          "evaluation_groups": [
+            {
+              "all_true_flag": true,
+              "evaluations": [
+                {
+                  "query": "",
+                  "operand_1": {
+                    "variable": "change_request",
+                    "task": "job"
+                  },
+                  "operator": "==",
+                  "operand_2": {
+                    "variable": true,
+                    "task": "static"
+                  }
+                }
+              ]
+            }
+          ],
+          "options": {}
+        },
+        "outgoing": {
+          "return_value": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "d1": {
+      "name": "changeStandardTemplateById",
+      "canvasName": "changeStandardTemplateById",
+      "summary": "create the standard change",
+      "description": "create the standard change",
+      "location": "Adapter",
+      "locationType": "Servicenow",
+      "app": "Servicenow",
+      "type": "automatic",
+      "displayName": "Servicenow",
+      "groups": [],
+      "nodeLocation": {
+        "x": -300,
+        "y": -800
+      },
+      "variables": {
+        "incoming": {
+          "adapter_id": "ServiceNow",
+          "standardChangeTemplateId": "b1c8d15147810200e90d87e8dee490f7"
+        },
+        "outgoing": {
+          "result": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "d2": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "change sys_id",
+      "description": "change sys_id",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 0,
+        "y": -800
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "response.result.sys_id.value",
+          "obj": "$var.d1.result"
+        },
+        "outgoing": {
+          "return_data": "$var.job.change_sys_id"
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "d3": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "change number",
+      "description": "change number",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 0,
+        "y": -1000
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "response.result.number.value",
+          "obj": "$var.d1.result"
+        },
+        "outgoing": {
+          "return_data": "$var.job.change_number"
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "d4": {
+      "name": "updateStandardChangeRequestById",
+      "canvasName": "updateStandardChangeRequestById",
+      "summary": "assignment group + description",
+      "description": "assignment group + description",
+      "location": "Adapter",
+      "locationType": "Servicenow",
+      "app": "Servicenow",
+      "type": "automatic",
+      "displayName": "Servicenow",
+      "groups": [],
+      "nodeLocation": {
+        "x": 300,
+        "y": -800
+      },
+      "variables": {
+        "incoming": {
+          "adapter_id": "ServiceNow",
+          "sysId": "$var.d2.return_data",
+          "body": {
+            "assignment_group": "287ebd7da9fe198100f92cc8d1d2154e",
+            "short_description": "wf-branch-vlan-v1: branch VLAN change (itential-enterprise-lab)"
+          }
+        },
+        "outgoing": {
+          "result": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "d5": {
+      "name": "updateStandardChangeRequestById",
+      "canvasName": "updateStandardChangeRequestById",
+      "summary": "state: Scheduled",
+      "description": "state: Scheduled",
+      "location": "Adapter",
+      "locationType": "Servicenow",
+      "app": "Servicenow",
+      "type": "automatic",
+      "displayName": "Servicenow",
+      "groups": [],
+      "nodeLocation": {
+        "x": 600,
+        "y": -800
+      },
+      "variables": {
+        "incoming": {
+          "adapter_id": "ServiceNow",
+          "sysId": "$var.d2.return_data",
+          "body": {
+            "state": "-2"
+          }
+        },
+        "outgoing": {
+          "result": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "d6": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "state after scheduled",
+      "description": "state after scheduled",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 900,
+        "y": -800
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "response.result.state.display_value",
+          "obj": "$var.d5.result"
+        },
+        "outgoing": {
+          "return_data": "$var.job.change_state_scheduled"
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "d7": {
+      "name": "updateStandardChangeRequestById",
+      "canvasName": "updateStandardChangeRequestById",
+      "summary": "state: Implement",
+      "description": "state: Implement",
+      "location": "Adapter",
+      "locationType": "Servicenow",
+      "app": "Servicenow",
+      "type": "automatic",
+      "displayName": "Servicenow",
+      "groups": [],
+      "nodeLocation": {
+        "x": 1200,
+        "y": -800
+      },
+      "variables": {
+        "incoming": {
+          "adapter_id": "ServiceNow",
+          "sysId": "$var.d2.return_data",
+          "body": {
+            "state": "-1"
+          }
+        },
+        "outgoing": {
+          "result": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "d8": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "state after implement",
+      "description": "state after implement",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 1500,
+        "y": -800
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "response.result.state.display_value",
+          "obj": "$var.d7.result"
+        },
+        "outgoing": {
+          "return_data": "$var.job.change_state_implement"
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
     "0a": {
       "name": "evaluation",
       "canvasName": "evaluation",
@@ -630,6 +914,229 @@
         "decorators": []
       }
     },
+    "e0": {
+      "name": "evaluation",
+      "canvasName": "evaluation",
+      "summary": "change request wanted? (work note)",
+      "description": "change request wanted? (work note)",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 4600,
+        "y": -600
+      },
+      "variables": {
+        "incoming": {
+          "all_true_flag": true,
+          "evaluation_groups": [
+            {
+              "all_true_flag": true,
+              "evaluations": [
+                {
+                  "query": "",
+                  "operand_1": {
+                    "variable": "change_request",
+                    "task": "job"
+                  },
+                  "operator": "==",
+                  "operand_2": {
+                    "variable": true,
+                    "task": "static"
+                  }
+                }
+              ]
+            }
+          ],
+          "options": {}
+        },
+        "outgoing": {
+          "return_value": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "e1": {
+      "name": "replace",
+      "canvasName": "replace",
+      "summary": "work note text",
+      "description": "work note text",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 4700,
+        "y": -800
+      },
+      "variables": {
+        "incoming": {
+          "str": "NetBox reservation: VLAN __V__ (VLAN object id __I__) reserved by wf-branch-vlan-v1",
+          "substr": "__V__",
+          "newSubstr": "$var.b2.numToString"
+        },
+        "outgoing": {
+          "replacedString": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "e2": {
+      "name": "numberToString",
+      "canvasName": "numberToString",
+      "summary": "vlan id as string",
+      "description": "vlan id as string",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 4850,
+        "y": -1000
+      },
+      "variables": {
+        "incoming": {
+          "num": "$var.a2.return_data",
+          "radix": 10
+        },
+        "outgoing": {
+          "numToString": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "e3": {
+      "name": "replace",
+      "canvasName": "replace",
+      "summary": "work note text (id)",
+      "description": "work note text (id)",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 5000,
+        "y": -800
+      },
+      "variables": {
+        "incoming": {
+          "str": "$var.e1.replacedString",
+          "substr": "__I__",
+          "newSubstr": "$var.e2.numToString"
+        },
+        "outgoing": {
+          "replacedString": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "e4": {
+      "name": "replace",
+      "canvasName": "replace",
+      "summary": "work note body",
+      "description": "work note body",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 5150,
+        "y": -800
+      },
+      "variables": {
+        "incoming": {
+          "str": "{\"work_notes\": \"__N__\"}",
+          "substr": "__N__",
+          "newSubstr": "$var.e3.replacedString"
+        },
+        "outgoing": {
+          "replacedString": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "e5": {
+      "name": "parse",
+      "canvasName": "parse",
+      "summary": "work note body object",
+      "description": "work note body object",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 5300,
+        "y": -800
+      },
+      "variables": {
+        "incoming": {
+          "text": "$var.e4.replacedString"
+        },
+        "outgoing": {
+          "textObject": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "e6": {
+      "name": "updateChangeRequestById",
+      "canvasName": "updateChangeRequestById",
+      "summary": "work note: the NetBox reservation",
+      "description": "work note: the NetBox reservation",
+      "location": "Adapter",
+      "locationType": "Servicenow",
+      "app": "Servicenow",
+      "type": "automatic",
+      "displayName": "Servicenow",
+      "groups": [],
+      "nodeLocation": {
+        "x": 5450,
+        "y": -800
+      },
+      "variables": {
+        "incoming": {
+          "adapter_id": "ServiceNow",
+          "sysId": "$var.job.change_sys_id",
+          "body": "$var.e5.textObject"
+        },
+        "outgoing": {
+          "result": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
     "4b": {
       "name": "replace",
       "canvasName": "replace",
@@ -858,6 +1365,174 @@
       "actor": "Pronghorn",
       "scheduled": false
     },
+    "f0": {
+      "name": "evaluation",
+      "canvasName": "evaluation",
+      "summary": "change request wanted? (close)",
+      "description": "change request wanted? (close)",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 6750,
+        "y": -600
+      },
+      "variables": {
+        "incoming": {
+          "all_true_flag": true,
+          "evaluation_groups": [
+            {
+              "all_true_flag": true,
+              "evaluations": [
+                {
+                  "query": "",
+                  "operand_1": {
+                    "variable": "change_request",
+                    "task": "job"
+                  },
+                  "operator": "==",
+                  "operand_2": {
+                    "variable": true,
+                    "task": "static"
+                  }
+                }
+              ]
+            }
+          ],
+          "options": {}
+        },
+        "outgoing": {
+          "return_value": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "f1": {
+      "name": "updateStandardChangeRequestById",
+      "canvasName": "updateStandardChangeRequestById",
+      "summary": "state: Review",
+      "description": "state: Review",
+      "location": "Adapter",
+      "locationType": "Servicenow",
+      "app": "Servicenow",
+      "type": "automatic",
+      "displayName": "Servicenow",
+      "groups": [],
+      "nodeLocation": {
+        "x": 6900,
+        "y": -800
+      },
+      "variables": {
+        "incoming": {
+          "adapter_id": "ServiceNow",
+          "sysId": "$var.job.change_sys_id",
+          "body": {
+            "state": "0"
+          }
+        },
+        "outgoing": {
+          "result": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "f2": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "state after review",
+      "description": "state after review",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 7050,
+        "y": -800
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "response.result.state.display_value",
+          "obj": "$var.f1.result"
+        },
+        "outgoing": {
+          "return_data": "$var.job.change_state_review"
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "f3": {
+      "name": "updateStandardChangeRequestById",
+      "canvasName": "updateStandardChangeRequestById",
+      "summary": "state: Closed",
+      "description": "state: Closed",
+      "location": "Adapter",
+      "locationType": "Servicenow",
+      "app": "Servicenow",
+      "type": "automatic",
+      "displayName": "Servicenow",
+      "groups": [],
+      "nodeLocation": {
+        "x": 7200,
+        "y": -800
+      },
+      "variables": {
+        "incoming": {
+          "adapter_id": "ServiceNow",
+          "sysId": "$var.job.change_sys_id",
+          "body": {
+            "state": "3",
+            "close_code": "successful",
+            "close_notes": "VLAN configured by wf-branch-vlan-v1; NetBox VLAN active"
+          }
+        },
+        "outgoing": {
+          "result": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "f4": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "state after close",
+      "description": "state after close",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 7350,
+        "y": -800
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "response.result.state.display_value",
+          "obj": "$var.f3.result"
+        },
+        "outgoing": {
+          "return_data": "$var.job.change_state_closed"
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
     "7a": {
       "name": "makeData",
       "canvasName": "makeData",
@@ -968,7 +1643,7 @@
   },
   "transitions": {
     "workflow_start": {
-      "0a": {
+      "d0": {
         "state": "success",
         "type": "standard"
       }
@@ -993,6 +1668,64 @@
     },
     "2a": {
       "2b": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "d0": {
+      "d1": {
+        "state": "success",
+        "type": "standard"
+      },
+      "0a": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "d1": {
+      "d2": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "d2": {
+      "d3": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "d3": {
+      "d4": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "d4": {
+      "d5": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "d5": {
+      "d6": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "d6": {
+      "d7": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "d7": {
+      "d8": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "d8": {
+      "0a": {
         "state": "success",
         "type": "standard"
       }
@@ -1096,6 +1829,52 @@
       }
     },
     "a2": {
+      "e0": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "e0": {
+      "e1": {
+        "state": "success",
+        "type": "standard"
+      },
+      "4b": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "e1": {
+      "e2": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "e2": {
+      "e3": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "e3": {
+      "e4": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "e4": {
+      "e5": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "e5": {
+      "e6": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "e6": {
       "4b": {
         "state": "success",
         "type": "standard"
@@ -1150,6 +1929,40 @@
       }
     },
     "6a": {
+      "f0": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "f0": {
+      "f1": {
+        "state": "success",
+        "type": "standard"
+      },
+      "7a": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "f1": {
+      "f2": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "f2": {
+      "f3": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "f3": {
+      "f4": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "f4": {
       "7a": {
         "state": "success",
         "type": "standard"
@@ -1188,6 +2001,10 @@
       "switch_override": {
         "type": "string",
         "description": "Inventory node to configure instead of <branch>-sw01 (empty = default; used by verify to force a device failure)"
+      },
+      "change_request": {
+        "type": "boolean",
+        "description": "Open, work-note and close a ServiceNow standard change around the work (S4b)"
       }
     },
     "required": [
@@ -1215,6 +2032,24 @@
       },
       "rolled_back": {
         "type": "boolean"
+      },
+      "change_number": {
+        "type": "string"
+      },
+      "change_sys_id": {
+        "type": "string"
+      },
+      "change_state_scheduled": {
+        "type": "string"
+      },
+      "change_state_implement": {
+        "type": "string"
+      },
+      "change_state_review": {
+        "type": "string"
+      },
+      "change_state_closed": {
+        "type": "string"
       }
     }
   },

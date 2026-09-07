@@ -192,19 +192,20 @@ else
       id=$(run_job wf-branch-vlan-v1 "{\"branch\":\"br2\",\"vlan_name\":\"${VLAN_NAME}-snow\",\"switch_override\":\"\",\"change_request\":true}" nowait) || { echo "$id"; return 1; }
       approve_pending_task "$id" || return 1
       wait_job "$id" || return 1
-      chg=$(job_vars "$id" | ${PY} -c 'import sys,json;print(json.load(sys.stdin).get("change_number",""))')
+      local vars; vars=$(job_vars "$id")
+      chg=$(echo "$vars" | ${PY} -c 'import sys,json;print(json.load(sys.stdin).get("change_number",""))')
       [ -n "$chg" ] || { echo "workflow returned no change_number"; return 1; }
-      sid=$(snow "${SNOW_URL}/api/now/table/change_request?sysparm_query=number=${chg}&sysparm_fields=sys_id,state" | ${PY} -c 'import sys,json;r=json.load(sys.stdin)["result"];assert r and r[0]["state"] in ("3","closed","Closed"),r;print(r[0]["sys_id"])') || { echo "change ${chg} not closed"; return 1; }
-      snow "${SNOW_URL}/api/now/table/sys_journal_field?sysparm_query=element_id=${sid}^element=work_notes&sysparm_fields=value" | ${PY} -c 'import sys,json;r=json.load(sys.stdin)["result"];assert any("netbox" in x["value"].lower() for x in r),r' || { echo "no NetBox work note on ${chg}"; return 1; }
-      snow "${SNOW_URL}/api/now/table/sys_audit?sysparm_query=documentkey=${sid}^fieldname=state&sysparm_fields=newvalue" | ${PY} -c 'import sys,json;r=json.load(sys.stdin)["result"];assert len(r)>=3,f"{len(r)} state transitions"' || { echo "fewer than 3 state transitions on ${chg}"; return 1; }
-      echo "change ${chg}: opened, work-noted, closed"
+      # every state ServiceNow reported back to the workflow (sys_audit is admin-only on the PDI)
+      echo "$vars" | ${PY} -c 'import sys,json;v=json.load(sys.stdin);st=[v.get("change_state_"+k) for k in ("scheduled","implement","review","closed")];assert st==["Scheduled","Implement","Review","Closed"],st;print("transitions:", " -> ".join(["New"]+st))' || return 1
+      # second source: the change itself, read back from the PDI
+      snow "${SNOW_URL}/api/now/table/change_request?sysparm_query=number=${chg}&sysparm_fields=number,state,work_notes,close_code&sysparm_display_value=true" | ${PY} -c 'import sys,json;r=json.load(sys.stdin)["result"];assert r and r[0]["state"]=="Closed",r;assert "netbox" in (r[0].get("work_notes") or "").lower(),"no NetBox work note";print("PDI:",r[0]["number"],r[0]["state"],r[0]["close_code"])' || { echo "change ${chg} not closed with a NetBox work note"; return 1; }
       # cleanup of the br2 verify VLAN
       local vinfo; vinfo=$(nb "${NETBOX_URL}/api/ipam/vlans/?site=br2&name=${VLAN_NAME}-snow" | ${PY} -c 'import sys,json;d=json.load(sys.stdin);print(d["results"][0]["id"],d["results"][0]["vid"]) if d["count"] else print("")')
       if [ -n "$vinfo" ]; then nb -X DELETE "${NETBOX_URL}/api/ipam/vlans/${vinfo%% *}/" -o /dev/null; ${PY} verify/devcmd.py 10.100.0.166 "configure
 no vlan ${vinfo##* }
 end" >/dev/null 2>&1 || true; fi
     }
-    check "S4b.2 wf-branch-vlan-v1 with change_request=true opens, work-notes and closes a change (3 state transitions)" c9
+    check "S4b.2 wf-branch-vlan-v1 with change_request=true opens a standard change, work-notes the NetBox reservation, walks New->Scheduled->Implement->Review->Closed" c9
     # --- S4b.3 update set exported ---
     c10() { ls servicenow/*.xml >/dev/null 2>&1 && ${PY} -c 'import glob,xml.etree.ElementTree as E;[E.parse(f) for f in glob.glob("servicenow/*.xml")];assert any("sys_remote_update_set" in open(f).read() for f in glob.glob("servicenow/*.xml"))'; }
     check "S4b.3 Itential update set exported to servicenow/ (well-formed, contains sys_remote_update_set)" c10
