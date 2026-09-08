@@ -148,6 +148,16 @@
       loop_control:
         label: "{{ item.a }} <-> {{ item.b }}"
 
+    - name: VRFs the devices run (topology vrfs; route targets are added by netbox-enrich.yml)
+      netbox.netbox.netbox_vrf:
+        netbox_url: "{{ nb_url }}"
+        netbox_token: "{{ nb_token }}"
+        validate_certs: false
+        data: {name: "{{ item.key }}", description: "{{ item.value.description }}", tags: [phase-4]}
+      loop: "{{ vrfs | dict2items }}"
+      loop_control:
+        label: "{{ item.key }}"
+
     - name: Prefix roles for in-band
       netbox.netbox.netbox_ipam_role:
         netbox_url: "{{ nb_url }}"
@@ -169,6 +179,7 @@
           scope: "{{ item.site }}"
           status: reserved
           prefix_role: "{{ item.role }}"
+          vrf: "{{ item.vrf | default(omit) }}"
           description: "{{ item.description }}"
           tags: [phase-4]
       loop: "{{ inband_prefixes }}"

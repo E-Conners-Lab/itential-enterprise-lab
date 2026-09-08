@@ -175,5 +175,120 @@ def test_seed_play_creates_interfaces_with_the_device_names() -> None:
     assert "item.split(':')[1] }}\"" not in task.replace(
         'name: "{{ item.split', "name: X"
     ), task
-    assert "ports[item]" in task, "the seed must map the short port name through the derive.py port map"
+    assert "ports[item]" in task, (
+        "the seed must map the short port name through the derive.py port map"
+    )
     assert "topology/derive.py" in text
+
+
+# --- S4e.2: VRFs, ASNs, BGP neighbours in config contexts, FHRP group ---------------------------------------
+REFERENCE = ROOT / "topology" / "generated" / "configs"
+
+
+def configured_neighbors(text: str) -> set[tuple[str, int]]:
+    """neighbor <ip> remote-as <as>, and on EOS neighbor <ip> peer group <G> with the remote-as on the group."""
+    group_as = {
+        g: int(a)
+        for g, a in re.findall(r"^\s*neighbor (\S+) remote-as (\d+)", text, re.M)
+        if not g[0].isdigit()
+    }
+    out = {
+        (ip, int(a))
+        for ip, a in re.findall(
+            r"^\s*neighbor (\d+\.\d+\.\d+\.\d+) remote-as (\d+)", text, re.M
+        )
+    }
+    out |= {
+        (ip, group_as[g])
+        for ip, g in re.findall(
+            r"^\s*neighbor (\d+\.\d+\.\d+\.\d+) peer group (\S+)", text, re.M
+        )
+    }
+    return out
+
+
+def test_bgp_neighbors_equal_the_reference_configs_both_ways(topo: dict) -> None:
+    """Every neighbour the derivation lists is configured on the device, and every configured one is listed."""
+    for name, node in topo["nodes"].items():
+        if node["platform"] not in ("c8000v", "veos"):
+            continue
+        derived = {
+            (n["neighbor"], n["remote_as"]) for n in derive.bgp_neighbors(topo, name)
+        }
+        configured = configured_neighbors((REFERENCE / f"{name}.cfg").read_text())
+        assert derived == configured, (
+            f"{name}: derived {sorted(derived)} != configured {sorted(configured)}"
+        )
+
+
+def test_bgp_neighbor_vrfs_and_afis(topo: dict) -> None:
+    n = {
+        (x["neighbor"], x["vrf"], x["afi"])
+        for x in derive.bgp_neighbors(topo, "br1-wan01")
+    }
+    assert ("10.103.0.9", "WAN", "ipv4") in n and ("10.103.100.1", None, "ipv4") in n
+    n = {
+        (x["neighbor"], x["vrf"], x["afi"])
+        for x in derive.bgp_neighbors(topo, "dc1-leaf01")
+    }
+    assert ("10.101.254.1", None, "evpn") in n and ("10.101.3.1", "PROD", "ipv4") in n
+    assert (
+        derive.bgp_neighbors(topo, "br1-sw01") == []
+        and derive.bgp_neighbors(topo, "dc1-acc01") == []
+    )
+
+
+def test_asns_cover_routing_and_sit_on_their_sites(topo: dict) -> None:
+    rows = derive.asns(topo)
+    assert {r["asn"] for r in rows} == set(topo["routing"]["asn"].values())
+    assert {r["asn"]: r["site"] for r in rows}[65201] == "br1" and {
+        r["asn"]: r["site"] for r in rows
+    }[65000] == "wan"
+    assert all(r["site"] in topo["sites"] for r in rows)
+
+
+def test_device_contexts_carry_asn_router_id_and_rds(topo: dict) -> None:
+    c = derive.contexts(topo)
+    assert (
+        c["devices"]["br1-wan01"]["bgp"]["asn"] == 65201
+        and c["devices"]["br1-wan01"]["bgp"]["router_id"] == "10.103.255.21"
+    )
+    assert c["devices"]["br1-wan01"]["vrfs"]["WAN"]["rd"] == "65201:1"
+    assert c["devices"]["dc1-leaf01"]["vrfs"]["PROD"]["rd"] == "10.101.254.11:50001"
+    assert "bgp" not in c["devices"]["br1-sw01"]
+    assert (
+        c["lab"]["ntp"] == topo["lab"]["ntp"]
+        and c["sites"]["br1"]["gateways"][0]["gateway"] == "10.102.17.1"
+    )
+    assert set(c["platforms"]) == {"ios-xe", "eos"}
+
+
+def test_fhrp_group_for_the_transit_virtual_router(topo: dict) -> None:
+    groups = derive.fhrp_groups(topo)
+    assert (
+        len(groups) == 1
+        and groups[0]["address"] == "10.101.1.254/24"
+        and groups[0]["vrf"] == "PROD"
+    )
+    assert {m["device"] for m in groups[0]["members"]} == {"dc1-leaf01", "dc1-leaf02"}
+
+
+def test_enrich_play_builds_element_2() -> None:
+    text = PLAY.read_text()
+    for needle in (
+        "netbox_asn",
+        "netbox_rir",
+        "netbox_config_context",
+        "local_context_data",
+        "netbox_fhrp_group",
+        "netbox_route_target",
+    ):
+        assert needle in text, f"netbox-enrich.yml lacks {needle}"
+
+
+def test_seed_play_creates_vrfs_before_prefixes() -> None:
+    text = SEED.read_text()
+    assert "netbox_vrf" in text and text.index("netbox_vrf") < text.index(
+        "In-band prefixes"
+    ), "VRFs must exist before prefixes are placed in them"
+    assert 'vrf: "{{ item.vrf | default(omit) }}"' in text

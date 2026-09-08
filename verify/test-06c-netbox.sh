@@ -163,6 +163,107 @@ PY
 }
 check "S4e.1 every addressed interface of the 12 network devices is in NetBox with its address, VRF and 'to <peer>' description; the devices agree (wf-show-all-v1 + direct SSH)" c1
 
+# --- S4e.2 VRFs and route targets, ASNs on sites, BGP neighbours in the device context == the device, FHRP group ------
+c2() {
+  nb "${NETBOX_URL}/api/ipam/vrfs/?limit=100" > "$WORK/nb-vrfs.json"
+  nb "${NETBOX_URL}/api/ipam/asns/?limit=100" > "$WORK/nb-asns.json"
+  nb "${NETBOX_URL}/api/dcim/sites/?limit=100" > "$WORK/nb-sites.json"
+  nb "${NETBOX_URL}/api/ipam/fhrp-groups/?limit=100" > "$WORK/nb-fhrp.json"
+  nb "${NETBOX_URL}/api/ipam/fhrp-group-assignments/?limit=100" > "$WORK/nb-fhrp-members.json"
+  nb "${NETBOX_URL}/api/ipam/prefixes/?limit=200" > "$WORK/nb-prefixes.json"
+  nb "${NETBOX_URL}/api/dcim/devices/?limit=100&status=active&platform=ios-xe&platform=eos&include=config_context" > "$WORK/nb-devices-ctx.json"
+  # the device's BGP tables over direct SSH (second source): routers one command, fabric switches two
+  local dev ip
+  while read -r dev ip; do
+    case "$dev" in
+      *-wan0*|isp-core01) ${PY} verify/devcmd.py "$ip" "show ip bgp all summary" > "$WORK/bgp-${dev}.txt" 2>/dev/null || { echo "direct SSH to ${dev} failed"; return 1; } ;;
+      dc1-spine*|dc1-leaf*) { ${PY} verify/devcmd.py "$ip" "show ip bgp summary vrf all"; echo "=== EVPN"; ${PY} verify/devcmd.py "$ip" "show bgp evpn summary"; } > "$WORK/bgp-${dev}.txt" 2>/dev/null || { echo "direct SSH to ${dev} failed"; return 1; } ;;
+      *) : > "$WORK/bgp-${dev}.txt" ;;
+    esac
+  done < <(${PY} -c "import json;[print(d['name'], d['primary_ip4']['address'].split('/')[0]) for d in json.load(open('$WORK/nb-devices-ctx.json'))['results']]")
+  WORK="$WORK" ${PY} - <<'PY'
+import json, os, re, sys
+W = os.environ["WORK"]
+intent = json.load(open(f"{W}/intent.json"))
+errs = []
+vrfs = {v["name"]: v for v in json.load(open(f"{W}/nb-vrfs.json"))["results"]}
+if set(vrfs) < {"MGMT", "WAN", "PROD"}:
+    errs.append(f"VRFs in NetBox: {sorted(vrfs)}")
+else:
+    rts = {t["name"] for t in vrfs["PROD"]["import_targets"]} & {t["name"] for t in vrfs["PROD"]["export_targets"]}
+    if rts != {"50001:50001"}:
+        errs.append(f"PROD route targets: {rts}")
+prefixes = json.load(open(f"{W}/nb-prefixes.json"))["results"]
+for want in ("10.101.1.0/24", "10.101.10.0/24"):
+    p = [x for x in prefixes if x["prefix"] == want]
+    if not p or not p[0]["vrf"] or p[0]["vrf"]["name"] != "PROD":
+        errs.append(f"prefix {want} not in VRF PROD ({p[0]['vrf'] if p else 'missing'})")
+asns = {a["asn"]: a for a in json.load(open(f"{W}/nb-asns.json"))["results"]}
+if set(asns) != {a["asn"] for a in intent["asns"]}:
+    errs.append(f"ASNs in NetBox {sorted(asns)} != intent {sorted(a['asn'] for a in intent['asns'])}")
+sites = {s["slug"]: {a["asn"] for a in s.get("asns", [])} for s in json.load(open(f"{W}/nb-sites.json"))["results"]}
+for site, want in intent["asns_by_site"].items():
+    if sites.get(site) != set(want):
+        errs.append(f"site {site} ASNs {sorted(sites.get(site, []))} != {want}")
+groups = {g["name"]: g for g in json.load(open(f"{W}/nb-fhrp.json"))["results"]}
+members = json.load(open(f"{W}/nb-fhrp-members.json"))["results"]
+for g in intent["fhrp_groups"]:
+    nbg = groups.get(g["name"])
+    if not nbg:
+        errs.append(f"FHRP group {g['name']} missing"); continue
+    addrs = {a["address"] for a in nbg.get("ip_addresses", [])}
+    if g["address"] not in addrs:
+        errs.append(f"FHRP group {g['name']}: address {g['address']} not on the group ({addrs})")
+    have = {(m["interface"]["device"]["name"], m["interface"]["name"]) for m in members if m["group"]["id"] == nbg["id"]}
+    want = {(m["device"], m["interface"]) for m in g["members"]}
+    if have != want:
+        errs.append(f"FHRP group {g['name']} members {sorted(have)} != {sorted(want)}")
+devices = json.load(open(f"{W}/nb-devices-ctx.json"))["results"]
+if devices and "config_context" not in devices[0]:
+    errs.append("device list carries no config_context (include=config_context unsupported?)")
+NEIGH = re.compile(r"(\d+\.\d+\.\d+\.\d+)\s+4\s+(\d+)\s")
+def device_neighbors(name):
+    """{(neighbor, remote_as, vrf, afi)} from the raw tables: section headers give VRF and AFI."""
+    out, vrf, afi = set(), None, "ipv4"
+    for line in open(f"{W}/bgp-{name}.txt"):
+        if line.startswith("=== EVPN"):
+            afi, vrf = "evpn", None
+        elif line.startswith("For address family:"):
+            vrf = "WAN" if "VPNv4" in line else None
+        elif line.startswith("BGP summary information for VRF"):
+            v = line.split()[-1]; vrf = None if v == "default" else v
+        m = NEIGH.search(line)
+        if m:
+            out.add((m.group(1), int(m.group(2)), vrf, afi))
+    return out
+checked = 0
+for d in devices:
+    ctx = d.get("config_context") or {}
+    local = d.get("local_context_data") or {}
+    want_ctx = intent["contexts"]["devices"].get(d["name"])
+    if want_ctx is None:
+        errs.append(f"{d['name']}: no intent context"); continue
+    if local != want_ctx:
+        errs.append(f"{d['name']}: local context differs from intent")
+    for key in ("domain", "dns", "ntp", "management_gateway"):
+        if ctx.get(key) != intent["contexts"]["lab"][key]:
+            errs.append(f"{d['name']}: rendered context {key}={ctx.get(key)!r} != lab {intent['contexts']['lab'][key]!r}")
+    if ctx.get("automation_user") != "automation" or "password" in json.dumps(ctx).lower():
+        errs.append(f"{d['name']}: platform context (automation_user) missing or a password leaked")
+    if ctx.get("site") != d["site"]["slug"]:
+        errs.append(f"{d['name']}: site context {ctx.get('site')} != {d['site']['slug']}")
+    want = {(n["neighbor"], n["remote_as"], n["vrf"], n["afi"]) for n in (ctx.get("bgp") or {}).get("neighbors", [])}
+    have = device_neighbors(d["name"])
+    if want != have:
+        errs.append(f"{d['name']}: context neighbours {sorted(want)} != device {sorted(have)}")
+    checked += len(want)
+if errs:
+    print("\n".join(errs[:30])); sys.exit(1)
+print(f"VRFs MGMT/WAN/PROD (PROD RT 50001:50001), {len(asns)} ASNs on their sites, FHRP group {[g['name'] for g in intent['fhrp_groups']]} with its members and address, {checked} BGP neighbours in the device contexts equal the devices' own tables over direct SSH ({len(devices)} devices)")
+PY
+}
+check "S4e.2 VRFs with route targets, prefixes in PROD, the 7 ASNs on their sites, BGP neighbours and RDs in each device's config context equal to the device (direct SSH), the transit virtual router as an FHRP group" c2
+
 echo
 echo "passed=${pass} failed=${fail}"
 [ "$fail" -eq 0 ]

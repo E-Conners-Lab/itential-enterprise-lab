@@ -201,10 +201,7 @@ def render_context(topo: dict, name: str) -> dict:
             ctx["svi10"] = {"virtual": svis["Vlan10"]["virtual"]}
         if "Vlan100" in svis:
             ctx["transit_ip"] = bare(svis["Vlan100"]["address"])
-            ctx["svi100"] = {
-                "virtual": svis["Vlan100"]["virtual"],
-                "virtual_ip": bare(svis["Vlan100"]["virtual"]),
-            }
+            ctx["svi100"] = {"virtual_ip": bare(svis["Vlan100"]["virtual_router"])}
     return ctx
 
 
@@ -236,6 +233,7 @@ def interfaces(topo: dict) -> dict[str, list[dict]]:
                 "kind": "svi",
                 "address": svi.get("address"),
                 "virtual": svi.get("virtual"),
+                "virtual_router": svi.get("virtual_router"),
                 "vrf": svi.get("vrf"),
                 "description": svi.get("description", ""),
             }
@@ -305,6 +303,211 @@ def ports(topo: dict) -> dict[str, str]:
     return out
 
 
+def bgp_neighbors(topo: dict, name: str) -> list[dict]:
+    """[{neighbor, remote_as, vrf, afi, description}] the device's startup config carries (the templates' rules)."""
+    node = topo["nodes"][name]
+    routing = topo["routing"]
+    asn = routing["asn"]
+    firewalls = bool(topo["lab"].get("firewalls", True))
+    ctx = render_context(topo, name)
+    out: list[dict] = []
+
+    def add(neighbor, remote_as, vrf=None, afi="ipv4", description=""):
+        out.append(
+            {
+                "neighbor": neighbor,
+                "remote_as": remote_as,
+                "vrf": vrf,
+                "afi": afi,
+                "description": description,
+            }
+        )
+
+    links = [
+        item
+        for item in node_links(topo, name)
+        if not (item["link"].get("bypass") and firewalls)
+        and (firewalls or topo["nodes"][item["end"]["peer_node"]]["role"] != "firewall")
+    ]
+    if node["platform"] == "c8000v":
+        if node["role"] == "isp-core":
+            for n, item in zip(ctx["isp_neighbors"], links, strict=True):
+                add(n["ip"], n["as"], description=item["end"]["peer_node"])
+            return out
+        for t in ctx["tunnels"]:
+            add(t["nbr"], t["ras"], description=f"{t['peer']} via Tunnel{t['id']}")
+        for item in links:
+            peer = item["end"]["peer_node"]
+            role = topo["nodes"][peer]["role"]
+            if role == "firewall":
+                add(item["end"]["peer_ip"], asn["dc1_fw"], description=peer)
+            elif role == "leaf":
+                add(
+                    item["end"]["peer_ip"],
+                    asn["dc1_leaf"],
+                    description=f"{peer} (firewall bypass)",
+                )
+        if ctx["ibgp"]:
+            add(ctx["ibgp"], asn["dc1_edge"], description="iBGP dc1 edge peer")
+        if ctx["isp_peer"]:
+            add(
+                ctx["isp_peer"],
+                asn["isp"],
+                vrf="WAN",
+                description="provider (transport only)",
+            )
+    elif node["platform"] == "veos" and node["role"] in ("spine", "leaf"):
+        other_as = asn["dc1_leaf"] if node["role"] == "spine" else asn["dc1_spine"]
+        for item in links:
+            if item["link"].get("bypass"):
+                continue
+            add(item["end"]["peer_ip"], other_as, description=item["end"]["peer_node"])
+        for lo in ctx["evpn_peers"]:
+            add(lo, other_as, afi="evpn", description="EVPN")
+        if node["role"] == "leaf":
+            for item in links:
+                if item["link"].get("bypass"):
+                    add(
+                        item["end"]["peer_ip"],
+                        asn["dc1_edge"],
+                        vrf="PROD",
+                        description=f"{item['end']['peer_node']} (firewall bypass)",
+                    )
+            if firewalls:
+                add(
+                    routing["firewall_transit_gateway"],
+                    asn["dc1_fw"],
+                    vrf="PROD",
+                    description="firewall pair (active) on the transit VLAN",
+                )
+    return out
+
+
+def device_context(topo: dict, name: str) -> dict:
+    """The device's local config context for NetBox: BGP (ASN, router-id, neighbours) and the per-device VRF RDs."""
+    node = topo["nodes"][name]
+    ctx = render_context(topo, name)
+    out: dict = {"management": {"vrf": "MGMT", "address": node["mgmt_ip"]}}
+    if ctx["asn"]:
+        out["bgp"] = {
+            "asn": ctx["asn"],
+            "router_id": ctx["lo"],
+            "neighbors": bgp_neighbors(topo, name),
+        }
+    vrfs = {}
+    if node["platform"] == "c8000v" and node["role"] != "isp-core":
+        vrfs["WAN"] = {"rd": f"{ctx['asn']}:1"}
+    if node["role"] == "leaf":
+        vrfs["PROD"] = {
+            "rd": f"{ctx['lo']}:{topo['vrfs']['PROD']['vni']}",
+            "vni": topo["vrfs"]["PROD"]["vni"],
+        }
+    if vrfs:
+        out["vrfs"] = vrfs
+    return out
+
+
+def contexts(topo: dict) -> dict:
+    """Config contexts: lab-wide, per site, per platform (rendered by NetBox onto every device) and per device (local)."""
+    lab = topo["lab"]
+    sites = {}
+    for slug, site in topo["sites"].items():
+        entry: dict = {"site": slug, "aggregate": site.get("aggregate")}
+        gateways = []
+        for n in topo["nodes"].values():
+            if n["site"] != slug:
+                continue
+            lan = n.get("addressing", {}).get("lan")
+            if lan:
+                gateways.append(
+                    {
+                        "vlan": lan["vlan"],
+                        "gateway": bare(lan["gateway"]),
+                        "prefix": lan["prefix"],
+                    }
+                )
+            for svi in n.get("addressing", {}).get("svis", []):
+                if svi.get("virtual"):
+                    gateways.append(
+                        {
+                            "vlan": int(svi["name"].removeprefix("Vlan")),
+                            "gateway": bare(svi["virtual"]),
+                            "vrf": svi.get("vrf"),
+                        }
+                    )
+        if gateways:
+            entry["gateways"] = sorted(
+                {g["gateway"]: g for g in gateways}.values(), key=lambda g: g["vlan"]
+            )
+        sites[slug] = entry
+    platforms = {
+        "ios-xe": {
+            "automation_user": "automation",
+            "management_vrf": "MGMT",
+            "parser": "genie",
+        },
+        "eos": {
+            "automation_user": "automation",
+            "management_vrf": "MGMT",
+            "parser": "textfsm",
+        },
+    }
+    return {
+        "lab": {
+            "domain": lab["domain"],
+            "dns": lab["dns"],
+            "ntp": lab["ntp"],
+            "management_gateway": lab["mgmt_gateway"],
+            "asn": topo["routing"]["asn"],
+        },
+        "sites": sites,
+        "platforms": platforms,
+        "devices": {
+            name: device_context(topo, name)
+            for name, n in topo["nodes"].items()
+            if n["platform"] in ("c8000v", "veos")
+        },
+    }
+
+
+def asns(topo: dict) -> list[dict]:
+    """The autonomous systems and the site each belongs to (RIR private)."""
+    site_of = {
+        "isp": "wan",
+        "dc1_edge": "dc1",
+        "dc1_spine": "dc1",
+        "dc1_leaf": "dc1",
+        "dc1_fw": "dc1",
+    }
+    return [
+        {
+            "asn": number,
+            "site": site_of.get(key, key),
+            "description": key.replace("_", " "),
+        }
+        for key, number in topo["routing"]["asn"].items()
+    ]
+
+
+def fhrp_groups(topo: dict) -> list[dict]:
+    """Shared virtual-router addresses (EOS VARP) as FHRP groups with the member SVIs."""
+    groups: dict[str, dict] = {}
+    for name, node in topo["nodes"].items():
+        for svi in node.get("addressing", {}).get("svis", []):
+            if svi.get("virtual_router"):
+                g = groups.setdefault(
+                    svi["virtual_router"],
+                    {
+                        "address": svi["virtual_router"],
+                        "vrf": svi.get("vrf"),
+                        "name": f"{node['site']}-{svi['name'].lower()}-varp",
+                        "members": [],
+                    },
+                )
+                g["members"].append({"device": name, "interface": svi["name"]})
+    return list(groups.values())
+
+
 if __name__ == "__main__":
     topology = load_topology()
     per_device = interfaces(topology)
@@ -316,7 +519,33 @@ if __name__ == "__main__":
     port_map = ports(topology)
     renames = {k: v for k, v in port_map.items() if k.split(":")[1] != v}
     json.dump(
-        {"interfaces": per_device, "rows": flat, "ports": port_map, "renames": renames},
+        {
+            "interfaces": per_device,
+            "rows": flat,
+            "ports": port_map,
+            "renames": renames,
+            "contexts": contexts(topology),
+            "asns": asns(topology),
+            "asns_by_site": {
+                site: sorted(a["asn"] for a in asns(topology) if a["site"] == site)
+                for site in topology["sites"]
+            },
+            "fhrp_groups": fhrp_groups(topology),
+            # the play's lookups in one fixed order: groups, assignments, one per group address, one per member SVI
+            "fhrp_lookups": [
+                "ipam/fhrp-groups/?limit=100",
+                "ipam/fhrp-group-assignments/?limit=100",
+            ]
+            + [
+                f"ipam/ip-addresses/?address={g['address']}"
+                for g in fhrp_groups(topology)
+            ]
+            + [
+                f"dcim/interfaces/?device={m['device']}&name={m['interface']}"
+                for g in fhrp_groups(topology)
+                for m in g["members"]
+            ],
+        },
         sys.stdout,
         indent=1,
     )
