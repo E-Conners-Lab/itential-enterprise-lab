@@ -65,8 +65,7 @@
                     "result": {
                       "type": "array",
                       "items": {
-                        "type": "object",
-                        "additionalProperties": true
+                        "type": "object"
                       }
                     }
                   }
@@ -128,8 +127,7 @@
                   "type": "object",
                   "properties": {
                     "result": {
-                      "type": "object",
-                      "additionalProperties": true
+                      "type": "object"
                     }
                   }
                 }
@@ -179,8 +177,7 @@
                   "type": "object",
                   "properties": {
                     "result": {
-                      "type": "object",
-                      "additionalProperties": true
+                      "type": "object"
                     }
                   }
                 }
@@ -276,8 +273,7 @@
                     "result": {
                       "type": "array",
                       "items": {
-                        "type": "object",
-                        "additionalProperties": true
+                        "type": "object"
                       }
                     }
                   }
@@ -339,8 +335,7 @@
                   "type": "object",
                   "properties": {
                     "result": {
-                      "type": "object",
-                      "additionalProperties": true
+                      "type": "object"
                     }
                   }
                 }

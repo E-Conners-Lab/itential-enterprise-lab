@@ -95,6 +95,8 @@ services:
       OLLAMA_KEEP_ALIVE: "30m"
       OLLAMA_NUM_PARALLEL: "1"
       OLLAMA_MAX_LOADED_MODELS: "1"
+      # a fleet-wide tool result (twelve devices, ~5k tokens) must fit the local model's context (ADR 0046)
+      OLLAMA_CONTEXT_LENGTH: "16384"
     deploy:
       resources:
         limits:

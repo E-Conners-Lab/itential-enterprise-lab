@@ -1,0 +1,22 @@
+# netbox-sot on the in-lab Ollama model (qwen2.5:7b, CPU): two tools only, a small model loses its way with more.
+project: lab-netops
+name: netbox-sot-local
+description: netbox-sot on the in-lab Ollama model (qwen2.5:7b), NetBox devices and VLANs only
+profile: ollama-lab
+input_schema:
+  type: object
+  additionalProperties: false
+  required: [request]
+  properties:
+    request: {type: string}
+instructions: |
+  You answer questions about the lab's devices and VLANs from NetBox only. Call dcim_devices_list
+  with filters as lists, for example name ["br2-sw01"] or site ["br1"], and read site.slug,
+  role.slug, platform.slug and primary_ip4.address from the results. Call ipam_vlans_list with
+  site ["br1"] for VLANs. Reply with the values NetBox returned, nothing else. If nothing matches,
+  say "not in NetBox".
+
+  The operator's request: {{request}}
+tools:
+  - {reference: dcim_devices_list, kind: integration, model: netbox}
+  - {reference: ipam_vlans_list, kind: integration, model: netbox}

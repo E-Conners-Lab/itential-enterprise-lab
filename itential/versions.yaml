@@ -91,10 +91,12 @@ workflows:
   show_version: wf-show-version-v1
   branch_vlan: wf-branch-vlan-v1
   show_command: wf-show-command-v1 # S4c.7 (ADR 0038)
+  show_all: wf-show-all-v1 # S4d.5: one show command on every lab device, parsed per device (ADR 0046)
   config_push: wf-config-push-v1 # S4d: the only write path, Work Center approval (ADR 0040/0041)
   compliance_run: wf-compliance-run-v1 # S4d.1: target of the nightly schedule trigger
   backup_all: wf-backup-all-v1 # S4d.2: every Configuration Manager device backed up (forEach), nightly
   branch_vlan_delete: wf-branch-vlan-delete-v1 # S4d.3: the LCM delete action; switch write through wf-config-push-v1 (ADR 0043)
+  compliance_report: wf-compliance-report-v1 # S4d.5: run or read the plan, compact per-device summary for the agents (ADR 0046)
 
 # --- Phase 6b: Platform coverage of the EVE-NG lab (PID S4d, ADR 0040). Built by
 # ansible/playbooks/platform.yml from itential/golden-config/<deviceType>/{base.gc,device.j2};

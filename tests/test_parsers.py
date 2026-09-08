@@ -116,8 +116,12 @@ def test_criterion_and_verify_cover_structured_output() -> None:
 
 
 def test_agents_use_the_structured_tool() -> None:
+    """Every agent that reads devices holds the structured show-command workflow (the fleet's NetBox, compliance and
+    remediation tiers hold no device read tool at all, ADR 0046)."""
     docs = [yaml.safe_load(p.read_text()) for p in sorted(AGENTS.glob("*.yaml"))]
-    for a in docs:
+    readers = [a for a in docs if {t["reference"] for t in a["tools"]} & {"send-command", "wf-show-command-v1", "wf-show-version-v1"}]
+    assert readers, "no agent reads devices"
+    for a in readers:
         refs = {t["reference"] for t in a["tools"]}
         assert "wf-show-command-v1" in refs, f"{a['name']} lacks the structured show-command tool"
         assert "wf-show-command-v1" in a["instructions"]

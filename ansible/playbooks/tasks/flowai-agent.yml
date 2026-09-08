@@ -3,7 +3,8 @@
 # referenceIds, then create or update it in the project. Included by flowai.yml per document.
 # referenceId formats (Tool Registry): application:<App>:<method>, adapter:<Export>:<Instance>:<method>,
 # workflow:<workflow uuid> (the document's uuid field, not its _id; the current import of that name),
-# integration:<title>%3A<version>:<instance>:<operationId> (ADR 0045; the colon of the model id is encoded).
+# integration:<title>%3A<version>:<instance>:<operationId> (ADR 0045; the colon of the model id is encoded),
+# application:<App>:<method> for platform application methods (kind: application, app: ConfigurationManager; ADR 0046).
 - name: "Agent current workflow ids for {{ agent.name }}"
   ansible.builtin.uri:
     url: "{{ platform_local }}/automation-studio/workflows?limit=100"
@@ -22,6 +23,7 @@
            else ('adapter:' ~ adapter_exports[item.adapter] ~ ':' ~ item.adapter ~ ':' ~ item.reference) if item.kind == 'adapter'
            else ('integration:' ~ integrations.models[item.model].title ~ '%3A' ~ integrations.models[item.model].version
                  ~ ':' ~ integrations.models[item.model].instance ~ ':' ~ item.reference) if item.kind == 'integration'
+           else ('application:' ~ item.app ~ ':' ~ item.reference) if item.kind == 'application'
            else ('workflow:' ~ (wf_list.json['items'] | selectattr('name', 'equalto', item.reference) | map(attribute='uuid') | first))
          ] }}
   vars:

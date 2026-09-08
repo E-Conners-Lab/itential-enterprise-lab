@@ -146,8 +146,7 @@
                     "results": {
                       "type": "array",
                       "items": {
-                        "type": "object",
-                        "additionalProperties": true
+                        "type": "object"
                       }
                     }
                   }
@@ -188,8 +187,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true
+                  "type": "object"
                 }
               }
             }
@@ -284,8 +282,7 @@
                     "results": {
                       "type": "array",
                       "items": {
-                        "type": "object",
-                        "additionalProperties": true
+                        "type": "object"
                       }
                     }
                   }
@@ -397,8 +394,7 @@
                     "results": {
                       "type": "array",
                       "items": {
-                        "type": "object",
-                        "additionalProperties": true
+                        "type": "object"
                       }
                     }
                   }
@@ -538,8 +534,7 @@
                     "results": {
                       "type": "array",
                       "items": {
-                        "type": "object",
-                        "additionalProperties": true
+                        "type": "object"
                       }
                     }
                   }
@@ -628,8 +623,7 @@
                     "results": {
                       "type": "array",
                       "items": {
-                        "type": "object",
-                        "additionalProperties": true
+                        "type": "object"
                       }
                     }
                   }

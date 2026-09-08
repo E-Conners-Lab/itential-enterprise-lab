@@ -20,7 +20,8 @@ HERE = Path(__file__).resolve().parent
 VERSIONS = yaml.safe_load((HERE.parent / "versions.yaml").read_text())
 MODELS = VERSIONS["integrations"]["models"]
 
-OBJ = {"type": "object", "additionalProperties": True}
+# no bare `true` literals anywhere in these documents: Ollama rejects a chat request whose tool schemas carry one (memory lesson)
+OBJ = {"type": "object"}
 PAGE = {"type": "object", "properties": {"count": {"type": "integer"}, "next": {"type": ["string", "null"]},
                                           "previous": {"type": ["string", "null"]}, "results": {"type": "array", "items": OBJ}}}
 SNOW_RESULT = {"type": "object", "properties": {"result": {"type": "array", "items": OBJ}}}

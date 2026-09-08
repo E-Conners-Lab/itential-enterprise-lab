@@ -460,6 +460,84 @@ def show_command() -> dict:
                      "parse_error": {"type": "string"}})  # "" when the parse succeeded
 
 
+# --- wf-show-all-v1 (S4d.5, ADR 0046): one show command on every lab device in one call ------------------
+# A local model asked about "all devices" invents node names and loops (measured); this workflow is the
+# deterministic fan-out: the Configuration Manager device list (the lab inventory), one multi-node
+# send-command, and one parse on the runner keyed by device (Genie for cisco_ios, TextFSM for arista_eos).
+# Each device's parsed data is capped at 1500 characters so twelve devices fit a small model's context.
+SHOW_ALL_CODE = """import json, sys
+GENIE = {"cisco_ios": "iosxe"}  # the lab's cisco_ios nodes are IOS-XE (C8000v)
+TEXTFSM = {"arista_eos": "arista_eos"}
+LIMIT = 1500
+d = json.loads(sys.stdin.read() or "{}")
+ostype = {x.get("name"): x.get("ostype") for x in (d.get("devices") or {}).get("list") or []}
+out = {"devices": [], "results": {}, "parser_errors": {}}
+for r in ((d.get("result") or {}).get("results") or []):
+    name, output, command = r.get("name"), r.get("output") or "", r.get("command") or ""
+    os_ = ostype.get(name)
+    entry = {"ostype": os_, "parser": "none", "parsed": None, "truncated": False}
+    if not r.get("success", True):
+        entry["error"] = "command failed"
+        entry["raw_head"] = output[:600]
+    else:
+        try:
+            if os_ in GENIE:
+                from genie.conf.base import Device
+                dev = Device(name="x", os=GENIE[os_])
+                dev.custom.setdefault("abstraction", {"order": ["os"]})
+                entry["parsed"], entry["parser"] = dev.parse(command, output=output), "genie"
+            elif os_ in TEXTFSM:
+                from ntc_templates.parse import parse_output
+                entry["parsed"], entry["parser"] = parse_output(platform=TEXTFSM[os_], command=command, data=output), "textfsm"
+            else:
+                entry["error"] = "no parser for ostype %s" % os_
+                entry["raw_head"] = output[:600]
+        except Exception as e:  # unsupported command or empty output: keep the head of the raw text
+            entry["error"] = type(e).__name__ + ": " + str(e)[:200]
+            entry["raw_head"] = output[:600]
+    text = json.dumps(entry["parsed"]) if entry["parsed"] is not None else ""
+    if len(text) > LIMIT:
+        entry["parsed"], entry["truncated"] = text[:LIMIT] + "...", True
+    if entry.get("error"):
+        out["parser_errors"][name] = entry["error"]
+    out["devices"].append(name)
+    out["results"][name] = entry
+out["devices_checked"] = len(out["devices"])
+print(json.dumps(out))
+"""
+
+
+def show_all() -> dict:
+    tasks = {
+        "1a": task("getDevicesFiltered", "ConfigurationManager", "every lab device (the inventory through the broker)",
+                   {"options": {"start": 0, "limit": 500}}, {"devices": None}, x=0),
+        "1b": jq("device names", "$var.1a.devices", "list[*].name", x=300, to_job="devices"),
+        "1c": task("join", "WorkFlowEngine", "names joined for the selector", {"arr": "$var.1b.return_data", "separator": '","'},
+                   {"joinedElements": None}, display="Tools", x=600),
+        "1d": replace("selector JSON with every node", '[{"inventory": "%s", "nodeNames": ["__N__"]}]' % INVENTORY, "__N__", "$var.1c.joinedElements", x=900),
+        "1e": parse("selector object", "$var.1d.replacedString", x=1200),
+        "2a": replace("commands JSON", '["__C__"]', "__C__", "$var.job.command", x=0, y=300),
+        "2b": parse("commands list", "$var.2a.replacedString", x=300, y=300),
+        "3a": task("sendCommand", "GatewayManager", "the command on every node in one Gateway 5 call",
+                   {"clusterId": CLUSTER, "commands": "$var.2b.textObject", "inventory": "$var.1e.textObject"}, {"result": None}, x=1500),
+        "3b": task("setObjectKey", "WorkFlowEngine", "results + device list (ostype per device) for the parser",
+                   {"obj": "$var.3a.result", "path": ["devices"], "value": "$var.1a.devices"}, {"object": None}, display="Tools", x=1800),
+        "4a": task("runCode", "GatewayManager", "parse per device on the runner (Genie / TextFSM)",
+                   {"clusterId": CLUSTER, "language": "python", "code": SHOW_ALL_CODE, "data": "$var.3b.object",
+                    "safety": {"timeout": 240}, "packages": PARSER_PACKAGES}, {"result": None}, x=2100),
+        "4b": jq("results per device", "$var.4a.result", "stdout_json.results", x=2400, to_job="results"),
+        "4c": jq("devices checked", "$var.4a.result", "stdout_json.devices_checked", x=2400, y=200, to_job="devices_checked"),
+        "4d": jq("parser errors", "$var.4a.result", "stdout_json.parser_errors", x=2400, y=400, to_job="parser_errors"),
+    }
+    return workflow("wf-show-all-v1",
+                    "Runs one show command on every lab device in one Gateway 5 call and returns the parsed result per device "
+                    "(Genie for cisco_ios, TextFSM for arista_eos, each capped at 1500 characters); the agents' fleet-wide read (PID S4d.5, ADR 0046)",
+                    {"command": {"type": "string", "required": True, "description": "One show command, e.g. show ip interface brief"}},
+                    tasks, chain("1a", "1b", "1c", "1d", "1e", "2a", "2b", "3a", "3b", "4a", "4b", "4c", "4d"),
+                    {"devices": {"type": "array"}, "devices_checked": {"type": "number"}, "results": {"type": "object"},
+                     "parser_errors": {"type": "object"}})
+
+
 # --- wf-config-push-v1 (S4d, ADR 0040/0041): the one governed write path ---------------------
 # Inputs: device, config (CLI lines), reason. The operator sees device, reason and the exact lines in
 # a Work Center approval; on approval Gateway 5 pushes them with send-config and saves the running
@@ -620,8 +698,108 @@ def branch_vlan_delete() -> dict:
                                 "push_job": {"type": "object"}, "instance": {"type": "object"}})
 
 
+# --- wf-compliance-report-v1 (S4d.5, ADR 0046): one cheap compliance tool for the agents ----------------
+# Input run=true starts the plan and waits for it (four unrolled delay + search attempts, no cycle in the graph);
+# run=false takes the newest complete instance. Either way the batch reports are reduced on the Gateway 5 runner
+# to one compact object per device (errors, warnings, passes, the issue lines) published as `summary`, with
+# `compliant` beside it. Reading the raw report tools directly cost an agent 638k input tokens (measured).
+PICK_CODE = """import json, sys
+d = json.loads(sys.stdin.read() or "{}")
+plans = d.get("plans") or [p for g in d.get("groups", []) for p in g.get("plans", [])]
+done = [p for p in plans if p.get("jobStatus") == "complete" and p.get("batchId")]
+done.sort(key=lambda p: str(p.get("started") or p.get("triggeredAt") or p.get("id") or ""))
+p = done[-1] if done else {}
+print(json.dumps({"batchId": p.get("batchId"), "instanceId": p.get("id") or p.get("_id"), "startTime": p.get("startTime")}))
+"""
+SUMMARY_CODE = """import json, sys
+d = json.loads(sys.stdin.read() or "{}")
+reports = d.get("reports") if isinstance(d, dict) else d
+if isinstance(reports, dict):
+    reports = reports.get("complianceHistory") or reports.get("list") or []
+reports = reports or []
+devices = []
+for r in reports:
+    t = r.get("totals") or {}
+    issues = [" ".join(w.get("value", "") for w in (i.get("spec") or {}).get("words", [])).strip() for i in r.get("issues") or []]
+    devices.append({"device": r.get("deviceName"), "report_id": r.get("id") or r.get("_id"), "errors": t.get("errors", 0),
+                    "warnings": t.get("warnings", 0), "passes": t.get("passes", 0), "issues": issues})
+devices.sort(key=lambda x: str(x["device"]))
+bad = [x["device"] for x in devices if x["errors"] or x["warnings"]]
+print(json.dumps({"compliant": not bad, "devices_checked": len(devices), "devices_with_issues": bad, "devices": devices}))
+"""
+
+
+def compliance_report() -> dict:
+    def search_instance(tid: str, x: int, y: int) -> dict:
+        return task("searchCompliancePlanInstances", "ConfigurationManager", "the run's instance", {"searchParams": "$var.2d.textObject"},
+                    {"compliancePlanInstances": None}, x=x, y=y)
+
+    tasks = {
+        "1a": task("searchCompliancePlans", "ConfigurationManager", "the plan by name",
+                   {"name": "^" + PLAN_NAME + "$", "options": {"start": 0, "limit": 10}}, {"compliancePlans": None}, x=0),
+        "1b": jq("plan id", "$var.1a.compliancePlans", "plans[0].id", x=300, to_job="plan_id"),
+        "1c": evaluate("new run requested?", "job", "run", "", "==", True, x=600),
+        # run=true: start the plan and wait for the instance to complete
+        "2a": task("runCompliancePlan", "ConfigurationManager", "run the plan", {"planId": "$var.1b.return_data", "options": {}},
+                   {"response": None}, x=900, y=-300),
+        "2b": jq("instance id", "$var.2a.response", "instanceId", x=1200, y=-300, to_job="instance_id"),
+        "2c": replace("search params", '{"instanceId": "__I__"}', "__I__", "$var.2b.return_data", x=1500, y=-300),
+        "2d": parse("search params object", "$var.2c.replacedString", x=1800, y=-300),
+        # run=false: the newest complete instance of the plan
+        # the search pages at ten unsorted instances by default (measured): newest first, up to a hundred
+        "4a": task("searchCompliancePlanInstances", "ConfigurationManager", "every instance of the plan, newest first",
+                   {"searchParams": {"planName": PLAN_NAME, "sort": {"started": -1}, "limit": 100}}, {"compliancePlanInstances": None}, x=900, y=300),
+        "4b": task("runCode", "GatewayManager", "newest complete instance (Python on the runner)",
+                   {"clusterId": CLUSTER, "language": "python", "code": PICK_CODE, "data": "$var.4a.compliancePlanInstances",
+                    "safety": {"timeout": 30}, "packages": []}, {"result": None}, x=1200, y=300),
+        "4c": jq("its batch id", "$var.4b.result", "stdout_json.batchId", x=1500, y=300, to_job="batch_id"),
+        "4d": jq("its instance id", "$var.4b.result", "stdout_json.instanceId", x=1800, y=300, to_job="instance_id"),
+        # the reports of the batch, reduced to one compact summary (runCode's data must be an object: the array is wrapped)
+        "6a": task("getComplianceReportsByBatch", "ConfigurationManager", "the batch's reports", {"batchId": "$var.job.batch_id"},
+                   {"complianceHistory": None}, x=4200),
+        "6e": task("setObjectKey", "WorkFlowEngine", "reports wrapped in an object for the runner",
+                   {"obj": {}, "path": ["reports"], "value": "$var.6a.complianceHistory"}, {"object": None}, display="Tools", x=4350),
+        "6b": task("runCode", "GatewayManager", "summary per device (Python on the runner)",
+                   {"clusterId": CLUSTER, "language": "python", "code": SUMMARY_CODE, "data": "$var.6e.object",
+                    "safety": {"timeout": 30}, "packages": []}, {"result": None}, x=4500),
+        "6c": jq("summary", "$var.6b.result", "stdout_json", x=4800, to_job="summary"),
+        "6d": jq("compliant?", "$var.6b.result", "stdout_json.compliant", x=5100, to_job="compliant"),
+    }
+    tr = {"workflow_start": t("", "1a"), "1a": t("", "1b"), "1b": t("", "1c"),
+          "1c": {"2a": {"state": "success", "type": "standard"}, "4a": {"state": "failure", "type": "standard"}},
+          "2a": t("", "2b"), "2b": t("", "2c"), "2c": t("", "2d"),
+          "4a": t("", "4b"), "4b": t("", "4c"), "4c": t("", "4d"), "4d": t("", "6a"),
+          "6a": t("", "6e"), "6e": t("", "6b"), "6b": t("", "6c"), "6c": t("", "6d"), "6d": t("", "workflow_end")}
+    # four attempts: delay, search, read the status, evaluate; complete -> batch id -> reports; else the next attempt
+    attempts = [("a1", "a2", "a3", "a4", "a5", 30), ("b1", "b2", "b3", "b4", "b5", 30), ("c1", "c2", "c3", "c4", "c5", 30), ("d1", "d2", "d3", "d4", "d5", 60)]
+    tr["2d"] = t("", attempts[0][0])
+    for i, (dl, se, st, ev, bt, secs) in enumerate(attempts):
+        x = 2100 + i * 500
+        tasks[dl] = task("delay", "WorkFlowEngine", f"wait {secs} s (attempt {i + 1})", {"time": secs}, {"time_in_milliseconds": None},
+                         kind="operation", display="WorkFlowEngine", x=x, y=-300)
+        tasks[se] = search_instance(se, x + 100, -300)
+        tasks[st] = jq("instance status", f"$var.{se}.compliancePlanInstances", "plans[0].jobStatus", x=x + 200, y=-300)
+        tasks[ev] = evaluate("complete?", st, "return_data", "", "==", "complete", x=x + 300, y=-300)
+        tasks[bt] = jq("batch id", f"$var.{se}.compliancePlanInstances", "plans[0].batchId", x=x + 400, y=-500, to_job="batch_id")
+        tr[dl] = t("", se)
+        tr[se] = t("", st)
+        tr[st] = t("", ev)
+        tr[ev] = {bt: {"state": "success", "type": "standard"}}  # failure: the next attempt; after the last the job ends in error
+        tr[bt] = t("", "6a")
+    for (_, _, _, ev, _, _), nxt in zip(attempts, attempts[1:]):
+        tr[ev][nxt[0]] = {"state": "failure", "type": "standard"}
+    return workflow("wf-compliance-report-v1",
+                    "Runs (run=true) or reads (run=false) the %s compliance plan and returns one compact summary per device: "
+                    "errors, warnings, passes and the issue lines; the agents' compliance tool (PID S4d.5, ADR 0046)" % PLAN_NAME,
+                    {"run": {"type": "boolean", "required": True, "description": "true: start a new run of the plan and wait for it; "
+                                                                                 "false: summarise the newest complete run"}},
+                    tasks, tr, {"plan_id": {"type": "string"}, "instance_id": {"type": "string"}, "batch_id": {"type": "string"},
+                                "summary": {"type": "object"}, "compliant": {"type": "boolean"}})
+
+
 if __name__ == "__main__":
-    for wf in (device_count(), show_version(), show_command(), branch_vlan(), branch_vlan_delete(), config_push(), compliance_run(), backup_all()):
+    for wf in (device_count(), show_version(), show_command(), show_all(), branch_vlan(), branch_vlan_delete(), config_push(),
+               compliance_run(), compliance_report(), backup_all()):
         out = HERE / f"{wf['name']}.json"
         out.write_text(json.dumps(wf, indent=2) + "\n")
         print(out.relative_to(HERE.parent.parent), len(wf["tasks"]) - 2, "tasks")
