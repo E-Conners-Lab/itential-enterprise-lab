@@ -71,7 +71,7 @@
           model: "{{ model_of[item] }}"
           slug: "{{ model_of[item] | lower | regex_replace('[^a-z0-9]+', '-') }}"
           manufacturer: "{{ manufacturer_of[item] }}"
-          u_height: 0
+          u_height: 1  # virtual, but one U in the rack model: a 0U type cannot take a rack position (ADR 0048)
           is_full_depth: false
       loop: "{{ nodes.values() | map(attribute='platform') | unique | list }}"
 
@@ -129,7 +129,10 @@
           termination_b_type: dcim.interface
           termination_b: {device: "{{ item.b.split(':')[0] }}", name: "{{ ports[item.b] }}"}
           status: planned
-      loop: "{{ links if not (lab.firewalls | default(true)) else (links | rejectattr('bypass', 'defined') | list) }}"
+      # a link that is a circuit (links[].circuit) is cabled through its circuit terminations by netbox-enrich.yml
+      loop: >-
+        {{ (links if not (lab.firewalls | default(true)) else (links | rejectattr('bypass', 'defined') | list))
+           | rejectattr('circuit', 'defined') | list }}
       loop_control:
         label: "{{ item.a }} <-> {{ item.b }}"
 

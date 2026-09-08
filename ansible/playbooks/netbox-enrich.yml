@@ -414,3 +414,174 @@
         label: "{{ item.0.name }} {{ item.0.address }}"
       when: item.1.json.results | selectattr('assigned_object_type', 'equalto', 'ipam.fhrpgroup') | list | length == 0
       changed_when: true
+
+    # --- S4e.3: one location and one rack per site; devices at their derived positions ---
+    - name: Locations
+      netbox.netbox.netbox_location:
+        netbox_url: "{{ nb_url }}"
+        netbox_token: "{{ nb_token }}"
+        validate_certs: false
+        # the rack module resolves a location by the slug of its name (measured), so the slug is that
+        data:
+          name: "{{ item.location }}"
+          slug: "{{ item.location | lower | regex_replace('[^a-z0-9]+', '-') }}"
+          site: "{{ item.site }}"
+          tags: ["{{ tag }}"]
+      loop: "{{ intent.racks }}"
+      loop_control:
+        label: "{{ item.site }}: {{ item.location }}"
+
+    - name: Racks
+      netbox.netbox.netbox_rack:
+        netbox_url: "{{ nb_url }}"
+        netbox_token: "{{ nb_token }}"
+        validate_certs: false
+        data:
+          name: "{{ item.rack }}"
+          site: "{{ item.site }}"
+          location: "{{ item.location }}"
+          status: active
+          u_height: "{{ item.u_height }}"
+          tags: ["{{ tag }}"]
+      loop: "{{ intent.racks }}"
+      loop_control:
+        label: "{{ item.rack }}"
+
+    - name: Devices at their rack positions (front face, one U each)
+      netbox.netbox.netbox_device:
+        netbox_url: "{{ nb_url }}"
+        netbox_token: "{{ nb_token }}"
+        validate_certs: false
+        data:
+          name: "{{ item.1.name }}"
+          rack: "{{ item.0.rack }}"
+          position: "{{ item.1.position }}"
+          face: "{{ item.1.face }}"
+      loop: "{{ intent.racks | subelements('devices') }}"
+      loop_control:
+        label: "{{ item.0.rack }} U{{ item.1.position }} {{ item.1.name }}"
+
+    # --- S4e.4: the provider links as circuits; the edge port and the provider port are cabled through the terminations ---
+    - name: Providers
+      netbox.netbox.netbox_provider:
+        netbox_url: "{{ nb_url }}"
+        netbox_token: "{{ nb_token }}"
+        validate_certs: false
+        data: {name: "{{ item.value.name }}", description: "{{ item.value.description }}", tags: ["{{ tag }}"]}
+      loop: "{{ intent.providers | dict2items }}"
+      loop_control:
+        label: "{{ item.value.name }}"
+
+    - name: Circuit types
+      netbox.netbox.netbox_circuit_type:
+        netbox_url: "{{ nb_url }}"
+        netbox_token: "{{ nb_token }}"
+        validate_certs: false
+        data: {name: "{{ item }}", slug: "{{ item }}"}
+      loop: "{{ intent.circuits | map(attribute='type') | unique | list }}"
+
+    - name: Circuits
+      netbox.netbox.netbox_circuit:
+        netbox_url: "{{ nb_url }}"
+        netbox_token: "{{ nb_token }}"
+        validate_certs: false
+        data:
+          cid: "{{ item.cid }}"
+          provider: "{{ item.provider }}"
+          circuit_type: "{{ item.type }}"
+          status: active
+          commit_rate: "{{ item.commit_rate_kbps }}"
+          description: "{{ item.description }}"
+          tags: ["{{ tag }}"]
+      loop: "{{ intent.circuits }}"
+      loop_control:
+        label: "{{ item.cid }}"
+
+    # netbox_circuit_termination (collection 3.22) cannot scope a termination on NetBox 4.7 (site is not a
+    # terminating object any more, termination_type is exclusive with it; measured 2026-09-08): the API does it
+    - name: Circuits, sites and terminations as NetBox holds them
+      ansible.builtin.uri:
+        url: "{{ nb_url }}/api/{{ item }}/?limit=100"
+        headers: "{{ nb_headers }}"
+        validate_certs: false
+      loop: [circuits/circuits, dcim/sites, circuits/circuit-terminations]
+      register: circuit_state
+
+    - name: Circuit terminations (A at the customer site, Z at the WAN site)
+      ansible.builtin.uri:
+        url: "{{ nb_url }}/api/circuits/circuit-terminations/"
+        method: POST
+        headers: "{{ nb_headers }}"
+        body_format: json
+        body:
+          circuit: "{{ (circuit_state.results[0].json.results | selectattr('cid', 'equalto', item.0.cid) | first).id }}"
+          term_side: "{{ item.1 | upper }}"
+          termination_type: dcim.site
+          termination_id: "{{ (circuit_state.results[1].json.results | selectattr('slug', 'equalto', item.0[item.1].site) | first).id }}"
+          port_speed: "{{ item.0.commit_rate_kbps }}"
+          description: "{{ item.0[item.1].device }} {{ item.0[item.1].interface }}"
+        validate_certs: false
+        status_code: 201
+      loop: "{{ intent.circuits | product(['a', 'z']) | list }}"
+      loop_control:
+        label: "{{ item.0.cid }} {{ item.1 | upper }} at {{ item.0[item.1].site }}"
+      when: >-
+        circuit_state.results[2].json.results | selectattr('circuit.cid', 'equalto', item.0.cid)
+        | selectattr('term_side', 'equalto', item.1 | upper) | list | length == 0
+      changed_when: true
+
+    - name: The edge and provider ports of every circuit as NetBox holds them (a direct cable between them is retired)
+      ansible.builtin.uri:
+        url: "{{ nb_url }}/api/dcim/interfaces/?device={{ item.0[item.1].device }}&name={{ item.0[item.1].interface }}"
+        headers: "{{ nb_headers }}"
+        validate_certs: false
+      loop: "{{ intent.circuits | product(['a', 'z']) | list }}"
+      loop_control:
+        label: "{{ item.0[item.1].device }} {{ item.0[item.1].interface }}"
+      register: circuit_ports
+
+    - name: Direct cables between the two ports of a circuit are retired
+      ansible.builtin.uri:
+        url: "{{ nb_url }}/api/dcim/cables/{{ item.json.results[0].cable.id }}/"
+        method: DELETE
+        headers: "{{ nb_headers }}"
+        validate_certs: false
+        status_code: [204, 404]
+      loop: >-
+        {{ circuit_ports.results | selectattr('json.results.0.cable', 'defined') | selectattr('json.results.0.cable')
+           | selectattr('json.results.0.link_peers_type', 'equalto', 'dcim.interface') | list }}
+      loop_control:
+        label: "{{ item.item.0.cid }}: cable {{ item.json.results[0].cable.id }} {{ item.item.0[item.item.1].device }}"
+      changed_when: true
+
+    # netbox_cable cannot look an existing cable up when it ends on a circuit termination ("circuit-terminations
+    # not found in API_APPS_ENDPOINTS", collection 3.22, second run): the API does it, port by port
+    - name: The terminations, fresh
+      ansible.builtin.uri:
+        url: "{{ nb_url }}/api/circuits/circuit-terminations/?limit=100"
+        headers: "{{ nb_headers }}"
+        validate_certs: false
+      register: terminations
+
+    - name: Cables from the edge port to termination A and from the provider port to termination Z
+      ansible.builtin.uri:
+        url: "{{ nb_url }}/api/dcim/cables/"
+        method: POST
+        headers: "{{ nb_headers }}"
+        body_format: json
+        body:
+          a_terminations: [{object_type: dcim.interface, object_id: "{{ item.json.results[0].id }}"}]
+          b_terminations: [{object_type: circuits.circuittermination, object_id: "{{ term_id }}"}]
+          status: connected
+          tags: [{name: "{{ tag }}"}]
+        validate_certs: false
+        status_code: 201
+      loop: "{{ circuit_ports.results }}"
+      loop_control:
+        label: "{{ item.item.0[item.item.1].device }} {{ item.item.0[item.item.1].interface }} <-> {{ item.item.0.cid }}"
+      vars:
+        term_id: >-
+          {{ (terminations.json.results | selectattr('circuit.cid', 'equalto', item.item.0.cid)
+              | selectattr('term_side', 'equalto', item.item.1 | upper) | first).id }}
+      when: item.json.results[0].link_peers_type != 'circuits.circuittermination'
+      changed_when: true

@@ -508,6 +508,64 @@ def fhrp_groups(topo: dict) -> list[dict]:
     return list(groups.values())
 
 
+def racks(topo: dict) -> list[dict]:
+    """One location and rack per site; every node of the site racked top down in rack_order, one U each."""
+    order = {role: n for n, role in enumerate(topo["rack_order"])}
+    out = []
+    for site, spec in topo["racks"].items():
+        names = sorted(
+            (name for name, node in topo["nodes"].items() if node["site"] == site),
+            key=lambda n: (order[topo["nodes"][n]["role"]], n),
+        )
+        devices = [
+            {"name": name, "position": spec["u_height"] - idx, "face": "front"}
+            for idx, name in enumerate(names)
+        ]
+        out.append(
+            {
+                "site": site,
+                "location": spec["location"],
+                "rack": spec["rack"],
+                "u_height": spec["u_height"],
+                "devices": devices,
+            }
+        )
+    return out
+
+
+def circuits(topo: dict) -> list[dict]:
+    """The circuits on links[].circuit: Z at the provider port (a-side, WAN site), A at the customer edge (b-side)."""
+    out = []
+    for link in topo["links"]:
+        cid = link.get("circuit")
+        if not cid:
+            continue
+        spec = topo["circuits"][cid]
+        a_node, a_if = link["a"].split(":")
+        b_node, b_if = link["b"].split(":")
+        out.append(
+            {
+                "cid": cid,
+                "provider": topo["providers"][spec["provider"]]["name"],
+                "provider_slug": spec["provider"],
+                "type": spec["type"],
+                "commit_rate_kbps": spec.get("commit_rate_kbps"),
+                "description": spec.get("description", ""),
+                "a": {
+                    "site": topo["nodes"][b_node]["site"],
+                    "device": b_node,
+                    "interface": device_name(topo["nodes"][b_node]["platform"], b_if),
+                },
+                "z": {
+                    "site": topo["nodes"][a_node]["site"],
+                    "device": a_node,
+                    "interface": device_name(topo["nodes"][a_node]["platform"], a_if),
+                },
+            }
+        )
+    return out
+
+
 if __name__ == "__main__":
     topology = load_topology()
     per_device = interfaces(topology)
@@ -531,6 +589,9 @@ if __name__ == "__main__":
                 for site in topology["sites"]
             },
             "fhrp_groups": fhrp_groups(topology),
+            "racks": racks(topology),
+            "circuits": circuits(topology),
+            "providers": topology.get("providers", {}),
             # the play's lookups in one fixed order: groups, assignments, one per group address, one per member SVI
             "fhrp_lookups": [
                 "ipam/fhrp-groups/?limit=100",

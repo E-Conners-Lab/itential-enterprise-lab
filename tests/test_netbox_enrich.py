@@ -292,3 +292,92 @@ def test_seed_play_creates_vrfs_before_prefixes() -> None:
         "In-band prefixes"
     ), "VRFs must exist before prefixes are placed in them"
     assert 'vrf: "{{ item.vrf | default(omit) }}"' in text
+
+
+# --- S4e.3: locations and racks ------------------------------------------------------------------------------
+def test_every_node_is_racked_once_with_a_unique_position(topo: dict) -> None:
+    rows = derive.racks(topo)
+    assert {r["site"] for r in rows} == set(topo["racks"]) == set(topo["sites"]), (
+        "one rack per site"
+    )
+    racked = [d["name"] for r in rows for d in r["devices"]]
+    assert sorted(racked) == sorted(topo["nodes"]), "every node is racked exactly once"
+    for r in rows:
+        positions = [d["position"] for d in r["devices"]]
+        assert len(set(positions)) == len(positions) and all(
+            1 <= p <= r["u_height"] for p in positions
+        ), r["rack"]
+        assert r["devices"][0]["position"] == r["u_height"], (
+            f"{r['rack']}: the first device sits at the top"
+        )
+    dc1 = {
+        d["name"]: d["position"]
+        for r in rows
+        if r["site"] == "dc1"
+        for d in r["devices"]
+    }
+    assert (
+        dc1["dc1-wan01"]
+        > dc1["dc1-fw01"]
+        > dc1["dc1-spine01"]
+        > dc1["dc1-leaf01"]
+        > dc1["dc1-acc01"]
+        > dc1["dc1-srv01"]
+    )
+    assert set(topo["rack_order"]) >= {n["role"] for n in topo["nodes"].values()}
+
+
+def test_enrich_play_builds_element_3() -> None:
+    text = PLAY.read_text()
+    for needle in ("netbox_location", "netbox_rack", "position:"):
+        assert needle in text, f"netbox-enrich.yml lacks {needle}"
+
+
+def test_seed_device_types_take_one_u() -> None:
+    """A 0U device type cannot hold a rack position (NetBox), so every type is 1U."""
+    assert "u_height: 1" in SEED.read_text()
+
+
+# --- S4e.4: provider circuits on the four provider links ------------------------------------------------------
+def test_circuits_cover_every_provider_link(topo: dict) -> None:
+    rows = derive.circuits(topo)
+    isp_links = [
+        lk
+        for lk in topo["links"]
+        if lk["a"].startswith("isp-core01:") or lk["b"].startswith("isp-core01:")
+    ]
+    assert len(rows) == len(isp_links) == 4
+    assert {r["cid"] for r in rows} == set(topo["circuits"]), (
+        "every circuit in the YAML sits on exactly one link"
+    )
+    for r in rows:
+        assert (
+            r["z"]["device"] == "isp-core01"
+            and r["z"]["site"] == "wan"
+            and r["z"]["interface"].startswith("GigabitEthernet")
+        )
+        assert (
+            r["a"]["site"] == topo["nodes"][r["a"]["device"]]["site"]
+            and r["a"]["site"] != "wan"
+        )
+        assert r["provider"] == "Simulated ISP" and r["type"] == "transit"
+    assert {r["cid"]: r["a"]["device"] for r in rows}["ISP-BR1-01"] == "br1-wan01"
+
+
+def test_seed_cables_skip_circuit_links() -> None:
+    text = SEED.read_text()
+    task = text[text.index("- name: Cables (one per link)") :]
+    task = task[: task.index("- name:", 10)]
+    assert "rejectattr('circuit', 'defined')" in task
+
+
+def test_enrich_play_builds_element_4() -> None:
+    text = PLAY.read_text()
+    for needle in (
+        "netbox_provider",
+        "netbox_circuit_type",
+        "netbox_circuit:",
+        "netbox_circuit_termination",
+        "circuits.circuittermination",
+    ):
+        assert needle in text, f"netbox-enrich.yml lacks {needle}"

@@ -312,10 +312,10 @@ nodes:
 # Each link is one hidden EVE-NG bridge network and one NetBox cable. Data ports only.
 links:
   # provider core to every site edge (10.103.0.0/24 /30s)
-  - {a: "isp-core01:Gi2", b: "dc1-wan01:Gi2", prefix: 10.103.0.0/30}
-  - {a: "isp-core01:Gi3", b: "dc1-wan02:Gi2", prefix: 10.103.0.4/30}
-  - {a: "isp-core01:Gi4", b: "br1-wan01:Gi2", prefix: 10.103.0.8/30}
-  - {a: "isp-core01:Gi5", b: "br2-wan01:Gi2", prefix: 10.103.0.12/30}
+  - {a: "isp-core01:Gi2", b: "dc1-wan01:Gi2", prefix: 10.103.0.0/30, circuit: ISP-DC1-01}
+  - {a: "isp-core01:Gi3", b: "dc1-wan02:Gi2", prefix: 10.103.0.4/30, circuit: ISP-DC1-02}
+  - {a: "isp-core01:Gi4", b: "br1-wan01:Gi2", prefix: 10.103.0.8/30, circuit: ISP-BR1-01}
+  - {a: "isp-core01:Gi5", b: "br2-wan01:Gi2", prefix: 10.103.0.12/30, circuit: ISP-BR2-01}
   # DC edge routers to both firewalls: routed /30s from 10.101.2.0/24, eBGP with GR (ADR 0034 amendment)
   - {a: "dc1-wan01:Gi3", b: "dc1-fw01:eth1/1", prefix: 10.101.2.0/30}
   - {a: "dc1-wan01:Gi4", b: "dc1-fw02:eth1/1", prefix: 10.101.2.4/30}
@@ -353,6 +353,25 @@ links:
   - {a: "dc1-wan02:Gi6", b: "dc1-leaf02:Eth7", prefix: 10.101.3.4/30, bypass: true}
   - {a: "br1-wan01:Gi4", b: "br1-sw01:Eth4", vlan: 10, bypass: true}
   - {a: "br2-wan01:Gi4", b: "br2-sw01:Eth4", vlan: 10, bypass: true}
+
+# The four provider links are circuits (ADR 0048): the link's a-side is the provider port (termination Z at the
+# WAN site), the b-side the customer edge (termination A at its site). links[].circuit names the circuit.
+providers:
+  simulated-isp: {name: "Simulated ISP", description: "The isp-core01 C8000v standing in for a carrier"}
+circuits:
+  ISP-DC1-01: {provider: simulated-isp, type: transit, commit_rate_kbps: 1000000, description: "DC1 primary transit (dc1-wan01)"}
+  ISP-DC1-02: {provider: simulated-isp, type: transit, commit_rate_kbps: 1000000, description: "DC1 secondary transit (dc1-wan02)"}
+  ISP-BR1-01: {provider: simulated-isp, type: transit, commit_rate_kbps: 100000, description: "Branch 1 transit"}
+  ISP-BR2-01: {provider: simulated-isp, type: transit, commit_rate_kbps: 100000, description: "Branch 2 transit"}
+
+# One location and one 42U rack per site (ADR 0048); devices are racked top down in rack_order (1U each),
+# so a position is derived, never typed. The EVE-NG lab has no physical rack: this is the model NetBox shows.
+racks:
+  wan: {location: "WAN core room", rack: wan-rack01, u_height: 42}
+  dc1: {location: "DC1 hall A", rack: dc1-rack01, u_height: 42}
+  br1: {location: "Branch 1 comms room", rack: br1-rack01, u_height: 42}
+  br2: {location: "Branch 2 comms room", rack: br2-rack01, u_height: 42}
+rack_order: [isp-core, wan-edge, firewall, spine, leaf, access, branch-switch, server, client]
 
 # VRFs the devices run (ADR 0034/0048); RDs are per device (WAN: <asn>:1, PROD: <router-id>:50001)
 vrfs:

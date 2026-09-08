@@ -264,6 +264,95 @@ PY
 }
 check "S4e.2 VRFs with route targets, prefixes in PROD, the 7 ASNs on their sites, BGP neighbours and RDs in each device's config context equal to the device (direct SSH), the transit virtual router as an FHRP group" c2
 
+# --- S4e.3 one location and one rack per site; every device racked at its derived position -------------------------
+c3() {
+  nb "${NETBOX_URL}/api/dcim/locations/?limit=100" > "$WORK/nb-locations.json"
+  nb "${NETBOX_URL}/api/dcim/racks/?limit=100" > "$WORK/nb-racks.json"
+  nb "${NETBOX_URL}/api/dcim/devices/?limit=100" > "$WORK/nb-all-devices.json"
+  WORK="$WORK" ${PY} - <<'PY'
+import json, os, sys
+W = os.environ["WORK"]
+intent = json.load(open(f"{W}/intent.json"))["racks"]
+locations = {(loc["site"]["slug"], loc["name"]) for loc in json.load(open(f"{W}/nb-locations.json"))["results"]}
+racks = {r["name"]: r for r in json.load(open(f"{W}/nb-racks.json"))["results"]}
+devices = {d["name"]: d for d in json.load(open(f"{W}/nb-all-devices.json"))["results"]}
+errs = []
+for r in intent:
+    if (r["site"], r["location"]) not in locations:
+        errs.append(f"location {r['location']} missing at {r['site']}")
+    nbr = racks.get(r["rack"])
+    if not nbr:
+        errs.append(f"rack {r['rack']} missing"); continue
+    if nbr["site"]["slug"] != r["site"] or (nbr.get("location") or {}).get("name") != r["location"] or nbr["u_height"] != r["u_height"]:
+        errs.append(f"rack {r['rack']}: site/location/height differ ({nbr['site']['slug']}, {(nbr.get('location') or {}).get('name')}, {nbr['u_height']})")
+    seen = {}
+    for dev in r["devices"]:
+        d = devices.get(dev["name"])
+        if not d:
+            errs.append(f"{dev['name']}: not in NetBox"); continue
+        if not d.get("rack") or d["rack"]["name"] != r["rack"] or d.get("position") != dev["position"] or (d.get("face") or {}).get("value") != dev["face"]:
+            errs.append(f"{dev['name']}: rack {(d.get('rack') or {}).get('name')} U{d.get('position')} {(d.get('face') or {}).get('value')} != {r['rack']} U{dev['position']} {dev['face']}")
+        if d.get("position") in seen:
+            errs.append(f"{r['rack']}: U{d['position']} holds {seen[d['position']]} and {dev['name']}")
+        seen[d.get("position")] = dev["name"]
+if errs:
+    print("\n".join(errs[:30])); sys.exit(1)
+print(f"{len(intent)} locations and racks, {sum(len(r['devices']) for r in intent)} devices at their positions ({', '.join(r['rack'] + ': ' + str(len(r['devices'])) + 'U' for r in intent)})")
+PY
+}
+check "S4e.3 one location and one rack per site, every device racked at its derived position (role order top down, unique U)" c3
+
+# --- S4e.4 provider circuits: terminations at the right sites, the edge port's cable trace crosses the circuit -----------
+c4() {
+  nb "${NETBOX_URL}/api/circuits/circuits/?limit=100" > "$WORK/nb-circuits.json"
+  nb "${NETBOX_URL}/api/circuits/circuit-terminations/?limit=100" > "$WORK/nb-terminations.json"
+  nb "${NETBOX_URL}/api/circuits/providers/?limit=100" > "$WORK/nb-providers.json"
+  nb "${NETBOX_URL}/api/dcim/cables/?limit=500" > "$WORK/nb-cables.json"
+  local dev ifc id
+  while read -r dev ifc; do
+    id=$(nb "${NETBOX_URL}/api/dcim/interfaces/?device=${dev}&name=${ifc}" | ${PY} -c 'import sys,json;print(json.load(sys.stdin)["results"][0]["id"])')
+    nb "${NETBOX_URL}/api/dcim/interfaces/${id}/trace/" > "$WORK/trace-${dev}.json"
+  done < <(${PY} -c "import json;[print(c['a']['device'], c['a']['interface']) for c in json.load(open('$WORK/intent.json'))['circuits']]")
+  WORK="$WORK" ${PY} - <<'PY'
+import json, os, sys
+W = os.environ["WORK"]
+intent = json.load(open(f"{W}/intent.json"))
+circuits = {c["cid"]: c for c in json.load(open(f"{W}/nb-circuits.json"))["results"]}
+terms = json.load(open(f"{W}/nb-terminations.json"))["results"]
+providers = {p["name"] for p in json.load(open(f"{W}/nb-providers.json"))["results"]}
+cables = json.load(open(f"{W}/nb-cables.json"))
+errs = []
+for c in intent["circuits"]:
+    if c["provider"] not in providers:
+        errs.append(f"provider {c['provider']} missing")
+    nbc = circuits.get(c["cid"])
+    if not nbc or nbc["provider"]["name"] != c["provider"] or nbc["type"]["slug"] != c["type"] or nbc["status"]["value"] != "active":
+        errs.append(f"circuit {c['cid']} missing or wrong ({nbc and (nbc['provider']['name'], nbc['type']['slug'], nbc['status']['value'])})"); continue
+    for side in ("a", "z"):
+        t = [x for x in terms if x["circuit"]["cid"] == c["cid"] and x["term_side"] == side.upper()]
+        if not t or t[0].get("termination_type") != "dcim.site" or (t[0].get("termination") or {}).get("slug") != c[side]["site"]:
+            errs.append(f"{c['cid']} termination {side.upper()}: expected site {c[side]['site']}, got {t and (t[0].get('termination_type'), t[0].get('termination'))}")
+    # the trace from the edge port: segments of [near ends, cable, far ends]; a termination end carries a
+    # circuit-terminations URL; the last far end must be the provider port
+    path = json.load(open(f"{W}/trace-{c['a']['device']}.json"))
+    ends = [e for seg in path for part in seg if isinstance(part, list) for e in part]
+    if not any("circuit-terminations" in (e.get("url") or "") for e in ends):
+        errs.append(f"{c['cid']}: the trace from {c['a']['device']} {c['a']['interface']} crosses no circuit termination")
+    last = path[-1][-1][0] if path and isinstance(path[-1][-1], list) and path[-1][-1] else {}
+    far = ((last.get("device") or {}).get("name"), last.get("name"))
+    if far != (c["z"]["device"], c["z"]["interface"]):
+        errs.append(f"{c['cid']}: the trace ends at {far}, expected {(c['z']['device'], c['z']['interface'])}")
+direct = [cb for cb in cables["results"] if all(t.get("object_type") == "dcim.interface" for t in cb["a_terminations"] + cb["b_terminations"])
+          and {t["object"]["device"]["name"] for t in cb["a_terminations"] + cb["b_terminations"]} & {"isp-core01"}]
+if direct:
+    errs.append(f"direct cables to isp-core01 still exist: {[cb['id'] for cb in direct]}")
+if errs:
+    print("\n".join(errs[:30])); sys.exit(1)
+print(f"{len(intent['circuits'])} circuits of {sorted(providers)} with A/Z terminations at their sites; every edge port traces through its circuit to the isp-core01 port; {cables['count']} cables (no direct cable to the provider core)")
+PY
+}
+check "S4e.4 provider circuits with terminations at their sites; the cable trace from each edge port crosses the circuit to the isp-core01 port; no direct provider cable remains" c4
+
 echo
 echo "passed=${pass} failed=${fail}"
 [ "$fail" -eq 0 ]
