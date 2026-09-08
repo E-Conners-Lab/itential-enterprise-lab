@@ -56,6 +56,20 @@ hold every API shape measured on Platform 6.5.2 (`itential-platform-lessons.md`,
    post the change summary, wait for Elliot's "approve", merge.
 3. Open the Phase 6 draft PR from `phase-6/flowai` (description = the phase report: built / verified / deferred,
    ADR 0037-0047, verify log paths); rebase onto main once #17 merges; post the summary; wait for "approve".
-4. Deferred, do not build: PA-VM firewalls (image not staged), Gateway 4, observability/job metrics (Phase 9),
+4. NetBox enrichment (owner request 2026-09-08, after the Phase 6 PR; ADR 0048, PID 1.13 before code). Measured
+   on 2026-09-08: NetBox holds the skeleton only. Modeled: 5 sites, 5 manufacturers, 5 device types, 12 roles,
+   5 platforms, 21 devices (17 active, 4 planned firewalls), 87 interfaces, 33 cables (one per topology link),
+   19 prefixes, 2 DHCP ranges, 47 addresses with DNS names, primary IPv4 everywhere, 2 VLAN groups + 1 VLAN,
+   23 tags, the Proxmox cluster with 5 VMs. Not modeled: locations/racks/positions, console/power/front/rear
+   ports, inventory items (serials); the /30 link addresses, loopbacks, SVIs and anycast gateways on their
+   interfaces and the "to <peer>" interface descriptions (what Golden Config interface intent needs, ADR 0040);
+   VRFs (MGMT, tenant), route targets, ASNs (in the topology), FHRP groups (BGP sessions need the netbox-bgp
+   plugin); providers/circuits/terminations for the four provider links; tenants, contacts, config contexts
+   (site gateways, DNS, NTP live only in the YAML), custom fields, journal entries. Rule: `topology/*.yaml` stays
+   the single oracle (ADR 0002): racks, circuits, VRFs and ASNs are added there and derived by a new
+   `netbox-enrich.yml` play, never typed into NetBox. Order: interface addressing + descriptions, VRFs + ASNs,
+   racks + locations, circuits, config contexts + journal entries (the plays and the LCM actions write them).
+   Design first (ADR + PID), then red tests, then the play; netbox-sot's acceptance grows with each object type.
+5. Deferred, do not build: PA-VM firewalls (image not staged), Gateway 4, observability/job metrics (Phase 9),
    node-credential secrets (Phase 10), Windows endpoints. Ideas noted, not scheduled: an eAPI python-script
    service for EOS structured data (TextFSM regex risk), Tool Registry pruning.
