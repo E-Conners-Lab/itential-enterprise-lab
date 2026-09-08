@@ -206,7 +206,9 @@ lcm_model_id() { iap "${PLATFORM}/lifecycle-manager/resources?limit=100" | ${PY}
 run_action() { iap -X POST "${PLATFORM}/lifecycle-manager/resources/$1/run-action" -d "$2" | ${PY} -c 'import sys,json;d=json.load(sys.stdin);x=d.get("data") or {};print(x.get("_id",""),x.get("jobId",""),x.get("instanceId",""))'; }
 wait_exec() { local st; for _ in $(seq 1 48); do st=$(iap "${PLATFORM}/lifecycle-manager/action-executions/$1" | ${PY} -c 'import sys,json;print((json.load(sys.stdin).get("data") or {}).get("status",""))'); case "$st" in complete) return 0;; error|canceled) echo "execution $1 ${st}"; return 1;; esac; sleep 5; done; echo "execution $1 timeout (${st})"; return 1; }
 wait_task() { for _ in $(seq 1 24); do iap "${PLATFORM}/operations-manager/jobs/$1" | ${PY} -c "import sys,json;t=json.load(sys.stdin)['data']['tasks'].get('$2',{});sys.exit(0 if t.get('status')=='running' else 1)" && return 0; sleep 5; done; echo "task $2 of job $1 never reached running"; return 1; }
-push_jobs() { iap "${PLATFORM}/operations-manager/jobs?limit=60" | ${PY} -c 'import sys,json;print(len([j for j in json.load(sys.stdin).get("data") or [] if j.get("name")=="wf-config-push-v1"]))'; }
+# the id of the newest wf-config-push-v1 job (the list is newest first); a count inside a fixed window slides
+# once the history is deep enough (the no-op job itself evicts an older push job, measured 20260908T130615Z)
+push_jobs() { iap "${PLATFORM}/operations-manager/jobs?limit=60" | ${PY} -c 'import sys,json;p=[j["_id"] for j in json.load(sys.stdin).get("data") or [] if j.get("name")=="wf-config-push-v1"];print(p[0] if p else "")'; }
 LCM_NAME="lcm-${ts_lc}"; LCM_INST="br2-${LCM_NAME}"; BR2_SW=10.100.0.166
 c3() {
   local model create_id delete_id pair
@@ -281,7 +283,7 @@ c3() {
   wait_job "$job" || return 1
   after=$(push_jobs)
   iap "${PLATFORM}/operations-manager/jobs/${job}" | ${PY} -c 'import sys,json;v=json.load(sys.stdin)["data"]["variables"];assert v.get("changed") is False,v' || { echo "second delete was not a no-op"; return 1; }
-  [ "$before" = "$after" ] || { echo "the no-op delete started a push job"; return 1; }
+  [ "$before" = "$after" ] || { echo "the no-op delete started a push job (${after})"; return 1; }
   echo "no-op: wf-branch-vlan-delete-v1 on the retired VLAN changed nothing and started no push (job ${job})"
   # 5) a rejected create leaves nothing behind: the reservation is rolled back, the child job ends in error by design,
   #    the execution waits until it is cancelled (the terminal step), and the cancel retires the instance
