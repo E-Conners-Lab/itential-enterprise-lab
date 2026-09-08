@@ -1,0 +1,28 @@
+# test-06b-platform 20260908T015718Z
+SKIP  S4d.1 Golden Config: plan clean on 12 devices; hostname drift on br1-wan01 and br1-sw01 flagged with no false positive; restored through wf-config-push-v1
+SKIP  S4d.2 command templates on br1-wan01 and br1-sw01 with every rule evaluated; analytic pre/post green; nightly backup schedule and a run whose backups equal the running configs
+FAIL  S4d.3 Lifecycle Manager branch-vlan: instances from NetBox; create -> JSON form approval (Work Center shows branch, VLAN, switch, NetBox reservation) -> instance; rejected push changes nothing; delete -> governed push; history; no-op; rejected create retired
+      actions runnable: Create -> workflow 9ba421aa, Delete -> workflow e27a31e7
+      form fields: ['branch', 'decision', 'netbox_vlan_id', 'status', 'switch', 'vid', 'vlan_name']
+      instances cover every NetBox branch VLAN: br1-approve-demo 
+      Work Center item 01a07ebc-0003-755b-8e47-deb139e29a60 shows {'branch': 'br2', 'vid': 11, 'vlan_name': 'lcm-20260908t015718z', 'switch': 'br2-sw01', 'netbox_vlan_id': 22, 'status': 'reserved'}
+      instance br2-lcm-20260908t015718z {'branch': 'br2', 'vid': 11, 'vlan_name': 'lcm-20260908t015718z', 'switch': 'br2-sw01', 'netbox_vlan_id': 22, 'status': 'active'}
+      create: VLAN 11 lcm-20260908t015718z active in NetBox (id 22) and on br2-sw01; instance br2-lcm-20260908t015718z recorded (execution 6a9f6b82db698a97918e2e5d)
+      rejected push: job bd3dc5c995804f408d8a34b2 in error, delete job 73941d83533c4b72b2e5bc87 waited, NetBox and br2-sw01 untouched, both cancelled
+      delete: push job 2439a78fef3b42dc97a99b82 removed VLAN 11 from br2-sw01 after the approval; NetBox VLAN gone; instance br2-lcm-20260908t015718z retired (execution 6a9f6ba2db698a97918e2e5f)
+      Traceback (most recent call last):
+        File "<string>", line 1, in <module>
+          import sys,json;d=json.load(sys.stdin)["data"];h=[(x["actionType"],x["status"],bool(x.get("jobId"))) for x in d];assert h==[("create","complete",True),("delete","complete",True)],h;print("history:",[(x["actionName"],x["status"],x["jobId"]) for x in d])
+                            ~~~~~~~~~^^^^^^^^^^^
+        File "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/__init__.py", line 298, in load
+          return loads(fp.read(),
+              cls=cls, object_hook=object_hook,
+              parse_float=parse_float, parse_int=parse_int,
+              parse_constant=parse_constant, object_pairs_hook=object_pairs_hook, **kw)
+        File "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/__init__.py", line 352, in loads
+          return _default_decoder.decode(s)
+                 ~~~~~~~~~~~~~~~~~~~~~~~^^^
+DEFER S4d.4 Integration Models (element 4, not built yet)
+DEFER S4d.6 hosts and firewalls (element 6, not built yet)
+
+passed=0 failed=1 deferred=2

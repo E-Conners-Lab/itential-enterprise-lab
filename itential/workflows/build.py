@@ -23,6 +23,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 CLUSTER = "lab"
 INVENTORY = "lab"
+VERSIONS = yaml.safe_load((HERE.parent / "versions.yaml").read_text())
 
 
 def task(name: str, app: str, summary: str, incoming: dict, outgoing: dict, *, kind: str = "automatic",
@@ -189,6 +190,47 @@ def t(a: str, b: str, state: str = "success") -> dict:
     return {b: {"state": state, "type": "standard"}}
 
 
+# --- Lifecycle Manager + JSON Forms (S4d.3, ADR 0043/0044) ---------------------------------------------
+FORM_NAME = VERSIONS["forms"]["approval"]
+FORM_VIEW = "/json-forms/task/ShowJsonForm"  # measured on 6.5.2: app JsonForms, form_id by name, instance_data defaults, export out
+CONFIG_PUSH = VERSIONS["workflows"]["config_push"]
+# the object Lifecycle Manager stores as the instance (itential/lcm/branch-vlan.yaml schema); every marker is
+# filled by one Tools.replace (a $var inside a nested object never resolves) and the string parsed at the end
+INSTANCE_TPL = '{"branch": "__B__", "vid": __V__, "vlan_name": "__N__", "switch": "__S__", "netbox_vlan_id": __I__, "status": "__ST__"}'
+INSTANCE_MARKERS = ("__B__", "__V__", "__N__", "__S__", "__I__", "__ST__")
+
+
+def form_task(summary: str, data_ref: str, x: int, y: int = 0) -> dict:
+    """JsonForms.ShowJsonForm manual task: the approver sees the form pre-filled from data_ref (a top-level $var
+    object) and the submitted form comes back as export -> job variable approval (ADR 0044). The form has no
+    reject button: the decision is a field, evaluated by the next task; a failure finish is a reject too."""
+    return task("ShowJsonForm", "JsonForms", summary, {"form_id": FORM_NAME, "instance_data": data_ref},
+                {"export": "$var.job.approval"}, kind="manual", display="JsonForms", view=FORM_VIEW, x=x, y=y)
+
+
+def instance_chain(ids: list[str], refs: dict, x: int, y: int = 0, *, to_job: bool = False) -> dict:
+    """Six replace tasks filling INSTANCE_TPL (branch, vid string, name, switch, NetBox id string, status) and a
+    parse whose textObject is the instance object; to_job publishes it as $var.job.instance (what LCM stores)."""
+    tasks, prev = {}, INSTANCE_TPL
+    for i, (tid, marker) in enumerate(zip(ids[:6], INSTANCE_MARKERS)):
+        tasks[tid] = replace(f"instance: {marker.strip('_').lower()}", prev, marker, refs[marker], x=x + 300 * i, y=y)
+        prev = f"$var.{tid}.replacedString"
+    tasks[ids[6]] = parse("instance object", prev, x=x + 1800, y=y)
+    if to_job:
+        tasks[ids[6]]["variables"]["outgoing"] = {"textObject": "$var.job.instance"}
+    return tasks
+
+
+def child_job(summary: str, workflow_name: str, variables: dict, out_job_var: str, x: int, y: int = 0) -> dict:
+    """WorkFlowEngine.childJob: starts another workflow by name with {task, value} references as its inputs and
+    waits for it; job_details carries the finished child. A child that ends in error errors this task."""
+    c = task("childJob", "WorkFlowEngine", summary,
+             {"task": "", "workflow": workflow_name, "variables": variables, "data_array": "", "transformation": "", "loopType": ""},
+             {"job_details": f"$var.job.{out_job_var}"}, kind="operation", display="WorkFlowEngine", x=x, y=y)
+    c["actor"] = "job"
+    return c
+
+
 # --- wf-branch-vlan-v1 (S4.4): reserve a VLAN in NetBox, approve, configure the branch switch ---------
 # Inputs: branch (br1|br2), vlan_name. The next free VID in the branch's NetBox VLAN group is chosen
 # by a few lines of Python on Gateway 5 (runCode; the NetBox adapter strips the trailing slash the
@@ -257,9 +299,19 @@ def branch_vlan() -> dict:
         "e4": replace("work note body", '{"work_notes": "__N__"}', "__N__", "$var.e3.replacedString", x=5150, y=-800),
         "e5": parse("work note body object", "$var.e4.replacedString", x=5300, y=-800),
         "e6": snow_call("work note: the NetBox reservation", "PATCH", "$var.job.change_table_path", "$var.e5.textObject", x=5450, y=-800, query={"sysparm_fields": "number,state"}),
-        # approval
-        "4b": replace("summary line", "Reserved VLAN __V__ in NetBox; apply it to the branch switch?", "__V__", "$var.b2.numToString", x=4800, y=-200),
-        "4a": view("approval", "Approve VLAN change", "$var.4b.replacedString", "$var.4b.replacedString", "Approve", "Reject", x=5100, y=-200),
+        # approval on the JSON form (ADR 0044): the fields are the instance object with status reserved
+        "a3": num2str("vlan id as string", "$var.a2.return_data", x=4700, y=-200),
+        "4a": form_task("approval", "$var.a9.textObject", x=7000, y=-200),
+        "4c": evaluate("approved on the form?", "4a", "export", "decision", "==", "approve", x=7300, y=-200),
+        # the stored instance once the switch is configured and NetBox says active (ADR 0043)
+        "7b": replace("instance: status active", "$var.a8.replacedString", "__ST__", "active", x=9500, y=-200),
+        "7c": parse("instance object (active)", "$var.7b.replacedString", x=9800, y=-200),
+        # no-op path: the instance from the VLAN NetBox already has (vid, id, status from the search result)
+        "b3": jq("existing vid", "$var.2a.result", "response.results[0].vid", x=1500, y=400, to_job="vid"),
+        "b4": jq("existing NetBox id", "$var.2a.result", "response.results[0].id", x=1800, y=400, to_job="vlan_id"),
+        "b5": jq("existing status", "$var.2a.result", "response.results[0].status.value", x=2100, y=400),
+        "b6": num2str("existing vid as string", "$var.b3.return_data", x=2400, y=400),
+        "b7": num2str("existing id as string", "$var.b4.return_data", x=2700, y=400),
         # configure the switch
         "5a": replace("config: vid", "vlan __V__\n   name __N__", "__V__", "$var.b2.numToString", x=5400, y=-200),
         "5b": replace("config: name", "$var.5a.replacedString", "__N__", "$var.job.vlan_name", x=5700, y=-200),
@@ -281,6 +333,14 @@ def branch_vlan() -> dict:
     tasks["1a"]["variables"]["outgoing"] = {"replacedString": "$var.job.switch"}
     tasks["d4"]["variables"]["outgoing"] = {"replacedString": "$var.job.change_path"}
     tasks["d9"]["variables"]["outgoing"] = {"replacedString": "$var.job.change_table_path"}
+    tasks["7c"]["variables"]["outgoing"] = {"textObject": "$var.job.instance"}
+    form_ids = ["a4", "a5", "a6", "a7", "a8", "b1", "a9"]
+    tasks.update(instance_chain(form_ids, {"__B__": "$var.job.branch", "__V__": "$var.b2.numToString", "__N__": "$var.job.vlan_name",
+                                           "__S__": "$var.job.switch", "__I__": "$var.a3.numToString", "__ST__": "reserved"}, x=5000, y=-200))
+    noop_ids = ["b8", "b9", "c4", "c5", "c6", "c7", "c8"]
+    tasks.update(instance_chain(noop_ids, {"__B__": "$var.job.branch", "__V__": "$var.b6.numToString", "__N__": "$var.job.vlan_name",
+                                           "__S__": "$var.job.switch", "__I__": "$var.b7.numToString", "__ST__": "$var.b5.return_data"},
+                                x=3000, y=400, to_job=True))
     order = ["1b", "1c", "1d", "2a", "2b"]
     reserve = ["3a", "3b", "a1", "b2", "3e", "3f", "c1", "c2", "c3", "3d", "a2", "e0"]
     apply = ["5a", "5b", "5c", "5d", "6a", "f0"]
@@ -294,27 +354,37 @@ def branch_vlan() -> dict:
     tr["0a"] = {"0b": {"state": "success", "type": "standard"}, "1a": {"state": "failure", "type": "standard"}}
     tr["0b"] = t("", "1b")
     tr["1a"] = t("", "1b")
-    tr["2b"] = {"9a": {"state": "success", "type": "standard"}, "3a": {"state": "failure", "type": "standard"}}
+    noop = ["b3", "b4", "b5", "b6", "b7", *noop_ids, "9a"]
+    tr["2b"] = {noop[0]: {"state": "success", "type": "standard"}, "3a": {"state": "failure", "type": "standard"}}
+    for a, b in zip(noop, noop[1:]):
+        tr[a] = t("", b)
     tr["9a"] = t("", "workflow_end")
     for a, b in zip(reserve, reserve[1:]):
         tr[a] = t("", b)
-    tr["e0"] = {"e1": {"state": "success", "type": "standard"}, "4b": {"state": "failure", "type": "standard"}}
-    for a, b in zip(["e1", "e2", "e3", "e4", "e5", "e6"], ["e2", "e3", "e4", "e5", "e6", "4b"]):
+    tr["e0"] = {"e1": {"state": "success", "type": "standard"}, "a3": {"state": "failure", "type": "standard"}}
+    for a, b in zip(["e1", "e2", "e3", "e4", "e5", "e6"], ["e2", "e3", "e4", "e5", "e6", "a3"]):
         tr[a] = t("", b)
-    tr["4b"] = t("", "4a")
-    tr["4a"] = {"5a": {"state": "success", "type": "standard"}, "8a": {"state": "failure", "type": "standard"}}
+    form_chain = ["a3", *form_ids, "4a"]
+    for a, b in zip(form_chain, form_chain[1:]):
+        tr[a] = t("", b)
+    # the form: submitted -> the decision decides; a failure finish (API reject) rolls back like a reject
+    tr["4a"] = {"4c": {"state": "success", "type": "standard"}, "8a": {"state": "failure", "type": "standard"}}
+    tr["4c"] = {"5a": {"state": "success", "type": "standard"}, "8a": {"state": "failure", "type": "standard"}}
     for a, b in zip(apply, apply[1:]):
         tr[a] = t("", b)
     tr["5c"] = {"5d": {"state": "success", "type": "standard"}, "8a": {"state": "error", "type": "standard"}}
     tr["5d"] = {"6a": {"state": "success", "type": "standard"}, "8a": {"state": "failure", "type": "standard"}}
-    tr["f0"] = {"f1": {"state": "success", "type": "standard"}, "7a": {"state": "failure", "type": "standard"}}
-    for a, b in zip(["f1", "f2", "f3", "f4"], ["f2", "f3", "f4", "7a"]):
+    tr["f0"] = {"f1": {"state": "success", "type": "standard"}, "7b": {"state": "failure", "type": "standard"}}
+    for a, b in zip(["f1", "f2", "f3", "f4"], ["f2", "f3", "f4", "7b"]):
         tr[a] = t("", b)
+    tr["7b"] = t("", "7c")
+    tr["7c"] = t("", "7a")
     tr["7a"] = t("", "workflow_end")
     tr["8a"] = t("", "8b")
     tr["8b"] = {}
-    return workflow("wf-branch-vlan-v1", "Reserves a VLAN in NetBox for a branch, asks for approval, configures the branch switch through Gateway 5, "
-                    "activates the NetBox VLAN; rolls the reservation back on rejection or device failure (PID S4.4)",
+    return workflow("wf-branch-vlan-v1", "Reserves a VLAN in NetBox for a branch, asks for approval on the JSON form %s, configures the branch "
+                    "switch through Gateway 5, activates the NetBox VLAN and publishes the Lifecycle Manager instance; rolls the reservation "
+                    "back on rejection or device failure (PID S4.4, S4d.3, ADR 0043/0044)" % FORM_NAME,
                     {"branch": {"type": "string", "required": True, "description": "Branch site slug, e.g. br1"},
                      "vlan_name": {"type": "string", "required": True, "description": "VLAN name to reserve and configure"},
                      "switch_override": {"type": "string", "description": "Inventory node to configure instead of <branch>-sw01 (empty = default; used by verify to force a device failure)"},
@@ -323,7 +393,8 @@ def branch_vlan() -> dict:
                                 "reservation": {"type": "object"}, "config_result": {"type": "object"}, "rolled_back": {"type": "boolean"},
                                 "change_number": {"type": "string"}, "change_sys_id": {"type": "string"},
                                 "change_state_scheduled": {"type": "string"}, "change_state_implement": {"type": "string"},
-                                "change_state_review": {"type": "string"}, "change_state_closed": {"type": "string"}})
+                                "change_state_review": {"type": "string"}, "change_state_closed": {"type": "string"},
+                                "instance": {"type": "object"}, "approval": {"type": "object"}})
 
 
 # --- wf-show-command-v1 (S4c.7): one show command -> raw text + structured data per vendor --------
@@ -331,7 +402,6 @@ def branch_vlan() -> dict:
 # with Genie (Cisco) or TextFSM/ntc-templates (Arista). The engine is chosen from the node's NetBox
 # platform slug, which the workflow substitutes into the code (a top-level string input resolves
 # `$var`; the nested `data` object would not), and the sendCommand result is the script's stdin.
-VERSIONS = yaml.safe_load((HERE.parent / "versions.yaml").read_text())
 PARSER_PACKAGES = VERSIONS["parsers"]["cisco"]["packages"] + VERSIONS["parsers"]["arista"]["packages"]
 PARSE_CODE = """import json, sys
 PLATFORM = "__P__"  # NetBox platform slug of the node (the workflow replaces it)
@@ -468,8 +538,90 @@ def backup_all() -> dict:
                     {}, tasks, tr, {"devices": {"type": "array"}})
 
 
+# --- wf-branch-vlan-delete-v1 (S4d.3, ADR 0043): the Lifecycle Manager delete action -------------------
+# Input: the instance object LCM passes as the job variable `instance` (branch, vid, vlan_name, switch,
+# netbox_vlan_id, status). The switch is read with `show vlan <vid>` and, only when the VLAN is present,
+# wf-config-push-v1 runs as a child job with `no vlan <vid>` (its Work Center approval is the gate); the
+# NetBox VLAN is deleted after the device, so a rejected push changes nothing. A rejected push leaves the
+# push job in error and this job waiting on it (a job in error is retryable on 6.5.2): cancelling the
+# execution ends both and keeps the instance. Run on a retired VLAN it is a no-op (changed false, no push).
+# An instance without data fails the first read and takes the no-data path.
+def branch_vlan_delete() -> dict:
+    tasks = {
+        "1a": jq("branch", "$var.job.instance", "branch", x=0, y=-300),
+        "1b": jq("vid", "$var.job.instance", "vid", x=300, y=-300, to_job="vid"),
+        "1c": jq("vlan name", "$var.job.instance", "vlan_name", x=600, y=-300),
+        "1d": jq("switch", "$var.job.instance", "switch", x=900, y=-300, to_job="switch"),
+        "1e": jq("NetBox VLAN id", "$var.job.instance", "netbox_vlan_id", x=1200, y=-300),
+        "1f": num2str("vid as string", "$var.1b.return_data", x=1500, y=-300),
+        "2f": num2str("NetBox id as string", "$var.1e.return_data", x=1800, y=-300),
+        "2a": flag("changed = false (nothing yet)", "false", "changed", x=2700, y=-300),
+        # NetBox: the VLAN by site + name (the same lookup the create uses), deleted when present
+        "3a": nb("getIpamVlans", "the VLAN in NetBox", {"site": "$var.1a.return_data", "name": "$var.1c.return_data"}, x=3000, y=-300),
+        "3b": evaluate("still in NetBox?", "3a", "result", "response.count", ">", 0, x=3300, y=-300),
+        "3c": jq("its NetBox id", "$var.3a.result", "response.results[0].id", x=3600, y=-500),
+        "3d": nb("deleteIpamVlansId", "delete the NetBox VLAN", {"id": "$var.3c.return_data"}, x=3900, y=-500),
+        "3e": flag("netbox_deleted = true", "true", "netbox_deleted", x=4200, y=-500),
+        "2b": flag("changed = true", "true", "changed", x=4500, y=-500),
+        "3f": flag("netbox_deleted = false (absent)", "false", "netbox_deleted", x=3900, y=-100),
+        # the switch: read before write; `no vlan` is pushed only when the VLAN is configured
+        "4a": replace("show vlan command list", '["show vlan __V__"]', "__V__", "$var.1f.numToString", x=4800, y=-300),
+        "4b": parse("command list", "$var.4a.replacedString", x=5100, y=-300),
+        "4c": task("sendCommand", "GatewayManager", "show vlan <vid> through Gateway 5",
+                   {"clusterId": CLUSTER, "commands": "$var.4b.textObject", "inventory": "$var.0b.textObject"},
+                   {"result": "$var.job.show_vlan"}, x=5400, y=-300),
+        "4d": evaluate("VLAN absent on the switch?", "4c", "result", "result.results[0].output", "contains", "not found", x=5700, y=-300),
+        "5a": replace("config: no vlan <vid>", "no vlan __V__", "__V__", "$var.1f.numToString", x=6000, y=-500),
+        "5b": replace("reason: vid", "Lifecycle Manager branch-vlan delete: remove VLAN __V__ (__N__) from __S__", "__V__", "$var.1f.numToString", x=6300, y=-500),
+        "5c": replace("reason: name", "$var.5b.replacedString", "__N__", "$var.1c.return_data", x=6600, y=-500),
+        "5d": replace("reason: switch", "$var.5c.replacedString", "__S__", "$var.1d.return_data", x=6900, y=-500),
+        "5e": child_job("remove the VLAN through the governed push (approval in Work Center)", CONFIG_PUSH,
+                        {"device": {"task": "1d", "value": "return_data"}, "config": {"task": "5a", "value": "replacedString"},
+                         "reason": {"task": "5d", "value": "replacedString"}}, "push_job", x=7200, y=-500),
+        "2c": flag("switch_changed = true", "true", "switch_changed", x=7500, y=-500),
+        "2d": flag("changed = true", "true", "changed", x=7800, y=-500),
+        "6a": flag("switch_changed = false (absent)", "false", "switch_changed", x=6000, y=-100),
+        # no data on the instance (a rejected create): nothing to delete, LCM retires it
+        "9a": flag("changed = false (no instance data)", "false", "changed", x=300, y=300),
+    }
+    tasks["0a"], tasks["0b"] = selector("$var.1d.return_data", x=2100)
+    tasks["0a"]["nodeLocation"]["y"] = tasks["0b"]["nodeLocation"]["y"] = -300
+    final_ids = ["7a", "7b", "7c", "7d", "7e", "7f", "2e"]
+    tasks.update(instance_chain(final_ids, {"__B__": "$var.1a.return_data", "__V__": "$var.1f.numToString", "__N__": "$var.1c.return_data",
+                                            "__S__": "$var.1d.return_data", "__I__": "$var.2f.numToString", "__ST__": "deleted"},
+                                x=8100, y=-300, to_job=True))
+    # order: read the switch, push through the approval, and only then touch NetBox, so a rejected push changes nothing
+    head = ["1a", "1b", "1c", "1d", "1e", "1f", "2f", "0a", "0b", "2a", "4a", "4b", "4c", "4d"]
+    tr = {"workflow_start": t("", "1a")}
+    for a, b in zip(head, head[1:]):
+        tr[a] = t("", b)
+    tr["1a"] = {"1b": {"state": "success", "type": "standard"}, "9a": {"state": "failure", "type": "standard"}}
+    tr["4d"] = {"6a": {"state": "success", "type": "standard"}, "5a": {"state": "failure", "type": "standard"}}
+    for a, b in zip(["5a", "5b", "5c", "5d", "5e", "2c"], ["5b", "5c", "5d", "5e", "2c", "2d"]):
+        tr[a] = t("", b)  # 5e waits while the push job is in error (a job in error is retryable); cancelling ends both
+    tr["2d"] = t("", "3a")
+    tr["6a"] = t("", "3a")
+    tr["3a"] = t("", "3b")
+    tr["3b"] = {"3c": {"state": "success", "type": "standard"}, "3f": {"state": "failure", "type": "standard"}}
+    for a, b in zip(["3c", "3d", "3e", "2b"], ["3d", "3e", "2b", final_ids[0]]):
+        tr[a] = t("", b)
+    tr["3f"] = t("", final_ids[0])
+    for a, b in zip(final_ids, final_ids[1:]):
+        tr[a] = t("", b)
+    tr[final_ids[-1]] = t("", "workflow_end")
+    tr["9a"] = t("", "workflow_end")
+    return workflow("wf-branch-vlan-delete-v1",
+                    "Lifecycle Manager delete action for branch-vlan: deletes the NetBox VLAN and removes it from the branch switch only "
+                    "through %s (Work Center approval); no-op when both are already gone (PID S4d.3, ADR 0043)" % CONFIG_PUSH,
+                    {"instance": {"type": "object", "description": "The branch-vlan instance data (branch, vid, vlan_name, switch, netbox_vlan_id, status); "
+                                                                   "Lifecycle Manager passes it for a delete action"}},
+                    tasks, tr, {"changed": {"type": "boolean"}, "netbox_deleted": {"type": "boolean"}, "switch_changed": {"type": "boolean"},
+                                "vid": {"type": "number"}, "switch": {"type": "string"}, "show_vlan": {"type": "object"},
+                                "push_job": {"type": "object"}, "instance": {"type": "object"}})
+
+
 if __name__ == "__main__":
-    for wf in (device_count(), show_version(), show_command(), branch_vlan(), config_push(), compliance_run(), backup_all()):
+    for wf in (device_count(), show_version(), show_command(), branch_vlan(), branch_vlan_delete(), config_push(), compliance_run(), backup_all()):
         out = HERE / f"{wf['name']}.json"
         out.write_text(json.dumps(wf, indent=2) + "\n")
         print(out.relative_to(HERE.parent.parent), len(wf["tasks"]) - 2, "tasks")

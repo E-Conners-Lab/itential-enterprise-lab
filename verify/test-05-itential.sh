@@ -24,7 +24,8 @@ fail=0; pass=0; deferred=0; hibernated=0
 ok()    { echo "PASS  $1"; pass=$((pass+1)); }
 bad()   { echo "FAIL  $1"; fail=$((fail+1)); }
 defer() { echo "DEFER $1"; deferred=$((deferred+1)); }
-check() { local name=$1; shift; if "$@" >/tmp/verify05.$$ 2>&1; then ok "$name"; else bad "$name"; sed 's/^/      /' /tmp/verify05.$$ | head -12; fi; }
+# ONLY="S4.4" runs a subset while iterating (every criterion still runs by default)
+check() { local name=$1; shift; if [ -n "${ONLY:-}" ] && ! echo " ${ONLY} " | grep -q " ${name%% *} "; then echo "SKIP  $name"; return; fi; if "$@" >/tmp/verify05.$$ 2>&1; then ok "$name"; else bad "$name"; sed 's/^/      /' /tmp/verify05.$$ | head -12; fi; }
 nb()    { curl -s -m 20 -H "Authorization: Token ${NETBOX_TOKEN}" "$@"; }
 JAR=$(mktemp); trap 'rm -f "$JAR" /tmp/verify05.$$' EXIT
 # Every call to the Platform goes through the lab CA and the real name: no -k anywhere.
@@ -98,14 +99,16 @@ check "S4.3 wf-show-version-v1 via IAG: br1-wan01 = 17.13.01a, br1-sw01 = 4.33.1
 # --- S4.4 wf-branch-vlan-v1: reserve in NetBox + configure br1-sw01, approval task, idempotent, rollback ---
 VLAN_NAME="verify-$(echo "$ts" | tr "A-Z" "a-z")"
 approve_pending_task() {
-  # the workflow parks on the ViewData task (4a); finishing it with success is the approval
+  # the workflow parks on the JSON form task (4a, ADR 0044); finishing it with success and export.decision=approve is the
+  # approval (what the Work Center card submits); a failure finish is a rejection and rolls the reservation back
   local job=$1 decision=${2:-success} task
   for _ in $(seq 1 24); do
     task=$(iap "${PLATFORM}/operations-manager/jobs/${job}" | ${PY} -c 'import sys,json;d=json.load(sys.stdin)["data"];t=[k for k,v in d.get("tasks",{}).items() if v.get("type")=="manual" and v.get("status")=="running"];print(t[0] if t else "")')
     [ -n "$task" ] && break; sleep 5
   done
   [ -n "$task" ] || { echo "no pending manual task on job ${job}"; return 1; }
-  iap -X POST "${PLATFORM}/operations-manager/jobs/${job}/tasks/${task}/finish" -d "{\"taskData\":{\"finish_state\":\"${decision}\",\"variables\":{}}}" -o /dev/null -w '%{http_code}' | grep -qx 200
+  local vars='{}'; [ "$decision" = success ] && vars='{"export":{"decision":"approve"}}'
+  iap -X POST "${PLATFORM}/operations-manager/jobs/${job}/tasks/${task}/finish" -d "{\"taskData\":{\"finish_state\":\"${decision}\",\"variables\":${vars}}}" -o /dev/null -w '%{http_code}' | grep -qx 200
 }
 wait_job() { local id=$1 s; for _ in $(seq 1 60); do s=$(job_status "$id"); case "$s" in complete) return 0;; error|canceled|cancelled) echo "job ${id} ${s}"; return 1;; esac; sleep 5; done; echo "job ${id} timeout (${s})"; return 1; }
 nb_vlan() { nb "${NETBOX_URL}/api/ipam/vlans/?site=br1&name=${VLAN_NAME}"; }

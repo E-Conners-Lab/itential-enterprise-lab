@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 # Phase 6b verification: Platform coverage of the EVE-NG lab (PID S4d criteria 1-4 and 6; S4d.5 is in
-# test-06-flowai.sh). Intent: itential/versions.yaml (golden_config), itential/golden-config/, NetBox.
+# test-06-flowai.sh). Intent: itential/versions.yaml (golden_config, mop, lcm, forms), itential/golden-config/,
+# itential/command-templates/, itential/lcm/, itential/forms/, NetBox.
 # State: the Platform API over TLS (Configuration Manager, Operations Manager) and the devices over
 # direct SSH (verify/devcmd.py, second source). Writes: a hostname change on one device per vendor
-# through wf-config-push-v1 (approved here through the API, restored at the end). Each element is
+# through wf-config-push-v1 (approved here through the API, restored at the end) and one branch VLAN on br2
+# created and removed through the Lifecycle Manager actions (S4d.3). Each element is
 # added as it is built; a criterion that is not built yet prints DEFER, never PASS.
 set -uo pipefail
 cd "$(dirname "$0")/.."
@@ -180,7 +182,149 @@ print(len(rules),"pre/post rules equal")' || { echo "${dev} ${at}: $(echo "$an" 
   echo "backups: wf-backup-all-v1 job ${job}; ${n_ok}/${#nbrows[@]} devices' newest backup equals the running config over direct SSH"
 }
 check "S4d.2 command templates on br1-wan01 and br1-sw01 with every rule evaluated; analytic pre/post green; nightly backup schedule and a run whose backups equal the running configs" c2
-defer "S4d.3 Lifecycle Manager + JSON Forms (element 3, not built yet)"
+
+# --- S4d.3 Lifecycle Manager + JSON Forms (ADR 0043/0044): model, form, instances from NetBox; create -> approval form (Work Center
+# shows branch, VLAN, switch, NetBox reservation) -> instance; delete -> the governed push; history; no-op when absent ---
+LCM_MODEL=$(${PY} -c "import yaml;print(yaml.safe_load(open('$V'))['lcm']['model'])")
+FORM_NAME=$(${PY} -c "import yaml;print(yaml.safe_load(open('$V'))['forms']['approval'])")
+LCM_ACTIONS=$(${PY} -c "import yaml;d=yaml.safe_load(open('itential/lcm/${LCM_MODEL}.yaml'));print(' '.join(a['type']+':'+a['_id'] for a in d['actions']))" 2>/dev/null)
+# approve_form <job> <task>: the JSON form approval (ShowJsonForm) finished through the API with decision approve (what the Work Center card submits)
+approve_form() { local i; for i in $(seq 1 24); do if iap -X POST "${PLATFORM}/operations-manager/jobs/$1/tasks/$2/finish" -d '{"taskData":{"finish_state":"success","variables":{"export":{"decision":"approve"}}}}' -o /dev/null -w '%{http_code}' | grep -qx 200; then return 0; fi; sleep 5; done; echo "form approval of $1/$2 never accepted"; return 1; }
+# reject_form <job> <task>: a failure finish with decision reject (rolls the reservation back; the job ends in error by design)
+reject_form() { iap -X POST "${PLATFORM}/operations-manager/jobs/$1/tasks/$2/finish" -d '{"taskData":{"finish_state":"failure","variables":{"export":{"decision":"reject"}}}}' -o /dev/null -w '%{http_code}' | grep -qx 200; }
+# a job in error is retryable on 6.5.2, so a parent childJob task and an LCM execution wait until the errored child is cancelled
+cancel_jobs() { iap -X POST "${PLATFORM}/operations-manager/jobs/cancel" -d "{\"jobIds\":[$(printf '"%s",' "$@" | sed 's/,$//')]}" -o /dev/null -w '%{http_code}' | grep -qx 200; }
+cancel_exec() { iap -X POST "${PLATFORM}/lifecycle-manager/action-executions/$1/cancel" -d '{}' | ${PY} -c 'import sys,json;d=json.load(sys.stdin);assert (d.get("data") or {}).get("status")=="canceled",d'; }
+wait_status() { local st; for _ in $(seq 1 24); do st=$(job_status "$1"); [ "$st" = "$2" ] && return 0; sleep 5; done; echo "job $1 is ${st}, wanted $2"; return 1; }
+# child_job <workflow name> <parent job id>: the running child started by the parent (LCM wraps every action in a resource:action job)
+child_job() { local i id; for i in $(seq 1 24); do id=$(iap "${PLATFORM}/operations-manager/jobs?limit=40" | ${PY} -c "
+import sys,json
+for j in (json.load(sys.stdin).get('data') or []):
+    if j.get('name')=='$1' and j.get('status')=='running' and '$2' in (j.get('ancestors') or []): print(j['_id']); break"); [ -n "$id" ] && { echo "$id"; return 0; }; sleep 5; done; echo "no running $1 under job $2"; return 1; }
+lcm_model_id() { iap "${PLATFORM}/lifecycle-manager/resources?limit=100" | ${PY} -c "import sys,json;print(next((m['_id'] for m in json.load(sys.stdin)['data'] if m['name']=='$1'),''))"; }
+# run_action <model id> <body> -> "execution id, wrapper job id, instance id"
+run_action() { iap -X POST "${PLATFORM}/lifecycle-manager/resources/$1/run-action" -d "$2" | ${PY} -c 'import sys,json;d=json.load(sys.stdin);x=d.get("data") or {};print(x.get("_id",""),x.get("jobId",""),x.get("instanceId",""))'; }
+wait_exec() { local st; for _ in $(seq 1 48); do st=$(iap "${PLATFORM}/lifecycle-manager/action-executions/$1" | ${PY} -c 'import sys,json;print((json.load(sys.stdin).get("data") or {}).get("status",""))'); case "$st" in complete) return 0;; error|canceled) echo "execution $1 ${st}"; return 1;; esac; sleep 5; done; echo "execution $1 timeout (${st})"; return 1; }
+wait_task() { for _ in $(seq 1 24); do iap "${PLATFORM}/operations-manager/jobs/$1" | ${PY} -c "import sys,json;t=json.load(sys.stdin)['data']['tasks'].get('$2',{});sys.exit(0 if t.get('status')=='running' else 1)" && return 0; sleep 5; done; echo "task $2 of job $1 never reached running"; return 1; }
+push_jobs() { iap "${PLATFORM}/operations-manager/jobs?limit=60" | ${PY} -c 'import sys,json;print(len([j for j in json.load(sys.stdin).get("data") or [] if j.get("name")=="wf-config-push-v1"]))'; }
+LCM_NAME="lcm-${ts_lc}"; LCM_INST="br2-${LCM_NAME}"; BR2_SW=10.100.0.166
+c3() {
+  local model create_id delete_id pair
+  model=$(lcm_model_id "$LCM_MODEL"); [ -n "$model" ] || { echo "resource model ${LCM_MODEL} missing"; return 1; }
+  for pair in $LCM_ACTIONS; do case "${pair%%:*}" in create) create_id=${pair##*:};; delete) delete_id=${pair##*:};; esac; done
+  [ -n "${create_id:-}" ] && [ -n "${delete_id:-}" ] || { echo "itential/lcm/${LCM_MODEL}.yaml lacks create/delete action ids"; return 1; }
+  # every action runnable: the platform resolves the workflow names to the current imports
+  iap -X POST "${PLATFORM}/lifecycle-manager/resources/${model}/actions/validate" -d "$(iap "${PLATFORM}/lifecycle-manager/resources/${model}" | ${PY} -c 'import sys,json;print(json.dumps({"actions":json.load(sys.stdin)["data"]["actions"]}))')" \
+    | ${PY} -c 'import sys,json;d=json.load(sys.stdin)["data"];bad=[(a["action"]["name"],a["errors"]) for a in d if not a["runnable"]];assert not bad,bad;print("actions runnable:",", ".join(a["action"]["name"]+" -> workflow "+a["action"]["workflow"][:8] for a in d))' || return 1
+  # the form carries the PID fields
+  iap "${PLATFORM}/json-forms/forms" | ${PY} -c "import sys,json;f=[x for x in json.load(sys.stdin) if x['name']=='${FORM_NAME}'];assert f,'form ${FORM_NAME} missing';keys={i['customKey'] for i in f[0]['struct']['items']};need={'branch','vid','vlan_name','switch','netbox_vlan_id','decision'};assert need<=keys,(need-keys);print('form fields:',sorted(keys))" || return 1
+  # one instance per NetBox branch VLAN (intent: NetBox; state: LCM)
+  local nb_names inst_names missing
+  nb_names=$(nb "${NETBOX_URL}/api/ipam/vlans/?limit=0&group=br1-user&group=br2-user" | ${PY} -c 'import sys,json;print("\n".join(sorted(v["site"]["slug"]+"-"+v["name"] for v in json.load(sys.stdin)["results"])))')
+  inst_names=$(iap "${PLATFORM}/lifecycle-manager/resources/${model}/instances?limit=100" | ${PY} -c 'import sys,json;print("\n".join(sorted(i["name"] for i in json.load(sys.stdin)["data"])))')
+  missing=$(comm -23 <(echo "$nb_names") <(echo "$inst_names"))
+  [ -z "$missing" ] || { echo "NetBox branch VLANs without an instance: $(echo "$missing" | tr '\n' ' ')"; return 1; }
+  echo "instances cover every NetBox branch VLAN: $(echo "$nb_names" | tr '\n' ' ')"
+  # 1) create on br2 through the LCM action: the child job pauses on the form, Work Center shows the fields, approve, instance active
+  local ex wrapper iid child wi vid nbid
+  read -r ex wrapper iid <<<"$(run_action "$model" "{\"actionId\":\"${create_id}\",\"instanceName\":\"${LCM_INST}\",\"instanceDescription\":\"verify ${ts} S4d.3\",\"inputs\":{\"branch\":\"br2\",\"vlan_name\":\"${LCM_NAME}\",\"switch_override\":\"\",\"change_request\":false}}")"
+  [ -n "$ex" ] && [ -n "$wrapper" ] || { echo "create action did not start"; return 1; }
+  child=$(child_job wf-branch-vlan-v1 "$wrapper") || { echo "$child"; return 1; }
+  wait_task "$child" 4a || return 1
+  read -r vid nbid <<<"$(nb "${NETBOX_URL}/api/ipam/vlans/?site=br2&name=${LCM_NAME}" | ${PY} -c 'import sys,json;d=json.load(sys.stdin);assert d["count"]==1,d["count"];v=d["results"][0];assert v["status"]["value"]=="reserved",v["status"];print(v["vid"],v["id"])')" || { echo "NetBox has no reserved VLAN ${LCM_NAME} in br2 while the approval waits"; return 1; }
+  # Work Center: the pending item of the child job and the fields the approver sees (NetBox above is the second source)
+  wi=$(iap -X POST "${PLATFORM}/work-center-service/work-items/search" -d '{"filters":[{"field":"name","operator":"contains","value":"ShowJsonForm"}],"sort":{"field":"createdAt","order":"desc"},"skip":0,"limit":20}' \
+    | ${PY} -c "import sys,json;d=json.load(sys.stdin);d=d.get('data') if isinstance(d,dict) else [];assert isinstance(d,list),d;w=[x for x in d if (x.get('execution') or {}).get('id')=='${child}' and x.get('status')=='pending'];print(w[0]['id'] if w else '')")
+  [ -n "$wi" ] || { echo "no pending Work Center item for job ${child}"; return 1; }
+  iap "${PLATFORM}/work-center-service/work-items/${wi}/variables/incoming" | ${PY} -c "import sys,json;v=json.load(sys.stdin)['incoming'];assert v.get('form_id')=='${FORM_NAME}',v.get('form_id');d=v['instance_data'];assert d['branch']=='br2' and d['vid']==${vid} and d['vlan_name']=='${LCM_NAME}' and d['switch']=='br2-sw01' and d['netbox_vlan_id']==${nbid} and d['status']=='reserved',d;print('Work Center item',sys.argv[1],'shows',{k:d[k] for k in ('branch','vid','vlan_name','switch','netbox_vlan_id','status')})" "$wi" || return 1
+  approve_form "$child" 4a || return 1
+  wait_job "$child" || return 1; wait_exec "$ex" || return 1
+  iap "${PLATFORM}/lifecycle-manager/resources/${model}/instances/${iid}" | ${PY} -c "import sys,json;i=json.load(sys.stdin)['data'];d=i['instanceData'];assert i['name']=='${LCM_INST}' and d['vid']==${vid} and d['status']=='active' and d['netbox_vlan_id']==${nbid} and i['lastAction']['type']=='create' and i['lastAction']['status']=='complete',i;print('instance',i['name'],d)" || return 1
+  nb "${NETBOX_URL}/api/ipam/vlans/${nbid}/" | ${PY} -c 'import sys,json;assert json.load(sys.stdin)["status"]["value"]=="active"' || { echo "NetBox VLAN ${nbid} not active"; return 1; }
+  ${PY} verify/devcmd.py "$BR2_SW" "show vlan ${vid}" | grep -q "$LCM_NAME" || { echo "br2-sw01 has no VLAN ${vid} ${LCM_NAME} (direct SSH)"; return 1; }
+  echo "create: VLAN ${vid} ${LCM_NAME} active in NetBox (id ${nbid}) and on br2-sw01; instance ${LCM_INST} recorded (execution ${ex})"
+  # 2a) a rejected push changes nothing: the delete workflow (started directly with the instance data) pushes only through
+  #     wf-config-push-v1; rejecting that card leaves the push job in error, the delete job waiting on it, NetBox and the
+  #     switch untouched; cancelling both jobs is the terminal step (a job in error is retryable on 6.5.2)
+  local djob push0 inst_json
+  inst_json="{\"branch\":\"br2\",\"vid\":${vid},\"vlan_name\":\"${LCM_NAME}\",\"switch\":\"br2-sw01\",\"netbox_vlan_id\":${nbid},\"status\":\"active\"}"
+  djob=$(start_job wf-branch-vlan-delete-v1 "{\"instance\":${inst_json}}"); [ -n "$djob" ] || { echo "wf-branch-vlan-delete-v1 did not start"; return 1; }
+  push0=$(child_job wf-config-push-v1 "$djob") || { echo "$push0"; return 1; }
+  sleep 5; iap -X POST "${PLATFORM}/operations-manager/jobs/${push0}/tasks/2a/finish" -d '{"taskData":{"finish_state":"failure","variables":{}}}' -o /dev/null -w '%{http_code}' | grep -qx 200 || { echo "could not reject the push card"; return 1; }
+  wait_status "$push0" error || return 1
+  [ "$(job_status "$djob")" = running ] || { echo "the delete job did not wait on the rejected push: $(job_status "$djob")"; return 1; }
+  nb "${NETBOX_URL}/api/ipam/vlans/${nbid}/" | ${PY} -c 'import sys,json;assert json.load(sys.stdin)["status"]["value"]=="active"' || { echo "NetBox VLAN changed by a rejected delete"; return 1; }
+  ${PY} verify/devcmd.py "$BR2_SW" "show vlan ${vid}" | grep -q "$LCM_NAME" || { echo "br2-sw01 lost VLAN ${vid} on a rejected delete (direct SSH)"; return 1; }
+  cancel_jobs "$djob" "$push0" || { echo "cancel of ${djob} ${push0} refused"; return 1; }
+  wait_status "$djob" canceled || return 1
+  echo "rejected push: job ${push0} in error, delete job ${djob} waited, NetBox and br2-sw01 untouched, both cancelled"
+  # 2) delete through the LCM action: the delete workflow reaches the switch only through wf-config-push-v1 and its approval card
+  local ex2 wrapper2 child2 push
+  read -r ex2 wrapper2 _ <<<"$(run_action "$model" "{\"actionId\":\"${delete_id}\",\"instance\":\"${iid}\",\"inputs\":{}}")"
+  [ -n "$ex2" ] || { echo "delete action did not start"; return 1; }
+  child2=$(child_job wf-branch-vlan-delete-v1 "$wrapper2") || { echo "$child2"; return 1; }
+  push=$(child_job wf-config-push-v1 "$child2") || { echo "$push"; return 1; }
+  approve_task "$push" 2a || return 1
+  wait_job "$child2" || return 1; wait_exec "$ex2" || return 1
+  iap "${PLATFORM}/operations-manager/jobs/${push}" | ${PY} -c 'import sys,json;d=json.load(sys.stdin)["data"];v=d["variables"];assert d["status"]=="complete" and v.get("changed") is True and "no vlan '"$vid"'" in v.get("config",""),(d["status"],v.get("config"))' || { echo "push job ${push} did not apply 'no vlan ${vid}'"; return 1; }
+  nb "${NETBOX_URL}/api/ipam/vlans/?site=br2&name=${LCM_NAME}" | ${PY} -c 'import sys,json;assert json.load(sys.stdin)["count"]==0,"NetBox VLAN survived the delete"' || return 1
+  ${PY} verify/devcmd.py "$BR2_SW" "show vlan ${vid}" | grep -q "not found" || { echo "br2-sw01 still has VLAN ${vid} (direct SSH)"; return 1; }
+  iap "${PLATFORM}/lifecycle-manager/resources/${model}/instances?limit=100" | ${PY} -c "import sys,json;n=[i['name'] for i in json.load(sys.stdin)['data']];assert '${LCM_INST}' not in n,n" || { echo "instance ${LCM_INST} still listed after the delete"; return 1; }
+  echo "delete: push job ${push} removed VLAN ${vid} from br2-sw01 after the approval; NetBox VLAN gone; instance ${LCM_INST} retired (execution ${ex2})"
+  # 3) history: the two executions on the instance, each with its job
+  # (curl globs [ ] in a URL, so the instance filter is applied client-side on the newest executions)
+  iap "${PLATFORM}/lifecycle-manager/action-executions?sort=startTime&order=1&limit=100" | ${PY} -c 'import sys,json;d=[x for x in json.load(sys.stdin)["data"] if x.get("instanceId")=="'"$iid"'"];h=[(x["actionType"],x["status"],bool(x.get("jobId"))) for x in d];assert h==[("create","complete",True),("delete","complete",True)],h;print("history:",[(x["actionName"],x["status"],x["jobId"]) for x in d])' || return 1
+  # 4) no-op: the delete workflow on the retired VLAN touches nothing (changed=false, no push job started)
+  local job before after
+  before=$(push_jobs)
+  job=$(start_job wf-branch-vlan-delete-v1 "{\"instance\":{\"branch\":\"br2\",\"vid\":${vid},\"vlan_name\":\"${LCM_NAME}\",\"switch\":\"br2-sw01\",\"netbox_vlan_id\":${nbid},\"status\":\"deleted\"}}"); [ -n "$job" ] || { echo "wf-branch-vlan-delete-v1 did not start"; return 1; }
+  wait_job "$job" || return 1
+  after=$(push_jobs)
+  iap "${PLATFORM}/operations-manager/jobs/${job}" | ${PY} -c 'import sys,json;v=json.load(sys.stdin)["data"]["variables"];assert v.get("changed") is False,v' || { echo "second delete was not a no-op"; return 1; }
+  [ "$before" = "$after" ] || { echo "the no-op delete started a push job"; return 1; }
+  echo "no-op: wf-branch-vlan-delete-v1 on the retired VLAN changed nothing and started no push (job ${job})"
+  # 5) a rejected create leaves nothing behind: the reservation is rolled back, the child job ends in error by design,
+  #    the execution waits until it is cancelled (the terminal step), and the cancel retires the instance
+  local ex3 wrapper3 iid3 child3 nbid3
+  read -r ex3 wrapper3 iid3 <<<"$(run_action "$model" "{\"actionId\":\"${create_id}\",\"instanceName\":\"${LCM_INST}-rej\",\"instanceDescription\":\"verify ${ts} S4d.3 reject\",\"inputs\":{\"branch\":\"br2\",\"vlan_name\":\"${LCM_NAME}-rej\",\"switch_override\":\"\",\"change_request\":false}}")"
+  [ -n "$ex3" ] || { echo "second create action did not start"; return 1; }
+  child3=$(child_job wf-branch-vlan-v1 "$wrapper3") || { echo "$child3"; return 1; }
+  wait_task "$child3" 4a || return 1
+  nbid3=$(nb "${NETBOX_URL}/api/ipam/vlans/?site=br2&name=${LCM_NAME}-rej" | ${PY} -c 'import sys,json;d=json.load(sys.stdin);assert d["count"]==1 and d["results"][0]["status"]["value"]=="reserved",d;print(d["results"][0]["id"])') || { echo "no reservation for ${LCM_NAME}-rej"; return 1; }
+  reject_form "$child3" 4a || { echo "reject of ${child3}/4a refused"; return 1; }
+  wait_status "$child3" error || return 1
+  iap "${PLATFORM}/operations-manager/jobs/${child3}" | ${PY} -c 'import sys,json;v=json.load(sys.stdin)["data"]["variables"];assert v.get("rolled_back") is True and (v.get("approval") or {}).get("decision")=="reject",v' || { echo "rejected create did not roll back"; return 1; }
+  nb "${NETBOX_URL}/api/ipam/vlans/?site=br2&name=${LCM_NAME}-rej" | ${PY} -c 'import sys,json;assert json.load(sys.stdin)["count"]==0,"reservation survived the reject"' || return 1
+  [ "$(iap "${PLATFORM}/lifecycle-manager/action-executions/${ex3}" | ${PY} -c 'import sys,json;print(json.load(sys.stdin)["data"]["status"])')" = running ] || { echo "execution ${ex3} did not wait on the errored child"; return 1; }
+  cancel_exec "$ex3" || { echo "cancel of execution ${ex3} refused"; return 1; }
+  iap "${PLATFORM}/lifecycle-manager/resources/${model}/instances?limit=100" | ${PY} -c "import sys,json;n=[i['name'] for i in json.load(sys.stdin)['data']];assert '${LCM_INST}-rej' not in n,n" || { echo "instance ${LCM_INST}-rej survived the cancel"; return 1; }
+  echo "rejected create: reservation ${nbid3} rolled back, child ${child3} in error, execution ${ex3} cancelled, instance retired"
+}
+check "S4d.3 Lifecycle Manager ${LCM_MODEL}: instances from NetBox; create -> JSON form approval (Work Center shows branch, VLAN, switch, NetBox reservation) -> instance; rejected push changes nothing; delete -> governed push; history; no-op; rejected create retired" c3
+# cleanup if a failed run left the verify VLAN behind (same direct cleanup test-05/06 use; the LCM instance is retired by its delete action when possible)
+lcm_cleanup() {
+  local model row ex st name iid wrapper child2 push
+  model=$(lcm_model_id "$LCM_MODEL"); [ -n "$model" ] || return 0
+  # running executions of this run's instances: reject a pending form, then cancel (the cancel retires a create's instance)
+  while read -r ex st name; do
+    [ -n "$ex" ] || continue
+    echo "cleanup: execution ${ex} (${name}) is ${st}: rejecting any pending form and cancelling"
+    for j in $(iap "${PLATFORM}/operations-manager/jobs?limit=40" | ${PY} -c 'import sys,json;[print(j["_id"]) for j in json.load(sys.stdin).get("data") or [] if j.get("name")=="wf-branch-vlan-v1" and j.get("status")=="running"]'); do reject_form "$j" 4a || true; done
+    sleep 5; cancel_exec "$ex" >/dev/null 2>&1 || true
+  done < <(iap "${PLATFORM}/lifecycle-manager/action-executions?sort=startTime&order=-1&limit=50" | ${PY} -c "import sys,json;[print(e['_id'],e['status'],e['instanceName']) for e in json.load(sys.stdin)['data'] if e.get('status')=='running' and (e.get('instanceName') or '').startswith('${LCM_INST}')]")
+  # an instance left active: retire it through its delete action (push card approved here, as the checks do)
+  iid=$(iap "${PLATFORM}/lifecycle-manager/resources/${model}/instances?limit=100" | ${PY} -c "import sys,json;print(next((i['_id'] for i in json.load(sys.stdin)['data'] if i['name']=='${LCM_INST}'),''))")
+  [ -n "$iid" ] || return 0
+  echo "cleanup: retiring instance ${LCM_INST} through its delete action"
+  read -r ex wrapper _ <<<"$(run_action "$model" "{\"actionId\":\"$(echo "$LCM_ACTIONS" | tr ' ' '\n' | awk -F: '/^delete/{print $2}')\",\"instance\":\"${iid}\",\"inputs\":{}}")"
+  child2=$(child_job wf-branch-vlan-delete-v1 "$wrapper" 2>/dev/null) && { push=$(child_job wf-config-push-v1 "$child2" 2>/dev/null) && approve_task "$push" 2a >/dev/null 2>&1; wait_job "$child2" >/dev/null 2>&1 || cancel_exec "$ex" >/dev/null 2>&1; }
+}
+lcm_cleanup
+vid=$(nb "${NETBOX_URL}/api/ipam/vlans/?site=br2&name=${LCM_NAME}" | ${PY} -c 'import sys,json;d=json.load(sys.stdin);print(d["results"][0]["vid"] if d["count"] else "")' 2>/dev/null)
+if [ -n "$vid" ]; then echo "cleanup: removing leftover VLAN ${vid} ${LCM_NAME}"; nb -X DELETE "${NETBOX_URL}/api/ipam/vlans/$(nb "${NETBOX_URL}/api/ipam/vlans/?site=br2&name=${LCM_NAME}" | ${PY} -c 'import sys,json;print(json.load(sys.stdin)["results"][0]["id"])')/" -o /dev/null; ${PY} verify/devcmd.py "$BR2_SW" "configure
+no vlan ${vid}
+end" >/dev/null 2>&1 || true; fi
+
 defer "S4d.4 Integration Models (element 4, not built yet)"
 defer "S4d.6 hosts and firewalls (element 6, not built yet)"
 

@@ -100,7 +100,8 @@ approve_latest() {
     [ -n "$job" ] && break; sleep 5
   done
   [ -n "$job" ] || { echo "no running wf-branch-vlan-v1 job to approve"; return 1; }
-  sleep 5; iap -X POST "${PLATFORM}/operations-manager/jobs/${job}/tasks/${task}/finish" -d '{"taskData":{"finish_state":"success","variables":{}}}' -o /dev/null -w '%{http_code}' | grep -qx 200 && echo "approved job ${job}"
+  # task 4a is the JSON form approval (ADR 0044): the card submits export.decision, so the API finish carries it too
+  sleep 5; iap -X POST "${PLATFORM}/operations-manager/jobs/${job}/tasks/${task}/finish" -d '{"taskData":{"finish_state":"success","variables":{"export":{"decision":"approve"}}}}' -o /dev/null -w '%{http_code}' | grep -qx 200 && echo "approved job ${job}"
 }
 nb_vlan() { nb "${NETBOX_URL}/api/ipam/vlans/?site=br1&name=${VLAN_NAME}"; }
 c3() {

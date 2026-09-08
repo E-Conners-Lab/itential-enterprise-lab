@@ -1,7 +1,7 @@
 {
   "name": "wf-branch-vlan-v1",
   "type": "automation",
-  "description": "Reserves a VLAN in NetBox for a branch, asks for approval, configures the branch switch through Gateway 5, activates the NetBox VLAN; rolls the reservation back on rejection or device failure (PID S4.4)",
+  "description": "Reserves a VLAN in NetBox for a branch, asks for approval on the JSON form lab-branch-vlan-approval, configures the branch switch through Gateway 5, activates the NetBox VLAN and publishes the Lifecycle Manager instance; rolls the reservation back on rejection or device failure (PID S4.4, S4d.3, ADR 0043/0044)",
   "tasks": {
     "d0": {
       "name": "evaluation",
@@ -1182,11 +1182,11 @@
       "actor": "Pronghorn",
       "scheduled": false
     },
-    "4b": {
-      "name": "replace",
-      "canvasName": "replace",
-      "summary": "summary line",
-      "description": "summary line",
+    "a3": {
+      "name": "numberToString",
+      "canvasName": "numberToString",
+      "summary": "vlan id as string",
+      "description": "vlan id as string",
       "location": "Application",
       "locationType": null,
       "app": "WorkFlowEngine",
@@ -1194,14 +1194,117 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 4800,
+        "x": 4700,
         "y": -200
       },
       "variables": {
         "incoming": {
-          "str": "Reserved VLAN __V__ in NetBox; apply it to the branch switch?",
-          "substr": "__V__",
-          "newSubstr": "$var.b2.numToString"
+          "num": "$var.a2.return_data",
+          "radix": 10
+        },
+        "outgoing": {
+          "numToString": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "4a": {
+      "name": "ShowJsonForm",
+      "canvasName": "ShowJsonForm",
+      "summary": "approval",
+      "description": "approval",
+      "location": "Application",
+      "locationType": null,
+      "app": "JsonForms",
+      "type": "manual",
+      "displayName": "JsonForms",
+      "groups": [],
+      "nodeLocation": {
+        "x": 7000,
+        "y": -200
+      },
+      "variables": {
+        "incoming": {
+          "form_id": "lab-branch-vlan-approval",
+          "instance_data": "$var.a9.textObject"
+        },
+        "outgoing": {
+          "export": "$var.job.approval"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "view": "/json-forms/task/ShowJsonForm"
+    },
+    "4c": {
+      "name": "evaluation",
+      "canvasName": "evaluation",
+      "summary": "approved on the form?",
+      "description": "approved on the form?",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 7300,
+        "y": -200
+      },
+      "variables": {
+        "incoming": {
+          "all_true_flag": true,
+          "evaluation_groups": [
+            {
+              "all_true_flag": true,
+              "evaluations": [
+                {
+                  "query": "decision",
+                  "operand_1": {
+                    "variable": "export",
+                    "task": "4a"
+                  },
+                  "operator": "==",
+                  "operand_2": {
+                    "variable": "approve",
+                    "task": "static"
+                  }
+                }
+              ]
+            }
+          ],
+          "options": {}
+        },
+        "outgoing": {
+          "return_value": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "7b": {
+      "name": "replace",
+      "canvasName": "replace",
+      "summary": "instance: status active",
+      "description": "instance: status active",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 9500,
+        "y": -200
+      },
+      "variables": {
+        "incoming": {
+          "str": "$var.a8.replacedString",
+          "substr": "__ST__",
+          "newSubstr": "active"
         },
         "outgoing": {
           "replacedString": null
@@ -1212,35 +1315,175 @@
       "actor": "Pronghorn",
       "scheduled": false
     },
-    "4a": {
-      "name": "ViewData",
-      "canvasName": "ViewData",
-      "summary": "approval",
-      "description": "approval",
+    "7c": {
+      "name": "parse",
+      "canvasName": "parse",
+      "summary": "instance object (active)",
+      "description": "instance object (active)",
       "location": "Application",
       "locationType": null,
       "app": "WorkFlowEngine",
-      "type": "manual",
+      "type": "automatic",
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 5100,
+        "x": 9800,
         "y": -200
       },
       "variables": {
         "incoming": {
-          "header": "Approve VLAN change",
-          "message": "$var.4b.replacedString",
-          "body": "$var.4b.replacedString",
-          "variables": {},
-          "btn_success": "Approve",
-          "btn_failure": "Reject"
+          "text": "$var.7b.replacedString"
         },
-        "outgoing": {},
+        "outgoing": {
+          "textObject": "$var.job.instance"
+        },
         "error": "",
         "decorators": []
       },
-      "view": "/workflow_engine/task/ViewData"
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "b3": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "existing vid",
+      "description": "existing vid",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 1500,
+        "y": 400
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "response.results[0].vid",
+          "obj": "$var.2a.result"
+        },
+        "outgoing": {
+          "return_data": "$var.job.vid"
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "b4": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "existing NetBox id",
+      "description": "existing NetBox id",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 1800,
+        "y": 400
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "response.results[0].id",
+          "obj": "$var.2a.result"
+        },
+        "outgoing": {
+          "return_data": "$var.job.vlan_id"
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "b5": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "existing status",
+      "description": "existing status",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 2100,
+        "y": 400
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "response.results[0].status.value",
+          "obj": "$var.2a.result"
+        },
+        "outgoing": {
+          "return_data": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "b6": {
+      "name": "numberToString",
+      "canvasName": "numberToString",
+      "summary": "existing vid as string",
+      "description": "existing vid as string",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 2400,
+        "y": 400
+      },
+      "variables": {
+        "incoming": {
+          "num": "$var.b3.return_data",
+          "radix": 10
+        },
+        "outgoing": {
+          "numToString": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "b7": {
+      "name": "numberToString",
+      "canvasName": "numberToString",
+      "summary": "existing id as string",
+      "description": "existing id as string",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 2700,
+        "y": 400
+      },
+      "variables": {
+        "incoming": {
+          "num": "$var.b4.return_data",
+          "radix": 10
+        },
+        "outgoing": {
+          "numToString": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
     },
     "5a": {
       "name": "replace",
@@ -1673,6 +1916,422 @@
       "actor": "Pronghorn",
       "scheduled": false
     },
+    "a4": {
+      "name": "replace",
+      "canvasName": "replace",
+      "summary": "instance: b",
+      "description": "instance: b",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 5000,
+        "y": -200
+      },
+      "variables": {
+        "incoming": {
+          "str": "{\"branch\": \"__B__\", \"vid\": __V__, \"vlan_name\": \"__N__\", \"switch\": \"__S__\", \"netbox_vlan_id\": __I__, \"status\": \"__ST__\"}",
+          "substr": "__B__",
+          "newSubstr": "$var.job.branch"
+        },
+        "outgoing": {
+          "replacedString": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "a5": {
+      "name": "replace",
+      "canvasName": "replace",
+      "summary": "instance: v",
+      "description": "instance: v",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 5300,
+        "y": -200
+      },
+      "variables": {
+        "incoming": {
+          "str": "$var.a4.replacedString",
+          "substr": "__V__",
+          "newSubstr": "$var.b2.numToString"
+        },
+        "outgoing": {
+          "replacedString": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "a6": {
+      "name": "replace",
+      "canvasName": "replace",
+      "summary": "instance: n",
+      "description": "instance: n",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 5600,
+        "y": -200
+      },
+      "variables": {
+        "incoming": {
+          "str": "$var.a5.replacedString",
+          "substr": "__N__",
+          "newSubstr": "$var.job.vlan_name"
+        },
+        "outgoing": {
+          "replacedString": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "a7": {
+      "name": "replace",
+      "canvasName": "replace",
+      "summary": "instance: s",
+      "description": "instance: s",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 5900,
+        "y": -200
+      },
+      "variables": {
+        "incoming": {
+          "str": "$var.a6.replacedString",
+          "substr": "__S__",
+          "newSubstr": "$var.job.switch"
+        },
+        "outgoing": {
+          "replacedString": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "a8": {
+      "name": "replace",
+      "canvasName": "replace",
+      "summary": "instance: i",
+      "description": "instance: i",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 6200,
+        "y": -200
+      },
+      "variables": {
+        "incoming": {
+          "str": "$var.a7.replacedString",
+          "substr": "__I__",
+          "newSubstr": "$var.a3.numToString"
+        },
+        "outgoing": {
+          "replacedString": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "b1": {
+      "name": "replace",
+      "canvasName": "replace",
+      "summary": "instance: st",
+      "description": "instance: st",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 6500,
+        "y": -200
+      },
+      "variables": {
+        "incoming": {
+          "str": "$var.a8.replacedString",
+          "substr": "__ST__",
+          "newSubstr": "reserved"
+        },
+        "outgoing": {
+          "replacedString": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "a9": {
+      "name": "parse",
+      "canvasName": "parse",
+      "summary": "instance object",
+      "description": "instance object",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 6800,
+        "y": -200
+      },
+      "variables": {
+        "incoming": {
+          "text": "$var.b1.replacedString"
+        },
+        "outgoing": {
+          "textObject": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "b8": {
+      "name": "replace",
+      "canvasName": "replace",
+      "summary": "instance: b",
+      "description": "instance: b",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 3000,
+        "y": 400
+      },
+      "variables": {
+        "incoming": {
+          "str": "{\"branch\": \"__B__\", \"vid\": __V__, \"vlan_name\": \"__N__\", \"switch\": \"__S__\", \"netbox_vlan_id\": __I__, \"status\": \"__ST__\"}",
+          "substr": "__B__",
+          "newSubstr": "$var.job.branch"
+        },
+        "outgoing": {
+          "replacedString": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "b9": {
+      "name": "replace",
+      "canvasName": "replace",
+      "summary": "instance: v",
+      "description": "instance: v",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 3300,
+        "y": 400
+      },
+      "variables": {
+        "incoming": {
+          "str": "$var.b8.replacedString",
+          "substr": "__V__",
+          "newSubstr": "$var.b6.numToString"
+        },
+        "outgoing": {
+          "replacedString": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "c4": {
+      "name": "replace",
+      "canvasName": "replace",
+      "summary": "instance: n",
+      "description": "instance: n",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 3600,
+        "y": 400
+      },
+      "variables": {
+        "incoming": {
+          "str": "$var.b9.replacedString",
+          "substr": "__N__",
+          "newSubstr": "$var.job.vlan_name"
+        },
+        "outgoing": {
+          "replacedString": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "c5": {
+      "name": "replace",
+      "canvasName": "replace",
+      "summary": "instance: s",
+      "description": "instance: s",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 3900,
+        "y": 400
+      },
+      "variables": {
+        "incoming": {
+          "str": "$var.c4.replacedString",
+          "substr": "__S__",
+          "newSubstr": "$var.job.switch"
+        },
+        "outgoing": {
+          "replacedString": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "c6": {
+      "name": "replace",
+      "canvasName": "replace",
+      "summary": "instance: i",
+      "description": "instance: i",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 4200,
+        "y": 400
+      },
+      "variables": {
+        "incoming": {
+          "str": "$var.c5.replacedString",
+          "substr": "__I__",
+          "newSubstr": "$var.b7.numToString"
+        },
+        "outgoing": {
+          "replacedString": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "c7": {
+      "name": "replace",
+      "canvasName": "replace",
+      "summary": "instance: st",
+      "description": "instance: st",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 4500,
+        "y": 400
+      },
+      "variables": {
+        "incoming": {
+          "str": "$var.c6.replacedString",
+          "substr": "__ST__",
+          "newSubstr": "$var.b5.return_data"
+        },
+        "outgoing": {
+          "replacedString": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "c8": {
+      "name": "parse",
+      "canvasName": "parse",
+      "summary": "instance object",
+      "description": "instance object",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 4800,
+        "y": 400
+      },
+      "variables": {
+        "incoming": {
+          "text": "$var.c7.replacedString"
+        },
+        "outgoing": {
+          "textObject": "$var.job.instance"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
     "workflow_start": {
       "name": "workflow_start",
       "summary": "workflow_start",
@@ -1810,12 +2469,84 @@
       }
     },
     "2b": {
-      "9a": {
+      "b3": {
         "state": "success",
         "type": "standard"
       },
       "3a": {
         "state": "failure",
+        "type": "standard"
+      }
+    },
+    "b3": {
+      "b4": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "b4": {
+      "b5": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "b5": {
+      "b6": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "b6": {
+      "b7": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "b7": {
+      "b8": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "b8": {
+      "b9": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "b9": {
+      "c4": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "c4": {
+      "c5": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "c5": {
+      "c6": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "c6": {
+      "c7": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "c7": {
+      "c8": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "c8": {
+      "9a": {
+        "state": "success",
         "type": "standard"
       }
     },
@@ -1896,7 +2627,7 @@
         "state": "success",
         "type": "standard"
       },
-      "4b": {
+      "a3": {
         "state": "failure",
         "type": "standard"
       }
@@ -1932,18 +2663,70 @@
       }
     },
     "e6": {
-      "4b": {
+      "a3": {
         "state": "success",
         "type": "standard"
       }
     },
-    "4b": {
+    "a3": {
+      "a4": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "a4": {
+      "a5": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "a5": {
+      "a6": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "a6": {
+      "a7": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "a7": {
+      "a8": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "a8": {
+      "b1": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "b1": {
+      "a9": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "a9": {
       "4a": {
         "state": "success",
         "type": "standard"
       }
     },
     "4a": {
+      "4c": {
+        "state": "success",
+        "type": "standard"
+      },
+      "8a": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "4c": {
       "5a": {
         "state": "success",
         "type": "standard"
@@ -1996,7 +2779,7 @@
         "state": "success",
         "type": "standard"
       },
-      "7a": {
+      "7b": {
         "state": "failure",
         "type": "standard"
       }
@@ -2020,6 +2803,18 @@
       }
     },
     "f4": {
+      "7b": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "7b": {
+      "7c": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "7c": {
       "7a": {
         "state": "success",
         "type": "standard"
@@ -2107,6 +2902,12 @@
       },
       "change_state_closed": {
         "type": "string"
+      },
+      "instance": {
+        "type": "object"
+      },
+      "approval": {
+        "type": "object"
       }
     }
   },
