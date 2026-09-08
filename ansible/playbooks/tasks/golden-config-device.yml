@@ -33,7 +33,8 @@
     leaf_path: "{{ leaf_doc.json.root.name }}/{{ dev.site }}/{{ dev.name }}"
     leaf_text: >-
       {{ lookup('ansible.builtin.template', gc_dir ~ '/' ~ tree.key ~ '/device.j2',
-                template_vars={'device': dev, 'mgmt_ip': dev.mgmt_ip, 'mgmt_if': dev.mgmt_if}) }}
+                template_vars={'device': dev, 'mgmt_ip': dev.mgmt_ip, 'mgmt_if': dev.mgmt_if,
+                               'interfaces': dev.interfaces | default([])}) }}
 
 - name: "Current leaf spec for {{ dev.name }}"
   ansible.builtin.uri:

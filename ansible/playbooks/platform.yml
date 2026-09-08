@@ -58,7 +58,25 @@
       register: nb_ips
       no_log: true
 
-    # one flat list: name, site, role, tree (deviceType), mgmt_ip, mgmt_if
+    - name: Interfaces with their descriptions and VRFs (S4e interface intent, ADR 0048)
+      ansible.builtin.uri:
+        url: "{{ netbox_url }}/api/dcim/interfaces/?limit=0&device={{ item.name }}&mgmt_only=false"
+        headers: "{{ netbox_headers }}"
+      loop: "{{ nb_by_tree.results | map(attribute='json.results') | flatten }}"
+      loop_control:
+        label: "{{ item.name }}"
+      register: nb_ifaces
+      no_log: true
+
+    - name: FHRP groups and their assignments (the virtual-router addresses on the leaf SVIs)
+      ansible.builtin.uri:
+        url: "{{ netbox_url }}/api/ipam/{{ item }}/?limit=0"
+        headers: "{{ netbox_headers }}"
+      loop: [fhrp-groups, fhrp-group-assignments]
+      register: nb_fhrp
+      no_log: true
+
+    # one flat list: name, site, role, tree (deviceType), mgmt_ip, mgmt_if, interfaces (intent)
     - name: Device intent
       ansible.builtin.set_fact:
         gc_devices: >-
@@ -68,8 +86,12 @@
                         | selectattr('value.netbox_platform', 'equalto', item.0.platform.slug) | first).key,
                'mgmt_ip': item.0.primary_ip4.address | ansible.utils.ipaddr('address'),
                'mgmt_if': (item.1.json.results | selectattr('address', 'equalto', item.0.primary_ip4.address)
-                           | map(attribute='assigned_object.name') | first)}] }}
-      loop: "{{ (nb_by_tree.results | map(attribute='json.results') | flatten) | zip(nb_ips.results) | list }}"
+                           | map(attribute='assigned_object.name') | first),
+               'interfaces': lookup('ansible.builtin.template', playbook_dir ~ '/templates/gc-interfaces.j2',
+                                    template_vars={'ifaces': item.2.json.results, 'ips': item.1.json.results,
+                                                   'groups': nb_fhrp.results[0].json.results,
+                                                   'fhrp': nb_fhrp.results[1].json.results}) | from_json}] }}
+      loop: "{{ (nb_by_tree.results | map(attribute='json.results') | flatten) | zip(nb_ips.results, nb_ifaces.results) | list }}"
       loop_control:
         label: "{{ item.0.name }}"
 

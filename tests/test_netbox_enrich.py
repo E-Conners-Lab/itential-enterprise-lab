@@ -381,3 +381,87 @@ def test_enrich_play_builds_element_4() -> None:
         "circuits.circuittermination",
     ):
         assert needle in text, f"netbox-enrich.yml lacks {needle}"
+
+
+# --- S4e.5: journal entries ---------------------------------------------------------------------------------------
+def test_enrich_play_journals_only_when_the_changelog_moved() -> None:
+    text = PLAY.read_text()
+    assert "core/object-changes" in text and "netbox_journal_entry" in text
+    task = text[text.index("- name: Journal entry per site") :]
+    assert (
+        "when: journal_wanted" in task and "journal_this_commit.json.count == 0" in text
+    ), (
+        "an entry when the run changed NetBox or the first time a commit runs; a repeat run of the same commit writes none"
+    )
+
+
+def test_branch_vlan_workflows_write_a_journal_entry_on_the_switch() -> None:
+    import json
+
+    for name, marker in (
+        ("wf-branch-vlan-v1", "branch-vlan create"),
+        ("wf-branch-vlan-delete-v1", "branch-vlan delete"),
+    ):
+        wf = json.loads((ROOT / "itential" / "workflows" / f"{name}.json").read_text())
+        posts = [
+            t
+            for t in wf["tasks"].values()
+            if t.get("name") == "runCode"
+            and "extras/journal-entries/" in t["variables"]["incoming"].get("code", "")
+        ]
+        assert len(posts) == 1, f"{name}: one runCode task posts the journal entry"
+        assert "NETBOX_TOKEN" in posts[0]["variables"]["incoming"]["code"], (
+            "the token comes from the runner's environment, never from job variables"
+        )
+        assert marker in json.dumps(wf), f"{name}: the journal comment names the action"
+
+
+# --- S4e.6: the agent reads the new objects; Golden Config renders the interface intent ---------------------------
+INTEGRATION = ROOT / "itential" / "integrations" / "lab-netbox.json"
+AGENT = ROOT / "itential" / "agents" / "netbox-sot.yaml"
+GC = ROOT / "itential" / "golden-config"
+NEW_READS = {
+    "/api/dcim/racks/": "dcim_racks_list",
+    "/api/circuits/circuits/": "circuits_circuits_list",
+    "/api/ipam/asns/": "ipam_asns_list",
+    "/api/ipam/vrfs/": "ipam_vrfs_list",
+    "/api/ipam/prefixes/": "ipam_prefixes_list",
+}
+
+
+def test_integration_model_reads_the_enriched_objects() -> None:
+    import json
+
+    doc = json.loads(INTEGRATION.read_text())
+    for path, op_id in NEW_READS.items():
+        assert (
+            path in doc["paths"] and doc["paths"][path]["get"]["operationId"] == op_id
+        ), f"lab-netbox lacks {op_id}"
+    assert all("post" not in v and "delete" not in v for v in doc["paths"].values()), (
+        "the NetBox model stays read-only"
+    )
+
+
+def test_netbox_sot_holds_the_new_reads() -> None:
+    import yaml
+
+    agent = yaml.safe_load(AGENT.read_text())
+    refs = {t["reference"] for t in agent["tools"]}
+    assert set(NEW_READS.values()) <= refs, f"netbox-sot tools: {sorted(refs)}"
+    assert "config_context" in agent["instructions"], (
+        "the agent is told the device retrieve carries the rendered config context"
+    )
+
+
+def test_golden_config_leaf_renders_interface_intent() -> None:
+    for os_dir in ("cisco-ios", "arista-eos"):
+        text = (GC / os_dir / "device.j2").read_text()
+        assert (
+            "for i in interfaces" in text
+            and "i.description" in text
+            and "ip address" in text
+        ), f"{os_dir}/device.j2 renders no interface intent from NetBox"
+    assert (
+        "'virtual ' if a.role == 'anycast'"
+        in (GC / "arista-eos" / "device.j2").read_text()
+    ), "EOS anycast addresses render as ip address virtual"

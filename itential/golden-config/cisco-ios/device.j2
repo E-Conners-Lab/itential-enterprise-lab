@@ -2,3 +2,9 @@
 <e/>interface {{ mgmt_if }}
  vrf forwarding MGMT
  ip address {{ mgmt_ip }} 255.255.255.0
+{% for i in interfaces %}
+<e/>interface {{ i.name }}
+{% if i.description %} description {{ i.description }}
+{% endif %}{% if i.vrf %} vrf forwarding {{ i.vrf }}
+{% endif %}{% for a in i.addresses %} ip address {{ a.address | ansible.utils.ipaddr('address') }} {{ a.address | ansible.utils.ipaddr('netmask') }}
+{% endfor %}{% endfor %}

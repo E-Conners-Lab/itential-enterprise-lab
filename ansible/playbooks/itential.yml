@@ -128,6 +128,8 @@
           OLLAMA_IMAGE={{ images.ollama.repository }}:{{ images.ollama.tag }}
           ETCD_IMAGE={{ images.etcd.repository }}:{{ images.etcd.tag }}
           GATEWAY5_RUNNER_IMAGE={{ stack.runner_image }}
+          NETBOX_URL={{ lookup('ansible.builtin.env', 'NETBOX_URL') }}
+          NETBOX_TOKEN={{ lookup('ansible.builtin.env', 'NETBOX_TOKEN') }}
           MCP_TRANSPORT=http
           BIND_ADDRESS=127.0.0.1:
           OOB_ADDRESS={{ oob_address }}

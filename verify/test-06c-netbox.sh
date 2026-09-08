@@ -29,6 +29,47 @@ start_job() { iap -X POST "${PLATFORM}/operations-manager/jobs/start" -d "{\"wor
 job_status() { iap "${PLATFORM}/operations-manager/jobs/$1" | ${PY} -c 'import sys,json;print(json.load(sys.stdin)["data"]["status"])'; }
 wait_job() { local st; for _ in $(seq 1 48); do st=$(job_status "$1"); case "$st" in complete) return 0;; error|canceled|cancelled) echo "job $1 ${st}"; return 1;; esac; sleep 5; done; echo "job $1 timeout (${st})"; return 1; }
 job_vars() { iap "${PLATFORM}/operations-manager/jobs/$1" | ${PY} -c 'import sys,json;print(json.dumps(json.load(sys.stdin)["data"].get("variables",{})))'; }
+# agent sessions (as test-06): run_agent <name> <inputs json> -> session id; session_text; session_usage
+tokens_in=0; tokens_out=0
+agent_id() { iap "${PLATFORM}/agent-project-service/operable-agents" | ${PY} -c "import sys,json;a=[x for x in json.load(sys.stdin)['data']['items'] if x.get('name')=='$1'];print(a[0]['_id'] if a else '')"; }
+run_agent() {
+  local name=$1 inputs=$2 aid sid state
+  aid=$(agent_id "$name"); [ -n "$aid" ] || { echo "agent ${name} not found"; return 1; }
+  sid=$(iap -X POST "${PLATFORM}/agent-session-manager/sessions" -d "{\"agentDefinitionId\":\"${aid}\",\"inputs\":${inputs}}" | ${PY} -c 'import sys,json;print(json.load(sys.stdin).get("sessionId",""))')
+  [ -n "$sid" ] || { echo "session start failed for ${name}"; return 1; }
+  echo "$sid"
+  for _ in $(seq 1 60); do
+    state=$(iap "${PLATFORM}/agent-session-manager/sessions/${sid}" | ${PY} -c 'import sys,json;print((json.load(sys.stdin).get("status") or "").lower())')
+    case "$state" in complete|completed) return 0;; failed|error|canceled|cancelled) echo "session ${sid} ${state}"; return 1;; esac
+    sleep 5
+  done
+  echo "session ${sid} did not finish (${state})"; return 1
+}
+session_msgs() { iap "${PLATFORM}/agent-session-manager/sessions/$1/messages?limit=500&sortBy=eventId&sortOrder=asc"; }
+session_text()  { session_msgs "$1" | ${PY} -c 'import sys,json;m=json.load(sys.stdin);m=sorted([x for x in m if x.get("type")=="inference-succeeded" and x.get("text")],key=lambda x:x.get("timestamp",0));print(m[-1]["text"] if m else "")'; }
+session_usage() { session_msgs "$1" | ${PY} -c 'import sys,json;m=json.load(sys.stdin);u=[x["data"]["tokenUsage"] for x in m if x.get("type")=="inference-succeeded" and x.get("data",{}).get("tokenUsage")];print(sum(t.get("inputTokens",0) for t in u),sum(t.get("outputTokens",0) for t in u))'; }
+# the totals live in a file: count_tokens runs inside command substitutions, where shell variables would be lost
+count_tokens() { read -r i o <<<"$(session_usage "$1")"; echo "$i $o" >> "$WORK/tokens"; echo "tokens in=${i} out=${o}"; }
+token_totals() { [ -s "$WORK/tokens" ] && awk '{i+=$1;o+=$2} END{print "in=" i " out=" o}' "$WORK/tokens" || echo "in=0 out=0"; }
+# compliance plan (as test-06b): plan_id <name>; run_plan <id> -> waits, prints "<status> <batch>"
+plan_id() { iap -X POST "${PLATFORM}/configuration_manager/search/compliance_plans" -d '{"name":"","options":{"start":0,"limit":100}}' | ${PY} -c "import sys,json;d=json.load(sys.stdin);print(next((p['id'] for p in d.get('plans',[]) if p.get('name')=='$1'),''))"; }
+# run_plan <plan id> -> prints the batch id after the instance completes (as test-06b)
+run_plan() {
+  local inst batch st
+  inst=$(iap -X POST "${PLATFORM}/configuration_manager/compliance_plans/run" -d "{\"planId\":\"$1\",\"options\":{}}" | ${PY} -c 'import sys,json;print(json.load(sys.stdin).get("instanceId",""))')
+  [ -n "$inst" ] || { echo "plan run did not start"; return 1; }
+  for _ in $(seq 1 60); do
+    read -r st batch <<<"$(iap -X POST "${PLATFORM}/configuration_manager/search/compliance_plan_instances" -d "{\"searchParams\":{\"instanceId\":\"${inst}\"}}" | ${PY} -c 'import sys,json;d=json.load(sys.stdin);p=d.get("plans") or [x for g in d.get("groups",[]) for x in g.get("plans",[])];print((p[0].get("jobStatus") or ""),(p[0].get("batchId") or "")) if p else print("","")')"
+    [ "$st" = complete ] && { echo "$batch"; return 0; }; sleep 5
+  done
+  echo "plan instance ${inst} did not finish (${st})"; return 1
+}
+# batch_issues <batchId> -> one line per device: name errors warnings passes | issues (as test-06b)
+batch_issues() { iap "${PLATFORM}/configuration_manager/compliance_reports/batch/$1" | ${PY} -c '
+import sys,json
+for r in json.load(sys.stdin):
+    t=r.get("totals",{}); iss=[" ".join(w["value"] for w in i["spec"]["words"]) for i in r.get("issues",[])]
+    print(r["deviceName"], t.get("errors",0), t.get("warnings",0), t.get("passes",0), "|", "; ".join(iss))'; }
 # show_all <command> -> writes the parsed results of every device to $WORK/<slug>.json
 # wf-show-all-v1 caps each device's parsed result at 1500 characters (sized for the local model, ADR 0046); a device
 # whose result hit the cap (a JSON string, not a list) is re-read alone through wf-show-command-v1.
@@ -352,6 +393,75 @@ print(f"{len(intent['circuits'])} circuits of {sorted(providers)} with A/Z termi
 PY
 }
 check "S4e.4 provider circuits with terminations at their sites; the cable trace from each edge port crosses the circuit to the isp-core01 port; no direct provider cable remains" c4
+
+# --- S4e.5 journal entries: one per site from the play's changing runs; create and delete entries on br2-sw01 (LCM) ----
+c5() {
+  nb "${NETBOX_URL}/api/extras/journal-entries/?limit=500" > "$WORK/nb-journal.json"
+  nb "${NETBOX_URL}/api/dcim/sites/?limit=100" > "$WORK/nb-sites.json"
+  nb "${NETBOX_URL}/api/dcim/devices/?name=br2-sw01" > "$WORK/nb-br2sw01.json"
+  WORK="$WORK" ${PY} - <<'PY'
+import json, os, re, subprocess, sys
+W = os.environ["WORK"]
+entries = json.load(open(f"{W}/nb-journal.json"))["results"]
+sites = {s["id"]: s["slug"] for s in json.load(open(f"{W}/nb-sites.json"))["results"]}
+sw = json.load(open(f"{W}/nb-br2sw01.json"))["results"][0]["id"]
+errs = []
+per_site = {}
+for e in entries:
+    if e["assigned_object_type"] == "dcim.site" and e["comments"].startswith("netbox-enrich.yml (git "):
+        per_site.setdefault(sites.get(e["assigned_object_id"]), []).append(e)
+for slug in sites.values():
+    if not per_site.get(slug):
+        errs.append(f"site {slug}: no netbox-enrich.yml journal entry")
+shas = {m.group(1) for es in per_site.values() for e in es for m in [re.search(r"\(git ([0-9a-f]+)\)", e["comments"])] if m}
+for sha in shas:
+    if subprocess.run(["git", "cat-file", "-e", sha], capture_output=True).returncode != 0:
+        errs.append(f"journal names commit {sha}, unknown to this repo")
+switch = [e["comments"] for e in entries if e["assigned_object_type"] == "dcim.device" and e["assigned_object_id"] == sw]
+for marker in ("Lifecycle Manager branch-vlan create: VLAN", "Lifecycle Manager branch-vlan delete: VLAN"):
+    if not any(c.startswith(marker) for c in switch):
+        errs.append(f"br2-sw01: no journal entry starting with {marker!r} (test-06b S4d.3 writes them through the LCM actions)")
+if errs:
+    print("\n".join(errs[:20])); sys.exit(1)
+print(f"{sum(len(v) for v in per_site.values())} play entries over {len(per_site)} sites naming commits {sorted(shas)}; br2-sw01 carries {len(switch)} LCM entries (newest: {switch[0][:70]!r})")
+PY
+}
+check "S4e.5 journal entries: every site carries netbox-enrich.yml entries naming a real commit; br2-sw01 carries the LCM create and delete entries" c5
+
+# --- S4e.6 idempotency, the agent on the enriched objects, Golden Config with the interface intent --------------------
+COMPLIANCE_PLAN=$(${PY} -c "import yaml;print(yaml.safe_load(open('$V'))['golden_config']['plan'])")
+c6() {
+  # 1) a second run of the play changes nothing
+  local out
+  out=$(cd ansible && NETBOX_API="$NETBOX_URL" ansible-playbook playbooks/netbox-enrich.yml < /dev/null 2>&1) || { echo "$out" | grep -E 'ERROR|failed:' | head -5; return 1; }
+  echo "$out" | grep -E '^localhost' | grep -q 'changed=0 ' || { echo "netbox-enrich.yml is not idempotent: $(echo "$out" | grep -E '^localhost')"; return 1; }
+  echo "netbox-enrich.yml re-run: $(echo "$out" | grep -E '^localhost' | sed 's/  */ /g')"
+  # 2) netbox-sot answers one question per object type; every answer is checked against the NetBox API
+  local sid txt q want
+  while IFS='|' read -r q want; do
+    sid=$(run_agent netbox-sot "{\"request\":\"${q}\"}") || { echo "$sid"; return 1; }
+    txt=$(session_text "${sid##*$'\n'}")
+    for w in $want; do echo "$txt" | grep -qi -- "$w" || { echo "netbox-sot on '${q}': answer lacks '${w}': ${txt:0:300}"; return 1; }; done
+    echo "netbox-sot: '${q}' -> ${txt:0:110} ($(count_tokens "${sid##*$'\n'}"))"
+  done <<EOF
+Which address does interface GigabitEthernet2 of br1-wan01 carry, in which VRF, and what does its description say?|$(nb "${NETBOX_URL}/api/ipam/ip-addresses/?device=br1-wan01&interface=GigabitEthernet2" | ${PY} -c 'import sys,json;r=json.load(sys.stdin)["results"][0];print(r["address"], r["vrf"]["name"])') isp-core01
+Which autonomous system numbers are assigned to site br1?|$(nb "${NETBOX_URL}/api/ipam/asns/?site=br1" | ${PY} -c 'import sys,json;print(" ".join(str(a["asn"]) for a in json.load(sys.stdin)["results"]))')
+In which rack and at which rack unit position is dc1-leaf01 installed?|$(nb "${NETBOX_URL}/api/dcim/devices/?name=dc1-leaf01" | ${PY} -c 'import sys,json;d=json.load(sys.stdin)["results"][0];print(d["rack"]["name"], int(d["position"]))')
+Which circuit terminates at site br1 and who is its provider?|$(nb "${NETBOX_URL}/api/circuits/circuits/?site=br1" | ${PY} -c 'import sys,json;c=json.load(sys.stdin)["results"][0];print(c["cid"], c["provider"]["name"])')
+What NTP server and domain does the rendered config context of br2-sw01 give?|$(nb "${NETBOX_URL}/api/dcim/devices/?name=br2-sw01" | ${PY} -c 'import sys,json;c=json.load(sys.stdin)["results"][0]["config_context"];print(c["ntp"], c["domain"])')
+EOF
+  # 3) the compliance plan is clean on every device with the interface intent in the leaves
+  local pid batch
+  pid=$(plan_id "$COMPLIANCE_PLAN"); [ -n "$pid" ] || { echo "compliance plan ${COMPLIANCE_PLAN} not found"; return 1; }
+  batch=$(run_plan "$pid") || { echo "$batch"; return 1; }
+  batch_issues "$batch" > "$WORK/issues.txt" || { echo "batch ${batch} reports unreadable"; return 1; }
+  [ "$(wc -l < "$WORK/issues.txt")" -ge 12 ] || { echo "fewer than 12 device reports:"; cat "$WORK/issues.txt"; return 1; }
+  awk '$2+$3>0' "$WORK/issues.txt" | grep -q . && { echo "issues with the interface intent in the tree:"; awk '$2+$3>0' "$WORK/issues.txt"; return 1; }
+  echo "compliance ${COMPLIANCE_PLAN}: $(wc -l < "$WORK/issues.txt" | tr -d ' ') device reports, 0 errors, 0 warnings (passes: $(awk '{s+=$4} END{print s}' "$WORK/issues.txt")) with the interface intent rendered from NetBox"
+}
+check "S4e.6 the play re-runs with changed=0; netbox-sot answers address/VRF/peer, site ASNs, rack position, circuit and context questions equal to the NetBox API; the compliance plan stays clean with the interface intent in the device leaves" c6
+echo
+echo "tokens spent this run: $(token_totals) (Anthropic)"
 
 echo
 echo "passed=${pass} failed=${fail}"

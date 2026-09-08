@@ -21,6 +21,20 @@
       register: derive_out
       changed_when: false
 
+    - name: The newest NetBox change before this run (the changelog decides whether a journal entry is written)
+      ansible.builtin.uri:
+        url: "{{ nb_url }}/api/core/object-changes/?limit=1"
+        headers: "{{ nb_headers }}"
+        validate_certs: false
+      register: change_before
+
+    - name: The repo commit this run derives from
+      ansible.builtin.command: git describe --always --dirty  # noqa: command-instead-of-module (a label, not a checkout)
+      args:
+        chdir: "{{ playbook_dir }}/../.."
+      register: git_head
+      changed_when: false
+
     - name: The intent as facts (every addressed or linked interface with its device)
       ansible.builtin.set_fact:
         intent: "{{ derive_out.stdout | from_json }}"
@@ -585,3 +599,57 @@
               | selectattr('term_side', 'equalto', item.item.1 | upper) | first).id }}
       when: item.json.results[0].link_peers_type != 'circuits.circuittermination'
       changed_when: true
+
+    # --- S4e.5: one journal entry per site when this run changed NetBox (its own changelog is the judge) ---
+    - name: Changes this run made
+      ansible.builtin.uri:
+        url: "{{ nb_url }}/api/core/object-changes/?limit=500&id__gt={{ change_before.json.results[0].id | default(0) }}"
+        headers: "{{ nb_headers }}"
+        validate_certs: false
+      register: change_after
+
+    - name: Journal entries this commit already left on the sites
+      ansible.builtin.uri:
+        url: >-
+          {{ nb_url }}/api/extras/journal-entries/?assigned_object_type=dcim.site&limit=500&q={{
+          ('(git ' ~ git_head.stdout ~ ')') | urlencode }}
+        headers: "{{ nb_headers }}"
+        validate_certs: false
+      register: journal_this_commit
+
+    # a journal entry per site when this run changed NetBox, or the first time this commit runs (its provenance)
+    - name: Journal wanted?
+      ansible.builtin.set_fact:
+        journal_wanted: "{{ change_after.json.count > 0 or journal_this_commit.json.count == 0 }}"
+
+    - name: Sites (ids for the journal)
+      ansible.builtin.uri:
+        url: "{{ nb_url }}/api/dcim/sites/?limit=100"
+        headers: "{{ nb_headers }}"
+        validate_certs: false
+      register: sites_now
+      when: journal_wanted
+
+    - name: The change summary (objects per type)
+      ansible.builtin.set_fact:
+        change_summary: >-
+          {{ change_after.json.results | map(attribute='changed_object_type') | list | unique
+             | map('regex_replace', '^(.*)$', '\\1') | list }}
+      when: journal_wanted
+
+    - name: Journal entry per site (what netbox-enrich.yml reconciled, and from which commit)
+      netbox.netbox.netbox_journal_entry:
+        netbox_url: "{{ nb_url }}"
+        netbox_token: "{{ nb_token }}"
+        validate_certs: false
+        data:
+          assigned_object_type: dcim.site
+          assigned_object_id: "{{ item.id }}"
+          kind: info
+          comments: >-
+            netbox-enrich.yml (git {{ git_head.stdout }}) reconciled {{ change_after.json.count }} changes
+            ({{ change_summary | default([]) | join(', ') }}) on {{ lookup('ansible.builtin.pipe', 'date -u +%Y-%m-%dT%H:%MZ') }}
+      loop: "{{ sites_now.json.results | default([]) }}"
+      loop_control:
+        label: "{{ item.slug }}"
+      when: journal_wanted

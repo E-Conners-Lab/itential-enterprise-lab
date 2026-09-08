@@ -2332,6 +2332,189 @@
       "actor": "Pronghorn",
       "scheduled": false
     },
+    "ea1": {
+      "name": "replace",
+      "canvasName": "replace",
+      "summary": "journal: device",
+      "description": "journal: device",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 6600,
+        "y": -1100
+      },
+      "variables": {
+        "incoming": {
+          "str": "{\"device\": \"__S__\", \"comment\": \"__C__\"}",
+          "substr": "__S__",
+          "newSubstr": "$var.job.switch"
+        },
+        "outgoing": {
+          "replacedString": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "ea2": {
+      "name": "replace",
+      "canvasName": "replace",
+      "summary": "journal: comment",
+      "description": "journal: comment",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 6900,
+        "y": -1100
+      },
+      "variables": {
+        "incoming": {
+          "str": "$var.ea1.replacedString",
+          "substr": "__C__",
+          "newSubstr": "Lifecycle Manager branch-vlan create: VLAN __V__ (__N__) configured through Gateway 5 by wf-branch-vlan-v1; NetBox VLAN active"
+        },
+        "outgoing": {
+          "replacedString": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "ea3": {
+      "name": "replace",
+      "canvasName": "replace",
+      "summary": "journal comment: vid",
+      "description": "journal comment: vid",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 7200,
+        "y": -1100
+      },
+      "variables": {
+        "incoming": {
+          "str": "$var.ea2.replacedString",
+          "substr": "__V__",
+          "newSubstr": "$var.b2.numToString"
+        },
+        "outgoing": {
+          "replacedString": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "ea4": {
+      "name": "replace",
+      "canvasName": "replace",
+      "summary": "journal comment: name",
+      "description": "journal comment: name",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 7500,
+        "y": -1100
+      },
+      "variables": {
+        "incoming": {
+          "str": "$var.ea3.replacedString",
+          "substr": "__N__",
+          "newSubstr": "$var.job.vlan_name"
+        },
+        "outgoing": {
+          "replacedString": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "ea5": {
+      "name": "parse",
+      "canvasName": "parse",
+      "summary": "journal body object",
+      "description": "journal body object",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 7800,
+        "y": -1100
+      },
+      "variables": {
+        "incoming": {
+          "text": "$var.ea4.replacedString"
+        },
+        "outgoing": {
+          "textObject": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "ea6": {
+      "name": "runCode",
+      "canvasName": "runCode",
+      "summary": "journal entry on the switch (python on the runner posts to NetBox)",
+      "description": "journal entry on the switch (python on the runner posts to NetBox)",
+      "location": "Application",
+      "locationType": null,
+      "app": "GatewayManager",
+      "type": "automatic",
+      "displayName": "GatewayManager",
+      "groups": [],
+      "nodeLocation": {
+        "x": 8100,
+        "y": -1100
+      },
+      "variables": {
+        "incoming": {
+          "clusterId": "lab",
+          "language": "python",
+          "code": "import json, os, sys, urllib.request\ndata = json.load(sys.stdin)\nurl = os.environ[\"NETBOX_URL\"].rstrip(\"/\") + \"/api/\"\nheaders = {\"Authorization\": \"Token \" + os.environ[\"NETBOX_TOKEN\"], \"Content-Type\": \"application/json\", \"Accept\": \"application/json\"}\ndef call(path, body=None):\n    req = urllib.request.Request(url + path, data=json.dumps(body).encode() if body else None, headers=headers, method=\"POST\" if body else \"GET\")\n    with urllib.request.urlopen(req, timeout=20) as r:\n        return json.load(r)\ndevices = call(\"dcim/devices/?name=\" + data[\"device\"])[\"results\"]\nif not devices:\n    raise SystemExit(\"device %s not in NetBox\" % data[\"device\"])\nentry = call(\"extras/journal-entries/\", {\"assigned_object_type\": \"dcim.device\", \"assigned_object_id\": devices[0][\"id\"],\n                                         \"kind\": \"info\", \"comments\": data[\"comment\"]})\nprint(json.dumps({\"journal_entry_id\": entry[\"id\"], \"device_id\": devices[0][\"id\"]}))\n",
+          "data": "$var.ea5.textObject",
+          "safety": {
+            "timeout": 60
+          },
+          "packages": []
+        },
+        "outgoing": {
+          "result": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
     "workflow_start": {
       "name": "workflow_start",
       "summary": "workflow_start",
@@ -2769,6 +2952,42 @@
       }
     },
     "6a": {
+      "ea1": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "ea1": {
+      "ea2": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "ea2": {
+      "ea3": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "ea3": {
+      "ea4": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "ea4": {
+      "ea5": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "ea5": {
+      "ea6": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "ea6": {
       "f0": {
         "state": "success",
         "type": "standard"

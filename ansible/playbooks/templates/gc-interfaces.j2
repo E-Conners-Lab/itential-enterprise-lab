@@ -1,0 +1,21 @@
+{#- The interface intent of one device for the Golden Config leaf: every non-management interface that carries
+    a description or an address (ADR 0048); addresses with role; the FHRP group address when the interface is a
+    member (EOS ip virtual-router address). Emitted as one JSON list. -#}
+{%- set by_iface = {} -%}
+{%- for a in ips if a.assigned_object_type == 'dcim.interface' -%}
+{%-   set _ = by_iface.setdefault(a.assigned_object.id, []).append({'address': a.address, 'role': (a.role.value if a.role else none)}) -%}
+{%- endfor -%}
+{%- set group_addr = {} -%}
+{%- for g in groups if g.ip_addresses -%}
+{%-   set _ = group_addr.update({g.id: g.ip_addresses[0].address}) -%}
+{%- endfor -%}
+{%- set vr = {} -%}
+{%- for m in fhrp if m.interface_type == 'dcim.interface' and m.group.id in group_addr -%}
+{%-   set _ = vr.update({m.interface.id: group_addr[m.group.id]}) -%}
+{%- endfor -%}
+{%- set out = [] -%}
+{%- for i in ifaces | sort(attribute='name') if (i.description or i.id in by_iface) and not i.mgmt_only -%}
+{%-   set _ = out.append({'name': i.name, 'description': i.description, 'vrf': (i.vrf.name if i.vrf else none),
+                          'addresses': by_iface.get(i.id, []), 'virtual_router': vr.get(i.id)}) -%}
+{%- endfor -%}
+{{ out | to_json }}

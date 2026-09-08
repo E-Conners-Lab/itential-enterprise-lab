@@ -173,7 +173,8 @@ integrations:
       instance: netbox-api # integration (virtual adapter) name; the adapter instance stays NetBox
       auth: tokenAuth # OpenAPI security scheme in the document: apiKey header Authorization "Token <NETBOX_TOKEN>"
       server: {protocol: http, host: 10.100.0.64, port: 8080, base_path: ""}
-      operations: [dcim_devices_list, dcim_devices_retrieve, dcim_interfaces_list, ipam_ip_addresses_list, ipam_vlans_list, dcim_sites_list]
+      operations: [dcim_devices_list, dcim_devices_retrieve, dcim_interfaces_list, ipam_ip_addresses_list, ipam_vlans_list, dcim_sites_list,
+                   dcim_racks_list, circuits_circuits_list, ipam_asns_list, ipam_vrfs_list, ipam_prefixes_list]  # S4e, ADR 0048
     servicenow:
       title: lab-servicenow
       version: "1.0.0"
