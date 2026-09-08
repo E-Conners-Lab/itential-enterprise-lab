@@ -1,0 +1,17 @@
+# test-06b-platform 20260908T024041Z
+SKIP  S4d.1 Golden Config: plan clean on 12 devices; hostname drift on br1-wan01 and br1-sw01 flagged with no false positive; restored through wf-config-push-v1
+SKIP  S4d.2 command templates on br1-wan01 and br1-sw01 with every rule evaluated; analytic pre/post green; nightly backup schedule and a run whose backups equal the running configs
+SKIP  S4d.3 Lifecycle Manager branch-vlan: instances from NetBox; create -> JSON form approval (Work Center shows branch, VLAN, switch, NetBox reservation) -> instance; rejected push changes nothing; delete -> governed push; history; no-op; rejected create retired
+PASS  S4d.4 Integration Models lab-netbox and lab-servicenow: instances netbox-api/servicenow-api, every operation an authorized tool; lab-netops reads br1-sw01 and INC0000060 through the integration tools (not the adapters)
+      model lab-netbox:1.0.0: 6 operations
+      integration netbox-api: server http 10.100.0.64 8080 auth ['tokenAuth']
+      tools netbox-api: 6 authorized
+      model lab-servicenow:1.0.0: 5 operations
+      integration servicenow-api: server https dev409097.service-now.com 443 auth ['BasicAuth']
+      tools servicenow-api: 5 authorized
+      NetBox: br1-sw01 is br1 / branch-switch through ['dcim_devices_list']; tokens in=12946 out=118
+      ServiceNow: INC0000060 = 'Unable to connect to email' through ['listIncidents']; tokens in=11922 out=160
+      tokens spent by S4d.4: in=24868 out=278
+DEFER S4d.6 hosts and firewalls (element 6, not built yet)
+
+passed=1 failed=0 deferred=1

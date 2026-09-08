@@ -1,0 +1,371 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "lab-servicenow",
+    "version": "1.0.0",
+    "description": "ServiceNow PDI: incidents and change requests through the Table API (PID S4d.4, ADR 0045)"
+  },
+  "servers": [
+    {
+      "url": "https://example.service-now.com"
+    }
+  ],
+  "paths": {
+    "/api/now/table/incident": {
+      "get": {
+        "operationId": "listIncidents",
+        "summary": "List incidents (Table API)",
+        "description": "List incidents (Table API)",
+        "parameters": [
+          {
+            "name": "sysparm_query",
+            "in": "query",
+            "required": false,
+            "description": "Encoded query, e.g. number=INC0000060 or active=true^priority=1",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "sysparm_limit",
+            "in": "query",
+            "required": false,
+            "description": "Maximum records",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "sysparm_fields",
+            "in": "query",
+            "required": false,
+            "description": "Comma-separated fields to return",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "sysparm_display_value",
+            "in": "query",
+            "required": false,
+            "description": "true returns display values (state names, user names) instead of sys_ids",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "result": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "error"
+          }
+        },
+        "security": [
+          {
+            "BasicAuth": []
+          }
+        ]
+      }
+    },
+    "/api/now/table/incident/{sys_id}": {
+      "get": {
+        "operationId": "getIncident",
+        "summary": "One incident by sys_id",
+        "description": "One incident by sys_id",
+        "parameters": [
+          {
+            "name": "sys_id",
+            "in": "path",
+            "required": true,
+            "description": "Incident sys_id",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "sysparm_fields",
+            "in": "query",
+            "required": false,
+            "description": "Comma-separated fields to return",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "sysparm_display_value",
+            "in": "query",
+            "required": false,
+            "description": "true returns display values (state names, user names) instead of sys_ids",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "result": {
+                      "type": "object",
+                      "additionalProperties": true
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "error"
+          }
+        },
+        "security": [
+          {
+            "BasicAuth": []
+          }
+        ]
+      },
+      "patch": {
+        "operationId": "updateIncident",
+        "summary": "Update an incident: work notes, comments, state, assignment group",
+        "description": "Update an incident: work notes, comments, state, assignment group",
+        "parameters": [
+          {
+            "name": "sys_id",
+            "in": "path",
+            "required": true,
+            "description": "Incident sys_id",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "sysparm_fields",
+            "in": "query",
+            "required": false,
+            "description": "Comma-separated fields to return",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "result": {
+                      "type": "object",
+                      "additionalProperties": true
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "error"
+          }
+        },
+        "security": [
+          {
+            "BasicAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "work_notes": {
+                    "type": "string"
+                  },
+                  "comments": {
+                    "type": "string"
+                  },
+                  "state": {
+                    "type": "string"
+                  },
+                  "assignment_group": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/now/table/change_request": {
+      "get": {
+        "operationId": "listChangeRequests",
+        "summary": "List change requests (Table API)",
+        "description": "List change requests (Table API)",
+        "parameters": [
+          {
+            "name": "sysparm_query",
+            "in": "query",
+            "required": false,
+            "description": "Encoded query, e.g. number=INC0000060 or active=true^priority=1",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "sysparm_limit",
+            "in": "query",
+            "required": false,
+            "description": "Maximum records",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "sysparm_fields",
+            "in": "query",
+            "required": false,
+            "description": "Comma-separated fields to return",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "sysparm_display_value",
+            "in": "query",
+            "required": false,
+            "description": "true returns display values (state names, user names) instead of sys_ids",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "result": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "error"
+          }
+        },
+        "security": [
+          {
+            "BasicAuth": []
+          }
+        ]
+      }
+    },
+    "/api/now/table/change_request/{sys_id}": {
+      "get": {
+        "operationId": "getChangeRequest",
+        "summary": "One change request by sys_id",
+        "description": "One change request by sys_id",
+        "parameters": [
+          {
+            "name": "sys_id",
+            "in": "path",
+            "required": true,
+            "description": "Change sys_id",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "sysparm_fields",
+            "in": "query",
+            "required": false,
+            "description": "Comma-separated fields to return",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "sysparm_display_value",
+            "in": "query",
+            "required": false,
+            "description": "true returns display values (state names, user names) instead of sys_ids",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "result": {
+                      "type": "object",
+                      "additionalProperties": true
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "error"
+          }
+        },
+        "security": [
+          {
+            "BasicAuth": []
+          }
+        ]
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "BasicAuth": {
+        "type": "http",
+        "scheme": "basic",
+        "description": "the integration user (SNOW_USER / SNOW_PASSWORD)"
+      }
+    }
+  }
+}

@@ -2,7 +2,8 @@
 # One agent from itential/agents/<name>.yaml: resolve its tool references to Tool Registry
 # referenceIds, then create or update it in the project. Included by flowai.yml per document.
 # referenceId formats (Tool Registry): application:<App>:<method>, adapter:<Export>:<Instance>:<method>,
-# workflow:<workflow uuid> (the document's uuid field, not its _id; the current import of that name).
+# workflow:<workflow uuid> (the document's uuid field, not its _id; the current import of that name),
+# integration:<title>%3A<version>:<instance>:<operationId> (ADR 0045; the colon of the model id is encoded).
 - name: "Agent current workflow ids for {{ agent.name }}"
   ansible.builtin.uri:
     url: "{{ platform_local }}/automation-studio/workflows?limit=100"
@@ -19,6 +20,8 @@
       {{ agent_tool_ids + [
            ('application:GatewayManager:' ~ gateway_methods[item.reference]) if item.kind == 'gateway-service'
            else ('adapter:' ~ adapter_exports[item.adapter] ~ ':' ~ item.adapter ~ ':' ~ item.reference) if item.kind == 'adapter'
+           else ('integration:' ~ integrations.models[item.model].title ~ '%3A' ~ integrations.models[item.model].version
+                 ~ ':' ~ integrations.models[item.model].instance ~ ':' ~ item.reference) if item.kind == 'integration'
            else ('workflow:' ~ (wf_list.json['items'] | selectattr('name', 'equalto', item.reference) | map(attribute='uuid') | first))
          ] }}
   vars:

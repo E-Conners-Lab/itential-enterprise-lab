@@ -5,6 +5,7 @@
 # itential/golden-config/<deviceType>/, one compliance plan on a nightly schedule trigger.
 # Element 2: MOP command + analytic templates from itential/command-templates/, nightly backups.
 # Element 3: the JSON form (itential/forms/), the Lifecycle Manager model (itential/lcm/) and its instances from NetBox.
+# Element 4: Integration Models (itential/integrations/) for NetBox and ServiceNow, their instances and agent tools.
 # Everything is created through the API from the repo documents and NetBox; re-runs update in place.
 - name: Platform applications wired to the lab
   hosts: itential-host
@@ -24,6 +25,7 @@
     mop_dir: "{{ playbook_dir }}/../../{{ mop.documents }}"
     lcm_dir: "{{ playbook_dir }}/../../{{ lcm.documents }}"
     forms_dir: "{{ playbook_dir }}/../../{{ forms.documents }}"
+    integrations_dir: "{{ playbook_dir }}/../../{{ integrations.documents }}"
   tasks:
     - name: Login as {{ admin_user }}
       ansible.builtin.uri:
@@ -95,3 +97,6 @@
 
     - name: Element 3 - JSON form, Lifecycle Manager model and its instances (ADR 0043/0044)
       ansible.builtin.include_tasks: tasks/lcm.yml
+
+    - name: Element 4 - Integration Models, integrations and their tools (ADR 0045)
+      ansible.builtin.include_tasks: tasks/integrations.yml

@@ -28,7 +28,14 @@ instructions: |
     wf-branch-vlan-v1 with branch (br1 or br2), vlan_name, switch_override "" and
     change_request false, then report the job id and that a human approval is pending.
     Never configure a VLAN with send-config directly.
-  - Read NetBox through the NetBox tools when the question is about the source of truth.
+  - Read NetBox through the netbox-api tools (dcim_devices_list, dcim_devices_retrieve,
+    dcim_interfaces_list, ipam_ip_addresses_list, ipam_vlans_list, dcim_sites_list) when the question
+    is about the source of truth: names, sites, roles, platforms, addresses, VLANs. Filters are lists,
+    e.g. name ["br1-sw01"]; keep limit small.
+  - Read ServiceNow through the servicenow-api tools (listIncidents with sysparm_query such as
+    "number=INC0000060", getIncident by sys_id, listChangeRequests, getChangeRequest) when the
+    question is about a ticket; ask for sysparm_display_value "true" to get readable states and
+    names. Never update a ticket from this agent.
   - Answer briefly; when the request was a version question reply with the version string only.
 
   The operator's request: {{request}}
@@ -37,5 +44,14 @@ tools:
   - {reference: wf-branch-vlan-v1, kind: workflow}
   - {reference: wf-show-version-v1, kind: workflow}
   - {reference: wf-show-command-v1, kind: workflow}
-  - {reference: getDcimDevices, kind: adapter, adapter: NetBox}
-  - {reference: getIpamVlans, kind: adapter, adapter: NetBox}
+  # source of truth and tickets through the Integration Models (ADR 0045), read-only operations only
+  - {reference: dcim_devices_list, kind: integration, model: netbox}
+  - {reference: dcim_devices_retrieve, kind: integration, model: netbox}
+  - {reference: dcim_interfaces_list, kind: integration, model: netbox}
+  - {reference: ipam_ip_addresses_list, kind: integration, model: netbox}
+  - {reference: ipam_vlans_list, kind: integration, model: netbox}
+  - {reference: dcim_sites_list, kind: integration, model: netbox}
+  - {reference: listIncidents, kind: integration, model: servicenow}
+  - {reference: getIncident, kind: integration, model: servicenow}
+  - {reference: listChangeRequests, kind: integration, model: servicenow}
+  - {reference: getChangeRequest, kind: integration, model: servicenow}

@@ -5,13 +5,13 @@
 # State: the Platform API over TLS (Configuration Manager, Operations Manager) and the devices over
 # direct SSH (verify/devcmd.py, second source). Writes: a hostname change on one device per vendor
 # through wf-config-push-v1 (approved here through the API, restored at the end) and one branch VLAN on br2
-# created and removed through the Lifecycle Manager actions (S4d.3). Each element is
-# added as it is built; a criterion that is not built yet prints DEFER, never PASS.
+# created and removed through the Lifecycle Manager actions (S4d.3). S4d.4 runs two lab-netops sessions (Anthropic tokens,
+# printed). Each element is added as it is built; a criterion that is not built yet prints DEFER, never PASS.
 set -uo pipefail
 cd "$(dirname "$0")/.."
 [ -f .env ] || { echo "missing .env"; exit 1; }
 set -a; . ./.env; set +a
-: "${NETBOX_URL:?}" "${NETBOX_TOKEN:?}" "${AUTOMATION_PASSWORD:?}" "${ITENTIAL_ADMIN_PASSWORD:?}"
+: "${NETBOX_URL:?}" "${NETBOX_TOKEN:?}" "${AUTOMATION_PASSWORD:?}" "${ITENTIAL_ADMIN_PASSWORD:?}" "${SNOW_INSTANCE:?}" "${SNOW_USER:?}" "${SNOW_PASSWORD:?}"
 ADMIN_USER=${ITENTIAL_ADMIN_USER:-admin@itential}
 PY=.venv/bin/python
 V=itential/versions.yaml
@@ -325,7 +325,65 @@ if [ -n "$vid" ]; then echo "cleanup: removing leftover VLAN ${vid} ${LCM_NAME}"
 no vlan ${vid}
 end" >/dev/null 2>&1 || true; fi
 
-defer "S4d.4 Integration Models (element 4, not built yet)"
+
+# --- S4d.4 Integration Models (ADR 0045): both models and integrations from the documents; every operation an authorized tool;
+# lab-netops reads a NetBox device and a ServiceNow incident through the integration tools (the session names them, not the
+# adapter methods); second sources: NetBox and the PDI over their own APIs. Spends Anthropic tokens (printed) ---
+INT_MODELS=$(${PY} -c "import yaml;m=yaml.safe_load(open('$V'))['integrations']['models'];print(' '.join(f\"{k}:{v['title']}:{v['version']}:{v['instance']}:{','.join(v['operations'])}\" for k,v in m.items()))")
+# agent session helpers (the same calls test-06 makes)
+agent_id() { iap "${PLATFORM}/agent-project-service/operable-agents" | ${PY} -c "import sys,json;a=[x for x in json.load(sys.stdin)['data']['items'] if x.get('name')=='$1'];print(a[0]['_id'] if a else '')"; }
+run_agent() {
+  local name=$1 inputs=$2 aid sid state
+  aid=$(agent_id "$name"); [ -n "$aid" ] || { echo "agent ${name} not found"; return 1; }
+  sid=$(iap -X POST "${PLATFORM}/agent-session-manager/sessions" -d "{\"agentDefinitionId\":\"${aid}\",\"inputs\":${inputs}}" | ${PY} -c 'import sys,json;print(json.load(sys.stdin).get("sessionId",""))')
+  [ -n "$sid" ] || { echo "session start failed for ${name}"; return 1; }
+  echo "$sid"
+  for _ in $(seq 1 60); do
+    state=$(iap "${PLATFORM}/agent-session-manager/sessions/${sid}" | ${PY} -c 'import sys,json;print((json.load(sys.stdin).get("status") or "").lower())')
+    case "$state" in complete|completed) return 0;; failed|error|canceled|cancelled) echo "session ${sid} ${state}"; return 1;; esac
+    sleep 5
+  done
+  echo "session ${sid} did not finish (${state})"; return 1
+}
+session_msgs()  { iap "${PLATFORM}/agent-session-manager/sessions/$1/messages?limit=100&sortBy=eventId&sortOrder=asc"; }
+session_text()  { session_msgs "$1" | ${PY} -c 'import sys,json;m=json.load(sys.stdin);m=sorted([x for x in m if x.get("type")=="inference-succeeded" and x.get("text")],key=lambda x:x.get("timestamp",0));print(m[-1]["text"] if m else "")'; }
+session_tools() { session_msgs "$1" | ${PY} -c 'import sys,json;m=json.load(sys.stdin);print(sorted({x["data"].get("toolName","") for x in m if x.get("category")=="TOOL_CALLED"}))'; }
+session_usage() { session_msgs "$1" | ${PY} -c 'import sys,json;m=json.load(sys.stdin);u=[x["data"]["tokenUsage"] for x in m if x.get("type")=="inference-succeeded" and x.get("data",{}).get("tokenUsage")];print(sum(t.get("inputTokens",0) for t in u),sum(t.get("outputTokens",0) for t in u))'; }
+c4() {
+  local row key title ver inst ops tools_json errs=""
+  # models and integrations as declared; every operation a tool the admin may use (roles re-synced by the play)
+  for row in $INT_MODELS; do
+    IFS=: read -r key title ver inst ops <<<"$row"
+    iap "${PLATFORM}/integration-models/${title}:${ver}/export" | ${PY} -c "
+import sys,json;d=json.load(sys.stdin);m=d.get('model',d);ops=sorted(o['operationId'] for p in m['paths'].values() for o in p.values())
+assert ops==sorted('${ops}'.split(',')),ops;print('model ${title}:${ver}:',len(ops),'operations')" || return 1
+    iap "${PLATFORM}/integrations/${inst}" | ${PY} -c "import sys,json;d=json.load(sys.stdin)['data'];p=d['properties']['properties'];assert d['model']=='@itential/adapter_${title}:${ver}' and d.get('virtual') is True,d['model'];print('integration ${inst}: server',p['server']['protocol'],p['server']['host'],p['server'].get('port'),'auth',list(p['authentication']))" || return 1
+    tools_json=$(${PY} -c "import json;print(json.dumps({'referenceIds':['integration:${title}%3A${ver}:${inst}:'+o for o in '${ops}'.split(',')],'queryOptions':{'limit':100}}))")
+    iap -X POST "${PLATFORM}/tools/bulk" -d "$tools_json" | ${PY} -c "import sys,json;d=json.load(sys.stdin)['data'];want='${ops}'.split(',');got={t['referenceId'].split(':')[-1]:t.get('authorized',True) for t in d};miss=[o for o in want if o not in got];den=[o for o,a in got.items() if a is False];assert not miss and not den,('missing',miss,'not authorized',den);print('tools ${inst}:',len(got),'authorized')" || return 1
+  done
+  # 1) a NetBox device through the integration (second source: NetBox itself)
+  local sid txt tools site role
+  read -r site role <<<"$(nb "${NETBOX_URL}/api/dcim/devices/?name=br1-sw01" | ${PY} -c 'import sys,json;d=json.load(sys.stdin)["results"][0];print(d["site"]["slug"],d["role"]["slug"])')"
+  sid=$(run_agent lab-netops '{"request":"Using the NetBox integration, which site and device role does the device br1-sw01 have? Reply with the site slug and the role slug only."}') || { echo "$sid"; return 1; }
+  sid=${sid##*$'\n'}; txt=$(session_text "$sid"); tools=$(session_tools "$sid"); read -r i o <<<"$(session_usage "$sid")"
+  echo "$tools" | grep -q "dcim_devices_list\|dcim_devices_retrieve" || { echo "no NetBox integration tool in the session: ${tools}"; return 1; }
+  echo "$tools" | grep -q "getDcimDevices\|Netbox" && { echo "the adapter was used instead of the integration: ${tools}"; return 1; }
+  echo "$txt" | grep -qi "$site" && echo "$txt" | grep -qi "$role" || { echo "answer lacks ${site}/${role}: $(echo "$txt" | head -c 200)"; return 1; }
+  echo "NetBox: br1-sw01 is ${site} / ${role} through ${tools}; tokens in=${i} out=${o}"
+  # 2) a ServiceNow incident through the integration (second source: the PDI's own Table API)
+  local want
+  want=$(curl -s -m 30 -u "${SNOW_USER}:${SNOW_PASSWORD}" "https://${SNOW_INSTANCE}.service-now.com/api/now/table/incident?sysparm_query=number=INC0000060&sysparm_fields=short_description" -H 'Accept: application/json' | ${PY} -c 'import sys,json;print(json.load(sys.stdin)["result"][0]["short_description"])')
+  [ -n "$want" ] || { echo "the PDI did not answer for INC0000060 (hibernated?)"; return 1; }
+  sid=$(run_agent lab-netops '{"request":"Using the ServiceNow integration, what is the short description of incident INC0000060? Reply with the short description only."}') || { echo "$sid"; return 1; }
+  sid=${sid##*$'\n'}; txt=$(session_text "$sid"); tools=$(session_tools "$sid"); read -r i2 o2 <<<"$(session_usage "$sid")"
+  echo "$tools" | grep -q "listIncidents\|getIncident" || { echo "no ServiceNow integration tool in the session: ${tools}"; return 1; }
+  echo "$tools" | grep -q "Servicenow\|genericAdapterRequest" && { echo "the adapter was used instead of the integration: ${tools}"; return 1; }
+  echo "$txt" | grep -qi "$want" || { echo "answer lacks '${want}': $(echo "$txt" | head -c 200)"; return 1; }
+  echo "ServiceNow: INC0000060 = '${want}' through ${tools}; tokens in=${i2} out=${o2}"
+  echo "tokens spent by S4d.4: in=$((i+i2)) out=$((o+o2))"
+}
+check "S4d.4 Integration Models lab-netbox and lab-servicenow: instances netbox-api/servicenow-api, every operation an authorized tool; lab-netops reads br1-sw01 and INC0000060 through the integration tools (not the adapters)" c4
+
 defer "S4d.6 hosts and firewalls (element 6, not built yet)"
 
 echo

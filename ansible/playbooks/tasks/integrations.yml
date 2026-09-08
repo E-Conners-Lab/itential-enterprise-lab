@@ -1,0 +1,240 @@
+---
+# Element 4 of PID S4d (ADR 0045): Integration Models (OpenAPI documents generated into itential/integrations/) for NetBox
+# and the ServiceNow PDI, one integration instance each with the credentials from .env, the roles the new models register
+# re-synced to the admin (as itential.yml does after an adapter install), and the operations registered as agent tools.
+# Never call /adapters/<name>/start on an integration: it is not a process, the call only flips its health to STOPPED
+# (measured 2026-09-08). Needs: login, admin_user, integrations_dir.
+- name: Integration documents
+  ansible.builtin.set_fact:
+    int_docs: >-
+      {{ int_docs | default({}) | combine({item.key: lookup('ansible.builtin.file', doc_path) | from_json}) }}
+  vars:
+    doc_path: "{{ integrations_dir }}/{{ item.value.title }}.json"
+  loop: "{{ integrations.models | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"
+
+- name: Documents match the oracle (title, version, the auth scheme the play fills)
+  ansible.builtin.assert:
+    that:
+      - int_docs[item.key].info.title == item.value.title
+      - int_docs[item.key].info.version == item.value.version | string
+      - item.value.auth in int_docs[item.key].components.securitySchemes
+    quiet: true
+  loop: "{{ integrations.models | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"
+
+- name: Every document validates as an integration model
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/integration-models/validation"
+    method: PUT
+    headers: {Cookie: "{{ login.cookies_string }}"}
+    body_format: json
+    body: {model: "{{ int_docs[item.key] }}"}
+    status_code: 200
+  loop: "{{ integrations.models | dict2items }}"
+  loop_control:
+    label: "{{ item.value.title }}:{{ item.value.version }}"
+
+- name: Existing integration models
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/integration-models?limit=100"
+    headers: {Cookie: "{{ login.cookies_string }}"}
+  register: models_now
+
+- name: Integration models created (id = title:version)
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/integration-models"
+    method: POST
+    headers: {Cookie: "{{ login.cookies_string }}"}
+    body_format: json
+    body: {model: "{{ int_docs[item.key] }}"}
+    status_code: [200, 201]
+  loop: "{{ integrations.models | dict2items }}"
+  loop_control:
+    label: "{{ item.value.title }}:{{ item.value.version }}"
+  when: (item.value.title ~ ':' ~ item.value.version) not in (models_now.json.integrationModels | map(attribute='versionId') | list)
+
+- name: Stored documents (export) of the models that already existed
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/integration-models/{{ item.value.title }}:{{ item.value.version }}/export"
+    headers: {Cookie: "{{ login.cookies_string }}"}
+  loop: "{{ integrations.models | dict2items }}"
+  loop_control:
+    label: "{{ item.value.title }}:{{ item.value.version }}"
+  register: models_export
+  when: (item.value.title ~ ':' ~ item.value.version) in (models_now.json.integrationModels | map(attribute='versionId') | list)
+
+# the operations (path, verb, operationId, parameters) are what becomes tools; a changed document is re-uploaded in place
+- name: Integration models updated when the operations changed
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/integration-models"
+    method: PUT
+    headers: {Cookie: "{{ login.cookies_string }}"}
+    body_format: json
+    body: {model: "{{ int_docs[item.item.key] }}"}
+    status_code: 200
+  loop: "{{ models_export.results }}"
+  loop_control:
+    label: "{{ item.item.value.title }}:{{ item.item.value.version }}"
+  when: >-
+    item.json is defined and
+    ((item.json.model | default(item.json)).paths | default({})) != int_docs[item.item.key].paths
+  changed_when: true
+
+# --- one integration (virtual adapter) per model; credentials from .env are written on every run like the adapters -------
+- name: Integration instances wanted
+  ansible.builtin.set_fact:
+    int_wanted: >-
+      {{ int_wanted | default([]) + [{
+           'key': item.key, 'name': item.value.instance, 'title': item.value.title, 'version': item.value.version | string,
+           'server': item.value.server | combine({'host': snow_host ~ '.service-now.com'} if item.key == 'servicenow' else {}),
+           'auth': ({item.value.auth: {'value': 'Token ' ~ lookup('ansible.builtin.env', 'NETBOX_TOKEN')}} if item.key == 'netbox'
+                    else {item.value.auth: {'username': lookup('ansible.builtin.env', 'SNOW_USER'),
+                                            'password': lookup('ansible.builtin.env', 'SNOW_PASSWORD')}})}] }}
+  vars:
+    snow_host: "{{ lookup('ansible.builtin.env', 'SNOW_INSTANCE') }}"
+  loop: "{{ integrations.models | dict2items }}"
+  loop_control:
+    label: "{{ item.value.instance }}"
+  no_log: true
+
+- name: PDI details present in .env (SNOW_INSTANCE, SNOW_USER, SNOW_PASSWORD)
+  ansible.builtin.assert:
+    that:
+      - lookup('ansible.builtin.env', 'SNOW_INSTANCE') | length > 0
+      - lookup('ansible.builtin.env', 'SNOW_USER') | length > 0
+      - lookup('ansible.builtin.env', 'SNOW_PASSWORD') | length > 0
+      - lookup('ansible.builtin.env', 'NETBOX_TOKEN') | length > 0
+    quiet: true
+
+- name: Existing integrations
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/integrations?limit=100"
+    headers: {Cookie: "{{ login.cookies_string }}"}
+  register: int_now
+
+- name: Integrations created (a virtual adapter of the model; measured shape, 6.5.2)
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/integrations"
+    method: POST
+    headers: {Cookie: "{{ login.cookies_string }}"}
+    body_format: json
+    body:
+      properties:
+        name: "{{ item.name }}"
+        model: "@itential/adapter_{{ item.title }}:{{ item.version }}"
+        type: Adapter
+        virtual: true
+        isEncrypted: false
+        description: "{{ item.title }} for the agents (itential/integrations/{{ item.title }}.json, PID S4d.4)"
+        properties:
+          id: "{{ item.name }}"
+          type: "{{ item.title }}:{{ item.version }}"
+          brokers: []
+          groups: []
+          properties:
+            authentication: "{{ item.auth }}"
+            server: "{{ item.server }}"
+            tls: {enabled: "{{ item.server.protocol == 'https' }}", rejectUnauthorized: true}
+            variables: {}
+            version: "{{ item.version }}"
+    status_code: [200, 201]
+  loop: "{{ int_wanted }}"
+  loop_control:
+    label: "{{ item.name }}"
+  when: item.name not in (int_now.json.results | map(attribute='data.name') | list)
+  no_log: true
+
+- name: Integration properties written from .env (server + credentials; always, as the adapter instances are)
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/integrations/{{ item.name }}/properties"
+    method: PUT
+    headers: {Cookie: "{{ login.cookies_string }}"}
+    body_format: json
+    body:
+      properties:
+        authentication: "{{ item.auth }}"
+        server: "{{ item.server }}"
+        tls: {enabled: "{{ item.server.protocol == 'https' }}", rejectUnauthorized: true}
+        variables: {}
+        version: "{{ item.version }}"
+    status_code: 200
+  loop: "{{ int_wanted }}"
+  loop_control:
+    label: "{{ item.name }}"
+  when: item.name in (int_now.json.results | map(attribute='data.name') | list)
+  no_log: true
+  changed_when: true
+
+# --- roles: a model registers <title>:<version> admin/get; without them the admin cannot see the tools (measured) ------
+- name: Model roles re-synced to admin_group and the LDAP admin (same step itential.yml runs after an adapter install)
+  ansible.builtin.command:
+    argv:
+      - docker
+      - exec
+      - mongodb
+      - mongosh
+      - --quiet
+      - itential
+      - --eval
+      - >-
+        const roles = db.roles.find({}, {_id: 1}).toArray().map(r => ({roleId: r._id}));
+        const g = db.groups.findOne({name: 'admin_group'}, {_id: 1});
+        const u = {username: '{{ admin_user }}', provenance: 'LDAP'};
+        let changed = 0;
+        if (db.accounts.findOne(u, {assignedRoles: 1}).assignedRoles.length !== roles.length) {
+          db.accounts.updateOne(u, {$set: {assignedRoles: roles}}); changed++; }
+        if (db.groups.findOne({_id: g._id}, {assignedRoles: 1}).assignedRoles.length !== roles.length) {
+          db.groups.updateOne({_id: g._id}, {$set: {assignedRoles: roles}}); changed++; }
+        print(changed ? 'CHANGED ' + roles.length : 'OK ' + roles.length);
+  register: int_role_resync
+  changed_when: "'CHANGED' in int_role_resync.stdout"
+  failed_when: "'OK' not in int_role_resync.stdout and 'CHANGED' not in int_role_resync.stdout"
+
+- name: Fresh session with the model roles as {{ admin_user }}
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/login"
+    method: POST
+    body_format: json
+    body: {username: "{{ admin_user }}", password: "{{ admin_pw }}"}
+    status_code: 200
+  register: login
+  no_log: true
+
+# --- tools: discovery creates integration:<title>%3A<version>:<instance>:<operationId> for every operation ---------------
+- name: Tool discovery
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/tools/discover"
+    method: POST
+    headers: {Cookie: "{{ login.cookies_string }}"}
+    body_format: json
+    body: {}
+    status_code: 200
+  changed_when: false
+
+- name: Expected integration tools
+  ansible.builtin.set_fact:
+    int_tool_ids: >-
+      {{ int_tool_ids | default([]) + ['integration:' ~ m.title ~ '%3A' ~ m.version ~ ':' ~ m.instance ~ ':' ~ item.1] }}
+  loop: >-
+    {{ integrations.models | dict2items | subelements('value.operations') }}
+  vars:
+    m: "{{ item.0.value }}"
+  loop_control:
+    label: "{{ item.0.value.instance }}:{{ item.1 }}"
+
+- name: Every operation is a tool the admin may use
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/tools/bulk"
+    method: POST
+    headers: {Cookie: "{{ login.cookies_string }}"}
+    body_format: json
+    body: {referenceIds: "{{ int_tool_ids }}", queryOptions: {limit: 100}}
+    status_code: 200
+  register: int_tools
+  vars:
+    found: "{{ int_tools.json.data | map(attribute='referenceId') | list }}"
+    denied: "{{ int_tools.json.data | selectattr('authorized', 'defined') | rejectattr('authorized') | list }}"
+  failed_when: (found | length) != (int_tool_ids | length) or (denied | length) > 0

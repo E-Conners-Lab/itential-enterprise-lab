@@ -1,0 +1,13 @@
+# test-06b-platform 20260908T023519Z
+SKIP  S4d.1 Golden Config: plan clean on 12 devices; hostname drift on br1-wan01 and br1-sw01 flagged with no false positive; restored through wf-config-push-v1
+SKIP  S4d.2 command templates on br1-wan01 and br1-sw01 with every rule evaluated; analytic pre/post green; nightly backup schedule and a run whose backups equal the running configs
+SKIP  S4d.3 Lifecycle Manager branch-vlan: instances from NetBox; create -> JSON form approval (Work Center shows branch, VLAN, switch, NetBox reservation) -> instance; rejected push changes nothing; delete -> governed push; history; no-op; rejected create retired
+FAIL  S4d.4 Integration Models lab-netbox and lab-servicenow: instances netbox-api/servicenow-api, every operation an authorized tool; lab-netops reads br1-sw01 and INC0000060 through the integration tools (not the adapters)
+      Traceback (most recent call last):
+        File "<string>", line 2, in <module>
+          import sys,json;d=json.load(sys.stdin);m=d.get('model',d);ops=sorted(o['operationId'] for p in m['paths'].values() for o in p.values())
+                                                   ^^^^^
+      AttributeError: 'str' object has no attribute 'get'
+DEFER S4d.6 hosts and firewalls (element 6, not built yet)
+
+passed=0 failed=1 deferred=1
