@@ -444,8 +444,32 @@ def compliance_run() -> dict:
     return workflow("wf-compliance-run-v1", "Runs the Configuration Manager compliance plan %s; scheduled nightly by Operations Manager (PID S4d.1, ADR 0040)" % PLAN_NAME,
                     {}, tasks, chain("1a", "1b", "2a"), {"plan_id": {"type": "string"}, "run": {"type": "object"}})
 
+# --- wf-backup-all-v1 (S4d.2, ADR 0042): every Configuration Manager device backed up, nightly ---------
+# No inputs (schedule triggers do not persist formData). The device list comes from Configuration Manager
+# itself (the InventoryBroker devices, ADR 0039), so a node added to NetBox is backed up on the next run
+# with no change here. Loop = WorkFlowEngine forEach: the "loop" transition starts an iteration, a body
+# task with no outgoing transition returns to the forEach, "success" fires when the array is exhausted.
+def backup_all() -> dict:
+    tasks = {
+        "1a": task("getDevicesFiltered", "ConfigurationManager", "every device Configuration Manager knows",
+                   {"options": {"start": 0, "limit": 500}}, {"devices": None}, x=0),
+        "1b": jq("device names", "$var.1a.devices", "list[*].name", x=300, to_job="devices"),
+        "2a": task("forEach", "WorkFlowEngine", "one device at a time", {"data_array": "$var.1b.return_data"},
+                   {"current_item": None}, kind="operation", display="WorkFlowEngine", x=600),
+        "3a": task("backUpDevice", "ConfigurationManager", "backup through the broker (Gateway 5)",
+                   {"name": "$var.2a.current_item", "options": {"description": "nightly backup (wf-backup-all-v1)", "notes": ""}},
+                   {"status": None}, x=900, y=300),
+    }
+    tr = {"workflow_start": t("", "1a"), "1a": t("", "1b"), "1b": t("", "2a"),
+          "2a": {"3a": {"state": "loop", "type": "standard"}, "workflow_end": {"state": "success", "type": "standard"}},
+          "3a": {}}
+    return workflow("wf-backup-all-v1", "Backs up every Configuration Manager device through the InventoryBroker (Gateway 5); "
+                    "scheduled nightly by Operations Manager (PID S4d.2, ADR 0042)",
+                    {}, tasks, tr, {"devices": {"type": "array"}})
+
+
 if __name__ == "__main__":
-    for wf in (device_count(), show_version(), show_command(), branch_vlan(), config_push(), compliance_run()):
+    for wf in (device_count(), show_version(), show_command(), branch_vlan(), config_push(), compliance_run(), backup_all()):
         out = HERE / f"{wf['name']}.json"
         out.write_text(json.dumps(wf, indent=2) + "\n")
         print(out.relative_to(HERE.parent.parent), len(wf["tasks"]) - 2, "tasks")

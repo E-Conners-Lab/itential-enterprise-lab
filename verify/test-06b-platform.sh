@@ -123,7 +123,63 @@ check "S4d.1 Golden Config: plan clean on 12 devices; hostname drift on br1-wan0
 # restore hostnames if the drift step left them behind (a failed run must not leave the lab drifted)
 for row in "br1-wan01 10.100.0.146" "br1-sw01 10.100.0.165"; do read -r name ip <<<"$row"; [ "$(running_hostname "$ip")" = "$name" ] || { echo "restoring ${name} after a failed run"; push "$name" "hostname ${name}" "verify ${ts} cleanup" >/dev/null 2>&1 || echo "WARN ${name} still drifted; fix with wf-config-push-v1"; }; done
 
-defer "S4d.2 command templates + nightly backups (element 2, not built yet)"
+# --- S4d.2 command templates (MOP) on one device per vendor; analytic pre/post; nightly backups = running config ---
+MOP_NAMES=$(${PY} -c "import yaml;m=yaml.safe_load(open('$V'))['mop'];print(' '.join(v['command']+':'+v['analytic'] for v in m['templates'].values()))")
+BACKUP_SCHED=$(${PY} -c "import yaml;print(yaml.safe_load(open('$V'))['mop']['backup_schedule']['name'])")
+# normalise a configuration for comparison: no comment/header/timestamp lines, no trailing spaces
+norm_cfg() { ${PY} -c '
+import sys,re
+skip=re.compile(r"^(!|> |Building configuration|Current configuration|% |\s*$)")  # "> cmd" = the EOS exec-channel echo
+print("\n".join(l.rstrip() for l in sys.stdin.read().replace("\r","").split("\n") if not skip.match(l)))'; }
+c2() {
+  local tl al pre post an ok rules
+  tl=$(iap "${PLATFORM}/mop/listTemplates"); al=$(iap "${PLATFORM}/mop/listAnalyticTemplates")
+  for pair in $MOP_NAMES; do
+    echo "$tl" | grep -q "\"name\":\"${pair%%:*}\"" || { echo "command template ${pair%%:*} missing"; return 1; }
+    echo "$al" | grep -q "\"name\":\"${pair##*:}\"" || { echo "analytic template ${pair##*:} missing"; return 1; }
+  done
+  for row in "br1-wan01:lab-cisco-ios-checks:lab-cisco-ios-prepost" "br1-sw01:lab-arista-eos-checks:lab-arista-eos-prepost"; do
+    IFS=: read -r dev ct at <<<"$row"
+    pre=$(iap -X POST "${PLATFORM}/mop/RunCommandTemplate" -d "{\"template\":\"${ct}\",\"variables\":{},\"devices\":[\"${dev}\"]}")
+    rules=$(echo "$pre" | ${PY} -c '
+import sys,json
+d=json.load(sys.stdin); assert d.get("result") is True, ("template failed", [(c["evaluated"], [(r["rule"], r.get("result")) for r in c["rules"]]) for c in d.get("commands_results",[]) if not c.get("result")])
+n=0
+for c in d["commands_results"]:
+    for r in c["rules"]:
+        assert isinstance(r.get("result"), bool) and r.get("eval") != "missing_parameters", (c["evaluated"], r); n+=1
+print(n, "rules over", len(d["commands_results"]), "commands")') || { echo "${dev} ${ct}: ${rules}"; return 1; }
+    echo "${dev}: ${ct} passed, ${rules}"
+    post=$(iap -X POST "${PLATFORM}/mop/RunCommandTemplate" -d "{\"template\":\"${ct}\",\"variables\":{},\"devices\":[\"${dev}\"]}")
+    an=$(iap -X POST "${PLATFORM}/mop/runAnalyticsTemplate" -d "{\"pre\":${pre},\"post\":${post},\"analytic_template_name\":\"${at}\",\"variables\":{}}")
+    echo "$an" | ${PY} -c '
+import sys,json;d=json.load(sys.stdin);d=d.get("analytic_result",d)
+rules=[(pp["preRawCommand"],r["preRegex"],r.get("pass")) for pp in d.get("prepostCommands",[]) for r in pp.get("rules",[])]
+assert rules and all(p is True for _,_,p in rules), rules
+assert d.get("result", True) is not False and d.get("pass", True) is not False, {k:d.get(k) for k in ("result","pass")}
+print(len(rules),"pre/post rules equal")' || { echo "${dev} ${at}: $(echo "$an" | head -c 400)"; return 1; }
+    echo "${dev}: ${at} pre/post equal"
+  done
+  iap "${PLATFORM}/operations-manager/triggers?equalsField=type&equals=schedule&limit=50" | ${PY} -c "import sys,json;d=json.load(sys.stdin)['data'];t=[x for x in d if x['name']=='${BACKUP_SCHED}'];assert t and t[0]['enabled'],('backup schedule trigger',[x['name'] for x in d]);print('schedule:',t[0]['name'],'every',t[0].get('repeatFrequency'),t[0].get('repeatUnit'),'first run',t[0].get('firstRunAt'))" || return 1
+  # one run of the backup workflow, then every device's newest backup equals its running config over direct SSH
+  local t0 job n_ok=0 errs="" name ip
+  t0=$(date -u +%Y-%m-%dT%H:%M:%S)
+  job=$(start_job wf-backup-all-v1 "{}"); [ -n "$job" ] || { echo "wf-backup-all-v1 did not start"; return 1; }
+  wait_job "$job" || return 1
+  local nbrows=() row
+  while IFS= read -r row; do nbrows+=("$row"); done < <(nb "${NETBOX_URL}/api/dcim/devices/?limit=0&status=active&has_primary_ip=true&platform=ios-xe&platform=eos" | ${PY} -c 'import sys,json;[print(d["name"],d["primary_ip4"]["address"].split("/")[0]) for d in json.load(sys.stdin)["results"]]')
+  for row in "${nbrows[@]}"; do read -r name ip <<<"$row"
+    iap -X POST "${PLATFORM}/configuration_manager/backups" -d "{\"options\":{\"filter\":{\"name\":\"${name}\"},\"start\":\"0\",\"limit\":1,\"sort\":{\"date\":-1},\"regex\":false}}" \
+      | ${PY} -c "import sys,json;d=json.load(sys.stdin);b=(d.get('list') or [None])[0];assert b and b['name']=='${name}',d;assert b['date']>='${t0}',('newest backup older than the run',b['date']);print(b['id'] if 'id' in b else b['_id'])" > /tmp/verify06b.bid.$$ 2>&1 || { errs+="${name}: $(cat /tmp/verify06b.bid.$$ | tail -1)\n"; continue; }
+    iap "${PLATFORM}/configuration_manager/backups/$(cat /tmp/verify06b.bid.$$)" | ${PY} -c 'import sys,json;print(json.load(sys.stdin).get("rawConfig",""))' | norm_cfg > /tmp/verify06b.bk.$$
+    ${PY} verify/devcmd.py "$ip" "show running-config" | norm_cfg > /tmp/verify06b.run.$$ || { errs+="${name}: direct ssh failed\n"; continue; }
+    if diff -q /tmp/verify06b.bk.$$ /tmp/verify06b.run.$$ >/dev/null; then n_ok=$((n_ok+1)); else errs+="${name}: backup differs from the running config: $(diff /tmp/verify06b.bk.$$ /tmp/verify06b.run.$$ | grep -c '^[<>]') lines\n"; fi
+  done
+  rm -f /tmp/verify06b.bid.$$ /tmp/verify06b.bk.$$ /tmp/verify06b.run.$$
+  [ -z "$errs" ] || { printf "%b" "$errs"; return 1; }
+  echo "backups: wf-backup-all-v1 job ${job}; ${n_ok}/${#nbrows[@]} devices' newest backup equals the running config over direct SSH"
+}
+check "S4d.2 command templates on br1-wan01 and br1-sw01 with every rule evaluated; analytic pre/post green; nightly backup schedule and a run whose backups equal the running configs" c2
 defer "S4d.3 Lifecycle Manager + JSON Forms (element 3, not built yet)"
 defer "S4d.4 Integration Models (element 4, not built yet)"
 defer "S4d.6 hosts and firewalls (element 6, not built yet)"

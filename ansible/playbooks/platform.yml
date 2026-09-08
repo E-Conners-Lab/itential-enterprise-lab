@@ -3,6 +3,7 @@
 # imports every wf-*, including wf-config-push-v1 and wf-compliance-run-v1) and before flowai.yml.
 # Element 1: device groups by site and role, one Golden Config tree per OS from
 # itential/golden-config/<deviceType>/, one compliance plan on a nightly schedule trigger.
+# Element 2: MOP command + analytic templates from itential/command-templates/, nightly backups.
 # Everything is created through the API from the repo documents and NetBox; re-runs update in place.
 - name: Platform applications wired to the lab
   hosts: itential-host
@@ -19,6 +20,7 @@
     netbox_url: "http://{{ netbox_oob_host }}:{{ netbox_port }}"
     netbox_headers: {Authorization: "Token {{ lookup('ansible.builtin.env', 'NETBOX_TOKEN') }}"}
     gc_dir: "{{ playbook_dir }}/../../{{ golden_config.documents }}"
+    mop_dir: "{{ playbook_dir }}/../../{{ mop.documents }}"
   tasks:
     - name: Login as {{ admin_user }}
       ansible.builtin.uri:
@@ -84,3 +86,6 @@
 
     - name: Element 1 - device groups, Golden Config trees, compliance plan, nightly schedule
       ansible.builtin.include_tasks: tasks/golden-config.yml
+
+    - name: Element 2 - command templates (MOP) and the nightly backups
+      ansible.builtin.include_tasks: tasks/mop.yml

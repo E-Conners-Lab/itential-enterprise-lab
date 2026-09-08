@@ -1,0 +1,14 @@
+# test-06b-platform 20260907T235945Z
+SKIP  S4d.1 Golden Config: plan clean on 12 devices; hostname drift on br1-wan01 and br1-sw01 flagged with no false positive; restored through wf-config-push-v1
+FAIL  S4d.2 command templates on br1-wan01 and br1-sw01 with every rule evaluated; analytic pre/post green; nightly backup schedule and a run whose backups equal the running configs
+      Traceback (most recent call last):
+        File "<string>", line 3, in <module>
+          d=json.load(sys.stdin); assert d.get("result") is True, ("template failed", [(c["evaluated"], [(r["rule"], r.get("result")) for r in c["rules"]]) for c in d.get("commands_results",[]) if not c.get("result")])
+                                         ^^^^^^^^^^^^^^^^^^^^^^^
+      AssertionError: ('template failed', [('show version', [('Cisco IOS XE Software', True), ('/Version 17\\.\\d+/', False)]), ('show ip interface brief', [('/^GigabitEthernet1\\s+\\S+\\s+YES\\s+\\S+\\s+up\\s+up/', False), ('/^Loopback0\\s+\\S+\\s+YES\\s+\\S+\\s+up\\s+up/', False)]), ('show bgp all summary', [('/\\s(Idle|Active|Connect|OpenSent|OpenConfirm)\\s*$/', True), ('/^\\d+\\.\\d+\\.\\d+\\.\\d+\\s+4\\s+\\d+.*\\s\\d+\\s*$/', False)])])
+      br1-wan01 lab-cisco-ios-checks: 
+DEFER S4d.3 Lifecycle Manager + JSON Forms (element 3, not built yet)
+DEFER S4d.4 Integration Models (element 4, not built yet)
+DEFER S4d.6 hosts and firewalls (element 6, not built yet)
+
+passed=0 failed=1 deferred=3

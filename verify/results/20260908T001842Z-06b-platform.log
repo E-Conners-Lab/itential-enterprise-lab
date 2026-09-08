@@ -1,0 +1,22 @@
+# test-06b-platform 20260908T001842Z
+SKIP  S4d.1 Golden Config: plan clean on 12 devices; hostname drift on br1-wan01 and br1-sw01 flagged with no false positive; restored through wf-config-push-v1
+FAIL  S4d.2 command templates on br1-wan01 and br1-sw01 with every rule evaluated; analytic pre/post green; nightly backup schedule and a run whose backups equal the running configs
+      br1-wan01: lab-cisco-ios-checks passed, 6 rules over 3 commands
+      2 pre/post rules equal
+      br1-wan01: lab-cisco-ios-prepost pre/post equal
+      br1-sw01: lab-arista-eos-checks passed, 6 rules over 4 commands
+      2 pre/post rules equal
+      br1-sw01: lab-arista-eos-prepost pre/post equal
+      schedule: nightly backups lab every 1 day first run 1788834600000
+      br1-sw01: backup differs from the running config: 1 lines
+      br2-sw01: backup differs from the running config: 1 lines
+      dc1-acc01: backup differs from the running config: 1 lines
+      dc1-leaf01: backup differs from the running config: 1 lines
+      dc1-leaf02: backup differs from the running config: 1 lines
+      dc1-spine01: backup differs from the running config: 1 lines
+      dc1-spine02: backup differs from the running config: 1 lines
+DEFER S4d.3 Lifecycle Manager + JSON Forms (element 3, not built yet)
+DEFER S4d.4 Integration Models (element 4, not built yet)
+DEFER S4d.6 hosts and firewalls (element 6, not built yet)
+
+passed=0 failed=1 deferred=3

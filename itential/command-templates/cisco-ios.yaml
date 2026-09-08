@@ -1,0 +1,38 @@
+# IOS-XE pre/post checks (routers): version, management and loopback up, no BGP peer stuck, at least one
+# established peer with a prefix count. Rules written against `show` output captured on 2026-09-07.
+command_template:
+  name: lab-cisco-ios-checks
+  description: "Lab pre/post checks for IOS-XE routers: version, interfaces up, BGP neighbours (PID S4d.2)"
+  os: cisco_ios
+  passRule: true
+  commands:
+    - command: show version
+      passRule: true
+      rules:
+        - {rule: "Cisco IOS XE Software", eval: contains, severity: error}
+        - {rule: "Version 17\\.\\d+", eval: RegEx, severity: error}
+    - command: show ip interface brief
+      passRule: true
+      rules:
+        - {rule: "^GigabitEthernet1\\s+\\S+\\s+YES\\s+\\S+\\s+up\\s+up", eval: RegEx, severity: error, flags: {multiline: true}}
+        - {rule: "^Loopback0\\s+\\S+\\s+YES\\s+\\S+\\s+up\\s+up", eval: RegEx, severity: error, flags: {multiline: true}}
+    - command: show bgp all summary
+      passRule: true
+      rules:
+        - {rule: "\\s(Idle|Active|Connect|OpenSent|OpenConfirm)\\s*$", eval: "!RegEx", severity: error, flags: {multiline: true}}
+        - {rule: "^\\d+\\.\\d+\\.\\d+\\.\\d+\\s+4\\s+\\d+.*\\s\\d+\\s*$", eval: RegEx, severity: error, flags: {multiline: true}}
+analytic_template:
+  name: lab-cisco-ios-prepost
+  os: cisco_ios
+  passRule: true
+  prepostCommands:
+    - preRawCommand: show version
+      postRawCommand: show version
+      passRule: true
+      rules:
+        - {type: regex, preRegex: "Version (\\S+),", postRegex: "Version (\\S+),", evaluator: "="}
+    - preRawCommand: show ip interface brief
+      postRawCommand: show ip interface brief
+      passRule: true
+      rules:
+        - {type: regex, preRegex: "Loopback0\\s+(\\S+)", postRegex: "Loopback0\\s+(\\S+)", evaluator: "="}

@@ -93,6 +93,7 @@ workflows:
   show_command: wf-show-command-v1 # S4c.7 (ADR 0038)
   config_push: wf-config-push-v1 # S4d: the only write path, Work Center approval (ADR 0040/0041)
   compliance_run: wf-compliance-run-v1 # S4d.1: target of the nightly schedule trigger
+  backup_all: wf-backup-all-v1 # S4d.2: every Configuration Manager device backed up (forEach), nightly
 
 # --- Phase 6b: Platform coverage of the EVE-NG lab (PID S4d, ADR 0040). Built by
 # ansible/playbooks/platform.yml from itential/golden-config/<deviceType>/{base.gc,device.j2};
@@ -130,3 +131,12 @@ llm:
 agents:
   project: lab-netops
   documents: itential/agents
+
+# --- S4d.2 (ADR 0042): command templates (MOP, read-only checks) per OS type and the nightly backups.
+# Documents in itential/command-templates/<deviceType>.yaml; created through /mop/* by tasks/mop.yml.
+mop:
+  documents: itential/command-templates
+  templates:
+    cisco-ios: {command: lab-cisco-ios-checks, analytic: lab-cisco-ios-prepost}
+    arista-eos: {command: lab-arista-eos-checks, analytic: lab-arista-eos-prepost}
+  backup_schedule: {name: nightly backups lab, at_utc: "02:30", repeat_unit: days, repeat_interval: 1}
