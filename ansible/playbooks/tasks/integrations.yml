@@ -66,21 +66,45 @@
   register: models_export
   when: (item.value.title ~ ':' ~ item.value.version) in (models_now.json.integrationModels | map(attribute='versionId') | list)
 
-# the operations (path, verb, operationId, parameters) are what becomes tools; a changed document is re-uploaded in place
-- name: Integration models updated when the operations changed
-  ansible.builtin.uri:
-    url: "{{ platform_local }}/integration-models"
-    method: PUT
-    headers: {Cookie: "{{ login.cookies_string }}"}
-    body_format: json
-    body: {model: "{{ int_docs[item.item.key] }}"}
-    status_code: 200
+# a model cannot be edited in place (PUT /integration-models answers 500, and the docs say delete and re-import):
+# when the document's operations changed, the integration is removed, the model deleted and re-created, and the
+# integration created again further down (the roles the model registers keep their names)
+- name: Models whose document changed
+  ansible.builtin.set_fact:
+    int_changed: >-
+      {{ int_changed | default([]) + ([item.item.key] if (item.json is defined and
+         ((item.json.model | default(item.json)).paths | default({})) != int_docs[item.item.key].paths) else []) }}
   loop: "{{ models_export.results }}"
   loop_control:
     label: "{{ item.item.value.title }}:{{ item.item.value.version }}"
-  when: >-
-    item.json is defined and
-    ((item.json.model | default(item.json)).paths | default({})) != int_docs[item.item.key].paths
+
+- name: Integrations of a changed model removed (re-created below with the new model)
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/integrations/{{ integrations.models[item].instance }}"
+    method: DELETE
+    headers: {Cookie: "{{ login.cookies_string }}"}
+    status_code: [200, 404]
+  loop: "{{ int_changed | default([]) }}"
+  changed_when: true
+
+- name: Changed integration models deleted
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/integration-models/{{ integrations.models[item].title }}:{{ integrations.models[item].version }}"
+    method: DELETE
+    headers: {Cookie: "{{ login.cookies_string }}"}
+    status_code: 200
+  loop: "{{ int_changed | default([]) }}"
+  changed_when: true
+
+- name: Changed integration models re-created from the documents
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/integration-models"
+    method: POST
+    headers: {Cookie: "{{ login.cookies_string }}"}
+    body_format: json
+    body: {model: "{{ int_docs[item] }}"}
+    status_code: [200, 201]
+  loop: "{{ int_changed | default([]) }}"
   changed_when: true
 
 # --- one integration (virtual adapter) per model; credentials from .env are written on every run like the adapters -------

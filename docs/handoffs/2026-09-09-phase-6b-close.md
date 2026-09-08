@@ -6,7 +6,7 @@ plugin is installed at user scope).
 ---
 
 Continue the itential-enterprise-lab project (repo https://github.com/E-Conners-Lab/itential-enterprise-lab,
-local ~/PycharmProjects/itential-enterprise-lab, branch `phase-6/flowai`, last commit d70400a).
+local ~/PycharmProjects/itential-enterprise-lab, branch `phase-6/flowai`, at the branch head pushed on 2026-09-08: `git log --oneline -6`).
 Read this file, then `docs/PID.md` (S4c, S4d, amendments 1.8 to 1.12), ADR 0037-0047, `itential/versions.yaml`,
 `ansible/playbooks/itential.yml`, `platform.yml` (+ `tasks/`), `flowai.yml` (+ `tasks/flowai-agent.yml`),
 `itential/workflows/build.py`, `itential/agents/*.yaml`, `verify/test-06-flowai.sh`, `verify/test-06b-platform.sh`
