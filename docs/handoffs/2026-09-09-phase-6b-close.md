@@ -73,3 +73,6 @@ hold every API shape measured on Platform 6.5.2 (`itential-platform-lessons.md`,
 5. Deferred, do not build: PA-VM firewalls (image not staged), Gateway 4, observability/job metrics (Phase 9),
    node-credential secrets (Phase 10), Windows endpoints. Ideas noted, not scheduled: an eAPI python-script
    service for EOS structured data (TextFSM regex risk), Tool Registry pruning.
+   Build-process gap closed 2026-09-08: `make phase-network-topology` now runs the Phase 4 sequence; the only
+   unscripted step left is the EVE-NG Ubuntu golden image (docs/manual-steps.md step 15, a recipe is an
+   `images/` idea, not scheduled).
