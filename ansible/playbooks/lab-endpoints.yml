@@ -65,3 +65,29 @@
         state: present
         update_cache: true
         cache_valid_time: 3600
+
+    # Gateway 5 reaches the hosts as the automation user with its password (PID S4d.6, ADR 0047): the cloud
+    # image's 60-cloudimg-settings.conf disables password login and sorts before EVE's 60-eve.conf, so a
+    # drop-in that sorts first enables it for this one user (the key login of the play stays).
+    - name: Automation account password from .env (the same lab account the network devices use; fixed salt keeps re-runs idempotent)
+      ansible.builtin.user:
+        name: automation
+        password: "{{ lookup('ansible.builtin.env', 'AUTOMATION_PASSWORD') | password_hash('sha512', 'itentiallab24') }}"
+      no_log: true
+
+    - name: Password login for the automation user (Gateway 5 inventory nodes)
+      ansible.builtin.copy:
+        dest: /etc/ssh/sshd_config.d/10-lab-automation.conf
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          # itential-enterprise-lab (ansible/playbooks/lab-endpoints.yml): Gateway 5 send-command as automation
+          Match User automation
+              PasswordAuthentication yes
+      notify: Reload sshd
+  handlers:
+    - name: Reload sshd
+      ansible.builtin.service:
+        name: ssh
+        state: reloaded

@@ -58,6 +58,7 @@ stack:
   ldif_sha256: 4d22e7a2a80dc5f3b6fabccf35b68e34fe6d6c9fd4c87842c2a6deca53f97cbc
   gateway5_cluster_id: lab
   inventory: lab # Inventory Manager inventory holding the NetBox network devices
+  host_inventory: lab-hosts # the Ubuntu hosts (S4d.6, ADR 0047): reached by Gateway 5, never by Configuration Manager
   mongo_cache_gb: 4
   runner_image: gateway5-runner:5.5.2-py3.12.14 # local build tag on the VM (ADR 0038)
 
@@ -180,3 +181,12 @@ integrations:
       auth: BasicAuth # http basic: SNOW_USER / SNOW_PASSWORD (itential.integration on the PDI)
       server: {protocol: https, port: 443, base_path: ""} # host = <SNOW_INSTANCE>.service-now.com from .env
       operations: [listIncidents, getIncident, updateIncident, listChangeRequests, getChangeRequest]
+
+# --- S4d.6 (ADR 0047): the Ubuntu hosts as Gateway 5 inventory nodes in their own inventory (stack.host_inventory),
+# so Configuration Manager (InventoryBroker publishes only stack.inventory) never backs them up or checks them.
+# Nodes come from NetBox (active, primary address, these platforms); Gateway 5's netmiko driver takes platform linux.
+# Password login for the automation user is enabled per host by ansible/playbooks/lab-endpoints.yml.
+hosts:
+  netbox_platforms: {ubuntu-24-04: linux}
+  roles: [server, client]
+  probe: ["uptime -p", "hostname"] # the reachability and uptime check (verify S4d.6, agents later)

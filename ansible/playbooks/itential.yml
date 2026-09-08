@@ -831,6 +831,95 @@
       when: have != want
       no_log: true
 
+    # --- Hosts (S4d.6, ADR 0047): the Ubuntu endpoints in their own inventory for Gateway 5 only ------------
+    - name: Ubuntu hosts from NetBox (active, with a management address, by platform)
+      ansible.builtin.uri:
+        url: >-
+          http://{{ netbox_oob_host }}:{{ netbox_port }}/api/dcim/devices/?limit=0&status=active&has_primary_ip=true&platform={{ item }}
+        headers: {Authorization: "Token {{ lookup('ansible.builtin.env', 'NETBOX_TOKEN') }}"}
+      loop: "{{ hosts.netbox_platforms.keys() | list }}"
+      register: nb_hosts
+      no_log: true
+
+    - name: Host nodes (netmiko platform linux, the automation account with its password)
+      ansible.builtin.set_fact:
+        host_nodes: >-
+          {{ host_nodes | default([]) + [{'name': item.name, 'tags': [item.site.slug, item.role.slug, item.platform.slug],
+             'attributes': {'itential_host': item.primary_ip4.address | ansible.utils.ipaddr('address'),
+                            'itential_platform': hosts.netbox_platforms[item.platform.slug],
+                            'itential_user': 'automation',
+                            'itential_password': lookup('ansible.builtin.env', 'AUTOMATION_PASSWORD'),
+                            'cluster_id': stack.gateway5_cluster_id}}] }}
+      loop: "{{ nb_hosts.results | map(attribute='json.results') | flatten | selectattr('role.slug', 'in', hosts.roles) | list }}"
+      loop_control:
+        label: "{{ item.name }}"
+      no_log: true
+
+    - name: Host inventory exists?
+      ansible.builtin.uri:
+        url: "{{ platform_local }}/inventory_manager/v1/inventories/{{ stack.host_inventory }}"
+        headers: {Cookie: "{{ login.cookies_string }}"}
+        status_code: [200, 404]
+      register: host_inv_state
+
+    - name: Host inventory without broker actions (Configuration Manager never sees hosts) on cluster {{ stack.gateway5_cluster_id }}
+      ansible.builtin.uri:
+        url: "{{ platform_local }}/inventory_manager/v1/inventories"
+        method: POST
+        headers: {Cookie: "{{ login.cookies_string }}"}
+        body_format: json
+        body:
+          name: "{{ stack.host_inventory }}"
+          description: "Lab Ubuntu hosts from NetBox for Gateway 5 (ansible/playbooks/itential.yml, PID S4d.6)"
+          groups: [admin_group]
+          createBrokerActions: false
+          defaultClusterId: "{{ stack.gateway5_cluster_id }}"
+        status_code: [200, 201]
+      when: host_inv_state.status != 200
+
+    - name: Existing host nodes
+      ansible.builtin.uri:
+        url: "{{ platform_local }}/inventory_manager/v1/inventories/{{ stack.host_inventory }}/nodes"
+        headers: {Cookie: "{{ login.cookies_string }}"}
+      register: host_inv_existing
+      no_log: true
+
+    - name: Host nodes populated from NetBox (replaces the set when it differs)
+      ansible.builtin.uri:
+        url: "{{ platform_local }}/inventory_manager/v1/nodes/bulk"
+        method: POST
+        headers: {Cookie: "{{ login.cookies_string }}"}
+        body_format: json
+        body:
+          inventory_identifier: "{{ stack.host_inventory }}"
+          nodes: "{{ host_nodes | default([]) }}"
+        status_code: 200
+      vars:
+        have: "{{ host_inv_existing.json.result.data | map(attribute='name') | sort }}"
+        want: "{{ host_nodes | default([]) | map(attribute='name') | sort }}"
+      when: have != want
+      no_log: true
+
+    - name: Gateway 5 answers on one host through the host inventory (uptime, hostname)
+      ansible.builtin.uri:
+        url: "{{ platform_local }}/gateway_manager/v1/services/run"
+        method: POST
+        headers: {Cookie: "{{ login.cookies_string }}"}
+        body_format: json
+        body:
+          serviceName: send-command
+          clusterId: "{{ stack.gateway5_cluster_id }}"
+          params: {commands: "{{ hosts.probe }}"}
+          inventory:
+            - inventory: "{{ stack.host_inventory }}"
+              nodeNames: ["{{ (host_nodes | default([]) | first).name }}"]
+        status_code: 200
+        timeout: 120
+      register: host_probe
+      failed_when: not (host_probe.json.result.results | map(attribute='success') | list | min)
+      changed_when: false
+      when: host_nodes | default([]) | length > 0
+
     # --- Device Broker (ADR 0039): the built-in Inventory Manager adapter publishes the inventory's
     # nodes to Device Broker, which is where Configuration Manager (backups, Golden Config,
     # compliance), command templates and the MCP device tools read devices. Gateway 5 only.

@@ -345,7 +345,7 @@ run_agent() {
   done
   echo "session ${sid} did not finish (${state})"; return 1
 }
-session_msgs()  { iap "${PLATFORM}/agent-session-manager/sessions/$1/messages?limit=100&sortBy=eventId&sortOrder=asc"; }
+session_msgs()  { iap "${PLATFORM}/agent-session-manager/sessions/$1/messages?limit=500&sortBy=eventId&sortOrder=asc"; }
 session_text()  { session_msgs "$1" | ${PY} -c 'import sys,json;m=json.load(sys.stdin);m=sorted([x for x in m if x.get("type")=="inference-succeeded" and x.get("text")],key=lambda x:x.get("timestamp",0));print(m[-1]["text"] if m else "")'; }
 session_tools() { session_msgs "$1" | ${PY} -c 'import sys,json;m=json.load(sys.stdin);print(sorted({x["data"].get("toolName","") for x in m if x.get("category")=="TOOL_CALLED"}))'; }
 session_usage() { session_msgs "$1" | ${PY} -c 'import sys,json;m=json.load(sys.stdin);u=[x["data"]["tokenUsage"] for x in m if x.get("type")=="inference-succeeded" and x.get("data",{}).get("tokenUsage")];print(sum(t.get("inputTokens",0) for t in u),sum(t.get("outputTokens",0) for t in u))'; }
@@ -384,7 +384,35 @@ assert ops==sorted('${ops}'.split(',')),ops;print('model ${title}:${ver}:',len(o
 }
 check "S4d.4 Integration Models lab-netbox and lab-servicenow: instances netbox-api/servicenow-api, every operation an authorized tool; lab-netops reads br1-sw01 and INC0000060 through the integration tools (not the adapters)" c4
 
-defer "S4d.6 hosts and firewalls (element 6, not built yet)"
+
+# --- S4d.6 hosts (ADR 0047): the Ubuntu hosts as lab-hosts inventory nodes, reachable through Gateway 5 with their uptime;
+# absent from Configuration Manager; direct SSH as the same account is the second source. Firewalls stay deferred ---
+HOST_INV=$(${PY} -c "import yaml;print(yaml.safe_load(open('$V'))['stack']['host_inventory'])")
+HOST_PLATFORMS=$(${PY} -c "import yaml;print('&'.join('platform='+p for p in yaml.safe_load(open('$V'))['hosts']['netbox_platforms']))")
+c6() {
+  local nbrows=() row name ip inv_names nb_names missing out gw_host gw_up direct_host direct_up errs=""
+  while IFS= read -r row; do nbrows+=("$row"); done < <(nb "${NETBOX_URL}/api/dcim/devices/?limit=0&status=active&has_primary_ip=true&${HOST_PLATFORMS}" | ${PY} -c 'import sys,json;[print(d["name"],d["primary_ip4"]["address"].split("/")[0]) for d in json.load(sys.stdin)["results"] if d["role"]["slug"] in ("server","client")]')
+  [ "${#nbrows[@]}" = 3 ] || { echo "NetBox has ${#nbrows[@]} Ubuntu hosts, wanted 3"; return 1; }
+  nb_names=$(printf '%s\n' "${nbrows[@]}" | awk '{print $1}' | sort)
+  inv_names=$(iap "${PLATFORM}/inventory_manager/v1/inventories/${HOST_INV}/nodes" | ${PY} -c 'import sys,json;d=json.load(sys.stdin);print("\n".join(sorted(n["name"] for n in d["result"]["data"])))')
+  [ "$nb_names" = "$inv_names" ] || { echo "inventory ${HOST_INV} nodes ($(echo "$inv_names" | tr '\n' ' ')) differ from NetBox ($(echo "$nb_names" | tr '\n' ' '))"; return 1; }
+  # never a Configuration Manager device (no backups, no compliance on hosts)
+  iap -X POST "${PLATFORM}/configuration_manager/devices" -d '{"options":{"start":0,"limit":200}}' | ${PY} -c "import sys,json;names={d['name'] for d in json.load(sys.stdin)['list']};bad=names & set('''$nb_names'''.split());assert not bad,('hosts visible to Configuration Manager',bad);print('Configuration Manager sees',len(names),'devices, no host')" || return 1
+  for row in "${nbrows[@]}"; do read -r name ip <<<"$row"
+    out=$(iap -X POST "${PLATFORM}/gateway_manager/v1/services/run" -d "{\"serviceName\":\"send-command\",\"clusterId\":\"lab\",\"params\":{\"commands\":[\"uptime -p\",\"hostname\"]},\"inventory\":[{\"inventory\":\"${HOST_INV}\",\"nodeNames\":[\"${name}\"]}]}")
+    read -r gw_up gw_host <<<"$(echo "$out" | ${PY} -c 'import sys,json;d=json.load(sys.stdin);r=d["result"]["results"];assert all(x["success"] for x in r),r;o={x["command"]:x["output"].strip() for x in r};print(o["uptime -p"].replace(" ","_"),o["hostname"])' 2>/dev/null)" || { errs+="${name}: Gateway 5 send-command failed: $(echo "$out" | head -c 200)\n"; continue; }
+    [ "$gw_host" = "$name" ] || { errs+="${name}: Gateway 5 saw hostname ${gw_host}\n"; continue; }
+    direct_host=$(${PY} verify/devcmd.py "$ip" "hostname" 2>/dev/null | tr -d '\r' | tail -1); direct_up=$(${PY} verify/devcmd.py "$ip" "uptime -p" 2>/dev/null | tr -d '\r' | tail -1 | tr ' ' '_')
+    [ "$direct_host" = "$name" ] || { errs+="${name}: direct SSH saw hostname '${direct_host}'\n"; continue; }
+    # both uptimes report the same number of days (the minutes may tick between the two reads)
+    [ "$(echo "$gw_up" | grep -o '[0-9]*_day' )" = "$(echo "$direct_up" | grep -o '[0-9]*_day')" ] || { errs+="${name}: uptime ${gw_up} (Gateway 5) vs ${direct_up} (direct SSH)\n"; continue; }
+    echo "${name} (${ip}): reachable, $(echo "$gw_up" | tr '_' ' ') through Gateway 5; direct SSH agrees"
+  done
+  [ -z "$errs" ] || { printf "%b" "$errs"; return 1; }
+}
+check "S4d.6 the three Ubuntu hosts are ${HOST_INV} inventory nodes, reachable through Gateway 5 with their uptime (direct SSH agrees), and unknown to Configuration Manager" c6
+defer "S4d.6 firewalls: PA-VM image not staged (S3.4 deferral)"
+
 
 echo
 echo "passed=${pass} failed=${fail} deferred=${deferred}"
