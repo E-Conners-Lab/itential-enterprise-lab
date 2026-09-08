@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Name** | itential-enterprise-lab |
-| **Version** | 1.12 |
+| **Version** | 1.13 |
 | **Date** | 2026-09-08 |
 | **Author** | Elliot Conner. Claude Code is the build agent; every action it takes is bounded by this document |
 | **Standard** | Project Initiation Standard PIS-01 - PIS-30 (`~/.claude/skills/project-initiation-standard`) |
@@ -210,6 +210,21 @@ Conventions: **Placement** is Proxmox VM (OpenTofu + Ansible), k3s (Helm/Kustomi
   6. Hosts and firewalls (amended 1.12, ADR 0047): the three Ubuntu hosts (`dc1-srv01`, `br1-host01`, `br2-host01`) as Gateway 5 inventory nodes in their own inventory `lab-hosts` (platform `linux`, the automation account with the password `lab-endpoints.yml` enables for that user only), never published to Configuration Manager; reachability and uptime through Gateway 5 `send-command` with direct SSH as the second source; PA-VM firewalls when the image is staged (deferred with S3.4). ~~the three Ubuntu hosts as inventory nodes with reachability and uptime checks~~
 - **Deferred (not built in S4d):** Gateway 4, observability and job metrics (Phase 9), node-credential secrets (Phase 10), Windows endpoints.
 - **Verification:** `verify/test-06b-platform.sh` (S4d.1 to S4d.4 and S4d.6); S4d.5 in `verify/test-06-flowai.sh`.
+
+### S4e — NetBox enrichment derived from the topology (Phase 6, amendment 1.13, ADR 0048)
+
+- **Purpose:** NetBox answers what the lab really runs beyond management (owner request 2026-09-08): every address on its interface with the peer description, VRFs and ASNs, racks, the provider circuits, config contexts and journal entries, so `netbox-sot` and Golden Config (ADR 0040) read intent instead of the management skeleton.
+- **Placement:** NetBox 4.7.0 on VM 110 (no plugin; BGP neighbours live in config contexts, ADR 0048). No new VM.
+- **Components:** `topology/enterprise.yaml` gains `addressing` per node, `vrfs`, `racks`, `circuits`; the startup-config templates read them (rendered output byte-identical, proven by `tests/test_topology.py` against `topology/generated/configs/`); `ansible/playbooks/netbox-enrich.yml` derives the NetBox objects after `netbox-topology.yml` and re-runs with `changed=0`; the golden-config device leaf renders the interface intent; `wf-branch-vlan-v1` / `-delete-v1` write a journal entry on the switch.
+- **Acceptance** (`verify/test-06c-netbox.sh`, second source `verify/devcmd.py`, one netbox-sot question per object type with the tokens printed):
+  1. Interface addressing and descriptions: every addressed interface of the 12 network devices exists in NetBox with its address, VRF and `to <peer>` description, and the parsed `show ip interface brief` (Genie / TextFSM through `wf-show-command-v1`, direct SSH agrees) of every device equals NetBox interface by interface; the rendered startup configs are unchanged by the lift (pytest).
+  2. VRFs and ASNs: `MGMT`, `WAN`, `PROD` with RDs and route targets; every in-band prefix and address in its VRF; the seven ASNs on their sites; each device's BGP neighbours in its rendered config context equal `show bgp summary` on the device (address, remote AS, VRF); the anycast gateway and the transit virtual router are FHRP groups with the leaf SVIs as members.
+  3. Racks and locations: one location and one rack per site, every device with a unique position; netbox-sot answers a rack question equal to the API.
+  4. Circuits: provider, four transit circuits with terminations, the edge port and the `isp-core01` port cabled through the circuit (trace crosses it); the direct cables of those links are gone.
+  5. Config contexts and journal entries: the rendered context of every device carries domain, DNS, NTP, management gateway, site gateway and the automation account name (never a password); the play leaves one journal entry per site per run; an LCM create and delete on br2 leave one entry each on `br2-sw01`.
+  6. Idempotency and the agent: the second play run is `changed=0`; netbox-sot answers the five object-type questions equal to the NetBox API; the Golden Config plan with the interface intent in the device leaves is clean on the 12 devices.
+- **Deferred:** netbox-bgp plugin (custom netbox-docker image), console/power/front/rear ports, inventory items, tenants and contacts, custom fields, Windows client addresses.
+- **Verification:** `verify/test-06c-netbox.sh`; `tests/test_topology.py` (render identity), `tests/test_netbox_enrich.py` (derivation rules: link address sides, VRF membership, rack positions unique, circuit ids).
 
 ### S5 — DDI: Infoblox NIOS with BIND9 + Kea secondary (Phase 7)
 
@@ -600,7 +615,7 @@ at the end of Phase 2 and this table amended.
 | 3 | `phase-3/platform` | `verify/test-03-platform.sh` | none |
 | 4 | `phase-4/network-topology` | `verify/test-04-topology.sh` | Download PA-VM to `/srv/images/pa-vm` (Customer Support Portal); C8000v/vEOS reused (ADR 0032/0033); Windows 11 automated (`images/fetch.sh`, `images/build-win11.sh`) |
 | 5 | `phase-5/itential` | `verify/test-05-itential.sh` | `aws sso login` before image pulls (manual step 6); create the PDI integration user; log into the PDI every 10 days from then on |
-| 6 | `phase-6/flowai` | `verify/test-06-flowai.sh`, `verify/test-06b-platform.sh` | Provider key in `.env`; Ollama on the Mac Mini optional (ADR 0037) |
+| 6 | `phase-6/flowai` (+ `phase-6/netbox-enrichment`, ADR 0048) | `verify/test-06-flowai.sh`, `verify/test-06b-platform.sh`, `verify/test-06c-netbox.sh` | Provider key in `.env`; Ollama on the Mac Mini optional (ADR 0037) |
 | 7 | `phase-6/ddi` | `verify/test-06-ddi.sh` | Download NIOS eval, apply the temp licence on the console |
 | 8 | `phase-7/identity` | `verify/test-07-identity.sh` | Download Windows Server eval ISO |
 | 9 | `phase-8/observability` | `verify/test-08-observability.sh` | none |
@@ -655,4 +670,5 @@ the verify log path and any ADRs added.
 | 1.10 | 2026-09-08 | Phase 6 element 4: S4d.4 detailed (generated Integration Model documents for NetBox and ServiceNow, instances from `.env`, model roles re-synced, operations as `lab-netops` tools; the adapter start route is never used on an integration; ADR 0045) |
 | 1.11 | 2026-09-08 | Phase 6 element 5: S4d.5 detailed (the five-agent fleet with local twins, tiered autonomy, the diagnostics work note as the only ungated write, remediation through `wf-config-push-v1` only; ADR 0046) |
 | 1.12 | 2026-09-08 | Phase 6 element 6: S4d.6 detailed (the Ubuntu hosts in the `lab-hosts` Gateway 5 inventory, password login for the automation user on the endpoints, Configuration Manager untouched; ADR 0047) |
+| 1.13 | 2026-09-08 | Phase 6 element 7 (owner request): S4e NetBox enrichment derived from `topology/enterprise.yaml` (addressing on interfaces with peer descriptions, VRFs and ASNs with BGP neighbours in config contexts, racks, provider circuits, config contexts, journal entries; the templates read the YAML, rendered configs unchanged; `netbox-enrich.yml`; `verify/test-06c-netbox.sh`; ADR 0048) |
 | 1.5 | 2026-09-07 | Phase 5 (S4b): Gateway 5 is the only gateway (Gateway 4 staged, not deployed); the PDI needs no customisation (stock standard-change template + Network group + one integration user), so S4b.3 is a rebuild record `servicenow/README.md` instead of an update set; S4b.2 evidence is the states ServiceNow returns to the workflow plus the change read back (`sys_audit` is admin-only on a PDI); PDI `dev409097`, Australia; basic auth needs `snc_basic_auth_api_access` on 2026 instances |
