@@ -17,22 +17,7 @@
     model_of: {c8000v: "Catalyst 8000V", veos: "vEOS-lab", pa-vm: "VM-Series", ubuntu: "Ubuntu 24.04 VM", win11: "Windows 11 VM"}
     platform_of: {c8000v: ios-xe, veos: eos, pa-vm: panos, ubuntu: ubuntu-24.04, win11: windows-11}
     mgmt_iface_of: {c8000v: GigabitEthernet1, veos: Management1, pa-vm: management, ubuntu: eth0, win11: eth0}
-    inband_prefixes:
-      - {prefix: 10.103.0.0/24, site: wan, role: wan-transit, description: "ISP-to-site /30s"}
-      - {prefix: 10.103.100.0/24, site: wan, role: wan-transit, description: "GRE/IPsec tunnels"}
-      - {prefix: 10.103.255.0/24, site: wan, role: wan-transit, description: "router loopbacks"}
-      - {prefix: 10.101.255.0/24, site: dc1, role: dc-inband, description: "fabric underlay /31s"}
-      - {prefix: 10.101.254.0/24, site: dc1, role: dc-inband, description: "fabric loopbacks"}
-      - {prefix: 10.101.253.0/24, site: dc1, role: dc-inband, description: "VTEP loopbacks"}
-      - {prefix: 10.101.252.0/30, site: dc1, role: dc-inband, description: "MLAG peer link"}
-      - {prefix: 10.101.2.0/24, site: dc1, role: dc-inband, description: "WAN edge to firewall routed /30s"}
-      - {prefix: 10.101.3.0/24, site: dc1, role: dc-inband, description: "firewall bypass /30s (lab.firewalls false)"}
-      - {prefix: 10.101.1.0/24, site: dc1, role: dc-inband, description: "VLAN 100 transit, VRF PROD", vlan: 100}
-      - {prefix: 10.101.10.0/24, site: dc1, role: dc-inband, description: "server VLAN 10", vlan: 10}
-      - {prefix: 10.102.16.0/20, site: br1, role: branch-inband, description: "branch 1"}
-      - {prefix: 10.102.17.0/24, site: br1, role: branch-inband, description: "branch 1 users VLAN 10", vlan: 10}
-      - {prefix: 10.102.32.0/20, site: br2, role: branch-inband, description: "branch 2"}
-      - {prefix: 10.102.33.0/24, site: br2, role: branch-inband, description: "branch 2 users VLAN 10", vlan: 10}
+    # inband_prefixes: from topology/enterprise.yaml (vars_files), ADR 0048
   tasks:
     - name: Sites
       netbox.netbox.netbox_site:

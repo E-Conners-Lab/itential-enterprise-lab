@@ -10,22 +10,7 @@
     brN-wan01 (AS 6520N): tunnels to both DC edges; the firewall is the LAN gateway - or, while
       bypassed, the router's spare port is the VLAN 10 gateway with a DHCP pool. -#}
 {%- set site = node.site %}
-{%- set lo = {'isp-core01': '10.103.255.1', 'dc1-wan01': '10.103.255.11', 'dc1-wan02': '10.103.255.12', 'br1-wan01': '10.103.255.21', 'br2-wan01': '10.103.255.22'}[name] %}
-{%- set asn = {'wan': routing.asn.isp, 'dc1': routing.asn.dc1_edge, 'br1': routing.asn.br1, 'br2': routing.asn.br2}[site] %}
-{%- set isp_peer = {'dc1-wan01': '10.103.0.1', 'dc1-wan02': '10.103.0.5', 'br1-wan01': '10.103.0.9', 'br2-wan01': '10.103.0.13'}.get(name) %}
-{%- set wan_ip = {'dc1-wan01': '10.103.0.2', 'dc1-wan02': '10.103.0.6', 'br1-wan01': '10.103.0.10', 'br2-wan01': '10.103.0.14'}.get(name) %}
-{%- set lan = {'br1': {'net': '10.102.17.0', 'gw': '10.102.17.1', 'agg': '10.102.16.0'}, 'br2': {'net': '10.102.33.0', 'gw': '10.102.33.1', 'agg': '10.102.32.0'}}.get(site) %}
-{#- tunnel plan: DC edge x branch; 10.103.100.0/30 dc1-wan01<->br1, .4/30 dc1-wan01<->br2, .8/30 dc1-wan02<->br1, .12/30 dc1-wan02<->br2 -#}
-{%- set tunnels = {
-  'dc1-wan01': [{'id': 1, 'peer': 'br1-wan01', 'dst': '10.103.0.10', 'ip': '10.103.100.1', 'nbr': '10.103.100.2', 'ras': routing.asn.br1},
-                {'id': 2, 'peer': 'br2-wan01', 'dst': '10.103.0.14', 'ip': '10.103.100.5', 'nbr': '10.103.100.6', 'ras': routing.asn.br2}],
-  'dc1-wan02': [{'id': 1, 'peer': 'br1-wan01', 'dst': '10.103.0.10', 'ip': '10.103.100.9', 'nbr': '10.103.100.10', 'ras': routing.asn.br1},
-                {'id': 2, 'peer': 'br2-wan01', 'dst': '10.103.0.14', 'ip': '10.103.100.13', 'nbr': '10.103.100.14', 'ras': routing.asn.br2}],
-  'br1-wan01': [{'id': 1, 'peer': 'dc1-wan01', 'dst': '10.103.0.2', 'ip': '10.103.100.2', 'nbr': '10.103.100.1', 'ras': routing.asn.dc1_edge},
-                {'id': 2, 'peer': 'dc1-wan02', 'dst': '10.103.0.6', 'ip': '10.103.100.10', 'nbr': '10.103.100.9', 'ras': routing.asn.dc1_edge}],
-  'br2-wan01': [{'id': 1, 'peer': 'dc1-wan01', 'dst': '10.103.0.2', 'ip': '10.103.100.6', 'nbr': '10.103.100.5', 'ras': routing.asn.dc1_edge},
-                {'id': 2, 'peer': 'dc1-wan02', 'dst': '10.103.0.6', 'ip': '10.103.100.14', 'nbr': '10.103.100.13', 'ras': routing.asn.dc1_edge}],
-}.get(name, []) %}
+{#- lo, asn, isp_peer, wan_ip, lan, tunnels, ibgp, agg, isp_neighbors come from topology/derive.py (ADR 0048) -#}
 {#- routed eBGP neighbours on this router's links: firewalls (AS from routing) and leaf bypass (AS dc1_leaf) -#}
 {%- set ns = namespace(ebgp=[], links=[]) %}
 {%- set ns.links = [] %}
@@ -170,16 +155,15 @@ router bgp {{ asn }}
  bgp router-id {{ lo }}
  bgp log-neighbor-changes
  bgp graceful-restart
-{%- if name == 'isp-core01' %}
- neighbor 10.103.0.2 remote-as {{ routing.asn.dc1_edge }}
- neighbor 10.103.0.6 remote-as {{ routing.asn.dc1_edge }}
- neighbor 10.103.0.10 remote-as {{ routing.asn.br1 }}
- neighbor 10.103.0.14 remote-as {{ routing.asn.br2 }}
+{%- if node.role == 'isp-core' %}
+{%- for n in isp_neighbors %}
+ neighbor {{ n.ip }} remote-as {{ n.as }}
+{%- endfor %}
  address-family ipv4
-  network 10.103.255.1 mask 255.255.255.255
-{%- for n in ['10.103.0.2', '10.103.0.6', '10.103.0.10', '10.103.0.14'] %}
-  neighbor {{ n }} activate
-  neighbor {{ n }} default-originate
+  network {{ lo }} mask 255.255.255.255
+{%- for n in isp_neighbors %}
+  neighbor {{ n.ip }} activate
+  neighbor {{ n.ip }} default-originate
 {%- endfor %}
  exit-address-family
 {%- else %}
@@ -194,18 +178,15 @@ router bgp {{ asn }}
  neighbor {{ e.ip }} fall-over bfd
 {%- endfor %}
 {%- if site == 'dc1' %}
-{%- set ibgp = '10.101.2.250' if name == 'dc1-wan01' else '10.101.2.249' %}
  neighbor {{ ibgp }} remote-as {{ routing.asn.dc1_edge }}
  neighbor {{ ibgp }} description iBGP dc1 edge peer
 {%- endif %}
  address-family ipv4
   network {{ lo }} mask 255.255.255.255
+  network {{ agg.net }} mask {{ agg.mask }}
 {%- if site == 'dc1' %}
-  network 10.101.0.0 mask 255.255.0.0
   neighbor {{ ibgp }} activate
   neighbor {{ ibgp }} next-hop-self
-{%- else %}
-  network {{ lan.agg }} mask 255.255.240.0
 {%- endif %}
 {%- for t in tunnels %}
   neighbor {{ t.nbr }} activate
@@ -221,10 +202,8 @@ router bgp {{ asn }}
  exit-address-family
 {%- endif %}
 !
-{%- if site == 'dc1' %}
-ip route 10.101.0.0 255.255.0.0 Null0 250
-{%- elif lan %}
-ip route {{ lan.agg }} 255.255.240.0 Null0 250
+{%- if agg %}
+ip route {{ agg.net }} {{ agg.mask }} Null0 250
 {%- endif %}
 !
 end

@@ -32,8 +32,20 @@ TOPO = ROOT / "topology" / "enterprise.yaml"
 CONFIG_DIR = ROOT / "topology" / "configs"
 
 # manifest platform key -> EVE-NG template name (from /opt/unetlab/html/templates/intel/*.yml)
-TEMPLATE = {"c8000v": "c8000v", "veos": "veos", "pa-vm": "paloalto", "ubuntu": "linux", "win11": "win"}
-CONSOLE = {"c8000v": "telnet", "veos": "telnet", "pa-vm": "telnet", "ubuntu": "vnc", "win11": "vnc"}
+TEMPLATE = {
+    "c8000v": "c8000v",
+    "veos": "veos",
+    "pa-vm": "paloalto",
+    "ubuntu": "linux",
+    "win11": "win",
+}
+CONSOLE = {
+    "c8000v": "telnet",
+    "veos": "telnet",
+    "pa-vm": "telnet",
+    "ubuntu": "vnc",
+    "win11": "vnc",
+}
 STARTUP_CONFIG_PLATFORMS = {"c8000v", "veos", "pa-vm"}  # templates with a config_script
 
 
@@ -60,7 +72,10 @@ def iface_index(platform: str, iface: str) -> int:
 
 
 def link_network_name(link: dict) -> str:
-    a, b = link["a"].replace(":", "_").replace("/", "-"), link["b"].replace(":", "_").replace("/", "-")
+    a, b = (
+        link["a"].replace(":", "_").replace("/", "-"),
+        link["b"].replace(":", "_").replace("/", "-"),
+    )
     return f"link-{a}--{b}"
 
 
@@ -69,7 +84,11 @@ class Eve:
         self.base = f"https://{host}/api"
         self.s = requests.Session()
         self.s.verify = False
-        r = self.s.post(f"{self.base}/auth/login", json={"username": user, "password": password, "html5": "-1"}, timeout=20)
+        r = self.s.post(
+            f"{self.base}/auth/login",
+            json={"username": user, "password": password, "html5": "-1"},
+            timeout=20,
+        )
         if r.json().get("status") != "success":
             raise SystemExit(f"EVE-NG login failed: {r.text[:200]}")
         self.lab = lab_path
@@ -79,10 +98,20 @@ class Eve:
         try:
             body = r.json()
         except ValueError:
-            raise SystemExit(f"{method} {path}: HTTP {r.status_code} non-JSON: {r.text[:200]}")
-        if body.get("status") != "success" and not (method == "GET" and body.get("code") == 404):
-            hint = "  (60061 = stale /opt/unetlab/labs/<lab>.unl.lock from an interrupted API call; remove it when nothing is running)" if body.get("code") == 400 and "lock" in str(body.get("message")) else ""
-            raise SystemExit(f"{method} {path}: {body.get('code')} {body.get('message')}{hint}")
+            raise SystemExit(
+                f"{method} {path}: HTTP {r.status_code} non-JSON: {r.text[:200]}"
+            )
+        if body.get("status") != "success" and not (
+            method == "GET" and body.get("code") == 404
+        ):
+            hint = (
+                "  (60061 = stale /opt/unetlab/labs/<lab>.unl.lock from an interrupted API call; remove it when nothing is running)"
+                if body.get("code") == 400 and "lock" in str(body.get("message"))
+                else ""
+            )
+            raise SystemExit(
+                f"{method} {path}: {body.get('code')} {body.get('message')}{hint}"
+            )
         return body
 
     # ---- lab
@@ -90,7 +119,18 @@ class Eve:
         return self._req("GET", f"/labs{self.lab}").get("code") != 404
 
     def create_lab(self, name: str, description: str) -> None:
-        self._req("POST", "/labs", json={"path": "/", "name": name, "version": "1", "author": "itential-enterprise-lab", "description": description, "body": ""})
+        self._req(
+            "POST",
+            "/labs",
+            json={
+                "path": "/",
+                "name": name,
+                "version": "1",
+                "author": "itential-enterprise-lab",
+                "description": description,
+                "body": "",
+            },
+        )
 
     # ---- networks
     def networks(self) -> dict[str, dict]:
@@ -99,8 +139,20 @@ class Eve:
             data = {str(n.get("id", i)): n for i, n in enumerate(data)}
         return {n["name"]: {**n, "id": int(k)} for k, n in data.items()}
 
-    def add_network(self, name: str, ntype: str, left: int, top: int, visible: int) -> None:
-        self._req("POST", f"/labs{self.lab}/networks", json={"type": ntype, "name": name, "left": left, "top": top, "visibility": visible})
+    def add_network(
+        self, name: str, ntype: str, left: int, top: int, visible: int
+    ) -> None:
+        self._req(
+            "POST",
+            f"/labs{self.lab}/networks",
+            json={
+                "type": ntype,
+                "name": name,
+                "left": left,
+                "top": top,
+                "visibility": visible,
+            },
+        )
 
     # ---- nodes
     def nodes(self) -> dict[str, dict]:
@@ -110,18 +162,32 @@ class Eve:
         return {n["name"]: {**n, "id": int(k)} for k, n in data.items()}
 
     def template_images(self, template: str) -> list[str]:
-        opts = self._req("GET", f"/list/templates/{template}").get("data", {}).get("options", {})
+        opts = (
+            self._req("GET", f"/list/templates/{template}")
+            .get("data", {})
+            .get("options", {})
+        )
         lst = (opts.get("image") or {}).get("list") or {}
-        return list(lst.keys()) if isinstance(lst, dict) else list(lst)  # EVE-NG returns [] when empty
+        return (
+            list(lst.keys()) if isinstance(lst, dict) else list(lst)
+        )  # EVE-NG returns [] when empty
 
     def add_node(self, payload: dict) -> int:
-        return int(self._req("POST", f"/labs{self.lab}/nodes", json=payload)["data"]["id"])
+        return int(
+            self._req("POST", f"/labs{self.lab}/nodes", json=payload)["data"]["id"]
+        )
 
     def set_interfaces(self, node_id: int, mapping: dict[int, int]) -> None:
-        self._req("PUT", f"/labs{self.lab}/nodes/{node_id}/interfaces", json={str(k): v for k, v in mapping.items()})
+        self._req(
+            "PUT",
+            f"/labs{self.lab}/nodes/{node_id}/interfaces",
+            json={str(k): v for k, v in mapping.items()},
+        )
 
     def interfaces(self, node_id: int) -> dict:
-        return self._req("GET", f"/labs{self.lab}/nodes/{node_id}/interfaces").get("data", {})
+        return self._req("GET", f"/labs{self.lab}/nodes/{node_id}/interfaces").get(
+            "data", {}
+        )
 
     # EVE-NG Pro keeps startup configs in config *sets*; uploads need the set id in the body and
     # answer 201 with a PHP array dump appended (non-JSON tail), so parse leniently here.
@@ -131,21 +197,35 @@ class Eve:
         for cs in sets:
             if cs.get("name") == name:
                 return int(cs["id"])
-        r = self.s.post(f"{self.base}/labs{self.lab}/configsets", json={"name": name}, timeout=60)
+        r = self.s.post(
+            f"{self.base}/labs{self.lab}/configsets", json={"name": name}, timeout=60
+        )
         if r.status_code != 200 or '"success"' not in r.text:
             raise SystemExit(f"create config set: HTTP {r.status_code} {r.text[:160]}")
         return int(r.json()["id"])
 
     def upload_config(self, node_id: int, text: str, cfsid: int) -> None:
-        r = self.s.put(f"{self.base}/labs{self.lab}/configs/{node_id}", json={"id": node_id, "cfsid": cfsid, "data": text}, timeout=60)
+        r = self.s.put(
+            f"{self.base}/labs{self.lab}/configs/{node_id}",
+            json={"id": node_id, "cfsid": cfsid, "data": text},
+            timeout=60,
+        )
         if r.status_code not in (200, 201) or '"success"' not in r.text[:200]:
-            raise SystemExit(f"upload config node {node_id}: HTTP {r.status_code} {r.text[:120]}")
+            raise SystemExit(
+                f"upload config node {node_id}: HTTP {r.status_code} {r.text[:120]}"
+            )
 
     def enable_config(self, node_id: int, cfsid: int) -> None:
         # Pro stores the selected config set id in the node's 'config' field; answers 201
-        r = self.s.put(f"{self.base}/labs{self.lab}/nodes/{node_id}", json={"id": node_id, "config": cfsid}, timeout=60)
+        r = self.s.put(
+            f"{self.base}/labs{self.lab}/nodes/{node_id}",
+            json={"id": node_id, "config": cfsid},
+            timeout=60,
+        )
         if r.status_code not in (200, 201) or '"success"' not in r.text:
-            raise SystemExit(f"enable config node {node_id}: HTTP {r.status_code} {r.text[:120]}")
+            raise SystemExit(
+                f"enable config node {node_id}: HTTP {r.status_code} {r.text[:120]}"
+            )
 
     def start(self, node_id: int) -> None:
         self._req("GET", f"/labs{self.lab}/nodes/{node_id}/start")
@@ -163,22 +243,48 @@ def render_config(platform: str, name: str, node: dict, topo: dict) -> str | Non
     tpl = CONFIG_DIR / f"{platform}.j2"
     if not tpl.exists():
         return None
-    from jinja2 import Environment, FileSystemLoader, StrictUndefined
-
     import secrets as _secrets
     import subprocess
 
+    from jinja2 import Environment, FileSystemLoader, StrictUndefined
+
     secret = os.environ.get("AUTOMATION_PASSWORD")
     if not secret:
-        raise SystemExit("AUTOMATION_PASSWORD missing in .env (device-local automation account, moved to Vault in phase 9)")
-    env = Environment(loader=FileSystemLoader(str(CONFIG_DIR)), undefined=StrictUndefined, keep_trailing_newline=True)
+        raise SystemExit(
+            "AUTOMATION_PASSWORD missing in .env (device-local automation account, moved to Vault in phase 9)"
+        )
+    env = Environment(
+        loader=FileSystemLoader(str(CONFIG_DIR)),
+        undefined=StrictUndefined,
+        keep_trailing_newline=True,
+    )
     firewalls = bool(topo["lab"].get("firewalls", True))
-    links = [lk for lk in topo["links"] if (lk["a"].startswith(name + ":") or lk["b"].startswith(name + ":")) and not (lk.get("bypass") and firewalls)]
+    links = [
+        lk
+        for lk in topo["links"]
+        if (lk["a"].startswith(name + ":") or lk["b"].startswith(name + ":"))
+        and not (lk.get("bypass") and firewalls)
+    ]
+    sys.path.insert(0, str(ROOT))
+    from topology.derive import render_context  # the YAML owns every address (ADR 0048)
+
     return env.get_template(f"{platform}.j2").render(
-        name=name, node=node, lab=topo["lab"], routing=topo["routing"], links=links, nodes=topo["nodes"], firewalls=firewalls,
+        name=name,
+        node=node,
+        lab=topo["lab"],
+        routing=topo["routing"],
+        links=links,
+        nodes=topo["nodes"],
+        firewalls=firewalls,
+        **render_context(topo, name),
         automation_password=secret,
         # md5-crypt ($1$) is the phash format PAN-OS accepts; python's crypt module is gone in 3.13+
-        pan_password_hash=subprocess.run(["openssl", "passwd", "-1", "-salt", _secrets.token_hex(4), secret], capture_output=True, text=True, check=True).stdout.strip(),
+        pan_password_hash=subprocess.run(
+            ["openssl", "passwd", "-1", "-salt", _secrets.token_hex(4), secret],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip(),
     )
 
 
@@ -191,10 +297,14 @@ def plan(eve: Eve, topo: dict) -> dict:
             if n["role"] == "firewall" and not topo["lab"].get("firewalls", True):
                 continue
             if n["platform"] == plat and n["image"] not in have:
-                missing_images.append(f"{name}: {n['image']} (template {TEMPLATE[plat]} has {have or 'none'})")
+                missing_images.append(
+                    f"{name}: {n['image']} (template {TEMPLATE[plat]} has {have or 'none'})"
+                )
     have_nodes = eve.nodes() if eve.lab_exists() else {}
     have_nets = eve.networks() if eve.lab_exists() else {}
-    want_nets = [topo["lab"]["mgmt_network"]] + [link_network_name(lk) for lk in topo["links"]]
+    want_nets = [topo["lab"]["mgmt_network"]] + [
+        link_network_name(lk) for lk in topo["links"]
+    ]
     return {
         "lab_exists": eve.lab_exists(),
         "missing_images": missing_images,
@@ -207,9 +317,15 @@ def plan(eve: Eve, topo: dict) -> dict:
 def apply(eve: Eve, topo: dict, allow_missing: bool) -> None:
     p = plan(eve, topo)
     if p["missing_images"] and not allow_missing:
-        raise SystemExit("missing images on EVE-NG (stage them with images/import-eve.sh):\n  " + "\n  ".join(p["missing_images"]))
+        raise SystemExit(
+            "missing images on EVE-NG (stage them with images/import-eve.sh):\n  "
+            + "\n  ".join(p["missing_images"])
+        )
     if not p["lab_exists"]:
-        eve.create_lab(topo["lab"]["name"], "itential-enterprise-lab (ADR 0034). Built by eve/build.py; do not edit by hand.")
+        eve.create_lab(
+            topo["lab"]["name"],
+            "itential-enterprise-lab (ADR 0034). Built by eve/build.py; do not edit by hand.",
+        )
         print(f"created lab {eve.lab}")
     # networks: management cloud + one hidden bridge per link
     nets = eve.networks()
@@ -231,7 +347,10 @@ def apply(eve: Eve, topo: dict, allow_missing: bool) -> None:
     if firewalls:
         for lk in topo["links"]:
             if lk.get("bypass") and link_network_name(lk) in nets:
-                eve._req("DELETE", f"/labs{eve.lab}/networks/{nets[link_network_name(lk)]['id']}")
+                eve._req(
+                    "DELETE",
+                    f"/labs{eve.lab}/networks/{nets[link_network_name(lk)]['id']}",
+                )
                 print(f"removed bypass network {link_network_name(lk)}")
     nets = eve.networks()
     # nodes
@@ -246,17 +365,34 @@ def apply(eve: Eve, topo: dict, allow_missing: bool) -> None:
             print(f"SKIP {name}: image {n['image']} not on EVE-NG")
             continue
         payload = {
-            "type": "qemu", "template": TEMPLATE[n["platform"]], "image": n["image"], "name": name,
-            "cpu": n["cpu"], "ram": n["ram"], "ethernet": n["ethernet"], "console": CONSOLE[n["platform"]],
-            "left": n["eve"]["left"], "top": n["eve"]["top"], "config": 0, "delay": 0,
+            "type": "qemu",
+            "template": TEMPLATE[n["platform"]],
+            "image": n["image"],
+            "name": name,
+            "cpu": n["cpu"],
+            "ram": n["ram"],
+            "ethernet": n["ethernet"],
+            "console": CONSOLE[n["platform"]],
+            "left": n["eve"]["left"],
+            "top": n["eve"]["top"],
+            "config": 0,
+            "delay": 0,
         }
         # per-node QEMU overrides (Windows 11 needs q35 + OVMF: the image is a UEFI/GPT install)
-        payload.update({k: n["eve"][k] for k in ("qemu_version", "qemu_arch", "qemu_options", "qemu_nic") if k in n["eve"]})
+        payload.update(
+            {
+                k: n["eve"][k]
+                for k in ("qemu_version", "qemu_arch", "qemu_options", "qemu_nic")
+                if k in n["eve"]
+            }
+        )
         nid = eve.add_node(payload)
         print(f"created node {name} (id {nid})")
     have = eve.nodes()
     # interfaces: index 0 -> mgmt cloud; link ends -> their bridge
-    wiring: dict[str, dict[int, int]] = {name: {0: nets[mgmt]["id"]} for name in have if name in topo["nodes"]}
+    wiring: dict[str, dict[int, int]] = {
+        name: {0: nets[mgmt]["id"]} for name in have if name in topo["nodes"]
+    }
     for lk in active_links:
         nid = nets[link_network_name(lk)]["id"]
         for end in (lk["a"], lk["b"]):
@@ -265,7 +401,9 @@ def apply(eve: Eve, topo: dict, allow_missing: bool) -> None:
                 wiring[node][iface_index(topo["nodes"][node]["platform"], iface)] = nid
     for name, mapping in wiring.items():
         current = eve.interfaces(have[name]["id"]).get("ethernet") or {}
-        items = current.items() if isinstance(current, dict) else enumerate(current)  # list = index order
+        items = (
+            current.items() if isinstance(current, dict) else enumerate(current)
+        )  # list = index order
         cur = {int(k): int((v or {}).get("network_id", 0) or 0) for k, v in items}
         if any(cur.get(k) != v for k, v in mapping.items()):
             eve.set_interfaces(have[name]["id"], mapping)
@@ -276,7 +414,11 @@ def apply(eve: Eve, topo: dict, allow_missing: bool) -> None:
         if name not in have or n["platform"] not in STARTUP_CONFIG_PLATFORMS:
             continue
         cfg = render_config(n["platform"], name, n, topo)
-        if cfg and str(have[name].get("config")) in ("0", "None") and have[name].get("status") != 2:
+        if (
+            cfg
+            and str(have[name].get("config")) in ("0", "None")
+            and have[name].get("status") != 2
+        ):
             eve.upload_config(have[name]["id"], cfg, cfsid)
             eve.enable_config(have[name]["id"], cfsid)
             print(f"config {name}: {len(cfg)} bytes (set {cfsid})")
@@ -294,7 +436,9 @@ def start(eve: Eve, topo: dict, waves: bool) -> None:
                 eve.start(have[name]["id"])
                 print(f"start {name}")
         if waves and g is not groups[-1]:
-            print("wave started; waiting 300 s before the next (PAN-OS boot storm, PID E3)")
+            print(
+                "wave started; waiting 300 s before the next (PAN-OS boot storm, PID E3)"
+            )
             time.sleep(300)
 
 
@@ -304,10 +448,18 @@ def push_configs(eve: Eve, topo: dict, only: list[str] | None) -> None:
     config is disposable, the template is the source of truth). Endpoints are untouched."""
     have = eve.nodes()
     cfsid = eve.config_set()
-    targets = [n for n, v in topo["nodes"].items() if v["platform"] in ("c8000v", "veos", "pa-vm") and n in have and (not only or n in only)]
+    targets = [
+        n
+        for n, v in topo["nodes"].items()
+        if v["platform"] in ("c8000v", "veos", "pa-vm")
+        and n in have
+        and (not only or n in only)
+    ]
     for name in targets:
         node = have[name]
-        cfg = render_config(topo["nodes"][name]["platform"], name, topo["nodes"][name], topo)
+        cfg = render_config(
+            topo["nodes"][name]["platform"], name, topo["nodes"][name], topo
+        )
         if node.get("status") == 2:
             eve.stop(node["id"])
         eve.upload_config(node["id"], cfg, cfsid)
@@ -333,7 +485,9 @@ def push_configs(eve: Eve, topo: dict, only: list[str] | None) -> None:
             for name in sorted(pending):
                 ip = topo["nodes"][name]["mgmt_ip"]
                 try:
-                    out = devcmd.run(ip, "show version | include License Level", timeout=10)
+                    out = devcmd.run(
+                        ip, "show version | include License Level", timeout=10
+                    )
                 except Exception:
                     continue
                 if "License Level: network-advantage" in out:
@@ -360,20 +514,46 @@ def export_nodes(eve: Eve, topo: dict) -> Path:
     for name, n in sorted(eve.nodes().items()):
         if name not in topo["nodes"]:
             continue
-        rows[name] = {"id": n["id"], "mac0": f"50:00:00:{n['id']:02x}:00:00", "mgmt_ip": topo["nodes"][name]["mgmt_ip"], "platform": topo["nodes"][name]["platform"]}
-    out.write_text("# Generated by eve/build.py export; do not edit. Node ids depend on creation order.\n" + yaml.safe_dump({"lab": topo["lab"]["path"], "nodes": rows}, sort_keys=False))
+        rows[name] = {
+            "id": n["id"],
+            "mac0": f"50:00:00:{n['id']:02x}:00:00",
+            "mgmt_ip": topo["nodes"][name]["mgmt_ip"],
+            "platform": topo["nodes"][name]["platform"],
+        }
+    out.write_text(
+        "# Generated by eve/build.py export; do not edit. Node ids depend on creation order.\n"
+        + yaml.safe_dump({"lab": topo["lab"]["path"], "nodes": rows}, sort_keys=False)
+    )
     return out
 
 
 def main() -> None:
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("action", choices=["plan", "apply", "start", "stop", "status", "export", "push-configs"])
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    ap.add_argument(
+        "action",
+        choices=["plan", "apply", "start", "stop", "status", "export", "push-configs"],
+    )
     ap.add_argument("--only", nargs="*", help="push-configs: limit to these node names")
-    ap.add_argument("--allow-missing", action="store_true", help="apply: skip nodes whose image is absent (loud)")
-    ap.add_argument("--waves", action="store_true", help="start: firewalls last, in two waves 300 s apart")
+    ap.add_argument(
+        "--allow-missing",
+        action="store_true",
+        help="apply: skip nodes whose image is absent (loud)",
+    )
+    ap.add_argument(
+        "--waves",
+        action="store_true",
+        help="start: firewalls last, in two waves 300 s apart",
+    )
     a = ap.parse_args()
     topo = load_topology()
-    eve = Eve(os.environ["EVE_HOST"], os.environ["EVE_USERNAME"], os.environ["EVE_PASSWORD"], topo["lab"]["path"])
+    eve = Eve(
+        os.environ["EVE_HOST"],
+        os.environ["EVE_USERNAME"],
+        os.environ["EVE_PASSWORD"],
+        topo["lab"]["path"],
+    )
     if a.action == "plan":
         print(json.dumps(plan(eve, topo), indent=2))
         sys.exit(1 if plan(eve, topo)["missing_images"] else 0)
@@ -391,7 +571,9 @@ def main() -> None:
         print(export_nodes(eve, topo))
     elif a.action == "status":
         for name, n in sorted(eve.nodes().items()):
-            print(f"{name:14s} status={n.get('status')} image={n.get('image')} ram={n.get('ram')}")
+            print(
+                f"{name:14s} status={n.get('status')} image={n.get('image')} ram={n.get('ram')}"
+            )
 
 
 if __name__ == "__main__":

@@ -18,15 +18,26 @@ lab:
 
 sites:
   wan: {name: WAN, description: "Simulated provider core"}
-  dc1: {name: DC1, description: "Data centre: HA firewalls, EVPN-VXLAN fabric"}
-  br1: {name: Branch 1, description: "Branch: WAN router, firewall, switch, clients"}
-  br2: {name: Branch 2, description: "Branch: WAN router, firewall, switch, clients"}
+  dc1: {name: DC1, description: "Data centre: HA firewalls, EVPN-VXLAN fabric", aggregate: 10.101.0.0/16}
+  br1: {name: Branch 1, description: "Branch: WAN router, firewall, switch, clients", aggregate: 10.102.16.0/20}
+  br2: {name: Branch 2, description: "Branch: WAN router, firewall, switch, clients", aggregate: 10.102.32.0/20}
 
 routing:
   asn: {isp: 65000, dc1_edge: 65100, dc1_spine: 65101, dc1_leaf: 65102, dc1_fw: 65103, br1: 65201, br2: 65202}
   # WAN tunnels: gre = GRE-over-IPsec (IKEv2, tunnel protection; carries multicast/IPv6 later),
   # ipsec = FlexVPN static VTI (tunnel mode ipsec ipv4). Same IKEv2 policy, ciphers and BGP either way.
   wan_tunnel_mode: gre
+  # IKEv2 tunnels, one per DC edge x branch, in the link syntax (a-side .1, b-side .2 of the /30); the
+  # interface number is the tunnel id on that router (ADR 0048: the YAML owns every address).
+  tunnels:
+    - {a: "dc1-wan01:Tunnel1", b: "br1-wan01:Tunnel1", prefix: 10.103.100.0/30}
+    - {a: "dc1-wan01:Tunnel2", b: "br2-wan01:Tunnel1", prefix: 10.103.100.4/30}
+    - {a: "dc1-wan02:Tunnel1", b: "br1-wan01:Tunnel2", prefix: 10.103.100.8/30}
+    - {a: "dc1-wan02:Tunnel2", b: "br2-wan01:Tunnel2", prefix: 10.103.100.12/30}
+  # the active firewall's address on the VLAN 100 transit (eBGP from both leaves once lab.firewalls is true)
+  firewall_transit_gateway: 10.101.1.1
+  # what the fabric advertises as loopbacks (PL-LOOPBACKS): router-ids and the anycast VTEP
+  loopback_prefixes: [10.101.254.0/24, 10.101.253.0/24]
 
 # image = EVE-NG folder under /opt/unetlab/addons/qemu (manifest keys: c8000v, veos, pa-vm, ubuntu, win11)
 nodes:
@@ -40,6 +51,8 @@ nodes:
     ram: 6144
     ethernet: 8
     eve: {left: 560, top: 60}
+    addressing:
+      loopbacks: [{name: Loopback0, address: 10.103.255.1/32, description: router-id}]
   dc1-wan01:
     site: dc1
     role: wan-edge
@@ -50,6 +63,8 @@ nodes:
     ram: 6144
     ethernet: 8
     eve: {left: 420, top: 180}
+    addressing:
+      loopbacks: [{name: Loopback0, address: 10.103.255.11/32, description: router-id}]
   dc1-wan02:
     site: dc1
     role: wan-edge
@@ -60,6 +75,8 @@ nodes:
     ram: 6144
     ethernet: 8
     eve: {left: 700, top: 180}
+    addressing:
+      loopbacks: [{name: Loopback0, address: 10.103.255.12/32, description: router-id}]
   dc1-fw01:
     site: dc1
     role: firewall
@@ -90,6 +107,8 @@ nodes:
     ram: 4096
     ethernet: 9
     eve: {left: 420, top: 420}
+    addressing:
+      loopbacks: [{name: Loopback0, address: 10.101.254.1/32, description: router-id}]
   dc1-spine02:
     site: dc1
     role: spine
@@ -100,6 +119,8 @@ nodes:
     ram: 4096
     ethernet: 9
     eve: {left: 700, top: 420}
+    addressing:
+      loopbacks: [{name: Loopback0, address: 10.101.254.2/32, description: router-id}]
   dc1-leaf01:
     site: dc1
     role: leaf
@@ -110,6 +131,15 @@ nodes:
     ram: 4096
     ethernet: 9
     eve: {left: 420, top: 540}
+    addressing:
+      loopbacks:
+        - {name: Loopback0, address: 10.101.254.11/32, description: router-id}
+        - {name: Loopback1, address: 10.101.253.1/32, description: anycast VTEP, anycast: true}
+      svis:
+        - {name: Vlan4094, address: 10.101.252.1/30, description: MLAG peer}
+        - {name: Vlan10, vrf: PROD, virtual: 10.101.10.1/24, description: servers}
+        - {name: Vlan100, vrf: PROD, address: 10.101.1.252/24, virtual: 10.101.1.254/24,
+           description: transit to the firewalls (eBGP per leaf)}
   dc1-leaf02:
     site: dc1
     role: leaf
@@ -120,6 +150,15 @@ nodes:
     ram: 4096
     ethernet: 9
     eve: {left: 700, top: 540}
+    addressing:
+      loopbacks:
+        - {name: Loopback0, address: 10.101.254.12/32, description: router-id}
+        - {name: Loopback1, address: 10.101.253.1/32, description: anycast VTEP, anycast: true}
+      svis:
+        - {name: Vlan4094, address: 10.101.252.2/30, description: MLAG peer}
+        - {name: Vlan10, vrf: PROD, virtual: 10.101.10.1/24, description: servers}
+        - {name: Vlan100, vrf: PROD, address: 10.101.1.253/24, virtual: 10.101.1.254/24,
+           description: transit to the firewalls (eBGP per leaf)}
   dc1-acc01:
     site: dc1
     role: access
@@ -150,6 +189,10 @@ nodes:
     ram: 6144
     ethernet: 4
     eve: {left: 140, top: 180}
+    addressing:
+      loopbacks: [{name: Loopback0, address: 10.103.255.21/32, description: router-id}]
+      # the users VLAN gateway: on the firewall, or on the router's Gi4 while lab.firewalls is false
+      lan: {vlan: 10, prefix: 10.102.17.0/24, gateway: 10.102.17.1/24, description: users}
   br1-fw01:
     site: br1
     role: firewall
@@ -211,6 +254,9 @@ nodes:
     ram: 6144
     ethernet: 4
     eve: {left: 980, top: 180}
+    addressing:
+      loopbacks: [{name: Loopback0, address: 10.103.255.22/32, description: router-id}]
+      lan: {vlan: 10, prefix: 10.102.33.0/24, gateway: 10.102.33.1/24, description: users}
   br2-fw01:
     site: br2
     role: firewall
@@ -307,3 +353,27 @@ links:
   - {a: "dc1-wan02:Gi6", b: "dc1-leaf02:Eth7", prefix: 10.101.3.4/30, bypass: true}
   - {a: "br1-wan01:Gi4", b: "br1-sw01:Eth4", vlan: 10, bypass: true}
   - {a: "br2-wan01:Gi4", b: "br2-sw01:Eth4", vlan: 10, bypass: true}
+
+# VRFs the devices run (ADR 0034/0048); RDs are per device (WAN: <asn>:1, PROD: <router-id>:50001)
+vrfs:
+  MGMT: {description: "OOB management (pnet1)", platforms: [c8000v, veos]}
+  WAN: {description: "front-door VRF: provider transport only", platforms: [c8000v], rd: "<asn>:1"}
+  PROD: {description: "DC1 tenant VRF (L3VNI 50001)", platforms: [veos], rd: "<router-id>:50001", route_targets: ["50001:50001"]}
+
+# in-band prefixes (docs/ip-plan.md section 6); netbox-topology.yml seeds them, netbox-enrich.yml fills them
+inband_prefixes:
+  - {prefix: 10.103.0.0/24, site: wan, role: wan-transit, description: "ISP-to-site /30s"}
+  - {prefix: 10.103.100.0/24, site: wan, role: wan-transit, description: "GRE/IPsec tunnels"}
+  - {prefix: 10.103.255.0/24, site: wan, role: wan-transit, description: "router loopbacks"}
+  - {prefix: 10.101.255.0/24, site: dc1, role: dc-inband, description: "fabric underlay /31s"}
+  - {prefix: 10.101.254.0/24, site: dc1, role: dc-inband, description: "fabric loopbacks"}
+  - {prefix: 10.101.253.0/24, site: dc1, role: dc-inband, description: "VTEP loopbacks"}
+  - {prefix: 10.101.252.0/30, site: dc1, role: dc-inband, description: "MLAG peer link"}
+  - {prefix: 10.101.2.0/24, site: dc1, role: dc-inband, description: "WAN edge to firewall routed /30s"}
+  - {prefix: 10.101.3.0/24, site: dc1, role: dc-inband, description: "firewall bypass /30s (lab.firewalls false)"}
+  - {prefix: 10.101.1.0/24, site: dc1, role: dc-inband, description: "VLAN 100 transit, VRF PROD", vlan: 100, vrf: PROD}
+  - {prefix: 10.101.10.0/24, site: dc1, role: dc-inband, description: "server VLAN 10", vlan: 10, vrf: PROD}
+  - {prefix: 10.102.16.0/20, site: br1, role: branch-inband, description: "branch 1"}
+  - {prefix: 10.102.17.0/24, site: br1, role: branch-inband, description: "branch 1 users VLAN 10", vlan: 10}
+  - {prefix: 10.102.32.0/20, site: br2, role: branch-inband, description: "branch 2"}
+  - {prefix: 10.102.33.0/24, site: br2, role: branch-inband, description: "branch 2 users VLAN 10", vlan: 10}
