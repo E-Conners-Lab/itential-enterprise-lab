@@ -16,6 +16,12 @@ from pathlib import Path
 import yaml
 
 TOPO = Path(__file__).resolve().parent / "enterprise.yaml"
+# the YAML (and EVE-NG) use short port names; NetBox and the templates use the device's own names
+SHORT_TO_DEVICE = {
+    "c8000v": (("Gi", "GigabitEthernet"),),
+    "veos": (("Mgmt1", "Management1"), ("Eth", "Ethernet")),
+    "pa-vm": (("eth", "ethernet"), ("mgmt", "management")),
+}
 SITE_ASN_KEY = {"wan": "isp", "dc1": "dc1_edge"}  # branches use their own site key
 
 
@@ -25,6 +31,14 @@ def load_topology() -> dict:
 
 def site_asn(routing: dict, site: str) -> int:
     return routing["asn"][SITE_ASN_KEY.get(site, site)]
+
+
+def device_name(platform: str, iface: str) -> str:
+    """The interface name the device itself uses: Gi2 -> GigabitEthernet2, Eth1 -> Ethernet1, Mgmt1 -> Management1."""
+    for short, long in SHORT_TO_DEVICE.get(platform, ()):
+        if iface.startswith(short) and not iface.startswith(long):
+            return long + iface[len(short) :]
+    return iface
 
 
 def bare(address: str) -> str:
@@ -243,7 +257,8 @@ def interfaces(topo: dict) -> dict[str, list[dict]]:
                 " (firewall bypass)" if link.get("bypass") else ""
             )
             row = {
-                "name": mine,
+                "name": device_name(node["platform"], mine),
+                "seed_name": mine,
                 "kind": "link",
                 "description": description,
                 "address": None,
@@ -280,5 +295,28 @@ def interfaces(topo: dict) -> dict[str, list[dict]]:
     return out
 
 
+def ports(topo: dict) -> dict[str, str]:
+    """Every link end in the YAML's short form -> the device's own interface name (for the seed play's cables)."""
+    out = {}
+    for link in topo["links"]:
+        for end in (link["a"], link["b"]):
+            node, iface = end.split(":")
+            out[end] = device_name(topo["nodes"][node]["platform"], iface)
+    return out
+
+
 if __name__ == "__main__":
-    json.dump(interfaces(load_topology()), sys.stdout, indent=1)
+    topology = load_topology()
+    per_device = interfaces(topology)
+    flat = [
+        dict(row, device=device)
+        for device, items in per_device.items()
+        for row in items
+    ]
+    port_map = ports(topology)
+    renames = {k: v for k, v in port_map.items() if k.split(":")[1] != v}
+    json.dump(
+        {"interfaces": per_device, "rows": flat, "ports": port_map, "renames": renames},
+        sys.stdout,
+        indent=1,
+    )

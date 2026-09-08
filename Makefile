@@ -8,7 +8,7 @@ SHELL := /bin/bash
 
 PHASES := oob-network platform network-topology itential flowai ddi identity observability config-secrets-code panorama containerlab
 
-.PHONY: help bootstrap lint test up verify discover plan-oob plan-platform plan-itential $(addprefix phase-,$(PHASES))
+.PHONY: help bootstrap lint test up verify discover netbox-enrich plan-oob plan-platform plan-itential $(addprefix phase-,$(PHASES))
 
 help: ## Show targets
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-22s\033[0m %s\n", $$1, $$2}'
@@ -42,6 +42,9 @@ plan-itential: ## Phase 5: show what tofu would change (read-only)
 
 lint: ## Run every CI check locally
 	pre-commit run --all-files
+
+netbox-enrich: ## NetBox enrichment derived from topology/enterprise.yaml (addresses, VRFs, racks, circuits, contexts; ADR 0048)
+	$(load_env) cd ansible && ansible-playbook playbooks/netbox-enrich.yml
 
 discover: ## Phase 0: read-only inventory of Proxmox, EVE-NG, NetBox (writes verify/results/)
 	verify/discover.sh
@@ -82,6 +85,7 @@ phase-platform: ## Phase 3: NetBox VMs -> tofu apply -> k3s cluster -> Cilium/Me
 # to `start` once lab.firewalls is true (PA-VM boot storm, PID E3).
 phase-network-topology: ## Phase 4: NetBox topology -> EVE-NG plan/apply -> start -> node MAC export -> oob-gw DHCP reservations -> Linux endpoints -> verify
 	$(load_env) cd ansible && ansible-playbook playbooks/netbox-topology.yml
+	$(load_env) cd ansible && ansible-playbook playbooks/netbox-enrich.yml
 	$(load_env) .venv/bin/python eve/build.py plan
 	$(load_env) .venv/bin/python eve/build.py apply
 	$(load_env) .venv/bin/python eve/build.py start

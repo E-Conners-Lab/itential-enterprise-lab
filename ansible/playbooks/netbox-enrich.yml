@@ -1,0 +1,176 @@
+---
+# NetBox enrichment derived from topology/enterprise.yaml (PID S4e, ADR 0048). Runs after netbox-topology.yml.
+# Element 1: every addressed interface with its address, VRF and "to <peer>" description; the virtual interfaces
+# (loopbacks, SVIs, tunnels); interfaces the seed once created with the YAML short names are renamed in place
+# (same id, same cable). Idempotent: create or update only, changed=0 on the second run.
+- name: Enrich NetBox from the topology
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars_files:
+    - ../../topology/enterprise.yaml
+  vars:
+    ansible_python_interpreter: "{{ playbook_dir }}/../../.venv/bin/python"
+    nb_url: "{{ lookup('ansible.builtin.env', 'NETBOX_URL') }}"
+    nb_token: "{{ lookup('ansible.builtin.env', 'NETBOX_TOKEN') }}"
+    nb_headers: {Authorization: "Token {{ nb_token }}", Accept: application/json, Content-Type: application/json}
+    tag: phase-6
+  tasks:
+    - name: The intent from topology/derive.py (interfaces per device, port map)
+      ansible.builtin.command: "{{ ansible_python_interpreter }} {{ playbook_dir }}/../../topology/derive.py"
+      register: derive_out
+      changed_when: false
+
+    - name: The intent as facts (every addressed or linked interface with its device)
+      ansible.builtin.set_fact:
+        intent: "{{ derive_out.stdout | from_json }}"
+        rows: "{{ (derive_out.stdout | from_json).rows }}"
+
+    - name: Tag {{ tag }}
+      netbox.netbox.netbox_tag:
+        netbox_url: "{{ nb_url }}"
+        netbox_token: "{{ nb_token }}"
+        validate_certs: false
+        data: {name: "{{ tag }}", slug: "{{ tag }}", color: "2196f3", description: "Phase 6 NetBox enrichment (ADR 0048)"}
+
+    - name: VRFs (names and descriptions; RDs and route targets follow in S4e.2)
+      netbox.netbox.netbox_vrf:
+        netbox_url: "{{ nb_url }}"
+        netbox_token: "{{ nb_token }}"
+        validate_certs: false
+        data: {name: "{{ item.key }}", description: "{{ item.value.description }}", tags: ["{{ tag }}"]}
+      loop: "{{ vrfs | dict2items }}"
+      loop_control:
+        label: "{{ item.key }}"
+
+    # --- the seed once created link ports with the YAML short names; rename in place (id and cable survive) ---
+    - name: Link ports still carrying a YAML short name (every link end, firewall-facing ports included)
+      ansible.builtin.uri:
+        url: "{{ nb_url }}/api/dcim/interfaces/?device={{ item.key.split(':')[0] }}&name={{ item.key.split(':')[1] }}"
+        headers: "{{ nb_headers }}"
+        validate_certs: false
+      loop: "{{ intent.renames | dict2items }}"
+      loop_control:
+        label: "{{ item.key }}"
+      register: short_named
+
+    - name: Rename them to the device's own name
+      ansible.builtin.uri:
+        url: "{{ nb_url }}/api/dcim/interfaces/{{ item.json.results[0].id }}/"
+        method: PATCH
+        headers: "{{ nb_headers }}"
+        body_format: json
+        body: {name: "{{ item.item.value }}"}
+        validate_certs: false
+        status_code: 200
+      loop: "{{ short_named.results | selectattr('json', 'defined') | selectattr('json.count', 'equalto', 1) | list }}"
+      loop_control:
+        label: "{{ item.item.key }} -> {{ item.item.value }}"
+      changed_when: true
+
+    - name: Virtual interfaces (loopbacks, SVIs, tunnels) with their descriptions
+      netbox.netbox.netbox_device_interface:
+        netbox_url: "{{ nb_url }}"
+        netbox_token: "{{ nb_token }}"
+        validate_certs: false
+        data:
+          device: "{{ item.device }}"
+          name: "{{ item.name }}"
+          type: virtual
+          description: "{{ item.description }}"
+          vrf: "{{ item.vrf | default(omit, true) }}"
+          tags: ["{{ tag }}"]
+      loop: "{{ rows | rejectattr('kind', 'equalto', 'link') | list }}"
+      loop_control:
+        label: "{{ item.device }} {{ item.name }}"
+
+    - name: Link ports carry the 'to <peer>' description the device runs (and their VRF)
+      netbox.netbox.netbox_device_interface:
+        netbox_url: "{{ nb_url }}"
+        netbox_token: "{{ nb_token }}"
+        validate_certs: false
+        data:
+          device: "{{ item.device }}"
+          name: "{{ item.name }}"
+          description: "{{ item.description }}"
+          vrf: "{{ item.vrf | default(omit, true) }}"
+      loop: "{{ rows | selectattr('kind', 'equalto', 'link') | list }}"
+      loop_control:
+        label: "{{ item.device }} {{ item.name }}"
+
+    - name: Addresses on their interfaces (one device each)
+      netbox.netbox.netbox_ip_address:
+        netbox_url: "{{ nb_url }}"
+        netbox_token: "{{ nb_token }}"
+        validate_certs: false
+        data:
+          address: "{{ item.address }}"
+          vrf: "{{ item.vrf | default(omit, true) }}"
+          status: active
+          assigned_object: {device: "{{ item.device }}", name: "{{ item.name }}"}
+          description: "{{ item.device }} {{ item.name }}"
+          tags: ["{{ tag }}"]
+      loop: "{{ rows | selectattr('address', 'string') | rejectattr('anycast', 'defined') | list
+                + (rows | selectattr('address', 'string') | selectattr('anycast', 'defined') | rejectattr('anycast') | list) }}"
+      loop_control:
+        label: "{{ item.device }} {{ item.name }} {{ item.address }}"
+
+    # --- shared addresses (the anycast VTEP, the anycast gateway, the virtual router) exist once per leaf: the
+    # collection's lookup finds the other leaf's object and moves it (measured 2026-09-08), so these go through
+    # the API with a per-device lookup ---
+    - name: VRF ids
+      ansible.builtin.uri:
+        url: "{{ nb_url }}/api/ipam/vrfs/?limit=100"
+        headers: "{{ nb_headers }}"
+        validate_certs: false
+      register: vrf_list
+
+    - name: Shared addresses already on their device
+      ansible.builtin.uri:
+        url: >-
+          {{ nb_url }}/api/ipam/ip-addresses/?address={{ item.virtual | default(item.address) }}&device={{ item.device
+          }}&interface={{ item.name }}
+        headers: "{{ nb_headers }}"
+        validate_certs: false
+      loop: "{{ shared_rows }}"
+      loop_control:
+        label: "{{ item.device }} {{ item.name }} {{ item.virtual | default(item.address) }}"
+      register: shared_present
+      vars:
+        shared_rows: >-
+          {{ (rows | selectattr('anycast', 'defined') | selectattr('anycast') | list)
+             + (rows | selectattr('virtual', 'defined') | selectattr('virtual', 'string') | list) }}
+
+    - name: The interface ids for the shared addresses still missing
+      ansible.builtin.uri:
+        url: "{{ nb_url }}/api/dcim/interfaces/?device={{ item.item.device }}&name={{ item.item.name }}"
+        headers: "{{ nb_headers }}"
+        validate_certs: false
+      loop: "{{ shared_present.results | selectattr('json.count', 'equalto', 0) | list }}"
+      loop_control:
+        label: "{{ item.item.device }} {{ item.item.name }}"
+      register: shared_ifaces
+
+    - name: Shared addresses created on their device (role anycast, so NetBox allows the duplicate)
+      ansible.builtin.uri:
+        url: "{{ nb_url }}/api/ipam/ip-addresses/"
+        method: POST
+        headers: "{{ nb_headers }}"
+        body_format: json
+        body:
+          address: "{{ item.item.item.virtual | default(item.item.item.address) }}"
+          vrf: >-
+            {{ (vrf_list.json.results | selectattr('name', 'equalto', item.item.item.vrf) | map(attribute='id') | first)
+               if item.item.item.vrf else None }}
+          status: active
+          role: anycast
+          assigned_object_type: dcim.interface
+          assigned_object_id: "{{ item.json.results[0].id }}"
+          description: "{{ item.item.item.device }} {{ item.item.item.name }} (shared)"
+          tags: [{name: "{{ tag }}"}]
+        validate_certs: false
+        status_code: 201
+      loop: "{{ shared_ifaces.results | default([]) }}"
+      loop_control:
+        label: "{{ item.item.item.device }} {{ item.item.item.name }} {{ item.item.item.virtual | default(item.item.item.address) }}"
+      changed_when: true

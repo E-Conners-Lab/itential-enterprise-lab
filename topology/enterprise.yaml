@@ -51,8 +51,8 @@ nodes:
     ram: 6144
     ethernet: 8
     eve: {left: 560, top: 60}
-    addressing:
-      loopbacks: [{name: Loopback0, address: 10.103.255.1/32, description: router-id}]
+    addressing: # IOS-XE loopbacks carry no description on the device, so none here (NetBox = what runs)
+      loopbacks: [{name: Loopback0, address: 10.103.255.1/32}]
   dc1-wan01:
     site: dc1
     role: wan-edge
@@ -64,7 +64,7 @@ nodes:
     ethernet: 8
     eve: {left: 420, top: 180}
     addressing:
-      loopbacks: [{name: Loopback0, address: 10.103.255.11/32, description: router-id}]
+      loopbacks: [{name: Loopback0, address: 10.103.255.11/32}]
   dc1-wan02:
     site: dc1
     role: wan-edge
@@ -76,7 +76,7 @@ nodes:
     ethernet: 8
     eve: {left: 700, top: 180}
     addressing:
-      loopbacks: [{name: Loopback0, address: 10.103.255.12/32, description: router-id}]
+      loopbacks: [{name: Loopback0, address: 10.103.255.12/32}]
   dc1-fw01:
     site: dc1
     role: firewall
@@ -190,7 +190,7 @@ nodes:
     ethernet: 4
     eve: {left: 140, top: 180}
     addressing:
-      loopbacks: [{name: Loopback0, address: 10.103.255.21/32, description: router-id}]
+      loopbacks: [{name: Loopback0, address: 10.103.255.21/32}]
       # the users VLAN gateway: on the firewall, or on the router's Gi4 while lab.firewalls is false
       lan: {vlan: 10, prefix: 10.102.17.0/24, gateway: 10.102.17.1/24, description: users}
   br1-fw01:
@@ -255,7 +255,7 @@ nodes:
     ethernet: 4
     eve: {left: 980, top: 180}
     addressing:
-      loopbacks: [{name: Loopback0, address: 10.103.255.22/32, description: router-id}]
+      loopbacks: [{name: Loopback0, address: 10.103.255.22/32}]
       lan: {vlan: 10, prefix: 10.102.33.0/24, gateway: 10.102.33.1/24, description: users}
   br2-fw01:
     site: br2

@@ -19,6 +19,15 @@
     mgmt_iface_of: {c8000v: GigabitEthernet1, veos: Management1, pa-vm: management, ubuntu: eth0, win11: eth0}
     # inband_prefixes: from topology/enterprise.yaml (vars_files), ADR 0048
   tasks:
+    - name: Port names the devices use (topology/derive.py device_name; NetBox never holds the YAML short names, ADR 0048)
+      ansible.builtin.command: "{{ ansible_python_interpreter }} {{ playbook_dir }}/../../topology/derive.py"
+      register: derive_out
+      changed_when: false
+
+    - name: The port map
+      ansible.builtin.set_fact:
+        ports: "{{ (derive_out.stdout | from_json).ports }}"
+
     - name: Sites
       netbox.netbox.netbox_site:
         netbox_url: "{{ nb_url }}"
@@ -105,7 +114,7 @@
         validate_certs: false
         data:
           device: "{{ item.split(':')[0] }}"
-          name: "{{ item.split(':')[1] }}"
+          name: "{{ ports[item] }}"
           type: 1000base-t
       loop: "{{ (links | map(attribute='a') | list) + (links | map(attribute='b') | list) }}"
 
@@ -116,9 +125,9 @@
         validate_certs: false
         data:
           termination_a_type: dcim.interface
-          termination_a: {device: "{{ item.a.split(':')[0] }}", name: "{{ item.a.split(':')[1] }}"}
+          termination_a: {device: "{{ item.a.split(':')[0] }}", name: "{{ ports[item.a] }}"}
           termination_b_type: dcim.interface
-          termination_b: {device: "{{ item.b.split(':')[0] }}", name: "{{ item.b.split(':')[1] }}"}
+          termination_b: {device: "{{ item.b.split(':')[0] }}", name: "{{ ports[item.b] }}"}
           status: planned
       loop: "{{ links if not (lab.firewalls | default(true)) else (links | rejectattr('bypass', 'defined') | list) }}"
       loop_control:
@@ -132,9 +141,9 @@
         state: absent
         data:
           termination_a_type: dcim.interface
-          termination_a: {device: "{{ item.a.split(':')[0] }}", name: "{{ item.a.split(':')[1] }}"}
+          termination_a: {device: "{{ item.a.split(':')[0] }}", name: "{{ ports[item.a] }}"}
           termination_b_type: dcim.interface
-          termination_b: {device: "{{ item.b.split(':')[0] }}", name: "{{ item.b.split(':')[1] }}"}
+          termination_b: {device: "{{ item.b.split(':')[0] }}", name: "{{ ports[item.b] }}"}
       loop: "{{ links | selectattr('bypass', 'defined') | list if (lab.firewalls | default(true)) else [] }}"
       loop_control:
         label: "{{ item.a }} <-> {{ item.b }}"
