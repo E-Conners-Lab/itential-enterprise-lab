@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Name** | itential-enterprise-lab |
-| **Version** | 1.13 |
+| **Version** | 1.14 |
 | **Date** | 2026-09-08 |
 | **Author** | Elliot Conner. Claude Code is the build agent; every action it takes is bounded by this document |
 | **Standard** | Project Initiation Standard PIS-01 - PIS-30 (`~/.claude/skills/project-initiation-standard`) |
@@ -564,6 +564,12 @@ URL recorded. Sub-agents return reports; only distilled, sourced facts enter
 
 ## Domain 7 — Cost and Token Economics
 
+> **Amendment 1.14 (ADR 0049):** the `ANTHROPIC_API_KEY` is the owner's company key. Budget **$15 a week**; the
+> Agent Session Manager is the ledger (`verify/tokens.sh` / `make tokens`, prices in `itential/versions.yaml`
+> `llm.budget`); `verify/test-06-flowai.sh` and `verify/test-06c-netbox.sh` refuse to start Anthropic sessions once
+> the week is spent (`ANTHROPIC_VERIFY=force` overrides); a full Anthropic verify runs once per PR, iteration uses
+> `ONLY=` subsets or the `-local` twins. Measured 2026-09-09: ~$4.50 for the week since 2026-09-02.
+
 The runtime system contains no LLM. Token cost is the cost of *building* the
 lab with Claude Code; the other costs are electricity and licences.
 
@@ -671,4 +677,5 @@ the verify log path and any ADRs added.
 | 1.11 | 2026-09-08 | Phase 6 element 5: S4d.5 detailed (the five-agent fleet with local twins, tiered autonomy, the diagnostics work note as the only ungated write, remediation through `wf-config-push-v1` only; ADR 0046) |
 | 1.12 | 2026-09-08 | Phase 6 element 6: S4d.6 detailed (the Ubuntu hosts in the `lab-hosts` Gateway 5 inventory, password login for the automation user on the endpoints, Configuration Manager untouched; ADR 0047) |
 | 1.13 | 2026-09-08 | Phase 6 element 7 (owner request): S4e NetBox enrichment derived from `topology/enterprise.yaml` (addressing on interfaces with peer descriptions, VRFs and ASNs with BGP neighbours in config contexts, racks, provider circuits, config contexts, journal entries; the templates read the YAML, rendered configs unchanged; `netbox-enrich.yml`; `verify/test-06c-netbox.sh`; ADR 0048) |
+| 1.14 | 2026-09-09 | Domain 7: the Anthropic key is the owner's company key with a $15-a-week budget; the platform's session documents are the ledger (`verify/tokens.sh`, `make tokens`, `llm.budget` in versions.yaml), the agent verifies guard it, iteration runs on the local twins or `ONLY=` subsets (ADR 0049) |
 | 1.5 | 2026-09-07 | Phase 5 (S4b): Gateway 5 is the only gateway (Gateway 4 staged, not deployed); the PDI needs no customisation (stock standard-change template + Network group + one integration user), so S4b.3 is a rebuild record `servicenow/README.md` instead of an update set; S4b.2 evidence is the states ServiceNow returns to the workflow plus the change read back (`sys_audit` is admin-only on a PDI); PDI `dev409097`, Australia; basic auth needs `snc_basic_auth_api_access` on 2026 instances |

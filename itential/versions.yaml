@@ -117,6 +117,10 @@ golden_config:
 # by ansible/playbooks/flowai.yml through the Model Registry (write-only credentials).
 llm:
   default_profile: anthropic
+  # The Anthropic key is the owner's company key (ADR 0049): about $15 a week. verify/tokens.sh meters the last
+  # 7 days from the Agent Session Manager at these list prices (claude-sonnet-5, 2026-09-09) and the agent
+  # verifies refuse to start Anthropic sessions once the week is spent (ANTHROPIC_VERIFY=force overrides).
+  budget: {provider: anthropic, weekly_usd: 15, input_usd_per_mtok: 2.00, output_usd_per_mtok: 10.00}
   profiles:
     - name: anthropic
       provider: anthropic

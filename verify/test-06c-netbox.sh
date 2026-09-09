@@ -87,6 +87,12 @@ mkdir -p verify/results; exec > >(tee "verify/results/${ts}-06c-netbox.log") 2>&
 echo "# test-06c-netbox ${ts}"
 [ -s "$CA" ] || { bad "$CA missing"; echo; echo "passed=0 failed=1"; exit 1; }
 iap_login || { bad "login to ${PLATFORM} as ${ADMIN_USER}"; echo; echo "passed=0 failed=1"; exit 1; }
+# --- budget guard (ADR 0049): this run starts Anthropic sessions; the week's spend comes from the platform meter ---
+if [ "${ANTHROPIC_VERIFY:-}" != "force" ]; then
+  verify/tokens.sh --check || { bad "Anthropic weekly budget spent (verify/tokens.sh); set ANTHROPIC_VERIFY=force to run anyway"; echo; echo "passed=0 failed=1"; exit 1; }
+else
+  echo "budget guard bypassed (ANTHROPIC_VERIFY=force)"
+fi
 ${PY} topology/derive.py > "$WORK/intent.json" || { bad "topology/derive.py"; exit 1; }
 nb "${NETBOX_URL}/api/dcim/interfaces/?limit=1000" > "$WORK/nb-interfaces.json"
 nb "${NETBOX_URL}/api/ipam/ip-addresses/?limit=1000" > "$WORK/nb-addresses.json"

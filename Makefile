@@ -8,7 +8,7 @@ SHELL := /bin/bash
 
 PHASES := oob-network platform network-topology itential flowai ddi identity observability config-secrets-code panorama containerlab
 
-.PHONY: help bootstrap lint test up verify discover netbox-enrich plan-oob plan-platform plan-itential $(addprefix phase-,$(PHASES))
+.PHONY: help bootstrap lint test up verify discover netbox-enrich tokens plan-oob plan-platform plan-itential $(addprefix phase-,$(PHASES))
 
 help: ## Show targets
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-22s\033[0m %s\n", $$1, $$2}'
@@ -42,6 +42,9 @@ plan-itential: ## Phase 5: show what tofu would change (read-only)
 
 lint: ## Run every CI check locally
 	pre-commit run --all-files
+
+tokens: ## Anthropic spend of the last 7 days from the platform's session ledger against llm.budget (ADR 0049)
+	verify/tokens.sh
 
 netbox-enrich: ## NetBox enrichment derived from topology/enterprise.yaml (addresses, VRFs, racks, circuits, contexts; ADR 0048)
 	$(load_env) cd ansible && ansible-playbook playbooks/netbox-enrich.yml

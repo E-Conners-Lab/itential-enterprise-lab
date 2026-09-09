@@ -55,6 +55,12 @@ mkdir -p verify/results; exec > >(tee "verify/results/${ts}-06-flowai.log") 2>&1
 echo "# test-06-flowai ${ts}"
 [ -s "$CA" ] || { bad "$CA missing"; echo; echo "passed=0 failed=6"; exit 1; }
 iap_login || { bad "login to ${PLATFORM} as ${ADMIN_USER}"; echo; echo "passed=0 failed=6"; exit 1; }
+# --- budget guard (ADR 0049): this run starts Anthropic sessions; the week's spend comes from the platform meter ---
+if [ "${ANTHROPIC_VERIFY:-}" != "force" ]; then
+  verify/tokens.sh --check || { bad "Anthropic weekly budget spent (verify/tokens.sh); set ANTHROPIC_VERIFY=force to run anyway"; echo; echo "passed=0 failed=1"; exit 1; }
+else
+  echo "budget guard bypassed (ANTHROPIC_VERIFY=force)"
+fi
 ANTHROPIC_MODEL=$(${PY} -c "import yaml;p={x['name']:x for x in yaml.safe_load(open('$V'))['llm']['profiles']};print(p['anthropic']['model'])")
 OLLAMA_MODEL=$(${PY} -c "import yaml;p={x['name']:x for x in yaml.safe_load(open('$V'))['llm']['profiles']};print(p['ollama-lab']['model'])")
 
