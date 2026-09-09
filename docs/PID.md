@@ -3,8 +3,8 @@
 | | |
 |---|---|
 | **Name** | itential-enterprise-lab |
-| **Version** | 1.5 |
-| **Date** | 2026-09-06 |
+| **Version** | 1.12 |
+| **Date** | 2026-09-08 |
 | **Author** | Elliot Conner. Claude Code is the build agent; every action it takes is bounded by this document |
 | **Standard** | Project Initiation Standard PIS-01 - PIS-30 (`~/.claude/skills/project-initiation-standard`) |
 | **Companion docs** | `docs/discovery.md` (what exists), `docs/ip-plan.md`, `docs/resource-budget.md`, `docs/image-manifest.md`, `docs/adr/` (why), `docs/manual-steps.md` |
@@ -160,7 +160,7 @@ Conventions: **Placement** is Proxmox VM (OpenTofu + Ansible), k3s (Helm/Kustomi
   1. Platform UI and API reachable on 10.100.0.65 over TLS from the lab CA; IAG registered as a gateway in the platform.
   2. NetBox adapter: a workflow reads the device list and returns the same count as `GET /api/dcim/devices/`.
   3. Device adapters: a workflow runs `show version` on one node of each vendor through IAG and the version string equals the manifest.
-  4. First workflow (`wf-branch-vlan-v1`): given a branch and a VLAN name, reserves a VLAN in NetBox and configures it on the branch switch, with a manual approval task and a NetBox rollback on failure. Runs green twice; the second run is a no-op.
+  4. First workflow (`wf-branch-vlan-v1`): given a branch and a VLAN name, reserves a VLAN in NetBox and configures it on the branch switch, with a manual approval task and a NetBox rollback on failure. Runs green twice; the second run is a no-op. (Amended 1.9, ADR 0044: the approval task is the JSON form `lab-branch-vlan-approval` with a decision field; an API approval finishes it with `export.decision = approve`, a rejection stays a failure finish; the workflow also publishes the `instance` object Lifecycle Manager stores.)
   5. Licence state and any expiry recorded in the manifest; expiry monitored by Zabbix from Phase 8.
   6. `itential` VM memory pressure measured after 24 h of normal use (`free`, MongoDB WiredTiger cache); if above 80 % the budget lever list is applied by PR.
   7. Client reachability: from the Mac Mini on the home LAN, Claude Code lists the Itential MCP server's tools (`itential-mcp` container on OOB, name `mcp.lab.internal`) and runs a read-only tool call that returns the platform's version; the same works from the work laptop when it is on the home LAN.
@@ -180,7 +180,38 @@ Conventions: **Placement** is Proxmox VM (OpenTofu + Ansible), k3s (Helm/Kustomi
   5. `verify/` reports days since the last interactive login and fails the phase test if over 10.
 - **Verification:** part of `verify/test-05-itential.sh` (skips with a loud `HIBERNATED` message, not a pass, if the PDI is asleep).
 
-### S5 — DDI: Infoblox NIOS with BIND9 + Kea secondary (Phase 6)
+### S4c — FlowAI agents over the lab topology (Phase 6, ADR 0037)
+
+- **Purpose:** the reason the lab exists: agents that operate the EVE-NG topology through the Platform's governed tools, with a human approval where the network changes.
+- **Placement:** the FlowAI applications inside the Platform image on VM 205 (Agent Projects, Agent Execution Engine, Agent Session Manager, Tool Registry, Model Registry); an `ollama` container on the same VM for local models; the owner's Mac Mini Ollama as an optional fast endpoint.
+- **Components:** Model Registry provider profiles (Anthropic `claude-sonnet-5` default; Ollama in-lab with pinned small instruct models; Ollama on the Mac, optional), tools registered from the NetBox adapter, Gateway 5 device services on the `lab` inventory and the `wf-*` workflows, one agent project `lab-netops` generated from `itential/agents/` by `ansible/playbooks/flowai.yml`, the ServiceNow Integration Model for agent tool use, and the MCP server already reachable from Claude Code (S4.7). Everything is created through the API and held in the repo; provider keys stay in `.env`.
+- **Acceptance:**
+  1. Two provider profiles exist and answer: Anthropic and the in-lab Ollama; the model list of each is fetched through the Model Registry and the pinned models are present.
+  2. The agent, asked for the software version of a named node, answers with the string the device itself returns over direct SSH (both vendors, one node each), using the Gateway 5 tool; the session shows the tool call.
+  3. The agent, asked to add a named VLAN to a branch, runs `wf-branch-vlan-v1`; the job pauses on the approval task in Work Center, the VLAN is reserved in NetBox and configured on the switch only after approval, and the second identical request is a no-op.
+  4. The agent refuses (does not call the gateway) for a node that is not in the inventory, and every session records its token usage per model.
+  5. The same question in criterion 2 answered by the in-lab Ollama model; response time and VM memory recorded in the manifest.
+  6. Claude Code on the Mac drives criterion 2 through the MCP server (an agent session started and read back via MCP tools).
+  7. Structured device data (amendment 1.7, ADR 0038): `wf-show-command-v1` returns the raw text and a parsed object for one show command per vendor, Genie for the Cisco node and TextFSM (ntc-templates) for the Arista node, chosen from the node's NetBox platform; the parse runs as Gateway 5 inline code on a glibc runner node (etcd store) and the parsed values equal the device's own output over direct SSH.
+- **Verification:** `verify/test-06-flowai.sh`; a criterion that spends provider tokens records the cost in the log.
+
+### S4d — Platform coverage of the EVE-NG lab (Phase 6, amendment 1.8, ADR 0040)
+
+- **Purpose:** every Platform application operates the lab devices, so the agents in S4c have governed tools for configuration standards, checks, backups, service lifecycle and tickets, not only ad-hoc show commands.
+- **Placement:** the Platform on VM 205; devices through the InventoryBroker adapter (ADR 0039) and Gateway 5 only. No new VM, no Gateway 4.
+- **Components:** `ansible/playbooks/platform.yml` creates everything from documents in `itential/` through the API and re-runs idempotently, in the order `itential.yml`, `platform.yml`, `flowai.yml`. Device groups by site (dc1, br1, br2, wan) and role from the NetBox tags already on the inventory nodes. One Golden Config tree per OS (`cisco-ios`, `arista-eos`) rendered from `itential/golden-config/<os>.j2`: base node = OS baseline (management VRF, AAA and the automation user, DNS/NTP/logging, SSH/eAPI), site nodes with the site device group attached, one leaf per device carrying the NetBox intent (hostname, management interface and primary IP); every inventory node attached at its leaf. One compliance plan with one node entry per device leaf, run nightly by an Operations Manager schedule trigger on a generated workflow. Command templates, backup schedule, Lifecycle Manager model, JSON Form, Integration Models, the agent fleet and the host inventory follow as elements 2 to 6 (acceptance below); element 3 adds `itential/lcm/` (model), `itential/forms/` (generated form) and `tasks/lcm.yml` (ADR 0043/0044); element 4 adds `itential/integrations/` (generated OpenAPI documents) and `tasks/integrations.yml` (ADR 0045). Remediation is never automatic: a violation becomes a config push (`wf-config-push-v1`) behind a Work Center approval (Platform 7 removes auto-remediation).
+- **Finding at the start of S4d (ADR 0041):** all five IOS-XE routers ran and booted as `hostname Router` since Phase 4 (the config.iso bootstrap skipped line one of the template; verify 04 reached devices by IP and never checked). Restored through `wf-config-push-v1` with the approval before criterion 1 is measured; the Phase 4 root cause is a follow-up issue.
+- **Acceptance:**
+  1. Golden Config: the plan runs against all 12 devices with zero violations; after a deliberate hostname change on one device per vendor the next run flags exactly those two with no other issue; the names are restored through the governed push and the plan is clean again. Second source: `verify/devcmd.py`.
+  2. Command templates and backups (ADR 0042): each pre/post template (version, interfaces up, BGP neighbours; the topology runs no OSPF, ADR 0034) runs on one device per vendor with every pass/fail rule evaluated, and the analytic template passes on a pre/post pair; the nightly schedule trigger exists and, after one run of the backup workflow, the newest backup of every device equals the running config over direct SSH.
+  3. Lifecycle Manager and JSON Forms (amended 1.9, ADR 0043/0044): resource model `branch-vlan` with create (`wf-branch-vlan-v1`) and delete (`wf-branch-vlan-delete-v1`; the switch write only as a child job of `wf-config-push-v1`) actions, the actions naming their workflows so the nightly re-import keeps them valid; instances named `<branch>-<vlan_name>`, one imported per existing NetBox branch VLAN; a create, instance, delete round trip on br2 with the Work Center approvals: the JSON form `lab-branch-vlan-approval` on the create showing branch, VLAN id and name, switch and the NetBox reservation (read back through the Work Center API, NetBox as the second source), the push card on the delete; instance history with both executions and their jobs; the delete workflow on a retired VLAN is a no-op with no push job; a rejected push under the delete changes nothing, and a create rejected on the form rolls its reservation back and is retired by cancelling its execution (a job in error is retryable, so the execution waits). ~~create (`wf-branch-vlan-v1`) and delete (new workflow) actions; ... form fields ... shown on the approval task~~.
+  4. Integration Models (amended 1.10, ADR 0045): `lab-netbox` and `lab-servicenow` generated by `itential/integrations/build.py` (six NetBox reads; ServiceNow incidents and changes, one write: incident work notes), instances `netbox-api` and `servicenow-api` (the PDI's `itential.integration` user) created by `tasks/integrations.yml` with the model roles re-synced and every operation an authorized tool (`integration:<title>%3A<version>:<instance>:<operationId>`); `lab-netops` reads the site and role of br1-sw01 and the short description of INC0000060 through them, the sessions naming the integration operations and never an adapter method; NetBox and the PDI's Table API are the second sources. ~~ServiceNow (OpenAPI upload, instance with `itential.integration`) and NetBox registered; an agent reads an incident and a device through them, the session shows the integration tool, not the adapter.~~
+  5. Agent fleet (amended 1.11, ADR 0046; memory `work-laptop-agent-fleet`): `netbox-sot`, `device-ops`, `compliance`, `diagnostics` and `remediation` as `itential/agents/` documents, each on Claude and as an `ollama-lab` twin with one to three tools; the read tiers hold no device-writing tool; diagnostics writes one work note ("Proposed fix: ...") to the incident, the fleet's only ungated write (a ticket, not a device); remediation's only write is `wf-config-push-v1` behind the Work Center card. Acceptance in `verify/test-06-flowai.sh` (S4d.5a to S4d.5f, tokens printed): netbox-sot's count of active dc1 devices equals NetBox; device-ops's version of br2-sw01 equals direct SSH; compliance runs lab-baseline and reports it clean against the batch reports; after a deliberate hostname drift on br2-sw01 (governed push, approved by the verify) diagnostics's note on an incident the verify creates names the drift and proposes `hostname br2-sw01`; remediation starts `wf-config-push-v1` with that line, the verify approves the card and direct SSH confirms the restore; netbox-sot-local answers a site question with its response time and the VM memory recorded; `wf-show-all-v1` (one show command on every lab device in one call, parsed per device) answers a fleet-wide question on lab-netops-local with the device count NetBox confirms. ~~each on Claude and a local twin; one acceptance per agent in `verify/test-06-flowai.sh` with token usage; every write behind an approval.~~
+  6. Hosts and firewalls (amended 1.12, ADR 0047): the three Ubuntu hosts (`dc1-srv01`, `br1-host01`, `br2-host01`) as Gateway 5 inventory nodes in their own inventory `lab-hosts` (platform `linux`, the automation account with the password `lab-endpoints.yml` enables for that user only), never published to Configuration Manager; reachability and uptime through Gateway 5 `send-command` with direct SSH as the second source; PA-VM firewalls when the image is staged (deferred with S3.4). ~~the three Ubuntu hosts as inventory nodes with reachability and uptime checks~~
+- **Deferred (not built in S4d):** Gateway 4, observability and job metrics (Phase 9), node-credential secrets (Phase 10), Windows endpoints.
+- **Verification:** `verify/test-06b-platform.sh` (S4d.1 to S4d.4 and S4d.6); S4d.5 in `verify/test-06-flowai.sh`.
+
+### S5 — DDI: Infoblox NIOS with BIND9 + Kea secondary (Phase 7)
 
 - **Purpose:** authoritative DNS and DHCP for `lab.internal` and the OOB/in-band segments, driven from NetBox, with an eval-proof fallback (ADR 0009).
 - **Placement:** Proxmox VMs `nios` (ADR 0006) and `ddi-fallback` (Ubuntu: BIND9 secondary, Kea standby).
@@ -283,6 +314,7 @@ phase owns.
 | E10 | `qm config` sum vs `docs/resource-budget.md` | They match | Allocated vCPU/RAM within 2 % of the budget doc and under ceilings | |
 | E11 | Wrong-image silent failure: a node boots an older qcow2 | Detected | `show version` string != manifest string -> `verify/test-04` fails | yes (PIS-21) |
 | E12 | Windows eval expiry approach | Alerted | Zabbix trigger fires 14 days before the date in the manifest | |
+| E13 | Hostname drift on one device per vendor (S4d.1) | Exactly those two flagged | The next compliance plan run reports an error on those two devices and zero issues on the other ten; `verify/test-06b` compares the report with direct SSH | yes (silent-failure eval, PIS-21) |
 
 **PIS-09 — Eval execution method.** `make verify` -> `verify/run.sh` runs every
 `verify/test-*.sh` (bash + `jq` + `curl` + `ssh`, Python only where a vendor
@@ -568,12 +600,13 @@ at the end of Phase 2 and this table amended.
 | 3 | `phase-3/platform` | `verify/test-03-platform.sh` | none |
 | 4 | `phase-4/network-topology` | `verify/test-04-topology.sh` | Download PA-VM to `/srv/images/pa-vm` (Customer Support Portal); C8000v/vEOS reused (ADR 0032/0033); Windows 11 automated (`images/fetch.sh`, `images/build-win11.sh`) |
 | 5 | `phase-5/itential` | `verify/test-05-itential.sh` | `aws sso login` before image pulls (manual step 6); create the PDI integration user; log into the PDI every 10 days from then on |
-| 6 | `phase-6/ddi` | `verify/test-06-ddi.sh` | Download NIOS eval, apply the temp licence on the console |
-| 7 | `phase-7/identity` | `verify/test-07-identity.sh` | Download Windows Server eval ISO |
-| 8 | `phase-8/observability` | `verify/test-08-observability.sh` | none |
-| 9 | `phase-9/config-secrets-code` | `verify/test-09-config-secrets-code.sh` | Hold Vault unseal keys |
-| 10 | `phase-10/panorama` | `verify/test-10-panorama.sh` | Download Panorama; request an evaluation Panorama licence |
-| 11 | `phase-11/containerlab` | `verify/test-11-containerlab.sh` | Download cEOS-lab |
+| 6 | `phase-6/flowai` | `verify/test-06-flowai.sh`, `verify/test-06b-platform.sh` | Provider key in `.env`; Ollama on the Mac Mini optional (ADR 0037) |
+| 7 | `phase-6/ddi` | `verify/test-06-ddi.sh` | Download NIOS eval, apply the temp licence on the console |
+| 8 | `phase-7/identity` | `verify/test-07-identity.sh` | Download Windows Server eval ISO |
+| 9 | `phase-8/observability` | `verify/test-08-observability.sh` | none |
+| 10 | `phase-9/config-secrets-code` | `verify/test-09-config-secrets-code.sh` | Hold Vault unseal keys |
+| 11 | `phase-10/panorama` | `verify/test-10-panorama.sh` | Download Panorama; request an evaluation Panorama licence |
+| 12 | `phase-11/containerlab` | `verify/test-11-containerlab.sh` | Download cEOS-lab |
 
 Each PR description is the phase report: **built / verified / deferred**, with
 the verify log path and any ADRs added.
@@ -615,4 +648,11 @@ the verify log path and any ADRs added.
 | 1.2 | 2026-09-06 | Phase 3: object store is Garage, CNPG backups via the Barman Cloud plugin, kube-vip 1.2.3 (ADR 0031); S2.2 drill recorded separately per PIS-09; NetBox is the Ansible inventory from Phase 3 on (PIS-15 contract honoured) |
 | 1.3 | 2026-09-07 | Phase 4: design amended after vendor research (ADR 0034: routed eBGP edge/firewall handoff, NGE IKEv2 + front-door VRF, AVD tenant VRF); firewalls deferred behind `lab.firewalls` with bypass links, S3.4/S3.5/S3.6 firewall checks deferred until the PA-VM image is staged; Windows 11 built UEFI/TPM; C8000v needs a licence boot level + reload |
 | 1.4 | 2026-09-07 | Phase 5: S4 placement is one Ubuntu VM with the itential-dev-stack containers (ADR 0035, ADR 0020 amended), `iag` VM and 10.100.0.66 dropped, licence risk closed by owner decision (none needed), images from the private ECR via company SSO; budget 73 vCPU / 263 GB |
+| 1.7 | 2026-09-07 | S4c gains criterion 7 (structured CLI output: Genie for Cisco, TextFSM for Arista, owner request 2026-09-07); Gateway 5 becomes a distributed execution cluster (etcd + glibc runner) because the stock Alpine image cannot install pyATS (ADR 0038) |
+| 1.6 | 2026-09-07 | Phase order reordered (ADR 0037): Phase 6 is FlowAI agents (new S4c with criteria 1-6), DDI/identity/observability/config/Panorama/Containerlab move to 7-12, Windows Server deferred with identity; local LLMs (Ollama in-lab + optional Mac Mini) alongside Anthropic; ServiceNow Integration Model joins Phase 6 |
+| 1.8 | 2026-09-07 | Phase 6 continued: S4d (Platform coverage of the EVE-NG lab) added with six acceptance criteria and `verify/test-06b-platform.sh` (ADR 0040); the five IOS-XE routers were found running as `hostname Router` since Phase 4 and are restored through the governed push before S4d.1 (ADR 0041); E13 added |
+| 1.9 | 2026-09-08 | Phase 6 element 3: S4d.3 detailed (Lifecycle Manager model `branch-vlan` with actions by workflow name, `wf-branch-vlan-delete-v1` writing to the switch only through `wf-config-push-v1`, instances imported from NetBox, ADR 0043); the approval task of `wf-branch-vlan-v1` is the JSON form `lab-branch-vlan-approval` with a decision field (ADR 0044), S4.4 note and the verify approval payload updated |
+| 1.10 | 2026-09-08 | Phase 6 element 4: S4d.4 detailed (generated Integration Model documents for NetBox and ServiceNow, instances from `.env`, model roles re-synced, operations as `lab-netops` tools; the adapter start route is never used on an integration; ADR 0045) |
+| 1.11 | 2026-09-08 | Phase 6 element 5: S4d.5 detailed (the five-agent fleet with local twins, tiered autonomy, the diagnostics work note as the only ungated write, remediation through `wf-config-push-v1` only; ADR 0046) |
+| 1.12 | 2026-09-08 | Phase 6 element 6: S4d.6 detailed (the Ubuntu hosts in the `lab-hosts` Gateway 5 inventory, password login for the automation user on the endpoints, Configuration Manager untouched; ADR 0047) |
 | 1.5 | 2026-09-07 | Phase 5 (S4b): Gateway 5 is the only gateway (Gateway 4 staged, not deployed); the PDI needs no customisation (stock standard-change template + Network group + one integration user), so S4b.3 is a rebuild record `servicenow/README.md` instead of an update set; S4b.2 evidence is the states ServiceNow returns to the workflow plus the change read back (`sys_audit` is admin-only on a PDI); PDI `dev409097`, Australia; basic auth needs `snc_basic_auth_api_access` on 2026 instances |

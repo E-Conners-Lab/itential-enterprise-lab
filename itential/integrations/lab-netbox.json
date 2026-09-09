@@ -1,0 +1,656 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "lab-netbox",
+    "version": "1.0.0",
+    "description": "NetBox, the lab's source of truth: read-only device, interface, address, VLAN and site queries (PID S4d.4, ADR 0045)"
+  },
+  "servers": [
+    {
+      "url": "http://10.100.0.64:8080"
+    }
+  ],
+  "paths": {
+    "/api/dcim/devices/": {
+      "get": {
+        "operationId": "dcim_devices_list",
+        "summary": "List devices; filter by name, site, role, platform, status or tag",
+        "description": "List devices; filter by name, site, role, platform, status or tag",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "query",
+            "required": false,
+            "description": "Device name",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "style": "form",
+            "explode": true
+          },
+          {
+            "name": "site",
+            "in": "query",
+            "required": false,
+            "description": "Site slug",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "style": "form",
+            "explode": true
+          },
+          {
+            "name": "role",
+            "in": "query",
+            "required": false,
+            "description": "Role slug",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "style": "form",
+            "explode": true
+          },
+          {
+            "name": "platform",
+            "in": "query",
+            "required": false,
+            "description": "Platform slug",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "style": "form",
+            "explode": true
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "description": "Status (active, planned, ...)",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "style": "form",
+            "explode": true
+          },
+          {
+            "name": "tag",
+            "in": "query",
+            "required": false,
+            "description": "Tag slug",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "style": "form",
+            "explode": true
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "description": "Free-text search",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "Page size (NetBox default 50)",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "count": {
+                      "type": "integer"
+                    },
+                    "next": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "previous": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "results": {
+                      "type": "array",
+                      "items": {
+                        "type": "object"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "error"
+          }
+        },
+        "security": [
+          {
+            "tokenAuth": []
+          }
+        ]
+      }
+    },
+    "/api/dcim/devices/{id}/": {
+      "get": {
+        "operationId": "dcim_devices_retrieve",
+        "summary": "One device by NetBox id",
+        "description": "One device by NetBox id",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "NetBox device id",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "error"
+          }
+        },
+        "security": [
+          {
+            "tokenAuth": []
+          }
+        ]
+      }
+    },
+    "/api/dcim/interfaces/": {
+      "get": {
+        "operationId": "dcim_interfaces_list",
+        "summary": "List interfaces; filter by device or name",
+        "description": "List interfaces; filter by device or name",
+        "parameters": [
+          {
+            "name": "device",
+            "in": "query",
+            "required": false,
+            "description": "Device name",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "style": "form",
+            "explode": true
+          },
+          {
+            "name": "name",
+            "in": "query",
+            "required": false,
+            "description": "Interface name",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "style": "form",
+            "explode": true
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "description": "Free-text search",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "Page size (NetBox default 50)",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "count": {
+                      "type": "integer"
+                    },
+                    "next": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "previous": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "results": {
+                      "type": "array",
+                      "items": {
+                        "type": "object"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "error"
+          }
+        },
+        "security": [
+          {
+            "tokenAuth": []
+          }
+        ]
+      }
+    },
+    "/api/ipam/ip-addresses/": {
+      "get": {
+        "operationId": "ipam_ip_addresses_list",
+        "summary": "List IP addresses; filter by device, address or interface",
+        "description": "List IP addresses; filter by device, address or interface",
+        "parameters": [
+          {
+            "name": "device",
+            "in": "query",
+            "required": false,
+            "description": "Device name",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "style": "form",
+            "explode": true
+          },
+          {
+            "name": "address",
+            "in": "query",
+            "required": false,
+            "description": "Address with prefix length",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "style": "form",
+            "explode": true
+          },
+          {
+            "name": "interface",
+            "in": "query",
+            "required": false,
+            "description": "Interface name",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "style": "form",
+            "explode": true
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "description": "Free-text search",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "Page size (NetBox default 50)",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "count": {
+                      "type": "integer"
+                    },
+                    "next": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "previous": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "results": {
+                      "type": "array",
+                      "items": {
+                        "type": "object"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "error"
+          }
+        },
+        "security": [
+          {
+            "tokenAuth": []
+          }
+        ]
+      }
+    },
+    "/api/ipam/vlans/": {
+      "get": {
+        "operationId": "ipam_vlans_list",
+        "summary": "List VLANs; filter by site, group, name, vid or status",
+        "description": "List VLANs; filter by site, group, name, vid or status",
+        "parameters": [
+          {
+            "name": "site",
+            "in": "query",
+            "required": false,
+            "description": "Site slug",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "style": "form",
+            "explode": true
+          },
+          {
+            "name": "group",
+            "in": "query",
+            "required": false,
+            "description": "VLAN group slug",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "style": "form",
+            "explode": true
+          },
+          {
+            "name": "name",
+            "in": "query",
+            "required": false,
+            "description": "VLAN name",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "style": "form",
+            "explode": true
+          },
+          {
+            "name": "vid",
+            "in": "query",
+            "required": false,
+            "description": "802.1Q id",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "integer"
+              }
+            },
+            "style": "form",
+            "explode": true
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "description": "Status",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "style": "form",
+            "explode": true
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "description": "Free-text search",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "Page size (NetBox default 50)",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "count": {
+                      "type": "integer"
+                    },
+                    "next": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "previous": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "results": {
+                      "type": "array",
+                      "items": {
+                        "type": "object"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "error"
+          }
+        },
+        "security": [
+          {
+            "tokenAuth": []
+          }
+        ]
+      }
+    },
+    "/api/dcim/sites/": {
+      "get": {
+        "operationId": "dcim_sites_list",
+        "summary": "List sites",
+        "description": "List sites",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "query",
+            "required": false,
+            "description": "Site name",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "style": "form",
+            "explode": true
+          },
+          {
+            "name": "slug",
+            "in": "query",
+            "required": false,
+            "description": "Site slug",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "style": "form",
+            "explode": true
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "Page size (NetBox default 50)",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "count": {
+                      "type": "integer"
+                    },
+                    "next": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "previous": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "results": {
+                      "type": "array",
+                      "items": {
+                        "type": "object"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "error"
+          }
+        },
+        "security": [
+          {
+            "tokenAuth": []
+          }
+        ]
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "tokenAuth": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "Authorization",
+        "description": "Token <NetBox API token>"
+      }
+    }
+  }
+}

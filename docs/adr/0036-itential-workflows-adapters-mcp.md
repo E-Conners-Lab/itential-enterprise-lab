@@ -51,5 +51,6 @@ and the built-in local `admin` cannot own gateway resources (ADR 0035).
   `verify/test-05-itential.sh`; no JSON is edited by hand.
 - The Inventory Manager is derived state: NetBox stays the source of truth
   (ADR 0002); re-running the play re-syncs it.
-- Gateway 4 stays deployed-not-running (ADR 0035); Golden Config is out of
-  scope until a phase needs it.
+- Gateway 4 stays deployed-not-running (ADR 0035); ~~Golden Config is out of
+  scope until a phase needs it~~ (superseded 2026-09-07: Golden Config, compliance and
+  device groups are built in Phase 6 on the InventoryBroker devices, ADR 0039/0040).

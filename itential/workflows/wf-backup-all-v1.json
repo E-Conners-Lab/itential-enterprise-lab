@@ -1,0 +1,194 @@
+{
+  "name": "wf-backup-all-v1",
+  "type": "automation",
+  "description": "Backs up every Configuration Manager device through the InventoryBroker (Gateway 5); scheduled nightly by Operations Manager (PID S4d.2, ADR 0042)",
+  "tasks": {
+    "1a": {
+      "name": "getDevicesFiltered",
+      "canvasName": "getDevicesFiltered",
+      "summary": "every device Configuration Manager knows",
+      "description": "every device Configuration Manager knows",
+      "location": "Application",
+      "locationType": null,
+      "app": "ConfigurationManager",
+      "type": "automatic",
+      "displayName": "ConfigurationManager",
+      "groups": [],
+      "nodeLocation": {
+        "x": 0,
+        "y": 0
+      },
+      "variables": {
+        "incoming": {
+          "options": {
+            "start": 0,
+            "limit": 500
+          }
+        },
+        "outgoing": {
+          "devices": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "1b": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "device names",
+      "description": "device names",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 300,
+        "y": 0
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "list[*].name",
+          "obj": "$var.1a.devices"
+        },
+        "outgoing": {
+          "return_data": "$var.job.devices"
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "2a": {
+      "name": "forEach",
+      "canvasName": "forEach",
+      "summary": "one device at a time",
+      "description": "one device at a time",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 600,
+        "y": 0
+      },
+      "variables": {
+        "incoming": {
+          "data_array": "$var.1b.return_data"
+        },
+        "outgoing": {
+          "current_item": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "3a": {
+      "name": "backUpDevice",
+      "canvasName": "backUpDevice",
+      "summary": "backup through the broker (Gateway 5)",
+      "description": "backup through the broker (Gateway 5)",
+      "location": "Application",
+      "locationType": null,
+      "app": "ConfigurationManager",
+      "type": "automatic",
+      "displayName": "ConfigurationManager",
+      "groups": [],
+      "nodeLocation": {
+        "x": 900,
+        "y": 300
+      },
+      "variables": {
+        "incoming": {
+          "name": "$var.2a.current_item",
+          "options": {
+            "description": "nightly backup (wf-backup-all-v1)",
+            "notes": ""
+          }
+        },
+        "outgoing": {
+          "status": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "workflow_start": {
+      "name": "workflow_start",
+      "summary": "workflow_start",
+      "groups": [],
+      "nodeLocation": {
+        "x": -600,
+        "y": 0
+      }
+    },
+    "workflow_end": {
+      "name": "workflow_end",
+      "summary": "workflow_end",
+      "groups": [],
+      "nodeLocation": {
+        "x": 1800,
+        "y": 0
+      }
+    }
+  },
+  "transitions": {
+    "workflow_start": {
+      "1a": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "1a": {
+      "1b": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "1b": {
+      "2a": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "2a": {
+      "3a": {
+        "state": "loop",
+        "type": "standard"
+      },
+      "workflow_end": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "3a": {},
+    "workflow_end": {}
+  },
+  "groups": [],
+  "canvasVersion": 3,
+  "inputSchema": {
+    "type": "object",
+    "properties": {},
+    "required": []
+  },
+  "outputSchema": {
+    "type": "object",
+    "properties": {
+      "devices": {
+        "type": "array"
+      }
+    }
+  },
+  "tags": [],
+  "preAutomationTime": 300000,
+  "sla": 600000,
+  "font_size": 12,
+  "decorators": []
+}

@@ -42,3 +42,10 @@ records. Until Phase 9, secrets live only in the gitignored `.env`.
   `PHASES` variable and README status table are updated to match.
 - Every phase PR must include its verification test from the PID and the
   committed result in `verify/results/`.
+
+## Amendment 2026-09-07 (ADR 0037)
+
+Phase 6 becomes FlowAI agents; DDI, identity, observability, config/secrets/code,
+Panorama and Containerlab shift to Phases 7-12 unchanged in content. Branch names of
+the shifted phases keep their original numbers in `docs/PID.md` section 3 to preserve
+history.

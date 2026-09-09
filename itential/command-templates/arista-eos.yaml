@@ -1,0 +1,41 @@
+# EOS pre/post checks (spines, leaves, access and branch switches): version, management up, no errdisabled
+# port, no BGP peer stuck, and either an established peer or "% BGP inactive" (the L2-only branch switches).
+command_template:
+  name: lab-arista-eos-checks
+  description: "Lab pre/post checks for EOS switches: version, interfaces up, BGP neighbours (PID S4d.2)"
+  os: arista_eos
+  passRule: true
+  commands:
+    - command: show version
+      passRule: true
+      rules:
+        - {rule: "Arista vEOS-lab", eval: contains, severity: error}
+        - {rule: "Software image version: 4\\.\\d+", eval: RegEx, severity: error}
+    - command: show ip interface brief
+      passRule: true
+      rules:
+        - {rule: "^Management1\\s+\\S+\\s+up\\s+up", eval: RegEx, severity: error, flags: {multiline: true}}
+    - command: show interfaces status
+      passRule: true
+      rules:
+        - {rule: errdisabled, eval: "!contains", severity: error}
+    - command: show ip bgp summary
+      passRule: true
+      rules:
+        - {rule: "\\s(Idle|Active|Connect|OpenSent|OpenConfirm)\\s+", eval: "!RegEx", severity: error}
+        - {rule: "(Estab|BGP inactive)", eval: RegEx, severity: error}  # L2-only switches answer "% BGP inactive"
+analytic_template:
+  name: lab-arista-eos-prepost
+  os: arista_eos
+  passRule: true
+  prepostCommands:
+    - preRawCommand: show version
+      postRawCommand: show version
+      passRule: true
+      rules:
+        - {type: regex, preRegex: "Software image version: (\\S+)", postRegex: "Software image version: (\\S+)", evaluator: "="}
+    - preRawCommand: show ip interface brief
+      postRawCommand: show ip interface brief
+      passRule: true
+      rules:
+        - {type: regex, preRegex: "Management1\\s+(\\S+)", postRegex: "Management1\\s+(\\S+)", evaluator: "="}

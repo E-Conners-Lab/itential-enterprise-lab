@@ -235,6 +235,16 @@ def test_mcp_client_config_points_at_lab_mcp() -> None:
     assert srv["type"] == "http" and srv["url"] == "http://mcp.lab.internal:8000/mcp"
 
 
+def test_mcp_server_hides_the_tools_that_return_node_credentials() -> None:
+    """ADR 0039 amendment: describe_inventory and get_devices return itential_password to any MCP
+    client; the server excludes them by tag until the credentials become references (Phase 10)."""
+    ov = yaml.safe_load(OVERRIDE.read_text())
+    tags = str(ov["services"]["mcp"]["environment"]["ITENTIAL_MCP_SERVER_EXCLUDE_TAGS"]).split(",")
+    assert {"describe_inventory", "get_devices"} <= set(tags), tags
+    assert {"experimental", "beta"} <= set(tags), "keep the upstream defaults when overriding the list"
+    assert "describe_inventory" in VERIFY.read_text(), "verify 05 S4.7 must prove the tool is hidden"
+
+
 def test_verify_script_covers_every_criterion() -> None:
     assert VERIFY.exists() and VERIFY.stat().st_mode & 0o111, "verify/test-05-itential.sh missing or not executable"
     text = VERIFY.read_text()
@@ -253,3 +263,14 @@ def test_makefile_wires_the_phase() -> None:
     mk = (ROOT / "Makefile").read_text()
     assert re.search(r"^phase-itential:.*##", mk, re.M), "Makefile phase-itential target still the stub"
     assert "test: " in mk
+
+
+def test_play_registers_inventory_as_configuration_manager_provider(versions: dict) -> None:
+    """ADR 0039: Configuration Manager, Golden Config, compliance and MCP run_command consume
+    devices through Device Broker; the built-in Inventory Manager adapter is the provider on a
+    Gateway 5-only stack (no Gateway 4)."""
+    text = (ROOT / "ansible" / "playbooks" / "itential.yml").read_text()
+    assert "InventoryBroker" in text and 'type: InventoryManager' in text
+    assert f'inventories: ["{{{{ stack.inventory }}}}"]' in text
+    assert "prepend_inventory_name: false" in text
+    assert "configuration_manager/devices" in text, "the play must prove the devices reach Configuration Manager"

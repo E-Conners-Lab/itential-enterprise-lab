@@ -1,0 +1,33 @@
+# test-06-flowai 20260907T201103Z
+FAIL  S4c.1 provider profiles anthropic (claude-sonnet-5) and ollama-lab (qwen2.5:7b) answer and list their pinned models
+      profiles: ['anthropic', 'ollama-lab', 'ollama-mac']
+      anthropic lists claude-sonnet-5 among 11 models
+      Traceback (most recent call last):
+        File [35m"<string>"[0m, line [35m1[0m, in [35m<module>[0m
+          import sys,json;d=json.load(sys.stdin);ms=d.get('models') or [];names=[x.get('name') for x in ms];assert [1;31m'qwen2.5:7b' in names[0m,('qwen2.5:7b not in',names[:20]);print('ollama-lab lists qwen2.5:7b among',len(names),'models')
+                                                                                                                   [1;31m^^^^^^^^^^^^^^^^^^^^^[0m
+      [1;35mAssertionError[0m: [35m('qwen2.5:7b not in', [])[0m
+PASS  S4c.2 lab-netops answers the running version of br1-wan01 and br1-sw01 via the Gateway 5 tool; equals direct SSH
+      tokens in=14879 out=98
+      br1-wan01: agent said 17.13.01a; tools ['wf-show-version-v1']
+      tokens in=13982 out=100
+      br1-sw01: agent said 4.33.1.1F; tools ['wf-show-version-v1']
+PASS  S4c.3 lab-netops adds agent-20260907t201103z to br1 through wf-branch-vlan-v1 with the approval; second request is a no-op
+      approved job 6673ff26d4d34dcbbfe73465
+      tokens in=14769 out=314
+      run 1: VLAN 11 agent-20260907t201103z reserved, approved, configured
+      tokens in=20971 out=497
+      run 2: no-op (still exactly VLAN 11)
+FAIL  S4c.4 lab-netops refuses core-router-99 (not in the inventory) without touching the gateway; session records token usage
+      tokens in=6690 out=97
+      no refusal in: I don't have access to a device named "core-router-99" in the "lab" inventory. I can only interact with nodes that are part of that inventory, so I won't call any gateway tool for this request.
+      
+      Could you confirm the correct device name, or would you like me to check the NetBox inventory to see what
+PASS  S4c.5 lab-netops-local (ollama-lab qwen2.5:7b) answers the br1-sw01 version; response time and VM memory recorded
+      tokens in=1348 out=75
+      ollama-lab (qwen2.5:7b) answered in 36 s; VM RAM used 8953/24031 MB
+FAIL  S4c.6 MCP from this Mac lists lab-netops and reads its sessions
+      lab-netops not listed by MCP get_agents: {"_meta": {"fastmcp": {"wrap_result": true}}, "content": [{"type": "text", "text": "[]"}], "structuredContent": {"result": []}, "isError": false}
+
+tokens spent this run: in=72639 out=1181 (Anthropic + local)
+passed=3 failed=3

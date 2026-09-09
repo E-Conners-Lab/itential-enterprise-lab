@@ -1,0 +1,1427 @@
+{
+  "name": "wf-compliance-report-v1",
+  "type": "automation",
+  "description": "Runs (run=true) or reads (run=false) the lab-baseline compliance plan and returns one compact summary per device: errors, warnings, passes and the issue lines; the agents' compliance tool (PID S4d.5, ADR 0046)",
+  "tasks": {
+    "1a": {
+      "name": "searchCompliancePlans",
+      "canvasName": "searchCompliancePlans",
+      "summary": "the plan by name",
+      "description": "the plan by name",
+      "location": "Application",
+      "locationType": null,
+      "app": "ConfigurationManager",
+      "type": "automatic",
+      "displayName": "ConfigurationManager",
+      "groups": [],
+      "nodeLocation": {
+        "x": 0,
+        "y": 0
+      },
+      "variables": {
+        "incoming": {
+          "name": "^lab-baseline$",
+          "options": {
+            "start": 0,
+            "limit": 10
+          }
+        },
+        "outgoing": {
+          "compliancePlans": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "1b": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "plan id",
+      "description": "plan id",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 300,
+        "y": 0
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "plans[0].id",
+          "obj": "$var.1a.compliancePlans"
+        },
+        "outgoing": {
+          "return_data": "$var.job.plan_id"
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "1c": {
+      "name": "evaluation",
+      "canvasName": "evaluation",
+      "summary": "new run requested?",
+      "description": "new run requested?",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 600,
+        "y": 0
+      },
+      "variables": {
+        "incoming": {
+          "all_true_flag": true,
+          "evaluation_groups": [
+            {
+              "all_true_flag": true,
+              "evaluations": [
+                {
+                  "query": "",
+                  "operand_1": {
+                    "variable": "run",
+                    "task": "job"
+                  },
+                  "operator": "==",
+                  "operand_2": {
+                    "variable": true,
+                    "task": "static"
+                  }
+                }
+              ]
+            }
+          ],
+          "options": {}
+        },
+        "outgoing": {
+          "return_value": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "2a": {
+      "name": "runCompliancePlan",
+      "canvasName": "runCompliancePlan",
+      "summary": "run the plan",
+      "description": "run the plan",
+      "location": "Application",
+      "locationType": null,
+      "app": "ConfigurationManager",
+      "type": "automatic",
+      "displayName": "ConfigurationManager",
+      "groups": [],
+      "nodeLocation": {
+        "x": 900,
+        "y": -300
+      },
+      "variables": {
+        "incoming": {
+          "planId": "$var.1b.return_data",
+          "options": {}
+        },
+        "outgoing": {
+          "response": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "2b": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "instance id",
+      "description": "instance id",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 1200,
+        "y": -300
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "instanceId",
+          "obj": "$var.2a.response"
+        },
+        "outgoing": {
+          "return_data": "$var.job.instance_id"
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "2c": {
+      "name": "replace",
+      "canvasName": "replace",
+      "summary": "search params",
+      "description": "search params",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 1500,
+        "y": -300
+      },
+      "variables": {
+        "incoming": {
+          "str": "{\"instanceId\": \"__I__\"}",
+          "substr": "__I__",
+          "newSubstr": "$var.2b.return_data"
+        },
+        "outgoing": {
+          "replacedString": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "2d": {
+      "name": "parse",
+      "canvasName": "parse",
+      "summary": "search params object",
+      "description": "search params object",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 1800,
+        "y": -300
+      },
+      "variables": {
+        "incoming": {
+          "text": "$var.2c.replacedString"
+        },
+        "outgoing": {
+          "textObject": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "4a": {
+      "name": "searchCompliancePlanInstances",
+      "canvasName": "searchCompliancePlanInstances",
+      "summary": "every instance of the plan, newest first",
+      "description": "every instance of the plan, newest first",
+      "location": "Application",
+      "locationType": null,
+      "app": "ConfigurationManager",
+      "type": "automatic",
+      "displayName": "ConfigurationManager",
+      "groups": [],
+      "nodeLocation": {
+        "x": 900,
+        "y": 300
+      },
+      "variables": {
+        "incoming": {
+          "searchParams": {
+            "planName": "lab-baseline",
+            "sort": {
+              "started": -1
+            },
+            "limit": 100
+          }
+        },
+        "outgoing": {
+          "compliancePlanInstances": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "4b": {
+      "name": "runCode",
+      "canvasName": "runCode",
+      "summary": "newest complete instance (Python on the runner)",
+      "description": "newest complete instance (Python on the runner)",
+      "location": "Application",
+      "locationType": null,
+      "app": "GatewayManager",
+      "type": "automatic",
+      "displayName": "GatewayManager",
+      "groups": [],
+      "nodeLocation": {
+        "x": 1200,
+        "y": 300
+      },
+      "variables": {
+        "incoming": {
+          "clusterId": "lab",
+          "language": "python",
+          "code": "import json, sys\nd = json.loads(sys.stdin.read() or \"{}\")\nplans = d.get(\"plans\") or [p for g in d.get(\"groups\", []) for p in g.get(\"plans\", [])]\ndone = [p for p in plans if p.get(\"jobStatus\") == \"complete\" and p.get(\"batchId\")]\ndone.sort(key=lambda p: str(p.get(\"started\") or p.get(\"triggeredAt\") or p.get(\"id\") or \"\"))\np = done[-1] if done else {}\nprint(json.dumps({\"batchId\": p.get(\"batchId\"), \"instanceId\": p.get(\"id\") or p.get(\"_id\"), \"startTime\": p.get(\"startTime\")}))\n",
+          "data": "$var.4a.compliancePlanInstances",
+          "safety": {
+            "timeout": 30
+          },
+          "packages": []
+        },
+        "outgoing": {
+          "result": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "4c": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "its batch id",
+      "description": "its batch id",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 1500,
+        "y": 300
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "stdout_json.batchId",
+          "obj": "$var.4b.result"
+        },
+        "outgoing": {
+          "return_data": "$var.job.batch_id"
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "4d": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "its instance id",
+      "description": "its instance id",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 1800,
+        "y": 300
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "stdout_json.instanceId",
+          "obj": "$var.4b.result"
+        },
+        "outgoing": {
+          "return_data": "$var.job.instance_id"
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "6a": {
+      "name": "getComplianceReportsByBatch",
+      "canvasName": "getComplianceReportsByBatch",
+      "summary": "the batch's reports",
+      "description": "the batch's reports",
+      "location": "Application",
+      "locationType": null,
+      "app": "ConfigurationManager",
+      "type": "automatic",
+      "displayName": "ConfigurationManager",
+      "groups": [],
+      "nodeLocation": {
+        "x": 4200,
+        "y": 0
+      },
+      "variables": {
+        "incoming": {
+          "batchId": "$var.job.batch_id"
+        },
+        "outgoing": {
+          "complianceHistory": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "6e": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "reports wrapped in an object for the runner",
+      "description": "reports wrapped in an object for the runner",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 4350,
+        "y": 0
+      },
+      "variables": {
+        "incoming": {
+          "obj": {},
+          "path": [
+            "reports"
+          ],
+          "value": "$var.6a.complianceHistory"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "6b": {
+      "name": "runCode",
+      "canvasName": "runCode",
+      "summary": "summary per device (Python on the runner)",
+      "description": "summary per device (Python on the runner)",
+      "location": "Application",
+      "locationType": null,
+      "app": "GatewayManager",
+      "type": "automatic",
+      "displayName": "GatewayManager",
+      "groups": [],
+      "nodeLocation": {
+        "x": 4500,
+        "y": 0
+      },
+      "variables": {
+        "incoming": {
+          "clusterId": "lab",
+          "language": "python",
+          "code": "import json, sys\nd = json.loads(sys.stdin.read() or \"{}\")\nreports = d.get(\"reports\") if isinstance(d, dict) else d\nif isinstance(reports, dict):\n    reports = reports.get(\"complianceHistory\") or reports.get(\"list\") or []\nreports = reports or []\ndevices = []\nfor r in reports:\n    t = r.get(\"totals\") or {}\n    issues = [\" \".join(w.get(\"value\", \"\") for w in (i.get(\"spec\") or {}).get(\"words\", [])).strip() for i in r.get(\"issues\") or []]\n    devices.append({\"device\": r.get(\"deviceName\"), \"report_id\": r.get(\"id\") or r.get(\"_id\"), \"errors\": t.get(\"errors\", 0),\n                    \"warnings\": t.get(\"warnings\", 0), \"passes\": t.get(\"passes\", 0), \"issues\": issues})\ndevices.sort(key=lambda x: str(x[\"device\"]))\nbad = [x[\"device\"] for x in devices if x[\"errors\"] or x[\"warnings\"]]\nprint(json.dumps({\"compliant\": not bad, \"devices_checked\": len(devices), \"devices_with_issues\": bad, \"devices\": devices}))\n",
+          "data": "$var.6e.object",
+          "safety": {
+            "timeout": 30
+          },
+          "packages": []
+        },
+        "outgoing": {
+          "result": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "6c": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "summary",
+      "description": "summary",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 4800,
+        "y": 0
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "stdout_json",
+          "obj": "$var.6b.result"
+        },
+        "outgoing": {
+          "return_data": "$var.job.summary"
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "6d": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "compliant?",
+      "description": "compliant?",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 5100,
+        "y": 0
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "stdout_json.compliant",
+          "obj": "$var.6b.result"
+        },
+        "outgoing": {
+          "return_data": "$var.job.compliant"
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "a1": {
+      "name": "delay",
+      "canvasName": "delay",
+      "summary": "wait 30 s (attempt 1)",
+      "description": "wait 30 s (attempt 1)",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 2100,
+        "y": -300
+      },
+      "variables": {
+        "incoming": {
+          "time": 30
+        },
+        "outgoing": {
+          "time_in_milliseconds": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "a2": {
+      "name": "searchCompliancePlanInstances",
+      "canvasName": "searchCompliancePlanInstances",
+      "summary": "the run's instance",
+      "description": "the run's instance",
+      "location": "Application",
+      "locationType": null,
+      "app": "ConfigurationManager",
+      "type": "automatic",
+      "displayName": "ConfigurationManager",
+      "groups": [],
+      "nodeLocation": {
+        "x": 2200,
+        "y": -300
+      },
+      "variables": {
+        "incoming": {
+          "searchParams": "$var.2d.textObject"
+        },
+        "outgoing": {
+          "compliancePlanInstances": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "a3": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "instance status",
+      "description": "instance status",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 2300,
+        "y": -300
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "plans[0].jobStatus",
+          "obj": "$var.a2.compliancePlanInstances"
+        },
+        "outgoing": {
+          "return_data": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "a4": {
+      "name": "evaluation",
+      "canvasName": "evaluation",
+      "summary": "complete?",
+      "description": "complete?",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 2400,
+        "y": -300
+      },
+      "variables": {
+        "incoming": {
+          "all_true_flag": true,
+          "evaluation_groups": [
+            {
+              "all_true_flag": true,
+              "evaluations": [
+                {
+                  "query": "",
+                  "operand_1": {
+                    "variable": "return_data",
+                    "task": "a3"
+                  },
+                  "operator": "==",
+                  "operand_2": {
+                    "variable": "complete",
+                    "task": "static"
+                  }
+                }
+              ]
+            }
+          ],
+          "options": {}
+        },
+        "outgoing": {
+          "return_value": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "a5": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "batch id",
+      "description": "batch id",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 2500,
+        "y": -500
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "plans[0].batchId",
+          "obj": "$var.a2.compliancePlanInstances"
+        },
+        "outgoing": {
+          "return_data": "$var.job.batch_id"
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "b1": {
+      "name": "delay",
+      "canvasName": "delay",
+      "summary": "wait 30 s (attempt 2)",
+      "description": "wait 30 s (attempt 2)",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 2600,
+        "y": -300
+      },
+      "variables": {
+        "incoming": {
+          "time": 30
+        },
+        "outgoing": {
+          "time_in_milliseconds": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "b2": {
+      "name": "searchCompliancePlanInstances",
+      "canvasName": "searchCompliancePlanInstances",
+      "summary": "the run's instance",
+      "description": "the run's instance",
+      "location": "Application",
+      "locationType": null,
+      "app": "ConfigurationManager",
+      "type": "automatic",
+      "displayName": "ConfigurationManager",
+      "groups": [],
+      "nodeLocation": {
+        "x": 2700,
+        "y": -300
+      },
+      "variables": {
+        "incoming": {
+          "searchParams": "$var.2d.textObject"
+        },
+        "outgoing": {
+          "compliancePlanInstances": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "b3": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "instance status",
+      "description": "instance status",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 2800,
+        "y": -300
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "plans[0].jobStatus",
+          "obj": "$var.b2.compliancePlanInstances"
+        },
+        "outgoing": {
+          "return_data": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "b4": {
+      "name": "evaluation",
+      "canvasName": "evaluation",
+      "summary": "complete?",
+      "description": "complete?",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 2900,
+        "y": -300
+      },
+      "variables": {
+        "incoming": {
+          "all_true_flag": true,
+          "evaluation_groups": [
+            {
+              "all_true_flag": true,
+              "evaluations": [
+                {
+                  "query": "",
+                  "operand_1": {
+                    "variable": "return_data",
+                    "task": "b3"
+                  },
+                  "operator": "==",
+                  "operand_2": {
+                    "variable": "complete",
+                    "task": "static"
+                  }
+                }
+              ]
+            }
+          ],
+          "options": {}
+        },
+        "outgoing": {
+          "return_value": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "b5": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "batch id",
+      "description": "batch id",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 3000,
+        "y": -500
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "plans[0].batchId",
+          "obj": "$var.b2.compliancePlanInstances"
+        },
+        "outgoing": {
+          "return_data": "$var.job.batch_id"
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "c1": {
+      "name": "delay",
+      "canvasName": "delay",
+      "summary": "wait 30 s (attempt 3)",
+      "description": "wait 30 s (attempt 3)",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 3100,
+        "y": -300
+      },
+      "variables": {
+        "incoming": {
+          "time": 30
+        },
+        "outgoing": {
+          "time_in_milliseconds": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "c2": {
+      "name": "searchCompliancePlanInstances",
+      "canvasName": "searchCompliancePlanInstances",
+      "summary": "the run's instance",
+      "description": "the run's instance",
+      "location": "Application",
+      "locationType": null,
+      "app": "ConfigurationManager",
+      "type": "automatic",
+      "displayName": "ConfigurationManager",
+      "groups": [],
+      "nodeLocation": {
+        "x": 3200,
+        "y": -300
+      },
+      "variables": {
+        "incoming": {
+          "searchParams": "$var.2d.textObject"
+        },
+        "outgoing": {
+          "compliancePlanInstances": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "c3": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "instance status",
+      "description": "instance status",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 3300,
+        "y": -300
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "plans[0].jobStatus",
+          "obj": "$var.c2.compliancePlanInstances"
+        },
+        "outgoing": {
+          "return_data": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "c4": {
+      "name": "evaluation",
+      "canvasName": "evaluation",
+      "summary": "complete?",
+      "description": "complete?",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 3400,
+        "y": -300
+      },
+      "variables": {
+        "incoming": {
+          "all_true_flag": true,
+          "evaluation_groups": [
+            {
+              "all_true_flag": true,
+              "evaluations": [
+                {
+                  "query": "",
+                  "operand_1": {
+                    "variable": "return_data",
+                    "task": "c3"
+                  },
+                  "operator": "==",
+                  "operand_2": {
+                    "variable": "complete",
+                    "task": "static"
+                  }
+                }
+              ]
+            }
+          ],
+          "options": {}
+        },
+        "outgoing": {
+          "return_value": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "c5": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "batch id",
+      "description": "batch id",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 3500,
+        "y": -500
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "plans[0].batchId",
+          "obj": "$var.c2.compliancePlanInstances"
+        },
+        "outgoing": {
+          "return_data": "$var.job.batch_id"
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "d1": {
+      "name": "delay",
+      "canvasName": "delay",
+      "summary": "wait 60 s (attempt 4)",
+      "description": "wait 60 s (attempt 4)",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 3600,
+        "y": -300
+      },
+      "variables": {
+        "incoming": {
+          "time": 60
+        },
+        "outgoing": {
+          "time_in_milliseconds": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "d2": {
+      "name": "searchCompliancePlanInstances",
+      "canvasName": "searchCompliancePlanInstances",
+      "summary": "the run's instance",
+      "description": "the run's instance",
+      "location": "Application",
+      "locationType": null,
+      "app": "ConfigurationManager",
+      "type": "automatic",
+      "displayName": "ConfigurationManager",
+      "groups": [],
+      "nodeLocation": {
+        "x": 3700,
+        "y": -300
+      },
+      "variables": {
+        "incoming": {
+          "searchParams": "$var.2d.textObject"
+        },
+        "outgoing": {
+          "compliancePlanInstances": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "d3": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "instance status",
+      "description": "instance status",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 3800,
+        "y": -300
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "plans[0].jobStatus",
+          "obj": "$var.d2.compliancePlanInstances"
+        },
+        "outgoing": {
+          "return_data": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "d4": {
+      "name": "evaluation",
+      "canvasName": "evaluation",
+      "summary": "complete?",
+      "description": "complete?",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 3900,
+        "y": -300
+      },
+      "variables": {
+        "incoming": {
+          "all_true_flag": true,
+          "evaluation_groups": [
+            {
+              "all_true_flag": true,
+              "evaluations": [
+                {
+                  "query": "",
+                  "operand_1": {
+                    "variable": "return_data",
+                    "task": "d3"
+                  },
+                  "operator": "==",
+                  "operand_2": {
+                    "variable": "complete",
+                    "task": "static"
+                  }
+                }
+              ]
+            }
+          ],
+          "options": {}
+        },
+        "outgoing": {
+          "return_value": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "d5": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "batch id",
+      "description": "batch id",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 4000,
+        "y": -500
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "plans[0].batchId",
+          "obj": "$var.d2.compliancePlanInstances"
+        },
+        "outgoing": {
+          "return_data": "$var.job.batch_id"
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "workflow_start": {
+      "name": "workflow_start",
+      "summary": "workflow_start",
+      "groups": [],
+      "nodeLocation": {
+        "x": -600,
+        "y": 0
+      }
+    },
+    "workflow_end": {
+      "name": "workflow_end",
+      "summary": "workflow_end",
+      "groups": [],
+      "nodeLocation": {
+        "x": 1800,
+        "y": 0
+      }
+    }
+  },
+  "transitions": {
+    "workflow_start": {
+      "1a": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "1a": {
+      "1b": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "1b": {
+      "1c": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "1c": {
+      "2a": {
+        "state": "success",
+        "type": "standard"
+      },
+      "4a": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "2a": {
+      "2b": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "2b": {
+      "2c": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "2c": {
+      "2d": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "4a": {
+      "4b": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "4b": {
+      "4c": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "4c": {
+      "4d": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "4d": {
+      "6a": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "6a": {
+      "6e": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "6e": {
+      "6b": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "6b": {
+      "6c": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "6c": {
+      "6d": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "6d": {
+      "workflow_end": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "2d": {
+      "a1": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "a1": {
+      "a2": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "a2": {
+      "a3": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "a3": {
+      "a4": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "a4": {
+      "a5": {
+        "state": "success",
+        "type": "standard"
+      },
+      "b1": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "a5": {
+      "6a": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "b1": {
+      "b2": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "b2": {
+      "b3": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "b3": {
+      "b4": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "b4": {
+      "b5": {
+        "state": "success",
+        "type": "standard"
+      },
+      "c1": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "b5": {
+      "6a": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "c1": {
+      "c2": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "c2": {
+      "c3": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "c3": {
+      "c4": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "c4": {
+      "c5": {
+        "state": "success",
+        "type": "standard"
+      },
+      "d1": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "c5": {
+      "6a": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "d1": {
+      "d2": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "d2": {
+      "d3": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "d3": {
+      "d4": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "d4": {
+      "d5": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "d5": {
+      "6a": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "workflow_end": {}
+  },
+  "groups": [],
+  "canvasVersion": 3,
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "run": {
+        "type": "boolean",
+        "required": true,
+        "description": "true: start a new run of the plan and wait for it; false: summarise the newest complete run"
+      }
+    },
+    "required": [
+      "run"
+    ]
+  },
+  "outputSchema": {
+    "type": "object",
+    "properties": {
+      "plan_id": {
+        "type": "string"
+      },
+      "instance_id": {
+        "type": "string"
+      },
+      "batch_id": {
+        "type": "string"
+      },
+      "summary": {
+        "type": "object"
+      },
+      "compliant": {
+        "type": "boolean"
+      }
+    }
+  },
+  "tags": [],
+  "preAutomationTime": 300000,
+  "sla": 600000,
+  "font_size": 12,
+  "decorators": []
+}

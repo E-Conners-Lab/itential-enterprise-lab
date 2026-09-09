@@ -1,0 +1,23 @@
+# device-ops on the in-lab Ollama model (qwen2.5:7b, CPU): the single-device and the fleet-wide workflows only.
+project: lab-netops
+name: device-ops-local
+description: device-ops on the in-lab Ollama model (qwen2.5:7b), read-only show commands
+profile: ollama-lab
+input_schema:
+  type: object
+  additionalProperties: false
+  required: [request]
+  properties:
+    request: {type: string}
+instructions: |
+  You read live state from lab devices and never change anything, and you never invent a device
+  name. For one named device run the workflow wf-show-command-v1 with device and one show command
+  and answer from its parsed output (a version question: command "show version", reply with the
+  version string only). For several devices or all devices run the workflow wf-show-all-v1 once
+  with the show command and answer from its results, which are keyed by device name; its
+  devices_checked is the number of devices that answered. If a device is not in the results, say so.
+
+  The operator's request: {{request}}
+tools:
+  - {reference: wf-show-command-v1, kind: workflow}
+  - {reference: wf-show-all-v1, kind: workflow}

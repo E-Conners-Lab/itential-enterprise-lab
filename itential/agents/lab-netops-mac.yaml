@@ -1,0 +1,26 @@
+# lab-netops on the owner's Mac Mini Ollama (profile ollama-mac, optional): the fast local path.
+# Created only when the play could reach the Mac; no verify criterion depends on it.
+project: lab-netops
+name: lab-netops-mac
+description: lab-netops on the Mac Mini Ollama (qwen3:30b-a3b), optional fast local path
+profile: ollama-mac
+input_schema:
+  type: object
+  additionalProperties: false
+  required: [request]
+  properties:
+    request: {type: string}
+instructions: |
+  You are the network operations agent for the itential-enterprise-lab. Act only through your
+  tools; never invent device output. Devices you may touch are the nodes of the Inventory
+  Manager inventory "lab"; if a request names another device, say so and call no tool.
+  For device state questions prefer the workflow wf-show-command-v1 with device and one exact
+  show command; it returns raw text and parsed structured data (Genie on Cisco, TextFSM on
+  Arista) in parsed/parser. Fall back to the sendCommand tool (clusterId "lab", commands as a
+  list, inventory [{"inventory": "lab", "nodeNames": ["<device>"]}]) only when the workflow
+  fails. For a version question reply with the version string only.
+
+  The operator's request: {{request}}
+tools:
+  - {reference: send-command, kind: gateway-service}
+  - {reference: wf-show-command-v1, kind: workflow}

@@ -28,8 +28,19 @@ images:
   mongodb: {repository: docker.io/library/mongo, tag: "7.0.40"} # Platform 6 fully supports 7.0 (manifest 3.2); Docker Hub 2026-09-07
   redis: {repository: docker.io/library/redis, tag: "7.4.11"}
   mcp: {repository: ghcr.io/itential/itential-mcp, tag: v0.14.0} # release 2026-08-13; streamable HTTP transport
+  # in-lab local models on VM 205, CPU inference (ADR 0037); Docker Hub 2026-09-07
+  ollama: {repository: docker.io/ollama/ollama, tag: 0.33.3}
   # upstream dev-stack OpenLDAP: admin@itential and the group membership Gateway Manager needs (until Phase 7 AD)
   ldap: {repository: docker.io/osixia/openldap, tag: 1.4.0}
+  # Gateway 5 distributed execution (ADR 0038): etcd is the shared store a runner node needs
+  # (Gateway requires etcd v3.5); the runner is built on the VM from runner_base + the iagctl
+  # binary of images.gateway5 (itential/gateway5-runner/Dockerfile). quay.io / Docker Hub 2026-09-07
+  etcd: {repository: quay.io/coreos/etcd, tag: v3.5.21, digest: "sha256:a3ccd299377af4b9968d8cbaaf9722fe354297f11908f74a846075e1e5f4ee89"}
+  # glibc base for the runner: pyATS ships no musl (Alpine) or Python 3.14 wheels
+  runner_base:
+    repository: docker.io/library/python
+    tag: 3.12.14-slim-trixie
+    digest: "sha256:78387bc3881b8273120a12ebe6c1ab22b018ccc2c9adf565ae1ac9b536e184ea"
 
 vm:
   name: itential
@@ -42,12 +53,27 @@ vm:
 stack:
   # platform + mongodb + redis + gateway5 + mcp + openldap. Gateway 4 deferred (owner decision
   # 2026-09-07: Gateway 5 is the gateway; Golden Config is not in S4), openbao off (Vault in Phase 9)
-  profiles: [platform, gateway5, mcp, ldap]
+  profiles: [platform, gateway5, mcp, ldap, ollama]
   # itential/ldap/openldap.ldif, vendored from the same upstream commit
   ldif_sha256: 4d22e7a2a80dc5f3b6fabccf35b68e34fe6d6c9fd4c87842c2a6deca53f97cbc
   gateway5_cluster_id: lab
   inventory: lab # Inventory Manager inventory holding the NetBox network devices
+  host_inventory: lab-hosts # the Ubuntu hosts (S4d.6, ADR 0047): reached by Gateway 5, never by Configuration Manager
   mongo_cache_gb: 4
+  runner_image: gateway5-runner:5.5.2-py3.12.14 # local build tag on the VM (ADR 0038)
+
+# Structured CLI output (PID S4c.7, ADR 0038): the parse step of wf-show-command-v1 is a Gateway 5
+# runCode task whose pip packages are exactly these (one cached venv on the runner, ~790 MB). The
+# NetBox platform slug of the node picks the engine. Versions from PyPI on 2026-09-07.
+parsers:
+  cisco:
+    engine: genie # Cisco pyATS/Genie parsers, glibc + Python <= 3.13 only
+    packages: ["pyats==26.8", "genie==26.8"]
+    netbox_platforms: {ios-xe: iosxe, ios: ios, nx-os: nxos, ios-xr: iosxr}
+  arista:
+    engine: textfsm # ntc-templates through TextFSM
+    packages: ["textfsm==2.1.0", "ntc-templates==9.2.0"]
+    netbox_platforms: {eos: arista_eos, junos: juniper_junos}
 
 # Open-source adapters (GitLab itentialopensource/adapters, manifest 3.2), installed into the
 # platform's custom services mount from the tag's commit; npm deps resolved at install time.
@@ -65,3 +91,102 @@ workflows:
   device_count: wf-netbox-device-count-v1
   show_version: wf-show-version-v1
   branch_vlan: wf-branch-vlan-v1
+  show_command: wf-show-command-v1 # S4c.7 (ADR 0038)
+  show_all: wf-show-all-v1 # S4d.5: one show command on every lab device, parsed per device (ADR 0046)
+  config_push: wf-config-push-v1 # S4d: the only write path, Work Center approval (ADR 0040/0041)
+  compliance_run: wf-compliance-run-v1 # S4d.1: target of the nightly schedule trigger
+  backup_all: wf-backup-all-v1 # S4d.2: every Configuration Manager device backed up (forEach), nightly
+  branch_vlan_delete: wf-branch-vlan-delete-v1 # S4d.3: the LCM delete action; switch write through wf-config-push-v1 (ADR 0043)
+  compliance_report: wf-compliance-report-v1 # S4d.5: run or read the plan, compact per-device summary for the agents (ADR 0046)
+
+# --- Phase 6b: Platform coverage of the EVE-NG lab (PID S4d, ADR 0040). Built by
+# ansible/playbooks/platform.yml from itential/golden-config/<deviceType>/{base.gc,device.j2};
+# the tree deviceType selects the parser, the inventory keeps its netmiko names (measured 2026-09-07).
+golden_config:
+  documents: itential/golden-config
+  trees:
+    cisco-ios: {name: lab-cisco-ios, netmiko: cisco_ios, netbox_platform: ios-xe, mgmt_if: GigabitEthernet1}
+    arista-eos: {name: lab-arista-eos, netmiko: arista_eos, netbox_platform: eos, mgmt_if: Management1}
+  device_groups:
+    site: [dc1, br1, br2, wan]
+    role: [wan-edge, isp-core, spine, leaf, access, branch-switch]
+  plan: lab-baseline
+  schedule: {name: nightly compliance lab-baseline, at_utc: "03:00", repeat_unit: days, repeat_interval: 1}
+
+# --- Phase 6: FlowAI (PID S4c, ADR 0037). Provider keys live in .env only; profiles are created
+# by ansible/playbooks/flowai.yml through the Model Registry (write-only credentials).
+llm:
+  default_profile: anthropic
+  profiles:
+    - name: anthropic
+      provider: anthropic
+      model: claude-sonnet-5 # Model Registry listed 11 Claude models for the key on 2026-09-07
+      env_key: ANTHROPIC_API_KEY
+    - name: ollama-lab
+      provider: ollama
+      base_url: http://ollama:11434 # the Compose service on VM 205
+      model: qwen2.5:7b # Ollama library tag (Q4_K_M, ~4.7 GB, tool calling); pulled by the play
+    - name: ollama-mac # the owner's Mac Mini (M4 Pro, 64 GB), optional fast endpoint: no criterion depends on it
+      provider: ollama
+      base_url: http://192.168.68.142:11434 # scripts/mac-ollama.sh (LaunchAgent, OLLAMA_HOST=0.0.0.0)
+      model: qwen3:30b-a3b # Ollama library, MoE 30B/3B active, 18 GB; pulled by scripts/mac-ollama.sh
+      optional: true
+
+agents:
+  project: lab-netops
+  documents: itential/agents
+
+# --- S4d.2 (ADR 0042): command templates (MOP, read-only checks) per OS type and the nightly backups.
+# Documents in itential/command-templates/<deviceType>.yaml; created through /mop/* by tasks/mop.yml.
+mop:
+  documents: itential/command-templates
+  templates:
+    cisco-ios: {command: lab-cisco-ios-checks, analytic: lab-cisco-ios-prepost}
+    arista-eos: {command: lab-arista-eos-checks, analytic: lab-arista-eos-prepost}
+  backup_schedule: {name: nightly backups lab, at_utc: "02:30", repeat_unit: days, repeat_interval: 1}
+
+# --- S4d.3 (ADR 0043/0044): Lifecycle Manager model for the branch VLAN service and the JSON form on its approval
+# task. Documents: itential/lcm/<model>.yaml (schema + actions naming their workflows; the name survives the
+# itential.yml re-import, measured) and itential/forms/<form>.json (generated by itential/forms/build.py).
+# Created through /lifecycle-manager and /json-forms by tasks/lcm.yml; one instance per existing NetBox branch VLAN.
+lcm:
+  documents: itential/lcm
+  model: branch-vlan
+  actions: {create: wf-branch-vlan-v1, delete: wf-branch-vlan-delete-v1}
+  instance_name: "<branch>-<vlan_name>" # known before the run; the VID is chosen inside it
+  netbox_vlan_groups: [br1-user, br2-user] # the VLAN groups itential.yml creates; their VLANs become instances
+forms:
+  documents: itential/forms
+  approval: lab-branch-vlan-approval # ShowJsonForm on task 4a of wf-branch-vlan-v1 (read-only context + decision)
+
+# --- S4d.4 (ADR 0045): Integration Models (OpenAPI) for NetBox and the ServiceNow PDI, registered as agent tools.
+# Documents itential/integrations/<name>.json are generated by itential/integrations/build.py from a read-mostly
+# operation list (the live NetBox schema is 322 paths / 14 MB: far too many tools for an agent). tasks/integrations.yml
+# validates and creates each model (id = title:version), creates and starts the integration instance with the
+# credentials from .env, and refreshes the Tool Registry. Servers: the instance's server settings, not the document's.
+integrations:
+  documents: itential/integrations
+  models:
+    netbox:
+      title: lab-netbox
+      version: "1.0.0"
+      instance: netbox-api # integration (virtual adapter) name; the adapter instance stays NetBox
+      auth: tokenAuth # OpenAPI security scheme in the document: apiKey header Authorization "Token <NETBOX_TOKEN>"
+      server: {protocol: http, host: 10.100.0.64, port: 8080, base_path: ""}
+      operations: [dcim_devices_list, dcim_devices_retrieve, dcim_interfaces_list, ipam_ip_addresses_list, ipam_vlans_list, dcim_sites_list]
+    servicenow:
+      title: lab-servicenow
+      version: "1.0.0"
+      instance: servicenow-api
+      auth: BasicAuth # http basic: SNOW_USER / SNOW_PASSWORD (itential.integration on the PDI)
+      server: {protocol: https, port: 443, base_path: ""} # host = <SNOW_INSTANCE>.service-now.com from .env
+      operations: [listIncidents, getIncident, updateIncident, listChangeRequests, getChangeRequest]
+
+# --- S4d.6 (ADR 0047): the Ubuntu hosts as Gateway 5 inventory nodes in their own inventory (stack.host_inventory),
+# so Configuration Manager (InventoryBroker publishes only stack.inventory) never backs them up or checks them.
+# Nodes come from NetBox (active, primary address, these platforms); Gateway 5's netmiko driver takes platform linux.
+# Password login for the automation user is enabled per host by ansible/playbooks/lab-endpoints.yml.
+hosts:
+  netbox_platforms: {ubuntu-24-04: linux}
+  roles: [server, client]
+  probe: ["uptime -p", "hostname"] # the reachability and uptime check (verify S4d.6, agents later)

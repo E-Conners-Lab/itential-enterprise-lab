@@ -1,0 +1,539 @@
+{
+  "name": "wf-show-all-v1",
+  "type": "automation",
+  "description": "Runs one show command on every lab device in one Gateway 5 call and returns the parsed result per device (Genie for cisco_ios, TextFSM for arista_eos, each capped at 1500 characters); the agents' fleet-wide read (PID S4d.5, ADR 0046)",
+  "tasks": {
+    "1a": {
+      "name": "getDevicesFiltered",
+      "canvasName": "getDevicesFiltered",
+      "summary": "every lab device (the inventory through the broker)",
+      "description": "every lab device (the inventory through the broker)",
+      "location": "Application",
+      "locationType": null,
+      "app": "ConfigurationManager",
+      "type": "automatic",
+      "displayName": "ConfigurationManager",
+      "groups": [],
+      "nodeLocation": {
+        "x": 0,
+        "y": 0
+      },
+      "variables": {
+        "incoming": {
+          "options": {
+            "start": 0,
+            "limit": 500
+          }
+        },
+        "outgoing": {
+          "devices": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "1b": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "device names",
+      "description": "device names",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 300,
+        "y": 0
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "list[*].name",
+          "obj": "$var.1a.devices"
+        },
+        "outgoing": {
+          "return_data": "$var.job.devices"
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "1c": {
+      "name": "join",
+      "canvasName": "join",
+      "summary": "names joined for the selector",
+      "description": "names joined for the selector",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 600,
+        "y": 0
+      },
+      "variables": {
+        "incoming": {
+          "arr": "$var.1b.return_data",
+          "separator": "\",\""
+        },
+        "outgoing": {
+          "joinedElements": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "1d": {
+      "name": "replace",
+      "canvasName": "replace",
+      "summary": "selector JSON with every node",
+      "description": "selector JSON with every node",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 900,
+        "y": 0
+      },
+      "variables": {
+        "incoming": {
+          "str": "[{\"inventory\": \"lab\", \"nodeNames\": [\"__N__\"]}]",
+          "substr": "__N__",
+          "newSubstr": "$var.1c.joinedElements"
+        },
+        "outgoing": {
+          "replacedString": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "1e": {
+      "name": "parse",
+      "canvasName": "parse",
+      "summary": "selector object",
+      "description": "selector object",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 1200,
+        "y": 0
+      },
+      "variables": {
+        "incoming": {
+          "text": "$var.1d.replacedString"
+        },
+        "outgoing": {
+          "textObject": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "2a": {
+      "name": "replace",
+      "canvasName": "replace",
+      "summary": "commands JSON",
+      "description": "commands JSON",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 0,
+        "y": 300
+      },
+      "variables": {
+        "incoming": {
+          "str": "[\"__C__\"]",
+          "substr": "__C__",
+          "newSubstr": "$var.job.command"
+        },
+        "outgoing": {
+          "replacedString": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "2b": {
+      "name": "parse",
+      "canvasName": "parse",
+      "summary": "commands list",
+      "description": "commands list",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 300,
+        "y": 300
+      },
+      "variables": {
+        "incoming": {
+          "text": "$var.2a.replacedString"
+        },
+        "outgoing": {
+          "textObject": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "3a": {
+      "name": "sendCommand",
+      "canvasName": "sendCommand",
+      "summary": "the command on every node in one Gateway 5 call",
+      "description": "the command on every node in one Gateway 5 call",
+      "location": "Application",
+      "locationType": null,
+      "app": "GatewayManager",
+      "type": "automatic",
+      "displayName": "GatewayManager",
+      "groups": [],
+      "nodeLocation": {
+        "x": 1500,
+        "y": 0
+      },
+      "variables": {
+        "incoming": {
+          "clusterId": "lab",
+          "commands": "$var.2b.textObject",
+          "inventory": "$var.1e.textObject"
+        },
+        "outgoing": {
+          "result": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "3b": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "results + device list (ostype per device) for the parser",
+      "description": "results + device list (ostype per device) for the parser",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 1800,
+        "y": 0
+      },
+      "variables": {
+        "incoming": {
+          "obj": "$var.3a.result",
+          "path": [
+            "devices"
+          ],
+          "value": "$var.1a.devices"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "4a": {
+      "name": "runCode",
+      "canvasName": "runCode",
+      "summary": "parse per device on the runner (Genie / TextFSM)",
+      "description": "parse per device on the runner (Genie / TextFSM)",
+      "location": "Application",
+      "locationType": null,
+      "app": "GatewayManager",
+      "type": "automatic",
+      "displayName": "GatewayManager",
+      "groups": [],
+      "nodeLocation": {
+        "x": 2100,
+        "y": 0
+      },
+      "variables": {
+        "incoming": {
+          "clusterId": "lab",
+          "language": "python",
+          "code": "import json, sys\nGENIE = {\"cisco_ios\": \"iosxe\"}  # the lab's cisco_ios nodes are IOS-XE (C8000v)\nTEXTFSM = {\"arista_eos\": \"arista_eos\"}\nLIMIT = 1500\nd = json.loads(sys.stdin.read() or \"{}\")\nostype = {x.get(\"name\"): x.get(\"ostype\") for x in (d.get(\"devices\") or {}).get(\"list\") or []}\nout = {\"devices\": [], \"results\": {}, \"parser_errors\": {}}\nfor r in ((d.get(\"result\") or {}).get(\"results\") or []):\n    name, output, command = r.get(\"name\"), r.get(\"output\") or \"\", r.get(\"command\") or \"\"\n    os_ = ostype.get(name)\n    entry = {\"ostype\": os_, \"parser\": \"none\", \"parsed\": None, \"truncated\": False}\n    if not r.get(\"success\", True):\n        entry[\"error\"] = \"command failed\"\n        entry[\"raw_head\"] = output[:600]\n    else:\n        try:\n            if os_ in GENIE:\n                from genie.conf.base import Device\n                dev = Device(name=\"x\", os=GENIE[os_])\n                dev.custom.setdefault(\"abstraction\", {\"order\": [\"os\"]})\n                entry[\"parsed\"], entry[\"parser\"] = dev.parse(command, output=output), \"genie\"\n            elif os_ in TEXTFSM:\n                from ntc_templates.parse import parse_output\n                entry[\"parsed\"], entry[\"parser\"] = parse_output(platform=TEXTFSM[os_], command=command, data=output), \"textfsm\"\n            else:\n                entry[\"error\"] = \"no parser for ostype %s\" % os_\n                entry[\"raw_head\"] = output[:600]\n        except Exception as e:  # unsupported command or empty output: keep the head of the raw text\n            entry[\"error\"] = type(e).__name__ + \": \" + str(e)[:200]\n            entry[\"raw_head\"] = output[:600]\n    text = json.dumps(entry[\"parsed\"]) if entry[\"parsed\"] is not None else \"\"\n    if len(text) > LIMIT:\n        entry[\"parsed\"], entry[\"truncated\"] = text[:LIMIT] + \"...\", True\n    if entry.get(\"error\"):\n        out[\"parser_errors\"][name] = entry[\"error\"]\n    out[\"devices\"].append(name)\n    out[\"results\"][name] = entry\nout[\"devices_checked\"] = len(out[\"devices\"])\nprint(json.dumps(out))\n",
+          "data": "$var.3b.object",
+          "safety": {
+            "timeout": 240
+          },
+          "packages": [
+            "pyats==26.8",
+            "genie==26.8",
+            "textfsm==2.1.0",
+            "ntc-templates==9.2.0"
+          ]
+        },
+        "outgoing": {
+          "result": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "4b": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "results per device",
+      "description": "results per device",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 2400,
+        "y": 0
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "stdout_json.results",
+          "obj": "$var.4a.result"
+        },
+        "outgoing": {
+          "return_data": "$var.job.results"
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "4c": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "devices checked",
+      "description": "devices checked",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 2400,
+        "y": 200
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "stdout_json.devices_checked",
+          "obj": "$var.4a.result"
+        },
+        "outgoing": {
+          "return_data": "$var.job.devices_checked"
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "4d": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "parser errors",
+      "description": "parser errors",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 2400,
+        "y": 400
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "stdout_json.parser_errors",
+          "obj": "$var.4a.result"
+        },
+        "outgoing": {
+          "return_data": "$var.job.parser_errors"
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "workflow_start": {
+      "name": "workflow_start",
+      "summary": "workflow_start",
+      "groups": [],
+      "nodeLocation": {
+        "x": -600,
+        "y": 0
+      }
+    },
+    "workflow_end": {
+      "name": "workflow_end",
+      "summary": "workflow_end",
+      "groups": [],
+      "nodeLocation": {
+        "x": 1800,
+        "y": 0
+      }
+    }
+  },
+  "transitions": {
+    "workflow_start": {
+      "1a": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "1a": {
+      "1b": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "1b": {
+      "1c": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "1c": {
+      "1d": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "1d": {
+      "1e": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "1e": {
+      "2a": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "2a": {
+      "2b": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "2b": {
+      "3a": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "3a": {
+      "3b": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "3b": {
+      "4a": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "4a": {
+      "4b": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "4b": {
+      "4c": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "4c": {
+      "4d": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "4d": {
+      "workflow_end": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "workflow_end": {}
+  },
+  "groups": [],
+  "canvasVersion": 3,
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "command": {
+        "type": "string",
+        "required": true,
+        "description": "One show command, e.g. show ip interface brief"
+      }
+    },
+    "required": [
+      "command"
+    ]
+  },
+  "outputSchema": {
+    "type": "object",
+    "properties": {
+      "devices": {
+        "type": "array"
+      },
+      "devices_checked": {
+        "type": "number"
+      },
+      "results": {
+        "type": "object"
+      },
+      "parser_errors": {
+        "type": "object"
+      }
+    }
+  },
+  "tags": [],
+  "preAutomationTime": 300000,
+  "sla": 600000,
+  "font_size": 12,
+  "decorators": []
+}

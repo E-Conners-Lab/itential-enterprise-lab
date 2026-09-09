@@ -1,0 +1,14 @@
+<e/>vrf instance MGMT
+<e/>username automation privilege 15 {/.*/}
+<e/>aaa authorization exec default local
+<e/>dns domain lab.internal
+<e/>ip name-server vrf MGMT 10.100.0.1
+<e/>ntp server vrf MGMT 10.100.0.1
+<e/>ip route vrf MGMT 0.0.0.0/0 10.100.0.1
+<e/>management api http-commands
+   no shutdown
+   vrf MGMT
+      no shutdown
+service routing protocols model multi-agent
+{d/}<e/>username admin {/.*/}
+{d/}<e/>aaa root {/.*/}

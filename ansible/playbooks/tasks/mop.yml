@@ -1,0 +1,193 @@
+---
+# Element 2 of PID S4d (ADR 0042): command templates and analytic templates from
+# itential/command-templates/<deviceType>.yaml through the MOP API (read-only checks; MOP never pushes
+# configuration), and the nightly backup schedule on wf-backup-all-v1. Needs: login.
+- name: Command template documents
+  ansible.builtin.set_fact:
+    mop_docs: >-
+      {{ mop_docs | default({}) | combine({item.key: lookup('ansible.builtin.file', mop_dir ~ '/' ~ item.key ~ '.yaml') | from_yaml}) }}
+  loop: "{{ mop.templates | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"
+
+- name: Document names match the oracle
+  ansible.builtin.assert:
+    that:
+      - mop_docs[item.key].command_template.name == item.value.command
+      - mop_docs[item.key].analytic_template.name == item.value.analytic
+    quiet: true
+  loop: "{{ mop.templates | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"
+
+- name: Existing command templates
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/mop/listTemplates"
+    headers: {Cookie: "{{ login.cookies_string }}"}
+  register: mop_now
+
+- name: Command templates created
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/mop/createTemplate"
+    method: POST
+    headers: {Cookie: "{{ login.cookies_string }}"}
+    body_format: json
+    body: {mop: "{{ mop_docs[item.key].command_template }}"}
+    status_code: [200, 201]
+  loop: "{{ mop.templates | dict2items }}"
+  loop_control:
+    label: "{{ item.value.command }}"
+  when: item.value.command not in (mop_now.json | map(attribute='name') | list)
+
+- name: Command templates updated when the document changed (full replacement)
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/mop/updateTemplate/{{ item.value.command | urlencode }}"
+    method: POST
+    headers: {Cookie: "{{ login.cookies_string }}"}
+    body_format: json
+    body: {mop: "{{ mop_docs[item.key].command_template }}"}
+    status_code: 200
+  vars:
+    have: "{{ (mop_now.json | selectattr('name', 'equalto', item.value.command) | first) | default({}) }}"
+    want: "{{ mop_docs[item.key].command_template }}"
+  loop: "{{ mop.templates | dict2items }}"
+  loop_control:
+    label: "{{ item.value.command }}"
+  when: >-
+    have | length > 0 and (have.commands != want.commands or have.passRule != want.passRule
+    or have.description != want.description)
+  changed_when: true
+
+- name: Existing analytic templates
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/mop/listAnalyticTemplates"
+    headers: {Cookie: "{{ login.cookies_string }}"}
+  register: analytic_now
+
+- name: Analytic templates created
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/mop/createAnalyticTemplate"
+    method: POST
+    headers: {Cookie: "{{ login.cookies_string }}"}
+    body_format: json
+    body: {template: "{{ mop_docs[item.key].analytic_template }}"}  # the analytic API wraps in "template" (command templates use "mop")
+    status_code: [200, 201]
+  loop: "{{ mop.templates | dict2items }}"
+  loop_control:
+    label: "{{ item.value.analytic }}"
+  when: item.value.analytic not in (analytic_now.json | map(attribute='name') | list)
+
+- name: Analytic templates updated when the document changed
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/mop/updateAnalyticTemplate/{{ have._id }}"
+    method: POST
+    headers: {Cookie: "{{ login.cookies_string }}"}
+    body_format: json
+    body: {template: "{{ mop_docs[item.key].analytic_template }}"}
+    status_code: 200
+  vars:
+    have: "{{ (analytic_now.json | selectattr('name', 'equalto', item.value.analytic) | first) | default({}) }}"
+    want: "{{ mop_docs[item.key].analytic_template }}"
+  loop: "{{ mop.templates | dict2items }}"
+  loop_control:
+    label: "{{ item.value.analytic }}"
+  when: have | length > 0 and (have.prepostCommands != want.prepostCommands or have.passRule != want.passRule)
+  changed_when: true
+
+# --- nightly backups: automation on wf-backup-all-v1 + schedule trigger (same shape as the compliance run) ---
+- name: Workflow id (changes on every itential.yml import) of {{ workflows.backup_all }}
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/automation-studio/workflows?limit=100"
+    headers: {Cookie: "{{ login.cookies_string }}"}
+  register: wf_list_b
+
+- name: Workflow automations
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/operations-manager/automations?equalsField=componentType&equals=workflows&limit=100"
+    headers: {Cookie: "{{ login.cookies_string }}"}
+  register: wf_automations_b
+
+- name: Automation wrapping the backup workflow
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/operations-manager/automations"
+    method: POST
+    headers: {Cookie: "{{ login.cookies_string }}"}
+    body_format: json
+    body:
+      name: "{{ mop.backup_schedule.name }}"
+      description: "Backs up every device nightly through {{ workflows.backup_all }} (ansible/playbooks/platform.yml)"
+      componentType: workflows
+      componentId: "{{ wf_id_b }}"
+      componentName: "{{ workflows.backup_all }}"
+    status_code: [200, 201]
+  vars:
+    wf_id_b: "{{ (wf_list_b.json['items'] | selectattr('name', 'equalto', workflows.backup_all) | first)._id }}"
+  when: mop.backup_schedule.name not in (wf_automations_b.json.data | map(attribute='name') | list)
+
+- name: Backup automation follows the current workflow id
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/operations-manager/automations/{{ have._id }}"
+    method: PATCH
+    headers: {Cookie: "{{ login.cookies_string }}"}
+    body_format: json
+    body: {componentId: "{{ wf_id_b }}", componentName: "{{ workflows.backup_all }}"}
+    status_code: 200
+  vars:
+    wf_id_b: "{{ (wf_list_b.json['items'] | selectattr('name', 'equalto', workflows.backup_all) | first)._id }}"
+    have: "{{ (wf_automations_b.json.data | selectattr('name', 'equalto', mop.backup_schedule.name) | first) | default({}) }}"
+  when: have | length > 0 and have.componentId != wf_id_b
+  changed_when: true
+
+- name: Backup automation id
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/operations-manager/automations?equalsField=componentType&equals=workflows&limit=100"
+    headers: {Cookie: "{{ login.cookies_string }}"}
+  register: wf_automations_b2
+
+- name: Schedule triggers
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/operations-manager/triggers?equalsField=type&equals=schedule&limit=100"
+    headers: {Cookie: "{{ login.cookies_string }}"}
+  register: sched_now_b
+
+- name: Seconds after midnight UTC of the nightly backup
+  ansible.builtin.set_fact:
+    at_seconds_b: >-
+      {{ (mop.backup_schedule.at_utc.split(':')[0] | int) * 3600
+         + (mop.backup_schedule.at_utc.split(':')[1] | int) * 60 }}
+
+- name: Nightly backup schedule trigger
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/operations-manager/triggers"
+    method: POST
+    headers: {Cookie: "{{ login.cookies_string }}"}
+    body_format: json
+    body:
+      name: "{{ mop.backup_schedule.name }}"
+      description: "Nightly configuration backup of every device (PID S4d.2)"
+      type: schedule
+      actionType: automations
+      actionId: "{{ (wf_automations_b2.json.data | selectattr('name', 'equalto', mop.backup_schedule.name) | first)._id }}"
+      enabled: true
+      firstRunAt: "{{ first_run_ms_b | int }}"
+      repeatUnit: "{{ mop.backup_schedule.repeat_unit | regex_replace('s$', '') }}"
+      repeatFrequency: "{{ mop.backup_schedule.repeat_interval | int }}"
+      processMissedRuns: none
+    status_code: [200, 201]
+  vars:
+    first_run_ms_b: "{{ (((lookup('ansible.builtin.pipe', 'date -u +%s') | int) // 86400 + 1) * 86400 + (at_seconds_b | int)) * 1000 }}"
+  when: mop.backup_schedule.name not in (sched_now_b.json.data | map(attribute='name') | list)
+
+- name: Backup schedule trigger enabled and at the right time of day, next occurrence of {{ mop.backup_schedule.at_utc }}
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/operations-manager/triggers/{{ have._id }}"
+    method: PATCH
+    headers: {Cookie: "{{ login.cookies_string }}"}
+    body_format: json
+    body: {enabled: true, firstRunAt: "{{ first_run_ms_b | int }}"}
+    status_code: 200
+  vars:
+    have: "{{ (sched_now_b.json.data | selectattr('name', 'equalto', mop.backup_schedule.name) | first) | default({}) }}"
+    first_run_ms_b: "{{ (((lookup('ansible.builtin.pipe', 'date -u +%s') | int) // 86400 + 1) * 86400 + (at_seconds_b | int)) * 1000 }}"
+  when: have | length > 0 and (not have.enabled or ((have.firstRunAt | int) // 1000) % 86400 != (at_seconds_b | int))
+  changed_when: true

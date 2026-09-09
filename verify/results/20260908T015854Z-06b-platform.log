@@ -1,0 +1,19 @@
+# test-06b-platform 20260908T015854Z
+SKIP  S4d.1 Golden Config: plan clean on 12 devices; hostname drift on br1-wan01 and br1-sw01 flagged with no false positive; restored through wf-config-push-v1
+SKIP  S4d.2 command templates on br1-wan01 and br1-sw01 with every rule evaluated; analytic pre/post green; nightly backup schedule and a run whose backups equal the running configs
+PASS  S4d.3 Lifecycle Manager branch-vlan: instances from NetBox; create -> JSON form approval (Work Center shows branch, VLAN, switch, NetBox reservation) -> instance; rejected push changes nothing; delete -> governed push; history; no-op; rejected create retired
+      actions runnable: Create -> workflow 9ba421aa, Delete -> workflow e27a31e7
+      form fields: ['branch', 'decision', 'netbox_vlan_id', 'status', 'switch', 'vid', 'vlan_name']
+      instances cover every NetBox branch VLAN: br1-approve-demo 
+      Work Center item 01a07ebd-75d9-704e-8e51-89e3302c2533 shows {'branch': 'br2', 'vid': 11, 'vlan_name': 'lcm-20260908t015854z', 'switch': 'br2-sw01', 'netbox_vlan_id': 23, 'status': 'reserved'}
+      instance br2-lcm-20260908t015854z {'branch': 'br2', 'vid': 11, 'vlan_name': 'lcm-20260908t015854z', 'switch': 'br2-sw01', 'netbox_vlan_id': 23, 'status': 'active'}
+      create: VLAN 11 lcm-20260908t015854z active in NetBox (id 23) and on br2-sw01; instance br2-lcm-20260908t015854z recorded (execution 6a9f6be2db698a97918e2e60)
+      rejected push: job 347ed05bb12b443b9a1dd2b6 in error, delete job 45ade127bee54a10807b4a01 waited, NetBox and br2-sw01 untouched, both cancelled
+      delete: push job 5807139c94b54cf291290ee8 removed VLAN 11 from br2-sw01 after the approval; NetBox VLAN gone; instance br2-lcm-20260908t015854z retired (execution 6a9f6c01db698a97918e2e62)
+      history: [('Create', 'complete', '08640663d62e47e2b94a4daf'), ('Delete', 'complete', '59bf1eff6d7447c4922d0d55')]
+      no-op: wf-branch-vlan-delete-v1 on the retired VLAN changed nothing and started no push (job 9dd3323f970d45a69c6f075b)
+      rejected create: reservation 24 rolled back, child 7315ea42369e4dbf98aba708 in error, execution 6a9f6c26db698a97918e2e63 cancelled, instance retired
+DEFER S4d.4 Integration Models (element 4, not built yet)
+DEFER S4d.6 hosts and firewalls (element 6, not built yet)
+
+passed=1 failed=0 deferred=2

@@ -6,7 +6,7 @@ SHELL := /bin/bash
 .SHELLFLAGS := -eu -o pipefail -c
 .DEFAULT_GOAL := help
 
-PHASES := oob-network platform network-topology itential ddi identity observability config-secrets-code panorama containerlab
+PHASES := oob-network platform network-topology itential flowai ddi identity observability config-secrets-code panorama containerlab
 
 .PHONY: help bootstrap lint test up verify discover plan-oob plan-platform plan-itential $(addprefix phase-,$(PHASES))
 
@@ -72,6 +72,24 @@ phase-platform: ## Phase 3: NetBox VMs -> tofu apply -> k3s cluster -> Cilium/Me
 	$(load_env) cd ansible && ansible-playbook playbooks/k8s-platform.yml
 	verify/run.sh
 
+# Phase 4 (PID S3, ADR 0034). NetBox receives the topology before EVE-NG is built (ADR 0002); `plan`
+# fails loud on an image missing from EVE-NG (C8000v/vEOS folders per ADR 0032/0033, the Ubuntu golden
+# image per docs/manual-steps.md step 15, Windows 11 from the one-time `images/fetch.sh microsoft` +
+# `images/build-win11.sh`, which imports itself). `apply` is idempotent and uploads the startup configs;
+# `export` writes topology/generated/eve-nodes.yaml, the MAC table the oob-gw DHCP reservations render;
+# the endpoint play waits for the guests to boot. `eve/build.py push-configs` wipes and restarts nodes,
+# so it is a deliberate re-push after a topology/configs change, never part of `make up`. Add `--waves`
+# to `start` once lab.firewalls is true (PA-VM boot storm, PID E3).
+phase-network-topology: ## Phase 4: NetBox topology -> EVE-NG plan/apply -> start -> node MAC export -> oob-gw DHCP reservations -> Linux endpoints -> verify
+	$(load_env) cd ansible && ansible-playbook playbooks/netbox-topology.yml
+	$(load_env) .venv/bin/python eve/build.py plan
+	$(load_env) .venv/bin/python eve/build.py apply
+	$(load_env) .venv/bin/python eve/build.py start
+	$(load_env) .venv/bin/python eve/build.py export
+	$(load_env) cd ansible && ansible-playbook playbooks/oob-gw.yml
+	$(load_env) cd ansible && ansible-playbook -i inventory/netbox.yml playbooks/lab-endpoints.yml
+	verify/run.sh
+
 # Phase 5. NetBox registration first (inventory source), then the VM, then the images (needs an
 # SSO session: `aws sso login --profile itential-ecr`), then the stack, adapters and workflows.
 phase-itential: ## Phase 5: NetBox VM -> tofu apply -> resolver alias -> host (Docker, lab-CA cert) -> images from ECR -> dev-stack + gateways + adapters + workflows -> verify
@@ -84,6 +102,15 @@ phase-itential: ## Phase 5: NetBox VM -> tofu apply -> resolver alias -> host (D
 	$(load_env) cd ansible && ansible-playbook -i inventory/netbox.yml playbooks/itential.yml
 	verify/run.sh
 
+# Phase 6 (PID S4c + S4d): after itential.yml re-imports the workflows, platform.yml wires Configuration
+# Manager (Golden Config, compliance, device groups; more elements as they land) and flowai.yml re-resolves
+# the agents' tool references (ADR 0038 rule). Order matters: itential -> platform -> flowai.
+phase-flowai: ## Phase 6: workflows re-imported -> Platform applications wired to the lab -> Ollama + provider profiles + agents -> verify
+	$(load_env) cd ansible && ansible-playbook -i inventory/netbox.yml playbooks/itential.yml
+	$(load_env) cd ansible && ansible-playbook -i inventory/netbox.yml playbooks/platform.yml
+	$(load_env) cd ansible && ansible-playbook -i inventory/netbox.yml playbooks/flowai.yml
+	verify/run.sh
+
 # Later phases are wired in as each lands. Until then they fail loud.
-$(addprefix phase-,$(filter-out oob-network platform itential,$(PHASES))):
+$(addprefix phase-,$(filter-out oob-network platform network-topology itential flowai,$(PHASES))):
 	@echo "phase '$@' is not implemented yet (see docs/PID.md delivery plan)"; exit 1

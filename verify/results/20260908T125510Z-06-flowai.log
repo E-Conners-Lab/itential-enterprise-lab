@@ -1,0 +1,56 @@
+# test-06-flowai 20260908T125510Z
+PASS  S4c.1 provider profiles anthropic (claude-sonnet-5) and ollama-lab (qwen2.5:7b) answer and list their pinned models
+      profiles: ['anthropic', 'ollama-lab', 'ollama-mac']
+      anthropic: claude-sonnet-5 enabled (id a50763f9...)
+      anthropic provider answered: True 11 models listed
+      ollama-lab: qwen2.5:7b enabled (id 65351742...)
+      ollama-lab provider answered: False 0 models listed
+PASS  S4c.2 lab-netops answers the running version of br1-wan01 and br1-sw01 via the Gateway 5 tool; equals direct SSH
+      tokens in=22908 out=215
+      br1-wan01: agent said 17.13.01a; tools ['dcim_devices_list', 'wf-show-version-v1']
+      tokens in=12784 out=122
+      br1-sw01: agent said 4.33.1.1F; tools ['wf-show-command-v1']
+PASS  S4c.3 lab-netops adds agent-20260908t125510z to br1 through wf-branch-vlan-v1 with the approval; second request is a no-op
+      approved job e3afa5f8873d4495be73ebee
+      tokens in=13505 out=388
+      run 1: VLAN 12 agent-20260908t125510z reserved, approved, configured
+      tokens in=12387 out=267
+      run 2: no-op (still exactly VLAN 12)
+PASS  S4c.4 lab-netops refuses core-router-99 (not in the inventory) without touching the gateway; session records token usage
+      tokens in=12409 out=143
+      refused: core-router-99 is not found in the lab inventory/NetBox, so I can't retrieve its version — I won't call any gateway tool for it.
+PASS  S4c.5 lab-netops-local (ollama-lab qwen2.5:7b) answers the br1-sw01 version; response time and VM memory recorded
+      tokens in=2326 out=44
+      ollama-lab (qwen2.5:7b) answered in 57 s; VM RAM used 10000/24031 MB
+PASS  S4c.6 Claude Code's MCP tools start a lab-netops session (trigger_automation) and read the answer back (describe_session)
+      tokens in=12786 out=122
+      MCP trigger_automation(lab-netops) -> session eea0e6bb-883e-4691-8b08-a7aacf969067 -> 4.33.1.1F via describe_session
+PASS  S4c.7 wf-show-command-v1 returns structured 'show version': Genie on br1-wan01, TextFSM on br1-sw01, equal to direct SSH
+      br1-wan01: genie -> version.xe_version = 17.13.01a; matches direct SSH
+      br1-sw01: textfsm -> 0.image = 4.33.1.1F; matches direct SSH
+PASS  S4d.5a netbox-sot counts the active devices of dc1 through the NetBox integration; equals the NetBox API
+      tokens in=7036 out=137
+      netbox-sot: dc1 has 8 active devices (NetBox agrees); tools ['dcim_devices_list']
+PASS  S4d.5b device-ops reports br2-sw01's software version through the show-command workflow; equals direct SSH
+      tokens in=11157 out=285
+      device-ops: br2-sw01 runs 4.33.1.1F (direct SSH agrees); tools ['dcim_devices_list', 'wf-show-command-v1']
+PASS  S4d.5c compliance runs lab-baseline and reports the result; the batch reports read directly agree
+      tokens in=3471 out=140
+      compliance: lab-baseline clean on 12 devices; agent said 'all compliant'; tools ['wf-compliance-report-v1']
+PASS  S4d.5d diagnostics reads a verify-created incident about br2-sw01, checks the device and writes one 'Proposed fix' work note
+      tokens in=25225 out=1159
+      diagnostics: INC0010003 got the note 'Proposed fix: host'; tools ['dcim_devices_list', 'listIncidents', 'updateIncident', 'wf-show-command-v1']; push job c8189d79905e4584b4f7c837 made the drift
+PASS  S4d.5e remediation fixes the br2-sw01 hostname drift only through wf-config-push-v1; the card approved here; direct SSH confirms
+      tokens in=11932 out=729
+      remediation: proposed 'hostname br2-sw01', push job 79dba7647b5d41e58443d45c approved here, br2-sw01 restored (direct SSH); tools ['dcim_devices_list', 'wf-compliance-report-v1', 'wf-config-push-v1']
+PASS  S4d.5f netbox-sot-local (ollama-lab qwen2.5:7b) answers br2-sw01's site; response time and VM memory recorded
+      tokens in=2575 out=48
+      netbox-sot-local (qwen2.5:7b) answered in 46 s; VM RAM used 9933/24031 MB
+PASS  S4d.5g wf-show-all-v1 parses 'show version' on every lab device in one call (direct SSH agrees); lab-netops-local answers an all-devices question from it
+      wf-show-all-v1: 12 devices, parsers ['genie', 'textfsm']
+      tokens in=4862 out=44
+      lab-netops-local counted 12 devices from one wf-show-all-v1 call in 93 s; tools ['wf-show-all-v1']
+closed INC0010003
+
+tokens spent this run: in=155363 out=3843 (Anthropic + local)
+passed=14 failed=0

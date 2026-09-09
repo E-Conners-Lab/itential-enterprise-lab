@@ -6,14 +6,18 @@ end. Everything is code: OpenTofu for Proxmox, the EVE-NG REST API for the
 network topology, Helm/Kustomize for k3s, Ansible for guests, and NetBox as the
 network source of truth.
 
-> **Status: Phase 5 — Itential (in progress).** Itential Platform 6.5.2, Gateway 5.5.2
-> and the MCP server run as the `itential-dev-stack` containers on one Ubuntu VM
-> (`itential.lab.internal`, ADR 0035). The NetBox adapter, an Inventory Manager
-> inventory generated from NetBox and three generated workflows are live:
-> `wf-branch-vlan-v1` reserves a VLAN in NetBox, waits for approval, pushes it to the
-> branch switch through Gateway 5 and rolls the reservation back on failure (ADR 0036).
-> The EVE-NG lab `/enterprise.unl` runs 17 of 21 nodes; the four PA-VM firewalls wait
-> on the Customer Support Portal download (`lab.firewalls`, ADR 0034).
+> **Status: Phase 6 — FlowAI agents and Platform coverage of the lab (in progress, branch
+> `phase-6/flowai`; Phase 5 is draft PR #17).** Itential Platform 6.5.2, Gateway 5 (server plus a
+> glibc runner for Genie/TextFSM, ADR 0038), the MCP server and an in-lab Ollama run as the
+> `itential-dev-stack` containers on one Ubuntu VM (`itential.lab.internal`, ADR 0035). Everything on
+> the platform is created through its API from documents in `itential/` by three plays
+> (`itential.yml` -> `platform.yml` -> `flowai.yml`): ten generated workflows (`wf-*`, the only device
+> write path is `wf-config-push-v1` behind a Work Center approval), Golden Config trees and a nightly
+> compliance plan, MOP pre/post templates and nightly backups, the Lifecycle Manager service
+> `branch-vlan` with its JSON form approval, NetBox and ServiceNow Integration Models as agent tools,
+> and the agent fleet (`lab-netops`, `netbox-sot`, `device-ops`, `compliance`, `diagnostics`,
+> `remediation`, each on Claude and on a local model). The three Ubuntu hosts are Gateway 5 inventory
+> nodes; the four PA-VM firewalls wait on the Customer Support Portal download (`lab.firewalls`, ADR 0034).
 
 ## Architecture (target)
 
@@ -52,13 +56,14 @@ committed. Service specs and acceptance criteria are in `docs/PID.md`.
 | 2 | `phase-2/oob-network` | OOB network (`vmbr1`, `pnet1`, `oob-gw`), Proxmox API token, image staging, NetBox seeded | merged (PR #14) |
 | 3 | `phase-3/platform` | 3-node k3s: Cilium, MetalLB, Longhorn, cert-manager + lab CA, CloudNativePG + Garage backups | merged (PR #15) |
 | 4 | `phase-4/network-topology` | EVE-NG DC + 2 branches (C8000v, vEOS, endpoints; PA-VM deferred behind `lab.firewalls`) from `topology/` | merged (PR #16) |
-| 5 | `phase-5/itential` | Itential Platform 6.5.2 + Gateway 5.5.2 as the dev-stack containers on VM 205 (ADR 0035), NetBox adapter, Inventory Manager from NetBox, generated workflows incl. `wf-branch-vlan-v1`, MCP for Claude Code; ServiceNow PDI adapter | in progress |
-| 6 | `phase-6/ddi` | Infoblox NIOS primary, BIND9 + Kea secondary, zone generated from NetBox | planned |
-| 7 | `phase-7/identity` | Windows Server AD DS/DNS, tac_plus, Keycloak SSO | planned |
-| 8 | `phase-8/observability` | Zabbix, Prometheus + Grafana, gNMIc, Loki | planned |
-| 9 | `phase-9/config-secrets-code` | Oxidized, Vault, Gitea | planned |
-| 10 | `phase-10/panorama` | Panorama, firewall onboarding | planned |
-| 11 | `phase-11/containerlab` | Containerlab CI/test tier (cEOS mirror of the DC fabric) | planned |
+| 5 | `phase-5/itential` | Itential Platform 6.5.2 + Gateway 5.5.2 as the dev-stack containers on VM 205 (ADR 0035), NetBox adapter, Inventory Manager from NetBox, generated workflows incl. `wf-branch-vlan-v1`, MCP for Claude Code; ServiceNow PDI adapter | draft PR #17 (verify 11/11; the 24 h memory check pending) |
+| 6 | `phase-6/flowai` | FlowAI agents over the topology (S4c, ADR 0037/0038: Anthropic + in-lab Ollama profiles, `lab-netops`, Genie/TextFSM on a Gateway 5 runner) and Platform coverage of the lab (S4d, ADR 0039-0047: Configuration Manager through the InventoryBroker, Golden Config + nightly compliance, MOP templates + nightly backups, Lifecycle Manager `branch-vlan` + JSON form approval, NetBox/ServiceNow Integration Models, the five-agent fleet with local twins, Ubuntu hosts in Gateway 5) | in progress (S4c 7/7, S4d 1-6 built; draft PR after the full verify) |
+| 7 | `phase-7/ddi` | Infoblox NIOS primary, BIND9 + Kea secondary, zone generated from NetBox | planned |
+| 8 | `phase-8/identity` | Windows Server AD DS/DNS, tac_plus, Keycloak SSO | planned |
+| 9 | `phase-9/observability` | Zabbix, Prometheus + Grafana, gNMIc, Loki | planned |
+| 10 | `phase-10/config-secrets-code` | Oxidized, Vault, Gitea | planned |
+| 11 | `phase-11/panorama` | Panorama, firewall onboarding | planned |
+| 12 | `phase-12/containerlab` | Containerlab CI/test tier (cEOS mirror of the DC fabric) | planned |
 
 ## Repo layout
 
@@ -68,8 +73,10 @@ topology/    YAML that drives both EVE-NG and NetBox
 images/      import scripts only (images themselves are never committed)
 tofu/        Proxmox bridges, templates, VMs (bpg/proxmox)
 k8s/         Helm values, Kustomize overlays
-ansible/     guest OS and application configuration
+ansible/     guest OS and application configuration (itential.yml, platform.yml, flowai.yml build the platform from itential/)
 eve/         EVE-NG REST API client and topology builder
+itential/    the platform as documents: versions.yaml (oracle), workflows/ (build.py -> wf-*.json), golden-config/,
+             command-templates/, lcm/, forms/, integrations/, agents/, the vendored dev-stack Compose files
 verify/      one integration test per service; results/ holds committed evidence
 ```
 

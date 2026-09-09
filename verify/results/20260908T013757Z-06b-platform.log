@@ -1,0 +1,19 @@
+# test-06b-platform 20260908T013757Z
+SKIP  S4d.1 Golden Config: plan clean on 12 devices; hostname drift on br1-wan01 and br1-sw01 flagged with no false positive; restored through wf-config-push-v1
+SKIP  S4d.2 command templates on br1-wan01 and br1-sw01 with every rule evaluated; analytic pre/post green; nightly backup schedule and a run whose backups equal the running configs
+FAIL  S4d.3 Lifecycle Manager branch-vlan: instances from NetBox; create -> JSON form approval (Work Center shows branch, VLAN, switch, NetBox reservation) -> instance; delete -> governed push; history; no-op
+      actions runnable: Create -> workflow f16f6bd5, Delete -> workflow 6a711887
+      form fields: ['branch', 'decision', 'netbox_vlan_id', 'status', 'switch', 'vid', 'vlan_name']
+      instances cover every NetBox branch VLAN: br1-approve-demo 
+      Traceback (most recent call last):
+        File "<string>", line 1, in <module>
+          import sys,json;d=json.load(sys.stdin).get('data') or [];d=d.get('items') if isinstance(d,dict) else d;w=[x for x in d if (x.get('execution') or {}).get('id')=='4c937291c8414292a2c6523f' and x.get('status')=='pending'];print(w[0]['id'] if w else '')
+                            ^^^^^^^^^^^^^^^^^^^^^^^^
+      AttributeError: 'str' object has no attribute 'get'
+      no pending Work Center item for job 4c937291c8414292a2c6523f
+cleanup: retiring instance br2-lcm-20260908t013757z through its delete action
+cleanup: removing leftover VLAN 11 lcm-20260908t013757z
+DEFER S4d.4 Integration Models (element 4, not built yet)
+DEFER S4d.6 hosts and firewalls (element 6, not built yet)
+
+passed=0 failed=1 deferred=2

@@ -1,0 +1,18 @@
+# test-06b-platform 20260908T001151Z
+SKIP  S4d.1 Golden Config: plan clean on 12 devices; hostname drift on br1-wan01 and br1-sw01 flagged with no false positive; restored through wf-config-push-v1
+FAIL  S4d.2 command templates on br1-wan01 and br1-sw01 with every rule evaluated; analytic pre/post green; nightly backup schedule and a run whose backups equal the running configs
+      br1-wan01: lab-cisco-ios-checks passed, 6 rules over 3 commands
+      2 pre/post rules equal
+      br1-wan01: lab-cisco-ios-prepost pre/post equal
+      br1-sw01: lab-arista-eos-checks passed, 6 rules over 4 commands
+      Traceback (most recent call last):
+        File "<string>", line 4, in <module>
+          assert rules and all(p is True for _,_,p in rules), rules
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+      AssertionError: [('show version', 'Software image version: (\\S+)', False), ('show ip interface brief', 'Management1\\s+(\\S+)', True)]
+      br1-sw01 lab-arista-eos-prepost: {"_id":"lab-arista-eos-prepost","name":"lab-arista-eos-prepost","os":"arista_eos","passRule":true,"prepostCommands":[{"preRawCommand":"show version","postRawCommand":"show version","passRule":true,"rules":[{"type":"matches","preRegex":"Software image version: (\\S+)","postRegex":"Software image version: (\\S+)","evaluator":"=","pass":false}],"responses":[{"preResponse":{"raw":"show version","all_p
+DEFER S4d.3 Lifecycle Manager + JSON Forms (element 3, not built yet)
+DEFER S4d.4 Integration Models (element 4, not built yet)
+DEFER S4d.6 hosts and firewalls (element 6, not built yet)
+
+passed=0 failed=1 deferred=3

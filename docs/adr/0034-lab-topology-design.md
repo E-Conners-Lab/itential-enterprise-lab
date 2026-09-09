@@ -137,3 +137,18 @@ below was read on the cited page that day).
   networkd applies the lexically first unit, so the endpoint play narrows that
   definition to `ens3`; data ports run MTU 1400 (VXLAN + IPsec inside the
   1500-byte vEOS and WAN links, per AVD's vEOS guidance).
+
+
+## Amendment 2026-09-07: two facts a reader of the live fabric will trip over
+
+- **Leaves receive 0 EVPN prefixes from the spines by design.** Both leaves share AS 65102, so
+  every route a spine reflects (with next-hop-unchanged) carries 65102 in its AS path and the
+  receiving leaf drops it as a loop; the spines accept 14 EVPN prefixes from each leaf. With one
+  MLAG pair sharing the anycast VTEP there is nothing for a leaf to learn from its peer. A second
+  leaf pair needs `allowas-in` on the leaves or a distinct AS per pair (AVD's default).
+- **MLAG dual-primary detection shows "Disabled" in `show mlag` while configured.** Both leaves
+  carry `dual-primary detection delay 5 action errdisable all-interfaces` (confirmed in the running
+  config and in `show mlag detail`: delay 5, action errdisable-all). The summary line reports the
+  runtime arming state: no explicit `heartbeat` peer address is set (`hb-peer-address 0.0.0.0`),
+  the heartbeat runs over the peer address (alive, zero timeouts). Whether vEOS-lab arms detection
+  without a dedicated heartbeat peer is unconfirmed; the intent is not drifted.

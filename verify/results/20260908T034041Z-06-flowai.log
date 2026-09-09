@@ -1,0 +1,31 @@
+# test-06-flowai 20260908T034041Z
+SKIP  S4c.1 provider profiles anthropic (claude-sonnet-5) and ollama-lab (qwen2.5:7b) answer and list their pinned models
+SKIP  S4c.2 lab-netops answers the running version of br1-wan01 and br1-sw01 via the Gateway 5 tool; equals direct SSH
+SKIP  S4c.3 lab-netops adds agent-20260908t034041z to br1 through wf-branch-vlan-v1 with the approval; second request is a no-op
+SKIP  S4c.4 lab-netops refuses core-router-99 (not in the inventory) without touching the gateway; session records token usage
+PASS  S4c.5 lab-netops-local (ollama-lab qwen2.5:7b) answers the br1-sw01 version; response time and VM memory recorded
+      tokens in=2316 out=57
+      ollama-lab (qwen2.5:7b) answered in 57 s; VM RAM used 9756/24031 MB
+SKIP  S4c.6 Claude Code's MCP tools start a lab-netops session (trigger_automation) and read the answer back (describe_session)
+SKIP  S4c.7 wf-show-command-v1 returns structured 'show version': Genie on br1-wan01, TextFSM on br1-sw01, equal to direct SSH
+SKIP  S4d.5a netbox-sot counts the active devices of dc1 through the NetBox integration; equals the NetBox API
+SKIP  S4d.5b device-ops reports br2-sw01's software version through the show-command workflow; equals direct SSH
+PASS  S4d.5c compliance runs lab-baseline and reports the result; the batch reports read directly agree
+      tokens in=3511 out=149
+      compliance: lab-baseline clean on 12 devices; agent said 'all compliant'; tools ['wf-compliance-report-v1']
+SKIP  S4d.5d diagnostics reads a verify-created incident about br2-sw01, checks the device and writes one 'Proposed fix' work note
+FAIL  S4d.5e remediation fixes the br2-sw01 hostname drift only through wf-config-push-v1; the card approved here; direct SSH confirms
+      tokens in=6517 out=640
+      remediation did not start wf-config-push-v1: ['dcim_devices_list', 'wf-compliance-report-v1']; said: The latest compliance report shows no drift for br2-sw01:
+      
+      - **Report status**: `compliant: true`, `devices_with_issues: []`
+      - **br2-sw01 entry** (report_id `6a9f56b70e7c935f1ff4e2d0`): errors = 0, wa
+SKIP  S4d.5f netbox-sot-local (ollama-lab qwen2.5:7b) answers br2-sw01's site; response time and VM memory recorded
+PASS  S4d.5g wf-show-all-v1 parses 'show version' on every lab device in one call (direct SSH agrees); lab-netops-local answers an all-devices question from it
+      wf-show-all-v1: 12 devices, parsers ['genie', 'textfsm']
+      tokens in=4846 out=42
+      lab-netops-local counted 12 devices from one wf-show-all-v1 call in 93 s; tools ['wf-show-all-v1']
+restoring br2-sw01 after a failed run
+
+tokens spent this run: in=17190 out=888 (Anthropic + local)
+passed=3 failed=1

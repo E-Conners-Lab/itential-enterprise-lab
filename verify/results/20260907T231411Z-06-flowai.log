@@ -1,0 +1,13 @@
+# test-06-flowai 20260907T231411Z
+SKIP  S4c.1 provider profiles anthropic (claude-sonnet-5) and ollama-lab (qwen2.5:7b) answer and list their pinned models
+SKIP  S4c.2 lab-netops answers the running version of br1-wan01 and br1-sw01 via the Gateway 5 tool; equals direct SSH
+SKIP  S4c.3 lab-netops adds agent-20260907t231411z to br1 through wf-branch-vlan-v1 with the approval; second request is a no-op
+SKIP  S4c.4 lab-netops refuses core-router-99 (not in the inventory) without touching the gateway; session records token usage
+SKIP  S4c.5 lab-netops-local (ollama-lab qwen2.5:7b) answers the br1-sw01 version; response time and VM memory recorded
+SKIP  S4c.6 Claude Code's MCP tools start a lab-netops session (trigger_automation) and read the answer back (describe_session)
+PASS  S4c.7 wf-show-command-v1 returns structured 'show version': Genie on br1-wan01, TextFSM on br1-sw01, equal to direct SSH
+      br1-wan01: genie -> version.xe_version = 17.13.01a; matches direct SSH
+      br1-sw01: textfsm -> 0.image = 4.33.1.1F; matches direct SSH
+
+tokens spent this run: in=0 out=0 (Anthropic + local)
+passed=1 failed=0

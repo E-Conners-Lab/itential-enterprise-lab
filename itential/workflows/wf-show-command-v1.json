@@ -1,0 +1,511 @@
+{
+  "name": "wf-show-command-v1",
+  "type": "automation",
+  "description": "Runs one show command on an inventory node through Gateway 5 and returns the raw output plus structured data: Genie for Cisco platforms, TextFSM (ntc-templates) for Arista, chosen from the node's NetBox platform (PID S4c.7, ADR 0038)",
+  "tasks": {
+    "1a": {
+      "name": "replace",
+      "canvasName": "replace",
+      "summary": "commands JSON",
+      "description": "commands JSON",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 0,
+        "y": -300
+      },
+      "variables": {
+        "incoming": {
+          "str": "[\"__C__\"]",
+          "substr": "__C__",
+          "newSubstr": "$var.job.command"
+        },
+        "outgoing": {
+          "replacedString": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "1b": {
+      "name": "parse",
+      "canvasName": "parse",
+      "summary": "commands list",
+      "description": "commands list",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 300,
+        "y": -300
+      },
+      "variables": {
+        "incoming": {
+          "text": "$var.1a.replacedString"
+        },
+        "outgoing": {
+          "textObject": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "2a": {
+      "name": "sendCommand",
+      "canvasName": "sendCommand",
+      "summary": "run the command through Gateway 5",
+      "description": "run the command through Gateway 5",
+      "location": "Application",
+      "locationType": null,
+      "app": "GatewayManager",
+      "type": "automatic",
+      "displayName": "GatewayManager",
+      "groups": [],
+      "nodeLocation": {
+        "x": 600,
+        "y": 0
+      },
+      "variables": {
+        "incoming": {
+          "clusterId": "lab",
+          "commands": "$var.1b.textObject",
+          "inventory": "$var.0b.textObject"
+        },
+        "outgoing": {
+          "result": "$var.job.raw"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "3a": {
+      "name": "getDcimDevices",
+      "canvasName": "getDcimDevices",
+      "summary": "the node in NetBox",
+      "description": "the node in NetBox",
+      "location": "Adapter",
+      "locationType": "Netbox",
+      "app": "Netbox",
+      "type": "automatic",
+      "displayName": "Netbox",
+      "groups": [],
+      "nodeLocation": {
+        "x": 0,
+        "y": 300
+      },
+      "variables": {
+        "incoming": {
+          "adapter_id": "NetBox",
+          "name": "$var.job.device",
+          "limit": 1
+        },
+        "outgoing": {
+          "result": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "3b": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "platform slug",
+      "description": "platform slug",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 300,
+        "y": 300
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "response.results[0].platform.slug",
+          "obj": "$var.3a.result"
+        },
+        "outgoing": {
+          "return_data": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "3c": {
+      "name": "replace",
+      "canvasName": "replace",
+      "summary": "parse code for this platform",
+      "description": "parse code for this platform",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 600,
+        "y": 300
+      },
+      "variables": {
+        "incoming": {
+          "str": "import json, sys\nPLATFORM = \"__P__\"  # NetBox platform slug of the node (the workflow replaces it)\nGENIE = {\"ios-xe\": \"iosxe\", \"ios\": \"ios\", \"nx-os\": \"nxos\", \"ios-xr\": \"iosxr\"}\nTEXTFSM = {\"eos\": \"arista_eos\", \"junos\": \"juniper_junos\"}\nd = json.loads(sys.stdin.read() or \"{}\")\nr = ((d.get(\"result\") or {}).get(\"results\") or [{}])[0]\ncommand, output = r.get(\"command\", \"\"), r.get(\"output\", \"\")\nout = {\"parser\": \"none\", \"platform\": PLATFORM, \"command\": command, \"device\": r.get(\"name\"), \"parsed\": None, \"error\": \"\"}\ntry:\n    if PLATFORM in GENIE:\n        from genie.conf.base import Device\n        dev = Device(name=\"x\", os=GENIE[PLATFORM])\n        dev.custom.setdefault(\"abstraction\", {\"order\": [\"os\"]})\n        out[\"parsed\"], out[\"parser\"] = dev.parse(command, output=output), \"genie\"\n    elif PLATFORM in TEXTFSM:\n        from ntc_templates.parse import parse_output\n        out[\"parsed\"], out[\"parser\"] = parse_output(platform=TEXTFSM[PLATFORM], command=command, data=output), \"textfsm\"\n    else:\n        out[\"error\"] = \"no parser for platform \" + PLATFORM\nexcept Exception as e:  # unsupported command or empty output: report, keep the raw text usable\n    out[\"error\"] = type(e).__name__ + \": \" + str(e)[:300]\nprint(json.dumps(out))\n",
+          "substr": "__P__",
+          "newSubstr": "$var.3b.return_data"
+        },
+        "outgoing": {
+          "replacedString": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "4a": {
+      "name": "runCode",
+      "canvasName": "runCode",
+      "summary": "parse (Genie for Cisco, TextFSM for Arista) on the runner",
+      "description": "parse (Genie for Cisco, TextFSM for Arista) on the runner",
+      "location": "Application",
+      "locationType": null,
+      "app": "GatewayManager",
+      "type": "automatic",
+      "displayName": "GatewayManager",
+      "groups": [],
+      "nodeLocation": {
+        "x": 900,
+        "y": 0
+      },
+      "variables": {
+        "incoming": {
+          "clusterId": "lab",
+          "language": "python",
+          "code": "$var.3c.replacedString",
+          "data": "$var.2a.result",
+          "safety": {
+            "timeout": 180
+          },
+          "packages": [
+            "pyats==26.8",
+            "genie==26.8",
+            "textfsm==2.1.0",
+            "ntc-templates==9.2.0"
+          ]
+        },
+        "outgoing": {
+          "result": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "4b": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "structured result",
+      "description": "structured result",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 1200,
+        "y": 0
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "stdout_json.parsed",
+          "obj": "$var.4a.result"
+        },
+        "outgoing": {
+          "return_data": "$var.job.parsed"
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "4c": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "parser used",
+      "description": "parser used",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 1200,
+        "y": 200
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "stdout_json.parser",
+          "obj": "$var.4a.result"
+        },
+        "outgoing": {
+          "return_data": "$var.job.parser"
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "4d": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "parse error, if any",
+      "description": "parse error, if any",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 1200,
+        "y": 400
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "stdout_json.error",
+          "obj": "$var.4a.result"
+        },
+        "outgoing": {
+          "return_data": "$var.job.parse_error"
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "0a": {
+      "name": "replace",
+      "canvasName": "replace",
+      "summary": "selector JSON with the node name",
+      "description": "selector JSON with the node name",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": -600,
+        "y": 0
+      },
+      "variables": {
+        "incoming": {
+          "str": "[{\"inventory\": \"lab\", \"nodeNames\": [\"__DEVICE__\"]}]",
+          "substr": "__DEVICE__",
+          "newSubstr": "$var.job.device"
+        },
+        "outgoing": {
+          "replacedString": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "0b": {
+      "name": "parse",
+      "canvasName": "parse",
+      "summary": "selector JSON -> object",
+      "description": "selector JSON -> object",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": -300,
+        "y": 0
+      },
+      "variables": {
+        "incoming": {
+          "text": "$var.0a.replacedString"
+        },
+        "outgoing": {
+          "textObject": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "workflow_start": {
+      "name": "workflow_start",
+      "summary": "workflow_start",
+      "groups": [],
+      "nodeLocation": {
+        "x": -600,
+        "y": 0
+      }
+    },
+    "workflow_end": {
+      "name": "workflow_end",
+      "summary": "workflow_end",
+      "groups": [],
+      "nodeLocation": {
+        "x": 1800,
+        "y": 0
+      }
+    }
+  },
+  "transitions": {
+    "workflow_start": {
+      "0a": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "0a": {
+      "0b": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "0b": {
+      "1a": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "1a": {
+      "1b": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "1b": {
+      "2a": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "2a": {
+      "3a": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "3a": {
+      "3b": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "3b": {
+      "3c": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "3c": {
+      "4a": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "4a": {
+      "4b": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "4b": {
+      "4c": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "4c": {
+      "4d": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "4d": {
+      "workflow_end": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "workflow_end": {}
+  },
+  "groups": [],
+  "canvasVersion": 3,
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "device": {
+        "type": "string",
+        "required": true,
+        "description": "Inventory node name, e.g. br1-wan01"
+      },
+      "command": {
+        "type": "string",
+        "required": true,
+        "description": "One show command, e.g. show ip interface brief"
+      }
+    },
+    "required": [
+      "device",
+      "command"
+    ]
+  },
+  "outputSchema": {
+    "type": "object",
+    "properties": {
+      "raw": {
+        "type": "object"
+      },
+      "parsed": {
+        "type": [
+          "object",
+          "array",
+          "null"
+        ]
+      },
+      "parser": {
+        "type": "string"
+      },
+      "parse_error": {
+        "type": "string"
+      }
+    }
+  },
+  "tags": [],
+  "preAutomationTime": 300000,
+  "sla": 600000,
+  "font_size": 12,
+  "decorators": []
+}

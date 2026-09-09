@@ -1,0 +1,15 @@
+# test-06b-platform 20260908T000434Z
+SKIP  S4d.1 Golden Config: plan clean on 12 devices; hostname drift on br1-wan01 and br1-sw01 flagged with no false positive; restored through wf-config-push-v1
+FAIL  S4d.2 command templates on br1-wan01 and br1-sw01 with every rule evaluated; analytic pre/post green; nightly backup schedule and a run whose backups equal the running configs
+      br1-wan01: lab-cisco-ios-checks passed, 6 rules over 3 commands
+      Traceback (most recent call last):
+        File "<string>", line 1, in <module>
+          import sys,json;d=json.load(sys.stdin);d=d.get("analytic_result",d);assert d.get("result") is True or d.get("all_pass_flag") is True, json.dumps(d)[:400];print("analytic ok")
+                                                                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+      AssertionError: {"_id": "lab-cisco-ios-prepost", "name": "lab-cisco-ios-prepost", "os": "cisco_ios", "passRule": true, "prepostCommands": [{"preRawCommand": "show version", "postRawCommand": "show version", "passRule": true, "rules": [{"type": "matches", "preRegex": "/Version (\\S+),/", "postRegex": "/Version (\\S+),/", "evaluator": "=", "pass": false}], "responses": [{"preResponse": {"raw": "show version", "all_
+      br1-wan01 lab-cisco-ios-prepost: {"_id":"lab-cisco-ios-prepost","name":"lab-cisco-ios-prepost","os":"cisco_ios","passRule":true,"prepostCommands":[{"preRawCommand":"show version","postRawCommand":"show version","passRule":true,"rules":[{"type":"matches","preRegex":"/Version (\\S+),/","postRegex":"/Version (\\S+),/","evaluator":"=","pass":false}],"responses":[{"preResponse":{"raw":"show version","all_pass_flag":true,"evaluated":"s
+DEFER S4d.3 Lifecycle Manager + JSON Forms (element 3, not built yet)
+DEFER S4d.4 Integration Models (element 4, not built yet)
+DEFER S4d.6 hosts and firewalls (element 6, not built yet)
+
+passed=0 failed=1 deferred=3

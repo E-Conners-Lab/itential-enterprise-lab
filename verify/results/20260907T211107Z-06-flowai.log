@@ -1,0 +1,33 @@
+# test-06-flowai 20260907T211107Z
+PASS  S4c.1 provider profiles anthropic (claude-sonnet-5) and ollama-lab (qwen2.5:7b) answer and list their pinned models
+      profiles: ['anthropic', 'ollama-lab', 'ollama-mac']
+      anthropic: claude-sonnet-5 enabled (id a50763f9...)
+      anthropic provider answered: True 11 models listed
+      ollama-lab: qwen2.5:7b enabled (id 65351742...)
+      ollama-lab provider answered: False 0 models listed
+FAIL  S4c.2 lab-netops answers the running version of br1-wan01 and br1-sw01 via the Gateway 5 tool; equals direct SSH
+      tokens in=25240 out=253
+      br1-sw01: agent said 4.33.1.1F; tools ['getDcimDevices', 'wf-show-version-v1']
+      br1-wan01: a627c68e-efdf-4ada-b6f4-ccee214a60eb
+      session a627c68e-efdf-4ada-b6f4-ccee214a60eb failed
+PASS  S4c.3 lab-netops adds agent-20260907t211107z to br1 through wf-branch-vlan-v1 with the approval; second request is a no-op
+      approved job 3379f6cf08ce44e69c9f9d95
+      tokens in=15553 out=277
+      run 1: VLAN 11 agent-20260907t211107z reserved, approved, configured
+      tokens in=14471 out=266
+      run 2: no-op (still exactly VLAN 11)
+FAIL  S4c.4 lab-netops refuses core-router-99 (not in the inventory) without touching the gateway; session records token usage
+      tokens in=14566 out=128
+      a tool was called for an unknown node: ['getDcimDevices']
+PASS  S4c.5 lab-netops-local (ollama-lab qwen2.5:7b) answers the br1-sw01 version; response time and VM memory recorded
+      tokens in=1695 out=75
+      ollama-lab (qwen2.5:7b) answered in 52 s; VM RAM used 8632/24031 MB
+PASS  S4c.6 Claude Code's MCP tools start a lab-netops session (trigger_automation) and read the answer back (describe_session)
+      tokens in=14760 out=100
+      MCP trigger_automation(lab-netops) -> session 4bba7b7f-bdd3-48a3-82f2-860a6051fa3d -> 4.33.1.1F via describe_session
+PASS  S4c.7 wf-show-command-v1 returns structured 'show version': Genie on br1-wan01, TextFSM on br1-sw01, equal to direct SSH
+      br1-wan01: genie -> version.xe_version = 17.13.01a; matches direct SSH
+      br1-sw01: textfsm -> 0.image = 4.33.1.1F; matches direct SSH
+
+tokens spent this run: in=86285 out=1099 (Anthropic + local)
+passed=5 failed=2

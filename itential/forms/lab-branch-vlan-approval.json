@@ -1,0 +1,229 @@
+{
+  "name": "lab-branch-vlan-approval",
+  "description": "Approve or reject a branch VLAN change reserved in NetBox by wf-branch-vlan-v1 (PID S4d.3, ADR 0044)",
+  "struct": {
+    "type": "array",
+    "items": [
+      {
+        "nodeId": "node-branch",
+        "type": "string",
+        "title": "Branch",
+        "description": "Branch site (br1, br2)",
+        "placeholder": "",
+        "required": false,
+        "readOnly": true,
+        "binding": false,
+        "rel": "item",
+        "targetPointer": "/default",
+        "customKey": "branch"
+      },
+      {
+        "nodeId": "node-vid",
+        "type": "number",
+        "title": "VLAN id",
+        "description": "802.1Q id chosen from the branch VLAN group in NetBox",
+        "placeholder": "",
+        "required": false,
+        "readOnly": true,
+        "binding": false,
+        "rel": "item",
+        "targetPointer": "/default",
+        "customKey": "vid"
+      },
+      {
+        "nodeId": "node-vlan_name",
+        "type": "string",
+        "title": "VLAN name",
+        "description": "",
+        "placeholder": "",
+        "required": false,
+        "readOnly": true,
+        "binding": false,
+        "rel": "item",
+        "targetPointer": "/default",
+        "customKey": "vlan_name"
+      },
+      {
+        "nodeId": "node-switch",
+        "type": "string",
+        "title": "Switch",
+        "description": "Inventory node that receives 'vlan <id> / name <name>' on approval",
+        "placeholder": "",
+        "required": false,
+        "readOnly": true,
+        "binding": false,
+        "rel": "item",
+        "targetPointer": "/default",
+        "customKey": "switch"
+      },
+      {
+        "nodeId": "node-netbox_vlan_id",
+        "type": "number",
+        "title": "NetBox reservation (VLAN object id)",
+        "description": "The VLAN object reserved in NetBox; deleted again on reject",
+        "placeholder": "",
+        "required": false,
+        "readOnly": true,
+        "binding": false,
+        "rel": "item",
+        "targetPointer": "/default",
+        "customKey": "netbox_vlan_id"
+      },
+      {
+        "nodeId": "node-status",
+        "type": "string",
+        "title": "NetBox status",
+        "description": "reserved until the switch is configured",
+        "placeholder": "",
+        "required": false,
+        "readOnly": true,
+        "binding": false,
+        "rel": "item",
+        "targetPointer": "/default",
+        "customKey": "status"
+      },
+      {
+        "nodeId": "node-decision",
+        "type": "string",
+        "title": "Decision",
+        "description": "approve pushes the VLAN to the switch and activates the reservation; reject rolls it back",
+        "placeholder": "Select",
+        "required": true,
+        "readOnly": false,
+        "binding": false,
+        "rel": "collection",
+        "targetPointer": "/enum",
+        "customKey": "decision",
+        "enum": [
+          {
+            "id": "enum-decision-approve",
+            "label": "approve",
+            "value": "approve"
+          },
+          {
+            "id": "enum-decision-reject",
+            "label": "reject",
+            "value": "reject"
+          }
+        ],
+        "enumNames": [
+          {
+            "id": "name-decision-approve",
+            "label": "approve",
+            "value": "approve"
+          },
+          {
+            "id": "name-decision-reject",
+            "label": "reject",
+            "value": "reject"
+          }
+        ],
+        "default": "reject"
+      }
+    ]
+  },
+  "schema": {
+    "title": "lab-branch-vlan-approval",
+    "description": "Approve or reject a branch VLAN change reserved in NetBox by wf-branch-vlan-v1 (PID S4d.3, ADR 0044)",
+    "type": "object",
+    "required": [
+      "decision"
+    ],
+    "properties": {
+      "branch": {
+        "type": "string",
+        "title": "Branch",
+        "_id": "/properties/branch",
+        "description": "Branch site (br1, br2)",
+        "readOnly": true
+      },
+      "vid": {
+        "type": "number",
+        "title": "VLAN id",
+        "_id": "/properties/vid",
+        "description": "802.1Q id chosen from the branch VLAN group in NetBox",
+        "readOnly": true
+      },
+      "vlan_name": {
+        "type": "string",
+        "title": "VLAN name",
+        "_id": "/properties/vlan_name",
+        "description": "",
+        "readOnly": true
+      },
+      "switch": {
+        "type": "string",
+        "title": "Switch",
+        "_id": "/properties/switch",
+        "description": "Inventory node that receives 'vlan <id> / name <name>' on approval",
+        "readOnly": true
+      },
+      "netbox_vlan_id": {
+        "type": "number",
+        "title": "NetBox reservation (VLAN object id)",
+        "_id": "/properties/netbox_vlan_id",
+        "description": "The VLAN object reserved in NetBox; deleted again on reject",
+        "readOnly": true
+      },
+      "status": {
+        "type": "string",
+        "title": "NetBox status",
+        "_id": "/properties/status",
+        "description": "reserved until the switch is configured",
+        "readOnly": true
+      },
+      "decision": {
+        "type": "string",
+        "title": "Decision",
+        "_id": "/properties/decision",
+        "description": "approve pushes the VLAN to the switch and activates the reservation; reject rolls it back",
+        "enum": [
+          "approve",
+          "reject"
+        ],
+        "enumNames": [
+          "approve",
+          "reject"
+        ],
+        "default": "reject"
+      }
+    }
+  },
+  "uiSchema": {
+    "branch": {
+      "ui:readonly": true
+    },
+    "vid": {
+      "ui:readonly": true
+    },
+    "vlan_name": {
+      "ui:readonly": true
+    },
+    "switch": {
+      "ui:readonly": true
+    },
+    "netbox_vlan_id": {
+      "ui:readonly": true
+    },
+    "status": {
+      "ui:readonly": true
+    },
+    "decision": {
+      "ui:placeholder": "Select"
+    },
+    "ui:order": [
+      "branch",
+      "vid",
+      "vlan_name",
+      "switch",
+      "netbox_vlan_id",
+      "status",
+      "decision",
+      "*"
+    ]
+  },
+  "bindingSchema": {},
+  "validationSchema": {},
+  "tags": [],
+  "version": "2020.1"
+}

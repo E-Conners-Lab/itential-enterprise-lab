@@ -140,3 +140,52 @@ def test_images_are_manifest_keys_and_eve_folders(topo: dict) -> None:
     allowed = {"c8000v": "c8000v-17.13.01a", "veos": "veos-4.33.1.1F", "pa-vm": "paloalto-11.1", "ubuntu": "linux-ubuntu-24.04-server", "win11": "win-11-25h2"}
     for name, node in topo["nodes"].items():
         assert node["image"].startswith(allowed[node["platform"]].split("-")[0]), f"{name}: image {node['image']} does not match platform {node['platform']}"
+
+
+MAKEFILE = ROOT / "Makefile"
+MANUAL_STEPS = ROOT / "docs" / "manual-steps.md"
+ENDPOINTS_PLAY = ROOT / "ansible" / "playbooks" / "lab-endpoints.yml"
+
+
+def test_makefile_wires_phase_4_in_build_order() -> None:
+    """`make up` must build Phase 4 the way PR #16 did: NetBox first (ADR 0002), then the EVE-NG lab
+    (plan gates on missing images), start, the node MAC export the oob-gw DHCP reservations read,
+    the endpoint play, verify. push-configs wipes and restarts nodes, so it stays out of the chain."""
+    mk = MAKEFILE.read_text()
+    assert re.search(r"^phase-network-topology:.*##", mk, re.M), "Makefile phase-network-topology target still the stub"
+    stub = re.search(r"filter-out ([^,]+),\$\(PHASES\)", mk)
+    assert stub and "network-topology" in stub.group(1).split(), "network-topology still listed as unimplemented"
+    body = mk.split("phase-network-topology:", 1)[1].split("\n\n", 1)[0]
+    steps = [
+        "playbooks/netbox-topology.yml",
+        "eve/build.py plan",
+        "eve/build.py apply",
+        "eve/build.py start",
+        "eve/build.py export",
+        "playbooks/oob-gw.yml",
+        "-i inventory/netbox.yml playbooks/lab-endpoints.yml",
+        "verify/run.sh",
+    ]
+    positions = [body.find(s) for s in steps]
+    assert all(p >= 0 for p in positions), [s for s, p in zip(steps, positions) if p < 0]
+    assert positions == sorted(positions), "Phase 4 steps out of order"
+    assert "push-configs" not in body
+
+
+def test_endpoint_play_waits_for_the_guests_to_boot() -> None:
+    """Right after `eve/build.py start` the endpoints are still booting; the play must wait for SSH
+    instead of failing the first `make up`."""
+    play = yaml.safe_load(ENDPOINTS_PLAY.read_text())[0]
+    names = [t.get("name", "") for t in play.get("pre_tasks", [])]
+    waits = [t for t in play.get("pre_tasks", []) if "ansible.builtin.wait_for_connection" in t]
+    assert waits, f"no wait_for_connection in pre_tasks: {names}"
+    assert int(waits[0]["ansible.builtin.wait_for_connection"].get("timeout", 0)) >= 600
+
+
+def test_manual_steps_record_the_ubuntu_golden_image() -> None:
+    """The EVE-NG Ubuntu golden image (automation user, key, netplan) was prepared by hand in
+    Phase 4 and has no recipe in images/; the gap must be on the manual-steps list."""
+    text = MANUAL_STEPS.read_text()
+    row = [ln for ln in text.splitlines() if "linux-ubuntu-24.04-server" in ln]
+    assert row, "no manual-steps row for the EVE-NG Ubuntu golden image"
+    assert "automation" in row[0] and "| 4 |" in row[0]

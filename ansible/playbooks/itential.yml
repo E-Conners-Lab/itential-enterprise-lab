@@ -58,6 +58,39 @@
     # NetBox platform slug -> netmiko device_type for Gateway 5's device services
     platform_map: {ios-xe: cisco_ios, eos: arista_eos}
   tasks:
+    # --- Gateway 5 runner on glibc (ADR 0038): the stock image is Alpine/Python 3.14, where
+    # Cisco pyATS/Genie cannot install; the runner is the same iagctl binary on Debian/Python 3.12.
+    - name: Runner build directory
+      ansible.builtin.file:
+        path: "{{ stack_dir }}/gateway5-runner"
+        state: directory
+        owner: ubuntu
+        group: ubuntu
+        mode: "0755"
+
+    - name: Runner build context
+      ansible.builtin.copy:
+        src: ../../itential/gateway5-runner/Dockerfile
+        dest: "{{ stack_dir }}/gateway5-runner/Dockerfile"
+        owner: ubuntu
+        group: ubuntu
+        mode: "0644"
+      register: runner_dockerfile
+
+    - name: Runner base image pulled by digest
+      ansible.builtin.command: docker pull {{ images.runner_base.repository }}@{{ images.runner_base.digest }}
+      register: runner_base_pull
+      changed_when: "'Downloaded' in runner_base_pull.stdout"
+
+    - name: Runner image built from the pinned gateway and Python images
+      ansible.builtin.command:
+        cmd: >-
+          docker build --build-arg GATEWAY5_IMAGE={{ images.gateway5.repository }}:{{ images.gateway5.tag }}
+          --build-arg PYTHON_IMAGE={{ images.runner_base.repository }}@{{ images.runner_base.digest }}
+          -t {{ stack.runner_image }} {{ stack_dir }}/gateway5-runner
+      register: runner_build
+      changed_when: "'CACHED' not in runner_build.stderr or runner_dockerfile.changed"
+
     - name: Vendored Compose file and the lab override
       ansible.builtin.copy:
         src: "../../itential/{{ item }}"
@@ -92,6 +125,9 @@
           MONGO_VERSION={{ images.mongodb.tag }}
           REDIS_VERSION={{ images.redis.tag }}
           MCP_VERSION={{ images.mcp.tag }}
+          OLLAMA_IMAGE={{ images.ollama.repository }}:{{ images.ollama.tag }}
+          ETCD_IMAGE={{ images.etcd.repository }}:{{ images.etcd.tag }}
+          GATEWAY5_RUNNER_IMAGE={{ stack.runner_image }}
           MCP_TRANSPORT=http
           BIND_ADDRESS=127.0.0.1:
           OOB_ADDRESS={{ oob_address }}
@@ -461,6 +497,14 @@
       retries: 24
       delay: 5
 
+    - name: Runner registered in the cluster store (the server hands every execution to it)
+      ansible.builtin.command: docker logs gateway5-runner
+      register: runner_log
+      until: "'registered runner with database' in runner_log.stdout or 'registered runner with database' in runner_log.stderr"
+      retries: 12
+      delay: 5
+      changed_when: false
+
     # --- open-source adapters: package into the custom mount, then instances via the API ------
     # The custom directory is bind-mounted read-only into the platform; npm runs in a throw-away
     # container from the platform image (node 20, npm 10) as uid 1001 so the files stay readable.
@@ -785,6 +829,152 @@
         have: "{{ inv_existing.json.result.data | map(attribute='name') | sort }}"
         want: "{{ inv_nodes | map(attribute='name') | sort }}"
       when: have != want
+      no_log: true
+
+    # --- Hosts (S4d.6, ADR 0047): the Ubuntu endpoints in their own inventory for Gateway 5 only ------------
+    - name: Ubuntu hosts from NetBox (active, with a management address, by platform)
+      ansible.builtin.uri:
+        url: >-
+          http://{{ netbox_oob_host }}:{{ netbox_port }}/api/dcim/devices/?limit=0&status=active&has_primary_ip=true&platform={{ item }}
+        headers: {Authorization: "Token {{ lookup('ansible.builtin.env', 'NETBOX_TOKEN') }}"}
+      loop: "{{ hosts.netbox_platforms.keys() | list }}"
+      register: nb_hosts
+      no_log: true
+
+    - name: Host nodes (netmiko platform linux, the automation account with its password)
+      ansible.builtin.set_fact:
+        host_nodes: >-
+          {{ host_nodes | default([]) + [{'name': item.name, 'tags': [item.site.slug, item.role.slug, item.platform.slug],
+             'attributes': {'itential_host': item.primary_ip4.address | ansible.utils.ipaddr('address'),
+                            'itential_platform': hosts.netbox_platforms[item.platform.slug],
+                            'itential_user': 'automation',
+                            'itential_password': lookup('ansible.builtin.env', 'AUTOMATION_PASSWORD'),
+                            'cluster_id': stack.gateway5_cluster_id}}] }}
+      loop: "{{ nb_hosts.results | map(attribute='json.results') | flatten | selectattr('role.slug', 'in', hosts.roles) | list }}"
+      loop_control:
+        label: "{{ item.name }}"
+      no_log: true
+
+    - name: Host inventory exists?
+      ansible.builtin.uri:
+        url: "{{ platform_local }}/inventory_manager/v1/inventories/{{ stack.host_inventory }}"
+        headers: {Cookie: "{{ login.cookies_string }}"}
+        status_code: [200, 404]
+      register: host_inv_state
+
+    - name: Host inventory without broker actions (Configuration Manager never sees hosts) on cluster {{ stack.gateway5_cluster_id }}
+      ansible.builtin.uri:
+        url: "{{ platform_local }}/inventory_manager/v1/inventories"
+        method: POST
+        headers: {Cookie: "{{ login.cookies_string }}"}
+        body_format: json
+        body:
+          name: "{{ stack.host_inventory }}"
+          description: "Lab Ubuntu hosts from NetBox for Gateway 5 (ansible/playbooks/itential.yml, PID S4d.6)"
+          groups: [admin_group]
+          createBrokerActions: false
+          defaultClusterId: "{{ stack.gateway5_cluster_id }}"
+        status_code: [200, 201]
+      when: host_inv_state.status != 200
+
+    - name: Existing host nodes
+      ansible.builtin.uri:
+        url: "{{ platform_local }}/inventory_manager/v1/inventories/{{ stack.host_inventory }}/nodes"
+        headers: {Cookie: "{{ login.cookies_string }}"}
+      register: host_inv_existing
+      no_log: true
+
+    - name: Host nodes populated from NetBox (replaces the set when it differs)
+      ansible.builtin.uri:
+        url: "{{ platform_local }}/inventory_manager/v1/nodes/bulk"
+        method: POST
+        headers: {Cookie: "{{ login.cookies_string }}"}
+        body_format: json
+        body:
+          inventory_identifier: "{{ stack.host_inventory }}"
+          nodes: "{{ host_nodes | default([]) }}"
+        status_code: 200
+      vars:
+        have: "{{ host_inv_existing.json.result.data | map(attribute='name') | sort }}"
+        want: "{{ host_nodes | default([]) | map(attribute='name') | sort }}"
+      when: have != want
+      no_log: true
+
+    - name: Gateway 5 answers on one host through the host inventory (uptime, hostname)
+      ansible.builtin.uri:
+        url: "{{ platform_local }}/gateway_manager/v1/services/run"
+        method: POST
+        headers: {Cookie: "{{ login.cookies_string }}"}
+        body_format: json
+        body:
+          serviceName: send-command
+          clusterId: "{{ stack.gateway5_cluster_id }}"
+          params: {commands: "{{ hosts.probe }}"}
+          inventory:
+            - inventory: "{{ stack.host_inventory }}"
+              nodeNames: ["{{ (host_nodes | default([]) | first).name }}"]
+        status_code: 200
+        timeout: 120
+      register: host_probe
+      failed_when: not (host_probe.json.result.results | map(attribute='success') | list | min)
+      changed_when: false
+      when: host_nodes | default([]) | length > 0
+
+    # --- Device Broker (ADR 0039): the built-in Inventory Manager adapter publishes the inventory's
+    # nodes to Device Broker, which is where Configuration Manager (backups, Golden Config,
+    # compliance), command templates and the MCP device tools read devices. Gateway 5 only.
+    # The instance cannot be called "InventoryManager" (that is the application's own name).
+    - name: Device Broker adapter exists?
+      ansible.builtin.uri:
+        url: "{{ platform_local }}/adapters/InventoryBroker"
+        headers: {Cookie: "{{ login.cookies_string }}"}
+        status_code: [200, 404, 500]
+      register: broker_adapter
+
+    - name: Device Broker adapter (built-in Inventory Manager adapter)
+      ansible.builtin.uri:
+        url: "{{ platform_local }}/adapters"
+        method: POST
+        headers: {Cookie: "{{ login.cookies_string }}"}
+        body_format: json
+        body: {properties: {name: InventoryBroker, type: Adapter, properties: {id: InventoryBroker, type: InventoryManager}}}
+        status_code: [200, 201]
+      when: broker_adapter.status != 200
+
+    - name: Device Broker adapter exposes the inventory under plain node names
+      ansible.builtin.uri:
+        url: "{{ platform_local }}/adapters/InventoryBroker/properties"
+        method: PUT
+        headers: {Cookie: "{{ login.cookies_string }}"}
+        body_format: json
+        body:
+          properties:
+            inventories: ["{{ stack.inventory }}"]
+            prepend_inventory_name: false
+        status_code: 200
+      when: broker_adapter.status != 200 or (broker_adapter.json.data.properties.properties.inventories | default([])) != [stack.inventory]
+      changed_when: true
+
+    - name: Device Broker adapter active
+      ansible.builtin.uri:
+        url: "{{ platform_local }}/adapters/InventoryBroker"
+        headers: {Cookie: "{{ login.cookies_string }}"}
+      register: broker_state
+      until: broker_state.json.metadata.isActive | default(false)
+      retries: 20
+      delay: 3
+
+    - name: Configuration Manager sees every inventory node through the broker
+      ansible.builtin.uri:
+        url: "{{ platform_local }}/configuration_manager/devices"
+        method: POST
+        headers: {Cookie: "{{ login.cookies_string }}"}
+        body_format: json
+        body: {options: {start: 0, limit: 200}}
+      register: cm_devices
+      until: (cm_devices.json.total | default(0)) | int == inv_nodes | length
+      retries: 10
+      delay: 3
       no_log: true
 
     - name: Gateway 5 answers show version on one switch through the inventory (S4.3 building block)

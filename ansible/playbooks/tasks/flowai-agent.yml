@@ -1,0 +1,154 @@
+---
+# One agent from itential/agents/<name>.yaml: resolve its tool references to Tool Registry
+# referenceIds, then create or update it in the project. Included by flowai.yml per document.
+# referenceId formats (Tool Registry): application:<App>:<method>, adapter:<Export>:<Instance>:<method>,
+# workflow:<workflow uuid> (the document's uuid field, not its _id; the current import of that name),
+# integration:<title>%3A<version>:<instance>:<operationId> (ADR 0045; the colon of the model id is encoded),
+# application:<App>:<method> for platform application methods (kind: application, app: ConfigurationManager; ADR 0046).
+- name: "Agent current workflow ids for {{ agent.name }}"
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/automation-studio/workflows?limit=100"
+    headers: {Cookie: "{{ login.cookies_string }}"}
+  register: wf_list
+
+- name: "Agent start with no tools for {{ agent.name }}"
+  ansible.builtin.set_fact:
+    agent_tool_ids: []
+
+- name: "Agent resolve each tool for {{ agent.name }}"
+  ansible.builtin.set_fact:
+    agent_tool_ids: >-
+      {{ agent_tool_ids + [
+           ('application:GatewayManager:' ~ gateway_methods[item.reference]) if item.kind == 'gateway-service'
+           else ('adapter:' ~ adapter_exports[item.adapter] ~ ':' ~ item.adapter ~ ':' ~ item.reference) if item.kind == 'adapter'
+           else ('integration:' ~ integrations.models[item.model].title ~ '%3A' ~ integrations.models[item.model].version
+                 ~ ':' ~ integrations.models[item.model].instance ~ ':' ~ item.reference) if item.kind == 'integration'
+           else ('application:' ~ item.app ~ ':' ~ item.reference) if item.kind == 'application'
+           else ('workflow:' ~ (wf_list.json['items'] | selectattr('name', 'equalto', item.reference) | map(attribute='uuid') | first))
+         ] }}
+  vars:
+    gateway_methods: {send-command: sendCommand, send-config: sendConfig, run-service: runService}
+    adapter_exports: {NetBox: Netbox, ServiceNow: Servicenow}
+  loop: "{{ agent.tools }}"
+  loop_control:
+    label: "{{ item.kind }} {{ item.reference }}"
+
+- name: "Agent tools exist in the registry for {{ agent.name }}"
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/{{ tool_registry_base }}/bulk"
+    method: POST
+    headers: {Cookie: "{{ login.cookies_string }}"}
+    body_format: json
+    body: {referenceIds: "{{ agent_tool_ids }}", queryOptions: {limit: 100}}
+    status_code: 200
+  register: tools_found
+  failed_when: (tools_found.json.data | default(tools_found.json.results | default([]))) | length != agent_tool_ids | length
+
+- name: "Agent existing definition for {{ agent.name }}"
+  ansible.builtin.set_fact:
+    existing_agent: "{{ agents_now.json.data['items'] | selectattr('name', 'equalto', agent.name) | list }}"
+    agent_project_id: "{{ (projects2.json.data['items'] | selectattr('name', 'equalto', agent.project) | first)._id }}"
+
+- name: "Agent create for {{ agent.name }}"
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/agent-project-service/projects/{{ agent_project_id }}/agents"
+    method: POST
+    headers: {Cookie: "{{ login.cookies_string }}"}
+    body_format: json
+    body:
+      name: "{{ agent.name }}"
+      description: "{{ agent.description }}"
+      instructions: "{{ agent.instructions }}"
+      inputSchema: "{{ agent.input_schema }}"
+      provider: {profile: "{{ profile_ids[agent.profile] }}", model: "{{ model_ids[agent.profile] }}"}
+      tools: "{{ agent_tool_ids | map('community.general.dict_kv', 'referenceId') | list }}"
+      operators: ["{{ admin_group_id }}"]
+    status_code: [200, 201]
+  when: existing_agent | length == 0
+
+- name: "Agent update in place for {{ agent.name }}"
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/agent-project-service/agents/{{ existing_agent[0]._id | default(existing_agent[0].id) }}"
+    method: PATCH
+    headers: {Cookie: "{{ login.cookies_string }}"}
+    body_format: json
+    body: >-
+      {{ {'description': agent.description,
+          'prompt': {'instructions': agent.instructions, 'inputSchema': agent.input_schema},
+          'provider': {'profile': profile_ids[agent.profile], 'model': model_ids[agent.profile]},
+          'operators': [admin_group_id]}
+         | combine({'addTools': new_tools | map('community.general.dict_kv', 'referenceId') | list} if new_tools else {})
+         | combine({'removeTools': gone_tools | map('community.general.dict_kv', 'referenceId') | list} if gone_tools else {}) }}
+    status_code: 200
+  vars:
+    have_tools: "{{ existing_agent[0].tools | default([]) | map(attribute='referenceId') | list }}"
+    new_tools: "{{ agent_tool_ids | reject('in', have_tools) | list }}"
+    gone_tools: "{{ have_tools | reject('in', agent_tool_ids) | list }}"
+  when: existing_agent | length > 0
+  changed_when: true
+
+# --- MCP exposure (PID S4c.6): an Operations Manager automation wrapping the agent plus an
+# endpoint trigger, the same objects itential-mcp's expose_agent creates; idempotent by name.
+- name: "Agent id after create/update for {{ agent.name }}"
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/agent-project-service/operable-agents"
+    headers: {Cookie: "{{ login.cookies_string }}"}
+  register: agents_after
+  when: agent.expose_route is defined
+
+- name: "Agent automations for {{ agent.name }}"
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/operations-manager/automations?equalsField=componentType&equals=agents&limit=100"
+    headers: {Cookie: "{{ login.cookies_string }}"}
+  register: agent_automations
+  when: agent.expose_route is defined
+
+- name: "Automation wrapping {{ agent.name }}"
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/operations-manager/automations"
+    method: POST
+    headers: {Cookie: "{{ login.cookies_string }}"}
+    body_format: json
+    body:
+      name: "{{ agent.name }}"
+      description: "Agent {{ agent.name }} exposed for MCP clients (itential/agents/{{ agent.name }}.yaml)"
+      componentType: agents
+      componentId: "{{ this_agent_id }}"
+      componentName: "{{ this_agent_id }}"
+    status_code: [200, 201]
+  vars:
+    this_agent_id: "{{ (agents_after.json.data['items'] | selectattr('name', 'equalto', agent.name) | first)._id }}"
+  when: agent.expose_route is defined and agent.name not in (agent_automations.json.data | map(attribute='name') | list)
+
+- name: "Automation id for {{ agent.name }}"
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/operations-manager/automations?equalsField=componentType&equals=agents&limit=100"
+    headers: {Cookie: "{{ login.cookies_string }}"}
+  register: agent_automations2
+  when: agent.expose_route is defined
+
+- name: "Endpoint triggers for {{ agent.name }}"
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/operations-manager/triggers?equalsField=type&equals=endpoint&limit=200"
+    headers: {Cookie: "{{ login.cookies_string }}"}
+  register: triggers_now
+  when: agent.expose_route is defined
+
+- name: "Endpoint trigger for {{ agent.name }}"
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/operations-manager/triggers"
+    method: POST
+    headers: {Cookie: "{{ login.cookies_string }}"}
+    body_format: json
+    body:
+      actionId: "{{ (agent_automations2.json.data | selectattr('name', 'equalto', agent.name) | first)._id }}"
+      actionType: automations
+      name: "API route for {{ agent.name }}"
+      type: endpoint
+      verb: POST
+      routeName: "{{ agent.expose_route }}"
+      description: "Start {{ agent.name }} from an MCP client or any HTTP caller"
+      enabled: true
+      schema: "{{ agent.input_schema }}"
+    status_code: [200, 201]
+  when: agent.expose_route is defined and agent.expose_route not in (triggers_now.json.data | map(attribute='routeName') | list)

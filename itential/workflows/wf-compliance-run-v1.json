@@ -1,0 +1,164 @@
+{
+  "name": "wf-compliance-run-v1",
+  "type": "automation",
+  "description": "Runs the Configuration Manager compliance plan lab-baseline; scheduled nightly by Operations Manager (PID S4d.1, ADR 0040)",
+  "tasks": {
+    "1a": {
+      "name": "searchCompliancePlans",
+      "canvasName": "searchCompliancePlans",
+      "summary": "the plan by name",
+      "description": "the plan by name",
+      "location": "Application",
+      "locationType": null,
+      "app": "ConfigurationManager",
+      "type": "automatic",
+      "displayName": "ConfigurationManager",
+      "groups": [],
+      "nodeLocation": {
+        "x": 0,
+        "y": 0
+      },
+      "variables": {
+        "incoming": {
+          "name": "^lab-baseline$",
+          "options": {
+            "start": 0,
+            "limit": 10
+          }
+        },
+        "outgoing": {
+          "compliancePlans": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "1b": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "plan id",
+      "description": "plan id",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 300,
+        "y": 0
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "plans[0].id",
+          "obj": "$var.1a.compliancePlans"
+        },
+        "outgoing": {
+          "return_data": "$var.job.plan_id"
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "2a": {
+      "name": "runCompliancePlan",
+      "canvasName": "runCompliancePlan",
+      "summary": "run the compliance plan (asynchronous)",
+      "description": "run the compliance plan (asynchronous)",
+      "location": "Application",
+      "locationType": null,
+      "app": "ConfigurationManager",
+      "type": "automatic",
+      "displayName": "ConfigurationManager",
+      "groups": [],
+      "nodeLocation": {
+        "x": 600,
+        "y": 0
+      },
+      "variables": {
+        "incoming": {
+          "planId": "$var.1b.return_data",
+          "options": {}
+        },
+        "outgoing": {
+          "response": "$var.job.run"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "workflow_start": {
+      "name": "workflow_start",
+      "summary": "workflow_start",
+      "groups": [],
+      "nodeLocation": {
+        "x": -600,
+        "y": 0
+      }
+    },
+    "workflow_end": {
+      "name": "workflow_end",
+      "summary": "workflow_end",
+      "groups": [],
+      "nodeLocation": {
+        "x": 1800,
+        "y": 0
+      }
+    }
+  },
+  "transitions": {
+    "workflow_start": {
+      "1a": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "1a": {
+      "1b": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "1b": {
+      "2a": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "2a": {
+      "workflow_end": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "workflow_end": {}
+  },
+  "groups": [],
+  "canvasVersion": 3,
+  "inputSchema": {
+    "type": "object",
+    "properties": {},
+    "required": []
+  },
+  "outputSchema": {
+    "type": "object",
+    "properties": {
+      "plan_id": {
+        "type": "string"
+      },
+      "run": {
+        "type": "object"
+      }
+    }
+  },
+  "tags": [],
+  "preAutomationTime": 300000,
+  "sla": 600000,
+  "font_size": 12,
+  "decorators": []
+}
