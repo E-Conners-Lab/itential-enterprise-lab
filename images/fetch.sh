@@ -5,7 +5,9 @@
 #
 #   images/fetch.sh microsoft   # Windows Server 2025 eval, Windows 11 Enterprise 25H2 eval, virtio-win
 #   images/fetch.sh arista      # cEOS64-lab / vEOS64-lab via eos-downloader (needs ARISTA_TOKEN in .env)
-#   images/fetch.sh all
+#   images/fetch.sh itential    # Itential images from the private ECR (SSO session here) -> tarballs on the host (ADR 0035)
+#   images/fetch.sh itential-load  # staged tarballs -> the itential VM's Docker
+#   images/fetch.sh all         # microsoft + arista (itential needs an SSO session, so it is explicit)
 set -euo pipefail
 cd "$(dirname "$0")/.."
 [ -f .env ] || { echo "missing .env"; exit 1; }
@@ -44,9 +46,67 @@ arista() { # eos-downloader (ardl) with the owner's arista.com token; runs in a 
     cd ${STAGING} && sha256sum ceos/* >> MANIFEST.sha256 && sort -u -k2 MANIFEST.sha256 -o MANIFEST.sha256 && ls -la ceos"
 }
 
+# Itential (ADR 0035). Staging runs where the SSO session is: this workstation pulls each ECR
+# image (linux/amd64), verifies the digest against itential/versions.yaml and streams `docker save`
+# into ${STAGING}/itential/ with its sha256 in MANIFEST.sha256 (the offline copy). The long-lived
+# credential never leaves the workstation. `itential-load` pushes the staged tarballs into the VM's
+# Docker (no ECR access needed on the VM). Public images (mongo, redis, itential-mcp) are pulled by
+# Compose on the VM directly.
+ecr_login() {
+  local registry=$1
+  if [ -n "${ECR_AWS_ACCESS_KEY_ID:-}" ]; then
+    AWS_ACCESS_KEY_ID="$ECR_AWS_ACCESS_KEY_ID" AWS_SECRET_ACCESS_KEY="$ECR_AWS_SECRET_ACCESS_KEY" AWS_SESSION_TOKEN="${ECR_AWS_SESSION_TOKEN:-}" \
+      aws ecr get-login-password --region us-east-2
+  else
+    aws ecr get-login-password --region us-east-2 --profile "${ECR_AWS_PROFILE:?ECR_AWS_PROFILE or ECR_AWS_* keys missing in .env}" \
+      || { echo "ECR token failed: run 'aws sso login --profile ${ECR_AWS_PROFILE}'"; exit 1; }
+  fi | docker login --username AWS --password-stdin "$registry" >/dev/null
+}
+ecr_images() { # name repo tag digest, one per line
+  .venv/bin/python -c "
+import yaml
+for n, i in yaml.safe_load(open('itential/versions.yaml'))['images'].items():
+    if '.ecr.' in i['repository']: print(n, i['repository'], i['tag'], i['digest'])"
+}
+itential() {
+  local logged_in=0
+  $SSH "mkdir -p ${STAGING}/itential"
+  while read -r name repo tag digest; do
+    local image="${repo}:${tag}" tar="${name}-${tag}.tar"
+    # </dev/null: an ssh inside a read loop would otherwise eat the loop's stdin
+    if $SSH "grep -q ' itential/${tar}\$' ${STAGING}/MANIFEST.sha256 2>/dev/null && test -s ${STAGING}/itential/${tar}" </dev/null; then echo "present: itential/${tar}"; continue; fi
+    if ! docker image inspect "$image" >/dev/null 2>&1; then
+      [ $logged_in = 1 ] || { ecr_login "${repo%%/*}"; logged_in=1; }
+      echo "pulling ${image}"
+      docker pull --platform linux/amd64 -q "$image" >/dev/null
+    fi
+    local have; have=$(docker image inspect "$image" --format '{{index .RepoDigests 0}}' | cut -d@ -f2)
+    [ "$have" = "$digest" ] || { echo "digest mismatch for ${image}: pulled ${have}, versions.yaml ${digest}"; exit 1; }
+    echo "saving ${image} -> ${STAGING}/itential/${tar}"
+    docker save "$image" | $SSH "cat > ${STAGING}/itential/${tar}.part && mv ${STAGING}/itential/${tar}.part ${STAGING}/itential/${tar} && cd ${STAGING} && sha256sum itential/${tar} >> MANIFEST.sha256 && sort -u -k2 MANIFEST.sha256 -o MANIFEST.sha256 && tail -1 MANIFEST.sha256"
+  done < <(ecr_images)
+  [ $logged_in = 1 ] && docker logout 497639811223.dkr.ecr.us-east-2.amazonaws.com >/dev/null 2>&1
+  $SSH "ls -la ${STAGING}/itential/ && grep itential/ ${STAGING}/MANIFEST.sha256"
+}
+itential_load() { # staged tarballs -> the itential VM's Docker, through this workstation
+  local vm_ip; vm_ip=$(.venv/bin/python -c "import yaml;print(yaml.safe_load(open('itential/versions.yaml'))['vm']['ip'])")
+  local VM="ssh -o BatchMode=yes -o ConnectTimeout=8 -o StrictHostKeyChecking=accept-new ubuntu@${vm_ip}"
+  $VM 'docker version --format "{{.Server.Version}}"' >/dev/null || { echo "docker not reachable on ${vm_ip} (run ansible/playbooks/itential-host.yml first)"; exit 1; }
+  while read -r name repo tag digest; do
+    local image="${repo}:${tag}" tar="${name}-${tag}.tar"
+    if $VM "docker image inspect ${image} >/dev/null 2>&1" </dev/null; then echo "present on vm: ${image}"; continue; fi
+    $SSH "cd ${STAGING} && grep ' itential/${tar}\$' MANIFEST.sha256 | sha256sum -c --quiet" </dev/null || { echo "checksum failed for ${tar}"; exit 1; }
+    echo "loading ${tar} into ${vm_ip}"
+    $SSH "cat ${STAGING}/itential/${tar}" </dev/null | $VM "docker load" >/dev/null
+  done < <(ecr_images)
+  $VM "docker images --format '{{.Repository}}:{{.Tag}} {{.Size}}' | grep ecr"
+}
+
 case "$what" in
   microsoft) microsoft ;;
   arista) arista ;;
+  itential) itential ;;
+  itential-load) itential_load ;;
   all) microsoft; arista ;;
-  *) echo "usage: $0 {microsoft|arista|all}"; exit 1 ;;
+  *) echo "usage: $0 {microsoft|arista|itential|itential-load|all}"; exit 1 ;;
 esac

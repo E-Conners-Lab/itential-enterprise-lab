@@ -237,33 +237,37 @@ the owner's ECR credentials, then `docker save` the images into `/srv/images/ite
 offline rebuild copy. ADR 0020 is amended in the Phase 5 PR; the Rocky template stays unused.
 
 Owner decision 2026-09-06: **pull the latest maintenance tag of each image at Phase 5 time**, not
-the laptop's tags. Phase 5 lists ECR tags with the owner's credentials (`aws ecr list-images`),
-records the exact tags chosen here and in ADR 0020, and saves them to `/srv/images/itential/`.
+the laptop's tags. Listed on 2026-09-07 with `aws ecr describe-images` under the owner's company
+SSO profile (`ECR_AWS_PROFILE`; `ecr:ListImages` is denied, `DescribeImages` works). Exact tags and
+digests are in `itential/versions.yaml` and the ADR 0020 amendment; tarballs in `/srv/images/itential/`.
 
-| Image | Laptop today | Expected latest (docs.itential.com, 2026-09-06) | Role |
-|---|---|---|---|
-| `497639811223.dkr.ecr.us-east-2.amazonaws.com/automation-platform-config-lcm-flowai` | `6.5.1` | `6.5.2` | Itential Platform with the FlowAI bundle |
-| `497639811223.dkr.ecr.us-east-2.amazonaws.com/automation-gateway5` | `5.5.1-amd64` | `5.5.2-amd64` | Gateway 5 (FlowAI agent tool-calling, device services) |
-| `497639811223.dkr.ecr.us-east-2.amazonaws.com/automation-gateway` | `4.3.15` | newest `4.4.x` if present in ECR, else newest `4.3.x` | Gateway 4 (Golden Config / Configuration Manager). 4.3 receives no further security patches per Itential; 4.4 is the patched line. Both gateways are needed for the full lab |
-| `ghcr.io/itential/itential-mcp` | `v0.13.1` | MCP server (optional, later) | public |
-| `ghcr.io/itential/job-metrics-exporter` | pin a digest in Phase 5 | Prometheus exporter for jobs | laptop has `latest`; never pin `latest` |
+| Image | Laptop 2026-09-06 | Expected latest (docs.itential.com, 2026-09-06) | Pinned (Phase 5) | Role |
+|---|---|---|---|---|
+| `497639811223.dkr.ecr.us-east-2.amazonaws.com/automation-platform-config-lcm-flowai` | `6.5.1` | `6.5.2` | `6.5.2` (pushed 2026-09-03, alias of `6.5.2-ecm-6.5.2-fai-1.1.0-gm-1.2.3-lcm-6.5.2-2`) | Itential Platform with the FlowAI bundle |
+| `497639811223.dkr.ecr.us-east-2.amazonaws.com/automation-gateway5` | `5.5.1-amd64` | `5.5.2-amd64` | `5.5.2-amd64` (pushed 2026-09-02) | Gateway 5 (FlowAI agent tool-calling, device services) |
+| `497639811223.dkr.ecr.us-east-2.amazonaws.com/automation-gateway` | `4.3.15` | newest `4.4.x` if present in ECR, else newest `4.3.x` | `4.4.1` (pushed 2026-09-02; 4.4.0 and 4.3.15 also present) | Gateway 4 (Golden Config / Configuration Manager). 4.3 receives no further security patches per Itential; 4.4 is the patched line. **Staged, not deployed**: owner chose Gateway 5 as the main gateway (2026-09-07, ADR 0035); enable the `gateway4` profile when Golden Config is wanted |
+| `ghcr.io/itential/itential-mcp` | `v0.13.1` | `v0.14.0` (release 2026-08-13) | `v0.14.0` | MCP server, streamable HTTP on `mcp.lab.internal:8000` (S4.7); public image |
+| `docker.io/osixia/openldap` | `1.4.0` | `1.4.0` (upstream dev-stack default) | `1.4.0` | OpenLDAP with the dev-stack LDIF: `admin@itential`, the login Gateway Manager needs (ADR 0035); replaced by AD in Phase 7 |
+| `ghcr.io/itential/job-metrics-exporter` | `latest` | pin a digest when Phase 8 scrapes it | deferred to Phase 8 | Prometheus exporter for jobs; never pin `latest` |
 
 Do not pin: `automation-gateway5:5.1.0`, `automation-gateway:4.3.7`, `automation-platform-config-lcm:6`, `itential.jfrog.io/flow-ai-demo/itential_flowai:v0.1.4` (leftovers on the laptop).
 
-**Licensing, still open.** The running dev stack has no licence file, key or licensing env var
-anywhere (compose, `.env`, platform volume, container filesystem, logs). Whether this image is a
-demo build or whether a lab deployment needs a real licence is **UNVERIFIED**; the owner confirms
-with Itential before Phase 5, and confirms the account terms cover a personal lab.
+**Licence: none required (owner decision 2026-09-07).** The running dev stack has no licence file,
+key or licensing env var anywhere (compose, `.env`, platform volume, container filesystem, logs);
+the owner confirmed on 2026-09-07 that the lab needs none and that ECR access through the company
+AWS SSO is the sanctioned path. No expiry to monitor (S4.5); Zabbix watches only the TLS certificate
+from Phase 8. Supporting images: MongoDB `7.0.40`, Redis `7.4.11` (Docker Hub, 2026-09-07), Docker CE
+`29.8.0` on the VM (ADR 0035).
 
 ### 3.4 ServiceNow Personal Developer Instance (external, no image)
 
 | | |
 |---|---|
 | Release | Current families: **Zurich** (2025) and **Australia** (GA 2026-05-05; PDI pools were wait-listed in July 2026). Request Zurich if Australia is unavailable; the Itential ServiceNow store app 3.1.13 is certified on Zurich ([release family FAQ](https://developer.servicenow.com/print_page.do?release=australia&category=now-platform&identifier=pdi_faq&module=guide)) |
-| Instance | `devNNNNNN.service-now.com` over HTTPS; the instance name is recorded in `.env` as `SNOW_INSTANCE`, never the password |
+| Instance | `dev409097.service-now.com` over HTTPS (owner's PDI, recorded 2026-09-07; `.env` `SNOW_INSTANCE=dev409097`, never the password). Release family: **Australia** |
 | Hibernation | After roughly 6 hours idle; wake takes 3-20 minutes from the developer site |
 | Reclamation (policy effective 2026-07-11) | Reclaimed when the PDI is >= 90 days old **and** has had no interactive login in the last 10 days. **Background jobs and API integrations do not count as activity**, so the keep-alive is a human login at least every 10 days (calendar reminder is a manual step) plus exporting the Itential-related update set to the repo ([reclamation rules](https://www.servicenow.com/community/developer-articles/servicenow-pdi-reclamation-rules-avoid-losing-access/ta-p/3572371)) |
-| Adapter auth | Basic auth with a dedicated integration user is the documented method for `adapter-servicenow`; OAuth (`request_token`) is **UNVERIFIED** for this adapter |
+| Adapter auth | Basic auth with a dedicated integration user (`itential.integration`, roles `itil`, `snc_platform_rest_api_access`, `rest_api_explorer` **and `snc_basic_auth_api_access`**: PDIs provisioned in 2026 ship with Basic Authentication Account Security, which answers 401 "User is not authenticated" to any basic-auth API call from a user without that role, even with the right password; observed 2026-09-07 on the Australia release). OAuth (`request_token`) is **UNVERIFIED** for this adapter |
 | Verified | 2026-09-06 |
 
 ## 4. k3s container images and charts

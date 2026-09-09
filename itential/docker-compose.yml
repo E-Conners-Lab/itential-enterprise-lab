@@ -1,0 +1,426 @@
+# Itential Dev Stack
+#
+# Note: This compose file uses variables from defaults.env and .env
+# Run with: docker compose --env-file defaults.env --env-file .env [command]
+# Or use Makefile targets: make up, make down, etc.
+#
+# Profiles:
+#   deps     - MongoDB + Redis only
+#   platform - MongoDB + Redis + Platform (most common)
+#   gateway4 - Automation Gateway 4
+#   gateway5 - Automation Gateway 5
+#   ldap     - OpenLDAP (for enterprise auth testing)
+#   mcp      - MCP Server (for LLM integration)
+#   openbao  - OpenBao (Vault-compatible secrets management)
+#   full     - All services (excludes ldap, mcp, openbao)
+#
+# Usage:
+#   make setup                                              # First-time setup
+#   make up                                                 # Start all services
+#   docker compose --profile platform up -d                 # Platform only
+#   docker compose --profile platform --profile ldap up -d  # Platform + LDAP
+#   docker compose --profile platform --profile mcp up -d   # Platform + MCP
+#   docker compose --profile full --profile openbao up -d   # Full + OpenBao
+
+networks:
+  default:
+    name: devstack
+
+services:
+  # ==========================================================================
+  # DEPENDENCIES
+  # ==========================================================================
+
+  mongodb:
+    container_name: mongodb
+    image: mongo:${MONGO_VERSION:-8.0}
+    profiles: ["deps", "platform", "full"]
+    ports:
+      - "${BIND_ADDRESS}${MONGO_PORT:-27017}:27017"
+    volumes:
+      - type: bind
+        source: ./dependencies/mongodb-data
+        target: /data/db
+    environment:
+      MONGO_INITDB_DATABASE: itential
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    sysctls:
+      net.core.somaxconn: 511
+    restart: unless-stopped
+
+  redis:
+    container_name: redis
+    image: redis:${REDIS_VERSION:-7.4}
+    profiles: ["deps", "platform", "full"]
+    ports:
+      - "${BIND_ADDRESS}${REDIS_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    sysctls:
+      net.core.somaxconn: 511
+    restart: unless-stopped
+
+  # openldap - for testing enterprise ldap authentication
+  # admin: cn=admin,dc=itential,dc=io / admin
+  openldap:
+    container_name: openldap
+    image: osixia/openldap:1.4.0
+    profiles: ["ldap"]
+    command: --copy-service
+    ports:
+      - "${BIND_ADDRESS}${LDAP_PORT:-3389}:389"
+    volumes:
+      - type: bind
+        source: ./volumes/ldap/openldap.ldif
+        target: /container/service/slapd/assets/config/bootstrap/ldif/custom/01-custom-ldap.ldif
+    environment:
+      LDAP_ORGANISATION: "Itential, LLC."
+      LDAP_DOMAIN: itential.io
+      LDAP_ADMIN_PASSWORD: ${LDAP_ADMIN_PASSWORD:-admin}
+    restart: unless-stopped
+
+  # ==========================================================================
+  # ITENTIAL PLATFORM
+  # ==========================================================================
+
+  # init platform-logs volume with correct ownership
+  # note: PLATFORM_UID/PLATFORM_GID can be set in .env for alternative images (e.g., flowai uses 1000)
+  platform-init:
+    image: alpine:latest
+    profiles: ["platform", "full"]
+    volumes:
+      - platform-logs:/mnt
+    command: sh -c "chown -R ${PLATFORM_UID:-1001}:${PLATFORM_GID:-1001} /mnt && chmod -R 755 /mnt"
+    restart: "no"
+
+  platform:
+    container_name: platform
+    image: ${PLATFORM_IMAGE:?PLATFORM_IMAGE is required - check .env file}
+    platform: linux/amd64
+    profiles: ["platform", "full"]
+
+    # load vault env vars from .env (only when set by configure-openbao.sh)
+    env_file:
+      - path: .env
+        required: false
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      platform-init:
+        condition: service_completed_successfully
+    ports:
+      - "${BIND_ADDRESS}${PLATFORM_PORT:-3000}:3000"
+      - "${BIND_ADDRESS}${PLATFORM_HTTPS_PORT:-3443}:3443"
+      - "${BIND_ADDRESS}${GATEWAY_MANAGER_PORT:-8080}:8080"
+    volumes:
+      - type: bind
+        source: ./volumes/platform/adapters
+        target: /opt/itential/platform/services/custom
+        read_only: true
+      - platform-logs:/var/log/itential
+      - platform-logs:/opt/itential/logs
+      - type: bind
+        source: ./volumes/platform/ssl
+        target: /etc/ssl/platform
+        read_only: true
+      - type: bind
+        source: ./volumes/platform/vault
+        target: /opt/vault
+        read_only: true
+    environment:
+
+      # security
+      ITENTIAL_ENCRYPTION_KEY: ${ITENTIAL_ENCRYPTION_KEY:?ITENTIAL_ENCRYPTION_KEY is required - run make setup}
+
+      # mongodb
+      ITENTIAL_MONGO_URL: "mongodb://mongodb:27017"
+      ITENTIAL_MONGO_DB_NAME: "itential"
+      ITENTIAL_MONGO_AUTH_DB: "itential"
+      ITENTIAL_MONGO_TLS_ENABLED: "false"
+
+      # redis
+      ITENTIAL_REDIS_HOST: "redis"
+      ITENTIAL_REDIS_PORT: "6379"
+
+      # web server
+      ITENTIAL_WEBSERVER_HTTP_PORT: 3000
+      ITENTIAL_WEBSERVER_HTTPS_ENABLED: true
+      ITENTIAL_WEBSERVER_HTTPS_PORT: 3443
+      ITENTIAL_WEBSERVER_HTTPS_KEY: "/etc/ssl/platform/key.pem"
+      ITENTIAL_WEBSERVER_HTTPS_CERT: "/etc/ssl/platform/cert.pem"
+
+      # logging
+      ITENTIAL_LOG_LEVEL: ${LOG_LEVEL:-debug}
+      ITENTIAL_LOG_DIRECTORY: "/var/log/itential"
+
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:3000/login 2>/dev/null || curl -sf http://localhost:3000/login >/dev/null"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 120s
+    restart: unless-stopped
+
+  # ==========================================================================
+  # AUTOMATION GATEWAY 4
+  # ==========================================================================
+
+  # init gateway4 volumes with correct ownership
+  gateway4-init:
+    image: alpine:latest
+    profiles: ["gateway4", "full"]
+    volumes:
+      - gateway4-data:/mnt/data
+      - gateway4-app:/mnt/app
+    environment:
+      - UID=${UID:-1000}
+      - GID=${GID:-1000}
+    command: sh -c "chown -R ${UID:-1000}:${GID:-1000} /mnt/data /mnt/app && chmod -R 755 /mnt/data /mnt/app"
+    restart: "no"
+
+  gateway4:
+    container_name: gateway4
+    image: ${GATEWAY4_IMAGE:-gateway4-not-configured}
+    platform: linux/amd64
+    profiles: ["gateway4", "full"]
+    user: "${UID:-1000}:${GID:-1000}"
+    depends_on:
+      gateway4-init:
+        condition: service_completed_successfully
+    command:
+      - "automation-gateway"
+      - "--sync-config"
+    ports:
+      - "${BIND_ADDRESS}${GATEWAY4_PORT:-8083}:8083"
+    volumes:
+      - gateway4-data:/var/lib/automation-gateway
+      - gateway4-app:/opt/automation-gateway
+      - type: bind
+        source: ./volumes/gateway4/scripts
+        target: /usr/share/automation-gateway/scripts
+        read_only: true
+      - type: bind
+        source: ./volumes/gateway4/playbooks
+        target: /usr/share/automation-gateway/ansible-playbooks
+        read_only: true
+      - type: bind
+        source: ./volumes/gateway4/ssl
+        target: /etc/ssl/gateway
+        read_only: true
+    environment:
+      HOME: /var/lib/automation-gateway
+
+      # ansible settings
+      ANSIBLE_TIMEOUT: 900
+      ANSIBLE_HOST_KEY_CHECKING: "false"
+      ANSIBLE_PERSISTENT_COMMAND_TIMEOUT: 3600
+      ANSIBLE_PERSISTENT_CONNECT_TIMEOUT: 900
+      ANSIBLE_IGNORE_CERTS: "true"
+
+      # system
+      automation_gateway_port: 8083
+      automation_gateway_authentication_disabled: "false"
+      automation_gateway_authentication_max_sessions: 5000
+      automation_gateway_authentication_idle_timeout: 600
+      automation_gateway_password_reset_enabled: "false"
+
+      # logging
+      automation_gateway_global_log_directory: "/var/lib/automation-gateway"
+      automation_gateway_max_log_files: 5
+      automation_gateway_logging_level: ${LOG_LEVEL:-INFO}
+      automation_gateway_http_logging_level: ${LOG_LEVEL:-INFO}
+      automation_gateway_strict_args: "true"
+
+      # databases
+      automation_gateway_data_file: "sqlite:////var/lib/automation-gateway/automation-gateway.db"
+      automation_gateway_audit: "true"
+      automation_gateway_audit_retention_days: 30
+      automation_gateway_audit_db_file: "sqlite:////var/lib/automation-gateway/automation-gateway_audit.db"
+      automation_gateway_exec_history_db_file: "sqlite:////var/lib/automation-gateway/automation-gateway_exec_history.db"
+
+      # ansible
+      automation_gateway_ansible_enabled: "true"
+      automation_gateway_ansible_debug: "true"
+      automation_gateway_no_cleanup: "false"
+      automation_gateway_playbook_recursive: "true"
+      automation_gateway_playbook_path: '["/usr/share/automation-gateway/ansible-playbooks"]'
+      automation_gateway_module_path: '["/usr/share/ansible/modules","/usr/local/lib/python3.9/site-packages/ansible_collections/arista","/usr/local/lib/python3.9/site-packages/ansible_collections/cisco","/usr/local/lib/python3.9/site-packages/ansible_collections/f5networks","/usr/local/lib/python3.9/site-packages/ansible_collections/junipernetworks"]'
+      automation_gateway_collection_path: '["/usr/share/ansible/collections", "/opt/automation-gateway/.ansible/collections","/usr/share/automation-gateway/ansible/collections"]'
+      automation_gateway_role_path: '["/usr/share/ansible/roles"]'
+      automation_gateway_extended_device_role_path: '["/usr/local/lib/python3.9/site-packages/automation_gateway/integrations/extensible_device_roles/ansible_netmiko"]'
+
+      # scripts
+      automation_gateway_scripts_enabled: "true"
+      automation_gateway_script_recursive: "true"
+      automation_gateway_script_path: '["/usr/share/automation-gateway/scripts"]'
+
+      # feature flags (disabled by default)
+      automation_gateway_http_requests_enabled: "false"
+      automation_gateway_netconf_enabled: "false"
+      automation_gateway_netmiko_enabled: "false"
+      automation_gateway_nornir_enabled: "false"
+      automation_gateway_terraform_enabled: "false"
+      automation_gateway_grpc_enabled: "false"
+      automation_gateway_python_venv_enabled: "false"
+      automation_gateway_git_enabled: "true"
+      automation_gateway_vault_enabled: "false"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:8083/"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+  # ==========================================================================
+  # AUTOMATION GATEWAY 5
+  # ==========================================================================
+
+  gateway5:
+    container_name: gateway5
+    image: ${GATEWAY5_IMAGE:-gateway5-not-configured}
+    platform: linux/amd64
+    profiles: ["gateway5", "full"]
+    entrypoint:
+      - iagctl
+      - server
+    ports:
+      - "${BIND_ADDRESS}${GATEWAY5_PORT:-50051}:50051"
+    volumes:
+      - type: bind
+        source: ./volumes/gateway5/certificates
+        target: /etc/ssl/gateway5
+        read_only: true
+      - gateway5-data:/etc/gateway
+    environment:
+
+      # application
+      GATEWAY_APPLICATION_CLUSTER_ID: ${GATEWAY5_CLUSTER_ID:-cluster_1}
+      GATEWAY_APPLICATION_MODE: "server"
+      GATEWAY_APPLICATION_WORKING_DIR: "/etc/gateway"
+
+      # gw manager connection
+      # defaults to Platform's Gateway Manager; the standalone iag5 targets reuse
+      # this default and IAG5 retries the connection harmlessly when no Platform is
+      # up. an empty value is invalid for IAG5 (it panics), so :- forces the default
+      GATEWAY_CONNECT_HOSTS: "${GATEWAY5_CONNECT_HOSTS:-platform:8080}"
+      GATEWAY_CONNECT_CERTIFICATE_FILE: "/etc/ssl/gateway5/gw-manager.pem"
+      GATEWAY_CONNECT_PRIVATE_KEY_FILE: "/etc/ssl/gateway5/gw-manager-key.pem"
+      GATEWAY_CONNECT_INSECURE_TLS: "true"
+
+      # logging
+      GATEWAY_LOG_LEVEL: ${LOG_LEVEL:-INFO}
+
+      # server
+      GATEWAY_SERVER_USE_TLS: "false"
+      GATEWAY_SERVER_LISTEN_ADDRESS: "gateway5"
+    restart: unless-stopped
+
+  # ==========================================================================
+  # MCP SERVER
+  # ==========================================================================
+
+  mcp:
+    container_name: mcp
+    image: ghcr.io/itential/itential-mcp:${MCP_VERSION:-v0.10.0}
+    profiles: ["mcp"]
+    depends_on:
+      platform:
+        condition: service_healthy
+    stdin_open: true
+    tty: false
+    ports:
+      - "${BIND_ADDRESS}${MCP_SSE_PORT:-8000}:8000"
+    volumes:
+      - type: bind
+        source: ./volumes/mcp/logs
+        target: /app/logs
+    environment:
+      # platform connection
+      ITENTIAL_MCP_PLATFORM_HOST: platform
+      ITENTIAL_MCP_PLATFORM_PORT: 3000
+      ITENTIAL_MCP_PLATFORM_USER: ${MCP_PLATFORM_USER:-admin}
+      ITENTIAL_MCP_PLATFORM_PASSWORD: ${MCP_PLATFORM_PASSWORD:-admin}
+      ITENTIAL_MCP_PLATFORM_DISABLE_TLS: "true"
+
+      # server settings
+      ITENTIAL_MCP_SERVER_TRANSPORT: ${MCP_TRANSPORT:-stdio}
+      ITENTIAL_MCP_SERVER_HOST: "0.0.0.0"
+      ITENTIAL_MCP_SERVER_PORT: 8000
+      ITENTIAL_MCP_SERVER_LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/status/healthz', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    restart: unless-stopped
+
+  # ==========================================================================
+  # OPENBAO (Vault-compatible secrets management)
+  # ==========================================================================
+
+  # init openbao-data volume with correct ownership
+  openbao-init:
+    image: alpine:latest
+    profiles: ["openbao"]
+    volumes:
+      - openbao-data:/mnt/data
+    command: sh -c "chown -R 100:1000 /mnt/data && chmod -R 755 /mnt/data"
+    restart: "no"
+
+  openbao:
+    container_name: openbao
+    image: ghcr.io/openbao/openbao:${OPENBAO_VERSION:-2}
+    profiles: ["openbao"]
+    depends_on:
+      openbao-init:
+        condition: service_completed_successfully
+    cap_add:
+      - IPC_LOCK
+    ports:
+      - "${BIND_ADDRESS}${OPENBAO_PORT:-8200}:8200"
+    volumes:
+      - openbao-data:/openbao/data
+      - type: bind
+        source: ./volumes/openbao/config
+        target: /openbao/config
+        read_only: true
+    environment:
+      VAULT_DISABLE_MLOCK: "true"
+      VAULT_API_ADDR: "http://0.0.0.0:8200"
+    command: server -config=/openbao/config/config.hcl
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8200/v1/sys/health?standbyok=true&uninitcode=200&sealedcode=200"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+# ==========================================================================
+# VOLUMES
+# ==========================================================================
+
+volumes:
+  gateway4-app:
+    driver: local
+  gateway4-data:
+    driver: local
+  gateway5-data:
+    driver: local
+  openbao-data:
+    driver: local
+  platform-logs:
+    driver: local

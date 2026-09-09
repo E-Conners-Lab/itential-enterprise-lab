@@ -95,8 +95,8 @@ topology; "k3s VIP" means a MetalLB address.
 | 10.100.0.42 | gitea | k3s VIP | Gitea HTTP + SSH (phase 9) |
 | 10.100.0.43 - .63 | *(pool)* | k3s VIP | unassigned MetalLB pool |
 | 10.100.0.64 | netbox | Proxmox (VM 110, second NIC) | NetBox OOB leg (phase 2) |
-| 10.100.0.65 | itential | Proxmox | Itential Platform (phase 5) |
-| 10.100.0.66 | iag | Proxmox | Itential Automation Gateway (phase 5) |
+| 10.100.0.65 | itential | Proxmox | Itential Platform, both Automation Gateways and the MCP server as containers on one VM; alias `mcp.lab.internal` (phase 5, ADR 0035) |
+| 10.100.0.66 | *(reserved)* | | released 2026-09-07: the separate `iag` VM was dropped with the container path |
 | 10.100.0.67 | nios | Proxmox | Infoblox NIOS grid master, LAN1 (phase 6) |
 | 10.100.0.68 | ddi-fallback | Proxmox | BIND9 secondary + Kea standby (phase 6) |
 | 10.100.0.69 | dc01 | Proxmox | Windows Server AD DS / DNS (phase 7) |

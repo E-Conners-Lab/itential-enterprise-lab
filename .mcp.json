@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "itential": {
+      "type": "http",
+      "url": "http://mcp.lab.internal:8000/mcp"
+    }
+  }
+}

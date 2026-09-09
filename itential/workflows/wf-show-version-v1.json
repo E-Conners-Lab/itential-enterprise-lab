@@ -1,0 +1,170 @@
+{
+  "name": "wf-show-version-v1",
+  "type": "automation",
+  "description": "Runs 'show version' on one inventory node through Gateway 5 and returns the raw output (PID S4.3)",
+  "tasks": {
+    "1a": {
+      "name": "sendCommand",
+      "canvasName": "sendCommand",
+      "summary": "show version through Gateway 5",
+      "description": "show version through Gateway 5",
+      "location": "Application",
+      "locationType": null,
+      "app": "GatewayManager",
+      "type": "automatic",
+      "displayName": "GatewayManager",
+      "groups": [],
+      "nodeLocation": {
+        "x": 600,
+        "y": 0
+      },
+      "variables": {
+        "incoming": {
+          "clusterId": "lab",
+          "commands": [
+            "show version"
+          ],
+          "inventory": "$var.0b.textObject"
+        },
+        "outgoing": {
+          "result": "$var.job.show_version"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "0a": {
+      "name": "replace",
+      "canvasName": "replace",
+      "summary": "selector JSON with the node name",
+      "description": "selector JSON with the node name",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": -300,
+        "y": 0
+      },
+      "variables": {
+        "incoming": {
+          "str": "[{\"inventory\": \"lab\", \"nodeNames\": [\"__DEVICE__\"]}]",
+          "substr": "__DEVICE__",
+          "newSubstr": "$var.job.device"
+        },
+        "outgoing": {
+          "replacedString": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "0b": {
+      "name": "parse",
+      "canvasName": "parse",
+      "summary": "selector JSON -> object",
+      "description": "selector JSON -> object",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 0,
+        "y": 0
+      },
+      "variables": {
+        "incoming": {
+          "text": "$var.0a.replacedString"
+        },
+        "outgoing": {
+          "textObject": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "workflow_start": {
+      "name": "workflow_start",
+      "summary": "workflow_start",
+      "groups": [],
+      "nodeLocation": {
+        "x": -600,
+        "y": 0
+      }
+    },
+    "workflow_end": {
+      "name": "workflow_end",
+      "summary": "workflow_end",
+      "groups": [],
+      "nodeLocation": {
+        "x": 1800,
+        "y": 0
+      }
+    }
+  },
+  "transitions": {
+    "workflow_start": {
+      "0a": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "0a": {
+      "0b": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "0b": {
+      "1a": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "1a": {
+      "workflow_end": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "workflow_end": {}
+  },
+  "groups": [],
+  "canvasVersion": 3,
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "device": {
+        "type": "string",
+        "required": true,
+        "description": "Inventory node name, e.g. br1-sw01"
+      }
+    },
+    "required": [
+      "device"
+    ]
+  },
+  "outputSchema": {
+    "type": "object",
+    "properties": {
+      "show_version": {
+        "type": "object"
+      }
+    }
+  },
+  "tags": [],
+  "preAutomationTime": 300000,
+  "sla": 600000,
+  "font_size": 12,
+  "decorators": []
+}

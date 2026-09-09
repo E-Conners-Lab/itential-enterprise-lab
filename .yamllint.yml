@@ -14,3 +14,4 @@ ignore: |
   .ansible/
   .venv/
   k8s/**/charts/
+  itential/docker-compose.yml

@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Name** | itential-enterprise-lab |
-| **Version** | 1.0 |
+| **Version** | 1.5 |
 | **Date** | 2026-09-06 |
 | **Author** | Elliot Conner. Claude Code is the build agent; every action it takes is bounded by this document |
 | **Standard** | Project Initiation Standard PIS-01 - PIS-30 (`~/.claude/skills/project-initiation-standard`) |
@@ -153,9 +153,9 @@ Conventions: **Placement** is Proxmox VM (OpenTofu + Ansible), k3s (Helm/Kustomi
 ### S4 — Itential Platform + Automation Gateway (Phase 5)
 
 - **Purpose:** the automation brain. Workflows, JSON forms, pre/post checks, adapters to every other service.
-- **Placement:** two **Rocky 9** Proxmox VMs (Itential supports only RHEL/Rocky; Ubuntu is explicitly unsupported): `itential` (Platform 6 + MongoDB 7 + Redis 7 all-in-one, sized in the budget) and `iag` (Gateway 5 server + runner with the Ansible collections for PAN-OS, IOS XE, EOS, NIOS and NetBox).
-- **Components:** versions per manifest section 3; installed with Itential's `itential.deployer` and `itential.iag5` Ansible collections from the Itential software repository (credentials are an owner step). Adapters from the open-source library: NetBox, ServiceNow, Panorama, Infoblox, Zabbix, Vault (Phase 9), generic git for Gitea (Phase 9). **There is no adapter for Cisco IOS XE or Arista EOS**: those devices are reached through Gateway (netmiko/NETCONF/Ansible) and the vendor pre-built automations. Local admin account plus LDAP to Active Directory in Phase 7 (Platform supports SAML and LDAP for users, not OIDC).
-- **Licence risk:** Itential publishes no licence-file mechanism or trial terms; the owner confirms repository access and licence terms before this phase starts (PIS-04 trigger). If access cannot be obtained, this phase is blocked and the PID is amended, not worked around.
+- **Placement (amended 1.4, 2026-09-07):** one **Ubuntu 24.04** Proxmox VM `itential` (VM 205, 10.100.0.65, 8 vCPU / 24 GB / 160 GB) running Docker CE and the vendored `itential-dev-stack` Compose file: Platform, MongoDB 7, Redis 7, Gateway 5, Gateway 4 and the MCP server as containers (ADR 0035). The separate `iag` VM, the Rocky template and 10.100.0.66 are dropped. ~~two **Rocky 9** Proxmox VMs (`itential` all-in-one and `iag`)~~.
+- **Components (amended 1.4):** container images per manifest section 3.5 pulled from Itential's private ECR with the owner's company SSO session (ADR 0020 amendment records the tags); ~~installed with `itential.deployer` and `itential.iag5` from the RPM repository~~. Adapters from the open-source library: NetBox, ServiceNow, Panorama, Infoblox, Zabbix, Vault (Phase 9), generic git for Gitea (Phase 9). **There is no adapter for Cisco IOS XE or Arista EOS**: those devices are reached through Gateway (netmiko/NETCONF/Ansible) and the vendor pre-built automations. Local admin account plus LDAP to Active Directory in Phase 7 (Platform supports SAML and LDAP for users, not OIDC).
+- **Licence risk (resolved 1.4):** the owner confirmed on 2026-09-07 that no licence is needed for the lab images and that ECR access via company SSO is the supported path (PIS-04 trigger closed). ~~If access cannot be obtained, this phase is blocked.~~
 - **Acceptance:**
   1. Platform UI and API reachable on 10.100.0.65 over TLS from the lab CA; IAG registered as a gateway in the platform.
   2. NetBox adapter: a workflow reads the device list and returns the same count as `GET /api/dcim/devices/`.
@@ -170,7 +170,7 @@ Conventions: **Placement** is Proxmox VM (OpenTofu + Ansible), k3s (Helm/Kustomi
 
 - **Purpose:** ticket-driven automation entry point.
 - **Placement:** external (ServiceNow Personal Developer Instance owned by Elliot). Only the adapter configuration and a keep-alive job live in this repo.
-- **Components:** Itential ServiceNow adapter pointed at the PDI over HTTPS with a dedicated integration user (basic auth, credentials in `.env`, later Vault); the `wf-branch-vlan-v1` workflow extended to open, update and close a change request; the PDI's Itential-related customisations exported as an update set into `servicenow/` in this repo so a reclaimed PDI can be rebuilt.
+- **Components:** Itential ServiceNow adapter pointed at the PDI over HTTPS with a dedicated integration user (basic auth, credentials in `.env`, later Vault); the `wf-branch-vlan-v1` workflow extended to open, update and close a change request; ~~the PDI's Itential-related customisations exported as an update set into `servicenow/`~~ (amended 1.5: the PDI is used stock, `servicenow/README.md` is the rebuild record).
 - **Keep-alive is a human step.** ServiceNow reclaims a PDI that is 90+ days old with no *interactive* login in 10 days, and API traffic does not count (manifest 3.4). The owner logs in at least every 10 days (calendar reminder recorded in `docs/manual-steps.md`); `verify/` checks the PDI's last-login date and warns at 7 days.
 - **Acceptance:**
   1. Adapter health check green in the platform.
@@ -567,7 +567,7 @@ at the end of Phase 2 and this table amended.
 | 2 | `phase-2/oob-network` | `verify/test-02-oob.sh` | Confirm `oob-gw` home-LAN IP; nothing else |
 | 3 | `phase-3/platform` | `verify/test-03-platform.sh` | none |
 | 4 | `phase-4/network-topology` | `verify/test-04-topology.sh` | Download PA-VM to `/srv/images/pa-vm` (Customer Support Portal); C8000v/vEOS reused (ADR 0032/0033); Windows 11 automated (`images/fetch.sh`, `images/build-win11.sh`) |
-| 5 | `phase-5/itential` | `verify/test-05-itential.sh` | Confirm Itential repository credentials and licence terms; download Platform/Gateway RPMs; create the PDI integration user; log into the PDI every 10 days from then on |
+| 5 | `phase-5/itential` | `verify/test-05-itential.sh` | `aws sso login` before image pulls (manual step 6); create the PDI integration user; log into the PDI every 10 days from then on |
 | 6 | `phase-6/ddi` | `verify/test-06-ddi.sh` | Download NIOS eval, apply the temp licence on the console |
 | 7 | `phase-7/identity` | `verify/test-07-identity.sh` | Download Windows Server eval ISO |
 | 8 | `phase-8/observability` | `verify/test-08-observability.sh` | none |
@@ -614,3 +614,5 @@ the verify log path and any ADRs added.
 | 1.1 | 2026-09-06 | Phase 2: A-19 resolved (.120), assumption 1 amended to the chat-approval process, S1 criterion 8 (client access) and S4 criterion 7 (Itential MCP reachability) added, Itential moves to the container path (manifest 3.5, ADR 0020 to be amended in Phase 5) |
 | 1.2 | 2026-09-06 | Phase 3: object store is Garage, CNPG backups via the Barman Cloud plugin, kube-vip 1.2.3 (ADR 0031); S2.2 drill recorded separately per PIS-09; NetBox is the Ansible inventory from Phase 3 on (PIS-15 contract honoured) |
 | 1.3 | 2026-09-07 | Phase 4: design amended after vendor research (ADR 0034: routed eBGP edge/firewall handoff, NGE IKEv2 + front-door VRF, AVD tenant VRF); firewalls deferred behind `lab.firewalls` with bypass links, S3.4/S3.5/S3.6 firewall checks deferred until the PA-VM image is staged; Windows 11 built UEFI/TPM; C8000v needs a licence boot level + reload |
+| 1.4 | 2026-09-07 | Phase 5: S4 placement is one Ubuntu VM with the itential-dev-stack containers (ADR 0035, ADR 0020 amended), `iag` VM and 10.100.0.66 dropped, licence risk closed by owner decision (none needed), images from the private ECR via company SSO; budget 73 vCPU / 263 GB |
+| 1.5 | 2026-09-07 | Phase 5 (S4b): Gateway 5 is the only gateway (Gateway 4 staged, not deployed); the PDI needs no customisation (stock standard-change template + Network group + one integration user), so S4b.3 is a rebuild record `servicenow/README.md` instead of an update set; S4b.2 evidence is the states ServiceNow returns to the workflow plus the change read back (`sys_audit` is admin-only on a PDI); PDI `dev409097`, Australia; basic auth needs `snc_basic_auth_api_access` on 2026 instances |

@@ -1,0 +1,22 @@
+# test-05-itential 20260907T172125Z
+PASS  S4.1 https://itential.lab.internal serves a lab-CA cert for itential.lab.internal, runs Platform 6.5.2, Gateway 5 registered and connected
+PASS  S4.2 wf-netbox-device-count-v1 through the NetBox adapter returns NetBox's count == GET /api/dcim/devices/
+PASS  S4.3 wf-show-version-v1 via IAG: br1-wan01 = 17.13.01a, br1-sw01 = 4.33.1.1F, cross-checked over direct SSH
+PASS  S4.4 wf-branch-vlan-v1: reserve + configure with approval; second run no-op; NetBox rollback on device failure
+PASS  S4.5 licence state (none required, owner decision 2026-09-07) recorded in manifest 3.5
+DEFER S4.6 memory under 80 % now, but uptime is under 24 h
+      uptime 7746s; RAM used 3688/24031 MB (15%); wiredTiger 9 MB in cache of 4096 MB max
+      MEASURE-EARLY: uptime under 24 h, re-run after 21 h
+FAIL  S4.7 mcp.lab.internal answers streamable HTTP from this Mac; get_health returns Platform 6.5.2; .mcp.json matches
+      Traceback (most recent call last):
+        File [35m"<string>"[0m, line [35m1[0m, in [35m<module>[0m
+          import socket;assert [31msocket.gethostbyname[0m[1;31m('mcp.lab.internal')[0m=='10.100.0.65','mcp.lab.internal resolves elsewhere'
+                               [31m~~~~~~~~~~~~~~~~~~~~[0m[1;31m^^^^^^^^^^^^^^^^^^^^[0m
+      [1;35msocket.gaierror[0m: [35m[Errno 8] nodename nor servname provided, or not known[0m
+FAIL  S4b.1 adapter-servicenow health: SNOW_INSTANCE/SNOW_USER/SNOW_PASSWORD missing from .env
+FAIL  S4b.2 change request lifecycle: SNOW_INSTANCE/SNOW_USER/SNOW_PASSWORD missing from .env
+FAIL  S4b.3 update set in servicenow/: SNOW_INSTANCE/SNOW_USER/SNOW_PASSWORD missing from .env
+FAIL  S4b.4 instance recorded: SNOW_INSTANCE/SNOW_USER/SNOW_PASSWORD missing from .env
+FAIL  S4b.5 interactive login age: SNOW_INSTANCE/SNOW_USER/SNOW_PASSWORD missing from .env
+
+passed=5 failed=6 deferred=1 hibernated=0

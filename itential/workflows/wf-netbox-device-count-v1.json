@@ -1,0 +1,90 @@
+{
+  "name": "wf-netbox-device-count-v1",
+  "type": "automation",
+  "description": "Reads the NetBox device list through the NetBox adapter and returns its count (PID S4.2)",
+  "tasks": {
+    "1a": {
+      "name": "getDcimDevices",
+      "canvasName": "getDcimDevices",
+      "summary": "One page of devices (count comes with it)",
+      "description": "One page of devices (count comes with it)",
+      "location": "Adapter",
+      "locationType": "Netbox",
+      "app": "Netbox",
+      "type": "automatic",
+      "displayName": "Netbox",
+      "groups": [],
+      "nodeLocation": {
+        "x": 0,
+        "y": 0
+      },
+      "variables": {
+        "incoming": {
+          "adapter_id": "NetBox",
+          "limit": 1,
+          "offset": 0
+        },
+        "outgoing": {
+          "result": "$var.job.devices"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "workflow_start": {
+      "name": "workflow_start",
+      "summary": "workflow_start",
+      "groups": [],
+      "nodeLocation": {
+        "x": -600,
+        "y": 0
+      }
+    },
+    "workflow_end": {
+      "name": "workflow_end",
+      "summary": "workflow_end",
+      "groups": [],
+      "nodeLocation": {
+        "x": 1800,
+        "y": 0
+      }
+    }
+  },
+  "transitions": {
+    "workflow_start": {
+      "1a": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "1a": {
+      "workflow_end": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "workflow_end": {}
+  },
+  "groups": [],
+  "canvasVersion": 3,
+  "inputSchema": {
+    "type": "object",
+    "properties": {},
+    "required": []
+  },
+  "outputSchema": {
+    "type": "object",
+    "properties": {
+      "devices": {
+        "type": "object"
+      }
+    }
+  },
+  "tags": [],
+  "preAutomationTime": 300000,
+  "sla": 600000,
+  "font_size": 12,
+  "decorators": []
+}

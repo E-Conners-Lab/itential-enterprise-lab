@@ -8,3 +8,4 @@ exclude_paths:
   - verify/results/
   - topology/
   - tests/
+  - itential/docker-compose.yml # vendored upstream file, byte-identical to the pin (ADR 0035)

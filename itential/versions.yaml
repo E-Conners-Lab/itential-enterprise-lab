@@ -1,0 +1,67 @@
+# Single oracle for Phase 5 (PID S4, ADR 0035). Read by ansible/playbooks/itential-host.yml,
+# itential.yml, images/fetch.sh itential and verify/test-05-itential.sh; tests/test_itential.py
+# holds it to docs/image-manifest.md 3.5, docs/resource-budget.md, topology/ipam.yaml and
+# tofu/itential. Never 'latest'.
+upstream:
+  dev_stack_repo: https://github.com/itential/itential-dev-stack
+  dev_stack_commit: 2db4b448db683d80f16e532357972e3f3004c0cb # main on 2026-06-24, vendored 2026-09-07
+  compose_sha256: f1107f418ebd8ffcc48da903fc425777774717bc00379a8d90535fb6127f5bf4 # itential/docker-compose.yml
+
+docker_ce: 29.8.0-1~ubuntu.24.04~noble # download.docker.com stable, 2026-09-03
+
+images:
+  # Private ECR: tags listed with the owner's SSO session on the pull date (manifest 3.5, ADR 0020 amendment)
+  # Listed 2026-09-07 with `aws ecr describe-images --profile product-ecr-pull-all-497639811223`; digests below.
+  platform: # pushed 2026-09-03, 756 MB; same digest as 6.5.2-ecm-6.5.2-fai-1.1.0-gm-1.2.3-lcm-6.5.2-2
+    repository: 497639811223.dkr.ecr.us-east-2.amazonaws.com/automation-platform-config-lcm-flowai
+    tag: "6.5.2"
+    digest: sha256:dab5ef7e4e07a9eb01fcee8320bf1313bda05abec8673040e995bf902a23ba98
+  gateway5: # pushed 2026-09-02, 363 MB
+    repository: 497639811223.dkr.ecr.us-east-2.amazonaws.com/automation-gateway5
+    tag: 5.5.2-amd64
+    digest: sha256:6b7940cb5dd2bcad809c1e43bcb009d9bc76512423cf7068945f3f0e8245936c
+  gateway4: # pushed 2026-09-02, 173 MB; newest 4.4.x. Staged, not deployed (Gateway 4 deferred, ADR 0035)
+    repository: 497639811223.dkr.ecr.us-east-2.amazonaws.com/automation-gateway
+    tag: 4.4.1
+    digest: sha256:ced4fcc36d09274299f0cb2537ff0f0340c18bf7f6fdd292a1ae08896f20e0e0
+  # Public
+  mongodb: {repository: docker.io/library/mongo, tag: "7.0.40"} # Platform 6 fully supports 7.0 (manifest 3.2); Docker Hub 2026-09-07
+  redis: {repository: docker.io/library/redis, tag: "7.4.11"}
+  mcp: {repository: ghcr.io/itential/itential-mcp, tag: v0.14.0} # release 2026-08-13; streamable HTTP transport
+  # upstream dev-stack OpenLDAP: admin@itential and the group membership Gateway Manager needs (until Phase 7 AD)
+  ldap: {repository: docker.io/osixia/openldap, tag: 1.4.0}
+
+vm:
+  name: itential
+  vm_id: 205
+  ip: 10.100.0.65
+  cores: 8
+  memory_mb: 24576
+  disk_gb: 160
+
+stack:
+  # platform + mongodb + redis + gateway5 + mcp + openldap. Gateway 4 deferred (owner decision
+  # 2026-09-07: Gateway 5 is the gateway; Golden Config is not in S4), openbao off (Vault in Phase 9)
+  profiles: [platform, gateway5, mcp, ldap]
+  # itential/ldap/openldap.ldif, vendored from the same upstream commit
+  ldif_sha256: 4d22e7a2a80dc5f3b6fabccf35b68e34fe6d6c9fd4c87842c2a6deca53f97cbc
+  gateway5_cluster_id: lab
+  inventory: lab # Inventory Manager inventory holding the NetBox network devices
+  mongo_cache_gb: 4
+
+# Open-source adapters (GitLab itentialopensource/adapters, manifest 3.2), installed into the
+# platform's custom services mount from the tag's commit; npm deps resolved at install time.
+adapters:
+  netbox:
+    repo: https://gitlab.com/itentialopensource/adapters/adapter-netbox.git
+    tag: v1.0.10 # commit c3bd5098, 2026-08-31
+    export: Netbox
+  servicenow:
+    repo: https://gitlab.com/itentialopensource/adapters/adapter-servicenow.git
+    tag: v3.0.11 # commit 7af088d9, 2026-08-31
+    export: Servicenow # pronghorn.json export (adapter tasks: app/locationType)
+
+workflows:
+  device_count: wf-netbox-device-count-v1
+  show_version: wf-show-version-v1
+  branch_vlan: wf-branch-vlan-v1
