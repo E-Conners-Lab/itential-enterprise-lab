@@ -1,0 +1,655 @@
+---
+# NetBox enrichment derived from topology/enterprise.yaml (PID S4e, ADR 0048). Runs after netbox-topology.yml.
+# Element 1: every addressed interface with its address, VRF and "to <peer>" description; the virtual interfaces
+# (loopbacks, SVIs, tunnels); interfaces the seed once created with the YAML short names are renamed in place
+# (same id, same cable). Idempotent: create or update only, changed=0 on the second run.
+- name: Enrich NetBox from the topology
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars_files:
+    - ../../topology/enterprise.yaml
+  vars:
+    ansible_python_interpreter: "{{ playbook_dir }}/../../.venv/bin/python"
+    nb_url: "{{ lookup('ansible.builtin.env', 'NETBOX_URL') }}"
+    nb_token: "{{ lookup('ansible.builtin.env', 'NETBOX_TOKEN') }}"
+    nb_headers: {Authorization: "Token {{ nb_token }}", Accept: application/json, Content-Type: application/json}
+    tag: phase-6
+  tasks:
+    - name: The intent from topology/derive.py (interfaces per device, port map)
+      ansible.builtin.command: "{{ ansible_python_interpreter }} {{ playbook_dir }}/../../topology/derive.py"
+      register: derive_out
+      changed_when: false
+
+    - name: The newest NetBox change before this run (the changelog decides whether a journal entry is written)
+      ansible.builtin.uri:
+        url: "{{ nb_url }}/api/core/object-changes/?limit=1"
+        headers: "{{ nb_headers }}"
+        validate_certs: false
+      register: change_before
+
+    - name: The repo commit this run derives from
+      ansible.builtin.command: git describe --always --dirty  # noqa: command-instead-of-module (a label, not a checkout)
+      args:
+        chdir: "{{ playbook_dir }}/../.."
+      register: git_head
+      changed_when: false
+
+    - name: The intent as facts (every addressed or linked interface with its device)
+      ansible.builtin.set_fact:
+        intent: "{{ derive_out.stdout | from_json }}"
+        rows: "{{ (derive_out.stdout | from_json).rows }}"
+
+    - name: Tag {{ tag }}
+      netbox.netbox.netbox_tag:
+        netbox_url: "{{ nb_url }}"
+        netbox_token: "{{ nb_token }}"
+        validate_certs: false
+        data: {name: "{{ tag }}", slug: "{{ tag }}", color: "2196f3", description: "Phase 6 NetBox enrichment (ADR 0048)"}
+
+    - name: Route targets
+      netbox.netbox.netbox_route_target:
+        netbox_url: "{{ nb_url }}"
+        netbox_token: "{{ nb_token }}"
+        validate_certs: false
+        data: {name: "{{ item.1 }}", description: "VRF {{ item.0.key }} (L3VNI {{ item.0.value.vni }})", tags: ["{{ tag }}"]}
+      loop: "{{ vrfs | dict2items | selectattr('value.route_targets', 'defined') | subelements('value.route_targets') }}"
+      loop_control:
+        label: "{{ item.0.key }} {{ item.1 }}"
+
+    - name: VRFs (created by the seed) carry their route targets; RDs are per device and live in the device context
+      netbox.netbox.netbox_vrf:
+        netbox_url: "{{ nb_url }}"
+        netbox_token: "{{ nb_token }}"
+        validate_certs: false
+        data:
+          name: "{{ item.key }}"
+          description: "{{ item.value.description }}"
+          import_targets: "{{ item.value.route_targets | default([]) }}"
+          export_targets: "{{ item.value.route_targets | default([]) }}"
+      loop: "{{ vrfs | dict2items }}"
+      loop_control:
+        label: "{{ item.key }}"
+
+    - name: VRF ids
+      ansible.builtin.uri:
+        url: "{{ nb_url }}/api/ipam/vrfs/?limit=100"
+        headers: "{{ nb_headers }}"
+        validate_certs: false
+      register: vrf_list
+
+    # --- prefixes the seed created before their VRF existed sit in the global table: moved, or the global copy retired ---
+    - name: In-band prefixes that belong to a VRF, as NetBox holds them (every table)
+      ansible.builtin.uri:
+        url: "{{ nb_url }}/api/ipam/prefixes/?prefix={{ item.prefix }}"
+        headers: "{{ nb_headers }}"
+        validate_certs: false
+      loop: "{{ inband_prefixes | selectattr('vrf', 'defined') | list }}"
+      loop_control:
+        label: "{{ item.prefix }} -> {{ item.vrf }}"
+      register: vrf_prefixes
+
+    - name: A global copy next to the VRF one is retired (a query returning two objects means both exist)
+      ansible.builtin.uri:
+        url: "{{ nb_url }}/api/ipam/prefixes/{{ item.id }}/"
+        method: DELETE
+        headers: "{{ nb_headers }}"
+        validate_certs: false
+        status_code: 204
+      loop: >-
+        {{ vrf_prefixes.results | selectattr('json.count', 'equalto', 2) | map(attribute='json.results') | flatten
+           | selectattr('vrf', 'none') | list }}
+      loop_control:
+        label: "{{ item.prefix }} (global, id {{ item.id }})"
+      changed_when: true
+
+    - name: A lone global prefix is moved into its VRF
+      ansible.builtin.uri:
+        url: "{{ nb_url }}/api/ipam/prefixes/{{ (item.json.results | first).id }}/"
+        method: PATCH
+        headers: "{{ nb_headers }}"
+        body_format: json
+        body: {vrf: "{{ vrf_list.json.results | selectattr('name', 'equalto', item.item.vrf) | map(attribute='id') | first }}"}
+        validate_certs: false
+        status_code: 200
+      loop: "{{ vrf_prefixes.results }}"
+      loop_control:
+        label: "{{ item.item.prefix }} -> {{ item.item.vrf }}"
+      when: item.json.results | length == 1 and (item.json.results | first).vrf is none
+      changed_when: true
+
+    # --- S4e.2: ASNs on their sites ---
+    - name: RIR private
+      netbox.netbox.netbox_rir:
+        netbox_url: "{{ nb_url }}"
+        netbox_token: "{{ nb_token }}"
+        validate_certs: false
+        data: {name: private, slug: private, is_private: true}
+
+    - name: ASNs
+      netbox.netbox.netbox_asn:
+        netbox_url: "{{ nb_url }}"
+        netbox_token: "{{ nb_token }}"
+        validate_certs: false
+        data:
+          asn: "{{ item.asn }}"
+          rir: private
+          description: "{{ item.description }} ({{ item.site }})"
+          tags: ["{{ tag }}"]
+      loop: "{{ intent.asns }}"
+      loop_control:
+        label: "{{ item.asn }}"
+
+    - name: Sites and ASNs as NetBox holds them
+      ansible.builtin.uri:
+        url: "{{ nb_url }}/api/{{ item }}/?limit=100"
+        headers: "{{ nb_headers }}"
+        validate_certs: false
+      loop: [dcim/sites, ipam/asns]
+      register: site_asn_state
+
+    - name: Each site lists its ASNs
+      ansible.builtin.uri:
+        url: "{{ nb_url }}/api/dcim/sites/{{ site_id }}/"
+        method: PATCH
+        headers: "{{ nb_headers }}"
+        body_format: json
+        body: {asns: "{{ wanted }}"}
+        validate_certs: false
+      loop: "{{ intent.asns_by_site | dict2items }}"
+      loop_control:
+        label: "{{ item.key }} {{ item.value }}"
+      vars:
+        site_id: "{{ (site_asn_state.results[0].json.results | selectattr('slug', 'equalto', item.key) | first).id }}"
+        wanted: "{{ site_asn_state.results[1].json.results | selectattr('asn', 'in', item.value) | map(attribute='id') | sort }}"
+        current: >-
+          {{ (site_asn_state.results[0].json.results | selectattr('slug', 'equalto', item.key) | first).asns
+             | map(attribute='id') | sort }}
+      when: wanted != current
+      changed_when: true
+
+    # --- the seed once created link ports with the YAML short names; rename in place (id and cable survive) ---
+    - name: Link ports still carrying a YAML short name (every link end, firewall-facing ports included)
+      ansible.builtin.uri:
+        url: "{{ nb_url }}/api/dcim/interfaces/?device={{ item.key.split(':')[0] }}&name={{ item.key.split(':')[1] }}"
+        headers: "{{ nb_headers }}"
+        validate_certs: false
+      loop: "{{ intent.renames | dict2items }}"
+      loop_control:
+        label: "{{ item.key }}"
+      register: short_named
+
+    - name: Rename them to the device's own name
+      ansible.builtin.uri:
+        url: "{{ nb_url }}/api/dcim/interfaces/{{ item.json.results[0].id }}/"
+        method: PATCH
+        headers: "{{ nb_headers }}"
+        body_format: json
+        body: {name: "{{ item.item.value }}"}
+        validate_certs: false
+        status_code: 200
+      loop: "{{ short_named.results | selectattr('json', 'defined') | selectattr('json.count', 'equalto', 1) | list }}"
+      loop_control:
+        label: "{{ item.item.key }} -> {{ item.item.value }}"
+      changed_when: true
+
+    - name: Virtual interfaces (loopbacks, SVIs, tunnels) with their descriptions
+      netbox.netbox.netbox_device_interface:
+        netbox_url: "{{ nb_url }}"
+        netbox_token: "{{ nb_token }}"
+        validate_certs: false
+        data:
+          device: "{{ item.device }}"
+          name: "{{ item.name }}"
+          type: virtual
+          description: "{{ item.description }}"
+          vrf: "{{ item.vrf | default(omit, true) }}"
+          tags: ["{{ tag }}"]
+      loop: "{{ rows | rejectattr('kind', 'equalto', 'link') | list }}"
+      loop_control:
+        label: "{{ item.device }} {{ item.name }}"
+
+    - name: Link ports carry the 'to <peer>' description the device runs (and their VRF)
+      netbox.netbox.netbox_device_interface:
+        netbox_url: "{{ nb_url }}"
+        netbox_token: "{{ nb_token }}"
+        validate_certs: false
+        data:
+          device: "{{ item.device }}"
+          name: "{{ item.name }}"
+          description: "{{ item.description }}"
+          vrf: "{{ item.vrf | default(omit, true) }}"
+      loop: "{{ rows | selectattr('kind', 'equalto', 'link') | list }}"
+      loop_control:
+        label: "{{ item.device }} {{ item.name }}"
+
+    - name: Addresses on their interfaces (one device each)
+      netbox.netbox.netbox_ip_address:
+        netbox_url: "{{ nb_url }}"
+        netbox_token: "{{ nb_token }}"
+        validate_certs: false
+        data:
+          address: "{{ item.address }}"
+          vrf: "{{ item.vrf | default(omit, true) }}"
+          status: active
+          assigned_object: {device: "{{ item.device }}", name: "{{ item.name }}"}
+          description: "{{ item.device }} {{ item.name }}"
+          tags: ["{{ tag }}"]
+      loop: "{{ rows | selectattr('address', 'string') | rejectattr('anycast', 'defined') | list
+                + (rows | selectattr('address', 'string') | selectattr('anycast', 'defined') | rejectattr('anycast') | list) }}"
+      loop_control:
+        label: "{{ item.device }} {{ item.name }} {{ item.address }}"
+
+    # --- shared addresses (the anycast VTEP, the anycast gateway, the virtual router) exist once per leaf: the
+    # collection's lookup finds the other leaf's object and moves it (measured 2026-09-08), so these go through
+    # the API with a per-device lookup ---
+    - name: Shared addresses already on their device
+      ansible.builtin.uri:
+        url: >-
+          {{ nb_url }}/api/ipam/ip-addresses/?address={{ item.virtual | default(item.address) }}&device={{ item.device
+          }}&interface={{ item.name }}
+        headers: "{{ nb_headers }}"
+        validate_certs: false
+      loop: "{{ shared_rows }}"
+      loop_control:
+        label: "{{ item.device }} {{ item.name }} {{ item.virtual | default(item.address) }}"
+      register: shared_present
+      vars:
+        shared_rows: >-
+          {{ (rows | selectattr('anycast', 'defined') | selectattr('anycast') | list)
+             + (rows | selectattr('virtual', 'defined') | selectattr('virtual', 'string') | list) }}
+
+    - name: The interface ids for the shared addresses still missing
+      ansible.builtin.uri:
+        url: "{{ nb_url }}/api/dcim/interfaces/?device={{ item.item.device }}&name={{ item.item.name }}"
+        headers: "{{ nb_headers }}"
+        validate_certs: false
+      loop: "{{ shared_present.results | selectattr('json.count', 'equalto', 0) | list }}"
+      loop_control:
+        label: "{{ item.item.device }} {{ item.item.name }}"
+      register: shared_ifaces
+
+    - name: Shared addresses created on their device (role anycast, so NetBox allows the duplicate)
+      ansible.builtin.uri:
+        url: "{{ nb_url }}/api/ipam/ip-addresses/"
+        method: POST
+        headers: "{{ nb_headers }}"
+        body_format: json
+        body:
+          address: "{{ item.item.item.virtual | default(item.item.item.address) }}"
+          vrf: >-
+            {{ (vrf_list.json.results | selectattr('name', 'equalto', item.item.item.vrf) | map(attribute='id') | first)
+               if item.item.item.vrf else None }}
+          status: active
+          role: anycast
+          assigned_object_type: dcim.interface
+          assigned_object_id: "{{ item.json.results[0].id }}"
+          description: "{{ item.item.item.device }} {{ item.item.item.name }} (shared)"
+          tags: [{name: "{{ tag }}"}]
+        validate_certs: false
+        status_code: 201
+      loop: "{{ shared_ifaces.results | default([]) }}"
+      loop_control:
+        label: "{{ item.item.item.device }} {{ item.item.item.name }} {{ item.item.item.virtual | default(item.item.item.address) }}"
+      changed_when: true
+
+    # --- S4e.2: config contexts (lab, sites, platforms rendered by NetBox; BGP and RDs local per device) ---
+    - name: Config context lab (domain, DNS, NTP, management gateway, the ASN plan)
+      netbox.netbox.netbox_config_context:
+        netbox_url: "{{ nb_url }}"
+        netbox_token: "{{ nb_token }}"
+        validate_certs: false
+        data:
+          name: lab
+          weight: 1000
+          description: "The lab (topology/enterprise.yaml lab + routing.asn)"
+          data: "{{ intent.contexts.lab }}"
+          tags: []
+
+    - name: Config context per site (aggregate, gateways)
+      netbox.netbox.netbox_config_context:
+        netbox_url: "{{ nb_url }}"
+        netbox_token: "{{ nb_token }}"
+        validate_certs: false
+        data:
+          name: "site-{{ item.key }}"
+          weight: 2000
+          description: "Site {{ item.key }} (topology/enterprise.yaml sites + addressing)"
+          sites: ["{{ item.key }}"]
+          data: "{{ item.value }}"
+          tags: []  # on a context, tags are an assignment criterion (measured 2026-09-08), so none
+      loop: "{{ intent.contexts.sites | dict2items }}"
+      loop_control:
+        label: "site-{{ item.key }}"
+
+    - name: Config context per platform (automation account name, management VRF, parser)
+      netbox.netbox.netbox_config_context:
+        netbox_url: "{{ nb_url }}"
+        netbox_token: "{{ nb_token }}"
+        validate_certs: false
+        data:
+          name: "platform-{{ item.key }}"
+          weight: 3000
+          description: "Platform {{ item.key }}"
+          platforms: ["{{ item.key }}"]
+          data: "{{ item.value }}"
+          tags: []  # on a context, tags are an assignment criterion (measured 2026-09-08), so none
+      loop: "{{ intent.contexts.platforms | dict2items }}"
+      loop_control:
+        label: "platform-{{ item.key }}"
+
+    - name: Local context per device (BGP ASN, router-id, neighbours; per-device VRF RDs)
+      netbox.netbox.netbox_device:
+        netbox_url: "{{ nb_url }}"
+        netbox_token: "{{ nb_token }}"
+        validate_certs: false
+        data:
+          name: "{{ item.key }}"
+          local_context_data: "{{ item.value }}"
+      loop: "{{ intent.contexts.devices | dict2items }}"
+      loop_control:
+        label: "{{ item.key }}"
+
+    # --- S4e.2: the transit virtual router as an FHRP group (members: the leaf SVIs; the address on the group) ---
+    - name: FHRP groups
+      netbox.netbox.netbox_fhrp_group:
+        netbox_url: "{{ nb_url }}"
+        netbox_token: "{{ nb_token }}"
+        validate_certs: false
+        data:
+          name: "{{ item.name }}"
+          protocol: other
+          group_id: "{{ loop_index }}"
+          description: "EOS virtual-router {{ item.address }} (VRF {{ item.vrf }})"
+          tags: ["{{ tag }}"]
+      loop: "{{ intent.fhrp_groups }}"
+      loop_control:
+        label: "{{ item.name }}"
+        index_var: loop_index
+
+    - name: FHRP group ids, assignments, the group addresses and the member SVI ids (derive.py fixes the order)
+      ansible.builtin.uri:
+        url: "{{ nb_url }}/api/{{ item }}"
+        headers: "{{ nb_headers }}"
+        validate_certs: false
+      loop: "{{ intent.fhrp_lookups }}"
+      register: fhrp_state
+
+    - name: Member SVIs assigned to their FHRP group
+      netbox.netbox.netbox_fhrp_group_assignment:
+        netbox_url: "{{ nb_url }}"
+        netbox_token: "{{ nb_token }}"
+        validate_certs: false
+        data:
+          fhrp_group: "{{ (fhrp_state.results[0].json.results | selectattr('name', 'equalto', item.0.name) | first).id }}"
+          interface_type: dcim.interface
+          interface_id: "{{ (fhrp_state.results[2 + intent.fhrp_groups | length + member_index].json.results | first).id }}"
+          priority: 100
+      loop: "{{ intent.fhrp_groups | subelements('members') }}"
+      loop_control:
+        label: "{{ item.0.name }} <- {{ item.1.device }} {{ item.1.interface }}"
+        index_var: member_index
+
+    - name: Copies of a group address left on an interface are removed (the intent moved it to the group)
+      ansible.builtin.uri:
+        url: "{{ nb_url }}/api/ipam/ip-addresses/{{ item.id }}/"
+        method: DELETE
+        headers: "{{ nb_headers }}"
+        validate_certs: false
+        status_code: 204
+      loop: >-
+        {{ fhrp_state.results[2:2 + intent.fhrp_groups | length] | map(attribute='json.results') | flatten
+           | selectattr('assigned_object_type', 'equalto', 'dcim.interface') | list }}
+      loop_control:
+        label: "{{ item.address }} on {{ item.assigned_object.device.name }} {{ item.assigned_object.name }}"
+      changed_when: true
+
+    - name: The group address on its FHRP group (role vip)
+      ansible.builtin.uri:
+        url: "{{ nb_url }}/api/ipam/ip-addresses/"
+        method: POST
+        headers: "{{ nb_headers }}"
+        body_format: json
+        body:
+          address: "{{ item.0.address }}"
+          vrf: >-
+            {{ (vrf_list.json.results | selectattr('name', 'equalto', item.0.vrf) | map(attribute='id') | first)
+               if item.0.vrf else None }}
+          status: active
+          role: vip
+          assigned_object_type: ipam.fhrpgroup
+          assigned_object_id: "{{ (fhrp_state.results[0].json.results | selectattr('name', 'equalto', item.0.name) | first).id }}"
+          description: "{{ item.0.name }}"
+          tags: [{name: "{{ tag }}"}]
+        validate_certs: false
+        status_code: 201
+      loop: "{{ intent.fhrp_groups | zip(fhrp_state.results[2 : 2 + intent.fhrp_groups | length]) | list }}"
+      loop_control:
+        label: "{{ item.0.name }} {{ item.0.address }}"
+      when: item.1.json.results | selectattr('assigned_object_type', 'equalto', 'ipam.fhrpgroup') | list | length == 0
+      changed_when: true
+
+    # --- S4e.3: one location and one rack per site; devices at their derived positions ---
+    - name: Locations
+      netbox.netbox.netbox_location:
+        netbox_url: "{{ nb_url }}"
+        netbox_token: "{{ nb_token }}"
+        validate_certs: false
+        # the rack module resolves a location by the slug of its name (measured), so the slug is that
+        data:
+          name: "{{ item.location }}"
+          slug: "{{ item.location | lower | regex_replace('[^a-z0-9]+', '-') }}"
+          site: "{{ item.site }}"
+          tags: ["{{ tag }}"]
+      loop: "{{ intent.racks }}"
+      loop_control:
+        label: "{{ item.site }}: {{ item.location }}"
+
+    - name: Racks
+      netbox.netbox.netbox_rack:
+        netbox_url: "{{ nb_url }}"
+        netbox_token: "{{ nb_token }}"
+        validate_certs: false
+        data:
+          name: "{{ item.rack }}"
+          site: "{{ item.site }}"
+          location: "{{ item.location }}"
+          status: active
+          u_height: "{{ item.u_height }}"
+          tags: ["{{ tag }}"]
+      loop: "{{ intent.racks }}"
+      loop_control:
+        label: "{{ item.rack }}"
+
+    - name: Devices at their rack positions (front face, one U each)
+      netbox.netbox.netbox_device:
+        netbox_url: "{{ nb_url }}"
+        netbox_token: "{{ nb_token }}"
+        validate_certs: false
+        data:
+          name: "{{ item.1.name }}"
+          rack: "{{ item.0.rack }}"
+          position: "{{ item.1.position }}"
+          face: "{{ item.1.face }}"
+      loop: "{{ intent.racks | subelements('devices') }}"
+      loop_control:
+        label: "{{ item.0.rack }} U{{ item.1.position }} {{ item.1.name }}"
+
+    # --- S4e.4: the provider links as circuits; the edge port and the provider port are cabled through the terminations ---
+    - name: Providers
+      netbox.netbox.netbox_provider:
+        netbox_url: "{{ nb_url }}"
+        netbox_token: "{{ nb_token }}"
+        validate_certs: false
+        data: {name: "{{ item.value.name }}", description: "{{ item.value.description }}", tags: ["{{ tag }}"]}
+      loop: "{{ intent.providers | dict2items }}"
+      loop_control:
+        label: "{{ item.value.name }}"
+
+    - name: Circuit types
+      netbox.netbox.netbox_circuit_type:
+        netbox_url: "{{ nb_url }}"
+        netbox_token: "{{ nb_token }}"
+        validate_certs: false
+        data: {name: "{{ item }}", slug: "{{ item }}"}
+      loop: "{{ intent.circuits | map(attribute='type') | unique | list }}"
+
+    - name: Circuits
+      netbox.netbox.netbox_circuit:
+        netbox_url: "{{ nb_url }}"
+        netbox_token: "{{ nb_token }}"
+        validate_certs: false
+        data:
+          cid: "{{ item.cid }}"
+          provider: "{{ item.provider }}"
+          circuit_type: "{{ item.type }}"
+          status: active
+          commit_rate: "{{ item.commit_rate_kbps }}"
+          description: "{{ item.description }}"
+          tags: ["{{ tag }}"]
+      loop: "{{ intent.circuits }}"
+      loop_control:
+        label: "{{ item.cid }}"
+
+    # netbox_circuit_termination (collection 3.22) cannot scope a termination on NetBox 4.7 (site is not a
+    # terminating object any more, termination_type is exclusive with it; measured 2026-09-08): the API does it
+    - name: Circuits, sites and terminations as NetBox holds them
+      ansible.builtin.uri:
+        url: "{{ nb_url }}/api/{{ item }}/?limit=100"
+        headers: "{{ nb_headers }}"
+        validate_certs: false
+      loop: [circuits/circuits, dcim/sites, circuits/circuit-terminations]
+      register: circuit_state
+
+    - name: Circuit terminations (A at the customer site, Z at the WAN site)
+      ansible.builtin.uri:
+        url: "{{ nb_url }}/api/circuits/circuit-terminations/"
+        method: POST
+        headers: "{{ nb_headers }}"
+        body_format: json
+        body:
+          circuit: "{{ (circuit_state.results[0].json.results | selectattr('cid', 'equalto', item.0.cid) | first).id }}"
+          term_side: "{{ item.1 | upper }}"
+          termination_type: dcim.site
+          termination_id: "{{ (circuit_state.results[1].json.results | selectattr('slug', 'equalto', item.0[item.1].site) | first).id }}"
+          port_speed: "{{ item.0.commit_rate_kbps }}"
+          description: "{{ item.0[item.1].device }} {{ item.0[item.1].interface }}"
+        validate_certs: false
+        status_code: 201
+      loop: "{{ intent.circuits | product(['a', 'z']) | list }}"
+      loop_control:
+        label: "{{ item.0.cid }} {{ item.1 | upper }} at {{ item.0[item.1].site }}"
+      when: >-
+        circuit_state.results[2].json.results | selectattr('circuit.cid', 'equalto', item.0.cid)
+        | selectattr('term_side', 'equalto', item.1 | upper) | list | length == 0
+      changed_when: true
+
+    - name: The edge and provider ports of every circuit as NetBox holds them (a direct cable between them is retired)
+      ansible.builtin.uri:
+        url: "{{ nb_url }}/api/dcim/interfaces/?device={{ item.0[item.1].device }}&name={{ item.0[item.1].interface }}"
+        headers: "{{ nb_headers }}"
+        validate_certs: false
+      loop: "{{ intent.circuits | product(['a', 'z']) | list }}"
+      loop_control:
+        label: "{{ item.0[item.1].device }} {{ item.0[item.1].interface }}"
+      register: circuit_ports
+
+    - name: Direct cables between the two ports of a circuit are retired
+      ansible.builtin.uri:
+        url: "{{ nb_url }}/api/dcim/cables/{{ item.json.results[0].cable.id }}/"
+        method: DELETE
+        headers: "{{ nb_headers }}"
+        validate_certs: false
+        status_code: [204, 404]
+      loop: >-
+        {{ circuit_ports.results | selectattr('json.results.0.cable', 'defined') | selectattr('json.results.0.cable')
+           | selectattr('json.results.0.link_peers_type', 'equalto', 'dcim.interface') | list }}
+      loop_control:
+        label: "{{ item.item.0.cid }}: cable {{ item.json.results[0].cable.id }} {{ item.item.0[item.item.1].device }}"
+      changed_when: true
+
+    # netbox_cable cannot look an existing cable up when it ends on a circuit termination ("circuit-terminations
+    # not found in API_APPS_ENDPOINTS", collection 3.22, second run): the API does it, port by port
+    - name: The terminations, fresh
+      ansible.builtin.uri:
+        url: "{{ nb_url }}/api/circuits/circuit-terminations/?limit=100"
+        headers: "{{ nb_headers }}"
+        validate_certs: false
+      register: terminations
+
+    - name: Cables from the edge port to termination A and from the provider port to termination Z
+      ansible.builtin.uri:
+        url: "{{ nb_url }}/api/dcim/cables/"
+        method: POST
+        headers: "{{ nb_headers }}"
+        body_format: json
+        body:
+          a_terminations: [{object_type: dcim.interface, object_id: "{{ item.json.results[0].id }}"}]
+          b_terminations: [{object_type: circuits.circuittermination, object_id: "{{ term_id }}"}]
+          status: connected
+          tags: [{name: "{{ tag }}"}]
+        validate_certs: false
+        status_code: 201
+      loop: "{{ circuit_ports.results }}"
+      loop_control:
+        label: "{{ item.item.0[item.item.1].device }} {{ item.item.0[item.item.1].interface }} <-> {{ item.item.0.cid }}"
+      vars:
+        term_id: >-
+          {{ (terminations.json.results | selectattr('circuit.cid', 'equalto', item.item.0.cid)
+              | selectattr('term_side', 'equalto', item.item.1 | upper) | first).id }}
+      when: item.json.results[0].link_peers_type != 'circuits.circuittermination'
+      changed_when: true
+
+    # --- S4e.5: one journal entry per site when this run changed NetBox (its own changelog is the judge) ---
+    - name: Changes this run made
+      ansible.builtin.uri:
+        url: "{{ nb_url }}/api/core/object-changes/?limit=500&id__gt={{ change_before.json.results[0].id | default(0) }}"
+        headers: "{{ nb_headers }}"
+        validate_certs: false
+      register: change_after
+
+    - name: Journal entries this commit already left on the sites
+      ansible.builtin.uri:
+        url: >-
+          {{ nb_url }}/api/extras/journal-entries/?assigned_object_type=dcim.site&limit=500&q={{
+          ('(git ' ~ git_head.stdout ~ ')') | urlencode }}
+        headers: "{{ nb_headers }}"
+        validate_certs: false
+      register: journal_this_commit
+
+    # a journal entry per site when this run changed NetBox, or the first time this commit runs (its provenance)
+    - name: Journal wanted?
+      ansible.builtin.set_fact:
+        journal_wanted: "{{ change_after.json.count > 0 or journal_this_commit.json.count == 0 }}"
+
+    - name: Sites (ids for the journal)
+      ansible.builtin.uri:
+        url: "{{ nb_url }}/api/dcim/sites/?limit=100"
+        headers: "{{ nb_headers }}"
+        validate_certs: false
+      register: sites_now
+      when: journal_wanted
+
+    - name: The change summary (objects per type)
+      ansible.builtin.set_fact:
+        change_summary: >-
+          {{ change_after.json.results | map(attribute='changed_object_type') | list | unique
+             | map('regex_replace', '^(.*)$', '\\1') | list }}
+      when: journal_wanted
+
+    - name: Journal entry per site (what netbox-enrich.yml reconciled, and from which commit)
+      netbox.netbox.netbox_journal_entry:
+        netbox_url: "{{ nb_url }}"
+        netbox_token: "{{ nb_token }}"
+        validate_certs: false
+        data:
+          assigned_object_type: dcim.site
+          assigned_object_id: "{{ item.id }}"
+          kind: info
+          comments: >-
+            netbox-enrich.yml (git {{ git_head.stdout }}) reconciled {{ change_after.json.count }} changes
+            ({{ change_summary | default([]) | join(', ') }}) on {{ lookup('ansible.builtin.pipe', 'date -u +%Y-%m-%dT%H:%MZ') }}
+      loop: "{{ sites_now.json.results | default([]) }}"
+      loop_control:
+        label: "{{ item.slug }}"
+      when: journal_wanted

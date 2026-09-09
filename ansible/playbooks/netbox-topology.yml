@@ -17,23 +17,17 @@
     model_of: {c8000v: "Catalyst 8000V", veos: "vEOS-lab", pa-vm: "VM-Series", ubuntu: "Ubuntu 24.04 VM", win11: "Windows 11 VM"}
     platform_of: {c8000v: ios-xe, veos: eos, pa-vm: panos, ubuntu: ubuntu-24.04, win11: windows-11}
     mgmt_iface_of: {c8000v: GigabitEthernet1, veos: Management1, pa-vm: management, ubuntu: eth0, win11: eth0}
-    inband_prefixes:
-      - {prefix: 10.103.0.0/24, site: wan, role: wan-transit, description: "ISP-to-site /30s"}
-      - {prefix: 10.103.100.0/24, site: wan, role: wan-transit, description: "GRE/IPsec tunnels"}
-      - {prefix: 10.103.255.0/24, site: wan, role: wan-transit, description: "router loopbacks"}
-      - {prefix: 10.101.255.0/24, site: dc1, role: dc-inband, description: "fabric underlay /31s"}
-      - {prefix: 10.101.254.0/24, site: dc1, role: dc-inband, description: "fabric loopbacks"}
-      - {prefix: 10.101.253.0/24, site: dc1, role: dc-inband, description: "VTEP loopbacks"}
-      - {prefix: 10.101.252.0/30, site: dc1, role: dc-inband, description: "MLAG peer link"}
-      - {prefix: 10.101.2.0/24, site: dc1, role: dc-inband, description: "WAN edge to firewall routed /30s"}
-      - {prefix: 10.101.3.0/24, site: dc1, role: dc-inband, description: "firewall bypass /30s (lab.firewalls false)"}
-      - {prefix: 10.101.1.0/24, site: dc1, role: dc-inband, description: "VLAN 100 transit, VRF PROD", vlan: 100}
-      - {prefix: 10.101.10.0/24, site: dc1, role: dc-inband, description: "server VLAN 10", vlan: 10}
-      - {prefix: 10.102.16.0/20, site: br1, role: branch-inband, description: "branch 1"}
-      - {prefix: 10.102.17.0/24, site: br1, role: branch-inband, description: "branch 1 users VLAN 10", vlan: 10}
-      - {prefix: 10.102.32.0/20, site: br2, role: branch-inband, description: "branch 2"}
-      - {prefix: 10.102.33.0/24, site: br2, role: branch-inband, description: "branch 2 users VLAN 10", vlan: 10}
+    # inband_prefixes: from topology/enterprise.yaml (vars_files), ADR 0048
   tasks:
+    - name: Port names the devices use (topology/derive.py device_name; NetBox never holds the YAML short names, ADR 0048)
+      ansible.builtin.command: "{{ ansible_python_interpreter }} {{ playbook_dir }}/../../topology/derive.py"
+      register: derive_out
+      changed_when: false
+
+    - name: The port map
+      ansible.builtin.set_fact:
+        ports: "{{ (derive_out.stdout | from_json).ports }}"
+
     - name: Sites
       netbox.netbox.netbox_site:
         netbox_url: "{{ nb_url }}"
@@ -77,7 +71,7 @@
           model: "{{ model_of[item] }}"
           slug: "{{ model_of[item] | lower | regex_replace('[^a-z0-9]+', '-') }}"
           manufacturer: "{{ manufacturer_of[item] }}"
-          u_height: 0
+          u_height: 1  # virtual, but one U in the rack model: a 0U type cannot take a rack position (ADR 0048)
           is_full_depth: false
       loop: "{{ nodes.values() | map(attribute='platform') | unique | list }}"
 
@@ -120,7 +114,7 @@
         validate_certs: false
         data:
           device: "{{ item.split(':')[0] }}"
-          name: "{{ item.split(':')[1] }}"
+          name: "{{ ports[item] }}"
           type: 1000base-t
       loop: "{{ (links | map(attribute='a') | list) + (links | map(attribute='b') | list) }}"
 
@@ -131,11 +125,14 @@
         validate_certs: false
         data:
           termination_a_type: dcim.interface
-          termination_a: {device: "{{ item.a.split(':')[0] }}", name: "{{ item.a.split(':')[1] }}"}
+          termination_a: {device: "{{ item.a.split(':')[0] }}", name: "{{ ports[item.a] }}"}
           termination_b_type: dcim.interface
-          termination_b: {device: "{{ item.b.split(':')[0] }}", name: "{{ item.b.split(':')[1] }}"}
+          termination_b: {device: "{{ item.b.split(':')[0] }}", name: "{{ ports[item.b] }}"}
           status: planned
-      loop: "{{ links if not (lab.firewalls | default(true)) else (links | rejectattr('bypass', 'defined') | list) }}"
+      # a link that is a circuit (links[].circuit) is cabled through its circuit terminations by netbox-enrich.yml
+      loop: >-
+        {{ (links if not (lab.firewalls | default(true)) else (links | rejectattr('bypass', 'defined') | list))
+           | rejectattr('circuit', 'defined') | list }}
       loop_control:
         label: "{{ item.a }} <-> {{ item.b }}"
 
@@ -147,12 +144,22 @@
         state: absent
         data:
           termination_a_type: dcim.interface
-          termination_a: {device: "{{ item.a.split(':')[0] }}", name: "{{ item.a.split(':')[1] }}"}
+          termination_a: {device: "{{ item.a.split(':')[0] }}", name: "{{ ports[item.a] }}"}
           termination_b_type: dcim.interface
-          termination_b: {device: "{{ item.b.split(':')[0] }}", name: "{{ item.b.split(':')[1] }}"}
+          termination_b: {device: "{{ item.b.split(':')[0] }}", name: "{{ ports[item.b] }}"}
       loop: "{{ links | selectattr('bypass', 'defined') | list if (lab.firewalls | default(true)) else [] }}"
       loop_control:
         label: "{{ item.a }} <-> {{ item.b }}"
+
+    - name: VRFs the devices run (topology vrfs; route targets are added by netbox-enrich.yml)
+      netbox.netbox.netbox_vrf:
+        netbox_url: "{{ nb_url }}"
+        netbox_token: "{{ nb_token }}"
+        validate_certs: false
+        data: {name: "{{ item.key }}", description: "{{ item.value.description }}", tags: [phase-4]}
+      loop: "{{ vrfs | dict2items }}"
+      loop_control:
+        label: "{{ item.key }}"
 
     - name: Prefix roles for in-band
       netbox.netbox.netbox_ipam_role:
@@ -175,6 +182,7 @@
           scope: "{{ item.site }}"
           status: reserved
           prefix_role: "{{ item.role }}"
+          vrf: "{{ item.vrf | default(omit) }}"
           description: "{{ item.description }}"
           tags: [phase-4]
       loop: "{{ inband_prefixes }}"

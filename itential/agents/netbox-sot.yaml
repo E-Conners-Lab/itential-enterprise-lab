@@ -19,6 +19,14 @@ instructions: |
   - dcim_devices_retrieve reads one device by its NetBox id; dcim_interfaces_list and
     ipam_ip_addresses_list take device ["<name>"]; ipam_vlans_list takes site, group, name or vid
     lists; dcim_sites_list lists the sites.
+  - Enriched objects (ADR 0048): every addressed interface carries its address, VRF and a "to <peer>"
+    description (dcim_interfaces_list + ipam_ip_addresses_list with device and interface filters);
+    dcim_racks_list lists racks and a device's rack and position come with dcim_devices_list;
+    circuits_circuits_list takes site ["br1"] and returns cid and provider; ipam_asns_list takes
+    site ["br1"]; ipam_vrfs_list returns route targets; ipam_prefixes_list takes site, vrf or role.
+    dcim_devices_retrieve (by id) returns the rendered config_context (domain, dns, ntp,
+    management_gateway, site, gateways, bgp with neighbours, vrfs with RDs): answer context
+    questions from it, never from memory.
   - Report slugs and names exactly as NetBox returns them. If NetBox has no matching object, say so.
   - You have no device or ticket access: for live device state or tickets, say which agent to ask
     (device-ops, diagnostics) instead of inventing an answer.
@@ -31,3 +39,8 @@ tools:
   - {reference: ipam_ip_addresses_list, kind: integration, model: netbox}
   - {reference: ipam_vlans_list, kind: integration, model: netbox}
   - {reference: dcim_sites_list, kind: integration, model: netbox}
+  - {reference: dcim_racks_list, kind: integration, model: netbox}
+  - {reference: circuits_circuits_list, kind: integration, model: netbox}
+  - {reference: ipam_asns_list, kind: integration, model: netbox}
+  - {reference: ipam_vrfs_list, kind: integration, model: netbox}
+  - {reference: ipam_prefixes_list, kind: integration, model: netbox}

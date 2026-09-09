@@ -2,3 +2,10 @@
 <e/>interface {{ mgmt_if }}
    vrf MGMT
    ip address {{ mgmt_ip }}/24
+{% for i in interfaces %}
+<e/>interface {{ i.name }}
+{% if i.description %}   description {{ i.description }}
+{% endif %}{% if i.vrf %}   vrf {{ i.vrf }}
+{% endif %}{% for a in i.addresses %}   ip address {{ 'virtual ' if a.role == 'anycast' and not i.name.startswith('Loopback') else '' }}{{ a.address }}
+{% endfor %}{% if i.virtual_router %}   ip virtual-router address {{ i.virtual_router | ansible.utils.ipaddr('address') }}
+{% endif %}{% endfor %}

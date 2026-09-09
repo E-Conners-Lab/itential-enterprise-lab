@@ -7,10 +7,7 @@
             bypass port (Eth7) with eBGP to a DC WAN edge.
     access / branch switches: plain L2 (the router or firewall is the branch gateway) -#}
 {%- set role = node.role %}
-{%- set lo = {'dc1-spine01': '10.101.254.1', 'dc1-spine02': '10.101.254.2', 'dc1-leaf01': '10.101.254.11', 'dc1-leaf02': '10.101.254.12'}.get(name) %}
-{%- set vtep = '10.101.253.1' %}
-{%- set asn = routing.asn.dc1_spine if role == 'spine' else routing.asn.dc1_leaf %}
-{%- set transit_ip = {'dc1-leaf01': '10.101.1.252', 'dc1-leaf02': '10.101.1.253'}.get(name) %}
+{#- lo, vtep, asn, transit_ip, mlag, svi10, svi100, evpn_peers come from topology/derive.py (ADR 0048) -#}
 {#- ports facing a deferred firewall are left unconfigured -#}
 {%- set ns = namespace(links=[], bypass=[]) %}
 {%- for lk in links %}
@@ -89,12 +86,12 @@ interface Port-Channel10
 !
 interface Vlan4094
    description MLAG peer
-   ip address {{ '10.101.252.1/30' if name == 'dc1-leaf01' else '10.101.252.2/30' }}
+   ip address {{ mlag.address }}
 !
 mlag configuration
    domain-id dc1-leafs
    local-interface Vlan4094
-   peer-address {{ '10.101.252.2' if name == 'dc1-leaf01' else '10.101.252.1' }}
+   peer-address {{ mlag.peer }}
    peer-link Port-Channel1
    reload-delay mlag 300
    reload-delay non-mlag 330
@@ -105,13 +102,13 @@ ip virtual-router mac-address 00:1c:73:00:00:99
 interface Vlan10
    description servers
    vrf PROD
-   ip address virtual 10.101.10.1/24
+   ip address virtual {{ svi10.virtual }}
 !
 interface Vlan100
    description transit to the firewalls (eBGP per leaf)
    vrf PROD
    ip address {{ transit_ip }}/24
-   ip virtual-router address 10.101.1.254
+   ip virtual-router address {{ svi100.virtual_ip }}
 !
 interface Vxlan1
    vxlan source-interface Loopback1
@@ -193,8 +190,9 @@ router bgp {{ asn }}
    neighbor EVPN update-source Loopback0
    neighbor EVPN ebgp-multihop 3
    neighbor EVPN send-community extended
-   neighbor 10.101.254.11 peer group EVPN
-   neighbor 10.101.254.12 peer group EVPN
+{%- for p in evpn_peers %}
+   neighbor {{ p }} peer group EVPN
+{%- endfor %}
 {%- for lk in ns.links if lk.prefix is defined and not lk.get('bypass') %}
 {%- set base = lk.prefix.split('/')[0].split('.') %}
    neighbor {{ base[0] }}.{{ base[1] }}.{{ base[2] }}.{{ (base[3] | int) + 1 }} peer group LEAVES
@@ -215,8 +213,9 @@ router bgp {{ asn }}
    neighbor EVPN update-source Loopback0
    neighbor EVPN ebgp-multihop 3
    neighbor EVPN send-community extended
-   neighbor 10.101.254.1 peer group EVPN
-   neighbor 10.101.254.2 peer group EVPN
+{%- for p in evpn_peers %}
+   neighbor {{ p }} peer group EVPN
+{%- endfor %}
 {%- for lk in ns.links if lk.prefix is defined and not lk.get('bypass') %}
 {%- set base = lk.prefix.split('/')[0].split('.') %}
    neighbor {{ base[0] }}.{{ base[1] }}.{{ base[2] }}.{{ base[3] | int }} peer group SPINES
@@ -246,15 +245,16 @@ router bgp {{ asn }}
       neighbor {{ b.ip }} bfd
 {%- endfor %}
 {%- if firewalls %}
-      neighbor 10.101.1.1 remote-as {{ routing.asn.dc1_fw }}
-      neighbor 10.101.1.1 description firewall pair (active) on the transit VLAN
+      neighbor {{ routing.firewall_transit_gateway }} remote-as {{ routing.asn.dc1_fw }}
+      neighbor {{ routing.firewall_transit_gateway }} description firewall pair (active) on the transit VLAN
 {%- endif %}
       redistribute connected
 {%- endif %}
 !
 ip prefix-list PL-LOOPBACKS
-   seq 10 permit 10.101.254.0/24 eq 32
-   seq 20 permit 10.101.253.0/24 eq 32
+{%- for p in routing.loopback_prefixes %}
+   seq {{ loop.index * 10 }} permit {{ p }} eq 32
+{%- endfor %}
 !
 route-map RM-LOOPBACKS permit 10
    match ip address prefix-list PL-LOOPBACKS

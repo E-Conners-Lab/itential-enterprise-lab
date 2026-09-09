@@ -1139,6 +1139,189 @@
       "actor": "Pronghorn",
       "scheduled": false
     },
+    "eb1": {
+      "name": "replace",
+      "canvasName": "replace",
+      "summary": "journal: device",
+      "description": "journal: device",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 7200,
+        "y": -900
+      },
+      "variables": {
+        "incoming": {
+          "str": "{\"device\": \"__S__\", \"comment\": \"__C__\"}",
+          "substr": "__S__",
+          "newSubstr": "$var.1d.return_data"
+        },
+        "outgoing": {
+          "replacedString": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "eb2": {
+      "name": "replace",
+      "canvasName": "replace",
+      "summary": "journal: comment",
+      "description": "journal: comment",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 7500,
+        "y": -900
+      },
+      "variables": {
+        "incoming": {
+          "str": "$var.eb1.replacedString",
+          "substr": "__C__",
+          "newSubstr": "Lifecycle Manager branch-vlan delete: VLAN __V__ (__N__) removed through wf-config-push-v1 by wf-branch-vlan-delete-v1"
+        },
+        "outgoing": {
+          "replacedString": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "eb3": {
+      "name": "replace",
+      "canvasName": "replace",
+      "summary": "journal comment: vid",
+      "description": "journal comment: vid",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 7800,
+        "y": -900
+      },
+      "variables": {
+        "incoming": {
+          "str": "$var.eb2.replacedString",
+          "substr": "__V__",
+          "newSubstr": "$var.1f.numToString"
+        },
+        "outgoing": {
+          "replacedString": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "eb4": {
+      "name": "replace",
+      "canvasName": "replace",
+      "summary": "journal comment: name",
+      "description": "journal comment: name",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 8100,
+        "y": -900
+      },
+      "variables": {
+        "incoming": {
+          "str": "$var.eb3.replacedString",
+          "substr": "__N__",
+          "newSubstr": "$var.1c.return_data"
+        },
+        "outgoing": {
+          "replacedString": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "eb5": {
+      "name": "parse",
+      "canvasName": "parse",
+      "summary": "journal body object",
+      "description": "journal body object",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 8400,
+        "y": -900
+      },
+      "variables": {
+        "incoming": {
+          "text": "$var.eb4.replacedString"
+        },
+        "outgoing": {
+          "textObject": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "eb6": {
+      "name": "runCode",
+      "canvasName": "runCode",
+      "summary": "journal entry on the switch (python on the runner posts to NetBox)",
+      "description": "journal entry on the switch (python on the runner posts to NetBox)",
+      "location": "Application",
+      "locationType": null,
+      "app": "GatewayManager",
+      "type": "automatic",
+      "displayName": "GatewayManager",
+      "groups": [],
+      "nodeLocation": {
+        "x": 8700,
+        "y": -900
+      },
+      "variables": {
+        "incoming": {
+          "clusterId": "lab",
+          "language": "python",
+          "code": "import json, os, sys, urllib.request\ndata = json.load(sys.stdin)\nurl = os.environ[\"NETBOX_URL\"].rstrip(\"/\") + \"/api/\"\nheaders = {\"Authorization\": \"Token \" + os.environ[\"NETBOX_TOKEN\"], \"Content-Type\": \"application/json\", \"Accept\": \"application/json\"}\ndef call(path, body=None):\n    req = urllib.request.Request(url + path, data=json.dumps(body).encode() if body else None, headers=headers, method=\"POST\" if body else \"GET\")\n    with urllib.request.urlopen(req, timeout=20) as r:\n        return json.load(r)\ndevices = call(\"dcim/devices/?name=\" + data[\"device\"])[\"results\"]\nif not devices:\n    raise SystemExit(\"device %s not in NetBox\" % data[\"device\"])\nentry = call(\"extras/journal-entries/\", {\"assigned_object_type\": \"dcim.device\", \"assigned_object_id\": devices[0][\"id\"],\n                                         \"kind\": \"info\", \"comments\": data[\"comment\"]})\nprint(json.dumps({\"journal_entry_id\": entry[\"id\"], \"device_id\": devices[0][\"id\"]}))\n",
+          "data": "$var.eb5.textObject",
+          "safety": {
+            "timeout": 60
+          },
+          "packages": []
+        },
+        "outgoing": {
+          "result": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
     "workflow_start": {
       "name": "workflow_start",
       "summary": "workflow_start",
@@ -1282,6 +1465,42 @@
       }
     },
     "5e": {
+      "eb1": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "eb1": {
+      "eb2": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "eb2": {
+      "eb3": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "eb3": {
+      "eb4": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "eb4": {
+      "eb5": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "eb5": {
+      "eb6": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "eb6": {
       "2c": {
         "state": "success",
         "type": "standard"

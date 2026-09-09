@@ -3,7 +3,7 @@
   "info": {
     "title": "lab-netbox",
     "version": "1.0.0",
-    "description": "NetBox, the lab's source of truth: read-only device, interface, address, VLAN and site queries (PID S4d.4, ADR 0045)"
+    "description": "NetBox, the lab's source of truth: read-only device, interface, address, VLAN, site, rack, circuit, ASN, VRF and prefix queries (PID S4d.4/S4e, ADR 0045/0048)"
   },
   "servers": [
     {
@@ -586,6 +586,483 @@
             },
             "style": "form",
             "explode": true
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "Page size (NetBox default 50)",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "count": {
+                      "type": "integer"
+                    },
+                    "next": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "previous": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "results": {
+                      "type": "array",
+                      "items": {
+                        "type": "object"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "error"
+          }
+        },
+        "security": [
+          {
+            "tokenAuth": []
+          }
+        ]
+      }
+    },
+    "/api/dcim/racks/": {
+      "get": {
+        "operationId": "dcim_racks_list",
+        "summary": "List racks; filter by site or name (devices carry rack and position)",
+        "description": "List racks; filter by site or name (devices carry rack and position)",
+        "parameters": [
+          {
+            "name": "site",
+            "in": "query",
+            "required": false,
+            "description": "Site slug",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "style": "form",
+            "explode": true
+          },
+          {
+            "name": "name",
+            "in": "query",
+            "required": false,
+            "description": "Rack name",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "style": "form",
+            "explode": true
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "Page size (NetBox default 50)",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "count": {
+                      "type": "integer"
+                    },
+                    "next": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "previous": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "results": {
+                      "type": "array",
+                      "items": {
+                        "type": "object"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "error"
+          }
+        },
+        "security": [
+          {
+            "tokenAuth": []
+          }
+        ]
+      }
+    },
+    "/api/circuits/circuits/": {
+      "get": {
+        "operationId": "circuits_circuits_list",
+        "summary": "List circuits; filter by site (termination), provider or cid",
+        "description": "List circuits; filter by site (termination), provider or cid",
+        "parameters": [
+          {
+            "name": "site",
+            "in": "query",
+            "required": false,
+            "description": "Site slug of a termination",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "style": "form",
+            "explode": true
+          },
+          {
+            "name": "provider",
+            "in": "query",
+            "required": false,
+            "description": "Provider slug",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "style": "form",
+            "explode": true
+          },
+          {
+            "name": "cid",
+            "in": "query",
+            "required": false,
+            "description": "Circuit id",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "style": "form",
+            "explode": true
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "Page size (NetBox default 50)",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "count": {
+                      "type": "integer"
+                    },
+                    "next": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "previous": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "results": {
+                      "type": "array",
+                      "items": {
+                        "type": "object"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "error"
+          }
+        },
+        "security": [
+          {
+            "tokenAuth": []
+          }
+        ]
+      }
+    },
+    "/api/ipam/asns/": {
+      "get": {
+        "operationId": "ipam_asns_list",
+        "summary": "List autonomous system numbers; filter by site or asn",
+        "description": "List autonomous system numbers; filter by site or asn",
+        "parameters": [
+          {
+            "name": "site",
+            "in": "query",
+            "required": false,
+            "description": "Site slug",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "style": "form",
+            "explode": true
+          },
+          {
+            "name": "asn",
+            "in": "query",
+            "required": false,
+            "description": "AS number",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "integer"
+              }
+            },
+            "style": "form",
+            "explode": true
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "Page size (NetBox default 50)",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "count": {
+                      "type": "integer"
+                    },
+                    "next": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "previous": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "results": {
+                      "type": "array",
+                      "items": {
+                        "type": "object"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "error"
+          }
+        },
+        "security": [
+          {
+            "tokenAuth": []
+          }
+        ]
+      }
+    },
+    "/api/ipam/vrfs/": {
+      "get": {
+        "operationId": "ipam_vrfs_list",
+        "summary": "List VRFs (route targets included); filter by name",
+        "description": "List VRFs (route targets included); filter by name",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "query",
+            "required": false,
+            "description": "VRF name",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "style": "form",
+            "explode": true
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "Page size (NetBox default 50)",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "count": {
+                      "type": "integer"
+                    },
+                    "next": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "previous": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "results": {
+                      "type": "array",
+                      "items": {
+                        "type": "object"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "error"
+          }
+        },
+        "security": [
+          {
+            "tokenAuth": []
+          }
+        ]
+      }
+    },
+    "/api/ipam/prefixes/": {
+      "get": {
+        "operationId": "ipam_prefixes_list",
+        "summary": "List prefixes; filter by site, vrf, role, vlan_vid or within",
+        "description": "List prefixes; filter by site, vrf, role, vlan_vid or within",
+        "parameters": [
+          {
+            "name": "site",
+            "in": "query",
+            "required": false,
+            "description": "Site slug",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "style": "form",
+            "explode": true
+          },
+          {
+            "name": "vrf",
+            "in": "query",
+            "required": false,
+            "description": "VRF name",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "style": "form",
+            "explode": true
+          },
+          {
+            "name": "role",
+            "in": "query",
+            "required": false,
+            "description": "Prefix role slug",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "style": "form",
+            "explode": true
+          },
+          {
+            "name": "vlan_vid",
+            "in": "query",
+            "required": false,
+            "description": "VLAN id",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "within",
+            "in": "query",
+            "required": false,
+            "description": "Parent prefix",
+            "schema": {
+              "type": "string"
+            }
           },
           {
             "name": "limit",

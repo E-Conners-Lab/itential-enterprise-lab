@@ -88,7 +88,8 @@ eve = json.loads(sys.argv[1])
 bridges = [x for x in eve.get("data", {}).values() if x.get("type") == "bridge"]
 fw = t["lab"].get("firewalls", True)
 active = [lk for lk in t["links"] if not (lk.get("bypass") and fw)]  # bypass cables exist only while firewalls are deferred
-if cables != len(active): errs.append(f"NetBox cables {cables} != active yaml links {len(active)}")
+circuits = [lk for lk in active if lk.get("circuit")]  # a circuit link is two cables (port <-> termination A, Z <-> port), ADR 0048
+if cables != len(active) + len(circuits): errs.append(f"NetBox cables {cables} != active yaml links {len(active)} + circuit links {len(circuits)}")
 if len(bridges) != len(active): errs.append(f"EVE-NG bridge networks {len(bridges)} != active yaml links {len(active)}")
 if errs: print("\n".join(errs)); sys.exit(1)
 print(f"NetBox: {len(t['nodes'])} devices, {cables} cables; EVE-NG: {len(bridges)} links")

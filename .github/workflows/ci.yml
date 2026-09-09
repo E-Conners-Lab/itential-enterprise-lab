@@ -92,6 +92,8 @@ jobs:
         with:
           args: >-
             --no-progress
+            --max-retries 5
+            --retry-wait-time 10
             --exclude '^https?://(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[01])\.|localhost|127\.)'
             --exclude '\.local(/|$)'
             --exclude '\.lab\.internal(:|/|$)'

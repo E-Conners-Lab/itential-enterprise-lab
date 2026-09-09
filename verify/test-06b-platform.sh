@@ -273,6 +273,16 @@ c3() {
   ${PY} verify/devcmd.py "$BR2_SW" "show vlan ${vid}" | grep -q "not found" || { echo "br2-sw01 still has VLAN ${vid} (direct SSH)"; return 1; }
   iap "${PLATFORM}/lifecycle-manager/resources/${model}/instances?limit=100" | ${PY} -c "import sys,json;n=[i['name'] for i in json.load(sys.stdin)['data']];assert '${LCM_INST}' not in n,n" || { echo "instance ${LCM_INST} still listed after the delete"; return 1; }
   echo "delete: push job ${push} removed VLAN ${vid} from br2-sw01 after the approval; NetBox VLAN gone; instance ${LCM_INST} retired (execution ${ex2})"
+  # the create and the delete each left a journal entry on the switch in NetBox (PID S4e.5, ADR 0048)
+  local swid
+  swid=$(nb "${NETBOX_URL}/api/dcim/devices/?name=br2-sw01" | ${PY} -c 'import sys,json;print(json.load(sys.stdin)["results"][0]["id"])')
+  nb "${NETBOX_URL}/api/extras/journal-entries/?assigned_object_type=dcim.device&assigned_object_id=${swid}&limit=20" | ${PY} -c "
+import sys,json
+c=[e['comments'] for e in json.load(sys.stdin)['results']]
+want=['Lifecycle Manager branch-vlan create: VLAN ${vid} (${LCM_NAME})','Lifecycle Manager branch-vlan delete: VLAN ${vid} (${LCM_NAME})']
+missing=[w for w in want if not any(x.startswith(w) for x in c)]
+assert not missing,('journal entries missing on br2-sw01',missing,c[:4])
+print('journal: br2-sw01 carries the create and the delete entry for VLAN ${vid}')" || return 1
   # 3) history: the two executions on the instance, each with its job
   # (curl globs [ ] in a URL, so the instance filter is applied client-side on the newest executions)
   iap "${PLATFORM}/lifecycle-manager/action-executions?sort=startTime&order=1&limit=100" | ${PY} -c 'import sys,json;d=[x for x in json.load(sys.stdin)["data"] if x.get("instanceId")=="'"$iid"'"];h=[(x["actionType"],x["status"],bool(x.get("jobId"))) for x in d];assert h==[("create","complete",True),("delete","complete",True)],h;print("history:",[(x["actionName"],x["status"],x["jobId"]) for x in d])' || return 1
