@@ -99,7 +99,6 @@ topology; "k3s VIP" means a MetalLB address.
 | 10.100.0.66 | *(reserved)* | | released 2026-09-07: the separate `iag` VM was dropped with the container path |
 | 10.100.0.67 | nios | Proxmox | Infoblox NIOS grid master, LAN1 (phase 6) |
 | 10.100.0.68 | ddi-fallback | Proxmox | BIND9 secondary + Kea standby (phase 6) |
-| 10.100.0.69 | dc01 | Proxmox | Windows Server AD DS / DNS (phase 7) |
 | 10.100.0.70 | panorama | Proxmox | Panorama (phase 10) |
 | 10.100.0.71 - .95 | *(reserved)* | | |
 | 10.100.0.128 | dc1-fw01 | EVE-NG | PA-VM, DC HA pair member A |

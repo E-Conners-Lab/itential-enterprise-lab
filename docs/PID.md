@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Name** | itential-enterprise-lab |
-| **Version** | 1.14 |
+| **Version** | 1.15 |
 | **Date** | 2026-09-08 |
 | **Author** | Elliot Conner. Claude Code is the build agent; every action it takes is bounded by this document |
 | **Standard** | Project Initiation Standard PIS-01 - PIS-30 (`~/.claude/skills/project-initiation-standard`) |
@@ -227,6 +227,8 @@ Conventions: **Placement** is Proxmox VM (OpenTofu + Ansible), k3s (Helm/Kustomi
 - **Verification:** `verify/test-06c-netbox.sh`; `tests/test_topology.py` (render identity), `tests/test_netbox_enrich.py` (derivation rules: link address sides, VRF membership, rack positions unique, circuit ids).
 
 ### S5 — DDI: Infoblox NIOS with BIND9 + Kea secondary (Phase 7)
+> **Amendment 1.15 (ADR 0050):** Phase 10 builds the BIND9 + Kea half on `ddi-fallback` as the primary (criteria 1 to 3 against one server, rendered from NetBox); NIOS, the failover, expiry and redeploy drills (criteria 4 to 6) belong to the phase 12 firewall track.
+
 
 - **Purpose:** authoritative DNS and DHCP for `lab.internal` and the OOB/in-band segments, driven from NetBox, with an eval-proof fallback (ADR 0009).
 - **Placement:** Proxmox VMs `nios` (ADR 0006) and `ddi-fallback` (Ubuntu: BIND9 secondary, Kea standby).
@@ -241,6 +243,8 @@ Conventions: **Placement** is Proxmox VM (OpenTofu + Ansible), k3s (Helm/Kustomi
 - **Verification:** `verify/test-06-ddi.sh`.
 
 ### S6 — Identity and AAA: Windows Server AD DS/DNS, tac_plus, Keycloak (Phase 7)
+> **Amendment 1.15 (ADR 0050):** Phase 9, without Windows: OpenLDAP in k3s is the directory (groups NetAdmins, NetOps, ReadOnly, ServiceAccounts), Keycloak federates it, tac_plus uses the LDAP backend, Itential's LDAP adapter repoints to it; `dc01`, `ad.lab.internal` and criterion 2 are dropped, the other criteria read LDAP group for AD group; Grafana and Gitea SSO are asserted here.
+
 
 - **Purpose:** one directory for humans, SSO for every web UI, TACACS+ for every network device.
 - **Placement:** `dc01` Proxmox VM (Windows Server eval, AD DS + AD-integrated DNS for `ad.lab.internal`); tac_plus and Keycloak in k3s with MetalLB VIPs 10.100.0.34 / .33.
@@ -254,6 +258,8 @@ Conventions: **Placement** is Proxmox VM (OpenTofu + Ansible), k3s (Helm/Kustomi
 - **Verification:** `verify/test-07-identity.sh`.
 
 ### S7 — Observability: Zabbix, Prometheus + Grafana, gNMIc, Loki (Phase 8)
+> **Amendment 1.15 (ADR 0050):** Phase 7, first after the reorder: criterion 5 (Grafana via Keycloak) moves to the identity phase, the PA-VM SNMP templates to the firewall track; the deferred Itential job metrics land here.
+
 
 - **Purpose:** know the state of every service and device; feed Itential pre/post checks and expiry alerts.
 - **Placement:** k3s (VIPs .35-.39), all backed by CloudNativePG (Zabbix) and Longhorn.
@@ -268,6 +274,8 @@ Conventions: **Placement** is Proxmox VM (OpenTofu + Ansible), k3s (Helm/Kustomi
 - **Verification:** `verify/test-08-observability.sh`.
 
 ### S8 — Config, secrets, code: Oxidized, Vault, Gitea (Phase 9)
+> **Amendment 1.15 (ADR 0050):** Phase 8: the Anthropic company key (ADR 0049) moves into Vault with the device credentials; the NIOS Oxidized model waits for the firewall track; Gitea SSO is asserted in the identity phase.
+
 
 - **Purpose:** configuration history for every device, a secrets store that replaces `.env`, and an in-lab git server for Oxidized output and Itential pre-built artefacts.
 - **Placement:** k3s (VIPs .40-.42).
@@ -281,6 +289,8 @@ Conventions: **Placement** is Proxmox VM (OpenTofu + Ansible), k3s (Helm/Kustomi
 - **Verification:** `verify/test-09-config-secrets-code.sh`.
 
 ### S9 — Panorama (Phase 10)
+> **Amendment 1.15 (ADR 0050):** Part of the phase 12 firewall track with NIOS and the PA-VM firewalls; started only once the images exist.
+
 
 - **Purpose:** central firewall management so Itential drives policy through one API and the firewalls get templates, device groups and a shared object model.
 - **Placement:** Proxmox VM `panorama` (ADR 0006), management-only mode.
@@ -294,6 +304,8 @@ Conventions: **Placement** is Proxmox VM (OpenTofu + Ansible), k3s (Helm/Kustomi
 - **Verification:** `verify/test-10-panorama.sh`.
 
 ### S10 — Containerlab CI/test tier (Phase 11)
+> **Amendment 1.15 (ADR 0050):** Phase 11; cEOS-lab is registration-gated, not purchase-gated.
+
 
 - **Purpose:** a cheap, fast twin of the DC fabric (cEOS) where Itential validates switch changes before EVE-NG.
 - **Placement:** Proxmox VM `clab` (Ubuntu, Docker, Containerlab, nested KVM not required for cEOS).
@@ -622,12 +634,14 @@ at the end of Phase 2 and this table amended.
 | 4 | `phase-4/network-topology` | `verify/test-04-topology.sh` | Download PA-VM to `/srv/images/pa-vm` (Customer Support Portal); C8000v/vEOS reused (ADR 0032/0033); Windows 11 automated (`images/fetch.sh`, `images/build-win11.sh`) |
 | 5 | `phase-5/itential` | `verify/test-05-itential.sh` | `aws sso login` before image pulls (manual step 6); create the PDI integration user; log into the PDI every 10 days from then on |
 | 6 | `phase-6/flowai` (+ `phase-6/netbox-enrichment`, ADR 0048) | `verify/test-06-flowai.sh`, `verify/test-06b-platform.sh`, `verify/test-06c-netbox.sh` | Provider key in `.env`; Ollama on the Mac Mini optional (ADR 0037) |
-| 7 | `phase-6/ddi` | `verify/test-06-ddi.sh` | Download NIOS eval, apply the temp licence on the console |
-| 8 | `phase-7/identity` | `verify/test-07-identity.sh` | Download Windows Server eval ISO |
-| 9 | `phase-8/observability` | `verify/test-08-observability.sh` | none |
-| 10 | `phase-9/config-secrets-code` | `verify/test-09-config-secrets-code.sh` | Hold Vault unseal keys |
-| 11 | `phase-10/panorama` | `verify/test-10-panorama.sh` | Download Panorama; request an evaluation Panorama licence |
-| 12 | `phase-11/containerlab` | `verify/test-11-containerlab.sh` | Download cEOS-lab |
+| 7 | `phase-7/observability` | `verify/test-07-observability.sh` | none |
+| 8 | `phase-8/config-secrets-code` | `verify/test-08-config-secrets-code.sh` | Hold Vault unseal keys |
+| 9 | `phase-9/identity` | `verify/test-09-identity.sh` | none (Windows dropped, ADR 0050) |
+| 10 | `phase-10/ddi` | `verify/test-10-ddi.sh` | none (BIND9 + Kea from NetBox; NIOS joins in the firewall track) |
+| 11 | `phase-11/containerlab` | `verify/test-11-containerlab.sh` | Download cEOS-lab (arista.com account) |
+| 12 | `phase-12/firewall-track` | `verify/test-12-firewall-track.sh` | NIOS eval + console licence, PA-VM 11.1 to `/srv/images/pa-vm`, Panorama + evaluation licence |
+
+Order as of amendment 1.15 (ADR 0050): image-free phases first; everything behind a paid image lands in one firewall track.
 
 Each PR description is the phase report: **built / verified / deferred**, with
 the verify log path and any ADRs added.
@@ -678,4 +692,5 @@ the verify log path and any ADRs added.
 | 1.12 | 2026-09-08 | Phase 6 element 6: S4d.6 detailed (the Ubuntu hosts in the `lab-hosts` Gateway 5 inventory, password login for the automation user on the endpoints, Configuration Manager untouched; ADR 0047) |
 | 1.13 | 2026-09-08 | Phase 6 element 7 (owner request): S4e NetBox enrichment derived from `topology/enterprise.yaml` (addressing on interfaces with peer descriptions, VRFs and ASNs with BGP neighbours in config contexts, racks, provider circuits, config contexts, journal entries; the templates read the YAML, rendered configs unchanged; `netbox-enrich.yml`; `verify/test-06c-netbox.sh`; ADR 0048) |
 | 1.14 | 2026-09-09 | Domain 7: the Anthropic key is the owner's company key with a $15-a-week budget; the platform's session documents are the ledger (`verify/tokens.sh`, `make tokens`, `llm.budget` in versions.yaml), the agent verifies guard it, iteration runs on the local twins or `ONLY=` subsets (ADR 0049) |
+| 1.15 | 2026-09-09 | Reorder (ADR 0050): image-free phases first (7 observability, 8 config/secrets/code, 9 identity without Windows on OpenLDAP + Keycloak + tac_plus, 10 DDI on BIND9 + Kea, 11 Containerlab) and one phase 12 firewall track for NIOS, the PA-VM firewalls and Panorama; Windows Server and the Windows endpoint item dropped, `dc01` released |
 | 1.5 | 2026-09-07 | Phase 5 (S4b): Gateway 5 is the only gateway (Gateway 4 staged, not deployed); the PDI needs no customisation (stock standard-change template + Network group + one integration user), so S4b.3 is a rebuild record `servicenow/README.md` instead of an update set; S4b.2 evidence is the states ServiceNow returns to the workflow plus the change read back (`sys_audit` is admin-only on a PDI); PDI `dev409097`, Australia; basic auth needs `snc_basic_auth_api_access` on 2026 instances |
