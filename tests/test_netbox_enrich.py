@@ -437,8 +437,17 @@ def test_integration_model_reads_the_enriched_objects() -> None:
         assert (
             path in doc["paths"] and doc["paths"][path]["get"]["operationId"] == op_id
         ), f"lab-netbox lacks {op_id}"
-    assert all("post" not in v and "delete" not in v for v in doc["paths"].values()), (
-        "the NetBox model stays read-only"
+    # ADR 0048 asserted the model was read-only. ADR 0054 (S4f) moved the governed workflows' VLAN and
+    # journal writes onto it, so the guardrail narrows rather than disappears: every write the document
+    # declares must be one the oracle names, so an accidental one is still caught here.
+    import yaml as _yaml
+
+    declared = set(
+        _yaml.safe_load((ROOT / "itential" / "versions.yaml").read_text())["integrations"]["models"]["netbox"]["write_operations"]
+    )
+    written = {o["operationId"] for item in doc["paths"].values() for verb, o in item.items() if verb != "get"}
+    assert written <= declared, (
+        f"lab-netbox declares undeclared write operations {sorted(written - declared)}"
     )
 
 
