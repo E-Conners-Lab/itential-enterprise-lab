@@ -12,6 +12,13 @@ sentinel announce-port {{ redis.sentinel_port }}
 sentinel resolve-hostnames yes
 sentinel announce-hostnames yes
 
+# Sentinels authenticate to the monitored master with auth-user/auth-pass, and to EACH OTHER with these two:
+# without them `user default off` means a peer's connection is refused with NOAUTH, every Sentinel marks the
+# others +sdown seconds after discovering them through the master's hello channel, the quorum of 2 is never
+# reached, and a dead master goes +sdown but never +odown - so no failover ever runs (measured, drill S11.6c).
+sentinel sentinel-user {{ redis.users.sentineluser.name }}
+sentinel sentinel-pass {{ redis_sentinel_password }}
+
 sentinel monitor {{ redis.master_name }} {{ master_ip }} {{ redis.port }} {{ redis.quorum }}
 sentinel auth-user {{ redis.master_name }} {{ redis.users.sentineluser.name }}
 sentinel auth-pass {{ redis.master_name }} {{ redis_sentinel_password }}

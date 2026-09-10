@@ -97,6 +97,7 @@
         group: "999"
         mode: "0640"
         force: false
+      register: sentinel_conf
       no_log: true
 
     - name: Compose file
@@ -122,6 +123,15 @@
         chdir: "{{ dir }}"
       register: up
       changed_when: "'Started' in up.stderr or 'Created' in up.stderr or 'Recreated' in up.stderr"
+
+    # the configuration lives in a mounted directory, so compose sees no change and leaves the container
+    # running with the settings it read at startup; a rewritten base file only takes effect on a restart
+    - name: Sentinel restarted when its base configuration was rewritten
+      ansible.builtin.command:
+        cmd: docker compose restart sentinel
+        chdir: "{{ dir }}"
+      when: sentinel_conf is changed
+      changed_when: true
 
     - name: Wait for Redis to answer as an ACL user
       ansible.builtin.command:
