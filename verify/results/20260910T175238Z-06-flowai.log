@@ -1,0 +1,19 @@
+# test-06-flowai 20260910T175238Z
+Anthropic token meter, last 7 days (92 sessions; prices per MTok in=2.0 out=10.0, anthropic only is billed)
+  anthropic  claude-sonnet-5    sessions=  81 in=  2168899 out=  26136  $  4.60
+  ollama     qwen2.5:7b         sessions=  11 in=    26625 out=    861  $  0.00
+spent $4.60 of the $15.00 weekly budget; $10.40 left
+  largest: compliance 2026-09-08T02:54 in=963516 (COMPLETE)
+  largest: lab-netops 2026-09-08T03:07 in=103824 (COMPLETE)
+  largest: remediation 2026-09-08T02:58 in=66418 (COMPLETE)
+PASS  S4c.1 provider profiles anthropic (claude-sonnet-5) and ollama-lab (qwen2.5:7b) answer and list their pinned models
+      profiles: ['anthropic', 'ollama-lab', 'ollama-mac']
+      anthropic: claude-sonnet-5 enabled (id b2f044fe...)
+      anthropic provider answered: True 11 models listed
+      ollama-lab: qwen2.5:7b enabled (id e3d42212...)
+      ollama-lab provider answered: False 0 models listed
+FAIL  S4c.2 lab-netops answers the running version of br1-wan01 and br1-sw01 via the Gateway 5 tool; equals direct SSH
+      tokens in=32771 out=494
+      tokens in=19210 out=391
+      br1-wan01: answer lacks 17.13.01a: Both the workflow and the direct gateway command failed with the same internal Gateway5 error ("can't open file netsdk-musl-linux-amd64.pex") — the gateway service itself appears broken, not a devic
+      br1-sw01: answer lacks 4.33.1.1F: Both the workflow and the direct command failed with a gateway internal error (missing pex file on the Gateway5 service), so I can't retrieve the version from br1-sw01 right now. I won't fabricate a v

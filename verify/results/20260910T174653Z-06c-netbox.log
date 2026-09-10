@@ -1,0 +1,54 @@
+# test-06c-netbox 20260910T174653Z
+Anthropic token meter, last 7 days (92 sessions; prices per MTok in=2.0 out=10.0, anthropic only is billed)
+  anthropic  claude-sonnet-5    sessions=  81 in=  2168899 out=  26136  $  4.60
+  ollama     qwen2.5:7b         sessions=  11 in=    26625 out=    861  $  0.00
+spent $4.60 of the $15.00 weekly budget; $10.40 left
+  largest: compliance 2026-09-08T02:54 in=963516 (COMPLETE)
+  largest: lab-netops 2026-09-08T03:07 in=103824 (COMPLETE)
+  largest: remediation 2026-09-08T02:58 in=66418 (COMPLETE)
+FAIL  S4e.1 every addressed interface of the 12 network devices is in NetBox with its address, VRF and 'to <peer>' description; the devices agree (wf-show-all-v1 + direct SSH)
+      isp-core01: no wf-show-all-v1 result
+      dc1-wan01: no wf-show-all-v1 result
+      dc1-wan02: no wf-show-all-v1 result
+      dc1-spine01: no wf-show-all-v1 result
+      dc1-spine02: no wf-show-all-v1 result
+      dc1-leaf01: no wf-show-all-v1 result
+      dc1-leaf02: no wf-show-all-v1 result
+      dc1-acc01: no wf-show-all-v1 result
+      br1-wan01: no wf-show-all-v1 result
+      br1-sw01: no wf-show-all-v1 result
+      br2-wan01: no wf-show-all-v1 result
+      br2-sw01: no wf-show-all-v1 result
+      br1-wan01: direct SSH {'GigabitEthernet2': '10.103.0.10', 'GigabitEthernet4': '10.102.17.1', 'Loopback0': '10.103.255.21', 'Tunnel1': '10.103.100.2', 'Tunnel2': '10.103.100.10'} != workflow {}
+      dc1-leaf01: direct SSH {'Ethernet1': '10.101.255.1/31', 'Ethernet2': '10.101.255.5/31', 'Ethernet7': '10.101.3.2/30', 'Loopback0': '10.101.254.11/32', 'Loopback1': '10.101.253.1/32', 'Vlan10': '10.101.10.1/24', 'Vlan100': '10.101.1.252/24', 'Vlan4094': '10.101.252.1/30'} != workflow {}
+PASS  S4e.2 VRFs with route targets, prefixes in PROD, the 7 ASNs on their sites, BGP neighbours and RDs in each device's config context equal to the device (direct SSH), the transit virtual router as an FHRP group
+      VRFs MGMT/WAN/PROD (PROD RT 50001:50001), 7 ASNs on their sites, FHRP group ['dc1-vlan100-varp'] with its members and address, 38 BGP neighbours in the device contexts equal the devices' own tables over direct SSH (12 devices)
+PASS  S4e.3 one location and one rack per site, every device racked at its derived position (role order top down, unique U)
+      4 locations and racks, 21 devices at their positions (wan-rack01: 1U, dc1-rack01: 10U, br1-rack01: 5U, br2-rack01: 5U)
+PASS  S4e.4 provider circuits with terminations at their sites; the cable trace from each edge port crosses the circuit to the isp-core01 port; no direct provider cable remains
+      4 circuits of ['Simulated ISP'] with A/Z terminations at their sites; every edge port traces through its circuit to the isp-core01 port; 37 cables (no direct cable to the provider core)
+PASS  S4e.5 journal entries: every site carries netbox-enrich.yml entries naming a real commit; br2-sw01 carries the LCM create and delete entries
+      20 play entries over 5 sites naming commits ['7fde422', 'fff885b']; br2-sw01 carries 5 LCM entries (newest: 'Lifecycle Manager branch-vlan delete: VLAN 11 (lcm-20260910t164246z) r')
+FAIL  S4e.6 the play re-runs with changed=0; netbox-sot answers address/VRF/peer, site ASNs, rack position, circuit and context questions equal to the NetBox API; the compliance plan stays clean with the interface intent in the device leaves
+      netbox-enrich.yml re-run: localhost : ok=36 changed=0 unreachable=0 failed=0 skipped=14 rescued=0 ignored=0 
+      netbox-sot: 'Which address does interface GigabitEthernet2 of br1-wan01 carry, in which VRF, and what does its description say?' -> Interface **GigabitEthernet2** on **br1-wan01** carries:
+      
+      - **Address:** 10.103.0.10/30
+      - **VRF:** WAN (id 2,  (tokens in=11795 out=433)
+      netbox-sot: 'Which autonomous system numbers are assigned to site br1?' -> Site **br1** (Branch 1) has one ASN assigned:
+      
+      - **AS65201** — RIR: private, description "br1 (br1)", tagged ` (tokens in=9612 out=147)
+      netbox-sot: 'In which rack and at which rack unit position is dc1-leaf01 installed?' -> dc1-leaf01 is installed in rack **dc1-rack01** (site DC1, location "DC1 hall A"), at rack unit position **U36* (tokens in=11558 out=155)
+      netbox-sot: 'Which circuit terminates at site br1 and who is its provider?' -> NetBox shows one circuit terminating at site **br1** (Branch 1):
+      
+      - **Circuit ID (cid):** ISP-BR1-01
+      - **Provi (tokens in=10200 out=305)
+      netbox-sot: 'What NTP server and domain does the rendered config context of br2-sw01 give?' -> According to the rendered `config_context` for **br2-sw01** (id 19):
+      
+      - **NTP server:** `10.100.0.1`
+      - **Domai (tokens in=10911 out=230)
+      fewer than 12 device reports:
+
+tokens spent this run: in=54076 out=1270 (Anthropic)
+
+passed=4 failed=2

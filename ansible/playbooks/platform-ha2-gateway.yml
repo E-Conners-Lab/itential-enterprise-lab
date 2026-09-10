@@ -102,14 +102,15 @@
       changed_when: "'Started' in up.stderr or 'Created' in up.stderr or 'Recreated' in up.stderr"
 
     # The netsdk services live in the etcd store and carry the absolute path of the pex that runs them. Both
-    # nodes register them, and the last writer wins: a recreated server writes its own musl path, while the
-    # execution lands on the glibc runner, which answers "netsdk-musl-linux-amd64.pex: No such file or
-    # directory" for every send-command. The runner therefore always registers last.
+    # nodes register them and the last writer wins: the server writes its own musl path every time it
+    # reconnects to Gateway Manager - which a Platform restart causes - while the execution lands on the glibc
+    # runner, which then answers "netsdk-musl-linux-amd64.pex: No such file or directory" for every
+    # send-command. The restart is unconditional for that reason: this play is how the store is put right
+    # after anything that reconnected the gateway, and S11.5's live send-command is what catches it.
     - name: Runner re-registers its netsdk services after the server (the store keeps the last writer's paths)
       ansible.builtin.command:
         cmd: docker compose restart gateway5-runner
         chdir: "{{ dir }}"
-      when: up is changed
       changed_when: true
 
     - name: Runner registered in the cluster store (the server hands every execution to it)

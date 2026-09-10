@@ -212,6 +212,11 @@ c5() {
   local invy; for invy in $(${PY} -c "import yaml;s=yaml.safe_load(open('$IV'))['stack'];print(s['inventory'], s['host_inventory'])"); do
     echo "$have" | grep -q "\"${invy}\"" || { echo "inventory ${invy} missing"; errs=1; }
   done
+  # a live device call through Gateway 5, not a cached read: it is the only thing that catches the netsdk
+  # store holding the server's musl pex path while the execution lands on the glibc runner (ADR 0055)
+  api -X POST "${P}/gateway_manager/v1/services/run" -d '{"serviceName":"send-command","clusterId":"lab","params":{"commands":["show version"]},"inventory":[{"inventory":"lab","nodeNames":["br1-sw01"]}]}' \
+    | ${PY} -c 'import sys,json;d=json.load(sys.stdin);r=(d.get("result") or {}).get("results") or [];assert r and r[0].get("success"),json.dumps(d)[:300]' \
+    || { echo "a live send-command through Gateway 5 failed"; errs=1; }
   # the devices Configuration Manager sees come through the Device Broker from the inventory, which comes from
   # NetBox: the second source is NetBox's own count of active network devices with a management address
   local devs want
