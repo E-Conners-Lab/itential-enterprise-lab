@@ -312,7 +312,8 @@ def test_exporter_renders_the_measured_shapes() -> None:
     tasks = json.loads(
         '{"results":[{"global":true,"name":"sendCommand","taskType":"automatic","app":"GatewayManager","metrics":'
         '[{"totalErrorRunTime":278,"totalErrors":3,"startDate":"2026-09-07T16:37:19.393Z","totalSuccessRunTime":1014114,'
-        '"totalSuccesses":181}]}],"skip":0,"limit":2,"total":1}'
+        '"totalSuccesses":181}]},{"global":false,"name":"sendCommand","app":"GatewayManager","workflow":{"name":"wf-x"},'
+        '"taskId":"1a","metrics":[{"totalSuccesses":5}]}],"skip":0,"limit":2,"total":2}'
     )
     apps = json.loads('{"results":[{"id":"AgentExecutionEngine","state":"RUNNING","connection":null}]}')
     adapters = json.loads('{"results":[{"id":"NetBox","state":"RUNNING","connection":{"state":"ONLINE"}}]}')
@@ -322,6 +323,7 @@ def test_exporter_renders_the_measured_shapes() -> None:
     assert 'itential_workflow_sla_missed_total{workflow="wf-backup-all-v1"} 0' in text
     assert 'itential_task_errors_total{app="GatewayManager",task="sendCommand"} 3' in text
     assert 'itential_task_successes_total{app="GatewayManager",task="sendCommand"} 181' in text
+    assert text.count('itential_task_successes_total{app="GatewayManager",task="sendCommand"}') == 1, "per-workflow rows must not duplicate the series"
     assert 'itential_application_running{app="AgentExecutionEngine"} 1' in text
     assert 'itential_adapter_online{adapter="NetBox"} 1' in text and "itential_up 1" in text
     assert "# TYPE itential_workflow_jobs_complete_total gauge" in text

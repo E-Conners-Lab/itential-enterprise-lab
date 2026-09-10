@@ -8,7 +8,7 @@ process-level iap_* gauges only; the job, task and health metrics sit behind the
   itential_workflow_jobs_complete_total{workflow}   GET /workflow_engine/jobs/metrics  results[].jobsComplete
   itential_workflow_run_time_ms_total{workflow}     results[].totalRunTime
   itential_workflow_sla_missed_total{workflow}      results[].metrics[].slaTargetsMissed (summed)
-  itential_task_successes_total{app,task}           GET /workflow_engine/tasks/metrics results[].metrics[].totalSuccesses
+  itential_task_successes_total{app,task}           GET /workflow_engine/tasks/metrics results[global=true].metrics[].totalSuccesses
   itential_task_errors_total{app,task}              results[].metrics[].totalErrors
   itential_application_running{app}                 GET /health/applications results[].state == RUNNING
   itential_adapter_online{adapter}                  GET /health/adapters results[].connection.state == ONLINE and RUNNING
@@ -57,9 +57,11 @@ def render(jobs: list, tasks: list, apps: list, adapters: list, up: int) -> str:
     for r in jobs:
         missed = sum(int(m.get("slaTargetsMissed") or 0) for m in r.get("metrics") or [])
         out.append(f'itential_workflow_sla_missed_total{{workflow="{_esc(r["workflow"]["name"])}"}} {missed}')
-    head("itential_task_successes_total", "Successful task runs per application and task")
+    head("itential_task_successes_total", "Successful task runs per application and task (global metrics)")
     head_err: list[str] = []
-    for r in tasks:
+    # the API also returns one entry per workflow task ({global: false, workflow, taskId}) with the same app/name:
+    # only the global rows are exported, so every (app, task) series is unique (measured: 200 rows, 30 global)
+    for r in (r for r in tasks if r.get("global")):
         succ = sum(int(m.get("totalSuccesses") or 0) for m in r.get("metrics") or [])
         errs = sum(int(m.get("totalErrors") or 0) for m in r.get("metrics") or [])
         labels = f'app="{_esc(r.get("app") or "")}",task="{_esc(r.get("name") or "")}"'

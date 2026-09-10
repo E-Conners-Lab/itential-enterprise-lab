@@ -29,8 +29,10 @@
 {%- endif %}
 {%- endfor %}
 hostname {{ name }}
-{#- the image boots with an empty licence level, which hides every crypto/IKEv2 command; the level
-    takes effect on the next boot, so eve/build.py push-configs reloads the routers once (ADR 0034). -#}
+{# the image boots with an empty licence level, which hides every crypto/IKEv2 command; the level
+   takes effect on the next boot, so eve/build.py push-configs reloads the routers once (ADR 0034).
+   A '{#-' here swallowed the newline after hostname (issue #18): the config.iso carried
+   'hostname <name>license boot level ...' on one line. #}
 license boot level network-advantage addon dna-advantage
 ip domain name {{ lab.domain }}
 no ip domain lookup
