@@ -17,7 +17,8 @@ PY=.venv/bin/python
 CA=docs/lab-root-ca.crt
 V=itential/ha2/versions.yaml
 IV=itential/versions.yaml
-ADMIN_USER=${ITENTIAL_ADMIN_USER:-admin@itential}
+# the production environment has no LDAP yet (the identity phase adds it): the local account of the oracle
+ADMIN_USER=$(.venv/bin/python -c "import yaml;print(yaml.safe_load(open('itential/ha2/versions.yaml'))['platform']['admin_user'])")
 SSH="ssh -o BatchMode=yes -o ConnectTimeout=8 -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR"
 ts=$(date -u +%Y%m%dT%H%M%SZ)
 fail=0; pass=0; deferred=0
@@ -32,7 +33,7 @@ nb()    { curl -s -m 20 -H "Authorization: Token ${NETBOX_TOKEN}" "$@"; }
 web()   { curl -s -m 30 --cacert "$CA" "$@"; }
 val()   { ${PY} -c "import yaml,sys;d=yaml.safe_load(open('$V'));print(eval(sys.argv[1],{'d':d}))" "$1"; }
 host()  { val "next(v['ip'] for v in d['vms'] if v['name']=='$1')"; }
-JAR=$(mktemp); trap 'rm -f "$JAR" /tmp/verify08.$$ /tmp/verify08.*.$$' EXIT
+JAR=$(mktemp); trap 'rm -f "$JAR" "$JAR".* /tmp/verify08.$$ /tmp/verify08.*.$$' EXIT
 mkdir -p verify/results; exec > >(tee "verify/results/${ts}-08-platform-ha2.log") 2>&1
 echo "# test-08-platform-ha2 ${ts}"
 [ -s "$CA" ] || { bad "$CA missing"; echo; echo "passed=0 failed=1"; exit 1; }
@@ -105,7 +106,7 @@ print("replica set:", ", ".join(f"{n} {s}" for n, s in members))' || return 1
   echo "$anon" | grep -qi "unauthorized\|requires authentication" || { echo "an unauthenticated client was not refused: ${anon:0:160}"; return 1; }
   echo "unauthenticated clients are refused"
   # the Platform's connection string names all three members and the replica set
-  local url; url=$($SSH "ubuntu@${IAP1}" "sudo grep -h ITENTIAL_MONGO_URL /opt/itential/.env" | cut -d= -f2-)
+  local url; url=$($SSH "ubuntu@${IAP1}" "sudo docker inspect platform --format '{{range .Config.Env}}{{println .}}{{end}}'" | sed -n 's/^ITENTIAL_MONGO_URL=//p')
   local n; n=$(echo "$url" | tr ',' '\n' | grep -c ":$(val "d['mongodb']['port']")")
   [ "$n" = 3 ] || { echo "the Platform's MongoDB URL names ${n} members: ${url//:*@/:***@}"; return 1; }
   echo "$url" | grep -q "replicaSet=${RS}" || { echo "the Platform's MongoDB URL has no replicaSet=${RS}"; return 1; }
@@ -137,22 +138,31 @@ c3() {
   echo "$anon" | grep -qi "NOAUTH\|denied" || { echo "an unauthenticated Redis client was not refused: ${anon:0:120}"; return 1; }
   echo "unauthenticated clients are refused (ACL users only)"
   # the Platform reaches Redis through Sentinel, not a fixed host
-  $SSH "ubuntu@${IAP1}" "sudo grep -h REDIS /opt/itential/.env" | grep -q "SENTINEL" || { echo "the Platform is not configured for Sentinel"; return 1; }
+  $SSH "ubuntu@${IAP1}" "sudo docker inspect platform --format '{{range .Config.Env}}{{println .}}{{end}}'" | grep -q "^ITENTIAL_REDIS_SENTINELS=" || { echo "the Platform is not configured for Sentinel"; return 1; }
   echo "the Platform connects through Sentinel"
 }
 check "S11.3 Redis has one master, two replicas and three Sentinels that agree, with ACL users only" c3
 
 # --- S11.4 both Platform nodes healthy behind the load balancer ---------------------------------------------
 c4() {
-  local n code
+  local n code jar
   for n in "$IAP1" "$IAP2"; do
-    code=$(curl -s -m 30 --cacert "$CA" --resolve "${SERVICE}:3443:${n}" "https://${SERVICE}:3443/health/server" -o /tmp/verify08.h.$$ -w '%{http_code}')
+    # /health/server is session-authenticated; /login is the unauthenticated liveness endpoint
+    jar="${JAR}.${n}"
+    code=$(curl -s -m 60 --cacert "$CA" --resolve "${SERVICE}:3443:${n}" -c "$jar" -H "Content-Type: application/json" -X POST "https://${SERVICE}:3443/login" -d "{\"username\":\"${ADMIN_USER}\",\"password\":\"${ITENTIAL_ADMIN_PASSWORD}\"}" -o /dev/null -w '%{http_code}')
+    [ "$code" = 200 ] || { echo "node ${n}: login ${code}"; return 1; }
+    code=$(curl -s -m 30 --cacert "$CA" --resolve "${SERVICE}:3443:${n}" -b "$jar" "https://${SERVICE}:3443/health/server" -o /tmp/verify08.h.$$ -w '%{http_code}')
     [ "$code" = 200 ] || { echo "node ${n}: /health/server ${code}"; return 1; }
-    ${PY} -c 'import json,sys;d=json.load(open("/tmp/verify08.h.'"$$"'"));print(f"  node '"$n"': Platform {d[\"version\"]} up {int(d[\"uptime\"])}s")'
+    ${PY} - "$n" "/tmp/verify08.h.$$" <<'PYNODE'
+import json, sys
+d = json.load(open(sys.argv[2]))
+print(f"  node {sys.argv[1]}: Platform {d['version']} up {int(d['uptime'])}s")
+PYNODE
   done
   # the load balancer serves the service name with the lab CA
   code=$(curl -s -m 30 --cacert "$CA" --resolve "${SERVICE}:443:${LB}" "https://${SERVICE}/login" -o /dev/null -w '%{http_code}')
   [ "$code" = 200 ] || { echo "the load balancer answers ${code} for https://${SERVICE}/login"; return 1; }
+  # before the cut-over the name still resolves to the dev-stack, so every check here pins it to the VIP
   # a session created through the load balancer is valid on both nodes (shared Redis session store)
   code=$(curl -s -m 60 --cacert "$CA" --resolve "${SERVICE}:443:${LB}" -c "$JAR" -H "Content-Type: application/json" -X POST "https://${SERVICE}/login" -d "{\"username\":\"${ADMIN_USER}\",\"password\":\"${ITENTIAL_ADMIN_PASSWORD}\"}" -o /dev/null -w '%{http_code}')
   [ "$code" = 200 ] || { echo "login through the load balancer: ${code}"; return 1; }
