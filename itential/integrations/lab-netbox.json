@@ -3,7 +3,12 @@
   "info": {
     "title": "lab-netbox",
     "version": "1.0.0",
-    "description": "NetBox, the lab's source of truth: read-only device, interface, address, VLAN, site, rack, circuit, ASN, VRF and prefix queries (PID S4d.4/S4e, ADR 0045/0048)"
+    "description": "NetBox, the lab's source of truth: device, interface, address, VLAN, site, rack, circuit, ASN, VRF and prefix queries, plus the VLAN and journal writes the governed workflows make (PID S4d.4/S4e/S4f, ADR 0045/0048/0054)",
+    "x-spec-source": {
+      "url": "https://docs.netbox.dev/en/stable/integrations/rest-api/",
+      "taken": "4.7.0",
+      "kind": "openapi"
+    }
   },
   "servers": [
     {
@@ -551,6 +556,67 @@
             "tokenAuth": []
           }
         ]
+      },
+      "post": {
+        "operationId": "ipam_vlans_create",
+        "summary": "Reserve a VLAN (wf-branch-vlan-v1: created status=reserved, set active once the switch takes it)",
+        "description": "Reserve a VLAN (wf-branch-vlan-v1: created status=reserved, set active once the switch takes it)",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "error"
+          }
+        },
+        "security": [
+          {
+            "tokenAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "vid",
+                  "name"
+                ],
+                "properties": {
+                  "vid": {
+                    "type": "integer",
+                    "description": "VLAN id"
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "site": {
+                    "type": "integer",
+                    "description": "Site id"
+                  },
+                  "group": {
+                    "type": "integer",
+                    "description": "VLAN group id (the branch group)"
+                  },
+                  "status": {
+                    "type": "string",
+                    "description": "reserved | active"
+                  }
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/dcim/sites/": {
@@ -1117,6 +1183,150 @@
             "tokenAuth": []
           }
         ]
+      }
+    },
+    "/api/ipam/vlans/{id}/": {
+      "patch": {
+        "operationId": "ipam_vlans_partial_update",
+        "summary": "Change a VLAN in place (wf-branch-vlan-v1: reserved -> active once the push succeeded)",
+        "description": "Change a VLAN in place (wf-branch-vlan-v1: reserved -> active once the push succeeded)",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "NetBox VLAN id",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "error"
+          }
+        },
+        "security": [
+          {
+            "tokenAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "ipam_vlans_destroy",
+        "summary": "Delete a VLAN (wf-branch-vlan-v1 rollback and wf-branch-vlan-delete-v1)",
+        "description": "Delete a VLAN (wf-branch-vlan-v1 rollback and wf-branch-vlan-delete-v1)",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "NetBox VLAN id",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "success"
+          },
+          "default": {
+            "description": "error"
+          }
+        },
+        "security": [
+          {
+            "tokenAuth": []
+          }
+        ]
+      }
+    },
+    "/api/extras/journal-entries/": {
+      "post": {
+        "operationId": "extras_journal_entries_create",
+        "summary": "Write a journal entry on an object (the governed VLAN workflows record the push on the switch)",
+        "description": "Write a journal entry on an object (the governed VLAN workflows record the push on the switch)",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": "success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "error"
+          }
+        },
+        "security": [
+          {
+            "tokenAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "assigned_object_type",
+                  "assigned_object_id",
+                  "comments"
+                ],
+                "properties": {
+                  "assigned_object_type": {
+                    "type": "string",
+                    "description": "e.g. dcim.device"
+                  },
+                  "assigned_object_id": {
+                    "type": "integer"
+                  },
+                  "kind": {
+                    "type": "string",
+                    "description": "info | success | warning | danger"
+                  },
+                  "comments": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
       }
     }
   },

@@ -63,13 +63,15 @@ def test_documents_generated_and_scoped(integrations: dict, docs: dict) -> None:
         assert m["auth"] in doc["components"]["securitySchemes"], "the auth scheme the play fills is declared"
         ops = [(p, verb, o["operationId"]) for p, item in doc["paths"].items() for verb, o in item.items()]
         assert ops and all(o[2] for o in ops)
-        assert len(ops) <= 12, f"{key}: an agent tool set stays small ({len(ops)} operations)"
+        # ADR 0045 capped this at 12 to keep an *agent* tool set small. S4f (ADR 0054) adds the workflow
+        # writes to the same model, and those are never granted to an agent - the cap that matters now is
+        # the read set, held below by test_no_read_tier_agent_is_granted_a_write_operation.
+        reads = [o for o in ops if o[1] == "get"]
+        assert len(reads) <= 12, f"{key}: the agent-facing read set stays small ({len(reads)} operations)"
         for p, verb, oid in ops:
             o = doc["paths"][p][verb]
             assert o["security"] == [{m["auth"]: []}], f"{oid}: every operation is secured by the model's scheme"
-            assert "200" in o["responses"]
-    nb_ops = {verb for item in docs["netbox"]["paths"].values() for verb in item}
-    assert nb_ops == {"get"}, "NetBox through the integration is read-only: writes go through the adapter in workflows"
+            assert any(c.startswith("2") for c in o["responses"]), f"{oid}: declares no success response"
     sn = docs["servicenow"]["paths"]
     assert "get" in sn["/api/now/table/incident"] and "get" in sn["/api/now/table/incident/{sys_id}"]
     assert set(sn["/api/now/table/incident/{sys_id}"]) <= {"get", "patch"}, "the only ServiceNow write is an incident update (work notes)"
@@ -189,3 +191,19 @@ def test_s4f_has_its_own_verify_and_the_pid_carries_the_section() -> None:
     pid = PID.read_text()
     assert "### S4f " in pid and "| 1.22 |" in pid
     assert list(ADRS.glob("0054-*.md"))
+
+
+def test_no_read_tier_agent_is_granted_a_write_operation(versions: dict, integrations: dict) -> None:
+    """S4f puts NetBox's writes in the same model the read agents use, so `authorized` no longer implies
+    `safe to grant`. ADR 0046's tiering says a read-tier agent holds no tool that changes anything; the
+    grant is per agent in itential/agents/*.yaml, and this is what holds it to that."""
+    writes = set(integrations["models"]["netbox"].get("write_operations", []))
+    assert writes, "the oracle must name lab-netbox's write operations so the tiering can be checked"
+    read_tier = ("netbox-sot", "device-ops", "compliance")
+    for path in sorted(AGENTS.glob("*.yaml")):
+        doc = yaml.safe_load(path.read_text())
+        if not any(path.stem.startswith(a) for a in read_tier):
+            continue
+        named = {t.get("operation") or t.get("name") or "" for t in doc["tools"]}
+        leaked = named & writes
+        assert not leaked, f"{path.name} is a read-tier agent (ADR 0046) and is granted {sorted(leaked)}"

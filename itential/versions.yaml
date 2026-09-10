@@ -186,14 +186,28 @@ integrations:
       instance: netbox-api # integration (virtual adapter) name; the adapter instance stays NetBox
       auth: tokenAuth # OpenAPI security scheme in the document: apiKey header Authorization "Token <NETBOX_TOKEN>"
       server: {protocol: http, host: 10.100.0.64, port: 8080, base_path: ""}
+      # Provenance (S4f.1, ADR 0054 decision 4). The operation ids are NetBox's own, as drf-spectacular
+      # generates them and as this instance serves them at /api/schema/; the version is the pin that matters,
+      # because a NetBox major can rename an operation id. Not link-checked: CI's lychee reads only *.md.
+      spec: {url: "https://docs.netbox.dev/en/stable/integrations/rest-api/", taken: "4.7.0", kind: openapi}
       operations: [dcim_devices_list, dcim_devices_retrieve, dcim_interfaces_list, ipam_ip_addresses_list, ipam_vlans_list, dcim_sites_list,
-                   dcim_racks_list, circuits_circuits_list, ipam_asns_list, ipam_vrfs_list, ipam_prefixes_list]  # S4e, ADR 0048
+                   dcim_racks_list, circuits_circuits_list, ipam_asns_list, ipam_vrfs_list, ipam_prefixes_list,  # S4e, ADR 0048
+                   # S4f (ADR 0054): the writes wf-branch-vlan-v1/-delete-v1 reached through the adapter, and the
+                   # journal entry ADR 0048 had to write from the runner because the adapter dropped the trailing
+                   # slash. These are workflow operations: no read-tier agent lists them (ADR 0046, enforced in tests).
+                   ipam_vlans_create, ipam_vlans_partial_update, ipam_vlans_destroy, extras_journal_entries_create]
+      write_operations: [ipam_vlans_create, ipam_vlans_partial_update, ipam_vlans_destroy, extras_journal_entries_create]
     servicenow:
       title: lab-servicenow
       version: "1.0.0"
       instance: servicenow-api
       auth: BasicAuth # http basic: SNOW_USER / SNOW_PASSWORD (itential.integration on the PDI)
       server: {protocol: https, port: 443, base_path: ""} # host = <SNOW_INSTANCE>.service-now.com from .env
+      # Provenance (S4f.1): ServiceNow publishes no OpenAPI document for the Table API, so this model is
+      # written from the vendor's reference rather than trimmed from a specification. kind records that
+      # honestly - "documentation" means a regeneration is a re-read by a person, not a re-run of a script.
+      spec: {url: "https://www.servicenow.com/docs/bundle/zurich-api-reference/page/integrate/inbound-rest/concept/c_TableAPI.html",
+             taken: "2026-09-08", kind: documentation}
       operations: [listIncidents, getIncident, updateIncident, listChangeRequests, getChangeRequest]
 
 # --- S4d.6 (ADR 0047): the Ubuntu hosts as Gateway 5 inventory nodes in their own inventory (stack.host_inventory),

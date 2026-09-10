@@ -71,17 +71,20 @@ def op(
     security: str,
     *,
     body: dict | None = None,
+    success: str = "200",
 ) -> dict:
+    # A create answers 201 and a delete 204: declaring 200 for them would be a document that does not
+    # describe the API, and the platform reads these codes when it maps the response.
+    ok: dict = {"description": "success"}
+    if success != "204":
+        ok["content"] = {"application/json": {"schema": response}}
     o = {
         "operationId": operation_id,
         "summary": summary,
         "description": summary,
         "parameters": params,
         "responses": {
-            "200": {
-                "description": "success",
-                "content": {"application/json": {"schema": response}},
-            },
+            success: ok,
             "default": {"description": "error"},
         },
         "security": [{security: []}],
@@ -104,6 +107,10 @@ def model(
             "title": m["title"],
             "version": str(m["version"]),
             "description": description,
+            # S4f.1 (ADR 0054 decision 4): where this document came from, so a regeneration is
+            # reproducible and a drift is visible. kind=openapi was trimmed from a published
+            # specification; kind=documentation was written from a vendor reference by hand.
+            "x-spec-source": m["spec"],
         },
         "servers": [{"url": server_url}],
         "paths": paths,
@@ -273,9 +280,70 @@ def netbox() -> dict:
             )
         },
     }
+    # --- S4f (ADR 0054): the writes the workflows used to make through adapter-netbox. Every path keeps
+    # its trailing slash, which is the whole point: adapter-netbox 1.0.10 strips it, which is why
+    # available-vlans was unreachable and the journal entries went out from the runner (ADR 0048).
+    paths["/api/ipam/vlans/"]["post"] = op(
+        "ipam_vlans_create",
+        "Reserve a VLAN (wf-branch-vlan-v1: created status=reserved, set active once the switch takes it)",
+        [],
+        OBJ,
+        a,
+        body={
+            "type": "object",
+            "required": ["vid", "name"],
+            "properties": {
+                "vid": {"type": "integer", "description": "VLAN id"},
+                "name": {"type": "string"},
+                "site": {"type": "integer", "description": "Site id"},
+                "group": {"type": "integer", "description": "VLAN group id (the branch group)"},
+                "status": {"type": "string", "description": "reserved | active"},
+            },
+        },
+    )
+    paths["/api/ipam/vlans/{id}/"] = {
+        "patch": op(
+            "ipam_vlans_partial_update",
+            "Change a VLAN in place (wf-branch-vlan-v1: reserved -> active once the push succeeded)",
+            [path_param("id", "NetBox VLAN id", "integer")],
+            OBJ,
+            a,
+            body={"type": "object", "properties": {"status": {"type": "string"}, "name": {"type": "string"}}},
+        ),
+        "delete": op(
+            "ipam_vlans_destroy",
+            "Delete a VLAN (wf-branch-vlan-v1 rollback and wf-branch-vlan-delete-v1)",
+            [path_param("id", "NetBox VLAN id", "integer")],
+            OBJ,
+            a,
+            success="204",
+        ),
+    }
+    paths["/api/extras/journal-entries/"] = {
+        "post": op(
+            "extras_journal_entries_create",
+            "Write a journal entry on an object (the governed VLAN workflows record the push on the switch)",
+            [],
+            OBJ,
+            a,
+            body={
+                "type": "object",
+                "required": ["assigned_object_type", "assigned_object_id", "comments"],
+                "properties": {
+                    "assigned_object_type": {"type": "string", "description": "e.g. dcim.device"},
+                    "assigned_object_id": {"type": "integer"},
+                    "kind": {"type": "string", "description": "info | success | warning | danger"},
+                    "comments": {"type": "string"},
+                },
+            },
+            success="201",
+        )
+    }
+
     return model(
         "netbox",
-        "NetBox, the lab's source of truth: read-only device, interface, address, VLAN, site, rack, circuit, ASN, VRF and prefix queries (PID S4d.4/S4e, ADR 0045/0048)",
+        "NetBox, the lab's source of truth: device, interface, address, VLAN, site, rack, circuit, ASN, VRF and prefix queries, "
+        "plus the VLAN and journal writes the governed workflows make (PID S4d.4/S4e/S4f, ADR 0045/0048/0054)",
         paths,
         {
             "type": "apiKey",

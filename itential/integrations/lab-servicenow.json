@@ -3,7 +3,12 @@
   "info": {
     "title": "lab-servicenow",
     "version": "1.0.0",
-    "description": "ServiceNow PDI: incidents and change requests through the Table API (PID S4d.4, ADR 0045)"
+    "description": "ServiceNow PDI: incidents and change requests through the Table API (PID S4d.4, ADR 0045)",
+    "x-spec-source": {
+      "url": "https://www.servicenow.com/docs/bundle/zurich-api-reference/page/integrate/inbound-rest/concept/c_TableAPI.html",
+      "taken": "2026-09-08",
+      "kind": "documentation"
+    }
   },
   "servers": [
     {
