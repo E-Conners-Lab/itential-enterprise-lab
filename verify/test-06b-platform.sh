@@ -15,10 +15,11 @@ set -a; . ./.env; set +a
 ADMIN_USER=${ITENTIAL_ADMIN_USER:-admin@itential}
 PY=.venv/bin/python
 V=itential/versions.yaml
-# Both are overridable so the production environment can be proved before the cut-over moves the DNS record
-# (ADR 0055): IT_IP=<load balancer> IT_MCP_IP=<tools VM> verify/test-... . After the cut-over the defaults are
-# the production addresses anyway, because the name follows the record.
-IT_IP=${IT_IP:-$(${PY} -c "import yaml;print(yaml.safe_load(open('$V'))['vm']['ip'])")}
+# The S11 cut-over (ADR 0053/0055) moved itential.lab.internal onto the load balancer, so the name is the
+# address: no --resolve is forced any more and these run against whatever the record points at. IT_IP (and
+# IT_MCP_IP, for the MCP server on its own VM) still pin a specific host when one is being proved directly.
+IT_IP=${IT_IP:-}
+RESOLVE=${IT_IP:+--resolve itential.lab.internal:443:${IT_IP}}
 IT_HOST=itential.lab.internal
 PLATFORM="https://${IT_HOST}"
 CA=docs/lab-root-ca.crt
@@ -31,7 +32,7 @@ defer() { echo "DEFER $1"; deferred=$((deferred+1)); }
 check() { local name=$1; shift; if [ -n "${ONLY:-}" ] && ! echo " ${ONLY} " | grep -q " ${name%% *} "; then echo "SKIP  $name"; return; fi; if "$@" >/tmp/verify06b.$$ 2>&1; then ok "$name"; sed 's/^/      /' /tmp/verify06b.$$; else bad "$name"; sed 's/^/      /' /tmp/verify06b.$$ | head -20; fi; }
 nb()    { curl -s -m 20 -H "Authorization: Token ${NETBOX_TOKEN}" "$@"; }
 JAR=$(mktemp); trap 'rm -f "$JAR" /tmp/verify06b.$$' EXIT
-iap()   { curl -s -m 180 --cacert "$CA" --resolve "${IT_HOST}:443:${IT_IP}" -b "$JAR" -H "Content-Type: application/json" "$@"; }
+iap()   { curl -s -m 180 --cacert "$CA" ${RESOLVE} -b "$JAR" -H "Content-Type: application/json" "$@"; }
 iap_login() { iap -c "$JAR" -X POST "${PLATFORM}/login" -d "{\"username\":\"${ADMIN_USER}\",\"password\":\"${ITENTIAL_ADMIN_PASSWORD}\"}" -o /dev/null -w '%{http_code}' | grep -qx 200; }
 mkdir -p verify/results; exec > >(tee "verify/results/${ts}-06b-platform.log") 2>&1
 echo "# test-06b-platform ${ts}"

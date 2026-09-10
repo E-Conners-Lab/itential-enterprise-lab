@@ -95,12 +95,12 @@ topology; "k3s VIP" means a MetalLB address.
 | 10.100.0.42 | gitea | k3s VIP | Gitea HTTP + SSH (phase 9) |
 | 10.100.0.43 - .63 | *(pool)* | k3s VIP | unassigned MetalLB pool |
 | 10.100.0.64 | netbox | Proxmox (VM 110, second NIC) | NetBox OOB leg (phase 2) |
-| 10.100.0.65 | itential | Proxmox | Itential Platform, both Automation Gateways and the MCP server as containers on one VM; alias `mcp.lab.internal` (phase 5, ADR 0035) |
+| 10.100.0.65 | itential-dev | Proxmox | The dev-stack: Itential Platform, both Automation Gateways and the MCP server as containers on one VM (phase 5, ADR 0035). Renamed at the S11 cut-over, which moved `itential.lab.internal` and `mcp.lab.internal` off it; retires with VM 205 |
 | 10.100.0.66 | *(reserved)* | | released 2026-09-07: the separate `iag` VM was dropped with the container path |
 | 10.100.0.67 | nios | Proxmox | Infoblox NIOS grid master, LAN1 (phase 13, firewall track) |
 | 10.100.0.68 | ddi-fallback | Proxmox | BIND9 + Kea (phase 11) |
 | 10.100.0.70 | panorama | Proxmox | Panorama (phase 13, firewall track) |
-| 10.100.0.71 | iap-lb | Proxmox | nginx load balancer for the Platform nodes; alias itential at cut-over (ADR 0053) (phase 8, ADR 0053) |
+| 10.100.0.71 | iap-lb | Proxmox | nginx load balancer for the Platform nodes; carries `itential.lab.internal` since the S11 cut-over (phase 8, ADR 0053) |
 | 10.100.0.72 | iap-01 | Proxmox | Platform node 1 (phase 8, ADR 0053) |
 | 10.100.0.73 | iap-02 | Proxmox | Platform node 2 (phase 8, ADR 0053) |
 | 10.100.0.74 | mongo-01 | Proxmox | MongoDB replica set rs0 (phase 8, ADR 0053) |
@@ -110,7 +110,7 @@ topology; "k3s VIP" means a MetalLB address.
 | 10.100.0.78 | redis-02 | Proxmox | Redis + Sentinel (phase 8, ADR 0053) |
 | 10.100.0.79 | redis-03 | Proxmox | Redis + Sentinel (phase 8, ADR 0053) |
 | 10.100.0.80 | iag-01 | Proxmox | Gateway 5 cluster (gateway5, etcd, runner) (phase 8, ADR 0053) |
-| 10.100.0.81 | tools-01 | Proxmox | MCP server and Ollama (phase 8, ADR 0053) |
+| 10.100.0.81 | tools-01 | Proxmox | MCP server and Ollama, and the interim OpenLDAP (ADR 0055); aliases `mcp.lab.internal` and `ollama.lab.internal` (phase 8, ADR 0053) |
 | 10.100.0.82 - .95 | *(reserved)* | | |
 | 10.100.0.128 | dc1-fw01 | EVE-NG | PA-VM, DC HA pair member A |
 | 10.100.0.129 | dc1-fw02 | EVE-NG | PA-VM, DC HA pair member B |

@@ -13,13 +13,18 @@ set -a; . ./.env; set +a
 ADMIN_USER=${ITENTIAL_ADMIN_USER:-admin@itential}
 PY=.venv/bin/python
 V=itential/versions.yaml
-# Both are overridable so the production environment can be proved before the cut-over moves the DNS record
-# (ADR 0055): IT_IP=<load balancer> IT_MCP_IP=<tools VM> verify/test-... . After the cut-over the defaults are
-# the production addresses anyway, because the name follows the record.
-IT_IP=${IT_IP:-$(${PY} -c "import yaml;print(yaml.safe_load(open('$V'))['vm']['ip'])")}
+# The S11 cut-over (ADR 0053/0055) moved itential.lab.internal onto the load balancer, so the name is the
+# address: no --resolve is forced any more and these run against whatever the record points at. IT_IP (and
+# IT_MCP_IP, for the MCP server on its own VM) still pin a specific host when one is being proved directly.
+IT_IP=${IT_IP:-}
+# S4.6 measures the dev-stack VM itself, which keeps its own address whatever the service name points at
+DEV_IP=$(${PY} -c "import yaml;print(yaml.safe_load(open('$V'))['vm']['ip'])")
+RESOLVE=${IT_IP:+--resolve itential.lab.internal:443:${IT_IP}}
 IT_HOST=itential.lab.internal
 MCP_HOST=mcp.lab.internal
-MCP_IP=${IT_MCP_IP:-$IT_IP} # the MCP server has its own VM in the production environment (ADR 0053)
+# the MCP server has its own VM in the production environment (ADR 0053): S4.7 holds the name to the
+# HA2 oracle's tools VM, so a stale record on the retiring dev-stack is still caught
+MCP_IP=${IT_MCP_IP:-$(${PY} -c "import yaml;d=yaml.safe_load(open('itential/ha2/versions.yaml'));print(next(v['ip'] for v in d['vms'] if v['role']=='tools'))")}
 PLATFORM="https://${IT_HOST}"
 CA=docs/lab-root-ca.crt
 SSH="ssh -o BatchMode=yes -o ConnectTimeout=8 -o StrictHostKeyChecking=accept-new"
@@ -33,7 +38,7 @@ check() { local name=$1; shift; if [ -n "${ONLY:-}" ] && ! echo " ${ONLY} " | gr
 nb()    { curl -s -m 20 -H "Authorization: Token ${NETBOX_TOKEN}" "$@"; }
 JAR=$(mktemp); trap 'rm -f "$JAR" /tmp/verify05.$$' EXIT
 # Every call to the Platform goes through the lab CA and the real name: no -k anywhere.
-iap()   { curl -s -m 60 --cacert "$CA" --resolve "${IT_HOST}:443:${IT_IP}" -b "$JAR" -H "Content-Type: application/json" "$@"; }
+iap()   { curl -s -m 60 --cacert "$CA" ${RESOLVE} -b "$JAR" -H "Content-Type: application/json" "$@"; }
 iap_login() { iap -c "$JAR" -X POST "${PLATFORM}/login" -d "{\"username\":\"${ADMIN_USER}\",\"password\":\"${ITENTIAL_ADMIN_PASSWORD}\"}" -o /dev/null -w '%{http_code}' | grep -qx 200; }
 # run_job <workflow> <variables-json> -> prints the job id; waits for a terminal status unless $3=nowait
 run_job() {
@@ -61,9 +66,9 @@ iap_login || { bad "S4.1 login to ${PLATFORM} as ${ADMIN_USER} through the lab C
 
 # --- S4.1 TLS from the lab CA on 10.100.0.65; version equals the pin; both gateways registered ---
 c1() {
-  local san; san=$(openssl s_client -connect "${IT_IP}:443" -servername "$IT_HOST" -CAfile "$CA" </dev/null 2>/dev/null | openssl x509 -noout -ext subjectAltName 2>/dev/null)
+  local san; san=$(openssl s_client -connect "${IT_HOST}:443" -servername "$IT_HOST" -CAfile "$CA" </dev/null 2>/dev/null | openssl x509 -noout -ext subjectAltName 2>/dev/null)
   echo "$san" | grep -q "DNS:${IT_HOST}" || { echo "SAN missing ${IT_HOST}: ${san}"; return 1; }
-  openssl s_client -connect "${IT_IP}:443" -servername "$IT_HOST" -CAfile "$CA" </dev/null 2>/dev/null | grep -q "Verify return code: 0" || { echo "chain does not verify against ${CA}"; return 1; }
+  openssl s_client -connect "${IT_HOST}:443" -servername "$IT_HOST" -CAfile "$CA" </dev/null 2>/dev/null | grep -q "Verify return code: 0" || { echo "chain does not verify against ${CA}"; return 1; }
   local ver; ver=$(iap "${PLATFORM}/health/server" | ${PY} -c 'import sys,json;d=json.load(sys.stdin);print(d.get("release") or d.get("version") or d)')
   [ "$ver" = "$PLATFORM_VER" ] || { echo "platform reports ${ver}, versions.yaml pins ${PLATFORM_VER}"; return 1; }
   local conns; conns=$(iap "${PLATFORM}/gateway_manager/v1/connections")
@@ -154,10 +159,10 @@ check "S4.5 licence state (none required, owner decision 2026-09-07) recorded in
 # --- S4.6 memory pressure on the VM after 24 h ------------------------------------------------
 c6() {
   local up used total pct cache
-  up=$($SSH "ubuntu@${IT_IP}" "cut -d. -f1 /proc/uptime") || { echo "ssh to ${IT_IP} failed"; return 1; }
-  read -r total used <<<"$($SSH "ubuntu@${IT_IP}" "free -m | awk '/^Mem:/{print \$2, \$3}'")"
+  up=$($SSH "ubuntu@${DEV_IP}" "cut -d. -f1 /proc/uptime") || { echo "ssh to ${DEV_IP} failed"; return 1; }
+  read -r total used <<<"$($SSH "ubuntu@${DEV_IP}" "free -m | awk '/^Mem:/{print \$2, \$3}'")"
   pct=$((used * 100 / total))
-  cache=$($SSH "ubuntu@${IT_IP}" "docker exec mongodb mongosh --quiet --eval 'const c=db.serverStatus().wiredTiger.cache; print(Math.round(c[\"bytes currently in the cache\"]/1048576)+\" MB in cache of \"+Math.round(c[\"maximum bytes configured\"]/1048576)+\" MB max\")' 2>/dev/null" || echo "cache: n/a")
+  cache=$($SSH "ubuntu@${DEV_IP}" "docker exec mongodb mongosh --quiet --eval 'const c=db.serverStatus().wiredTiger.cache; print(Math.round(c[\"bytes currently in the cache\"]/1048576)+\" MB in cache of \"+Math.round(c[\"maximum bytes configured\"]/1048576)+\" MB max\")' 2>/dev/null" || echo "cache: n/a")
   echo "uptime ${up}s; RAM used ${used}/${total} MB (${pct}%); wiredTiger ${cache}"
   [ "$pct" -lt 80 ] || { echo "memory above 80%: apply the budget levers by PR"; return 1; }
   [ "$up" -ge 86400 ] || { echo "MEASURE-EARLY: uptime under 24 h, re-run after $(( (86400 - up) / 3600 )) h"; return 2; }

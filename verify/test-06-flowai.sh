@@ -14,10 +14,13 @@ set -a; . ./.env; set +a
 ADMIN_USER=${ITENTIAL_ADMIN_USER:-admin@itential}
 PY=.venv/bin/python
 V=itential/versions.yaml
-# Both are overridable so the production environment can be proved before the cut-over moves the DNS record
-# (ADR 0055): IT_IP=<load balancer> IT_MCP_IP=<tools VM> verify/test-... . After the cut-over the defaults are
-# the production addresses anyway, because the name follows the record.
-IT_IP=${IT_IP:-$(${PY} -c "import yaml;print(yaml.safe_load(open('$V'))['vm']['ip'])")}
+# The S11 cut-over (ADR 0053/0055) moved itential.lab.internal onto the load balancer, so the name is the
+# address: no --resolve is forced any more and these run against whatever the record points at. IT_IP (and
+# IT_MCP_IP, for the MCP server on its own VM) still pin a specific host when one is being proved directly.
+IT_IP=${IT_IP:-}
+# the local-model checks report the memory of the VM running Ollama, which is tools-01 in production
+OLLAMA_IP=${IT_OLLAMA_IP:-$(${PY} -c "import socket;print(socket.gethostbyname('ollama.lab.internal'))" 2>/dev/null)}
+RESOLVE=${IT_IP:+--resolve itential.lab.internal:443:${IT_IP}}
 IT_HOST=itential.lab.internal
 PLATFORM="https://${IT_HOST}"
 CA=docs/lab-root-ca.crt
@@ -30,7 +33,7 @@ bad()   { echo "FAIL  $1"; fail=$((fail+1)); }
 check() { local name=$1; shift; if [ -n "${ONLY:-}" ] && ! echo " ${ONLY} " | grep -q " ${name%% *} "; then echo "SKIP  $name"; return; fi; if "$@" >/tmp/verify06.$$ 2>&1; then ok "$name"; sed 's/^/      /' /tmp/verify06.$$; else bad "$name"; sed 's/^/      /' /tmp/verify06.$$ | head -14; fi; }
 nb()    { curl -s -m 20 -H "Authorization: Token ${NETBOX_TOKEN}" "$@"; }
 JAR=$(mktemp); trap 'rm -f "$JAR" /tmp/verify06.$$' EXIT
-iap()   { curl -s -m 120 --cacert "$CA" --resolve "${IT_HOST}:443:${IT_IP}" -b "$JAR" -H "Content-Type: application/json" "$@"; }
+iap()   { curl -s -m 120 --cacert "$CA" ${RESOLVE} -b "$JAR" -H "Content-Type: application/json" "$@"; }
 iap_login() { iap -c "$JAR" -X POST "${PLATFORM}/login" -d "{\"username\":\"${ADMIN_USER}\",\"password\":\"${ITENTIAL_ADMIN_PASSWORD}\"}" -o /dev/null -w '%{http_code}' | grep -qx 200; }
 agent_id() { iap "${PLATFORM}/agent-project-service/operable-agents" | ${PY} -c "import sys,json;a=[x for x in json.load(sys.stdin)['data']['items'] if x.get('name')=='$1'];print(a[0]['_id'] if a else '')"; }
 # run_agent <agent name> <inputs json> -> prints the session id; waits for a terminal state
@@ -154,7 +157,7 @@ c5() {
   sid=$(run_agent lab-netops-local '{"request":"What software version is running on br1-sw01? Reply with the version string only."}') || { echo "$sid"; return 1; }
   t1=$(date +%s); sid=${sid##*$'\n'}; txt=$(session_text "$sid"); count_tokens "$sid"
   echo "$txt" | grep -q "4.33.1.1F" || { echo "local model answer lacks 4.33.1.1F: $(echo "$txt" | head -c 300)"; return 1; }
-  read -r total used <<<"$($SSH "ubuntu@${IT_IP}" "free -m | awk '/^Mem:/{print \$2, \$3}'")"
+  read -r total used <<<"$($SSH "ubuntu@${OLLAMA_IP}" "free -m | awk '/^Mem:/{print \$2, \$3}'")"
   echo "ollama-lab (${OLLAMA_MODEL}) answered in $((t1-t0)) s; VM RAM used ${used}/${total} MB"
 }
 check "S4c.5 lab-netops-local (ollama-lab ${OLLAMA_MODEL}) answers the br1-sw01 version; response time and VM memory recorded" c5
@@ -347,7 +350,7 @@ c13() {
   sid=$(run_agent netbox-sot-local '{"request":"Which site is the device br2-sw01 in? Reply with the site slug only."}') || { echo "$sid"; return 1; }
   t1=$(date +%s); sid=${sid##*$'\n'}; txt=$(session_text "$sid"); count_tokens "$sid"
   echo "$txt" | grep -qi "br2" || { echo "local twin answer lacks br2: $(echo "$txt" | head -c 200)"; return 1; }
-  read -r total used <<<"$($SSH "ubuntu@${IT_IP}" "free -m | awk '/^Mem:/{print \$2, \$3}'")"
+  read -r total used <<<"$($SSH "ubuntu@${OLLAMA_IP}" "free -m | awk '/^Mem:/{print \$2, \$3}'")"
   echo "netbox-sot-local (${OLLAMA_MODEL}) answered in $((t1-t0)) s; VM RAM used ${used}/${total} MB"
 }
 check "S4d.5f netbox-sot-local (ollama-lab ${OLLAMA_MODEL}) answers br2-sw01's site; response time and VM memory recorded" c13

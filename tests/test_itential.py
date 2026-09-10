@@ -199,15 +199,23 @@ def test_ipam_itential_alias_and_released_iag(versions: dict) -> None:
     ipam = yaml.safe_load(IPAM.read_text())
     by_name = {r["hostname"]: r for r in ipam["addresses"]}
     assert "iag" not in by_name, "10.100.0.66 iag must be released (option 1, approved 2026-09-07)"
-    it = by_name["itential"]
+    # the S11 cut-over (ADR 0053/0055) moved itential.lab.internal and mcp.lab.internal off VM 205: the
+    # service name is an alias of the load balancer and the MCP server has its own VM
+    it = by_name["itential-dev"]
     assert it["address"] == versions["vm"]["ip"] == "10.100.0.65"
-    assert "mcp" in it.get("aliases", []), "mcp.lab.internal must be an alias of itential (S4.7)"
+    assert "mcp" not in it.get("aliases", []), "mcp.lab.internal moved to tools-01 at the cut-over"
+    lb = next(r for r in ipam["addresses"] if r["hostname"] == "iap-lb")
+    assert "itential" in lb.get("aliases", []), "itential.lab.internal must resolve to the load balancer"
+    assert "mcp" in by_name["tools-01"].get("aliases", []), "mcp.lab.internal must be an alias of tools-01"
     assert not any("10.100.0.66" == r["address"] for r in ipam["addresses"])
 
 
 def test_ip_plan_markdown_agrees() -> None:
     text = IP_PLAN.read_text()
-    assert re.search(r"\| 10\.100\.0\.65 \| itential \|.*mcp", text), "ip-plan .65 row must mention the mcp alias"
+    # after the S11 cut-over the .65 row is the dev-stack alone; the service name and the mcp alias moved
+    assert re.search(r"\| 10\.100\.0\.65 \| itential-dev \|", text), "ip-plan .65 row is the dev-stack"
+    assert re.search(r"\| 10\.100\.0\.71 \| iap-lb \|.*itential\.lab\.internal", text), "the .71 row carries the service name"
+    assert re.search(r"\| 10\.100\.0\.81 \| tools-01 \|.*mcp", text), "the .81 row carries the mcp alias"
     assert re.search(r"\| 10\.100\.0\.66 \| \*\(reserved\)\*", text), "ip-plan .66 row must be reserved"
 
 

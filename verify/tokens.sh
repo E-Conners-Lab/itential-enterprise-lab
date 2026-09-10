@@ -12,12 +12,12 @@ set -a; . ./.env; set +a
 : "${ITENTIAL_ADMIN_PASSWORD:?}"
 PY=.venv/bin/python
 V=itential/versions.yaml
-IT_IP=$(${PY} -c "import yaml;print(yaml.safe_load(open('$V'))['vm']['ip'])")
+# the S11 cut-over moved the name onto the load balancer: no --resolve, the record decides
 IT_HOST=itential.lab.internal
 PLATFORM="https://${IT_HOST}"
 CA=docs/lab-root-ca.crt
 JAR=$(mktemp); trap 'rm -f "$JAR"' EXIT
-iap() { curl -s -m 60 --cacert "$CA" --resolve "${IT_HOST}:443:${IT_IP}" -b "$JAR" -H "Content-Type: application/json" "$@"; }
+iap() { curl -s -m 60 --cacert "$CA" -b "$JAR" -H "Content-Type: application/json" "$@"; }
 iap -c "$JAR" -X POST "${PLATFORM}/login" -d "{\"username\":\"${ITENTIAL_ADMIN_USER:-admin@itential}\",\"password\":\"${ITENTIAL_ADMIN_PASSWORD}\"}" -o /dev/null -w '%{http_code}' | grep -qx 200 || { echo "login to ${PLATFORM} failed"; exit 2; }
 DAYS=${DAYS:-7}
 # every session of the window (paged), then the sums per provider/model in python

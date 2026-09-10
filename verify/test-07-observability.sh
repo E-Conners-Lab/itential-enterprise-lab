@@ -23,7 +23,8 @@ AM=https://alertmanager.lab.internal
 LOKI=https://loki.lab.internal
 GNMIC=https://gnmic.lab.internal/metrics
 GRAFANA=https://grafana.lab.internal
-IT_HOST=itential.lab.internal; IT_IP=$(${PY} -c "import yaml;print(yaml.safe_load(open('itential/versions.yaml'))['vm']['ip'])"); PLATFORM="https://${IT_HOST}"
+IT_HOST=itential.lab.internal; PLATFORM="https://${IT_HOST}"
+# the S11 cut-over moved the name onto the load balancer: no --resolve, the record decides
 ADMIN_USER=${ITENTIAL_ADMIN_USER:-admin@itential}
 SSH="ssh -o BatchMode=yes -o ConnectTimeout=8 -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR"
 ts=$(date -u +%Y%m%dT%H%M%SZ)
@@ -37,7 +38,7 @@ check() { local name=$1; shift; if [ -n "${ONLY:-}" ] && ! echo " ${ONLY} " | gr
 nb()    { curl -s -m 20 -H "Authorization: Token ${NETBOX_TOKEN}" "$@"; }
 web()   { curl -s -m 30 --cacert "$CA" "$@"; }
 JAR=$(mktemp); trap 'rm -f "$JAR" /tmp/verify07.$$ /tmp/verify07.*.$$' EXIT
-iap()   { curl -s -m 180 --cacert "$CA" --resolve "${IT_HOST}:443:${IT_IP}" -b "$JAR" -H "Content-Type: application/json" "$@"; }
+iap()   { curl -s -m 180 --cacert "$CA" -b "$JAR" -H "Content-Type: application/json" "$@"; }
 iap_login() { iap -c "$JAR" -X POST "${PLATFORM}/login" -d "{\"username\":\"${ADMIN_USER}\",\"password\":\"${ITENTIAL_ADMIN_PASSWORD}\"}" -o /dev/null -w '%{http_code}' | grep -qx 200; }
 mkdir -p verify/results; exec > >(tee "verify/results/${ts}-07-observability.log") 2>&1
 echo "# test-07-observability ${ts}"
