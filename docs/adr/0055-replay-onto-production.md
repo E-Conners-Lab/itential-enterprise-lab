@@ -126,5 +126,10 @@ The environments also differ in three measured ways:
   musl image, where `pip install pyats` fails, and the Platform records the task as *complete* with a null
   result - so `wf-show-command-v1` returned no parse and `wf-branch-vlan-v1`'s NetBox journal entry was
   never written, both silently. That is ADR 0038's glibc-runner finding reappearing as a missing flag.
+- Gateway 5's netsdk services live in the etcd store with the absolute path of the pex that runs them, and
+  both the server and the runner register them - last writer wins. A recreated server writes its own musl
+  path while the execution lands on the glibc runner, and every `send-command` then fails with
+  *"netsdk-musl-linux-amd64.pex: No such file or directory"*. The play restarts the runner whenever the
+  server changed, so the runner's paths are always the ones in the store.
 - The Ollama profile differs per environment, so `verify/test-06` S4c's provider-profile check passes on
   production only once `tools-01`'s Ollama has the pinned models pulled; that pull is part of the replay.

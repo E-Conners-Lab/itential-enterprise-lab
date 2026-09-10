@@ -39,7 +39,9 @@ services:
       # install pyats and the parse fails silently (ADR 0038: Genie needs the glibc runner). It is the
       # flag that makes the server hand every execution to a registered runner node.
       GATEWAY_SERVER_DISTRIBUTED_EXECUTION: "true"
-      GATEWAY_SERVER_LISTEN_ADDRESS: "0.0.0.0"
+      # the Compose service name, not 0.0.0.0: with distributed execution the runner dials the server
+      # back on the address it announces, and 0.0.0.0 is not an address anything can dial
+      GATEWAY_SERVER_LISTEN_ADDRESS: gateway5
       GATEWAY_STORE_BACKEND: etcd
       GATEWAY_STORE_ETCD_HOSTS: "etcd:{{ gateway.etcd_port }}"
       GATEWAY_STORE_ETCD_USE_TLS: "false"

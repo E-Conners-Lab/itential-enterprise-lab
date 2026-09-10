@@ -1,0 +1,36 @@
+# test-06b-platform 20260910T162747Z
+FAIL  S4d.1 Golden Config: plan clean on 12 devices; hostname drift on br1-wan01 and br1-sw01 flagged with no false positive; restored through wf-config-push-v1
+      schedule: nightly compliance lab-baseline every 1 day first run 1789095600000
+      plan instance 6aa2da90a365032dc05d4c4d did not finish (error)
+FAIL  S4d.2 command templates on br1-wan01 and br1-sw01 with every rule evaluated; analytic pre/post green; nightly backup schedule and a run whose backups equal the running configs
+      Traceback (most recent call last):
+        File [35m"<string>"[0m, line [35m3[0m, in [35m<module>[0m
+          d=json.load(sys.stdin); assert [1;31md.get("result") is True[0m, ("template failed", [(c["evaluated"], [(r["rule"], r.get("result")) for r in c["rules"]]) for c in d.get("commands_results",[]) if not c.get("result")])
+                                         [1;31m^^^^^^^^^^^^^^^^^^^^^^^[0m
+      [1;35mAssertionError[0m: [35m('template failed', [('show version', [('Cisco IOS XE Software', False), ('Version 17\\.\\d+', False)]), ('show ip interface brief', [('^GigabitEthernet1\\s+\\S+\\s+YES\\s+\\S+\\s+up\\s+up', False), ('^Loopback0\\s+\\S+\\s+YES\\s+\\S+\\s+up\\s+up', False)]), ('show bgp all summary', [('\\s(Idle|Active|Connect|OpenSent|OpenConfirm)\\s*$', True), ('^\\d+\\.\\d+\\.\\d+\\.\\d+\\s+4\\s+\\d+.*\\s\\d+\\s*$', False)])])[0m
+      br1-wan01 lab-cisco-ios-checks: 
+FAIL  S4d.3 Lifecycle Manager branch-vlan: instances from NetBox; create -> JSON form approval (Work Center shows branch, VLAN, switch, NetBox reservation) -> instance; rejected push changes nothing; delete -> governed push; history; no-op; rejected create retired
+      actions runnable: Create -> workflow f77fa17e, Delete -> workflow 341e306d
+      form fields: ['branch', 'decision', 'netbox_vlan_id', 'status', 'switch', 'vid', 'vlan_name']
+      instances cover every NetBox branch VLAN: br1-approve-demo 
+      Work Center item 01a08c2a-ba50-7769-9ff6-543bdc9c0a8e shows {'branch': 'br2', 'vid': 11, 'vlan_name': 'lcm-20260910t162747z', 'switch': 'br2-sw01', 'netbox_vlan_id': 43, 'status': 'reserved'}
+      job 2726d3e1f6fd48dca33a2aad error
+cleanup: execution 6aa2dbd0df4404b0278c6ed2 (br2-lcm-20260910t162747z) is running: rejecting any pending form and cancelling
+PASS  S4d.4 Integration Models lab-netbox and lab-servicenow: instances netbox-api/servicenow-api, every operation an authorized tool; lab-netops reads br1-sw01 and INC0000060 through the integration tools (not the adapters)
+      model lab-netbox:1.0.0: 11 operations
+      integration netbox-api: server http 10.100.0.64 8080 auth ['tokenAuth']
+      tools netbox-api: 11 authorized
+      model lab-servicenow:1.0.0: 5 operations
+      integration servicenow-api: server https dev409097.service-now.com 443 auth ['BasicAuth']
+      tools servicenow-api: 5 authorized
+      NetBox: br1-sw01 is br1 / branch-switch through ['dcim_devices_list']; tokens in=14146 out=118
+      ServiceNow: INC0000060 = 'Unable to connect to email' through ['listIncidents']; tokens in=12696 out=161
+      tokens spent by S4d.4: in=26842 out=279
+FAIL  S4d.6 the three Ubuntu hosts are lab-hosts inventory nodes, reachable through Gateway 5 with their uptime (direct SSH agrees), and unknown to Configuration Manager
+      Configuration Manager sees 12 devices, no host
+      br1-host01: Gateway 5 saw hostname 
+      br2-host01: Gateway 5 saw hostname 
+      dc1-srv01: Gateway 5 saw hostname 
+DEFER S4d.6 firewalls: PA-VM image not staged (S3.4 deferral)
+
+passed=1 failed=4 deferred=1
