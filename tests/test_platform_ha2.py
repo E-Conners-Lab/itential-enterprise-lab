@@ -157,3 +157,72 @@ def test_secrets_are_declared_in_env_example() -> None:
     wanted.add(HA2["mongodb"]["keyfile_env"])
     for key in sorted(wanted):
         assert f"{key}=" in env, f"{key} missing from .env.example"
+
+
+# --- the replay of phases 5-7 onto production (ADR 0055, PID amendment 1.20) -----------------------------
+
+TASKS = PLAYS / "tasks"
+PROD_VARS = PLAYS / "vars" / "itential-prod.yml"
+ASSET_PLAYS = ("itential.yml", "platform.yml", "flowai.yml")
+
+
+def test_the_asset_halves_live_in_shared_task_files() -> None:
+    """One definition per asset: the dev-stack play and the replay include the same file."""
+    for name in ("platform-assets.yml", "flowai-assets.yml", "roles-to-admin.yml", "roles-to-admin-ldap.yml"):
+        assert (TASKS / name).exists(), f"ansible/playbooks/tasks/{name} missing"
+    assets = (TASKS / "platform-assets.yml").read_text()
+    for marker in ("InventoryBroker", "inventory_manager/v1/nodes/bulk", "automation-studio/automations/import", "vlan-groups"):
+        assert marker in assets, f"platform-assets.yml must own {marker}"
+    assert "docker" not in assets, "the dev-stack's database re-sync belongs in roles-to-admin-ldap.yml"
+    flowai = (TASKS / "flowai-assets.yml").read_text()
+    for marker in ("model-registry-service/profiles", "agent-project-service/projects"):
+        assert marker in flowai, f"flowai-assets.yml must own {marker}"
+
+
+@pytest.mark.parametrize("play", ASSET_PLAYS)
+def test_the_asset_plays_take_their_target_from_a_variable(play: str) -> None:
+    """The default stays the dev-stack; an extra-vars overlay selects production (ADR 0055 decision 2)."""
+    text = (PLAYS / play).read_text()
+    assert "hosts: \"{{ platform_target | default('itential-host') }}\"" in text, f"{play} must take platform_target"
+    assert "hosts: itential-host" not in text, f"{play} still hard-codes the dev-stack group"
+
+
+@pytest.mark.parametrize("play", ASSET_PLAYS)
+def test_the_asset_plays_include_the_shared_task_files(play: str) -> None:
+    text = (PLAYS / play).read_text()
+    if play == "itential.yml":
+        assert "tasks/platform-assets.yml" in text
+    if play == "flowai.yml":
+        assert "tasks/flowai-assets.yml" in text
+    if play == "platform.yml":  # entirely assets: the target variable is all it needs
+        assert "golden_config" in text or "configuration_manager" in text
+
+
+def test_the_production_overlay_is_held_to_the_oracle() -> None:
+    """`vars/itential-prod.yml` repeats the oracle's addresses and account; the test keeps them equal."""
+    assert PROD_VARS.exists(), "ansible/playbooks/vars/itential-prod.yml missing"
+    prod = yaml.safe_load(PROD_VARS.read_text())
+    assert prod["platform_target"] == "ha2-platform[0]", "the replay runs on the first Platform node"
+    assert prod["platform_admin_user"] == HA2["platform"]["admin_user"], "the local administrator of the oracle"
+    tools = vms()["tools-01"]
+    assert prod["ollama_base_url"] == f"http://{tools['ip']}:{HA2['tools']['ollama_port']}", "Ollama runs on tools-01"
+    assert prod["role_resync_tasks"] == "roles-to-admin.yml", "production re-syncs roles through the authorization API"
+
+
+def test_the_replay_entry_point_runs_the_three_halves_in_order() -> None:
+    """ADR 0038's order: the workflows, then the Platform applications, then the agents that reference them."""
+    replay = PLAYS / "platform-ha2-replay.yml"
+    assert replay.exists(), "ansible/playbooks/platform-ha2-replay.yml missing"
+    text = replay.read_text()
+    order = [text.index(m) for m in ("tasks/platform-assets.yml", "platform.yml", "tasks/flowai-assets.yml")]
+    assert order == sorted(order), "platform assets, then platform.yml, then the FlowAI assets"
+    assert "ha2/versions.yaml" in text, "the replay reads the oracle"
+    mk = (ROOT / "Makefile").read_text()
+    assert "replay-platform-ha2:" in mk and "itential-prod.yml" in mk, "make replay-platform-ha2 passes the overlay"
+
+
+def test_the_dev_stack_play_keeps_building_the_dev_stack() -> None:
+    """The extraction must not move the dev-stack out of itential.yml (ADR 0055 decision 5)."""
+    text = (PLAYS / "itential.yml").read_text()
+    for marker in ("compose.override.yml", "gateway5", "ldif", "docker-compose.yml"):
+        assert marker in text, f"itential.yml must keep building the dev-stack ({marker})"

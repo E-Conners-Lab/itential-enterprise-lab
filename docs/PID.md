@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Name** | itential-enterprise-lab |
-| **Version** | 1.19 |
+| **Version** | 1.20 |
 | **Date** | 2026-09-09 |
 | **Author** | Elliot Conner. Claude Code is the build agent; every action it takes is bounded by this document |
 | **Standard** | Project Initiation Standard PIS-01 - PIS-30 (`~/.claude/skills/project-initiation-standard`) |
@@ -325,6 +325,7 @@ Conventions: **Placement** is Proxmox VM (OpenTofu + Ansible), k3s (Helm/Kustomi
 ---
 
 ### S11 — Production Itential environment, HA2 shape (Phase 8, amendment 1.18, ADR 0053)
+> **Amendment 1.20 (ADR 0055):** the replay of S11 acceptance 5 runs *before* the cut-over, not after it. The asset half of `itential.yml` and `flowai.yml` moves into `ansible/playbooks/tasks/` so both environments include one definition; every asset-creating play takes `hosts: "{{ platform_target | default('itential-host') }}"` and `ansible/playbooks/vars/itential-prod.yml` (held to the oracle by `tests/test_platform_ha2.py`) selects production; `playbooks/platform-ha2-replay.yml` is the entry point and `make replay-platform-ha2` the target. The phase 5-7 verifies still follow `itential.lab.internal` at cut-over, unchanged.
 
 - **Purpose:** run the Platform the way Itential's deployment guide describes production: every component on its own server, a MongoDB replica set, Redis with Sentinel, two Platform nodes behind a load balancer, authentication and TLS between every component; then migrate everything phases 5-7 built and retire the dev-stack VM.
 - **Placement:** nine Proxmox VMs in the service block (`docs/ip-plan.md` 3.2: `iap-lb` .71, `iap-01/02` .72-.73, `mongo-01..03` .74-.76, `redis-01..03` .77-.79, `iag-01` .80, `tools-01` .81), Ubuntu 24.04, containers from Itential's ECR and the official MongoDB/Redis images; `itential.lab.internal` moves to the load balancer at cut-over.
@@ -334,7 +335,7 @@ Conventions: **Placement** is Proxmox VM (OpenTofu + Ansible), k3s (Helm/Kustomi
   2. `rs.status()` on any member shows one PRIMARY and two SECONDARY, connections require SCRAM auth over TLS; the Platform's MongoDB URL names all three members.
   3. Redis: one master and two replicas, three Sentinels agree on the master, ACL users only, TLS; the Platform connects through Sentinel.
   4. Both Platform nodes answer `/health/server` and the load balancer serves `https://itential.lab.internal` with the lab-CA certificate; a login on one node is valid on the other.
-  5. Every phase 5-7 verify (`test-05`, `test-06`, `test-06b`, `test-06c`, `test-07` S7.7/S7.8) passes against production; Gateway 5 on `iag-01` reaches every device.
+  5. *(1.20)* Everything phases 5-7 built exists on production — every workflow, Golden Config tree, the compliance plan, the MOP templates, the LCM model, the Integration Models, the agent project and both inventories — and Configuration Manager sees the lab's devices through the Device Broker on `iag-01`; after the cut-over every phase 5-7 verify (`test-05`, `test-06`, `test-06b`, `test-06c`, `test-07` S7.7/S7.8) passes unchanged, because each addresses `itential.lab.internal`.
   6. Drills (`VERIFY_DRILLS=1`): stopping `iap-01` keeps the UI and a running job; stopping the MongoDB primary elects a new one within 30 s and a job started during the election completes; stopping the Redis master fails over through Sentinel and the Platform keeps serving.
   7. The official Itential Platform Monitoring dashboard's Redis and MongoDB rows show the replica sets (S7.8 stays green).
   8. VM 205 is deleted after the owner's approval; its NetBox, Zabbix and Prometheus records go with it; `docs/resource-budget.md` reflects the result.
@@ -714,6 +715,7 @@ the verify log path and any ADRs added.
 | 1.13 | 2026-09-08 | Phase 6 element 7 (owner request): S4e NetBox enrichment derived from `topology/enterprise.yaml` (addressing on interfaces with peer descriptions, VRFs and ASNs with BGP neighbours in config contexts, racks, provider circuits, config contexts, journal entries; the templates read the YAML, rendered configs unchanged; `netbox-enrich.yml`; `verify/test-06c-netbox.sh`; ADR 0048) |
 | 1.14 | 2026-09-09 | Domain 7: the Anthropic key is the owner's company key with a $15-a-week budget; the platform's session documents are the ledger (`verify/tokens.sh`, `make tokens`, `llm.budget` in versions.yaml), the agent verifies guard it, iteration runs on the local twins or `ONLY=` subsets (ADR 0049) |
 | 1.15 | 2026-09-09 | Reorder (ADR 0050): image-free phases first (7 observability, 8 config/secrets/code, 9 identity without Windows on OpenLDAP + Keycloak + tac_plus, 10 DDI on BIND9 + Kea, 11 Containerlab) and one phase 12 firewall track for NIOS, the PA-VM firewalls and Panorama; Windows Server and the Windows endpoint item dropped, `dc01` released |
+| 1.20 | 2026-09-10 | The phase 5-7 assets replay onto production from shared task files under `ansible/playbooks/tasks/`, targeted by `platform_target` and the `vars/itential-prod.yml` overlay, so the replay is provable before the cut-over; `platform-ha2-replay.yml` and `make replay-platform-ha2`; S11 criterion 5 reworded (ADR 0055) |
 | 1.19 | 2026-09-10 | Integration Models generated from OpenAPI specifications are the default integration; an npm adapter only where the Platform itself requires one (InventoryBroker, LDAP, Gateway Manager). NetBox and ServiceNow convert as the first element after the Phase 8 cut-over, with their specifications pinned in the repo (ADR 0054, owner instruction) |
 | 1.18 | 2026-09-10 | Phase 8 = production Itential environment in the HA2 shape at lab sizes (S11, ADR 0053): nine VMs, containers from ECR, MongoDB replica set, Redis + Sentinel, two Platform nodes behind nginx, migration by replay, VM 205 retired; later phases renumbered 9-13; resource budget: `dc01` removed, VM 205 retiring, Panorama lever 2 pulled |
 | 1.17 | 2026-09-10 | Phase 7 follow-up (ADR 0052, owner request): the official Itential Platform Monitoring dashboard vendored from grafana.com 25527; node/process/Redis/MongoDB exporters beside the dev-stack under the `monitoring` Compose profile; the lab exporter supplies the unpublished wfe-metrics-exporter's series; S7 criterion 8 |
