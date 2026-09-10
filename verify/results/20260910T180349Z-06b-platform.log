@@ -1,0 +1,43 @@
+# test-06b-platform 20260910T180349Z
+FAIL  S4d.1 Golden Config: plan clean on 12 devices; hostname drift on br1-wan01 and br1-sw01 flagged with no false positive; restored through wf-config-push-v1
+      hostname drift before the test: br2-sw01 runs as 'verify-20260910t175238z' 
+FAIL  S4d.2 command templates on br1-wan01 and br1-sw01 with every rule evaluated; analytic pre/post green; nightly backup schedule and a run whose backups equal the running configs
+      br1-wan01: lab-cisco-ios-checks passed, 6 rules over 3 commands
+      2 pre/post rules equal
+      br1-wan01: lab-cisco-ios-prepost pre/post equal
+      br1-sw01: lab-arista-eos-checks passed, 6 rules over 4 commands
+      2 pre/post rules equal
+      br1-sw01: lab-arista-eos-prepost pre/post equal
+      schedule: nightly backups lab every 1 day first run 1789093800000
+      br2-sw01: backup differs from the running config: 2 lines
+PASS  S4d.3 Lifecycle Manager branch-vlan: instances from NetBox; create -> JSON form approval (Work Center shows branch, VLAN, switch, NetBox reservation) -> instance; rejected push changes nothing; delete -> governed push; history; no-op; rejected create retired
+      actions runnable: Create -> workflow f77fa17e, Delete -> workflow 341e306d
+      form fields: ['branch', 'decision', 'netbox_vlan_id', 'status', 'switch', 'vid', 'vlan_name']
+      instances cover every NetBox branch VLAN: br1-approve-demo 
+      Work Center item 01a08c80-4c49-761e-b33e-e08b0f901d86 shows {'branch': 'br2', 'vid': 11, 'vlan_name': 'lcm-20260910t180349z', 'switch': 'br2-sw01', 'netbox_vlan_id': 54, 'status': 'reserved'}
+      instance br2-lcm-20260910t180349z {'branch': 'br2', 'vid': 11, 'vlan_name': 'lcm-20260910t180349z', 'switch': 'br2-sw01', 'netbox_vlan_id': 54, 'status': 'active'}
+      create: VLAN 11 lcm-20260910t180349z active in NetBox (id 54) and on br2-sw01; instance br2-lcm-20260910t180349z recorded (execution 6aa2f1b86b4f7a0ca82afec4)
+      rejected push: job 6c16bab0231c43a4bae043e1 in error, delete job f631bfc440e24e8dbd990a3a waited, NetBox and br2-sw01 untouched, both cancelled
+      delete: push job c36f7c7ac8e448fe96ecd1cd removed VLAN 11 from br2-sw01 after the approval; NetBox VLAN gone; instance br2-lcm-20260910t180349z retired (execution 6aa2f1df6b4f7a0ca82afec6)
+      journal: br2-sw01 carries the create and the delete entry for VLAN 11
+      history: [('Create', 'complete', '92c54310aa644b998b4d0a9c'), ('Delete', 'complete', 'dfe7c8c440fe4c1b814ad616')]
+      no-op: wf-branch-vlan-delete-v1 on the retired VLAN changed nothing and started no push (job 5d95bdd0b0c740db93fccfb7)
+      rejected create: reservation 55 rolled back, child cebff08ddb2d4657b385c56e in error, execution 6aa2f20b6b4f7a0ca82afec7 cancelled, instance retired
+PASS  S4d.4 Integration Models lab-netbox and lab-servicenow: instances netbox-api/servicenow-api, every operation an authorized tool; lab-netops reads br1-sw01 and INC0000060 through the integration tools (not the adapters)
+      model lab-netbox:1.0.0: 11 operations
+      integration netbox-api: server http 10.100.0.64 8080 auth ['tokenAuth']
+      tools netbox-api: 11 authorized
+      model lab-servicenow:1.0.0: 5 operations
+      integration servicenow-api: server https dev409097.service-now.com 443 auth ['BasicAuth']
+      tools servicenow-api: 5 authorized
+      NetBox: br1-sw01 is br1 / branch-switch through ['dcim_devices_list']; tokens in=14146 out=118
+      ServiceNow: INC0000060 = 'Unable to connect to email' through ['listIncidents']; tokens in=12681 out=160
+      tokens spent by S4d.4: in=26827 out=278
+PASS  S4d.6 the three Ubuntu hosts are lab-hosts inventory nodes, reachable through Gateway 5 with their uptime (direct SSH agrees), and unknown to Configuration Manager
+      Configuration Manager sees 12 devices, no host
+      br1-host01 (10.100.0.195): reachable, up 3 days, 18 hours, 12 minutes through Gateway 5; direct SSH agrees
+      br2-host01 (10.100.0.196): reachable, up 3 days, 18 hours, 12 minutes through Gateway 5; direct SSH agrees
+      dc1-srv01 (10.100.0.192): reachable, up 3 days, 18 hours, 12 minutes through Gateway 5; direct SSH agrees
+DEFER S4d.6 firewalls: PA-VM image not staged (S3.4 deferral)
+
+passed=3 failed=2 deferred=1

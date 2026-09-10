@@ -110,6 +110,24 @@ The environments also differ in three measured ways:
    execution until it returns, while the UI and the API keep serving from the standby (drill S11.6a). Genuine
    active/active needs a gateway cluster per Platform node, and that is a later element.
 
+   **The gateway's own HA flags do not close this.** `GATEWAY_CONNECT_SERVER_HA_ENABLED` and
+   `GATEWAY_CONNECT_SERVER_HA_IS_PRIMARY` exist in the 5.5.2 image, and Itential's *Choose a deployment
+   architecture* page says what they are for: several gateway **servers**, of which *"only one gateway server
+   can be active at a time. The active node maintains the connection to Gateway Manager and handles all
+   incoming requests"*. That is redundancy for the gateway, not a second connection for a second Platform
+   node. Nor is there a Platform-to-Gateway path to fall back on: the HA2 network table lists Platform to
+   Gateway on 8083/8443, but a Gateway 5 server listens only on 50051 (the runner's gRPC) - those ports are
+   Gateway 4's REST API. One WebSocket per cluster is all there is, and 6.5.2 does not proxy a gateway call
+   from a Platform node that does not hold it.
+
+   **The worker split does not cover the agent engine.** `ITENTIAL_JOB_WORKER_ENABLED` and
+   `ITENTIAL_TASK_WORKER_ENABLED` are the only such flags the image has; the agent execution engine
+   distributes independently, so a FlowAI session whose tool call lands on the standby ends `FAILED` with
+   *"session is terminal (sibling tool may have failed)"*. Measured: with both nodes up `verify/test-06` is
+   9 of 13; with `iap-02`'s Platform stopped the same three checks pass first try (S4c.2, S4d.5c, S4d.5e).
+   Closing this needs an owner decision - run the standby's Platform stopped (Itential's Active/Standby), or
+   accept the agent limitation - and it is recorded here rather than decided.
+
 ## Consequences
 
 - One definition per asset. A change to a workflow, an inventory or an agent lands in one file and reaches
