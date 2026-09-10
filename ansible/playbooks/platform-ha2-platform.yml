@@ -248,11 +248,14 @@
       register: up
       changed_when: "'Started' in up.stderr or 'Created' in up.stderr or 'Recreated' in up.stderr"
 
-    - name: Nginx reloads a changed configuration
+    # nginx.conf is bind-mounted as a single file and Ansible's template module writes atomically (temp file
+    # then rename), so the running container keeps the old inode: `nginx -s reload` re-reads the file it
+    # already has and nothing changes. The container is recreated instead, which re-resolves the bind.
+    - name: Nginx recreated on a changed configuration
       ansible.builtin.command:
-        cmd: docker compose exec -T nginx nginx -s reload
+        cmd: docker compose up -d --force-recreate nginx
         chdir: "{{ dir }}"
-      when: nginx_conf is changed and up is not changed
+      when: nginx_conf is changed
       changed_when: true
 
     - name: The service name answers through the load balancer

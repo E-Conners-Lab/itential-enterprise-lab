@@ -21,7 +21,6 @@
     platform_local: "{{ platform_api }}"
     admin_user: "{{ platform_admin_user | default(platform.admin_user) }}"
     admin_pw: "{{ lookup('ansible.builtin.env', 'ITENTIAL_ADMIN_PASSWORD') }}"
-    role_resync_tasks: roles-to-admin.yml
     netbox_oob_host: 10.100.0.64
     netbox_port: 8080
     # NetBox platform slug -> netmiko device_type for Gateway 5's device services (as itential.yml)
@@ -60,7 +59,7 @@
   tasks:
     - name: Ollama answers
       ansible.builtin.uri:
-        url: "http://127.0.0.1:{{ tools.ollama_port }}/api/tags"
+        url: "http://{{ (vms | selectattr('name', 'equalto', inventory_hostname) | first).ip }}:{{ tools.ollama_port }}/api/tags"
       register: ollama_tags
       until: ollama_tags.status | default(0) == 200
       retries: 20

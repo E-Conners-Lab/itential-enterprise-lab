@@ -175,35 +175,51 @@ PYNODE
 check "S11.4 both Platform nodes answer /health/server and the load balancer serves the service name with one shared session" c4
 
 # --- S11.5 everything phases 5-7 built exists on production -------------------------------------------------
+# Every endpoint here is the one the phase 5-7 plays and verifies use, so a PASS means the same API that
+# created the asset can see it; the device count is checked against NetBox rather than against a constant.
 c5() {
-  login_at "https://${SERVICE}" "$JAR" >/dev/null 2>&1 || true
-  curl -s -m 60 --cacert "$CA" --resolve "${SERVICE}:443:${LB}" -c "$JAR" -H "Content-Type: application/json" -X POST "https://${SERVICE}/login" -d "{\"username\":\"${ADMIN_USER}\",\"password\":\"${ITENTIAL_ADMIN_PASSWORD}\"}" -o /dev/null -w '%{http_code}' | grep -qx 200 || { echo "login failed"; return 1; }
+  curl -s -m 60 --cacert "$CA" --resolve "${SERVICE}:443:${LB}" -c "$JAR" -H "Content-Type: application/json" -X POST "https://${SERVICE}/login" -d "{\"username\":\"${ADMIN_USER}\",\"password\":\"${ITENTIAL_ADMIN_PASSWORD}\"}" -o /dev/null -w '%{http_code}' | grep -qx 200 || { echo "login as ${ADMIN_USER} through the load balancer failed"; return 1; }
   P="https://${SERVICE}"
   api() { curl -s -m 120 --cacert "$CA" --resolve "${SERVICE}:443:${LB}" -b "$JAR" -H "Content-Type: application/json" "$@"; }
-  local errs=0
-  # every workflow itential/versions.yaml names
+  local errs=0 have
+  # every workflow itential/versions.yaml names (Automation Studio lists them all in one page)
+  have=$(api "${P}/automation-studio/workflows?limit=200")
   local wf; for wf in $(${PY} -c "import yaml;print(' '.join(yaml.safe_load(open('$IV'))['workflows'].values()))"); do
-    api -X POST "${P}/automation-studio/automations/search" -d "{\"searchFields\":{\"name\":\"${wf}\"},\"options\":{\"limit\":5}}" | grep -q "\"${wf}\"" \
-      || { api "${P}/automation-studio/workflows?equals[name]=${wf}" | grep -q "\"${wf}\"" || { echo "workflow ${wf} missing"; errs=1; }; }
+    echo "$have" | grep -q "\"${wf}\"" || { echo "workflow ${wf} missing"; errs=1; }
   done
-  # Golden Config trees, the compliance plan, the LCM model, the integrations, the agents, the inventories
+  # Golden Config trees and the compliance plan (Configuration Manager)
+  have=$(api "${P}/configuration_manager/configs")
   local tree; for tree in $(${PY} -c "import yaml;print(' '.join(t['name'] for t in yaml.safe_load(open('$IV'))['golden_config']['trees'].values()))"); do
-    api -X POST "${P}/configuration_manager/search/configs/trees" -d '{"name":"","options":{"start":0,"limit":100}}' | grep -q "\"${tree}\"" || { echo "golden config tree ${tree} missing"; errs=1; }
+    echo "$have" | grep -q "\"${tree}\"" || { echo "golden config tree ${tree} missing"; errs=1; }
   done
-  api -X POST "${P}/configuration_manager/search/compliance_plans" -d '{"name":"","options":{"start":0,"limit":100}}' | grep -q "$(${PY} -c "import yaml;print(yaml.safe_load(open('$IV'))['golden_config']['plan'])")" || { echo "compliance plan missing"; errs=1; }
+  api -X POST "${P}/configuration_manager/search/compliance_plans" -d '{"name":"","options":{"start":0,"limit":100}}' \
+    | grep -q "$(${PY} -c "import yaml;print(yaml.safe_load(open('$IV'))['golden_config']['plan'])")" || { echo "compliance plan missing"; errs=1; }
+  # MOP command and analytic templates
+  have=$(api "${P}/mop/listTemplates"; api "${P}/mop/listAnalyticTemplates")
+  local mop; for mop in $(${PY} -c "import yaml;m=yaml.safe_load(open('$IV'))['mop']['templates'];print(' '.join(v for t in m.values() for v in t.values()))"); do
+    echo "$have" | grep -q "\"${mop}\"" || { echo "MOP template ${mop} missing"; errs=1; }
+  done
+  # the Lifecycle Manager model, the form, the Integration Models and the agent project
   api "${P}/lifecycle-manager/resources?limit=100" | grep -q "$(${PY} -c "import yaml;print(yaml.safe_load(open('$IV'))['lcm']['model'])")" || { echo "LCM model missing"; errs=1; }
+  api "${P}/json-forms/forms" | grep -q "$(${PY} -c "import yaml;print(yaml.safe_load(open('$IV'))['forms']['approval'])")" || { echo "approval form missing"; errs=1; }
+  have=$(api "${P}/integrations?limit=100")
   local inst; for inst in $(${PY} -c "import yaml;d=yaml.safe_load(open('$IV'))['integrations']['models'];print(' '.join(m['instance'] for m in d.values()))"); do
-    api "${P}/integration-manager/integrations?limit=100" | grep -q "\"${inst}\"" || { echo "integration ${inst} missing"; errs=1; }
+    echo "$have" | grep -q "\"${inst}\"" || { echo "integration ${inst} missing"; errs=1; }
   done
   api "${P}/agent-project-service/projects?limit=50" | grep -q "$(${PY} -c "import yaml;print(yaml.safe_load(open('$IV'))['agents']['project'])")" || { echo "agent project missing"; errs=1; }
+  # both Inventory Manager inventories
+  have=$(api "${P}/inventory_manager/v1/inventories")
   local invy; for invy in $(${PY} -c "import yaml;s=yaml.safe_load(open('$IV'))['stack'];print(s['inventory'], s['host_inventory'])"); do
-    api "${P}/inventory-manager/inventories?limit=50" | grep -q "\"${invy}\"" || { echo "inventory ${invy} missing"; errs=1; }
+    echo "$have" | grep -q "\"${invy}\"" || { echo "inventory ${invy} missing"; errs=1; }
   done
-  # the devices Configuration Manager sees come from NetBox, so the count must match the dev-stack's twelve
-  local devs; devs=$(api -X POST "${P}/configuration_manager/search/devices" -d '{"options":{"start":0,"limit":200}}' | ${PY} -c 'import sys,json;d=json.load(sys.stdin);print(len(d.get("list") or d.get("devices",{}).get("list") or []))' 2>/dev/null)
-  [ "${devs:-0}" -ge 12 ] || { echo "Configuration Manager sees ${devs} devices, expected at least 12"; errs=1; }
+  # the devices Configuration Manager sees come through the Device Broker from the inventory, which comes from
+  # NetBox: the second source is NetBox's own count of active network devices with a management address
+  local devs want
+  devs=$(api -X POST "${P}/configuration_manager/devices" -d '{"options":{"start":0,"limit":200}}' | ${PY} -c 'import sys,json;print(json.load(sys.stdin).get("total",0))')
+  want=$(nb "${NETBOX_URL%/}/api/dcim/devices/?limit=0&status=active&has_primary_ip=true&platform=ios-xe&platform=eos" | ${PY} -c 'import sys,json;print(json.load(sys.stdin)["count"])')
+  [ "${devs:-0}" -eq "${want:-0}" ] || { echo "Configuration Manager sees ${devs} devices, NetBox has ${want}"; errs=1; }
   [ "$errs" = 0 ] || return 1
-  echo "every workflow, Golden Config tree, compliance plan, LCM model, integration, agent project and inventory of phases 5-7 exists on production; ${devs} devices"
+  echo "every workflow, Golden Config tree, compliance plan, MOP template, LCM model, form, integration, agent project and inventory of phases 5-7 exists on production; ${devs} devices through the broker"
 }
 check "S11.5 everything phases 5-7 built exists on production (workflows, Golden Config, MOP, LCM, integrations, agents, inventories)" c5
 

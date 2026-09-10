@@ -88,6 +88,16 @@ The environments also differ in three measured ways:
    what `itential.yml` does against VM 205's MongoDB. `platform.bootstrap_user` (`admin`) stays for the first
    login only. `ansible/playbooks/platform-ha2-identity.yml` builds it, after the tools VM exists.
 
+8. **The load balancer is active/standby, not active/active, because a Gateway 5.5.2 holds exactly one
+   Platform connection.** `GATEWAY_CONNECT_HOSTS` is plural in name only - a comma-separated list is rejected
+   with *"too many colons in address"* - and the connection it makes is node-local: only the node holding it
+   can reach a device, and the other answers *"No connection found to Gateway with cluster id lab"* or, for
+   Configuration Manager's device list, simply never answers. With `ip_hash` on the HTTP upstream, whether the
+   lab worked depended on which node a client hashed to. Both upstreams therefore name the first Platform node
+   as the only primary and the rest as `backup`, so traffic and the gateway connection sit on the same node
+   and fail over together - which is what Itential's own Active/Standby architecture does between data
+   centres. Scaling to genuine active/active means one Gateway per Platform node, and that is a later element.
+
 ## Consequences
 
 - One definition per asset. A change to a workflow, an inventory or an agent lands in one file and reaches
@@ -106,5 +116,10 @@ The environments also differ in three measured ways:
 - One more play in the phase 8 sequence (`platform-ha2-identity.yml`) and one more container on `tools-01`.
   The dev-stack's LDAP block leaves `itential.yml` for `tasks/ldap-admin.yml`, parameterised by `ldap_url`
   and the mongosh invocation, so the two environments share the definition rather than copying it.
+- Two operational traps are now recorded in the plays that hit them: `nginx.conf` is bind-mounted as a
+  single file and Ansible's template module writes atomically, so the running container keeps the old inode
+  and `nginx -s reload` re-reads the file it already has - the container is recreated instead; and the
+  Platform image carries `wget` but not `curl`, so the compose healthcheck that used `curl` marked both
+  nodes unhealthy for as long as they ran.
 - The Ollama profile differs per environment, so `verify/test-06` S4c's provider-profile check passes on
   production only once `tools-01`'s Ollama has the pinned models pulled; that pull is part of the replay.

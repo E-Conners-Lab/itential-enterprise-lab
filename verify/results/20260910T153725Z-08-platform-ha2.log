@@ -1,0 +1,24 @@
+# test-08-platform-ha2 20260910T153725Z
+PASS  S11.1 the eleven production VMs run with the sizes of the oracle and the budget, and NetBox holds each one
+      11 VMs running with the budgeted vCPU/RAM/disk and their NetBox records
+PASS  S11.2 MongoDB is a three-member replica set (one PRIMARY, two SECONDARY) with authentication and TLS
+      replica set: mongo-01.lab.internal:27017 PRIMARY, mongo-02.lab.internal:27017 SECONDARY, mongo-03.lab.internal:27017 SECONDARY
+      unauthenticated clients are refused
+      the Platform connects to all three members of rs0 with TLS and SCRAM
+PASS  S11.3 Redis has one master, two replicas and three Sentinels that agree, with ACL users only
+      Redis: 1 master, 2 replicas
+      three Sentinels agree the master of itential is 10.100.0.77:6379
+      unauthenticated clients are refused (ACL users only)
+      the Platform connects through Sentinel
+PASS  S11.4 both Platform nodes answer /health/server and the load balancer serves the service name with one shared session
+        node 10.100.0.72: Platform 6.5.2 up 3882s
+        node 10.100.0.73: Platform 6.5.2 up 3883s
+      both nodes healthy; the load balancer serves itential.lab.internal and its session works on either node
+PASS  S11.5 everything phases 5-7 built exists on production (workflows, Golden Config, MOP, LCM, integrations, agents, inventories)
+      every workflow, Golden Config tree, compliance plan, MOP template, LCM model, form, integration, agent project and inventory of phases 5-7 exists on production; 12 devices through the broker
+FAIL  S11.7 the official Itential dashboard's MongoDB and Redis rows show the production replica sets
+      mongodb_rs_members_state has 0 series, expected at least 3 (the dashboard's replica-set panels)
+DEFER S11.8 VM 205 deleted: a separate owner-approved step at the end of the cut-over (ADR 0053)
+SKIP  S11.6 failover drills (set VERIFY_DRILLS=1 to run; they stop a Platform node, the MongoDB primary and the Redis master in turn)
+
+passed=5 failed=1 deferred=1

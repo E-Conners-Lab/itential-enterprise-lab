@@ -17,9 +17,16 @@ http {
     }
 
     upstream platform_http {
-        ip_hash;
+        # Itential's Deployer nginx guide uses sticky sessions, and the Platform keeps session state in Redis
+        # so any node can serve any session. This goes one step further and makes the first node the only
+        # primary, because Gateway 5.5.2 holds exactly one Platform connection (GATEWAY_CONNECT_HOSTS is
+        # plural in name only: a list is rejected with "too many colons in address"), and only the node
+        # holding that connection can reach a device. With ip_hash, a client hashed to the other node hung
+        # for ever on Configuration Manager's device list. Active/standby, which is what Itential's own
+        # Active/Standby architecture does between data centres; a failed primary hands everything over
+        # together, gateway connection included, because the stream upstream below is ordered the same way.
 {% for n in platform_nodes %}
-        server {{ n.ip }}:{{ platform.http_port }} max_fails=3 fail_timeout=10s;
+        server {{ n.ip }}:{{ platform.http_port }} max_fails=3 fail_timeout=10s{{ ' backup' if not loop.first else '' }};
 {% endfor %}
     }
 

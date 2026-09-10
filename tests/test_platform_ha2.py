@@ -258,3 +258,16 @@ def test_the_phase_target_builds_the_directory_before_the_administrator_and_the_
     assert "openldap.ldif" in tools and "ha2-tools" in tools, "the directory bootstrap ships with the tools VM"
     ident = (PLAYS / "platform-ha2-identity.yml").read_text()
     assert "tasks/ldap-admin.yml" in ident and "tasks/roles-to-admin.yml" in ident
+
+
+def test_the_load_balancer_keeps_traffic_and_the_gateway_on_one_node() -> None:
+    """A Gateway 5.5.2 holds one Platform connection, and only that node can reach a device, so both
+    upstreams name the first Platform node as the only primary (ADR 0055 decision 8)."""
+    conf = (HA2_DIR / "nginx.conf.j2").read_text()
+    assert "ip_hash" not in conf, "ip_hash cannot be combined with backup, and it sent clients to the wrong node"
+    assert conf.count("' backup' if not loop.first else ''") == 2, "both upstreams are primary + backup"
+    play = (PLAYS / "platform-ha2-platform.yml").read_text()
+    assert "--force-recreate nginx" in play, "a single-file bind mount survives a reload; the container is recreated"
+    compose = (HA2_DIR / "platform.compose.yml.j2").read_text()
+    assert "curl" not in compose, "the Platform image carries wget, not curl"
+    assert "{{ platform.gateway_manager_port }}:{{ platform.gateway_manager_port }}" in compose, "8080 is published"
