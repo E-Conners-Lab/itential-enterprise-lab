@@ -206,7 +206,7 @@ def test_lab_observability_block_matches_ipam() -> None:
     assert o["syslog"] == loki["address"] == VERSIONS["vips"]["loki"]
     assert o["snmp"]["user"] == OBS["zabbix"]["snmpv3"]["user"] == "zabbix"
     assert o["snmp"]["group"] and o["snmp"]["view"]
-    assert o["gnmi"]["port"] == OBS["gnmic"]["port"]
+    assert o["gnmi"]["port"] == OBS["gnmic"]["port"] == 6030  # EOS default: the snippet does not set it (not shown in a running config)
 
 
 def test_rendered_configs_carry_the_telemetry_lines_and_no_secret() -> None:

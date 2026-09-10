@@ -18,4 +18,3 @@ snmp-server user {{ o.snmp.user }} {{ o.snmp.group }} v3 auth sha {{ snmpv3.auth
 management api gnmi
    transport grpc default
       vrf MGMT
-      port {{ o.gnmi.port }}
