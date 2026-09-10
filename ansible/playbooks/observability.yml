@@ -61,6 +61,13 @@
     netbox_url: "{{ lookup('ansible.builtin.env', 'NETBOX_URL') }}"
     netbox_headers: {Authorization: "Token {{ lookup('ansible.builtin.env', 'NETBOX_TOKEN') }}"}
     itential_host: itential.{{ domain }}
+    itential_ip: "{{ (lookup('ansible.builtin.file', repo ~ '/itential/versions.yaml') | from_yaml).vm.ip }}"
+    # exporters beside the dev-stack on the Platform host (itential/compose.override.yml, profile monitoring; ADR 0052)
+    host_exporters:
+      - {job: node_exporter, port: 9100}
+      - {job: process_exporter, port: 9256}
+      - {job: redis_exporter, port: 9121}
+      - {job: mongo_exporter, port: 9216}
     itential_admin_user: "{{ lookup('ansible.builtin.env', 'ITENTIAL_ADMIN_USER') | default('admin@itential', true) }}"
     # release name -> chart key in versions.yaml, values file, and the image tags the oracle sets (`overrides`:
     # a key named `values` is the dict method in Jinja)

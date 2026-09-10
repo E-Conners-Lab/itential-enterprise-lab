@@ -72,6 +72,14 @@ components:
     image_tag: 3.12.14-slim-trixie
     digest: "sha256:78387bc3881b8273120a12ebe6c1ab22b018ccc2c9adf565ae1ac9b536e184ea"
 
+# The official Itential dashboard, vendored byte for byte (ADR 0052); tests/test_observability.py holds the file to the hash.
+vendored_dashboards:
+  itential-platform-monitoring:
+    grafana_com_id: 25527
+    revision: 3 # 2026-08-14, org Itential
+    sha256: 01fca89a5afcfb98916c6b05d3593fd0dc524172148cde800bda3bce126a90d1
+    uid: iap-platform-monitoring
+
 storage: # Longhorn, Gi (docs/resource-budget.md section 4: telemetry volumes are rebuildable)
   prometheus: 10
   prometheus_retention: 10d

@@ -8,7 +8,8 @@ repos:
       - id: trailing-whitespace
         exclude: ^verify/results/   # raw evidence is never rewritten
       - id: end-of-file-fixer
-        exclude: ^verify/results/
+        # raw evidence and vendored upstream files (byte-for-byte pins, ADR 0052) are never rewritten
+        exclude: ^(verify/results/|observability/grafana/dashboards/itential-platform-monitoring\.json$)
       - id: check-yaml
         args: [--allow-multiple-documents]
       - id: check-merge-conflict

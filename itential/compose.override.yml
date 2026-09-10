@@ -128,3 +128,51 @@ volumes:
     driver: local
   gateway5-runner-data:
     driver: local
+
+  # --- Platform host exporters for the official Itential Platform Monitoring dashboard (ADR 0052), profile
+  # `monitoring`: job names and series exactly as grafana.com 25527 queries them. Each listens on the OOB
+  # address only; Prometheus (k3s) scrapes them. MongoDB and Redis run without credentials in the dev-stack.
+  node-exporter:
+    container_name: node-exporter
+    image: ${NODE_EXPORTER_IMAGE}
+    profiles: ["monitoring"]
+    command: ["--path.rootfs=/host", "--web.listen-address=${OOB_ADDRESS}:9100",
+              "--collector.filesystem.mount-points-exclude=^/(dev|proc|sys|run|var/lib/docker/.+)($|/)"]
+    pid: host
+    network_mode: host
+    volumes:
+      - /:/host:ro,rslave
+    restart: unless-stopped
+  process-exporter:
+    container_name: process-exporter
+    image: ${PROCESS_EXPORTER_IMAGE}
+    profiles: ["monitoring"]
+    command: ["--procfs=/host/proc", "--config.path=/config/process-exporter.yml", "--web.listen-address=${OOB_ADDRESS}:9256"]
+    pid: host
+    network_mode: host
+    privileged: true # reads every process's cmdline in the host PID namespace (the Pronghorn titles)
+    volumes:
+      - /proc:/host/proc:ro
+      - ./process-exporter.yml:/config/process-exporter.yml:ro
+    restart: unless-stopped
+  redis-exporter:
+    container_name: redis-exporter
+    image: ${REDIS_EXPORTER_IMAGE}
+    profiles: ["monitoring"]
+    environment:
+      REDIS_ADDR: redis://redis:6379
+    ports:
+      - "${OOB_ADDRESS}:9121:9121"
+    depends_on:
+      - redis
+    restart: unless-stopped
+  mongodb-exporter:
+    container_name: mongodb-exporter
+    image: ${MONGODB_EXPORTER_IMAGE}
+    profiles: ["monitoring"]
+    command: ["--mongodb.uri=mongodb://mongodb:27017", "--collect-all", "--compatible-mode", "--web.listen-address=:9216"]
+    ports:
+      - "${OOB_ADDRESS}:9216:9216"
+    depends_on:
+      - mongodb
+    restart: unless-stopped

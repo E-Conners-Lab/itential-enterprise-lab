@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Name** | itential-enterprise-lab |
-| **Version** | 1.16 |
+| **Version** | 1.17 |
 | **Date** | 2026-09-09 |
 | **Author** | Elliot Conner. Claude Code is the build agent; every action it takes is bounded by this document |
 | **Standard** | Project Initiation Standard PIS-01 - PIS-30 (`~/.claude/skills/project-initiation-standard`) |
@@ -273,6 +273,7 @@ Conventions: **Placement** is Proxmox VM (OpenTofu + Ansible), k3s (Helm/Kustomi
   5. Grafana login via Keycloak; every provisioned dashboard renders with data.
   6. Shutting down `br1-wan01` raises a Zabbix trigger and an Alertmanager alert within 3 minutes; starting it clears both.
   7. *(1.16)* Prometheus holds the Platform's job and task metrics: for every workflow the exporter's `jobsComplete` equals `GET /workflow_engine/jobs/metrics`, and every Platform application and adapter reports `RUNNING` / `ONLINE` through it.
+  8. *(1.17, ADR 0052)* The official "Itential Platform Monitoring" dashboard (grafana.com 25527, vendored byte for byte) is provisioned and every metric family it queries has data in Prometheus (Platform route, job/task series, node, process, Redis and MongoDB exporters on the Platform host), except the MongoDB replica-set family (standalone database in the dev-stack).
 - **Verification:** `verify/test-07-observability.sh` (was `test-08` before amendment 1.15).
 
 ### S8 — Config, secrets, code: Oxidized, Vault, Gitea (Phase 9)
@@ -695,5 +696,6 @@ the verify log path and any ADRs added.
 | 1.13 | 2026-09-08 | Phase 6 element 7 (owner request): S4e NetBox enrichment derived from `topology/enterprise.yaml` (addressing on interfaces with peer descriptions, VRFs and ASNs with BGP neighbours in config contexts, racks, provider circuits, config contexts, journal entries; the templates read the YAML, rendered configs unchanged; `netbox-enrich.yml`; `verify/test-06c-netbox.sh`; ADR 0048) |
 | 1.14 | 2026-09-09 | Domain 7: the Anthropic key is the owner's company key with a $15-a-week budget; the platform's session documents are the ledger (`verify/tokens.sh`, `make tokens`, `llm.budget` in versions.yaml), the agent verifies guard it, iteration runs on the local twins or `ONLY=` subsets (ADR 0049) |
 | 1.15 | 2026-09-09 | Reorder (ADR 0050): image-free phases first (7 observability, 8 config/secrets/code, 9 identity without Windows on OpenLDAP + Keycloak + tac_plus, 10 DDI on BIND9 + Kea, 11 Containerlab) and one phase 12 firewall track for NIOS, the PA-VM firewalls and Panorama; Windows Server and the Windows endpoint item dropped, `dc01` released |
+| 1.17 | 2026-09-10 | Phase 7 follow-up (ADR 0052, owner request): the official Itential Platform Monitoring dashboard vendored from grafana.com 25527; node/process/Redis/MongoDB exporters beside the dev-stack under the `monitoring` Compose profile; the lab exporter supplies the unpublished wfe-metrics-exporter's series; S7 criterion 8 |
 | 1.16 | 2026-09-09 | Phase 7 design (ADR 0051): Zabbix/Prometheus/Loki ownership, TLS at Traefik on the planned VIPs, hosts and targets from NetBox, documents in `observability/`, device lines in the topology templates and Golden Config with governed pushes, gNMIc on vEOS only, the Platform metrics exporter (S7.7), S7.1 host set and S7.6 drill clarified, `verify/test-07-observability.sh`; IP-plan phase labels follow ADR 0050 |
 | 1.5 | 2026-09-07 | Phase 5 (S4b): Gateway 5 is the only gateway (Gateway 4 staged, not deployed); the PDI needs no customisation (stock standard-change template + Network group + one integration user), so S4b.3 is a rebuild record `servicenow/README.md` instead of an update set; S4b.2 evidence is the states ServiceNow returns to the workflow plus the change read back (`sys_audit` is admin-only on a PDI); PDI `dev409097`, Australia; basic auth needs `snc_basic_auth_api_access` on 2026 instances |

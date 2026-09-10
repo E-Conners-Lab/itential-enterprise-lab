@@ -98,7 +98,7 @@
         owner: ubuntu
         group: ubuntu
         mode: "0644"
-      loop: [docker-compose.yml, compose.override.yml]
+      loop: [docker-compose.yml, compose.override.yml, process-exporter.yml]
       notify: Compose up
 
     - name: OpenLDAP bootstrap (admin@itential and the admins group, upstream LDIF)
@@ -128,6 +128,10 @@
           OLLAMA_IMAGE={{ images.ollama.repository }}:{{ images.ollama.tag }}
           ETCD_IMAGE={{ images.etcd.repository }}:{{ images.etcd.tag }}
           GATEWAY5_RUNNER_IMAGE={{ stack.runner_image }}
+          NODE_EXPORTER_IMAGE={{ images.node_exporter.repository }}:{{ images.node_exporter.tag }}
+          PROCESS_EXPORTER_IMAGE={{ images.process_exporter.repository }}:{{ images.process_exporter.tag }}
+          REDIS_EXPORTER_IMAGE={{ images.redis_exporter.repository }}:{{ images.redis_exporter.tag }}
+          MONGODB_EXPORTER_IMAGE={{ images.mongodb_exporter.repository }}:{{ images.mongodb_exporter.tag }}
           NETBOX_URL={{ lookup('ansible.builtin.env', 'NETBOX_URL') }}
           NETBOX_TOKEN={{ lookup('ansible.builtin.env', 'NETBOX_TOKEN') }}
           MCP_TRANSPORT=http
