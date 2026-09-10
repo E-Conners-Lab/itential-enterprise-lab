@@ -6,18 +6,14 @@ end. Everything is code: OpenTofu for Proxmox, the EVE-NG REST API for the
 network topology, Helm/Kustomize for k3s, Ansible for guests, and NetBox as the
 network source of truth.
 
-> **Status: Phase 6 — FlowAI agents and Platform coverage of the lab (in progress, branch
-> `phase-6/flowai`; Phase 5 is draft PR #17).** Itential Platform 6.5.2, Gateway 5 (server plus a
-> glibc runner for Genie/TextFSM, ADR 0038), the MCP server and an in-lab Ollama run as the
-> `itential-dev-stack` containers on one Ubuntu VM (`itential.lab.internal`, ADR 0035). Everything on
-> the platform is created through its API from documents in `itential/` by three plays
-> (`itential.yml` -> `platform.yml` -> `flowai.yml`): ten generated workflows (`wf-*`, the only device
-> write path is `wf-config-push-v1` behind a Work Center approval), Golden Config trees and a nightly
-> compliance plan, MOP pre/post templates and nightly backups, the Lifecycle Manager service
-> `branch-vlan` with its JSON form approval, NetBox and ServiceNow Integration Models as agent tools,
-> and the agent fleet (`lab-netops`, `netbox-sot`, `device-ops`, `compliance`, `diagnostics`,
-> `remediation`, each on Claude and on a local model). The three Ubuntu hosts are Gateway 5 inventory
-> nodes; the four PA-VM firewalls wait on the Customer Support Portal download (`lab.firewalls`, ADR 0034).
+> **Status: Phase 7 — Observability (in progress, branch `phase-7/observability`; phases 0-6 merged).**
+> Zabbix 7.0 (CloudNativePG backend, SNMPv3 templates for IOS XE and EOS, agent 2 on every Ubuntu machine, HTTP
+> checks for every UI, an Expiries host from `observability/expiries.yaml`), kube-prometheus-stack (Prometheus,
+> Alertmanager, Grafana with four lab dashboards, SNMP and blackbox exporters), gNMIc against the vEOS fabric, Loki
+> with one Alloy syslog receiver for devices and VMs, and a Platform metrics exporter next to the Platform's own
+> `/prometheus_metrics` route, all in the `observability` namespace behind Traefik on the IP plan's VIPs
+> (`zabbix`, `grafana`, `prometheus`, `loki`, `gnmic`.lab.internal, ADR 0051). Hosts and targets come from NetBox;
+> every device receives its SNMPv3/syslog/gNMI lines through `wf-config-push-v1` with a Work Center approval.
 
 ## Architecture (target)
 
@@ -56,14 +52,14 @@ committed. Service specs and acceptance criteria are in `docs/PID.md`.
 | 2 | `phase-2/oob-network` | OOB network (`vmbr1`, `pnet1`, `oob-gw`), Proxmox API token, image staging, NetBox seeded | merged (PR #14) |
 | 3 | `phase-3/platform` | 3-node k3s: Cilium, MetalLB, Longhorn, cert-manager + lab CA, CloudNativePG + Garage backups | merged (PR #15) |
 | 4 | `phase-4/network-topology` | EVE-NG DC + 2 branches (C8000v, vEOS, endpoints; PA-VM deferred behind `lab.firewalls`) from `topology/` | merged (PR #16) |
-| 5 | `phase-5/itential` | Itential Platform 6.5.2 + Gateway 5.5.2 as the dev-stack containers on VM 205 (ADR 0035), NetBox adapter, Inventory Manager from NetBox, generated workflows incl. `wf-branch-vlan-v1`, MCP for Claude Code; ServiceNow PDI adapter | draft PR #17 (verify 11/11; the 24 h memory check pending) |
-| 6 | `phase-6/flowai` | FlowAI agents over the topology (S4c, ADR 0037/0038: Anthropic + in-lab Ollama profiles, `lab-netops`, Genie/TextFSM on a Gateway 5 runner) and Platform coverage of the lab (S4d, ADR 0039-0047: Configuration Manager through the InventoryBroker, Golden Config + nightly compliance, MOP templates + nightly backups, Lifecycle Manager `branch-vlan` + JSON form approval, NetBox/ServiceNow Integration Models, the five-agent fleet with local twins, Ubuntu hosts in Gateway 5) | in progress (S4c 7/7, S4d 1-6 built; draft PR after the full verify) |
-| 7 | `phase-7/ddi` | Infoblox NIOS primary, BIND9 + Kea secondary, zone generated from NetBox | planned |
-| 8 | `phase-8/identity` | Windows Server AD DS/DNS, tac_plus, Keycloak SSO | planned |
-| 9 | `phase-9/observability` | Zabbix, Prometheus + Grafana, gNMIc, Loki | planned |
-| 10 | `phase-10/config-secrets-code` | Oxidized, Vault, Gitea | planned |
-| 11 | `phase-11/panorama` | Panorama, firewall onboarding | planned |
-| 12 | `phase-12/containerlab` | Containerlab CI/test tier (cEOS mirror of the DC fabric) | planned |
+| 5 | `phase-5/itential` | Itential Platform 6.5.2 + Gateway 5.5.2 as the dev-stack containers on VM 205 (ADR 0035), NetBox adapter, Inventory Manager from NetBox, generated workflows incl. `wf-branch-vlan-v1`, MCP for Claude Code; ServiceNow PDI adapter | merged (PR #17) |
+| 6 | `phase-6/flowai` | FlowAI agents over the topology (S4c, ADR 0037/0038: Anthropic + in-lab Ollama profiles, `lab-netops`, Genie/TextFSM on a Gateway 5 runner) and Platform coverage of the lab (S4d, ADR 0039-0047: Configuration Manager through the InventoryBroker, Golden Config + nightly compliance, MOP templates + nightly backups, Lifecycle Manager `branch-vlan` + JSON form approval, NetBox/ServiceNow Integration Models, the five-agent fleet with local twins, Ubuntu hosts in Gateway 5) | merged (PR #19; S4e NetBox enrichment PR #20) |
+| 7 | `phase-7/observability` | Zabbix (CNPG), kube-prometheus-stack + SNMP/blackbox exporters, gNMIc (vEOS), Loki + Alloy syslog, Platform metrics; VIPs .35-.39 behind Traefik (ADR 0051) | in progress |
+| 8 | `phase-8/config-secrets-code` | Oxidized, Vault (takes the device credentials and the company key), Gitea | planned |
+| 9 | `phase-9/identity` | OpenLDAP, Keycloak SSO (Grafana, Gitea), tac_plus; no Windows (ADR 0050) | planned |
+| 10 | `phase-10/ddi` | BIND9 + Kea from NetBox (NIOS joins in the firewall track) | planned |
+| 11 | `phase-11/containerlab` | Containerlab CI/test tier (cEOS mirror of the DC fabric) | planned |
+| 12 | `phase-12/firewall-track` | NIOS grid master, the PA-VM firewalls (`lab.firewalls`), Panorama: once the images exist (ADR 0050) | planned |
 
 ## Repo layout
 

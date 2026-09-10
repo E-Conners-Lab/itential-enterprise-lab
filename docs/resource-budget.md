@@ -73,18 +73,18 @@ Sum of requests must stay under ~24 GB so that one node can fail (PID E5).
 | Longhorn (3 nodes) | 3 | 3.0 | 1 per node |
 | kube-system, Traefik, MetalLB, cert-manager, kube-vip, CNPG operator | 3 | 2.5 | |
 | CloudNativePG clusters x3 (Zabbix, Keycloak, Gitea) | 3/7/8/9 | 4.5 | 1.5 each, single instance |
-| Keycloak | 7 | 1.5 | |
-| tac_plus-ng | 7 | 0.1 | |
-| kube-prometheus-stack (Prometheus 15-day retention, Alertmanager, Grafana, exporters) | 8 | 3.0 | |
-| Loki (single binary) + Alloy (3 nodes) | 8 | 2.5 | |
-| gNMIc | 8 | 0.3 | |
-| Zabbix server + web | 8 | 1.5 | |
-| Oxidized | 9 | 0.5 | |
-| Vault (Raft, 1 replica) | 9 | 0.5 | |
-| Gitea + Actions runner controller | 9 | 0.7 | |
+| Keycloak | 9 | 1.5 | |
+| tac_plus-ng | 9 | 0.1 | |
+| kube-prometheus-stack (Prometheus 10-day retention, Alertmanager, Grafana, exporters) | 7 | 3.0 | |
+| Loki (single binary) + Alloy (3 nodes + the syslog receiver) | 7 | 2.5 | |
+| gNMIc | 7 | 0.3 | |
+| Zabbix server + web | 7 | 1.5 | |
+| Oxidized | 8 | 0.5 | |
+| Vault (Raft, 1 replica) | 8 | 0.5 | |
+| Gitea + Actions runner controller | 8 | 0.7 | |
 | **Total requests** | | **22.1** | of 36 GB; survives one node loss with ~2 GB to spare |
 
-Longhorn volumes (2 replicas each): Prometheus 30 GB, Loki 20 GB, three
+Longhorn volumes (2 replicas each): Prometheus 10 GB and Loki 10 GB as built in phase 7 (ADR 0051; the plan said 30 + 20), three
 Postgres 10 GB each, Gitea 10 GB, Vault 2 GB, Oxidized 2 GB, Garage backups
 bucket 20 GB (+2 GB metadata) = 116 GB logical, 232 GB physical across the
 150 GB of Longhorn disk on three nodes (over-provisioning 200 %, ADR 0031). **This does not fit at 2 replicas**; Phase 3 sets Prometheus and

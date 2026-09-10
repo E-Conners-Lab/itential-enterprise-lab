@@ -19,6 +19,8 @@
     release_deb: "zabbix-release_latest_7.0+ubuntu{{ ansible_distribution_version }}_all.deb"
     release_sha256: "{{ components.zabbix.release_deb_sha256[ansible_distribution_version] }}"
     oob_prefix: 10.100.0.0/24
+    # a server pod polling its own node arrives with its pod address (no masquerade on the local node)
+    pod_cidr: "{{ (lookup('ansible.builtin.file', playbook_dir ~ '/../../k8s/platform/versions.yaml') | from_yaml).cluster.pod_cidr }}"
   pre_tasks:
     # The EVE-NG endpoints (NetBox devices with role server/client) carry the golden image's automation user;
     # the Proxmox VMs log in as ubuntu (nb_inventory compose) and the phase-2 hosts as their inventory says.
@@ -69,7 +71,7 @@
         mode: "0644"
         content: |
           # ansible/playbooks/observability-hosts.yml (ADR 0051). The Zabbix server pods egress from the k3s nodes.
-          Server={{ oob_prefix }}
+          Server={{ oob_prefix }},{{ pod_cidr }}
           ServerActive=
           Hostname={{ zabbix_hostname }}
           Timeout=10

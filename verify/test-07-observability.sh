@@ -137,7 +137,7 @@ import datetime, json, sys, yaml
 doc = yaml.safe_load(open("observability/expiries.yaml"))
 items = {i["key_"]: i for i in json.load(open(sys.argv[1]))}
 trig = json.load(open(sys.argv[2]))
-today = datetime.date.today(); errs = []
+now = datetime.datetime.now(datetime.UTC); errs = []
 by_key = {e["key"]: e for e in doc["expiries"]}
 if by_key["netbox-api-token"]["expires"] != sys.argv[3]: errs.append(f"NetBox token expires {sys.argv[3]}, YAML says {by_key['netbox-api-token']['expires']}")
 if by_key["lab-root-ca"]["expires"] != sys.argv[4]: errs.append(f"lab CA notAfter {sys.argv[4]}, YAML says {by_key['lab-root-ca']['expires']}")
@@ -145,17 +145,19 @@ for e in doc["expiries"]:
     it = items.pop(f"expiry.days[{e['key']}]", None)
     if not it: errs.append(f"{e['key']}: no item"); continue
     if it["state"] != "0": errs.append(f"{e['key']}: item unsupported: {it['error']}"); continue
-    want = (datetime.date.fromisoformat(e["expires"]) - today).days
+    # the item computes (expiry midnight UTC - now) once an hour; the verify recomputes it the same way
+    want = (datetime.datetime.fromisoformat(e["expires"] + "T00:00:00+00:00") - now).total_seconds() / 86400
     got = float(it["lastvalue"]) if it["lastclock"] != "0" else None
-    if got is None or abs(got - want) > 1: errs.append(f"{e['key']}: days left {got} vs {want}")
+    if got is None or abs(got - want) > 0.1: errs.append(f"{e['key']}: days left {got} vs {want:.2f}")
 if items: errs.append(f"items without a YAML entry: {sorted(items)}")
 want_t = {f"expiry.days[{e['key']}]" for e in doc["expiries"]}
-have_t = {t["expression"].split("/")[2].split(",")[0].rstrip(")") for t in trig}
+import re
+have_t = {m.group(1) for t in trig for m in [re.search(r"\(/[^/]+/([^)]+\])\)", t["expression"])] if m}
 for t in trig:
     if f"<{doc['warn_days']}" not in t["expression"].replace(" ", ""): errs.append(f"trigger without <{doc['warn_days']}: {t['expression']}")
 if want_t - have_t: errs.append(f"no trigger for {sorted(want_t - have_t)}")
 if errs: print("\n".join(errs)); sys.exit(1)
-print(f"{len(doc['expiries'])} expiry items with values within a day of the YAML dates; {len(trig)} triggers at {doc['warn_days']} days; NetBox token and lab CA dates match the live sources")
+print(f"{len(doc['expiries'])} expiry items agree with the YAML dates (within 0.1 d); {len(trig)} triggers at {doc['warn_days']} days; NetBox token and lab CA dates match the live sources")
 PY
 }
 check "S7.1 Expiries host: one item per manifest expiry (days left agrees with the date, NetBox token and lab CA read back), trigger at 14 days" c1b

@@ -280,12 +280,14 @@
         kubeconfig: "{{ kubeconfig }}"
         state: present
         template: templates/obs-traefik-vips.yaml.j2
+        apply: true # keys the template drops are removed (a patch would keep them)
 
     - name: Ingresses behind the wildcard lab-CA certificate
       kubernetes.core.k8s:
         kubeconfig: "{{ kubeconfig }}"
         state: present
         template: templates/obs-ingress.yaml.j2
+        apply: true # keys the template drops are removed (a patch would keep them)
 
     - name: GNMIc configuration rendered from NetBox (vEOS targets)
       ansible.builtin.set_fact:
@@ -299,12 +301,14 @@
         kubeconfig: "{{ kubeconfig }}"
         state: present
         template: templates/obs-gnmic.yaml.j2
+        apply: true # keys the template drops are removed (a patch would keep them)
 
     - name: Platform exporter
       kubernetes.core.k8s:
         kubeconfig: "{{ kubeconfig }}"
         state: present
         template: templates/obs-itential-exporter.yaml.j2
+        apply: true # keys the template drops are removed (a patch would keep them)
       vars:
         exporter_source: "{{ lookup('ansible.builtin.file', obs_dir ~ '/itential-exporter/exporter.py') }}"
 
@@ -313,12 +317,14 @@
         kubeconfig: "{{ kubeconfig }}"
         state: present
         template: templates/obs-scrape.yaml.j2
+        apply: true # keys the template drops are removed (a patch would keep them)
 
     - name: Lab alert rules
       kubernetes.core.k8s:
         kubeconfig: "{{ kubeconfig }}"
         state: present
         src: "{{ k8s_dir }}/manifests/prometheus-rules.yaml"
+        apply: true
 
     - name: Grafana dashboards from observability/grafana/dashboards (sidecar ConfigMaps)
       kubernetes.core.k8s:
