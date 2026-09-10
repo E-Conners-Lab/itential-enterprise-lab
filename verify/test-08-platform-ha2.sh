@@ -255,6 +255,22 @@ defer "S11.8 VM 205 deleted: a separate owner-approved step at the end of the cu
 
 # --- S11.6 failover drills (disruptive; VERIFY_DRILLS=1 only) -----------------------------------------------
 if [ "${VERIFY_DRILLS:-0}" = 1 ]; then
+  # A drill takes a database or a node away, and the Platform reconnects when it comes back - but its
+  # adapters do not always survive the gap: after the Redis failover all four came up DEAD, so admin@itential
+  # (the LDAP adapter) could not log in until the Platform was restarted. Every drill therefore ends by
+  # waiting for the directory account to log in again, and restarts the active Platform once if it does not.
+  # Anything else would leave the environment worse than it found it and blame the next check for it.
+  settle() {
+    local i code
+    for i in $(seq 1 24); do
+      code=$(curl -s -m 20 --cacert "$CA" --resolve "${SERVICE}:3443:${IAP1}" -H "Content-Type: application/json" -X POST "https://${SERVICE}:3443/login" -d "{\"username\":\"${ADMIN_USER}\",\"password\":\"${ITENTIAL_ADMIN_PASSWORD}\"}" -o /dev/null -w '%{http_code}')
+      [ "$code" = 200 ] && return 0
+      [ "$i" = 8 ] && $SSH "ubuntu@${IAP1}" "cd /opt/itential && sudo docker compose restart platform" >/dev/null 2>&1
+      sleep 10
+    done
+    echo "after the drill ${ADMIN_USER} still cannot log in (the adapters may be DEAD): check /health/adapters on ${IAP1}"
+    return 1
+  }
   # 6a: stop one Platform node; the load balancer keeps serving
   # This is the failover the standby exists for (ADR 0055 decision 9): bring the standby up, take the active
   # node away, and the load balancer keeps serving from the standby. Restored to Active/Standby at the end.
@@ -282,6 +298,7 @@ if [ "${VERIFY_DRILLS:-0}" = 1 ]; then
     # back to Active/Standby: the standby is parked again
     $SSH "ubuntu@${IAP2}" "cd /opt/itential && sudo docker compose stop platform" >/dev/null
     [ "$ok" -ge 10 ] || { echo "the service answered 200 only ${ok} of 12 times while the active node was down"; return 1; }
+    settle || return 1
     echo "standby started, active node stopped: the load balancer kept serving (${ok}/12 probes 200); active node restarted and the standby parked again"
   }
   check "S11.6a drill: the standby takes over when the active Platform node is stopped, and is parked again after" d6a
@@ -310,6 +327,7 @@ if [ "${VERIFY_DRILLS:-0}" = 1 ]; then
     [ -n "$newp" ] && [ "$dt" -le 30 ] || { echo "no new primary within 30 s (after ${dt}s: '${newp}')"; return 1; }
     local code; code=$(curl -s -m 30 --cacert "$CA" --resolve "${SERVICE}:443:${LB}" "https://${SERVICE}/login" -o /dev/null -w '%{http_code}')
     [ "$code" = 200 ] || { echo "the Platform answers ${code} after the election"; return 1; }
+    settle || return 1
     echo "${prim} stopped: ${newp} became PRIMARY after ${dt}s and the Platform kept serving; ${prim} restarted"
   }
   check "S11.6b drill: stopping the MongoDB primary elects a new one within 30 s and the Platform keeps serving" d6b
@@ -335,6 +353,7 @@ if [ "${VERIFY_DRILLS:-0}" = 1 ]; then
     [ -n "$after" ] || { echo "Sentinel did not promote a replica within ${dt}s"; return 1; }
     local code; code=$(curl -s -m 30 --cacert "$CA" --resolve "${SERVICE}:443:${LB}" "https://${SERVICE}/login" -o /dev/null -w '%{http_code}')
     [ "$code" = 200 ] || { echo "the Platform answers ${code} after the failover"; return 1; }
+    settle || return 1
     echo "${vm} stopped: Sentinel promoted ${after} after ${dt}s and the Platform kept serving; ${vm} restarted"
   }
   check "S11.6c drill: stopping the Redis master promotes a replica through Sentinel and the Platform keeps serving" d6c

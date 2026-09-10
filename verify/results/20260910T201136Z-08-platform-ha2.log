@@ -1,0 +1,12 @@
+# test-08-platform-ha2 20260910T201136Z
+SKIP  S11.1 the eleven production VMs run with the sizes of the oracle and the budget, and NetBox holds each one
+SKIP  S11.2 MongoDB is a three-member replica set (one PRIMARY, two SECONDARY) with authentication and TLS
+SKIP  S11.3 Redis has one master, two replicas and three Sentinels that agree, with ACL users only
+SKIP  S11.4 the active Platform node serves through the load balancer and the standby is built and parked
+FAIL  S11.5 everything phases 5-7 built exists on production (workflows, Golden Config, MOP, LCM, integrations, agents, inventories)
+      login as admin@itential through the load balancer failed
+SKIP  S11.7 the official Itential dashboard's MongoDB and Redis rows show the production replica sets
+DEFER S11.8 VM 205 deleted: a separate owner-approved step at the end of the cut-over (ADR 0053)
+SKIP  S11.6 failover drills (set VERIFY_DRILLS=1 to run; they stop a Platform node, the MongoDB primary and the Redis master in turn)
+
+passed=0 failed=1 deferred=1
