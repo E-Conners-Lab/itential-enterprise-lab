@@ -37,7 +37,8 @@ inventory and host on it **from documents in this repo through plays that addres
 ## Decision
 
 1. **Shape: HA2, one data centre, at lab sizes, every component on its own VM** (the guide's production
-   rule), nine Proxmox VMs from the Ubuntu 24.04 template in the service block of the IP plan:
+   rule), eleven Proxmox VMs from the Ubuntu 24.04 template in the service block of the IP plan
+   (the nine Itential component servers, the load balancer in front of them, and the tools VM):
 
    | VM | Role | vCPU / RAM / disk | Address |
    |---|---|---|---|
@@ -46,9 +47,9 @@ inventory and host on it **from documents in this repo through plays that addres
    | `mongo-01..03` | MongoDB 7.0.40 replica set `rs0` (container), keyfile + SCRAM users (`admin`, `itential`, `monitor`), TLS with lab-CA certificates | 2 / 4 GB / 40 GB each | .74-.76 |
    | `redis-01..03` | Redis 7.4.11 replication + one Sentinel each (containers), ACL users as the Deployer defines them (`itential`, `repluser`, `sentineluser`, `monitor`), TLS with lab-CA certificates | 1 / 2 GB / 16 GB each | .77-.79 |
    | `iag-01` | Gateway 5 cluster (gateway5 + etcd + runner) exactly as ADR 0038 runs it on VM 205 | 4 / 6 GB / 60 GB | .80 |
-   | `tools-01` | MCP server and the in-lab Ollama (not Itential components; they leave the Platform VMs) | 4 / 10 GB / 40 GB | .81, aliases `mcp`, `ollama` |
+   | `tools-01` | MCP server and the in-lab Ollama (not Itential components; they leave the Platform VMs) | 4 / 8 GB / 40 GB | .81, aliases `mcp`, `ollama` |
 
-   51 GB of RAM: within the 83 GB free; VM 205's 24 GB come back at retirement. Ubuntu rather than Rocky: the
+   49 GB of RAM: within the 83 GB free; VM 205's 24 GB come back at retirement. Ubuntu rather than Rocky: the
    RHEL/Rocky requirement belongs to the RPM install; the container path is OS-neutral and the lab's Docker host
    automation (`itential-host.yml`) exists for Ubuntu. Rejected: the minimal shape (development-only per the
    guide), Rocky 9 (a second OS to automate for no Itential requirement), k3s for the Platform (validated on EKS
@@ -71,7 +72,7 @@ inventory and host on it **from documents in this repo through plays that addres
    dashboard's replica-set panels light up). Retirement of VM 205 is a separate owner-approved step.
 5. **This is Phase 8** (`phase-8/platform-ha2`, PID S11); config/secrets, identity, DDI, Containerlab and the
    firewall track move to 9-13. Vault (phase 9) then takes the database and Sentinel credentials.
-6. **Acceptance (S11)**: nine VMs match the budget; MongoDB `rs.status()` shows one PRIMARY and two SECONDARY over
+6. **Acceptance (S11)**: eleven VMs match the budget; MongoDB `rs.status()` shows one PRIMARY and two SECONDARY over
    TLS with auth; Redis one master, two replicas, three Sentinels agreeing on the master; both Platform nodes
    `/health/server` healthy behind the load balancer; every phase 5-7 verify passes against production; drills
    (`VERIFY_DRILLS=1`): stopping one Platform node keeps the UI and a running job, stopping the MongoDB primary
@@ -80,7 +81,7 @@ inventory and host on it **from documents in this repo through plays that addres
 
 ## Consequences
 
-- Nine more VMs and 51 GB of RAM (`docs/resource-budget.md` section 2 amended); the firewall track's 40 GB stay
+- Eleven more VMs and 49 GB of RAM (`docs/resource-budget.md` section 2 amended); the firewall track's 40 GB stay
   reserved; VM 205's 24 GB return at retirement.
 - Two Platform nodes need identical adapter installs: the play installs the NetBox and ServiceNow adapters into
   each node's custom-services directory from the pinned tags (the Kubernetes guide's persistent-volume method).

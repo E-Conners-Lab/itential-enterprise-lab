@@ -43,14 +43,14 @@ disk (VM 110 NetBox and VM 300 EVE-NG).
 | `iag-01` | 8 | Ubuntu 24.04 cloud | 4 | 6 | 60 | Gateway 5 cluster (gateway5, etcd, runner) |
 | `tools-01` | 8 | Ubuntu 24.04 cloud | 4 | 8 | 40 | MCP server, Ollama (in-lab model) |
 | `clab` | 12 | Ubuntu 24.04 cloud | 8 | 16 | 60 | Docker + Containerlab, 5 cEOS nodes at ~1.5 GB + runner |
-| **Total** | | | **95** | **296** | **1,455** | dc01 removed (ADR 0050), Panorama 16 GB (lever 2), the nine S11 VMs added while VM 205 still runs (ADR 0053) |
+| **Total** | | | **95** | **296** | **1,455** | dc01 removed (ADR 0050), Panorama 16 GB (lever 2), the eleven S11 VMs added while VM 205 still runs (ADR 0053) |
 | Ceiling | | | 108 | 280 | 1,400 (with the 200 GB `/srv/images` LV: 1,363); disk is thin, usage decides (section 1) | |
 | **Headroom** | | | **13 vCPU** | **-16 GB** | plan; the running hosts stay under the ceiling (see below) |
 
 RAM is the binding constraint. With ADR 0053 the plan sums to 296 GB against the 280 GB ceiling
-because the nine production VMs are listed next to VM 205 (24 GB), which retires at the S11 cut-over
+because the eleven production VMs are listed next to VM 205 (24 GB), which retires at the S11 cut-over
 (the plan is then 272 GB, 8 GB under the ceiling). The running hosts never exceed the
-ceiling: measured 2026-09-10, 197 GB run (eve-ng, netbox, oob-gw, three k3s nodes, VM 205); the nine
+ceiling: measured 2026-09-10, 197 GB run (eve-ng, netbox, oob-gw, three k3s nodes, VM 205); the eleven
 VMs add 49 GB (246 GB), and the firewall-track VMs (`nios`, `panorama`, 32 GB) are not built until VM 205
 is gone. Section 5 lists the levers in the order they are pulled if that sequence slips.
 

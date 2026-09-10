@@ -11,7 +11,8 @@ domain: lab.internal
 # The name every client uses. It resolves to VM 205 until the cut-over, then to iap-lb (ADR 0053 decision 4).
 service_name: itential
 
-# Nine VMs, each component on its own server as the guide requires for production. Sizes are lab sizes:
+# Eleven VMs: the nine Itential component servers, each on its own as the guide requires for production,
+# plus the load balancer in front of them and the tools VM. Sizes are lab sizes:
 # the guide's are 16 cores / 64-128 GB per node, which the host cannot hold (docs/resource-budget.md).
 vms:
   - {name: iap-lb, vm_id: 210, ip: 10.100.0.71, cores: 1, memory_mb: 1024, disk_gb: 16, role: loadbalancer}
