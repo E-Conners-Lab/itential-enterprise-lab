@@ -57,3 +57,23 @@ PASS  S4d.5a netbox-sot counts the active devices of dc1 through the NetBox inte
 PASS  S4d.5b device-ops reports br2-sw01's software version through the show-command workflow; equals direct SSH
       tokens in=12015 out=274
       device-ops: br2-sw01 runs 4.33.1.1F (direct SSH agrees); tools ['dcim_devices_list', 'wf-show-command-v1']
+FAIL  S4d.5c compliance runs lab-baseline and reports the result; the batch reports read directly agree
+      61645ff7-a40c-42b3-b67b-e0db1bced5a2
+      session 61645ff7-a40c-42b3-b67b-e0db1bced5a2 did not finish (running)
+PASS  S4d.5d diagnostics reads a verify-created incident about br2-sw01, checks the device and writes one 'Proposed fix' work note
+      tokens in=20852 out=1106
+      diagnostics: INC0010004 got the note 'Proposed fix:'; tools ['dcim_devices_list', 'listIncidents', 'updateIncident', 'wf-show-command-v1']; push job a903be4b35314971a76032bd made the drift
+FAIL  S4d.5e remediation fixes the br2-sw01 hostname drift only through wf-config-push-v1; the card approved here; direct SSH confirms
+      plan instance 6aa2df23a365032dc05d4c5f did not finish (error)
+PASS  S4d.5f netbox-sot-local (ollama-lab qwen2.5:7b) answers br2-sw01's site; response time and VM memory recorded
+      tokens in=2953 out=53
+      netbox-sot-local (qwen2.5:7b) answered in 104 s; VM RAM used 431/961 MB
+PASS  S4d.5g wf-show-all-v1 parses 'show version' on every lab device in one call (direct SSH agrees); lab-netops-local answers an all-devices question from it
+      wf-show-all-v1: 12 devices, parsers ['genie', 'textfsm']
+      tokens in=4884 out=42
+      lab-netops-local counted 12 devices from one wf-show-all-v1 call in 196 s; tools ['wf-show-all-v1']
+closed INC0010004
+restoring br2-sw01 after a failed run
+
+tokens spent this run: in=142773 out=3186 (Anthropic + local)
+passed=7 failed=7

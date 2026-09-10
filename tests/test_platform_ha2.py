@@ -271,3 +271,12 @@ def test_the_load_balancer_keeps_traffic_and_the_gateway_on_one_node() -> None:
     compose = (HA2_DIR / "platform.compose.yml.j2").read_text()
     assert "curl" not in compose, "the Platform image carries wget, not curl"
     assert "{{ platform.gateway_manager_port }}:{{ platform.gateway_manager_port }}" in compose, "8080 is published"
+
+
+def test_only_the_first_platform_node_runs_the_workers() -> None:
+    """Gateway Manager holds one connection per gateway cluster, so only one node can reach a device; the
+    others must not pick up job or task work (ADR 0055 decision 9)."""
+    compose = (HA2_DIR / "platform.compose.yml.j2").read_text()
+    for var in ("ITENTIAL_JOB_WORKER_ENABLED", "ITENTIAL_TASK_WORKER_ENABLED"):
+        assert f"{var}: \"{{{{ 'true' if inventory_hostname == platform.nodes[0] else 'false' }}}}\"" in compose, var
+    assert HA2["platform"]["nodes"][0] == "iap-01", "the worker node is the first node of the oracle"

@@ -98,6 +98,18 @@ The environments also differ in three measured ways:
    and fail over together - which is what Itential's own Active/Standby architecture does between data
    centres. Scaling to genuine active/active means one Gateway per Platform node, and that is a later element.
 
+9. **One Platform node runs the workers; the others serve the UI and the API.** Gateway Manager accepts
+   exactly one connection per gateway cluster - pointing a second gateway process at the other node is
+   refused with *"There is already an active connection for gateway cluster: lab"* - so only the node holding
+   it can reach a device. The Platform, though, spreads job and task execution across every node whose
+   workers are enabled, and a Configuration Manager compliance run then stalls halfway: reproducibly, 7 of
+   12 devices completed and the instance errored, and the same plan completed cleanly as soon as the second
+   node was stopped. `ITENTIAL_JOB_WORKER_ENABLED` and `ITENTIAL_TASK_WORKER_ENABLED` are therefore true on
+   `platform.nodes[0]` and false on the rest, which is Itential's Active/Standby shape and the same node the
+   load balancer and the gateway stream prefer. The cost is stated plainly: losing the worker node stops job
+   execution until it returns, while the UI and the API keep serving from the standby (drill S11.6a). Genuine
+   active/active needs a gateway cluster per Platform node, and that is a later element.
+
 ## Consequences
 
 - One definition per asset. A change to a workflow, an inventory or an agent lands in one file and reaches

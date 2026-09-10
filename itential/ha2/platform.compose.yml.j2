@@ -29,6 +29,16 @@ services:
       # the local administrator, declared rather than left to the image's default; the identity phase adds
       # LDAP and Keycloak in front of it (ADR 0050)
       ITENTIAL_DEFAULT_USER_ENABLED: "true"
+      # Gateway Manager accepts exactly ONE connection per gateway cluster ("There is already an active
+      # connection for gateway cluster: lab", measured on 6.5.2 by pointing a second gateway at the other
+      # node), so only the node holding it can reach a device. The Platform, however, spreads job and task
+      # execution across every node with the workers enabled, and a Configuration Manager compliance run then
+      # stalls halfway: 7 of 12 devices completed and the instance errored, reproducibly, until the second
+      # node was stopped. So the first node is the worker node and the rest serve the UI and the API only -
+      # Itential's own Active/Standby shape, and the same node the load balancer and the gateway prefer.
+      # Losing the worker node stops job execution until it returns; the UI and the API keep serving (S11.6a).
+      ITENTIAL_JOB_WORKER_ENABLED: "{{ 'true' if inventory_hostname == platform.nodes[0] else 'false' }}"
+      ITENTIAL_TASK_WORKER_ENABLED: "{{ 'true' if inventory_hostname == platform.nodes[0] else 'false' }}"
       ITENTIAL_DEFAULT_USER_USERNAME: "{{ platform.bootstrap_user }}"
       ITENTIAL_DEFAULT_USER_PASSWORD: ${ITENTIAL_ADMIN_PASSWORD:?}
 
