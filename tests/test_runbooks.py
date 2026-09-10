@@ -63,17 +63,17 @@ def test_every_chapter_has_the_five_sections(num: str) -> None:
 @pytest.mark.parametrize("num", sorted(CHAPTERS))
 def test_no_chapter_transcribes_an_environment_specific_value(num: str) -> None:
     """ADR 0056 decision 4: publishing is safe by construction, not by memory."""
-    t = text(num)
+    # A fill-in row carries a blank for the reader and an example beside it; that example is the one place
+    # an environment-shaped value is allowed, because it is explicitly not anybody's real value.
+    lines = [ln for ln in text(num).splitlines() if "______" not in ln]
     for pattern, what in FORBIDDEN:
-        hits = [m.group(0) for m in re.finditer(pattern, t)]
-        # chapter 00 names the placeholders themselves, so an example inside a fill-in row is allowed
-        hits = [h for h in hits if f"${{{h}}}" not in t]
+        hits = [m.group(0) for ln in lines for m in re.finditer(pattern, ln)]
         assert not hits, f"{num} transcribes {what}: {hits[:3]} - use a ${{PLACEHOLDER}} from chapter 00"
 
 
 def test_chapter_00_carries_the_fill_in_table() -> None:
     t = text("00")
-    assert re.search(r"^\|.*\bValue\b.*\|", t, re.M), "chapter 00 needs the fill-in table"
+    assert re.search(r"^\|.*______", t, re.M), "chapter 00 needs the fill-in table, with a blank per row"
     for key in ("HOME_LAN", "ECR_ACCOUNT", "SNOW_INSTANCE"):
         assert key in t, f"chapter 00's table must name {key}"
 
