@@ -6,18 +6,14 @@ end. Everything is code: OpenTofu for Proxmox, the EVE-NG REST API for the
 network topology, Helm/Kustomize for k3s, Ansible for guests, and NetBox as the
 network source of truth.
 
-> **Status: Phase 6 — FlowAI agents and Platform coverage of the lab (in progress, branch
-> `phase-6/flowai`; Phase 5 is draft PR #17).** Itential Platform 6.5.2, Gateway 5 (server plus a
-> glibc runner for Genie/TextFSM, ADR 0038), the MCP server and an in-lab Ollama run as the
-> `itential-dev-stack` containers on one Ubuntu VM (`itential.lab.internal`, ADR 0035). Everything on
-> the platform is created through its API from documents in `itential/` by three plays
-> (`itential.yml` -> `platform.yml` -> `flowai.yml`): ten generated workflows (`wf-*`, the only device
-> write path is `wf-config-push-v1` behind a Work Center approval), Golden Config trees and a nightly
-> compliance plan, MOP pre/post templates and nightly backups, the Lifecycle Manager service
-> `branch-vlan` with its JSON form approval, NetBox and ServiceNow Integration Models as agent tools,
-> and the agent fleet (`lab-netops`, `netbox-sot`, `device-ops`, `compliance`, `diagnostics`,
-> `remediation`, each on Claude and on a local model). The three Ubuntu hosts are Gateway 5 inventory
-> nodes; the four PA-VM firewalls wait on the Customer Support Portal download (`lab.firewalls`, ADR 0034).
+> **Status: Phase 7 — Observability (in progress, branch `phase-7/observability`; phases 0-6 merged).**
+> Zabbix 7.0 (CloudNativePG backend, SNMPv3 templates for IOS XE and EOS, agent 2 on every Ubuntu machine, HTTP
+> checks for every UI, an Expiries host from `observability/expiries.yaml`), kube-prometheus-stack (Prometheus,
+> Alertmanager, Grafana with four lab dashboards, SNMP and blackbox exporters), gNMIc against the vEOS fabric, Loki
+> with one Alloy syslog receiver for devices and VMs, and a Platform metrics exporter next to the Platform's own
+> `/prometheus_metrics` route, all in the `observability` namespace behind Traefik on the IP plan's VIPs
+> (`zabbix`, `grafana`, `prometheus`, `loki`, `gnmic`.lab.internal, ADR 0051). Hosts and targets come from NetBox;
+> every device receives its SNMPv3/syslog/gNMI lines through `wf-config-push-v1` with a Work Center approval.
 
 ## Architecture (target)
 
@@ -26,7 +22,7 @@ network source of truth.
 | Hypervisor | Dell R640, Proxmox VE 9.2 | 72 threads, 320 GB RAM, single 1.92 TB SAS SSD |
 | Network devices | EVE-NG Pro VM | PA-VM (DC HA pair + per-branch), C8000v WAN edges, vEOS spine/leaf/access, Linux/Windows endpoints |
 | OOB management | `vmbr1` on its own NIC, EVE-NG `pnet1` | Every service gets a leg on it |
-| Services | Proxmox VMs + k3s | Itential Platform + IAG, DDI (Infoblox NIOS, BIND9/Kea), AD/DNS, TACACS+, Keycloak, Zabbix, Prometheus/Grafana, gNMIc, Loki, Oxidized, Vault, Gitea, Panorama (Proxmox VM, ADR 0006), Containerlab CI tier |
+| Services | Proxmox VMs + k3s | Itential Platform + IAG, DDI (Infoblox NIOS, BIND9/Kea), OpenLDAP, TACACS+, Keycloak, Zabbix, Prometheus/Grafana, gNMIc, Loki, Oxidized, Vault, Gitea, Panorama (Proxmox VM, ADR 0006), Containerlab CI tier |
 | Sources of truth | NetBox (network), this repo (project) | See ADR 0002 |
 
 ## Bootstrap from zero
