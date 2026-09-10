@@ -1,0 +1,42 @@
+# test-06c-netbox 20260910T193755Z
+Anthropic token meter, last 7 days (89 sessions; prices per MTok in=2.0 out=10.0, anthropic only is billed)
+  anthropic  claude-sonnet-5    sessions=  70 in=   967442 out=  19496  $  2.13
+  ollama     qwen2.5:7b         sessions=  15 in=    46341 out=   1148  $  0.00
+  ?          ?                  sessions=   4 in=    14534 out=    630  $  0.00
+spent $2.13 of the $15.00 weekly budget; $12.87 left
+  largest: lab-netops 2026-09-10T16:29 in=32822 (COMPLETE)
+  largest: lab-netops 2026-09-10T17:52 in=32771 (COMPLETE)
+  largest: netbox-sot 2026-09-10T18:16 in=26326 (COMPLETE)
+PASS  S4e.1 every addressed interface of the 12 network devices is in NetBox with its address, VRF and 'to <peer>' description; the devices agree (wf-show-all-v1 + direct SSH)
+      12 devices, 64 intent interfaces equal in NetBox and on the devices (addresses + descriptions); direct SSH agrees on br1-wan01 and dc1-leaf01
+PASS  S4e.2 VRFs with route targets, prefixes in PROD, the 7 ASNs on their sites, BGP neighbours and RDs in each device's config context equal to the device (direct SSH), the transit virtual router as an FHRP group
+      VRFs MGMT/WAN/PROD (PROD RT 50001:50001), 7 ASNs on their sites, FHRP group ['dc1-vlan100-varp'] with its members and address, 38 BGP neighbours in the device contexts equal the devices' own tables over direct SSH (12 devices)
+PASS  S4e.3 one location and one rack per site, every device racked at its derived position (role order top down, unique U)
+      4 locations and racks, 21 devices at their positions (wan-rack01: 1U, dc1-rack01: 10U, br1-rack01: 5U, br2-rack01: 5U)
+PASS  S4e.4 provider circuits with terminations at their sites; the cable trace from each edge port crosses the circuit to the isp-core01 port; no direct provider cable remains
+      4 circuits of ['Simulated ISP'] with A/Z terminations at their sites; every edge port traces through its circuit to the isp-core01 port; 37 cables (no direct cable to the provider core)
+PASS  S4e.5 journal entries: every site carries netbox-enrich.yml entries naming a real commit; br2-sw01 carries the LCM create and delete entries
+      35 play entries over 5 sites naming commits ['75cf9a2', '7fde422', 'b4dca82', 'fff885b']; br2-sw01 carries 13 LCM entries (newest: 'Lifecycle Manager branch-vlan delete: VLAN 11 (lcm-20260910t192530z) r')
+PASS  S4e.6 the play re-runs with changed=0; netbox-sot answers address/VRF/peer, site ASNs, rack position, circuit and context questions equal to the NetBox API; the compliance plan stays clean with the interface intent in the device leaves
+      netbox-enrich.yml re-run: localhost : ok=36 changed=0 unreachable=0 failed=0 skipped=14 rescued=0 ignored=0 
+      netbox-sot: 'Which address does interface GigabitEthernet2 of br1-wan01 carry, in which VRF, and what does its description say?' -> On `br1-wan01`, interface **GigabitEthernet2**:
+      
+      - **IP address:** `10.103.0.10/30`
+      - **VRF:** `WAN` (descript (tokens in=11798 out=436)
+      netbox-sot: 'Which autonomous system numbers are assigned to site br1?' -> Site **br1** (Branch 1) has one ASN assigned:
+      
+      - **AS65201** (RIR: private) — description "br1 (br1)", tagged  (tokens in=9617 out=148)
+      netbox-sot: 'In which rack and at which rack unit position is dc1-leaf01 installed?' -> **dc1-leaf01** is installed in rack **dc1-rack01** (site DC1, location "DC1 hall A"), at rack unit position ** (tokens in=11559 out=155)
+      netbox-sot: 'Which circuit terminates at site br1 and who is its provider?' -> The circuit terminating at site **br1** (Branch 1) is:
+      
+      - **Circuit ID (CID):** ISP-BR1-01
+      - **Provider:** Sim (tokens in=10199 out=303)
+      netbox-sot: 'What NTP server and domain does the rendered config context of br2-sw01 give?' -> According to the rendered config context for **br2-sw01** (id 19):
+      
+      - **NTP server:** `10.100.0.1`
+      - **Domain: (tokens in=10904 out=227)
+      compliance lab-baseline: 12 device reports, 0 errors, 0 warnings (passes: 516) with the interface intent rendered from NetBox
+
+tokens spent this run: in=54077 out=1269 (Anthropic)
+
+passed=6 failed=0

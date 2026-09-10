@@ -12,6 +12,10 @@ services:
       ITENTIAL_MCP_SERVER_PORT: "8000"
       ITENTIAL_MCP_SERVER_PATH: "/mcp"
       ITENTIAL_MCP_SERVER_LOG_LEVEL: "INFO"
+      # ADR 0039 amendment: the tools that return Inventory Manager node attributes carry the device
+      # credentials in their reply, so they are hidden from MCP clients - the same list the dev-stack
+      # excludes (itential/compose.override.yml), asserted by verify/test-05 S4.7
+      ITENTIAL_MCP_SERVER_EXCLUDE_TAGS: "experimental,beta,describe_inventory,get_devices"
       # the load balancer's own name: correct before and after the cut-over
       ITENTIAL_MCP_PLATFORM_HOST: "{{ service_name }}.{{ domain }}"
       ITENTIAL_MCP_PLATFORM_PORT: "{{ loadbalancer.listen_port }}"
