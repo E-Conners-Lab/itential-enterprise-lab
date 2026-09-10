@@ -195,6 +195,41 @@ def nb(
     )
 
 
+_NB_MODEL = VERSIONS["integrations"]["models"]["netbox"]
+NETBOX_INTEGRATION = f"{_NB_MODEL['title']}:{_NB_MODEL['version']}"  # the model id, confirmed on 6.5.2
+NETBOX_INTEGRATION_INSTANCE = _NB_MODEL["instance"]  # netbox-api
+
+
+def nbi(
+    name: str,
+    summary: str,
+    incoming: dict,
+    x: int,
+    y: int = 0,
+    outgoing: dict | None = None,
+) -> dict:
+    """An Integration Model task (S4f, ADR 0054). An integration is a virtual adapter: the model is
+    addressed by `<title>:<version>` and the instance by adapter_id, as an adapter task addresses its
+    export and instance (measured on 6.5.2, ADR 0045). `name` is the document's operationId."""
+    # Measured on 6.5.2 (S4f probe, 2026-09-10): the platform validates an integration task against the
+    # model on import and refuses the workflow as a draft if it disagrees. Two rules an adapter task did
+    # not have: every input key must be a parameter the operation declares (an adapter took any key), and
+    # the single output is named `response`, not `result` - "Output: \"result\" does not match model
+    # output: \"response\"". So downstream tasks read $var.<id>.response, and the adapter's extra
+    # `response` wrapper inside the value is gone with it.
+    return task(
+        name,
+        NETBOX_INTEGRATION,
+        summary,
+        {"adapter_id": NETBOX_INTEGRATION_INSTANCE, **incoming},
+        outgoing or {"response": None},
+        location="Adapter",
+        location_type=NETBOX_INTEGRATION,
+        x=x,
+        y=y,
+    )
+
+
 def selector(device_ref: str, x: int) -> tuple[dict, dict]:
     """Two tasks that render the Gateway Manager inventory selector for one node. $var references
     are substituted only at the top level of a task's inputs, so the node name is spliced into a
@@ -232,17 +267,17 @@ def chain(*ids: str) -> dict:
 # --- wf-netbox-device-count-v1 (S4.2): NetBox adapter page -> job variable device_count -----------
 def device_count() -> dict:
     tasks = {
-        "1a": nb(
-            "getDcimDevices",
+        "1a": nbi(
+            "dcim_devices_list",
             "One page of devices (count comes with it)",
-            {"limit": 1, "offset": 0},
+            {"limit": 1},  # `offset` is not a parameter the operation declares, and the platform refuses it
             x=0,
-            outgoing={"result": "$var.job.devices"},
+            outgoing={"response": "$var.job.devices"},
         ),
     }
     return workflow(
         "wf-netbox-device-count-v1",
-        "Reads the NetBox device list through the NetBox adapter and returns its count (PID S4.2)",
+        "Reads the NetBox device list through the lab-netbox Integration Model and returns its count (PID S4.2, S4f)",
         {},
         tasks,
         chain("1a"),

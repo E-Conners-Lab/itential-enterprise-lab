@@ -84,11 +84,13 @@ check "S4.1 ${PLATFORM} serves a lab-CA cert for ${IT_HOST}, runs Platform ${PLA
 c2() {
   local want got id; want=$(nb "${NETBOX_URL}/api/dcim/devices/?limit=1" | ${PY} -c 'import sys,json;print(json.load(sys.stdin)["count"])')
   id=$(run_job wf-netbox-device-count-v1 '{}') || { echo "$id"; return 1; }
-  got=$(job_vars "${id##*$'\n'}" | ${PY} -c 'import sys,json;print(((json.load(sys.stdin).get("devices") or {}).get("response") or {}).get("count"))')
+  # S4f (ADR 0054): through the Integration Model the task output is the HTTP response object, so the
+  # parsed payload is `body` where the adapter wrapped it in `response` (measured on 6.5.2).
+  got=$(job_vars "${id##*$'\n'}" | ${PY} -c 'import sys,json;print(((json.load(sys.stdin).get("devices") or {}).get("body") or {}).get("count"))')
   [ "$got" = "$want" ] || { echo "workflow ${got} vs NetBox API ${want}"; return 1; }
   echo "device_count=${got}"
 }
-check "S4.2 wf-netbox-device-count-v1 through the NetBox adapter returns NetBox's count == GET /api/dcim/devices/" c2
+check "S4.2 wf-netbox-device-count-v1 through the lab-netbox integration returns NetBox's count == GET /api/dcim/devices/" c2
 
 # --- S4.3 show version through IAG on one node per vendor equals the manifest and the device itself ---
 c3() {
