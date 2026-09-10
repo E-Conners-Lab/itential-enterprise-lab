@@ -1,6 +1,6 @@
 # 0051 — Observability (S7): what Zabbix owns and what Prometheus owns, TLS at Traefik on the planned VIPs, exporters, the device telemetry lines, and what this phase leaves out
 
-- **Status:** proposed (owner review; design before code per PID rule)
+- **Status:** accepted (owner approval 2026-09-10, PR #22)
 - **Date:** 2026-09-09
 - **Related:** ADR 0024 (chart versions, kept), ADR 0034 (device design), ADR 0040/0041 (`wf-config-push-v1` is the only device write path), ADR 0048 (the topology YAML is the only oracle for device config), ADR 0050 (phase order, Windows dropped), PID S7 (amendment 1.16)
 
