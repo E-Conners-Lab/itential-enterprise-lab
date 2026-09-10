@@ -1,0 +1,85 @@
+# Observability documents (PID S7, ADR 0051). Read by ansible/playbooks/observability.yml, observability/zabbix/build.py
+# and verify/test-07-observability.sh. Hosts and device targets are NOT listed here: they come from NetBox.
+
+# HTTP checks for every UI (Zabbix template lab-web-ui, generated; blackbox module http_lab). Every URL is
+# reached through the lab CA. `expect` is the HTTP status the check accepts.
+web_checks:
+  - {name: netbox, url: "http://netbox.lab.internal:8080/login/", expect: 200} # netbox-docker serves plain HTTP on 8080 (S0)
+  - {name: itential, url: "https://itential.lab.internal/", expect: 200}
+  - {name: eve, url: "https://eve.lab.internal/", expect: 200, insecure: true} # EVE-NG's own self-signed certificate
+  - {name: zabbix, url: "https://zabbix.lab.internal/", expect: 200}
+  - {name: grafana, url: "https://grafana.lab.internal/api/health", expect: 200}
+  - {name: prometheus, url: "https://prometheus.lab.internal/-/healthy", expect: 200}
+  - {name: alertmanager, url: "https://alertmanager.lab.internal/-/healthy", expect: 200}
+  - {name: loki, url: "https://loki.lab.internal/ready", expect: 200}
+  - {name: gnmic, url: "https://gnmic.lab.internal/metrics", expect: 200}
+
+# Zabbix: templates the lab hosts link, by NetBox platform slug (devices) or kind (VMs). The lab templates
+# live in observability/zabbix/templates/ and link the stock ones named here (asserted present after import).
+zabbix:
+  host_groups: {devices: "lab/{site}", vms: "lab/vms", synthetic: "lab/synthetic"}
+  templates:
+    ios-xe: {lab: lab-ios-xe, stock: ["Cisco IOS by SNMP"]}
+    eos: {lab: lab-eos, stock: ["Network Generic Device by SNMP"]}
+    ubuntu-24-04: {lab: lab-linux, stock: ["Linux by Zabbix agent"]}
+    ubuntu-22-04: {lab: lab-linux, stock: ["Linux by Zabbix agent"]}
+  excluded_platforms: [windows-11, panos] # ADR 0050: unmanaged clients; firewalls wait for the firewall track
+  # the two pre-existing machines NetBox holds only as active addresses (ADR 0028); the agent play reaches
+  # them through inventory/phase2.yml
+  extra_hosts:
+    - {name: eve, address: 10.100.0.2, platform: ubuntu-22-04, group: "lab/vms"}
+    - {name: netbox, address: 10.100.0.64, platform: ubuntu-24-04, group: "lab/vms"}
+  synthetic_hosts:
+    - {name: lab-uis, template: lab-web-ui}
+    - {name: expiries, template: lab-expiries}
+  snmpv3: {user: zabbix, auth_protocol: SHA, priv_protocol: AES128} # passphrases: SNMPV3_*_PASSWORD in .env
+  grafana_user: grafana # read-only API user for the Grafana datasource; password ZABBIX_GRAFANA_PASSWORD in .env
+
+# Prometheus scrape jobs and the rule for their expected target count (S7.2). `count` is a number, or:
+# nodes = k3s nodes, devices = active NetBox routers + switches, eos = active vEOS, web_checks = entries above.
+prometheus:
+  jobs:
+    - {job: apiserver, count: nodes}
+    - {job: kubelet, count: nodes, endpoints: 3} # /metrics, /metrics/cadvisor, /metrics/probes per node
+    - {job: coredns, count: 1}
+    - {job: kube-state-metrics, count: 1}
+    - {job: node-exporter, count: nodes}
+    # kube-prometheus-stack names its own jobs after the release (kps); Prometheus and Alertmanager expose a
+    # second endpoint each (the config reloader), measured 2026-09-10
+    - {job: kps-operator, count: 1}
+    - {job: kps-prometheus, count: 2}
+    - {job: kps-alertmanager, count: 2}
+    - {job: kps-grafana, count: 1}
+    - {job: snmp-exporter, count: 1}
+    - {job: snmp-ios-xe, count: ios-xe}
+    - {job: snmp-eos, count: eos}
+    - {job: blackbox-exporter, count: 1}
+    - {job: blackbox-icmp, count: devices}
+    - {job: blackbox-http, count: web_checks}
+    - {job: gnmic, count: 1}
+    - {job: loki, count: 1}
+    - {job: alloy-logs, count: nodes}
+    - {job: alloy-syslog, count: 1}
+    - {job: itential-exporter, count: 1}
+    - {job: itential-platform, count: 1} # the Platform's own /prometheus_metrics route (docs.itential.com)
+  alerts: # PrometheusRule lab-observability; S7.6 uses LabDeviceDown
+    - {name: LabDeviceDown, for: 1m}
+    - {name: LabTargetDown, for: 5m}
+    - {name: LabUiDown, for: 3m}
+    - {name: LabBgpSessionDown, for: 2m}
+
+# gNMIc (vEOS only, ADR 0051 decision 8): port, subscriptions and the sample interval. Targets come from NetBox.
+gnmic:
+  port: 6030
+  subscriptions:
+    interfaces: {path: /interfaces/interface/state/counters, sample_interval: 30s}
+    bgp: {path: /network-instances/network-instance/protocols/protocol/bgp/neighbors/neighbor/state/session-state, sample_interval: 30s}
+
+# Loki / Alloy syslog receiver on the loki VIP: devices send BSD lines to 514/udp (taken raw, label host_ip);
+# the VMs' rsyslog sends RFC 5424 to 514/tcp.
+syslog:
+  udp_port: 514
+  tcp_port: 514
+
+grafana:
+  dashboards: [lab-health, fabric, wan, expiries] # observability/grafana/dashboards/<name>.json; firewalls: firewall track

@@ -15,6 +15,11 @@ restconf
 <e/>ip http secure-server
 ip http authentication local
 <e/>ntp server vrf MGMT 10.100.0.1
+<e/>logging origin-id hostname
+<e/>logging host 10.100.0.38 vrf MGMT
+<e/>logging source-interface GigabitEthernet1 vrf MGMT
+<e/>snmp-server view LAB iso included
+<e/>snmp-server group LAB v3 priv read LAB
 <e/>ip route vrf MGMT 0.0.0.0 0.0.0.0 10.100.0.1
 {d/}<e/>ip http server
 {d/}<e/>username admin {/.*/}

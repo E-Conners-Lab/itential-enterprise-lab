@@ -33,23 +33,22 @@ addresses:
   - {address: 10.100.0.18, hostname: k3s-03, placement: k3s-node, phase: 3, status: reserved}
   - {address: 10.100.0.19, hostname: k3s-api, placement: k3s-node, phase: 3, status: reserved, description: "kube-vip API VIP"}
   - {address: 10.100.0.32, hostname: ingress, placement: k3s-vip, phase: 3, status: reserved}
-  - {address: 10.100.0.33, hostname: keycloak, placement: k3s-vip, phase: 7, status: reserved}
-  - {address: 10.100.0.34, hostname: tacacs, placement: k3s-vip, phase: 7, status: reserved}
-  - {address: 10.100.0.35, hostname: zabbix, placement: k3s-vip, phase: 8, status: reserved}
-  - {address: 10.100.0.36, hostname: grafana, placement: k3s-vip, phase: 8, status: reserved}
-  - {address: 10.100.0.37, hostname: prometheus, placement: k3s-vip, phase: 8, status: reserved}
-  - {address: 10.100.0.38, hostname: loki, placement: k3s-vip, phase: 8, status: reserved}
-  - {address: 10.100.0.39, hostname: gnmic, placement: k3s-vip, phase: 8, status: reserved}
-  - {address: 10.100.0.40, hostname: oxidized, placement: k3s-vip, phase: 9, status: reserved}
-  - {address: 10.100.0.41, hostname: vault, placement: k3s-vip, phase: 9, status: reserved}
-  - {address: 10.100.0.42, hostname: gitea, placement: k3s-vip, phase: 9, status: reserved}
+  - {address: 10.100.0.33, hostname: keycloak, placement: k3s-vip, phase: 9, status: reserved}
+  - {address: 10.100.0.34, hostname: tacacs, placement: k3s-vip, phase: 9, status: reserved}
+  - {address: 10.100.0.35, hostname: zabbix, placement: k3s-vip, phase: 7, status: reserved}
+  - {address: 10.100.0.36, hostname: grafana, placement: k3s-vip, phase: 7, status: reserved}
+  - {address: 10.100.0.37, hostname: prometheus, placement: k3s-vip, phase: 7, status: reserved, aliases: [alertmanager]}
+  - {address: 10.100.0.38, hostname: loki, placement: k3s-vip, phase: 7, status: reserved}
+  - {address: 10.100.0.39, hostname: gnmic, placement: k3s-vip, phase: 7, status: reserved}
+  - {address: 10.100.0.40, hostname: oxidized, placement: k3s-vip, phase: 8, status: reserved}
+  - {address: 10.100.0.41, hostname: vault, placement: k3s-vip, phase: 8, status: reserved}
+  - {address: 10.100.0.42, hostname: gitea, placement: k3s-vip, phase: 8, status: reserved}
   - {address: 10.100.0.64, hostname: netbox, placement: proxmox-vm, phase: 2, status: active, description: "VM 110 second NIC"}
   # aliases are extra A records for the same address (unbound on oob-gw renders them).
   - {address: 10.100.0.65, hostname: itential, placement: proxmox-vm, phase: 5, status: reserved, aliases: [mcp], description: "Platform + both gateways + MCP as containers (ADR 0035)"}
-  - {address: 10.100.0.67, hostname: nios, placement: proxmox-vm, phase: 6, status: reserved}
-  - {address: 10.100.0.68, hostname: ddi-fallback, placement: proxmox-vm, phase: 6, status: reserved}
-  - {address: 10.100.0.69, hostname: dc01, placement: proxmox-vm, phase: 7, status: reserved}
-  - {address: 10.100.0.70, hostname: panorama, placement: proxmox-vm, phase: 10, status: reserved}
+  - {address: 10.100.0.67, hostname: nios, placement: proxmox-vm, phase: 12, status: reserved}
+  - {address: 10.100.0.68, hostname: ddi-fallback, placement: proxmox-vm, phase: 10, status: reserved}
+  - {address: 10.100.0.70, hostname: panorama, placement: proxmox-vm, phase: 12, status: reserved}
   - {address: 10.100.0.128, hostname: dc1-fw01, placement: eve-firewall, phase: 4, status: reserved}
   - {address: 10.100.0.129, hostname: dc1-fw02, placement: eve-firewall, phase: 4, status: reserved}
   - {address: 10.100.0.130, hostname: br1-fw01, placement: eve-firewall, phase: 4, status: reserved}

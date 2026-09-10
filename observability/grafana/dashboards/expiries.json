@@ -1,0 +1,181 @@
+{
+ "uid": "lab-expiries",
+ "title": "Expiries",
+ "description": "PID S7: every evaluation, licence, token and certificate expiry from observability/expiries.yaml, through the Zabbix datasource.",
+ "tags": [
+  "lab"
+ ],
+ "timezone": "utc",
+ "schemaVersion": 39,
+ "version": 1,
+ "editable": false,
+ "refresh": "30s",
+ "time": {
+  "from": "now-6h",
+  "to": "now"
+ },
+ "templating": {
+  "list": []
+ },
+ "annotations": {
+  "list": []
+ },
+ "panels": [
+  {
+   "id": 1,
+   "title": "Days left per expiry (Zabbix)",
+   "type": "bargauge",
+   "datasource": {
+    "type": "alexanderzobnin-zabbix-datasource",
+    "uid": "zabbix"
+   },
+   "gridPos": {
+    "x": 0,
+    "y": 0,
+    "w": 24,
+    "h": 8
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "alexanderzobnin-zabbix-datasource",
+      "uid": "zabbix"
+     },
+     "refId": "A",
+     "queryType": "0",
+     "group": {
+      "filter": "lab/synthetic"
+     },
+     "host": {
+      "filter": "expiries"
+     },
+     "application": {
+      "filter": ""
+     },
+     "item": {
+      "filter": "/.*/"
+     },
+     "functions": []
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "d",
+     "min": 0,
+     "max": 400,
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "red",
+        "value": null
+       },
+       {
+        "color": "orange",
+        "value": 14
+       },
+       {
+        "color": "green",
+        "value": 60
+       }
+      ]
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ]
+    },
+    "orientation": "horizontal",
+    "displayMode": "gradient"
+   }
+  },
+  {
+   "id": 2,
+   "title": "Days left over time",
+   "type": "timeseries",
+   "datasource": {
+    "type": "alexanderzobnin-zabbix-datasource",
+    "uid": "zabbix"
+   },
+   "gridPos": {
+    "x": 0,
+    "y": 8,
+    "w": 24,
+    "h": 9
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "alexanderzobnin-zabbix-datasource",
+      "uid": "zabbix"
+     },
+     "refId": "B",
+     "queryType": "0",
+     "group": {
+      "filter": "lab/synthetic"
+     },
+     "host": {
+      "filter": "expiries"
+     },
+     "application": {
+      "filter": ""
+     },
+     "item": {
+      "filter": "/.*/"
+     },
+     "functions": []
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "d"
+    },
+    "overrides": []
+   },
+   "options": {}
+  },
+  {
+   "id": 3,
+   "title": "Open expiry problems (Zabbix)",
+   "type": "alexanderzobnin-zabbix-triggers-panel",
+   "datasource": {
+    "type": "alexanderzobnin-zabbix-datasource",
+    "uid": "zabbix"
+   },
+   "gridPos": {
+    "x": 0,
+    "y": 17,
+    "w": 24,
+    "h": 7
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "alexanderzobnin-zabbix-datasource",
+      "uid": "zabbix"
+     },
+     "refId": "C",
+     "queryType": "5",
+     "group": {
+      "filter": "lab/synthetic"
+     },
+     "host": {
+      "filter": "expiries"
+     },
+     "trigger": {
+      "filter": "/.*/"
+     }
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {},
+    "overrides": []
+   },
+   "options": {}
+  }
+ ]
+}

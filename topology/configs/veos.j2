@@ -44,6 +44,8 @@ management ssh
    vrf MGMT
       no shutdown
 !
+{% include 'veos-observability.j2' %}
+!
 {%- if role in ['spine', 'leaf'] %}
 ip routing
 !

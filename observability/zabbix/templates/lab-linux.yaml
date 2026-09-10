@@ -1,0 +1,19 @@
+# Every Ubuntu machine (Proxmox VMs, the EVE-NG endpoints, the EVE-NG host and the NetBox VM): the stock
+# passive-agent Linux template; the agent is installed by ansible/playbooks/observability-hosts.yml.
+zabbix_export:
+  version: '7.0'
+  template_groups:
+    - uuid: 3b0d2a6e4c1f4a8e8b2d9c7f1e5a3d01
+      name: Templates/Lab
+  templates:
+    - uuid: 0e7d6c5b4a3948f2917e0d9c8b7a6901
+      template: lab-linux
+      name: lab-linux
+      description: 'Ubuntu machines with Zabbix agent 2 (passive): Linux by Zabbix agent (ADR 0051).'
+      templates:
+        - name: 'Linux by Zabbix agent'
+      groups:
+        - name: Templates/Lab
+      tags:
+        - tag: platform
+          value: linux

@@ -1,0 +1,99 @@
+# grafana/alloy, release alloy-syslog (ADR 0051): the one syslog receiver of the lab on the loki VIP.
+# 514/udp takes the routers' and switches' BSD lines unparsed (label host_ip = the sender; IOS XE's format
+# passes no strict parser); 514/tcp takes RFC 5424 from every Ubuntu machine's rsyslog. Port 514 as a
+# non-root container: the safe sysctl net.ipv4.ip_unprivileged_port_start.
+controller:
+  type: deployment
+  replicas: 1
+global:
+  podSecurityContext:
+    sysctls:
+      - {name: net.ipv4.ip_unprivileged_port_start, value: "0"}
+service:
+  type: LoadBalancer
+  annotations:
+    metallb.io/loadBalancerIPs: 10.100.0.38
+    metallb.io/allow-shared-ip: loki
+alloy:
+  stabilityLevel: experimental # the raw syslog format is gated behind this level in Alloy 1.19 (ADR 0051)
+  extraPorts:
+    - {name: syslog-tcp, port: 514, targetPort: 514, protocol: TCP}
+    - {name: syslog-udp, port: 514, targetPort: 514, protocol: UDP}
+  resources:
+    requests: {cpu: 20m, memory: 64Mi}
+    limits: {memory: 256Mi}
+  configMap:
+    create: true
+    content: |
+      logging {
+        level  = "warn"
+        format = "logfmt"
+      }
+
+      loki.source.syslog "devices" {
+        listener {
+          address                = "0.0.0.0:514"
+          protocol               = "udp"
+          syslog_format          = "raw"
+          labels                 = { job = "syslog-device" }
+        }
+        relabel_rules = loki.relabel.syslog.rules
+        forward_to    = [loki.process.devices.receiver]
+      }
+
+      // the sender's name from the line itself: EOS "Sep 10 01:37:23 dc1-spine01 ConfigAgent: %SYS-...",
+      // IOS XE with logging origin-id hostname "1882: br1-wan01: *Sep 10 01:36:02.974: %SYS-..."
+      loki.process "devices" {
+        // one regex per vendor format; a stage that does not match leaves the extracted map untouched
+        stage.regex {
+          expression = "^[A-Z][a-z]{2} +\\d+ [0-9:]+ (?P<host>[A-Za-z0-9._-]+) "
+        }
+        stage.regex {
+          expression = "^\\d+: (?P<host>[A-Za-z0-9._-]+): "
+        }
+        stage.labels {
+          values = { host = "" }
+        }
+        forward_to = [loki.write.default.receiver]
+      }
+
+      loki.source.syslog "vms" {
+        listener {
+          address                = "0.0.0.0:514"
+          protocol               = "tcp"
+          syslog_format          = "rfc5424"
+          labels                 = { job = "syslog-vm" }
+          use_incoming_timestamp = true
+        }
+        relabel_rules = loki.relabel.syslog.rules
+        forward_to    = [loki.write.default.receiver]
+      }
+
+      loki.relabel "syslog" {
+        forward_to = []
+        rule {
+          source_labels = ["__syslog_connection_ip_address"]
+          target_label  = "host_ip"
+        }
+        rule {
+          source_labels = ["__syslog_message_hostname"]
+          target_label  = "host"
+        }
+        rule {
+          source_labels = ["__syslog_message_severity"]
+          target_label  = "severity"
+        }
+        rule {
+          source_labels = ["__syslog_message_app_name"]
+          target_label  = "app"
+        }
+      }
+
+      loki.write "default" {
+        endpoint {
+          url = "http://loki:3100/loki/api/v1/push"
+        }
+      }
+configReloader:
+  resources:
+    requests: {cpu: 5m, memory: 16Mi}

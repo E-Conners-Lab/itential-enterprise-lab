@@ -15,6 +15,13 @@ lab:
   # Flip to true, run eve/build.py apply, and the bypass links are removed while the firewall
   # nodes and their (already existing) links come up (ADR 0034 amendment).
   firewalls: false
+  # Phase 7 (ADR 0051): what every router and switch sends and answers. The syslog host is the loki VIP of
+  # topology/ipam.yaml; the SNMPv3 user's passphrases live in .env and are pushed by
+  # ansible/playbooks/observability-devices.yml, never rendered into a committed config.
+  observability:
+    syslog: 10.100.0.38
+    snmp: {user: zabbix, group: LAB, view: LAB}
+    gnmi: {port: 6030}
 
 sites:
   wan: {name: WAN, description: "Simulated provider core"}

@@ -4,6 +4,14 @@
 <e/>dns domain lab.internal
 <e/>ip name-server vrf MGMT 10.100.0.1
 <e/>ntp server vrf MGMT 10.100.0.1
+<e/>logging vrf MGMT host 10.100.0.38
+<e/>logging vrf MGMT source-interface Management1
+<e/>snmp-server vrf MGMT
+<e/>snmp-server view LAB iso included
+<e/>snmp-server group LAB v3 priv read LAB
+<e/>management api gnmi
+   transport grpc default
+      vrf MGMT
 <e/>ip route vrf MGMT 0.0.0.0/0 10.100.0.1
 <e/>management api http-commands
    no shutdown

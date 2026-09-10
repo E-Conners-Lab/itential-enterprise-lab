@@ -1,0 +1,82 @@
+# Single oracle for every version and address the phase-7 observability plays use (PID S7, ADR 0051).
+# Values come from docs/image-manifest.md section 4.3 (ADR 0024/0051) and topology/ipam.yaml;
+# tests/test_observability.py fails CI if this file drifts from either. Never 'latest'.
+obs_namespace: observability
+
+# MetalLB VIPs from topology/ipam.yaml (hostnames resolve through oob-gw's unbound).
+vips:
+  zabbix: 10.100.0.35 # Traefik (web UI, API) + zabbix-server 10051 (shared IP)
+  grafana: 10.100.0.36
+  prometheus: 10.100.0.37 # alias alertmanager.lab.internal
+  loki: 10.100.0.38 # Traefik (Loki API) + Alloy syslog 514/tcp+udp (shared IP)
+  gnmic: 10.100.0.39
+
+# Traefik (kube-system) terminates TLS with the phase-3 wildcard certificate; one extra LoadBalancer
+# Service per VIP selects its pods (k8s/observability/manifests/traefik-vips.yaml).
+traefik:
+  namespace: kube-system
+  selector: {app.kubernetes.io/name: traefik, app.kubernetes.io/instance: traefik-kube-system}
+
+zabbix_db:
+  name: zabbix-db
+  postgres_image: ghcr.io/cloudnative-pg/postgresql:18.6 # = k8s/platform/versions.yaml components.cnpg.postgres_image
+  storage_gb: 10
+
+components:
+  zabbix:
+    chart_repo: https://zabbix-community.github.io/helm-zabbix
+    chart_name: zabbix
+    chart_version: 7.1.0
+    app_version: 7.0.30 # chart appVersion is 7.0.23; images overridden with zabbixImageTag
+    image_tag: alpine-7.0.30
+    agent2_version: 7.0.30-1 # repo.zabbix.com/zabbix/7.0/ubuntu, Ubuntu 24.04 (VMs) and 22.04 (EVE-NG host)
+    apt_repo: https://repo.zabbix.com/zabbix/7.0/ubuntu
+    release_deb_sha256: # zabbix-release_latest_7.0+ubuntu<ver>_all.deb, measured 2026-09-09
+      "24.04": 4f206504c2bc1cff36edf762e2274d0686b0e796b772533c95d04bbe265654de
+      "22.04": ae99d0cd34b5baf172e7303ce5d391b1bce1bcb23afd9d248b8450e3d4d3648a
+  kube_prometheus_stack:
+    chart_repo: https://prometheus-community.github.io/helm-charts
+    chart_name: kube-prometheus-stack
+    chart_version: 89.2.3
+    app_version: v0.93.1 # prometheus-operator
+    prometheus_version: v3.14.0
+    alertmanager_version: v0.34.0
+    grafana_version: 13.2.1
+    grafana_zabbix_plugin: alexanderzobnin-zabbix-app@6.6.0 # grafana.com 2026-07-30, Grafana >= 11.6 (id@version)
+  snmp_exporter:
+    chart_repo: https://prometheus-community.github.io/helm-charts
+    chart_name: prometheus-snmp-exporter
+    chart_version: 9.17.1
+    app_version: v0.30.1
+  blackbox_exporter:
+    chart_repo: https://prometheus-community.github.io/helm-charts
+    chart_name: prometheus-blackbox-exporter
+    chart_version: 11.18.0
+    app_version: v0.28.0
+  loki:
+    chart_repo: https://grafana.github.io/helm-charts
+    chart_name: loki
+    chart_version: 7.3.0
+    app_version: 3.6.12
+  alloy:
+    chart_repo: https://grafana.github.io/helm-charts
+    chart_name: alloy
+    chart_version: 1.12.1
+    app_version: v1.19.2
+  gnmic:
+    image: ghcr.io/openconfig/gnmic
+    image_tag: 0.47.0
+  itential_exporter:
+    # the Python image itential/versions.yaml pins as runner_base; the exporter is a ConfigMap script (ADR 0051)
+    image: docker.io/library/python
+    image_tag: 3.12.14-slim-trixie
+    digest: "sha256:78387bc3881b8273120a12ebe6c1ab22b018ccc2c9adf565ae1ac9b536e184ea"
+
+storage: # Longhorn, Gi (docs/resource-budget.md section 4: telemetry volumes are rebuildable)
+  prometheus: 10
+  prometheus_retention: 10d
+  prometheus_retention_size: 8GB
+  loki: 10
+  loki_retention: 168h
+  grafana: 1
+  alertmanager: 1

@@ -1,0 +1,36 @@
+# test-07-observability 20260910T012045Z
+FAIL  S7.1 Zabbix monitors every NetBox-active host (+eve, netbox) green with the lab templates; SNMPv3 and the agents confirmed from the workstation
+      br1-sw01: interface type 2 available=2 cannot retrieve OID: '.1.3.6.1.2.1.25.1.1.0' from [[10.100.0.165]:161]: timed out
+      br1-wan01: interface type 2 available=2 cannot retrieve OID: '.1.3.6.1.4.1.9.9.13.1.4.1.2' from [[10.100.0.146]:161]: timed out
+      br2-sw01: interface type 2 available=2 cannot retrieve OID: '.1.3.6.1.2.1.1.3.0' from [[10.100.0.166]:161]: timed out
+      br2-wan01: interface type 2 available=2 cannot retrieve OID: '.1.3.6.1.4.1.9.9.13.1.4.1.2' from [[10.100.0.147]:161]: timed out
+      dc1-acc01: interface type 2 available=2 cannot retrieve OID: '.1.3.6.1.2.1.25.1.1.0' from [[10.100.0.164]:161]: timed out
+      dc1-leaf01: interface type 2 available=2 cannot retrieve OID: '.1.3.6.1.2.1.1.3.0' from [[10.100.0.162]:161]: timed out
+      dc1-leaf02: interface type 2 available=2 cannot retrieve OID: '.1.3.6.1.2.1.25.1.1.0' from [[10.100.0.163]:161]: timed out
+      dc1-spine01: interface type 2 available=2 cannot retrieve OID: '.1.3.6.1.2.1.1.3.0' from [[10.100.0.160]:161]: timed out
+      dc1-spine02: interface type 2 available=2 cannot retrieve OID: '.1.3.6.1.2.1.1.3.0' from [[10.100.0.161]:161]: timed out
+      dc1-wan01: interface type 2 available=2 cannot retrieve OID: '.1.3.6.1.2.1.47.1.1.1.1.11' from [[10.100.0.144]:161]: timed out
+      dc1-wan02: interface type 2 available=2 cannot retrieve OID: '.1.3.6.1.4.1.9.9.13.1.3.1.2' from [[10.100.0.145]:161]: timed out
+      isp-core01: interface type 2 available=2 cannot retrieve OID: '.1.3.6.1.4.1.9.9.48.1.1.1.2' from [[10.100.0.148]:161]: timed out
+      k3s-01: interface type 1 available=2 Received empty response from Zabbix Agent at [10.100.0.16]. Assuming that agent dropped connection because of access permissions.
+FAIL  S7.1 Expiries host: one item per manifest expiry (days left agrees with the date, NetBox token and lab CA read back), trigger at 14 days
+      netbox-api-token: days left 360.95 vs 362
+      lab-root-ca: days left 3645.95 vs 3647
+      eve-ng-pro-licence: days left 216.95 vs 218
+      win11-br1-pc01: days left 86.95 vs 88
+      win11-br2-pc01: days left 86.95 vs 88
+      no trigger for ['expiry.days[eve-ng-pro-licence]', 'expiry.days[lab-root-ca]', 'expiry.days[netbox-api-token]', 'expiry.days[win11-br1-pc01]', 'expiry.days[win11-br2-pc01]']
+FAIL  S7.2 Prometheus target count per job equals observability.yaml (NetBox-sized); no target down; lab rules loaded
+      snmp-ios-xe: down: ['http://snmp-exporter-prometheus-snmp-exporter:9116/snmp?auth=lab_v3&module=if_mib&target=10.100.0.146 server returned HTTP status 500 Internal Server Error', 'http://snmp-exporter-prometheus-snmp-exporter:9116/snmp?auth=lab_v3&module=if_mib&target=10.100.0.147 server returned HTTP status 500 Internal Server Error', 'http://snmp-exporter-prometheus-snmp-exporter:9116/snmp?auth=lab_v3&module=if_mib&target=10.100.0.144 server returned HTTP status 500 Internal Server Error', 'http://snmp-exporter-prometheus-snmp-exporter:9116/snmp?auth=lab_v3&module=if_mib&target=10.100.0.145 server returned HTTP status 500 Internal Server Error', 'http://snmp-exporter-prometheus-snmp-exporter:9116/snmp?auth=lab_v3&module=if_mib&target=10.100.0.148 server returned HTTP status 500 Internal Server Error']
+      snmp-eos: down: ['http://snmp-exporter-prometheus-snmp-exporter:9116/snmp?auth=lab_v3&module=if_mib&target=10.100.0.162 server returned HTTP status 500 Internal Server Error', 'http://snmp-exporter-prometheus-snmp-exporter:9116/snmp?auth=lab_v3&module=if_mib&target=10.100.0.163 server returned HTTP status 500 Internal Server Error', 'http://snmp-exporter-prometheus-snmp-exporter:9116/snmp?auth=lab_v3&module=if_mib&target=10.100.0.160 server returned HTTP status 500 Internal Server Error', 'http://snmp-exporter-prometheus-snmp-exporter:9116/snmp?auth=lab_v3&module=if_mib&target=10.100.0.161 server returned HTTP status 500 Internal Server Error', 'http://snmp-exporter-prometheus-snmp-exporter:9116/snmp?auth=lab_v3&module=if_mib&target=10.100.0.165 server returned HTTP status 500 Internal Server Error', 'http://snmp-exporter-prometheus-snmp-exporter:9116/snmp?auth=lab_v3&module=if_mib&target=10.100.0.166 server returned HTTP status 500 Internal Server Error', 'http://snmp-exporter-prometheus-snmp-exporter:9116/snmp?auth=lab_v3&module=if_mib&target=10.100.0.164 server returned HTTP status 500 Internal Server Error']
+      loki: 0 targets, declared 1
+PASS  S7.5-prep Grafana provisions the lab dashboards and the Prometheus/Alertmanager/Loki/Zabbix datasources (login via Keycloak: phase 9)
+      dashboards ['Expiries', 'Fabric', 'Lab health', 'WAN']; datasources ['alertmanager', 'alexanderzobnin-zabbix-datasource', 'loki', 'prometheus']
+SKIP  S7.3 gNMIc BGP session count for dc1-spine01 equals show bgp summary (and Prometheus agrees)
+SKIP  S7.4 Loki returns a syslog line from each vendor within 60 s of a governed no-op config push (device log agrees)
+PASS  S7.7 Prometheus holds the Platform job metrics (jobsComplete per workflow equals the API) and every application/adapter is up
+      13 workflows: jobsComplete equal in the API and Prometheus; 23 applications running, 4 adapters online in both
+DEFER S7.5 Grafana login via Keycloak and every dashboard renders with data: identity phase (ADR 0050)
+SKIP  S7.6 drill (set VERIFY_DRILLS=1 to run; stops br1-wan01 for a few minutes)
+
+passed=2 failed=3 deferred=1

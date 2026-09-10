@@ -108,3 +108,30 @@
       loop: "{{ addresses }}"
       loop_control:
         label: "{{ item.address }} {{ item.hostname }}"
+
+    # Reservations the YAML released (dc01 with ADR 0050, iag with ADR 0035): a seeded address (placement tag)
+    # that this file no longer lists is deleted, so NetBox never keeps an address the plan gave back (ADR 0051).
+    - name: Seeded OOB addresses currently in NetBox
+      ansible.builtin.uri:
+        url: "{{ nb_url }}/api/ipam/ip-addresses/?parent=10.100.0.0/24&limit=500"
+        headers: {Authorization: "Token {{ nb_token }}"}
+      register: nb_addrs
+
+    - name: Released reservations deleted
+      netbox.netbox.netbox_ip_address:
+        netbox_url: "{{ nb_url }}"
+        netbox_token: "{{ nb_token }}"
+        validate_certs: false
+        data:
+          address: "{{ item.address }}"
+        state: absent
+      loop: >-
+        {{ nb_addrs.json.results
+           | selectattr('tags', 'defined')
+           | selectattr('tags', 'map', 'attribute=slug')
+           | list }}
+      loop_control:
+        label: "{{ item.address }} {{ item.dns_name | default('') }}"
+      when:
+        - item.tags | map(attribute='slug') | intersect(placement_tags) | length > 0
+        - item.address | ansible.utils.ipaddr('address') not in addresses | map(attribute='address') | list

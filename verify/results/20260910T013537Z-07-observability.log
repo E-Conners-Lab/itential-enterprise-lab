@@ -1,0 +1,26 @@
+# test-07-observability 20260910T013537Z
+PASS  S7.1 Zabbix monitors every NetBox-active host (+eve, netbox) green with the lab templates; SNMPv3 and the agents confirmed from the workstation
+      22 NetBox-derived hosts monitored and available; synthetic: ['lab-uis', 'expiries']
+      snmpget sysName over SNMPv3 from the workstation: br1-wan01, dc1-spine01
+      zabbix-agent2 + rsyslog active on every Ubuntu machine (systemctl over SSH)
+PASS  S7.1 Expiries host: one item per manifest expiry (days left agrees with the date, NetBox token and lab CA read back), trigger at 14 days
+      5 expiry items agree with the YAML dates (within 0.1 d); 5 triggers at 14 days; NetBox token and lab CA dates match the live sources
+PASS  S7.2 Prometheus target count per job equals observability.yaml (NetBox-sized); no target down; lab rules loaded
+      66 active targets in 21 declared jobs, all up
+      40 ServiceMonitor/Probe/ScrapeConfig objects in observability
+      lab alert rules loaded: ['LabBgpSessionDown', 'LabDeviceDown', 'LabTargetDown', 'LabUiDown']
+PASS  S7.5-prep Grafana provisions the lab dashboards and the Prometheus/Alertmanager/Loki/Zabbix datasources (login via Keycloak: phase 9)
+      dashboards ['Expiries', 'Fabric', 'Lab health', 'WAN']; datasources ['alertmanager', 'alexanderzobnin-zabbix-datasource', 'loki', 'prometheus']
+PASS  S7.3 gNMIc BGP session count for dc1-spine01 equals show bgp summary (and Prometheus agrees)
+      dc1-spine01: 4 Established sessions on the device, 4 in gNMIc, 4 in Prometheus
+FAIL  S7.4 Loki returns a syslog line from each vendor within 60 s of a governed no-op config push (device log agrees)
+      pushed to br1-wan01 (job b2b1a8487c6241508caf9ff7)
+      br1-wan01: no syslog line in Loki within 60 s of the push
+      pushed to dc1-spine01 (job 4402afd8f6f1497a9357fc29)
+      dc1-spine01: no syslog line in Loki within 60 s of the push
+PASS  S7.7 Prometheus holds the Platform job metrics (jobsComplete per workflow equals the API) and every application/adapter is up
+      13 workflows: jobsComplete equal in the API and Prometheus; 23 applications running, 4 adapters online in both
+DEFER S7.5 Grafana login via Keycloak and every dashboard renders with data: identity phase (ADR 0050)
+SKIP  S7.6 drill (set VERIFY_DRILLS=1 to run; stops br1-wan01 for a few minutes)
+
+passed=6 failed=1 deferred=1

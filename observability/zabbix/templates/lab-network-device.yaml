@@ -1,0 +1,67 @@
+# Fast reachability for every router and switch (ADR 0051 decision 5): ICMP every 15 s, unreachable after
+# four misses, so the S7.6 trigger fires about a minute after a device stops. Linked by lab-ios-xe and lab-eos.
+zabbix_export:
+  version: '7.0'
+  template_groups:
+    - uuid: 3b0d2a6e4c1f4a8e8b2d9c7f1e5a3d01
+      name: Templates/Lab
+  templates:
+    - uuid: 5c7e1f2a9b3d4e6f8a1b2c3d4e5f6a01
+      template: lab-network-device
+      name: lab-network-device
+      description: 'Lab reachability: ICMP every 15 s from the Zabbix server pods (ADR 0051).'
+      groups:
+        - name: Templates/Lab
+      items:
+        - uuid: 7d2f3a4b5c6d4e7f8a9b0c1d2e3f4a01
+          name: 'ICMP ping (fast)'
+          type: SIMPLE
+          key: 'icmpping[,2,200,,500]'
+          delay: 15s
+          history: 7d
+          value_type: UNSIGNED
+          description: 'Two echo requests 200 ms apart, 500 ms timeout; 1 when at least one answers.'
+          valuemap:
+            name: 'Service state'
+          tags:
+            - tag: component
+              value: network
+          triggers:
+            - uuid: 9e4a5b6c7d8e4f9a8b0c1d2e3f4a5b01
+              expression: 'max(/lab-network-device/icmpping[,2,200,,500],#4)=0'
+              name: 'LAB: {HOST.NAME} unreachable by ICMP'
+              priority: HIGH
+              description: 'Four consecutive fast pings (about a minute) failed (S7.6).'
+              tags:
+                - tag: scope
+                  value: availability
+        - uuid: 8c3e4f5a6b7c4d8e8f9a0b1c2d3e4f01
+          name: 'ICMP loss'
+          type: SIMPLE
+          key: 'icmppingloss[,5,200,,500]'
+          delay: 1m
+          history: 7d
+          value_type: FLOAT
+          units: '%'
+          tags:
+            - tag: component
+              value: network
+        - uuid: 6a2d3e4f5b6c4d7e8f9a0b1c2d3e4f02
+          name: 'ICMP response time'
+          type: SIMPLE
+          key: 'icmppingsec[,3,200,,500]'
+          delay: 1m
+          history: 7d
+          value_type: FLOAT
+          units: s
+          tags:
+            - tag: component
+              value: network
+      valuemaps:
+        - uuid: 4f1a2b3c5d6e4f7a8b9c0d1e2f3a4b01
+          name: 'Service state'
+          mappings:
+            - value: '0'
+              newvalue: Down
+            - value: '1'
+              newvalue: Up

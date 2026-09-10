@@ -1,0 +1,27 @@
+# Host-routed Ingresses behind Traefik (default TLS store = the wildcard lab-CA certificate, HTTP redirected
+# to HTTPS by the phase-3 HelmChartConfig). Backends are the plain-HTTP in-cluster Services.
+{% for i in ingresses %}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ i.name }}
+  namespace: {{ obs_namespace }}
+  labels:
+    lab/role: observability-ui
+spec:
+  ingressClassName: traefik
+  tls:
+    - hosts: ["{{ i.name }}.{{ domain }}"]
+  rules:
+    - host: {{ i.name }}.{{ domain }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ i.service }}
+                port:
+                  number: {{ i.port }}
+{% endfor %}

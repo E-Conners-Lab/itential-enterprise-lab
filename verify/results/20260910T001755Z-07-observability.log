@@ -1,0 +1,75 @@
+# test-07-observability 20260910T001755Z
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+    import sys,json;d=json.load(sys.stdin);
+                      ~~~~~~~~~^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/__init__.py", line 298, in load
+    return loads(fp.read(),
+        cls=cls, object_hook=object_hook,
+        parse_float=parse_float, parse_int=parse_int,
+        parse_constant=parse_constant, object_pairs_hook=object_pairs_hook, **kw)
+  File "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/__init__.py", line 352, in loads
+    return _default_decoder.decode(s)
+           ~~~~~~~~~~~~~~~~~~~~~~~^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/decoder.py", line 345, in decode
+    obj, end = self.raw_decode(s, idx=_w(s, 0).end())
+               ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/decoder.py", line 363, in raw_decode
+    raise JSONDecodeError("Expecting value", s, err.value) from None
+json.decoder.JSONDecodeError: Expecting value: line 2 column 1 (char 1)
+FAIL  Zabbix API login at https://zabbix.lab.internal/api_jsonrpc.php (ZABBIX_ADMIN_PASSWORD)
+FAIL  S7.1 Zabbix monitors every NetBox-active host (+eve, netbox) green with the lab templates; SNMPv3 and the agents confirmed from the workstation
+FAIL  S7.1 Expiries host: one item per manifest expiry (days left agrees with the date, NetBox token and lab CA read back), trigger at 14 days
+FAIL  S7.2 Prometheus target count per job equals observability.yaml (NetBox-sized); no target down; lab rules loaded
+FAIL  S7.5-prep Grafana provisions the lab dashboards and the Prometheus/Alertmanager/Loki/Zabbix datasources (login via Keycloak: phase 9)
+      Traceback (most recent call last):
+        File "<string>", line 1, in <module>
+          import sys,json;print(sorted(d["title"] for d in json.load(sys.stdin)))
+                                                           ~~~~~~~~~^^^^^^^^^^^
+        File "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/__init__.py", line 298, in load
+          return loads(fp.read(),
+              cls=cls, object_hook=object_hook,
+              parse_float=parse_float, parse_int=parse_int,
+              parse_constant=parse_constant, object_pairs_hook=object_pairs_hook, **kw)
+        File "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/__init__.py", line 352, in loads
+          return _default_decoder.decode(s)
+                 ~~~~~~~~~~~~~~~~~~~~~~~^^^
+        File "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/decoder.py", line 345, in decode
+          obj, end = self.raw_decode(s, idx=_w(s, 0).end())
+                     ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+        File "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/decoder.py", line 363, in raw_decode
+          raise JSONDecodeError("Expecting value", s, err.value) from None
+      json.decoder.JSONDecodeError: Expecting value: line 1 column 1 (char 0)
+      dashboard lab-health missing: 
+FAIL  S7.3 gNMIc BGP session count for dc1-spine01 equals show bgp summary (and Prometheus agrees)
+FAIL  S7.4 Loki returns a syslog line from each vendor within 60 s of a governed no-op config push (device log agrees)
+      pushed to br1-wan01 (job f2583689a085464dbade28c1)
+      Traceback (most recent call last):
+        File "<string>", line 1, in <module>
+          import sys,json;d=json.load(sys.stdin)["data"]["result"];[print(v[1][:160]) for s in d for v in s["values"]]
+                            ~~~~~~~~~^^^^^^^^^^^
+        File "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/__init__.py", line 298, in load
+          return loads(fp.read(),
+              cls=cls, object_hook=object_hook,
+              parse_float=parse_float, parse_int=parse_int,
+              parse_constant=parse_constant, object_pairs_hook=object_pairs_hook, **kw)
+        File "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/__init__.py", line 352, in loads
+          return _default_decoder.decode(s)
+                 ~~~~~~~~~~~~~~~~~~~~~~~^^^
+        File "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/decoder.py", line 345, in decode
+          obj, end = self.raw_decode(s, idx=_w(s, 0).end())
+                     ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+        File "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/decoder.py", line 363, in raw_decode
+          raise JSONDecodeError("Expecting value", s, err.value) from None
+      json.decoder.JSONDecodeError: Expecting value: line 1 column 1 (char 0)
+      Traceback (most recent call last):
+        File "<string>", line 1, in <module>
+          import sys,json;d=json.load(sys.stdin)["data"]["result"];[print(v[1][:160]) for s in d for v in s["values"]]
+                            ~~~~~~~~~^^^^^^^^^^^
+        File "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/__init__.py", line 298, in load
+          return loads(fp.read(),
+FAIL  S7.7 Prometheus holds the Platform job metrics (jobsComplete per workflow equals the API) and every application/adapter is up
+DEFER S7.5 Grafana login via Keycloak and every dashboard renders with data: identity phase (ADR 0050)
+SKIP  S7.6 drill (set VERIFY_DRILLS=1 to run; stops br1-wan01 for a few minutes)
+
+passed=0 failed=8 deferred=1

@@ -1,0 +1,89 @@
+# prometheus-community/prometheus-snmp-exporter (ADR 0051): interface counters of every router and switch over
+# SNMPv3. The passphrases come from the Secret snmpv3 (SNMPV3_AUTH_PASSWORD, SNMPV3_PRIV_PASSWORD) through
+# --config.expand-environment-variables; the targets are ScrapeConfigs the play renders from NetBox.
+extraArgs:
+  - --config.expand-environment-variables
+envFrom:
+  - secretRef: {name: snmpv3}
+resources:
+  requests: {cpu: 20m, memory: 32Mi}
+  limits: {memory: 128Mi}
+serviceMonitor:
+  enabled: false # the lab's ScrapeConfigs and ServiceMonitor (k8s/observability templates) own the jobs
+# The chart takes snmp.yml as one string (indented verbatim into its ConfigMap).
+config: |
+    auths:
+      lab_v3:
+        version: 3
+        username: zabbix # the same SNMPv3 user Zabbix polls with (topology lab.observability.snmp.user)
+        security_level: authPriv
+        password: ${SNMPV3_AUTH_PASSWORD}
+        auth_protocol: SHA
+        priv_protocol: AES
+        priv_password: ${SNMPV3_PRIV_PASSWORD}
+    modules:
+      # IF-MIB high-capacity counters plus status, labelled by ifDescr/ifName, and sysUpTime
+      if_mib:
+        walk:
+          - 1.3.6.1.2.1.1.3 # sysUpTime
+          - 1.3.6.1.2.1.2.2.1.2 # ifDescr
+          - 1.3.6.1.2.1.2.2.1.7 # ifAdminStatus
+          - 1.3.6.1.2.1.2.2.1.8 # ifOperStatus
+          - 1.3.6.1.2.1.2.2.1.14 # ifInErrors
+          - 1.3.6.1.2.1.2.2.1.20 # ifOutErrors
+          - 1.3.6.1.2.1.31.1.1.1.1 # ifName
+          - 1.3.6.1.2.1.31.1.1.1.6 # ifHCInOctets
+          - 1.3.6.1.2.1.31.1.1.1.10 # ifHCOutOctets
+          - 1.3.6.1.2.1.31.1.1.1.15 # ifHighSpeed
+        max_repetitions: 25
+        retries: 2
+        timeout: 10s
+        metrics:
+          - name: sysUpTime
+            oid: 1.3.6.1.2.1.1.3
+            type: gauge
+            help: The time since the network management portion of the system was last re-initialized (hundredths of a second)
+          - name: ifAdminStatus
+            oid: 1.3.6.1.2.1.2.2.1.7
+            type: gauge
+            help: The desired state of the interface (1 up, 2 down, 3 testing)
+            indexes: [{labelname: ifIndex, type: gauge}]
+            lookups: &iflookups
+              - {labels: [ifIndex], labelname: ifDescr, oid: 1.3.6.1.2.1.2.2.1.2, type: DisplayString}
+              - {labels: [ifIndex], labelname: ifName, oid: 1.3.6.1.2.1.31.1.1.1.1, type: DisplayString}
+          - name: ifOperStatus
+            oid: 1.3.6.1.2.1.2.2.1.8
+            type: gauge
+            help: The current operational state of the interface (1 up, 2 down)
+            indexes: [{labelname: ifIndex, type: gauge}]
+            lookups: *iflookups
+          - name: ifInErrors
+            oid: 1.3.6.1.2.1.2.2.1.14
+            type: counter
+            help: Inbound packets that contained errors
+            indexes: [{labelname: ifIndex, type: gauge}]
+            lookups: *iflookups
+          - name: ifOutErrors
+            oid: 1.3.6.1.2.1.2.2.1.20
+            type: counter
+            help: Outbound packets that could not be transmitted because of errors
+            indexes: [{labelname: ifIndex, type: gauge}]
+            lookups: *iflookups
+          - name: ifHCInOctets
+            oid: 1.3.6.1.2.1.31.1.1.1.6
+            type: counter
+            help: The total number of octets received on the interface
+            indexes: [{labelname: ifIndex, type: gauge}]
+            lookups: *iflookups
+          - name: ifHCOutOctets
+            oid: 1.3.6.1.2.1.31.1.1.1.10
+            type: counter
+            help: The total number of octets transmitted out of the interface
+            indexes: [{labelname: ifIndex, type: gauge}]
+            lookups: *iflookups
+          - name: ifHighSpeed
+            oid: 1.3.6.1.2.1.31.1.1.1.15
+            type: gauge
+            help: An estimate of the interface's current bandwidth in units of 1,000,000 bits per second
+            indexes: [{labelname: ifIndex, type: gauge}]
+            lookups: *iflookups
