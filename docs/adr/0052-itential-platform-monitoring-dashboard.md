@@ -1,6 +1,6 @@
 # 0052 — The official "Itential Platform Monitoring" dashboard (grafana.com 25527) and the exporters it expects
 
-- **Status:** proposed (owner request 2026-09-10: "get all the dashboards that are available and add them to my grafana stack")
+- **Status:** accepted (owner request and approval 2026-09-10, PR #23)
 - **Date:** 2026-09-10
 - **Related:** ADR 0035 (the dev-stack on VM 205; `compose.override.yml` is the lab's only change to the vendored Compose file), ADR 0051 (observability design; the Platform exporter and the native `/prometheus_metrics` route), PID S7 (amendment 1.17)
 
