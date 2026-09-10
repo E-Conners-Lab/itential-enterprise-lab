@@ -1,0 +1,13 @@
+# test-08-platform-ha2 20260910T120838Z
+FAIL  S11.1 the eleven production VMs run with the sizes of the oracle and the budget, and NetBox holds each one
+      iap-lb: not on the Proxmox host
+      iap-01: not on the Proxmox host
+      iap-02: not on the Proxmox host
+      mongo-01: not on the Proxmox host
+      mongo-02: not on the Proxmox host
+      mongo-03: not on the Proxmox host
+      redis-01: not on the Proxmox host
+      redis-02: not on the Proxmox host
+      redis-03: not on the Proxmox host
+      iag-01: not on the Proxmox host
+      tools-01: not on the Proxmox host

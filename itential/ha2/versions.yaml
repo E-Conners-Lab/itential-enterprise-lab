@@ -1,0 +1,115 @@
+# Single oracle for Phase 8 (PID S11, ADR 0053): the production Itential environment in Itential's HA2 shape
+# (docs.itential.com/itential-platform/plan/architecture/high-availability), at lab sizes.
+#
+# Images are NOT repeated here: they come from itential/versions.yaml (the same pins Phase 5 staged on the
+# Proxmox host). This file owns the topology - which VM runs what, the replica set and Sentinel names, the
+# ports and the accounts. tests/test_platform_ha2.py holds it to topology/ipam.yaml, docs/resource-budget.md
+# and docs/ip-plan.md; verify/test-08-platform-ha2.sh reads it as the intent.
+
+environment: production # distinguishes it from the dev-stack on VM 205 (ADR 0035), which retires at cut-over
+domain: lab.internal
+# The name every client uses. It resolves to VM 205 until the cut-over, then to iap-lb (ADR 0053 decision 4).
+service_name: itential
+
+# Eleven VMs: the nine Itential component servers, each on its own as the guide requires for production,
+# plus the load balancer in front of them and the tools VM. Sizes are lab sizes:
+# the guide's are 16 cores / 64-128 GB per node, which the host cannot hold (docs/resource-budget.md).
+vms:
+  - {name: iap-lb, vm_id: 210, ip: 10.100.0.71, cores: 1, memory_mb: 1024, disk_gb: 16, role: loadbalancer}
+  - {name: iap-01, vm_id: 211, ip: 10.100.0.72, cores: 4, memory_mb: 8192, disk_gb: 60, role: platform}
+  - {name: iap-02, vm_id: 212, ip: 10.100.0.73, cores: 4, memory_mb: 8192, disk_gb: 60, role: platform}
+  - {name: mongo-01, vm_id: 213, ip: 10.100.0.74, cores: 2, memory_mb: 4096, disk_gb: 40, role: mongodb, priority: 10}
+  - {name: mongo-02, vm_id: 214, ip: 10.100.0.75, cores: 2, memory_mb: 4096, disk_gb: 40, role: mongodb, priority: 5}
+  - {name: mongo-03, vm_id: 215, ip: 10.100.0.76, cores: 2, memory_mb: 4096, disk_gb: 40, role: mongodb, priority: 5}
+  - {name: redis-01, vm_id: 216, ip: 10.100.0.77, cores: 1, memory_mb: 2048, disk_gb: 16, role: redis, master: true}
+  - {name: redis-02, vm_id: 217, ip: 10.100.0.78, cores: 1, memory_mb: 2048, disk_gb: 16, role: redis}
+  - {name: redis-03, vm_id: 218, ip: 10.100.0.79, cores: 1, memory_mb: 2048, disk_gb: 16, role: redis}
+  - {name: iag-01, vm_id: 219, ip: 10.100.0.80, cores: 4, memory_mb: 6144, disk_gb: 60, role: gateway}
+  - {name: tools-01, vm_id: 220, ip: 10.100.0.81, cores: 4, memory_mb: 8192, disk_gb: 40, role: tools}
+
+# MongoDB replica set (guide: 3 members, authentication enabled, TLS between members recommended).
+mongodb:
+  replica_set: rs0
+  port: 27017
+  database: itential
+  # SCRAM accounts the Deployer defines (docs/mongodb_guide.md); passwords are generated once into .env
+  users:
+    admin: {name: admin, role: root, env: MONGO_ADMIN_PASSWORD}
+    itential: {name: itential, role: readWrite, env: MONGO_ITENTIAL_PASSWORD}
+    monitor: {name: monitor, role: clusterMonitor, env: MONGO_MONITOR_PASSWORD}
+  keyfile_env: MONGO_KEYFILE # 1024-char base64 shared secret for intra-cluster auth, generated once
+  wired_tiger_cache_gb: 1 # 4 GB VMs: half of (RAM - 1 GB) is the MongoDB default and too much here
+  tls: true
+
+# Redis replication + Sentinel (guide: 3 Redis with Sentinel; Sentinel quorum 2 of 3).
+redis:
+  port: 6379
+  sentinel_port: 26379
+  master_name: itential # the Platform's platform_redis_name; Sentinel monitors this name
+  quorum: 2
+  # ACL users the Deployer defines (docs/redis_guide.md); passwords generated once into .env
+  users:
+    itential: {name: itential, env: REDIS_ITENTIAL_PASSWORD}
+    repluser: {name: repluser, env: REDIS_REPL_PASSWORD}
+    sentineluser: {name: sentineluser, env: REDIS_SENTINEL_PASSWORD}
+    monitor: {name: monitor, env: REDIS_MONITOR_PASSWORD}
+  tls: false # Redis TLS needs per-node certificates on every client; phase 9 adds it with Vault-issued certs
+
+# The Platform nodes and the load balancer in front of them.
+platform:
+  http_port: 3000 # the load balancer forwards here (Deployer nginx guide)
+  https_port: 3443
+  gateway_manager_port: 8080 # Gateway 5 on iag-01 dials this through the load balancer (layer 4)
+  nodes: [iap-01, iap-02]
+  # Until the identity phase federates LDAP and Keycloak, local Platform accounts are the only AAA the
+  # production environment has. Two of them, and they are not interchangeable (measured on 6.5.2):
+  #  - bootstrap_user is the image's default user (ITENTIAL_DEFAULT_USER_* in the compose file, password
+  #    ITENTIAL_ADMIN_PASSWORD). The Platform rewrites its account document on every login, which clears the
+  #    group membership, so it can never satisfy an API that asks for "a member of a group holding role X".
+  #    It is break-glass and bootstrap only.
+  #  - admin_user is the directory account. Platform 6 has no API that creates a local account (the Admin
+  #    Essentials UI only lists and patches them), and the Phase 5 measurement holds here too: "the built-in
+  #    local admin's memberOf is ignored by the session". So production runs the same OpenLDAP the dev-stack
+  #    runs (see `ldap` below), admin@itential is provisioned by its first login, and its roles and group
+  #    membership are written to the database exactly as itential.yml writes them on VM 205. Same username on
+  #    both environments, so every phase 5-7 play and verify replays unchanged, and the identity phase
+  #    (OpenLDAP on k3s behind Keycloak) repoints the adapter without touching an account.
+  bootstrap_user: admin
+  admin_user: admin@itential
+  # the custom-services directory each node mounts; the adapters of itential/versions.yaml are installed twice
+  adapters_dir: /opt/itential/volumes/platform/adapters
+loadbalancer:
+  listen_port: 443
+  backend_port: 3000
+  sticky: true # "using sticky sessions" (Deployer nginx guide); the Platform keeps session state in Redis
+  health_path: /health/server
+
+gateway:
+  cluster_id: lab # the same Gateway 5 cluster id the dev-stack registers (itential/versions.yaml stack)
+  grpc_port: 50051
+  etcd_port: 2379
+
+# The interim directory: the same osixia/openldap image, the same upstream LDIF (itential/ldap/openldap.ldif)
+# and the same adapter settings the dev-stack uses, on tools-01 rather than as a Compose service beside the
+# Platform. The identity phase moves it to k3s and federates it with Keycloak; until then admin@itential
+# authenticates here, with ITENTIAL_ADMIN_PASSWORD (the LDIF's own value, an accepted lab exception).
+ldap:
+  port: 389
+  organisation: Itential, LLC.
+  domain: itential.io
+  base_dn: dc=itential,dc=io
+  bind_dn: cn=admin,dc=itential,dc=io
+  user_dn_template: cn={0},dc=itential,dc=io
+  ldif: itential/ldap/openldap.ldif
+
+tools:
+  mcp_port: 8000
+  ollama_port: 11434
+
+# Exporters for the official Itential Platform Monitoring dashboard (ADR 0052) follow the components:
+# node+process on both Platform nodes, redis_exporter on each Redis VM, mongodb_exporter on each MongoDB VM.
+exporters:
+  node: 9100
+  process: 9256
+  redis: 9121
+  mongodb: 9216

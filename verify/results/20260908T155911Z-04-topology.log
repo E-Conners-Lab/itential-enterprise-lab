@@ -1,0 +1,11 @@
+# test-04-topology 20260908T155911Z
+PASS  S3.1 every node in topology/enterprise.yaml exists in EVE-NG /enterprise.unl and is running
+PASS  S3.2 every node answers on its management address (ssh, or rdp for Windows)
+PASS  S3.3 NetBox devices, primary IPs and cable count equal the YAML; EVE-NG link count equals the YAML
+PASS  S3.4 ISP has 4 BGP peers; each branch 2 tunnels up; leaves 2 EVPN peers + MLAG active; firewalls HA (or bypass BGP while deferred)
+PASS  S3.5 br1-host01 reaches dc1-srv01 (10.101.10.10) through the branch edge -> IPsec tunnel -> DC edge -> fabric (via the firewalls when built, else the bypass)
+PASS  S3.6 show version on one node per vendor equals the manifest running version
+PASS  S3.7 summed node RAM in EVE-NG within the 115 GB internal ceiling
+DEFER S3.4-fw HA active/passive, S3.6-fw PAN-OS version, S3.5 path via firewalls (bypass path checked instead) (lab.firewalls=false: firewalls not built yet)
+
+passed=7 failed=0 deferred=1

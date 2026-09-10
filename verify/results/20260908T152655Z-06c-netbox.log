@@ -1,0 +1,32 @@
+# test-06c-netbox 20260908T152655Z
+PASS  S4e.1 every addressed interface of the 12 network devices is in NetBox with its address, VRF and 'to <peer>' description; the devices agree (wf-show-all-v1 + direct SSH)
+      12 devices, 64 intent interfaces equal in NetBox and on the devices (addresses + descriptions); direct SSH agrees on br1-wan01 and dc1-leaf01
+PASS  S4e.2 VRFs with route targets, prefixes in PROD, the 7 ASNs on their sites, BGP neighbours and RDs in each device's config context equal to the device (direct SSH), the transit virtual router as an FHRP group
+      VRFs MGMT/WAN/PROD (PROD RT 50001:50001), 7 ASNs on their sites, FHRP group ['dc1-vlan100-varp'] with its members and address, 38 BGP neighbours in the device contexts equal the devices' own tables over direct SSH (12 devices)
+FAIL  S4e.3 one location and one rack per site, every device racked at its derived position (role order top down, unique U)
+      isp-core01: rack None UNone None != wan-rack01 U42 front
+      dc1-wan01: rack None UNone None != dc1-rack01 U42 front
+      dc1-wan02: rack None UNone None != dc1-rack01 U41 front
+      dc1-rack01: UNone holds dc1-wan01 and dc1-wan02
+      dc1-fw01: rack None UNone None != dc1-rack01 U40 front
+      dc1-rack01: UNone holds dc1-wan02 and dc1-fw01
+      dc1-fw02: rack None UNone None != dc1-rack01 U39 front
+      dc1-rack01: UNone holds dc1-fw01 and dc1-fw02
+      dc1-spine01: rack None UNone None != dc1-rack01 U38 front
+      dc1-rack01: UNone holds dc1-fw02 and dc1-spine01
+      dc1-spine02: rack None UNone None != dc1-rack01 U37 front
+      dc1-rack01: UNone holds dc1-spine01 and dc1-spine02
+      dc1-leaf01: rack None UNone None != dc1-rack01 U36 front
+      dc1-rack01: UNone holds dc1-spine02 and dc1-leaf01
+      dc1-leaf02: rack None UNone None != dc1-rack01 U35 front
+      dc1-rack01: UNone holds dc1-leaf01 and dc1-leaf02
+      dc1-acc01: rack None UNone None != dc1-rack01 U34 front
+      dc1-rack01: UNone holds dc1-leaf02 and dc1-acc01
+      dc1-srv01: rack None UNone None != dc1-rack01 U33 front
+      dc1-rack01: UNone holds dc1-acc01 and dc1-srv01
+      br1-wan01: rack None UNone None != br1-rack01 U42 front
+      br1-fw01: rack None UNone None != br1-rack01 U41 front
+      br1-rack01: UNone holds br1-wan01 and br1-fw01
+      br1-sw01: rack None UNone None != br1-rack01 U40 front
+
+passed=2 failed=1

@@ -1,0 +1,35 @@
+# test-06c-netbox 20260908T173617Z
+SKIP  S4e.1 every addressed interface of the 12 network devices is in NetBox with its address, VRF and 'to <peer>' description; the devices agree (wf-show-all-v1 + direct SSH)
+SKIP  S4e.2 VRFs with route targets, prefixes in PROD, the 7 ASNs on their sites, BGP neighbours and RDs in each device's config context equal to the device (direct SSH), the transit virtual router as an FHRP group
+SKIP  S4e.3 one location and one rack per site, every device racked at its derived position (role order top down, unique U)
+SKIP  S4e.4 provider circuits with terminations at their sites; the cable trace from each edge port crosses the circuit to the isp-core01 port; no direct provider cable remains
+SKIP  S4e.5 journal entries: every site carries netbox-enrich.yml entries naming a real commit; br2-sw01 carries the LCM create and delete entries
+FAIL  S4e.6 the play re-runs with changed=0; netbox-sot answers address/VRF/peer, site ASNs, rack position, circuit and context questions equal to the NetBox API; the compliance plan stays clean with the interface intent in the device leaves
+      netbox-enrich.yml re-run: localhost : ok=36 changed=0 unreachable=0 failed=0 skipped=14 rescued=0 ignored=0 
+      netbox-sot: 'Which address does interface GigabitEthernet2 of br1-wan01 carry, in which VRF, and what does its description say?' -> Interface **GigabitEthernet2** on **br1-wan01** carries:
+      
+      - **Address:** 10.103.0.10/30
+      - **VRF:** WAN (descri (tokens in=11803 out=456)
+      netbox-sot: 'Which autonomous system numbers are assigned to site br1?' -> Site **br1 (Branch 1)** has **one ASN assigned: AS65201** (RIR: private), described as "br1 (br1)". (tokens in=9615 out=138)
+      netbox-sot: 'In which rack and at which rack unit position is dc1-leaf01 installed?' -> dc1-leaf01 is installed in rack **dc1-rack01** (in the DC1 hall A location at site DC1), at rack unit position (tokens in=11563 out=152)
+      netbox-sot: 'Which circuit terminates at site br1 and who is its provider?' -> The circuit terminating at site **br1** (Branch 1) is:
+      
+      - **Circuit ID (cid):** `ISP-BR1-01`
+      - **Provider:** S (tokens in=10185 out=336)
+      netbox-sot: 'What NTP server and domain does the rendered config context of br2-sw01 give?' -> According to the rendered config context for **br2-sw01** (id 19):
+      
+      - **NTP server:** `10.100.0.1`
+      - **Domain: (tokens in=10904 out=177)
+      Traceback (most recent call last):
+        File "<string>", line 3, in <module>
+          for r in json.load(sys.stdin):
+                   ~~~~~~~~~^^^^^^^^^^^
+        File "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/__init__.py", line 298, in load
+          return loads(fp.read(),
+              cls=cls, object_hook=object_hook,
+              parse_float=parse_float, parse_int=parse_int,
+              parse_constant=parse_constant, object_pairs_hook=object_pairs_hook, **kw)
+
+tokens spent this run: in=54070 out=1259 (Anthropic)
+
+passed=0 failed=1

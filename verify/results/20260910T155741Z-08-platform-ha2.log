@@ -1,0 +1,31 @@
+# test-08-platform-ha2 20260910T155741Z
+PASS  S11.1 the eleven production VMs run with the sizes of the oracle and the budget, and NetBox holds each one
+      11 VMs running with the budgeted vCPU/RAM/disk and their NetBox records
+PASS  S11.2 MongoDB is a three-member replica set (one PRIMARY, two SECONDARY) with authentication and TLS
+      replica set: mongo-01.lab.internal:27017 PRIMARY, mongo-02.lab.internal:27017 SECONDARY, mongo-03.lab.internal:27017 SECONDARY
+      unauthenticated clients are refused
+      the Platform connects to all three members of rs0 with TLS and SCRAM
+PASS  S11.3 Redis has one master, two replicas and three Sentinels that agree, with ACL users only
+      Redis: 1 master, 2 replicas
+      three Sentinels agree the master of itential is 10.100.0.78:6379
+      unauthenticated clients are refused (ACL users only)
+      the Platform connects through Sentinel
+PASS  S11.4 both Platform nodes answer /health/server and the load balancer serves the service name with one shared session
+        node 10.100.0.72: Platform 6.5.2 up 202s
+        node 10.100.0.73: Platform 6.5.2 up 204s
+      both nodes healthy; the load balancer serves itential.lab.internal and its session works on either node
+PASS  S11.5 everything phases 5-7 built exists on production (workflows, Golden Config, MOP, LCM, integrations, agents, inventories)
+      every workflow, Golden Config tree, compliance plan, MOP template, LCM model, form, integration, agent project and inventory of phases 5-7 exists on production; 12 devices through the broker
+PASS  S11.7 the official Itential dashboard's MongoDB and Redis rows show the production replica sets
+      the official dashboard has three replica-set members, one Redis master with replicas, and both Platform nodes
+DEFER S11.8 VM 205 deleted: a separate owner-approved step at the end of the cut-over (ADR 0053)
+PASS  S11.6a drill: stopping one Platform node leaves the service answering through the load balancer
+      iap-01 stopped: the load balancer kept serving (12/12 probes 200); node restarted
+PASS  S11.6b drill: stopping the MongoDB primary elects a new one within 30 s and the Platform keeps serving
+      primary before: mongo-01
+      mongo-01 stopped: mongo-02 became PRIMARY after 4s and the Platform kept serving; mongo-01 restarted
+PASS  S11.6c drill: stopping the Redis master promotes a replica through Sentinel and the Platform keeps serving
+      master before: redis-02 (10.100.0.78)
+      redis-02 stopped: Sentinel promoted 10.100.0.79 after 7s and the Platform kept serving; redis-02 restarted
+
+passed=9 failed=0 deferred=1

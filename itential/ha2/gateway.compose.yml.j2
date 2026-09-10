@@ -1,0 +1,93 @@
+# The Itential Gateway 5 cluster on its own server (PID S11, ADR 0053), the same shape ADR 0038 built on the
+# dev-stack: the server keeps the Gateway Manager connection and the gRPC listener, etcd is the shared store,
+# and every execution runs on the glibc runner so Genie and TextFSM can install there.
+# The guide puts Gateway on its own VM in HA2, which is what this file is.
+services:
+  etcd:
+    container_name: etcd
+    image: {{ images.etcd.repository }}:{{ images.etcd.tag }}
+    command: ["etcd", "--name", "{{ gateway.cluster_id }}", "--data-dir", "/etcd-data",
+              "--listen-client-urls", "http://0.0.0.0:{{ gateway.etcd_port }}",
+              "--advertise-client-urls", "http://etcd:{{ gateway.etcd_port }}"]
+    volumes:
+      - etcd-data:/etcd-data
+    restart: unless-stopped
+
+  gateway5:
+    container_name: gateway5
+    image: {{ images.gateway5.repository }}:{{ images.gateway5.tag }}
+    platform: linux/amd64
+    entrypoint: [iagctl, server]
+    ports:
+      - "{{ ip }}:{{ gateway.grpc_port }}:50051"
+    volumes:
+      - ./volumes/gateway5/certificates:/etc/ssl/gateway5:ro
+      - gateway5-data:/etc/gateway
+    environment:
+      GATEWAY_APPLICATION_CLUSTER_ID: "{{ gateway.cluster_id }}"
+      GATEWAY_APPLICATION_MODE: "server"
+      GATEWAY_APPLICATION_WORKING_DIR: "/etc/gateway"
+      # Gateway Manager lives in the Platform; this dials the load balancer's own name, which is correct
+      # both before and after the cut-over moves the service name onto it
+      GATEWAY_CONNECT_HOSTS: "{{ lb_host }}:{{ platform.gateway_manager_port }}"
+      GATEWAY_CONNECT_CERTIFICATE_FILE: "/etc/ssl/gateway5/gw-manager.pem"
+      GATEWAY_CONNECT_PRIVATE_KEY_FILE: "/etc/ssl/gateway5/gw-manager-key.pem"
+      GATEWAY_CONNECT_INSECURE_TLS: "true"
+      GATEWAY_LOG_LEVEL: "INFO"
+      GATEWAY_SERVER_USE_TLS: "false"
+      # Without this the server runs a runCode task itself, on its own musl image, where pip cannot
+      # install pyats and the parse fails silently (ADR 0038: Genie needs the glibc runner). It is the
+      # flag that makes the server hand every execution to a registered runner node.
+      GATEWAY_SERVER_DISTRIBUTED_EXECUTION: "true"
+      # the Compose service name, not 0.0.0.0: with distributed execution the runner dials the server
+      # back on the address it announces, and 0.0.0.0 is not an address anything can dial
+      GATEWAY_SERVER_LISTEN_ADDRESS: gateway5
+      GATEWAY_STORE_BACKEND: etcd
+      GATEWAY_STORE_ETCD_HOSTS: "etcd:{{ gateway.etcd_port }}"
+      GATEWAY_STORE_ETCD_USE_TLS: "false"
+    depends_on:
+      - etcd
+    restart: unless-stopped
+
+  gateway5-runner:
+    container_name: gateway5-runner
+    image: {{ gateway_runner_image }}
+    depends_on:
+      - etcd
+      - gateway5
+    environment:
+      GATEWAY_APPLICATION_MODE: runner
+      GATEWAY_APPLICATION_CLUSTER_ID: "{{ gateway.cluster_id }}"
+      GATEWAY_LOG_LEVEL: "info"
+      GATEWAY_STORE_BACKEND: etcd
+      GATEWAY_STORE_ETCD_HOSTS: "etcd:{{ gateway.etcd_port }}"
+      GATEWAY_STORE_ETCD_USE_TLS: "false"
+      GATEWAY_RUNNER_LISTEN_ADDRESS: 0.0.0.0
+      GATEWAY_RUNNER_PORT: "50051"
+      GATEWAY_RUNNER_ANNOUNCEMENT_ADDRESS: gateway5-runner
+      GATEWAY_RUNNER_USE_TLS: "false"
+      # NetBox for runCode tasks (ADR 0048); the OOB address, not the home-LAN one the dev-stack carried
+      NETBOX_URL: "http://{{ netbox_oob_url }}"
+      NETBOX_TOKEN: ${NETBOX_TOKEN}
+    volumes:
+      - gateway5-runner-data:/var/lib/gateway
+    deploy:
+      resources:
+        limits:
+          memory: 3g
+    restart: unless-stopped
+
+  node-exporter:
+    container_name: node-exporter
+    image: {{ images.node_exporter.repository }}:{{ images.node_exporter.tag }}
+    network_mode: host
+    pid: host
+    command: ["--path.rootfs=/host", "--web.listen-address={{ ip }}:{{ exporters.node }}"]
+    volumes:
+      - /:/host:ro,rslave
+    restart: unless-stopped
+
+volumes:
+  etcd-data:
+  gateway5-data:
+  gateway5-runner-data:

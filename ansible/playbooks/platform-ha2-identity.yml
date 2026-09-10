@@ -1,0 +1,71 @@
+---
+# Phase 8, slice F (PID S11, ADR 0055): the Platform's administrator on the production environment.
+#
+# Platform 6 has no API that creates a local account - the Admin Essentials bundle only lists and patches
+# them - and the image's default user cannot hold a group membership: the Platform rewrites its account
+# document on every login, so a memberOf written through the authorization API is gone by the next request,
+# and an assignedRoles update clears it outright. Inventory Manager and its peers refuse such a caller
+# ("User must be a member of at least one of the assigned groups with roles: inventory:read and
+# inventory:update"), which is the same thing Phase 5 measured on the dev-stack.
+#
+# So production runs the same directory the dev-stack runs - OpenLDAP with the upstream LDIF, on tools-01 -
+# and admin@itential is provisioned by its first login, exactly as on VM 205. Runs after the tools VM exists.
+- name: The Platform administrator from the directory
+  hosts: ha2-platform[0]
+  become: true
+  gather_facts: false
+  vars_files:
+    - ../../itential/ha2/versions.yaml
+    - ../../itential/versions.yaml
+  vars:
+    ansible_ssh_common_args: -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/dev/null
+    platform_local: "http://{{ (vms | selectattr('name', 'equalto', inventory_hostname) | first).ip }}:{{ platform.http_port }}"
+    tools_ip: "{{ (vms | selectattr('role', 'equalto', 'tools') | first).ip }}"
+    mongo_members: "{{ vms | selectattr('role', 'equalto', 'mongodb') | map(attribute='name') | list }}"
+    admin_user: "{{ platform.admin_user }}"
+    admin_pw: "{{ lookup('ansible.builtin.env', 'ITENTIAL_ADMIN_PASSWORD') }}"
+    ldap_url: "ldap://{{ tools_ip }}:{{ ldap.port }}"
+    # the directory account's roles and membership are written to the database, as they are on the dev-stack
+    # and as upstream's own scripts do; the replica set needs the URI so the write reaches the primary
+    mongo_shell_host: "{{ mongo_members[0] }}"
+    mongo_shell_argv:
+      - docker
+      - exec
+      - mongodb
+      - mongosh
+      - --quiet
+      - --tlsCAFile
+      - /etc/mongo/tls/ca.crt
+      - "{{ mongo_uri }}"
+      - --eval
+    mongo_uri: >-
+      mongodb://admin:{{ lookup('ansible.builtin.env', mongodb.users.admin.env) | urlencode }}@{{
+      mongo_members | map('regex_replace', '$', '.' ~ domain ~ ':' ~ mongodb.port | string) | join(',')
+      }}/{{ mongodb.database }}?replicaSet={{ mongodb.replica_set }}&authSource=admin&tls=true
+  tasks:
+    - name: The directory answers on tools-01
+      ansible.builtin.wait_for:
+        host: "{{ tools_ip }}"
+        port: "{{ ldap.port }}"
+        timeout: 120
+
+    - name: Log in as the bootstrap user
+      ansible.builtin.uri:
+        url: "{{ platform_local }}/login"
+        method: POST
+        body_format: json
+        body:
+          username: "{{ platform.bootstrap_user }}"
+          password: "{{ admin_pw }}"
+        status_code: 200
+      register: login
+      retries: 10
+      delay: 6
+      until: login.status | default(0) == 200
+      no_log: true
+
+    - name: Every role on admin_group and the default user (shared, ADR 0055)
+      ansible.builtin.include_tasks: tasks/roles-to-admin.yml
+
+    - name: The Platform's LDAP administrator (shared with the dev-stack play, ADR 0055)
+      ansible.builtin.include_tasks: tasks/ldap-admin.yml

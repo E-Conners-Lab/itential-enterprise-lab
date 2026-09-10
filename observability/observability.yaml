@@ -61,13 +61,15 @@ prometheus:
     - {job: alloy-logs, count: nodes}
     - {job: alloy-syslog, count: 1}
     - {job: itential-exporter, count: 1}
-    # the official Itential Platform Monitoring dashboard's sources (ADR 0052): the Platform's own /prometheus_metrics
-    # route and the four exporters beside the dev-stack on VM 205, with the job names the dashboard queries
-    - {job: iap_exporter, count: 1}
-    - {job: node_exporter, count: 1}
-    - {job: process_exporter, count: 1}
-    - {job: redis_exporter, count: 1}
-    - {job: mongo_exporter, count: 1}
+    # the official Itential Platform Monitoring dashboard's sources (ADR 0052), following the production
+    # environment since ADR 0055: the Platform's own /prometheus_metrics route on each node, node and process
+    # exporters on the Platform nodes, and one exporter per Redis server and per replica-set member - which is
+    # what gives the dashboard's MongoDB replica-set panels data. Counts come from itential/ha2/versions.yaml.
+    - {job: iap_exporter, count: ha2-platform}
+    - {job: node_exporter, count: ha2-platform}
+    - {job: process_exporter, count: ha2-platform}
+    - {job: redis_exporter, count: ha2-redis}
+    - {job: mongo_exporter, count: ha2-mongodb}
   alerts: # PrometheusRule lab-observability; S7.6 uses LabDeviceDown
     - {name: LabDeviceDown, for: 1m}
     - {name: LabTargetDown, for: 5m}

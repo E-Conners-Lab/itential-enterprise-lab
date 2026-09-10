@@ -23,7 +23,8 @@ AM=https://alertmanager.lab.internal
 LOKI=https://loki.lab.internal
 GNMIC=https://gnmic.lab.internal/metrics
 GRAFANA=https://grafana.lab.internal
-IT_HOST=itential.lab.internal; IT_IP=$(${PY} -c "import yaml;print(yaml.safe_load(open('itential/versions.yaml'))['vm']['ip'])"); PLATFORM="https://${IT_HOST}"
+IT_HOST=itential.lab.internal; PLATFORM="https://${IT_HOST}"
+# the S11 cut-over moved the name onto the load balancer: no --resolve, the record decides
 ADMIN_USER=${ITENTIAL_ADMIN_USER:-admin@itential}
 SSH="ssh -o BatchMode=yes -o ConnectTimeout=8 -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR"
 ts=$(date -u +%Y%m%dT%H%M%SZ)
@@ -37,7 +38,7 @@ check() { local name=$1; shift; if [ -n "${ONLY:-}" ] && ! echo " ${ONLY} " | gr
 nb()    { curl -s -m 20 -H "Authorization: Token ${NETBOX_TOKEN}" "$@"; }
 web()   { curl -s -m 30 --cacert "$CA" "$@"; }
 JAR=$(mktemp); trap 'rm -f "$JAR" /tmp/verify07.$$ /tmp/verify07.*.$$' EXIT
-iap()   { curl -s -m 180 --cacert "$CA" --resolve "${IT_HOST}:443:${IT_IP}" -b "$JAR" -H "Content-Type: application/json" "$@"; }
+iap()   { curl -s -m 180 --cacert "$CA" -b "$JAR" -H "Content-Type: application/json" "$@"; }
 iap_login() { iap -c "$JAR" -X POST "${PLATFORM}/login" -d "{\"username\":\"${ADMIN_USER}\",\"password\":\"${ITENTIAL_ADMIN_PASSWORD}\"}" -o /dev/null -w '%{http_code}' | grep -qx 200; }
 mkdir -p verify/results; exec > >(tee "verify/results/${ts}-07-observability.log") 2>&1
 echo "# test-07-observability ${ts}"
@@ -173,8 +174,12 @@ c2() {
   ${PY} - /tmp/verify07.targets.$$ "$n_nodes" "$n_dev" "$n_eos" "$n_ios" <<'PY' || return 1
 import collections, json, sys, yaml
 obs = yaml.safe_load(open("observability/observability.yaml"))
+ha2 = yaml.safe_load(open("itential/ha2/versions.yaml"))
 nodes, dev, eos, ios = map(int, sys.argv[2:6])
 rule = {"nodes": nodes, "devices": dev, "eos": eos, "ios-xe": ios, "web_checks": len(obs["web_checks"])}
+# the official dashboard's exporters follow the production environment (ADR 0055): one per VM of that role
+for role in ("platform", "redis", "mongodb"):
+    rule[f"ha2-{role}"] = sum(1 for v in ha2["vms"] if v["role"] == role)
 t = json.load(open(sys.argv[1]))["data"]["activeTargets"]
 per = collections.defaultdict(list)
 for x in t: per[x["labels"]["job"]].append(x)

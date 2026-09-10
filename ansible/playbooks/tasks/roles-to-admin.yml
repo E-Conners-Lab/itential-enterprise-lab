@@ -1,0 +1,73 @@
+---
+# Every role assigned to admin_group and to the built-in local administrator, through the authorization API
+# (ADR 0055): the Platform registers a role per application and per adapter method, so the assignment is
+# re-run after anything that loads new code. Included by platform-ha2-gateway.yml (before the adapters) and
+# by tasks/platform-assets.yml (after them). The caller provides platform_local and a session in `login`.
+# the roles endpoint pages at 100; the admin group carries every role, as upstream does
+- name: Every role id, page by page
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/authorization/roles?limit=100&skip={{ item }}"
+    headers: {Cookie: "{{ login.cookies_string }}"}
+  register: role_pages
+  loop: [0, 100, 200, 300]
+  loop_control:
+    label: "skip={{ item }}"
+
+- name: Role list complete
+  ansible.builtin.set_fact:
+    role_ids: >-
+      {{ role_pages.results | map(attribute='json.results') | flatten | map(attribute='_id') | unique
+         | map('community.general.dict_kv', 'roleId') | list }}
+    role_total: "{{ role_pages.results[0].json.total }}"
+
+- name: All roles collected
+  ansible.builtin.assert:
+    that: role_ids | length == role_total | int
+    fail_msg: "collected {{ role_ids | length }} of {{ role_total }} roles"
+    quiet: true
+
+- name: Existing groups
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/authorization/groups?limit=100"
+    headers: {Cookie: "{{ login.cookies_string }}"}
+  register: existing_groups
+
+- name: Group admin_group with every role
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/authorization/groups{{ '/' ~ existing[0]._id if existing else '' }}"
+    method: "{{ 'PATCH' if existing else 'POST' }}"
+    headers: {Cookie: "{{ login.cookies_string }}"}
+    body_format: json
+    body: >-
+      {{ {'updates': {'assignedRoles': role_ids}} if existing else
+         {'group': {'name': 'admin_group', 'provenance': 'Pronghorn',
+                    'description': 'Admin group with full permissions',
+                    'assignedRoles': role_ids, 'memberOf': [], 'inactive': false}} }}
+    status_code: [200, 201]
+  vars:
+    existing: "{{ existing_groups.json.results | selectattr('name', 'equalto', 'admin_group') | list }}"
+  changed_when: not existing
+
+- name: Group id
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/authorization/groups?limit=100"
+    headers: {Cookie: "{{ login.cookies_string }}"}
+  register: groups2
+
+- name: The admin_group id
+  ansible.builtin.set_fact:
+    admin_group_id: "{{ (groups2.json.results | selectattr('name', 'equalto', 'admin_group') | first)._id }}"
+
+# The default user holds its roles directly, which is enough to bootstrap. It is deliberately NOT made a
+# member of admin_group: the Platform rewrites its account document on every login and the membership is gone
+# again by the next request (measured on 6.5.2). tasks/local-admin-account.yml creates the real account that
+# carries the membership; anything that needs "a member of a group with role X" logs in as that one.
+- name: The default user holds every role directly
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/authorization/accounts/000000000000000000000000"
+    method: PATCH
+    headers: {Cookie: "{{ login.cookies_string }}"}
+    body_format: json
+    body: {updates: {assignedRoles: "{{ role_ids }}"}}
+    status_code: 200
+  changed_when: false

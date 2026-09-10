@@ -1,0 +1,43 @@
+# test-08-platform-ha2 20260910T132527Z
+SKIP  S11.1 the eleven production VMs run with the sizes of the oracle and the budget, and NetBox holds each one
+FAIL  S11.2 MongoDB is a three-member replica set (one PRIMARY, two SECONDARY) with authentication and TLS
+      replica set: mongo-01.lab.internal:27017 PRIMARY, mongo-02.lab.internal:27017 SECONDARY, mongo-03.lab.internal:27017 SECONDARY
+      unauthenticated clients are refused
+      the Platform's MongoDB URL has no replicaSet=rs0
+SKIP  S11.3 Redis has one master, two replicas and three Sentinels that agree, with ACL users only
+PASS  S11.4 both Platform nodes answer /health/server and the load balancer serves the service name with one shared session
+        File [35m"<string>"[0m, line [35m1[0m
+          import json,sys;d=json.load(open("/tmp/verify08.h.77712"));print(f"  node 10.100.0.72: Platform {d[\[1;31m"[0mversion\"]} up {int(d[\"uptime\"])}s")
+                                                                                                              [1;31m^[0m
+      [1;35mSyntaxError[0m: [35munexpected character after line continuation character[0m
+        File [35m"<string>"[0m, line [35m1[0m
+          import json,sys;d=json.load(open("/tmp/verify08.h.77712"));print(f"  node 10.100.0.73: Platform {d[\[1;31m"[0mversion\"]} up {int(d[\"uptime\"])}s")
+                                                                                                              [1;31m^[0m
+      [1;35mSyntaxError[0m: [35munexpected character after line continuation character[0m
+      both nodes healthy; the load balancer serves itential.lab.internal and its session works on either node
+FAIL  S11.5 everything phases 5-7 built exists on production (workflows, Golden Config, MOP, LCM, integrations, agents, inventories)
+      workflow wf-netbox-device-count-v1 missing
+      workflow wf-show-version-v1 missing
+      workflow wf-branch-vlan-v1 missing
+      workflow wf-show-command-v1 missing
+      workflow wf-show-all-v1 missing
+      workflow wf-config-push-v1 missing
+      workflow wf-compliance-run-v1 missing
+      workflow wf-backup-all-v1 missing
+      workflow wf-branch-vlan-delete-v1 missing
+      workflow wf-compliance-report-v1 missing
+      golden config tree lab-cisco-ios missing
+      golden config tree lab-arista-eos missing
+      compliance plan missing
+      LCM model missing
+      integration netbox-api missing
+      integration servicenow-api missing
+      agent project missing
+      inventory lab missing
+      inventory lab-hosts missing
+      Configuration Manager sees  devices, expected at least 12
+SKIP  S11.7 the official Itential dashboard's MongoDB and Redis rows show the production replica sets
+DEFER S11.8 VM 205 deleted: a separate owner-approved step at the end of the cut-over (ADR 0053)
+SKIP  S11.6 failover drills (set VERIFY_DRILLS=1 to run; they stop a Platform node, the MongoDB primary and the Redis master in turn)
+
+passed=1 failed=2 deferred=1

@@ -1,0 +1,95 @@
+---
+# Phase 8, slice E (PID S11, ADR 0053/0055): the tools VM. Neither the MCP server, the in-lab Ollama nor the
+# directory is an Itential Platform component, so the guide's "one component per server" rule moves them off
+# the Platform nodes onto tools-01. It runs before platform-ha2-identity.yml, which needs the directory, and
+# therefore before platform-ha2-gateway.yml, whose Gateway Manager calls need the directory account.
+- name: The tools VM (MCP, Ollama and the directory)
+  hosts: ha2-tools
+  become: true
+  gather_facts: false
+  vars_files:
+    - ../../itential/ha2/versions.yaml
+    - ../../itential/versions.yaml
+  vars:
+    ansible_ssh_common_args: -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/dev/null
+    dir: /opt/itential
+    ip: "{{ (vms | selectattr('name', 'equalto', inventory_hostname) | first).ip }}"
+    # the load balancer's own name: the service name still points at the dev-stack until the cut-over
+    service_name: "{{ (vms | selectattr('role', 'equalto', 'loadbalancer') | first).name }}"
+  tasks:
+    - name: Compose file
+      ansible.builtin.template:
+        src: ../../itential/ha2/tools.compose.yml.j2
+        dest: "{{ dir }}/docker-compose.yml"
+        owner: ubuntu
+        group: ubuntu
+        mode: "0644"
+
+    - name: Lab CA for the containers
+      ansible.builtin.file:
+        path: "{{ dir }}/tls"
+        state: directory
+        owner: ubuntu
+        group: ubuntu
+        mode: "0755"
+
+    - name: CA certificate (this VM terminates no TLS, so the host play left it none)
+      ansible.builtin.copy:
+        src: ../../docs/lab-root-ca.crt
+        dest: "{{ dir }}/tls/ca.crt"
+        owner: ubuntu
+        group: ubuntu
+        mode: "0644"
+
+    - name: Directory bootstrap directory
+      ansible.builtin.file:
+        path: "{{ dir }}/ldap"
+        state: directory
+        owner: ubuntu
+        group: ubuntu
+        mode: "0755"
+
+    - name: OpenLDAP bootstrap (admin@itential and the admins group, the same upstream LDIF the dev-stack uses)
+      ansible.builtin.copy:
+        src: "../../{{ ldap.ldif }}"
+        dest: "{{ dir }}/ldap/openldap.ldif"
+        owner: ubuntu
+        group: ubuntu
+        mode: "0644"
+
+    - name: Environment for compose
+      ansible.builtin.copy:
+        dest: "{{ dir }}/.env"
+        owner: ubuntu
+        group: ubuntu
+        mode: "0600"
+        content: |
+          # Rendered by ansible/playbooks/platform-ha2-gateway.yml; do not edit.
+          ITENTIAL_ADMIN_USER={{ platform.admin_user }}
+          ITENTIAL_ADMIN_PASSWORD={{ lookup('ansible.builtin.env', 'ITENTIAL_ADMIN_PASSWORD') }}
+      no_log: true
+
+    - name: Containers up
+      ansible.builtin.command:
+        cmd: docker compose up -d
+        chdir: "{{ dir }}"
+      register: up
+      changed_when: "'Started' in up.stderr or 'Created' in up.stderr or 'Recreated' in up.stderr"
+
+    - name: The local model of ADR 0037
+      ansible.builtin.command:
+        cmd: docker exec ollama ollama pull {{ (llm.profiles | selectattr('name', 'equalto', 'ollama-lab') | first).model }}
+      register: pull
+      changed_when: "'success' in pull.stdout"
+      async: 1800
+      poll: 30
+
+    - name: MCP answers
+      ansible.builtin.uri:
+        url: "http://{{ ip }}:{{ tools.mcp_port }}/mcp"
+        method: GET
+        status_code: [200, 400, 405, 406]
+      register: mcp
+      retries: 20
+      delay: 5
+      until: mcp.status is defined

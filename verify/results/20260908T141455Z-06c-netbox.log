@@ -1,0 +1,17 @@
+# test-06c-netbox 20260908T141455Z
+FAIL  S4e.1 every addressed interface of the 12 network devices is in NetBox with its address, VRF and 'to <peer>' description; the devices agree (wf-show-all-v1 + direct SSH)
+      Traceback (most recent call last):
+        File "<stdin>", line 15, in <module>
+        File "<stdin>", line 12, in results
+        File "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/__init__.py", line 352, in loads
+          return _default_decoder.decode(s)
+                 ~~~~~~~~~~~~~~~~~~~~~~~^^^
+        File "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/decoder.py", line 345, in decode
+          obj, end = self.raw_decode(s, idx=_w(s, 0).end())
+                     ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+        File "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/decoder.py", line 361, in raw_decode
+          obj, end = self.scan_once(s, idx)
+                     ~~~~~~~~~~~~~~^^^^^^^^
+      json.decoder.JSONDecodeError: Unterminated string starting at: line 1 column 1492 (char 1491)
+
+passed=0 failed=1

@@ -1,0 +1,227 @@
+---
+# Phase 8, slice E (PID S11, ADR 0053): the Gateway 5 cluster on its own server, and the tools VM.
+# Itential's HA2 architecture gives Gateway its own VM; ADR 0038's shape (server + etcd + glibc runner) moves
+# across unchanged. Gateway Manager lives in the Platform, so the registration here is the same sequence
+# ansible/playbooks/itential.yml runs for the dev-stack, aimed at the production nodes through the load
+# balancer's own name (the service name still resolves to VM 205 until the cut-over).
+- name: Gateway 5 cluster
+  hosts: ha2-gateway
+  become: true
+  gather_facts: false
+  vars_files:
+    - ../../itential/ha2/versions.yaml
+    - ../../itential/versions.yaml
+  vars:
+    ansible_ssh_common_args: -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/dev/null
+    dir: /opt/itential
+    ip: "{{ (vms | selectattr('name', 'equalto', inventory_hostname) | first).ip }}"
+    lb_host: "{{ (vms | selectattr('role', 'equalto', 'loadbalancer') | first).name }}.{{ domain }}"
+    netbox_oob_url: "10.100.0.64:8080" # the OOB address, not the home-LAN one the dev-stack carries
+    gateway_runner_image: "{{ stack.runner_image }}"
+  tasks:
+    - name: Directories
+      ansible.builtin.file:
+        path: "{{ dir }}/{{ item.path }}"
+        state: directory
+        owner: "{{ item.owner | default('ubuntu') }}"
+        group: "{{ item.group | default('ubuntu') }}"
+        mode: "0755"
+      loop:
+        - {path: volumes/gateway5/certificates, owner: "100", group: "101"}
+        - {path: gateway5-runner}
+      loop_control:
+        label: "{{ item.path }}"
+
+    - name: Runner Dockerfile
+      ansible.builtin.copy:
+        src: ../../itential/gateway5-runner/Dockerfile
+        dest: "{{ dir }}/gateway5-runner/Dockerfile"
+        owner: ubuntu
+        group: ubuntu
+        mode: "0644"
+      register: runner_dockerfile
+
+    - name: Runner base image pulled by digest
+      ansible.builtin.command: docker pull {{ images.runner_base.repository }}@{{ images.runner_base.digest }}
+      register: runner_base_pull
+      changed_when: "'Downloaded' in runner_base_pull.stdout"
+
+    - name: Runner image built from the pinned gateway and Python images
+      ansible.builtin.command:
+        cmd: >-
+          docker build --build-arg GATEWAY5_IMAGE={{ images.gateway5.repository }}:{{ images.gateway5.tag }}
+          --build-arg PYTHON_IMAGE={{ images.runner_base.repository }}@{{ images.runner_base.digest }}
+          -t {{ stack.runner_image }} {{ dir }}/gateway5-runner
+      register: runner_build
+      changed_when: "'CACHED' not in runner_build.stderr or runner_dockerfile.changed"
+
+    # Gateway 5 authenticates to Gateway Manager with a client certificate, self-signed like upstream
+    - name: Gateway 5 client certificate
+      ansible.builtin.command:
+        cmd: >-
+          openssl req -x509 -newkey rsa:4096 -nodes -days 1825
+          -keyout {{ dir }}/volumes/gateway5/certificates/gw-manager-key.pem
+          -out {{ dir }}/volumes/gateway5/certificates/gw-manager.pem
+          -subj /CN=gateway5 -addext subjectAltName=DNS:gateway5,DNS:{{ inventory_hostname }}.{{ domain }},IP:{{ ip }}
+          -addext basicConstraints=CA:FALSE -addext keyUsage=digitalSignature,keyEncipherment
+          -addext extendedKeyUsage=clientAuth,serverAuth
+        creates: "{{ dir }}/volumes/gateway5/certificates/gw-manager.pem"
+
+    - name: Certificate ownership (container uid 100)
+      ansible.builtin.file:
+        path: "{{ dir }}/volumes/gateway5/certificates/{{ item }}"
+        owner: "100"
+        group: "101"
+        mode: "0644"
+      loop: [gw-manager.pem, gw-manager-key.pem]
+
+    - name: Compose file
+      ansible.builtin.template:
+        src: ../../itential/ha2/gateway.compose.yml.j2
+        dest: "{{ dir }}/docker-compose.yml"
+        owner: ubuntu
+        group: ubuntu
+        mode: "0644"
+
+    - name: Environment for compose
+      ansible.builtin.copy:
+        dest: "{{ dir }}/.env"
+        owner: ubuntu
+        group: ubuntu
+        mode: "0600"
+        content: |
+          # Rendered by ansible/playbooks/platform-ha2-gateway.yml; do not edit.
+          NETBOX_TOKEN={{ lookup('ansible.builtin.env', 'NETBOX_TOKEN') }}
+      no_log: true
+
+    - name: Containers up
+      ansible.builtin.command:
+        cmd: docker compose up -d
+        chdir: "{{ dir }}"
+      register: up
+      changed_when: "'Started' in up.stderr or 'Created' in up.stderr or 'Recreated' in up.stderr"
+
+    # The netsdk services live in the etcd store and carry the absolute path of the pex that runs them. Both
+    # nodes register them and the last writer wins: the server writes its own musl path every time it
+    # reconnects to Gateway Manager - which a Platform restart causes - while the execution lands on the glibc
+    # runner, which then answers "netsdk-musl-linux-amd64.pex: No such file or directory" for every
+    # send-command. The restart is unconditional for that reason: this play is how the store is put right
+    # after anything that reconnected the gateway, and S11.5's live send-command is what catches it.
+    - name: Runner re-registers its netsdk services after the server (the store keeps the last writer's paths)
+      ansible.builtin.command:
+        cmd: docker compose restart gateway5-runner
+        chdir: "{{ dir }}"
+      changed_when: true
+
+    - name: Runner registered in the cluster store (the server hands every execution to it)
+      ansible.builtin.command: docker logs --tail 200 gateway5-runner
+      register: runner_log
+      until: "'registered runner with database' in runner_log.stdout or 'registered runner with database' in runner_log.stderr"
+      retries: 12
+      delay: 5
+      changed_when: false
+
+    - name: Read the client certificate for Gateway Manager
+      ansible.builtin.slurp:
+        src: "{{ dir }}/volumes/gateway5/certificates/gw-manager.pem"
+      register: gw_cert
+
+    - name: Hand it to the registration play
+      ansible.builtin.set_fact:
+        gw_cert_pem: "{{ gw_cert.content | b64decode }}"
+
+- name: Register the cluster with the production Gateway Manager
+  hosts: ha2-platform[0]
+  become: false
+  gather_facts: false
+  vars_files:
+    - ../../itential/ha2/versions.yaml
+  vars:
+    ansible_ssh_common_args: -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/dev/null
+    ip: "{{ (vms | selectattr('name', 'equalto', inventory_hostname) | first).ip }}"
+    api: "http://{{ (vms | selectattr('name', 'equalto', inventory_hostname) | first).ip }}:{{ platform.http_port }}"
+    # tasks/roles-to-admin.yml addresses the Platform as platform_local, the name the shared files use
+    platform_local: "{{ api }}"
+    alias: "gateway5-{{ gateway.cluster_id }}"
+    gw_cert_pem: "{{ hostvars[groups['ha2-gateway'][0]].gw_cert_pem }}"
+  tasks:
+    # platform-ha2-identity.yml has run: the directory account is the only one whose group membership the
+    # Platform honours, and Gateway Manager filters what it returns by that membership
+    - name: Log in as {{ platform.admin_user }}
+      ansible.builtin.uri:
+        url: "{{ api }}/login"
+        method: POST
+        body_format: json
+        body: {username: "{{ platform.admin_user }}", password: "{{ lookup('ansible.builtin.env', 'ITENTIAL_ADMIN_PASSWORD') }}"}
+        status_code: 200
+      register: login
+      no_log: true
+
+    - name: Gateway Manager ready
+      ansible.builtin.uri:
+        url: "{{ api }}/gateway_manager/v1/certificates"
+        headers: {Cookie: "{{ login.cookies_string }}"}
+        status_code: 200
+      register: gm_certs
+      until: gm_certs.status == 200
+      retries: 20
+      delay: 5
+
+    - name: Upload the Gateway 5 client certificate once
+      ansible.builtin.uri:
+        url: "{{ api }}/gateway_manager/v1/certificates"
+        method: POST
+        headers: {Cookie: "{{ login.cookies_string }}"}
+        body_format: json
+        body:
+          raw_certificate: "{{ gw_cert_pem }}"
+          contract_id: "{{ alias }}"
+          alias: "{{ alias }}"
+        status_code: [200, 201]
+      when: gm_certs.json.results | selectattr('alias', 'equalto', alias) | list | length == 0
+
+    - name: Certificate ids
+      ansible.builtin.uri:
+        url: "{{ api }}/gateway_manager/v1/certificates"
+        headers: {Cookie: "{{ login.cookies_string }}"}
+      register: gm_certs2
+
+    - name: Every role on admin_group and the local administrator (shared, ADR 0055)
+      ansible.builtin.include_tasks: tasks/roles-to-admin.yml
+
+    - name: Existing gateways
+      ansible.builtin.uri:
+        url: "{{ api }}/gateway_manager/v1/gateways"
+        headers: {Cookie: "{{ login.cookies_string }}"}
+      register: gateways
+
+    - name: Gateway cluster {{ gateway.cluster_id }}
+      ansible.builtin.uri:
+        url: "{{ api }}/gateway_manager/v1/gateways"
+        method: POST
+        headers: {Cookie: "{{ login.cookies_string }}"}
+        body_format: json
+        body:
+          gateway:
+            gateway_name: "{{ gateway.cluster_id }}"
+            cluster_id: "{{ gateway.cluster_id }}"
+            description: "Production Gateway 5 on iag-01 (PID S11, ADR 0053)"
+            enabled: true
+            readonly: false
+            certificates: ["{{ (gm_certs2.json.results | selectattr('alias', 'equalto', alias) | first)._id }}"]
+            groups: [admin_group]
+        status_code: [200, 201, 409] # the bootstrap user sees no group-scoped gateway, so the list can read empty
+      when: gateways.json.results | default([]) | selectattr('cluster_id', 'equalto', gateway.cluster_id) | list | length == 0
+
+    - name: Gateway 5 connected to Gateway Manager (up to 2 min)
+      ansible.builtin.uri:
+        url: "{{ api }}/gateway_manager/v1/connections"
+        headers: {Cookie: "{{ login.cookies_string }}"}
+      register: conns
+      until: gateway.cluster_id in (conns.json | to_json)
+      retries: 24
+      delay: 5
+
+    - name: Connected
+      ansible.builtin.debug:
+        msg: "Gateway cluster {{ gateway.cluster_id }} is connected to the production Gateway Manager"

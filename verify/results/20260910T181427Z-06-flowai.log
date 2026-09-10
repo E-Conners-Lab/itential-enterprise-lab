@@ -1,0 +1,68 @@
+# test-06-flowai 20260910T181427Z
+Anthropic token meter, last 7 days (93 sessions; prices per MTok in=2.0 out=10.0, anthropic only is billed)
+  anthropic  claude-sonnet-5    sessions=  82 in=  2181687 out=  26258  $  4.63
+  ollama     qwen2.5:7b         sessions=  11 in=    26625 out=    861  $  0.00
+spent $4.63 of the $15.00 weekly budget; $10.37 left
+  largest: compliance 2026-09-08T02:54 in=963516 (COMPLETE)
+  largest: lab-netops 2026-09-08T03:07 in=103824 (COMPLETE)
+  largest: remediation 2026-09-08T02:58 in=66418 (COMPLETE)
+PASS  S4c.1 provider profiles anthropic (claude-sonnet-5) and ollama-lab (qwen2.5:7b) answer and list their pinned models
+      profiles: ['anthropic', 'ollama-lab', 'ollama-mac']
+      anthropic: claude-sonnet-5 enabled (id b2f044fe...)
+      anthropic provider answered: True 11 models listed
+      ollama-lab: qwen2.5:7b enabled (id e3d42212...)
+      ollama-lab provider answered: False 0 models listed
+FAIL  S4c.2 lab-netops answers the running version of br1-wan01 and br1-sw01 via the Gateway 5 tool; equals direct SSH
+      tokens in=12787 out=122
+      br1-sw01: agent said 4.33.1.1F; tools ['wf-show-command-v1']
+      br1-wan01: 129bf93d-f818-47e4-b86d-c5296c4d778b
+      session 129bf93d-f818-47e4-b86d-c5296c4d778b failed
+FAIL  S4c.3 lab-netops adds agent-20260910t181427z to br1 through wf-branch-vlan-v1 with the approval; second request is a no-op
+      ea42a20b-3859-494f-9212-9340c0ac78ca
+      session ea42a20b-3859-494f-9212-9340c0ac78ca failed
+PASS  S4c.4 lab-netops refuses core-router-99 (not in the inventory) without touching the gateway; session records token usage
+      tokens in=12409 out=162
+      refused: "core-router-99" is not in NetBox, so it's not a node of the "lab" inventory. I won't call any gateway tool for it. Please confirm the correct device name (I ca
+FAIL  S4c.5 lab-netops-local (ollama-lab qwen2.5:7b) answers the br1-sw01 version; response time and VM memory recorded
+      35551ea3-8b4f-437d-924e-bbb2dc5b003d
+      session 35551ea3-8b4f-437d-924e-bbb2dc5b003d failed
+PASS  S4c.6 Claude Code's MCP tools start a lab-netops session (trigger_automation) and read the answer back (describe_session)
+      Traceback (most recent call last):
+        File [35m"<string>"[0m, line [35m1[0m, in [35m<module>[0m
+          import sys,json;m=json.load(sys.stdin);u=[x["data"]["tokenUsage"] for x in m if [1;31mx.get[0m("type")=="inference-succeeded" and x.get("data",{}).get("tokenUsage")];print(sum(t.get("inputTokens",0) for t in u),sum(t.get("outputTokens",0) for t in u))
+                                                                                          [1;31m^^^^^[0m
+      [1;35mAttributeError[0m: [35m'str' object has no attribute 'get'[0m
+      tokens in= out=
+      MCP trigger_automation(lab-netops) -> session 4c84a2d4-739a-4032-a3be-5a30517ef5e8 -> 4.33.1.1F via describe_session
+PASS  S4c.7 wf-show-command-v1 returns structured 'show version': Genie on br1-wan01, TextFSM on br1-sw01, equal to direct SSH
+      br1-wan01: genie -> version.xe_version = 17.13.01a; matches direct SSH
+      br1-sw01: textfsm -> 0.image = 4.33.1.1F; matches direct SSH
+PASS  S4d.5a netbox-sot counts the active devices of dc1 through the NetBox integration; equals the NetBox API
+      tokens in=26326 out=115
+      netbox-sot: dc1 has 8 active devices (NetBox agrees); tools ['dcim_devices_list']
+PASS  S4d.5b device-ops reports br2-sw01's software version through the show-command workflow; equals direct SSH
+      tokens in=11990 out=258
+      device-ops: br2-sw01 runs 4.33.1.1F (direct SSH agrees); tools ['dcim_devices_list', 'wf-show-command-v1']
+FAIL  S4d.5c compliance runs lab-baseline and reports the result; the batch reports read directly agree
+      ae65d731-130d-474f-9d56-b12a8e788287
+      session ae65d731-130d-474f-9d56-b12a8e788287 failed
+PASS  S4d.5d diagnostics reads a verify-created incident about br2-sw01, checks the device and writes one 'Proposed fix' work note
+      tokens in=20880 out=1154
+      diagnostics: INC0010007 got the note 'Proposed fix: host'; tools ['dcim_devices_list', 'listIncidents', 'updateIncident', 'wf-show-command-v1']; push job e0fe9267b49c4d8bb22331b7 made the drift
+FAIL  S4d.5e remediation fixes the br2-sw01 hostname drift only through wf-config-push-v1; the card approved here; direct SSH confirms
+Assertion failed: (advance > 0), function substitute, file process.c, line 462.
+      session 529e4d54-fc1f-4d7e-9814-888c5e0d14bd failed
+verify/test-06-flowai.sh: line 30: 70699 Abort trap: 6           sed 's/^/      /' /tmp/verify06.$$
+     70700 Done                    | head -14
+PASS  S4d.5f netbox-sot-local (ollama-lab qwen2.5:7b) answers br2-sw01's site; response time and VM memory recorded
+      tokens in=2942 out=46
+      netbox-sot-local (qwen2.5:7b) answered in 77 s; VM RAM used 425/961 MB
+FAIL  S4d.5g wf-show-all-v1 parses 'show version' on every lab device in one call (direct SSH agrees); lab-netops-local answers an all-devices question from it
+      wf-show-all-v1: 12 devices, parsers ['genie', 'textfsm']
+      a268e6fc-5c4e-43d9-b817-c3c488a82566
+      session a268e6fc-5c4e-43d9-b817-c3c488a82566 failed
+closed INC0010007
+restoring br2-sw01 after a failed run
+
+tokens spent this run: in=87334 out=1857 (Anthropic + local)
+passed=8 failed=6

@@ -1,0 +1,8 @@
+# test-06c-netbox 20260908T160836Z
+SKIP  S4e.1 every addressed interface of the 12 network devices is in NetBox with its address, VRF and 'to <peer>' description; the devices agree (wf-show-all-v1 + direct SSH)
+SKIP  S4e.2 VRFs with route targets, prefixes in PROD, the 7 ASNs on their sites, BGP neighbours and RDs in each device's config context equal to the device (direct SSH), the transit virtual router as an FHRP group
+SKIP  S4e.3 one location and one rack per site, every device racked at its derived position (role order top down, unique U)
+PASS  S4e.4 provider circuits with terminations at their sites; the cable trace from each edge port crosses the circuit to the isp-core01 port; no direct provider cable remains
+      4 circuits of ['Simulated ISP'] with A/Z terminations at their sites; every edge port traces through its circuit to the isp-core01 port; 37 cables (no direct cable to the provider core)
+
+passed=1 failed=0

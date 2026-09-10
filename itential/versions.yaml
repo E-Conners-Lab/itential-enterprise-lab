@@ -36,6 +36,9 @@ images:
   # (Gateway requires etcd v3.5); the runner is built on the VM from runner_base + the iagctl
   # binary of images.gateway5 (itential/gateway5-runner/Dockerfile). quay.io / Docker Hub 2026-09-07
   etcd: {repository: quay.io/coreos/etcd, tag: v3.5.21, digest: "sha256:a3ccd299377af4b9968d8cbaaf9722fe354297f11908f74a846075e1e5f4ee89"}
+  # Phase 8 (ADR 0053): nginx is the load balancer in front of the Platform nodes, the role Itential's Deployer
+  # documents for it. Docker Hub 2026-09-10; the stable line, alpine for a small surface.
+  nginx: {repository: docker.io/library/nginx, tag: 1.30.4-alpine} # 2026-09-02
   # Exporters beside the dev-stack for the official Itential Platform Monitoring dashboard (ADR 0052); tags confirmed
   # on Docker Hub and GitHub releases 2026-09-10
   node_exporter: {repository: docker.io/prom/node-exporter, tag: v1.12.1} # 2026-07-14

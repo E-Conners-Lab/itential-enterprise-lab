@@ -1,0 +1,5 @@
+# test-06c-netbox 20260908T140644Z
+PASS  S4e.1 every addressed interface of the 12 network devices is in NetBox with its address, VRF and 'to <peer>' description; the devices agree (wf-show-all-v1 + direct SSH)
+      12 devices, 64 intent interfaces equal in NetBox and on the devices (addresses + descriptions); direct SSH agrees on br1-wan01 and dc1-leaf01
+
+passed=1 failed=0

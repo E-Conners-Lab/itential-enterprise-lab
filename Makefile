@@ -6,9 +6,9 @@ SHELL := /bin/bash
 .SHELLFLAGS := -eu -o pipefail -c
 .DEFAULT_GOAL := help
 
-PHASES := oob-network platform network-topology itential flowai ddi identity observability config-secrets-code panorama containerlab
+PHASES := oob-network platform network-topology itential flowai observability platform-ha2 config-secrets-code identity ddi containerlab firewall-track
 
-.PHONY: help bootstrap lint test up verify discover netbox-enrich tokens plan-oob plan-platform plan-itential $(addprefix phase-,$(PHASES))
+.PHONY: help bootstrap lint test up verify discover netbox-enrich tokens plan-oob plan-platform plan-itential plan-platform-ha2 $(addprefix phase-,$(PHASES))
 
 help: ## Show targets
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-22s\033[0m %s\n", $$1, $$2}'
@@ -36,6 +36,9 @@ plan-oob: ## Phase 2: show what tofu would change (read-only)
 
 plan-platform: ## Phase 3: show what tofu would change (read-only)
 	@$(load_env) cd tofu/platform && tofu init -input=false >/dev/null && tofu plan -input=false
+
+plan-platform-ha2: ## Phase 8: show what tofu would change for the production environment (read-only)
+	@$(load_env) cd tofu/platform-ha2 && tofu init -input=false >/dev/null && tofu plan -input=false
 
 plan-itential: ## Phase 5: show what tofu would change (read-only)
 	@$(load_env) cd tofu/itential && tofu init -input=false >/dev/null && tofu plan -input=false
@@ -129,6 +132,32 @@ phase-observability: ## Phase 7: NetBox seed (phase labels, released addresses) 
 	$(load_env) cd ansible && ansible-playbook playbooks/observability-devices.yml
 	verify/run.sh
 
+# Phase 8 (PID S11, ADR 0053): the production Itential environment in Itential's HA2 shape. NetBox first
+# (the inventory source), then the VMs, then the Docker hosts, then the databases, then the Platform nodes and
+# the load balancer, then Gateway 5 and the tools VM. The cut-over (itential.lab.internal -> iap-lb) and the
+# retirement of VM 205 are separate owner-approved steps, not part of this target.
+phase-platform-ha2: ## Phase 8: NetBox VMs -> tofu apply -> Docker hosts -> MongoDB replica set -> Redis + Sentinel -> Platform nodes + nginx -> tools + directory -> the administrator -> Gateway 5 -> verify
+	$(load_env) cd ansible && ansible-playbook playbooks/netbox-seed.yml
+	$(load_env) cd ansible && ansible-playbook playbooks/netbox-vms.yml
+	$(load_env) cd tofu/platform-ha2 && tofu init -input=false >/dev/null && tofu apply -input=false -auto-approve
+	$(load_env) cd ansible && ansible-playbook playbooks/oob-gw.yml --tags dns
+	$(load_env) cd ansible && ansible-playbook -i inventory/netbox.yml playbooks/platform-ha2-hosts.yml
+	images/fetch.sh itential-load-ha2
+	$(load_env) cd ansible && ansible-playbook -i inventory/netbox.yml playbooks/platform-ha2-mongodb.yml
+	$(load_env) cd ansible && ansible-playbook -i inventory/netbox.yml playbooks/platform-ha2-redis.yml
+	$(load_env) cd ansible && ansible-playbook -i inventory/netbox.yml playbooks/platform-ha2-platform.yml
+	$(load_env) cd ansible && ansible-playbook -i inventory/netbox.yml playbooks/platform-ha2-tools.yml
+	$(load_env) cd ansible && ansible-playbook -i inventory/netbox.yml playbooks/platform-ha2-identity.yml
+	$(load_env) cd ansible && ansible-playbook -i inventory/netbox.yml playbooks/platform-ha2-gateway.yml
+	verify/run.sh
+
+# Phase 8, S11.5 (ADR 0055): the phase 5-7 assets replayed onto production from the shared task files. The
+# overlay selects the production target, the local administrator, the API role re-sync and tools-01's Ollama;
+# without it the same plays run against the dev-stack. Idempotent: re-run it right before the cut-over.
+replay-platform-ha2: ## Phase 8 S11.5: replay every phase 5-7 Platform asset onto the production environment
+	$(load_env) cd ansible && ansible-playbook -i inventory/netbox.yml -e @playbooks/vars/itential-prod.yml playbooks/platform-ha2-replay.yml
+	verify/run.sh
+
 # Later phases are wired in as each lands. Until then they fail loud.
-$(addprefix phase-,$(filter-out oob-network platform network-topology itential flowai observability,$(PHASES))):
+$(addprefix phase-,$(filter-out oob-network platform network-topology itential flowai observability platform-ha2,$(PHASES))):
 	@echo "phase '$@' is not implemented yet (see docs/PID.md delivery plan)"; exit 1

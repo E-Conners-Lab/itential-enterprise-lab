@@ -1,0 +1,28 @@
+# test-06c-netbox 20260908T134651Z
+FAIL  S4e.1 every addressed interface of the 12 network devices is in NetBox with its address, VRF and 'to <peer>' description; the devices agree (wf-show-all-v1 + direct SSH)
+      isp-core01: interface Loopback0 missing in NetBox
+      isp-core01: interface GigabitEthernet2 missing in NetBox
+      isp-core01: interface GigabitEthernet3 missing in NetBox
+      isp-core01: interface GigabitEthernet4 missing in NetBox
+      isp-core01: interface GigabitEthernet5 missing in NetBox
+      isp-core01 GigabitEthernet2: device has 10.103.0.1, NetBox has []
+      isp-core01 GigabitEthernet3: device has 10.103.0.5, NetBox has []
+      isp-core01 GigabitEthernet4: device has 10.103.0.9, NetBox has []
+      isp-core01 GigabitEthernet5: device has 10.103.0.13, NetBox has []
+      isp-core01 Loopback0: device has 10.103.255.1, NetBox has []
+      dc1-wan01: interface Loopback0 missing in NetBox
+      dc1-wan01: interface GigabitEthernet2 missing in NetBox
+      dc1-wan01: interface GigabitEthernet5 missing in NetBox
+      dc1-wan01: interface GigabitEthernet6 missing in NetBox
+      dc1-wan01: interface Tunnel1 missing in NetBox
+      dc1-wan01: interface Tunnel2 missing in NetBox
+      dc1-wan01 GigabitEthernet2: device has 10.103.0.2, NetBox has []
+      dc1-wan01 GigabitEthernet5: device has 10.101.2.249, NetBox has []
+      dc1-wan01 GigabitEthernet6: device has 10.101.3.1, NetBox has []
+      dc1-wan01 Loopback0: device has 10.103.255.11, NetBox has []
+      dc1-wan01 Tunnel1: device has 10.103.100.1, NetBox has []
+      dc1-wan01 Tunnel2: device has 10.103.100.5, NetBox has []
+      dc1-wan02: interface Loopback0 missing in NetBox
+      dc1-wan02: interface GigabitEthernet2 missing in NetBox
+
+passed=0 failed=1

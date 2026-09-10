@@ -1,0 +1,86 @@
+# The load balancer in front of the Platform nodes (PID S11, ADR 0053). The shape is the one Itential's
+# Deployer documents for nginx: forward to {{ platform.http_port }} on every Platform server with sticky
+# sessions. Open-source nginx has no `sticky cookie`, so ip_hash is the sticky method here; the Platform keeps
+# session state in Redis anyway, which is what makes a node loss survivable (S11.4 proves the session works on
+# either node).
+worker_processes auto;
+error_log /dev/stderr warn;
+events {
+    worker_connections 1024;
+}
+
+http {
+    access_log /dev/stdout combined;
+    map $http_upgrade $connection_upgrade {
+        default upgrade;
+        ''      close;
+    }
+
+    upstream platform_http {
+        # Itential's Deployer nginx guide uses sticky sessions, and the Platform keeps session state in Redis
+        # so any node can serve any session. This goes one step further and makes the first node the only
+        # primary, because Gateway 5.5.2 holds exactly one Platform connection (GATEWAY_CONNECT_HOSTS is
+        # plural in name only: a list is rejected with "too many colons in address"), and only the node
+        # holding that connection can reach a device. With ip_hash, a client hashed to the other node hung
+        # for ever on Configuration Manager's device list. Active/standby, which is what Itential's own
+        # Active/Standby architecture does between data centres; a failed primary hands everything over
+        # together, gateway connection included, because the stream upstream below is ordered the same way.
+{% for n in platform_nodes %}
+        server {{ n.ip }}:{{ platform.http_port }} max_fails=3 fail_timeout=10s{{ ' backup' if not loop.first else '' }};
+{% endfor %}
+    }
+
+    server {
+        listen {{ ip }}:80;
+        server_name {{ service_name }}.{{ domain }};
+        return 301 https://$host$request_uri;
+    }
+
+    server {
+        listen {{ ip }}:{{ loadbalancer.listen_port }} ssl;
+        http2 on;
+        server_name {{ service_name }}.{{ domain }};
+
+        ssl_certificate     /etc/nginx/tls/cert.pem;
+        ssl_certificate_key /etc/nginx/tls/key.pem;
+        ssl_protocols       TLSv1.2 TLSv1.3;
+        ssl_session_cache   shared:SSL:10m;
+
+        client_max_body_size 100m;
+        proxy_read_timeout   600s;
+        proxy_send_timeout   600s;
+
+        location / {
+            proxy_pass http://platform_http;
+            proxy_http_version 1.1;
+            proxy_set_header Host              $host;
+            proxy_set_header X-Real-IP         $remote_addr;
+            proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto https;
+            proxy_set_header Upgrade           $http_upgrade;
+            proxy_set_header Connection        $connection_upgrade;
+        }
+    }
+}
+
+# Gateway Manager: Gateway 5 on its own VM dials {{ service_name }}.{{ domain }}:{{ platform.gateway_manager_port }}.
+# That connection is not HTTP, so it is passed through at layer 4 rather than proxied.
+stream {
+    upstream platform_gwmanager {
+        # Gateway 5's registration is a stateful conversation over one WebSocket, and the connection it
+        # produces is node-local: only the node holding it can run a service on that gateway, and the others
+        # answer "No connection found to Gateway with cluster id". Round-robin also sent successive reconnect
+        # attempts to different nodes, and the gateway rejected the reply it got back ("received unexpected
+        # message from server: tasks/list"). So the first Platform node is the only primary and the rest are
+        # backups: the gateway always lands on the same node, and still moves if that node goes away.
+{% for n in platform_nodes %}
+        server {{ n.ip }}:{{ platform.gateway_manager_port }} max_fails=3 fail_timeout=10s{{ ' backup' if not loop.first else '' }};
+{% endfor %}
+    }
+
+    server {
+        listen {{ ip }}:{{ platform.gateway_manager_port }};
+        proxy_pass platform_gwmanager;
+        proxy_timeout 10m;
+    }
+}

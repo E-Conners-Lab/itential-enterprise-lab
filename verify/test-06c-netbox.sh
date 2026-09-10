@@ -11,7 +11,11 @@ set -a; . ./.env; set +a
 ADMIN_USER=${ITENTIAL_ADMIN_USER:-admin@itential}
 PY=.venv/bin/python
 V=itential/versions.yaml
-IT_IP=$(${PY} -c "import yaml;print(yaml.safe_load(open('$V'))['vm']['ip'])")
+# The S11 cut-over (ADR 0053/0055) moved itential.lab.internal onto the load balancer, so the name is the
+# address: no --resolve is forced any more and these run against whatever the record points at. IT_IP (and
+# IT_MCP_IP, for the MCP server on its own VM) still pin a specific host when one is being proved directly.
+IT_IP=${IT_IP:-}
+RESOLVE=${IT_IP:+--resolve itential.lab.internal:443:${IT_IP}}
 IT_HOST=itential.lab.internal
 PLATFORM="https://${IT_HOST}"
 CA=docs/lab-root-ca.crt
@@ -23,7 +27,7 @@ bad() { echo "FAIL  $1"; fail=$((fail+1)); }
 check() { local name=$1; shift; if [ -n "${ONLY:-}" ] && ! echo " ${ONLY} " | grep -q " ${name%% *} "; then echo "SKIP  $name"; return; fi; if "$@" >/tmp/verify06c.$$ 2>&1; then ok "$name"; sed 's/^/      /' /tmp/verify06c.$$; else bad "$name"; sed 's/^/      /' /tmp/verify06c.$$ | head -24; fi; }
 nb()  { curl -s -m 30 -H "Authorization: Token ${NETBOX_TOKEN}" "$@"; }
 JAR=$(mktemp); WORK=$(mktemp -d); trap 'rm -rf "$JAR" "$WORK" /tmp/verify06c.$$' EXIT
-iap() { curl -s -m 120 --cacert "$CA" --resolve "${IT_HOST}:443:${IT_IP}" -b "$JAR" -H "Content-Type: application/json" "$@"; }
+iap() { curl -s -m 120 --cacert "$CA" ${RESOLVE} -b "$JAR" -H "Content-Type: application/json" "$@"; }
 iap_login() { iap -c "$JAR" -X POST "${PLATFORM}/login" -d "{\"username\":\"${ADMIN_USER}\",\"password\":\"${ITENTIAL_ADMIN_PASSWORD}\"}" -o /dev/null -w '%{http_code}' | grep -qx 200; }
 start_job() { iap -X POST "${PLATFORM}/operations-manager/jobs/start" -d "{\"workflow\":\"$1\",\"options\":{\"type\":\"automation\",\"description\":\"verify ${ts}\",\"variables\":$2}}" | ${PY} -c 'import sys,json;d=json.load(sys.stdin).get("data");print(d.get("_id","") if isinstance(d,dict) else "")'; }
 job_status() { iap "${PLATFORM}/operations-manager/jobs/$1" | ${PY} -c 'import sys,json;print(json.load(sys.stdin)["data"]["status"])'; }

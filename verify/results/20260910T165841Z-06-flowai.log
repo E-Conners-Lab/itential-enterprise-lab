@@ -1,0 +1,149 @@
+# test-06-flowai 20260910T165841Z
+Anthropic token meter, last 7 days (91 sessions; prices per MTok in=2.0 out=10.0, anthropic only is billed)
+  anthropic  claude-sonnet-5    sessions=  80 in=  2156115 out=  26014  $  4.57
+  ollama     qwen2.5:7b         sessions=  11 in=    26625 out=    861  $  0.00
+spent $4.57 of the $15.00 weekly budget; $10.43 left
+  largest: compliance 2026-09-08T02:54 in=963516 (COMPLETE)
+  largest: lab-netops 2026-09-08T03:07 in=103824 (COMPLETE)
+  largest: remediation 2026-09-08T02:58 in=66418 (COMPLETE)
+FAIL  S4c.1 provider profiles anthropic (claude-sonnet-5) and ollama-lab (qwen2.5:7b) answer and list their pinned models
+      Traceback (most recent call last):
+        File [35m"<string>"[0m, line [35m1[0m, in [35m<module>[0m
+          import sys,json;d=[31mjson.load[0m[1;31m(sys.stdin)[0m;p=d.get("profiles") or d.get("data") or d;names={x["name"]:x for x in p};assert {"anthropic","ollama-lab"}<=set(names),list(names);print("profiles:",sorted(names))
+                            [31m~~~~~~~~~[0m[1;31m^^^^^^^^^^^[0m
+        File [35m"/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/__init__.py"[0m, line [35m298[0m, in [35mload[0m
+          return loads(fp.read(),
+              cls=cls, object_hook=object_hook,
+              parse_float=parse_float, parse_int=parse_int,
+              parse_constant=parse_constant, object_pairs_hook=object_pairs_hook, **kw)
+        File [35m"/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/__init__.py"[0m, line [35m352[0m, in [35mloads[0m
+          return [31m_default_decoder.decode[0m[1;31m(s)[0m
+                 [31m~~~~~~~~~~~~~~~~~~~~~~~[0m[1;31m^^^[0m
+        File [35m"/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/decoder.py"[0m, line [35m345[0m, in [35mdecode[0m
+          obj, end = [31mself.raw_decode[0m[1;31m(s, idx=_w(s, 0).end())[0m
+FAIL  S4c.2 lab-netops answers the running version of br1-wan01 and br1-sw01 via the Gateway 5 tool; equals direct SSH
+      tokens in=25394 out=254
+      tokens in=12790 out=122
+      br1-sw01: agent said 4.33.1.1F; tools ['wf-show-command-v1']
+      br1-wan01: answer lacks 17.13.01a: 17.13.1a
+PASS  S4c.3 lab-netops adds agent-20260910t165841z to br1 through wf-branch-vlan-v1 with the approval; second request is a no-op
+      approved job 17dd13f53d474c97acfe3ed9
+      tokens in=13504 out=370
+      run 1: VLAN 12 agent-20260910t165841z reserved, approved, configured
+      tokens in=12402 out=349
+      run 2: no-op (still exactly VLAN 12)
+PASS  S4c.4 lab-netops refuses core-router-99 (not in the inventory) without touching the gateway; session records token usage
+      tokens in=12427 out=186
+      refused: `core-router-99` is not found in NetBox/the "lab" inventory. I can't run any device commands against it. Please confirm the correct device name — I can list a
+FAIL  S4c.5 lab-netops-local (ollama-lab qwen2.5:7b) answers the br1-sw01 version; response time and VM memory recorded
+      e1bf8ddf-80a1-45db-b317-8ed776722323
+      session e1bf8ddf-80a1-45db-b317-8ed776722323 failed
+PASS  S4c.6 Claude Code's MCP tools start a lab-netops session (trigger_automation) and read the answer back (describe_session)
+      Traceback (most recent call last):
+        File [35m"<string>"[0m, line [35m1[0m, in [35m<module>[0m
+          import sys,json;m=json.load(sys.stdin);u=[x["data"]["tokenUsage"] for x in m if [1;31mx.get[0m("type")=="inference-succeeded" and x.get("data",{}).get("tokenUsage")];print(sum(t.get("inputTokens",0) for t in u),sum(t.get("outputTokens",0) for t in u))
+                                                                                          [1;31m^^^^^[0m
+      [1;35mAttributeError[0m: [35m'str' object has no attribute 'get'[0m
+      tokens in= out=
+      MCP trigger_automation(lab-netops) -> session 95b8090a-20dc-4666-85f2-ebbb852b4a1c -> 4.33.1.1F via describe_session
+PASS  S4c.7 wf-show-command-v1 returns structured 'show version': Genie on br1-wan01, TextFSM on br1-sw01, equal to direct SSH
+      br1-wan01: genie -> version.xe_version = 17.13.01a; matches direct SSH
+      br1-sw01: textfsm -> 0.image = 4.33.1.1F; matches direct SSH
+PASS  S4d.5a netbox-sot counts the active devices of dc1 through the NetBox integration; equals the NetBox API
+      tokens in=26323 out=115
+      netbox-sot: dc1 has 8 active devices (NetBox agrees); tools ['dcim_devices_list']
+PASS  S4d.5b device-ops reports br2-sw01's software version through the show-command workflow; equals direct SSH
+      tokens in=12035 out=292
+      device-ops: br2-sw01 runs 4.33.1.1F (direct SSH agrees); tools ['dcim_devices_list', 'wf-show-command-v1']
+FAIL  S4d.5c compliance runs lab-baseline and reports the result; the batch reports read directly agree
+      2f2843c1-8fd8-491e-abce-35e0e359f97c
+      session 2f2843c1-8fd8-491e-abce-35e0e359f97c did not finish (running)
+PASS  S4d.5d diagnostics reads a verify-created incident about br2-sw01, checks the device and writes one 'Proposed fix' work note
+      tokens in=20799 out=1051
+      diagnostics: INC0010005 got the note 'Proposed fix: host'; tools ['dcim_devices_list', 'listIncidents', 'updateIncident', 'wf-show-command-v1']; push job 8067080cce654e8a9cae0b57 made the drift
+PASS  S4d.5e remediation fixes the br2-sw01 hostname drift only through wf-config-push-v1; the card approved here; direct SSH confirms
+      tokens in=12846 out=733
+      remediation: proposed 'hostname br2-sw01', push job ca732c1ee6064087b9eed808 approved here, br2-sw01 restored (direct SSH); tools ['dcim_devices_list', 'wf-compliance-report-v1', 'wf-config-push-v1']
+PASS  S4d.5f netbox-sot-local (ollama-lab qwen2.5:7b) answers br2-sw01's site; response time and VM memory recorded
+      tokens in=2941 out=48
+      netbox-sot-local (qwen2.5:7b) answered in 119 s; VM RAM used 431/961 MB
+PASS  S4d.5g wf-show-all-v1 parses 'show version' on every lab device in one call (direct SSH agrees); lab-netops-local answers an all-devices question from it
+      wf-show-all-v1: 12 devices, parsers ['genie', 'textfsm']
+      Traceback (most recent call last):
+        File [35m"<string>"[0m, line [35m1[0m, in [35m<module>[0m
+          import sys,json;print(([31mjson.load[0m[1;31m(sys.stdin)[0m.get("status") or "").lower())
+                                 [31m~~~~~~~~~[0m[1;31m^^^^^^^^^^^[0m
+        File [35m"/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/__init__.py"[0m, line [35m298[0m, in [35mload[0m
+          return loads(fp.read(),
+              cls=cls, object_hook=object_hook,
+              parse_float=parse_float, parse_int=parse_int,
+              parse_constant=parse_constant, object_pairs_hook=object_pairs_hook, **kw)
+        File [35m"/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/__init__.py"[0m, line [35m352[0m, in [35mloads[0m
+          return [31m_default_decoder.decode[0m[1;31m(s)[0m
+                 [31m~~~~~~~~~~~~~~~~~~~~~~~[0m[1;31m^^^[0m
+        File [35m"/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/decoder.py"[0m, line [35m345[0m, in [35mdecode[0m
+          obj, end = [31mself.raw_decode[0m[1;31m(s, idx=_w(s, 0).end())[0m
+                     [31m~~~~~~~~~~~~~~~[0m[1;31m^^^^^^^^^^^^^^^^^^^^^^^[0m
+        File [35m"/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/decoder.py"[0m, line [35m363[0m, in [35mraw_decode[0m
+          raise JSONDecodeError("Expecting value", s, err.value) from None
+      [1;35mjson.decoder.JSONDecodeError[0m: [35mExpecting value: line 1 column 1 (char 0)[0m
+      Traceback (most recent call last):
+        File [35m"<string>"[0m, line [35m1[0m, in [35m<module>[0m
+          import sys,json;print(([31mjson.load[0m[1;31m(sys.stdin)[0m.get("status") or "").lower())
+                                 [31m~~~~~~~~~[0m[1;31m^^^^^^^^^^^[0m
+        File [35m"/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/__init__.py"[0m, line [35m298[0m, in [35mload[0m
+          return loads(fp.read(),
+              cls=cls, object_hook=object_hook,
+              parse_float=parse_float, parse_int=parse_int,
+              parse_constant=parse_constant, object_pairs_hook=object_pairs_hook, **kw)
+        File [35m"/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/__init__.py"[0m, line [35m352[0m, in [35mloads[0m
+          return [31m_default_decoder.decode[0m[1;31m(s)[0m
+                 [31m~~~~~~~~~~~~~~~~~~~~~~~[0m[1;31m^^^[0m
+        File [35m"/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/decoder.py"[0m, line [35m345[0m, in [35mdecode[0m
+          obj, end = [31mself.raw_decode[0m[1;31m(s, idx=_w(s, 0).end())[0m
+                     [31m~~~~~~~~~~~~~~~[0m[1;31m^^^^^^^^^^^^^^^^^^^^^^^[0m
+        File [35m"/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/decoder.py"[0m, line [35m363[0m, in [35mraw_decode[0m
+          raise JSONDecodeError("Expecting value", s, err.value) from None
+      [1;35mjson.decoder.JSONDecodeError[0m: [35mExpecting value: line 1 column 1 (char 0)[0m
+      Traceback (most recent call last):
+        File [35m"<string>"[0m, line [35m1[0m, in [35m<module>[0m
+          import sys,json;print(([31mjson.load[0m[1;31m(sys.stdin)[0m.get("status") or "").lower())
+                                 [31m~~~~~~~~~[0m[1;31m^^^^^^^^^^^[0m
+        File [35m"/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/__init__.py"[0m, line [35m298[0m, in [35mload[0m
+          return loads(fp.read(),
+              cls=cls, object_hook=object_hook,
+              parse_float=parse_float, parse_int=parse_int,
+              parse_constant=parse_constant, object_pairs_hook=object_pairs_hook, **kw)
+        File [35m"/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/__init__.py"[0m, line [35m352[0m, in [35mloads[0m
+          return [31m_default_decoder.decode[0m[1;31m(s)[0m
+                 [31m~~~~~~~~~~~~~~~~~~~~~~~[0m[1;31m^^^[0m
+        File [35m"/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/decoder.py"[0m, line [35m345[0m, in [35mdecode[0m
+          obj, end = [31mself.raw_decode[0m[1;31m(s, idx=_w(s, 0).end())[0m
+                     [31m~~~~~~~~~~~~~~~[0m[1;31m^^^^^^^^^^^^^^^^^^^^^^^[0m
+        File [35m"/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/decoder.py"[0m, line [35m363[0m, in [35mraw_decode[0m
+          raise JSONDecodeError("Expecting value", s, err.value) from None
+      [1;35mjson.decoder.JSONDecodeError[0m: [35mExpecting value: line 1 column 1 (char 0)[0m
+      Traceback (most recent call last):
+        File [35m"<string>"[0m, line [35m1[0m, in [35m<module>[0m
+          import sys,json;print(([31mjson.load[0m[1;31m(sys.stdin)[0m.get("status") or "").lower())
+                                 [31m~~~~~~~~~[0m[1;31m^^^^^^^^^^^[0m
+        File [35m"/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/__init__.py"[0m, line [35m298[0m, in [35mload[0m
+          return loads(fp.read(),
+              cls=cls, object_hook=object_hook,
+              parse_float=parse_float, parse_int=parse_int,
+              parse_constant=parse_constant, object_pairs_hook=object_pairs_hook, **kw)
+        File [35m"/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/__init__.py"[0m, line [35m352[0m, in [35mloads[0m
+          return [31m_default_decoder.decode[0m[1;31m(s)[0m
+                 [31m~~~~~~~~~~~~~~~~~~~~~~~[0m[1;31m^^^[0m
+        File [35m"/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/decoder.py"[0m, line [35m345[0m, in [35mdecode[0m
+          obj, end = [31mself.raw_decode[0m[1;31m(s, idx=_w(s, 0).end())[0m
+                     [31m~~~~~~~~~~~~~~~[0m[1;31m^^^^^^^^^^^^^^^^^^^^^^^[0m
+        File [35m"/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/decoder.py"[0m, line [35m363[0m, in [35mraw_decode[0m
+          raise JSONDecodeError("Expecting value", s, err.value) from None
+      [1;35mjson.decoder.JSONDecodeError[0m: [35mExpecting value: line 1 column 1 (char 0)[0m
+      tokens in=4894 out=43
+      lab-netops-local counted 12 devices from one wf-show-all-v1 call in 211 s; tools ['wf-show-all-v1']
+closed INC0010005
+
+tokens spent this run: in=156355 out=3563 (Anthropic + local)
+passed=10 failed=4

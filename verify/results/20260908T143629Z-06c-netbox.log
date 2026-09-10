@@ -1,0 +1,30 @@
+# test-06c-netbox 20260908T143629Z
+PASS  S4e.1 every addressed interface of the 12 network devices is in NetBox with its address, VRF and 'to <peer>' description; the devices agree (wf-show-all-v1 + direct SSH)
+      12 devices, 64 intent interfaces equal in NetBox and on the devices (addresses + descriptions); direct SSH agrees on br1-wan01 and dc1-leaf01
+FAIL  S4e.2 VRFs with route targets, prefixes in PROD, the 7 ASNs on their sites, BGP neighbours and RDs in each device's config context equal to the device (direct SSH), the transit virtual router as an FHRP group
+      prefix 10.101.1.0/24 not in VRF PROD (None)
+      prefix 10.101.10.0/24 not in VRF PROD (None)
+      br1-sw01: rendered context domain=None != lab 'lab.internal'
+      br1-sw01: rendered context dns=None != lab ['10.100.0.1']
+      br1-sw01: rendered context ntp=None != lab '10.100.0.1'
+      br1-sw01: rendered context management_gateway=None != lab '10.100.0.1'
+      br1-sw01: platform context (automation_user) missing or a password leaked
+      br1-sw01: site context None != br1
+      br1-wan01: rendered context domain=None != lab 'lab.internal'
+      br1-wan01: rendered context dns=None != lab ['10.100.0.1']
+      br1-wan01: rendered context ntp=None != lab '10.100.0.1'
+      br1-wan01: rendered context management_gateway=None != lab '10.100.0.1'
+      br1-wan01: platform context (automation_user) missing or a password leaked
+      br1-wan01: site context None != br1
+      br2-sw01: rendered context domain=None != lab 'lab.internal'
+      br2-sw01: rendered context dns=None != lab ['10.100.0.1']
+      br2-sw01: rendered context ntp=None != lab '10.100.0.1'
+      br2-sw01: rendered context management_gateway=None != lab '10.100.0.1'
+      br2-sw01: platform context (automation_user) missing or a password leaked
+      br2-sw01: site context None != br2
+      br2-wan01: rendered context domain=None != lab 'lab.internal'
+      br2-wan01: rendered context dns=None != lab ['10.100.0.1']
+      br2-wan01: rendered context ntp=None != lab '10.100.0.1'
+      br2-wan01: rendered context management_gateway=None != lab '10.100.0.1'
+
+passed=1 failed=1

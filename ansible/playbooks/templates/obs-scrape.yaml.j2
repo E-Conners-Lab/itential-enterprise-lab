@@ -104,12 +104,13 @@ spec:
 {% endfor %}
 ---
 # The Platform's native Prometheus route (docs.itential.com/itential-platform/monitor/prometheus-metrics): nine
-# iap_* families, served without a session on 6.5.2; HTTPS through the lab CA. Job iap_exporter and the address
-# as instance, as the official dashboard queries it (ADR 0052).
+# iap_* families, served without a session on 6.5.2. One ScrapeConfig per production Platform node, because
+# each presents its own certificate and the dashboard's Platform row is per instance (ADR 0052/0055).
+{% for n in platform_nodes %}
 apiVersion: monitoring.coreos.com/v1alpha1
 kind: ScrapeConfig
 metadata:
-  name: iap-exporter
+  name: iap-exporter-{{ n.name }}
   namespace: {{ obs_namespace }}
 spec:
   jobName: iap_exporter
@@ -119,13 +120,15 @@ spec:
   tlsConfig:
     ca:
       configMap: {name: lab-ca, key: ca.crt}
-    serverName: {{ itential_host }}
+    serverName: {{ n.name }}.{{ domain }}
   staticConfigs:
-    - targets: ["{{ itential_ip }}:443"]
+    - targets: ["{{ n.ip }}:{{ ha2.platform.https_port }}"]
       labels:
         platform: itential
-{% for e in host_exporters %}
+        node: {{ n.name }}
 ---
+{% endfor %}
+{% for e in host_exporters %}
 apiVersion: monitoring.coreos.com/v1alpha1
 kind: ScrapeConfig
 metadata:
@@ -135,7 +138,13 @@ spec:
   jobName: {{ e.job }}
   scrapeInterval: 30s
   staticConfigs:
-    - targets: ["{{ itential_ip }}:{{ e.port }}"]
+{% for v in ha2.vms | selectattr('role', 'equalto', e.role) %}
+    - targets: ["{{ v.ip }}:{{ e.port }}"]
       labels:
         platform: itential
+        node: {{ v.name }}
+{% endfor %}
+{% if not loop.last %}
+---
+{% endif %}
 {% endfor %}

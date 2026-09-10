@@ -1,0 +1,229 @@
+---
+# Phase 8, slice B (PID S11, ADR 0053): the MongoDB replica set of the production environment.
+# Itential's HA2 architecture calls for three members with authentication enabled; this play builds
+# rs0 across ha2-mongodb, enables keyFile intra-cluster authentication and requireTLS with the lab CA, and
+# creates the three SCRAM accounts the Deployer defines (admin, itential, monitor).
+#
+# Order matters and every step is guarded, so a second run changes nothing:
+#   secrets (generated once, persisted to .env before use) -> keyfile and data directory -> containers ->
+#   rs.initiate() on the first member (localhost exception) -> the three users -> exporters restarted.
+- name: Phase 8 MongoDB secrets, persisted before use
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars_files:
+    - ../../itential/ha2/versions.yaml
+  vars:
+    ansible_python_interpreter: "{{ playbook_dir }}/../../.venv/bin/python"
+    env_file: "{{ playbook_dir }}/../../.env"
+    secret_keys: "{{ (mongodb.users.values() | map(attribute='env') | list) + [mongodb.keyfile_env] }}"
+  tasks:
+    - name: Current values from .env
+      ansible.builtin.set_fact:
+        ha2_secrets: "{{ ha2_secrets | default({}) | combine({item: lookup('ansible.builtin.env', item)}) }}"
+      loop: "{{ secret_keys }}"
+      no_log: true
+
+    # lookup('password', '/dev/null') re-evaluates on every reference (lab-build-lessons): generate into a
+    # fact exactly once per missing key, then persist before anything uses it.
+    - name: Generate the missing passwords (24 alphanumerics)
+      ansible.builtin.set_fact:
+        ha2_secrets: >-
+          {{ ha2_secrets | combine({item: lookup('ansible.builtin.password', '/dev/null', length=24, chars=['ascii_letters', 'digits'])}) }}
+      loop: "{{ mongodb.users.values() | map(attribute='env') | list }}"
+      when: ha2_secrets[item] | length == 0
+      no_log: true
+
+    # the keyfile is the shared secret every member authenticates with: base64, 1024 characters at most
+    - name: Generate the keyfile if absent
+      ansible.builtin.set_fact:
+        ha2_secrets: >-
+          {{ ha2_secrets | combine({mongodb.keyfile_env:
+             lookup('ansible.builtin.password', '/dev/null', length=756, chars=['ascii_letters', 'digits']) | b64encode}) }}
+      when: ha2_secrets[mongodb.keyfile_env] | length == 0
+      no_log: true
+
+    - name: Persist to .env before use
+      ansible.builtin.lineinfile:
+        path: "{{ env_file }}"
+        regexp: "^{{ item }}="
+        line: "{{ item }}={{ ha2_secrets[item] }}"
+      loop: "{{ secret_keys }}"
+      no_log: true
+
+- name: MongoDB members
+  hosts: ha2-mongodb
+  become: true
+  gather_facts: false
+  vars_files:
+    - ../../itential/ha2/versions.yaml
+    - ../../itential/versions.yaml
+  vars:
+    ansible_ssh_common_args: -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/dev/null
+    dir: /opt/itential/mongodb
+    secrets: "{{ hostvars['localhost'].ha2_secrets }}"
+    ip: "{{ (vms | selectattr('name', 'equalto', inventory_hostname) | first).ip }}"
+    members: "{{ vms | selectattr('role', 'equalto', 'mongodb') | list }}"
+  tasks:
+    - name: Directories
+      ansible.builtin.file:
+        path: "{{ dir }}/{{ item.path }}"
+        state: directory
+        owner: "{{ item.owner | default('ubuntu') }}"
+        group: "{{ item.owner | default('ubuntu') }}"
+        mode: "{{ item.mode | default('0755') }}"
+      loop:
+        - {path: ""}
+        - {path: data, owner: "999", mode: "0750"}
+      loop_control:
+        label: "{{ item.path | default('.') }}"
+
+    - name: Keyfile (uid 999 is the mongodb user in the official image; mongod refuses a group-readable file)
+      ansible.builtin.copy:
+        content: "{{ secrets[mongodb.keyfile_env] }}\n"
+        dest: "{{ dir }}/keyfile"
+        owner: "999"
+        group: "999"
+        mode: "0400"
+      no_log: true
+
+    - name: Compose file
+      ansible.builtin.template:
+        src: ../../itential/ha2/mongodb.compose.yml.j2
+        dest: "{{ dir }}/docker-compose.yml"
+        owner: ubuntu
+        group: ubuntu
+        mode: "0644"
+
+    - name: Environment for compose (the exporter's password only)
+      ansible.builtin.copy:
+        content: "MONGO_MONITOR_PASSWORD={{ secrets[mongodb.users.monitor.env] }}\n"
+        dest: "{{ dir }}/.env"
+        owner: ubuntu
+        group: ubuntu
+        mode: "0600"
+      no_log: true
+
+    - name: Containers up
+      ansible.builtin.command:
+        cmd: docker compose up -d
+        chdir: "{{ dir }}"
+      register: up
+      changed_when: "'Started' in up.stderr or 'Created' in up.stderr or 'Recreated' in up.stderr"
+
+    - name: Wait for mongod to answer on this member
+      ansible.builtin.command:
+        cmd: >-
+          docker exec mongodb mongosh --quiet --tls --tlsCAFile /etc/mongo/tls/ca.crt
+          --tlsAllowInvalidHostnames --host 127.0.0.1 --eval "db.adminCommand({ping:1}).ok"
+      register: ping
+      changed_when: false
+      retries: 30
+      delay: 5
+      until: ping.rc == 0 and '1' in ping.stdout
+
+- name: Replica set and its accounts
+  hosts: ha2-mongodb[0]
+  become: true
+  gather_facts: false
+  vars_files:
+    - ../../itential/ha2/versions.yaml
+  vars:
+    ansible_ssh_common_args: -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/dev/null
+    secrets: "{{ hostvars['localhost'].ha2_secrets }}"
+    members: "{{ vms | selectattr('role', 'equalto', 'mongodb') | list }}"
+    # every mongosh call in this play goes to the local member over TLS; the host name is skipped because the
+    # localhost exception only applies to a loopback connection, whose name the certificate cannot carry
+    mongosh: >-
+      docker exec mongodb mongosh --quiet --tls --tlsCAFile /etc/mongo/tls/ca.crt
+      --tlsAllowInvalidHostnames --host 127.0.0.1
+    mongosh_admin: >-
+      docker exec mongodb mongosh --quiet --tls --tlsCAFile /etc/mongo/tls/ca.crt
+      --tlsAllowInvalidHostnames --host 127.0.0.1
+      -u {{ mongodb.users.admin.name }} -p '{{ secrets[mongodb.users.admin.env] }}' --authenticationDatabase admin
+  tasks:
+    - name: Is the replica set initiated?
+      ansible.builtin.command:
+        cmd: "{{ mongosh }} --eval \"try { rs.status().set } catch (e) { 'none' }\""
+      register: rs_state
+      changed_when: false
+
+    - name: Initiate the replica set (the higher priority makes the first member the initial primary)
+      ansible.builtin.command:
+        cmd: >-
+          {{ mongosh }} --eval "rs.initiate({_id: '{{ mongodb.replica_set }}', members: [
+          {% for m in members %}{_id: {{ loop.index0 }},
+          host: '{{ m.name }}.{{ domain }}:{{ mongodb.port }}',
+          priority: {{ m.priority }}}{{ ',' if not loop.last }}{% endfor %}
+          ]}).ok"
+      when: mongodb.replica_set not in rs_state.stdout
+      changed_when: true
+      register: initiated
+
+    - name: Wait for a PRIMARY
+      ansible.builtin.command:
+        cmd: "{{ mongosh }} --eval \"try { rs.status().members.filter(m => m.stateStr == 'PRIMARY').length } catch (e) { 0 }\""
+      register: primary
+      changed_when: false
+      retries: 30
+      delay: 5
+      until: primary.stdout | trim == '1'
+
+    - name: Does the admin account exist?
+      ansible.builtin.command:
+        cmd: "{{ mongosh_admin }} --eval \"db.adminCommand({connectionStatus:1}).ok\""
+      register: admin_ok
+      changed_when: false
+      failed_when: false
+
+    # the localhost exception allows exactly one thing once auth is on: creating the first user
+    - name: Create the admin account through the localhost exception
+      ansible.builtin.command:
+        cmd: >-
+          {{ mongosh }} --eval "db.getSiblingDB('admin').createUser({user: '{{ mongodb.users.admin.name }}',
+          pwd: '{{ secrets[mongodb.users.admin.env] }}', roles: [{role: '{{ mongodb.users.admin.role }}', db: 'admin'}]}).ok"
+      when: admin_ok.rc != 0 or '1' not in admin_ok.stdout
+      changed_when: true
+      no_log: true
+
+    - name: The Platform and monitor accounts
+      ansible.builtin.command:
+        cmd: >-
+          {{ mongosh_admin }} --eval "const u='{{ item.name }}';
+          const db=db.getSiblingDB('admin');
+          if (db.getUser(u)) { db.updateUser(u, {pwd: '{{ secrets[item.env] }}'}); print('updated'); }
+          else { db.createUser({user: u, pwd: '{{ secrets[item.env] }}',
+                 roles: [{role: '{{ item.role }}',
+                 db: '{{ mongodb.database if item.role == 'readWrite' else 'admin' }}'}]}); print('created'); }"
+      loop:
+        - "{{ mongodb.users.itential }}"
+        - "{{ mongodb.users.monitor }}"
+      loop_control:
+        label: "{{ item.name }}"
+      register: users
+      changed_when: "'created' in users.stdout"
+      no_log: true
+
+    - name: Replica set state
+      ansible.builtin.command:
+        cmd: "{{ mongosh_admin }} --eval \"JSON.stringify(rs.status().members.map(m => m.name + ' ' + m.stateStr))\""
+      register: final
+      changed_when: false
+
+    - name: Show it
+      ansible.builtin.debug:
+        msg: "{{ final.stdout }}"
+
+- name: Exporters read the monitor account, so they start after it exists
+  hosts: ha2-mongodb
+  become: true
+  gather_facts: false
+  vars:
+    ansible_ssh_common_args: -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/dev/null
+    dir: /opt/itential/mongodb
+  tasks:
+    - name: Restart the MongoDB exporter
+      ansible.builtin.command:
+        cmd: docker compose restart mongodb-exporter
+        chdir: "{{ dir }}"
+      changed_when: true
