@@ -152,13 +152,30 @@ requires the experimental stability level to be enabled explicitly.
 - EOS prints its hostname in the line; IOS XE does not until you add `logging origin-id hostname`, which is
   in the snippet, in the Golden Config baseline and in the reference configurations.
 
-**Zabbix cannot reach its database, or TLS fails.** The Zabbix image pins `SSLCALocation` to
-`/var/lib/zabbix/ssl/ssl_ca`, so the lab CA has to be mounted there. The chart takes an external PostgreSQL
-through `postgresAccess.existingSecretName`, which lines up with CloudNativePG's `<cluster>-app` secret;
-the chart's own PostgreSQL is a plain StatefulSet with no backups, which is why it is not used.
+**A Zabbix HTTP agent item cannot verify a lab certificate, and `ZBX_SSLCALOCATION` changes nothing.**
+The environment variable is the first thing anyone reaches for and it is **ignored** (measured). The image
+pins `SSLCALocation` to `/var/lib/zabbix/ssl/ssl_ca`, so the only thing that works is mounting the lab CA
+*there* — as a ConfigMap whose file is named by the subject hash (`<subject_hash>.0`), because that is what
+OpenSSL's directory lookup expects. Setting the variable and watching nothing change is the expensive half
+of this one.
 
-**The Zabbix agent package will not install at the pinned version.** Zabbix `.deb` packages carry **epoch
-1**. A version string without it does not match.
+**Zabbix cannot reach its database.** The chart takes an external PostgreSQL through
+`postgresAccess.existingSecretName`, which lines up with CloudNativePG's `<cluster>-app` secret; the
+chart's own PostgreSQL is a plain StatefulSet with no backups, which is why it is not used.
+
+**Rotating the stock Zabbix password fails and the API will not say why.** `user.update` requires
+`current_passwd` alongside the new `passwd` when changing your own user's password. Omit it and the call is
+rejected with an error that does not name the missing parameter.
+
+**The Zabbix agent package will not install at the pinned version.** Two separate causes that look
+identical. Zabbix `.deb` packages carry **epoch 1**, so a version string without it does not match. And the
+release package adds the repository *without refreshing the index*, so the pinned version is not there yet
+— the install task needs `update_cache: true` unconditionally. Fix the epoch first and it still fails, which
+makes the epoch fix look wrong.
+
+**The SNMP exporter's ConfigMap is unusable.** The chart takes `snmp.yml` as **one string block**
+(`config: |`), indented verbatim into its ConfigMap. Passing a mapping renders something that looks
+plausible and the exporter cannot read.
 
 **A Zabbix agent on a k3s node is unreachable.** A server pod polling its own node arrives with its **pod**
 address, not the node's. The agent's `Server=` list has to include the pod CIDR as well.
