@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Name** | itential-enterprise-lab |
-| **Version** | 1.20 |
+| **Version** | 1.21 |
 | **Date** | 2026-09-09 |
 | **Author** | Elliot Conner. Claude Code is the build agent; every action it takes is bounded by this document |
 | **Standard** | Project Initiation Standard PIS-01 - PIS-30 (`~/.claude/skills/project-initiation-standard`) |
@@ -715,6 +715,7 @@ the verify log path and any ADRs added.
 | 1.13 | 2026-09-08 | Phase 6 element 7 (owner request): S4e NetBox enrichment derived from `topology/enterprise.yaml` (addressing on interfaces with peer descriptions, VRFs and ASNs with BGP neighbours in config contexts, racks, provider circuits, config contexts, journal entries; the templates read the YAML, rendered configs unchanged; `netbox-enrich.yml`; `verify/test-06c-netbox.sh`; ADR 0048) |
 | 1.14 | 2026-09-09 | Domain 7: the Anthropic key is the owner's company key with a $15-a-week budget; the platform's session documents are the ledger (`verify/tokens.sh`, `make tokens`, `llm.budget` in versions.yaml), the agent verifies guard it, iteration runs on the local twins or `ONLY=` subsets (ADR 0049) |
 | 1.15 | 2026-09-09 | Reorder (ADR 0050): image-free phases first (7 observability, 8 config/secrets/code, 9 identity without Windows on OpenLDAP + Keycloak + tac_plus, 10 DDI on BIND9 + Kea, 11 Containerlab) and one phase 12 firewall track for NIOS, the PA-VM firewalls and Panorama; Windows Server and the Windows endpoint item dropped, `dc01` released |
+| 1.21 | 2026-09-10 | A nine-chapter runbook series in `docs/runbooks/`, one per track, each with the same five sections and a troubleshooting section carrying the traps the phases measured; parameterised so no environment-specific value is transcribed, adaptable with the tested versions pinned, and the blog posts drafted on top in a later pass (ADR 0056, owner request) |
 | 1.20 | 2026-09-10 | The phase 5-7 assets replay onto production from shared task files under `ansible/playbooks/tasks/`, targeted by `platform_target` and the `vars/itential-prod.yml` overlay, so the replay is provable before the cut-over; `platform-ha2-replay.yml` and `make replay-platform-ha2`; S11 criterion 5 reworded (ADR 0055) |
 | 1.19 | 2026-09-10 | Integration Models generated from OpenAPI specifications are the default integration; an npm adapter only where the Platform itself requires one (InventoryBroker, LDAP, Gateway Manager). NetBox and ServiceNow convert as the first element after the Phase 8 cut-over, with their specifications pinned in the repo (ADR 0054, owner instruction) |
 | 1.18 | 2026-09-10 | Phase 8 = production Itential environment in the HA2 shape at lab sizes (S11, ADR 0053): nine VMs, containers from ECR, MongoDB replica set, Redis + Sentinel, two Platform nodes behind nginx, migration by replay, VM 205 retired; later phases renumbered 9-13; resource budget: `dc01` removed, VM 205 retiring, Panorama lever 2 pulled |
