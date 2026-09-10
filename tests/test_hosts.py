@@ -12,7 +12,8 @@ import yaml
 
 ROOT = Path(__file__).resolve().parent.parent
 VERSIONS = ROOT / "itential" / "versions.yaml"
-ITENTIAL_PLAY = ROOT / "ansible" / "playbooks" / "itential.yml"
+# the host inventory is created in the task file itential.yml and the production replay share (ADR 0055)
+ITENTIAL_PLAY = ROOT / "ansible" / "playbooks" / "tasks" / "platform-assets.yml"
 ENDPOINTS_PLAY = ROOT / "ansible" / "playbooks" / "lab-endpoints.yml"
 VERIFY = ROOT / "verify" / "test-06b-platform.sh"
 PID = ROOT / "docs" / "PID.md"

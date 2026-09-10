@@ -120,6 +120,8 @@
     ansible_ssh_common_args: -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/dev/null
     ip: "{{ (vms | selectattr('name', 'equalto', inventory_hostname) | first).ip }}"
     api: "http://{{ (vms | selectattr('name', 'equalto', inventory_hostname) | first).ip }}:{{ platform.http_port }}"
+    # tasks/roles-to-admin.yml addresses the Platform as platform_local, the name the shared files use
+    platform_local: "{{ api }}"
     alias: "gateway5-{{ gateway.cluster_id }}"
     gw_cert_pem: "{{ hostvars[groups['ha2-gateway'][0]].gw_cert_pem }}"
   tasks:
@@ -162,81 +164,8 @@
         headers: {Cookie: "{{ login.cookies_string }}"}
       register: gm_certs2
 
-    # the roles endpoint pages at 100; the admin group carries every role, as upstream does
-    - name: Every role id, page by page
-      ansible.builtin.uri:
-        url: "{{ api }}/authorization/roles?limit=100&skip={{ item }}"
-        headers: {Cookie: "{{ login.cookies_string }}"}
-      register: role_pages
-      loop: [0, 100, 200, 300]
-      loop_control:
-        label: "skip={{ item }}"
-
-    - name: Role list complete
-      ansible.builtin.set_fact:
-        role_ids: >-
-          {{ role_pages.results | map(attribute='json.results') | flatten | map(attribute='_id') | unique
-             | map('community.general.dict_kv', 'roleId') | list }}
-        role_total: "{{ role_pages.results[0].json.total }}"
-
-    - name: All roles collected
-      ansible.builtin.assert:
-        that: role_ids | length == role_total | int
-        fail_msg: "collected {{ role_ids | length }} of {{ role_total }} roles"
-        quiet: true
-
-    - name: Existing groups
-      ansible.builtin.uri:
-        url: "{{ api }}/authorization/groups?limit=100"
-        headers: {Cookie: "{{ login.cookies_string }}"}
-      register: existing_groups
-
-    - name: Group admin_group with every role
-      ansible.builtin.uri:
-        url: "{{ api }}/authorization/groups{{ '/' ~ existing[0]._id if existing else '' }}"
-        method: "{{ 'PATCH' if existing else 'POST' }}"
-        headers: {Cookie: "{{ login.cookies_string }}"}
-        body_format: json
-        body: >-
-          {{ {'updates': {'assignedRoles': role_ids}} if existing else
-             {'group': {'name': 'admin_group', 'provenance': 'Pronghorn',
-                        'description': 'Admin group with full permissions',
-                        'assignedRoles': role_ids, 'memberOf': [], 'inactive': false}} }}
-        status_code: [200, 201]
-      vars:
-        existing: "{{ existing_groups.json.results | selectattr('name', 'equalto', 'admin_group') | list }}"
-      changed_when: not existing
-
-    - name: Group id
-      ansible.builtin.uri:
-        url: "{{ api }}/authorization/groups?limit=100"
-        headers: {Cookie: "{{ login.cookies_string }}"}
-      register: groups2
-
-    # two PATCHes: a combined memberOf + assignedRoles update leaves memberOf untouched (measured, Phase 5)
-    - name: The local administrator holds every role directly
-      ansible.builtin.uri:
-        url: "{{ api }}/authorization/accounts/000000000000000000000000"
-        method: PATCH
-        headers: {Cookie: "{{ login.cookies_string }}"}
-        body_format: json
-        body: {updates: {assignedRoles: "{{ role_ids }}"}}
-        status_code: 200
-      changed_when: false
-
-    - name: The local administrator is a member of admin_group
-      ansible.builtin.uri:
-        url: "{{ api }}/authorization/accounts/000000000000000000000000"
-        method: PATCH
-        headers: {Cookie: "{{ login.cookies_string }}"}
-        body_format: json
-        body:
-          updates:
-            memberOf:
-              - aaaManaged: false
-                groupId: "{{ (groups2.json.results | selectattr('name', 'equalto', 'admin_group') | first)._id }}"
-        status_code: 200
-      changed_when: false
+    - name: Every role on admin_group and the local administrator (shared, ADR 0055)
+      ansible.builtin.include_tasks: tasks/roles-to-admin.yml
 
     - name: Existing gateways
       ansible.builtin.uri:

@@ -1,0 +1,12 @@
+---
+# The production environment's overlay for the phase 5-7 asset plays (ADR 0055 decision 3), passed as
+# `-e @playbooks/vars/itential-prod.yml`. Without it the same plays run against the dev-stack, which is what
+# keeps VM 205 working until it is retired. tests/test_platform_ha2.py holds every value here to
+# itential/ha2/versions.yaml, so the oracle stays the only source of the addresses and the account name.
+platform_target: ha2-platform[0]
+# the production Platform has no LDAP yet (the identity phase adds it): the local account of the oracle
+platform_admin_user: admin
+# adapters register new roles; production assigns them through the authorization API, not in the database
+role_resync_tasks: roles-to-admin.yml
+# Ollama runs on tools-01, not as a Compose service on the Platform node
+ollama_base_url: http://10.100.0.81:11434

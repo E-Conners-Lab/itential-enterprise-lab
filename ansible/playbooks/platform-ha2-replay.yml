@@ -1,0 +1,122 @@
+---
+# Phase 8, slice E (PID S11.5, ADR 0053/0055): everything phases 5-7 built, replayed onto the production
+# environment. Nothing here is new content - the task files are the same ones the dev-stack plays include,
+# so a workflow, an inventory or an agent has one definition and reaches both environments.
+#
+# Order is ADR 0038's: the phase 5 assets (adapters, inventories, the Device Broker, the workflows), then the
+# Platform applications of phase 6 (platform.yml, imported whole because it is entirely assets), then the
+# agents, whose tool references resolve only once the workflows and the applications exist.
+#
+# Run it with the production overlay: `make replay-platform-ha2`. It is idempotent and re-runnable, so
+# anything created on VM 205 between the replay and the cut-over is picked up by running it again.
+- name: The phase 5 Platform assets on production
+  hosts: "{{ platform_target | default('ha2-platform[0]') }}"
+  become: true
+  gather_facts: false
+  vars_files:
+    - ../../itential/versions.yaml
+    - ../../itential/ha2/versions.yaml
+  vars:
+    ansible_ssh_common_args: -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/dev/null
+    platform_local: "http://127.0.0.1:{{ platform.http_port }}"
+    admin_user: "{{ platform_admin_user | default(platform.admin_user) }}"
+    admin_pw: "{{ lookup('ansible.builtin.env', 'ITENTIAL_ADMIN_PASSWORD') }}"
+    role_resync_tasks: roles-to-admin.yml
+    netbox_oob_host: 10.100.0.64
+    netbox_port: 8080
+    # NetBox platform slug -> netmiko device_type for Gateway 5's device services (as itential.yml)
+    platform_map: {ios-xe: cisco_ios, eos: arista_eos}
+  tasks:
+    - name: Log in as {{ admin_user }}
+      ansible.builtin.uri:
+        url: "{{ platform_local }}/login"
+        method: POST
+        body_format: json
+        body: {username: "{{ admin_user }}", password: "{{ admin_pw }}"}
+        status_code: 200
+      register: login
+      retries: 10
+      delay: 5
+      until: login.status | default(0) == 200
+      no_log: true
+
+    - name: The Platform assets of phase 5 (shared with the dev-stack play, ADR 0055)
+      ansible.builtin.import_tasks: tasks/platform-assets.yml
+
+# The Platform applications of phase 6: device groups, Golden Config, compliance, MOP, the form, LCM and the
+# Integration Models. platform.yml is entirely assets, so the target variable is all it needs.
+- name: The Platform applications of phase 6 on production
+  ansible.builtin.import_playbook: platform.yml
+
+- name: The pinned local models on tools-01
+  hosts: ha2-tools
+  become: true
+  gather_facts: false
+  vars_files:
+    - ../../itential/versions.yaml
+    - ../../itential/ha2/versions.yaml
+  vars:
+    ansible_ssh_common_args: -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/dev/null
+  tasks:
+    - name: Ollama answers
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ tools.ollama_port }}/api/tags"
+      register: ollama_tags
+      until: ollama_tags.status | default(0) == 200
+      retries: 20
+      delay: 3
+
+    - name: Pinned local models pulled (first pull downloads a few GB through oob-gw)
+      ansible.builtin.command:
+        cmd: "docker exec ollama ollama pull {{ item }}"
+      loop: >-
+        {{ llm.profiles | rejectattr('optional', 'defined') | selectattr('provider', 'equalto', 'ollama')
+           | map(attribute='model') | unique | list }}
+      when: item not in (ollama_tags.json.models | default([]) | map(attribute='name') | list)
+      changed_when: true
+
+- name: The FlowAI assets of phase 6 on production
+  hosts: "{{ platform_target | default('ha2-platform[0]') }}"
+  become: true
+  gather_facts: false
+  vars_files:
+    - ../../itential/versions.yaml
+    - ../../itential/ha2/versions.yaml
+  vars:
+    ansible_ssh_common_args: -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/dev/null
+    platform_local: "http://127.0.0.1:{{ platform.http_port }}"
+    admin_user: "{{ platform_admin_user | default(platform.admin_user) }}"
+    admin_pw: "{{ lookup('ansible.builtin.env', 'ITENTIAL_ADMIN_PASSWORD') }}"
+    tool_registry_base: tools # app-tool_registry mounts under its pronghorn title
+    agent_docs: "{{ lookup('ansible.builtin.fileglob', playbook_dir ~ '/../../' ~ agents.documents ~ '/*.yaml', wantlist=True) | sort }}"
+    required_profiles: "{{ llm.profiles | rejectattr('optional', 'defined') | list }}"
+    optional_profiles: "{{ llm.profiles | selectattr('optional', 'defined') | list }}"
+  tasks:
+    # the dev-stack reaches Ollama as a Compose service name; production reaches tools-01 over the OOB network
+    - name: Required profiles with the production Ollama address
+      ansible.builtin.set_fact:
+        prod_profiles: >-
+          {{ prod_profiles | default([])
+             + [item if item.provider != 'ollama' else item | combine({'base_url': ollama_base_url})] }}
+      loop: "{{ required_profiles }}"
+      loop_control:
+        label: "{{ item.name }}"
+
+    - name: Optional Ollama endpoints reachable?
+      ansible.builtin.uri:
+        url: "{{ item.base_url }}/api/tags"
+        timeout: 5
+      loop: "{{ optional_profiles }}"
+      loop_control:
+        label: "{{ item.name }} {{ item.base_url }}"
+      register: optional_probe
+      failed_when: false
+
+    - name: Profiles this run
+      ansible.builtin.set_fact:
+        llm_profiles: >-
+          {{ prod_profiles + (optional_probe.results | selectattr('status', 'defined')
+                              | selectattr('status', 'equalto', 200) | map(attribute='item') | list) }}
+
+    - name: The FlowAI assets of phase 6 (shared with the dev-stack play, ADR 0055)
+      ansible.builtin.import_tasks: tasks/flowai-assets.yml

@@ -8,14 +8,16 @@
 # Element 4: Integration Models (itential/integrations/) for NetBox and ServiceNow, their instances and agent tools.
 # Everything is created through the API from the repo documents and NetBox; re-runs update in place.
 - name: Platform applications wired to the lab
-  hosts: itential-host
+  hosts: "{{ platform_target | default('itential-host') }}"
   become: true
   gather_facts: false
   vars_files:
     - ../../itential/versions.yaml
   vars:
     platform_local: http://127.0.0.1:3000
-    admin_user: "{{ lookup('ansible.builtin.env', 'ITENTIAL_ADMIN_USER') | default('admin@itential', true) }}"
+    admin_user: >-
+      {{ platform_admin_user | default(lookup('ansible.builtin.env', 'ITENTIAL_ADMIN_USER')
+         | default('admin@itential', true)) }}
     admin_pw: "{{ lookup('ansible.builtin.env', 'ITENTIAL_ADMIN_PASSWORD') }}"
     netbox_oob_host: 10.100.0.64
     netbox_port: 8080

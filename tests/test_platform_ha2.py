@@ -214,7 +214,7 @@ def test_the_replay_entry_point_runs_the_three_halves_in_order() -> None:
     replay = PLAYS / "platform-ha2-replay.yml"
     assert replay.exists(), "ansible/playbooks/platform-ha2-replay.yml missing"
     text = replay.read_text()
-    order = [text.index(m) for m in ("tasks/platform-assets.yml", "platform.yml", "tasks/flowai-assets.yml")]
+    order = [text.index(m) for m in ("tasks/platform-assets.yml", "import_playbook: platform.yml", "tasks/flowai-assets.yml")]
     assert order == sorted(order), "platform assets, then platform.yml, then the FlowAI assets"
     assert "ha2/versions.yaml" in text, "the replay reads the oracle"
     mk = (ROOT / "Makefile").read_text()

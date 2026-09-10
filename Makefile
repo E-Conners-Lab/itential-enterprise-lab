@@ -149,6 +149,13 @@ phase-platform-ha2: ## Phase 8: NetBox VMs -> tofu apply -> Docker hosts -> Mong
 	$(load_env) cd ansible && ansible-playbook -i inventory/netbox.yml playbooks/platform-ha2-gateway.yml
 	verify/run.sh
 
+# Phase 8, S11.5 (ADR 0055): the phase 5-7 assets replayed onto production from the shared task files. The
+# overlay selects the production target, the local administrator, the API role re-sync and tools-01's Ollama;
+# without it the same plays run against the dev-stack. Idempotent: re-run it right before the cut-over.
+replay-platform-ha2: ## Phase 8 S11.5: replay every phase 5-7 Platform asset onto the production environment
+	$(load_env) cd ansible && ansible-playbook -i inventory/netbox.yml -e @playbooks/vars/itential-prod.yml playbooks/platform-ha2-replay.yml
+	verify/run.sh
+
 # Later phases are wired in as each lands. Until then they fail loud.
 $(addprefix phase-,$(filter-out oob-network platform network-topology itential flowai observability platform-ha2,$(PHASES))):
 	@echo "phase '$@' is not implemented yet (see docs/PID.md delivery plan)"; exit 1

@@ -1,0 +1,27 @@
+---
+# The dev-stack's role re-sync (ADR 0055): its administrator is an LDAP account and its MongoDB is a
+# standalone container on the same VM, so the assignment is made in the database, as upstream's
+# sync-admin-roles.sh does. Included by tasks/platform-assets.yml; production uses roles-to-admin.yml.
+- name: After the adapters loaded, re-sync every role to admin_group and {{ admin_user }}
+  ansible.builtin.command:
+    argv:
+      - docker
+      - exec
+      - mongodb
+      - mongosh
+      - --quiet
+      - itential
+      - --eval
+      - >-
+        const roles = db.roles.find({}, {_id: 1}).toArray().map(r => ({roleId: r._id}));
+        const g = db.groups.findOne({name: 'admin_group'}, {_id: 1});
+        const u = {username: '{{ admin_user }}', provenance: 'LDAP'};
+        let changed = 0;
+        if (db.accounts.findOne(u, {assignedRoles: 1}).assignedRoles.length !== roles.length) {
+          db.accounts.updateOne(u, {$set: {assignedRoles: roles}}); changed++; }
+        if (db.groups.findOne({_id: g._id}, {assignedRoles: 1}).assignedRoles.length !== roles.length) {
+          db.groups.updateOne({_id: g._id}, {$set: {assignedRoles: roles}}); changed++; }
+        print(changed ? 'CHANGED ' + roles.length : 'OK ' + roles.length);
+  register: role_resync
+  changed_when: "'CHANGED' in role_resync.stdout"
+  failed_when: "'OK' not in role_resync.stdout and 'CHANGED' not in role_resync.stdout"

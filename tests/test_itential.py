@@ -270,7 +270,8 @@ def test_play_registers_inventory_as_configuration_manager_provider(versions: di
     """ADR 0039: Configuration Manager, Golden Config, compliance and MCP run_command consume
     devices through Device Broker; the built-in Inventory Manager adapter is the provider on a
     Gateway 5-only stack (no Gateway 4)."""
-    text = (ROOT / "ansible" / "playbooks" / "itential.yml").read_text()
+    # the asset half of the play is the shared task file both environments include (ADR 0055)
+    text = (ROOT / "ansible" / "playbooks" / "tasks" / "platform-assets.yml").read_text()
     assert "InventoryBroker" in text and 'type: InventoryManager' in text
     assert f'inventories: ["{{{{ stack.inventory }}}}"]' in text
     assert "prepend_inventory_name: false" in text
