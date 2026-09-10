@@ -206,7 +206,7 @@ these are what was actually tested, so a difference is worth suspecting when som
 | Component | Version |
 |---|---|
 | Proxmox VE | 9.2 |
-| EVE-NG | Community, Ubuntu 20.04 base |
+| EVE-NG | Pro 6.5, Ubuntu 20.04 base |
 | OpenTofu | 1.10.x, provider `bpg/proxmox` 0.112.0 |
 | Ansible | core 2.19 |
 | Python | 3.12 (`.venv`) |

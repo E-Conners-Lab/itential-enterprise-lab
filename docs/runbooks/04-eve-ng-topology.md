@@ -198,7 +198,7 @@ as a list where a dict is documented. The builder tolerates both. If you extend 
 
 | Component | Version |
 |---|---|
-| EVE-NG | Pro 6.5, Community image base Ubuntu 20.04 |
+| EVE-NG | Pro 6.5, Ubuntu 20.04 base |
 | Cisco C8000v | IOS XE **17.13.01a** (the image already loaded; [ADR 0032](../adr/0032-c8000v-stays-on-17-13-01a.md) supersedes the 17.18.4 plan) |
 | Arista vEOS-lab | **4.33.1.1F** ([ADR 0033](../adr/0033-veos-stays-on-4-33-1-1f.md)) |
 | Palo Alto PA-VM | 11.1 — **not built**, `lab.firewalls: false` |

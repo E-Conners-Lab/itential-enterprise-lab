@@ -247,7 +247,7 @@ re-snapshot `verify/fixtures/pve-interfaces-vmbr0.expected` in a commit that say
 | Ubuntu cloud image | 24.04 noble, serial `20260826` (template VM 9000) |
 | Rocky Linux cloud image | 9.8 GenericCloud (template VM 9001) |
 | `unbound` / `dnsmasq` / `chrony` / `nftables` | Ubuntu 24.04 archive versions |
-| EVE-NG | Community, Ubuntu 20.04 base |
+| EVE-NG | Pro 6.5, Ubuntu 20.04 base |
 | NetBox | 4.x on the existing VM, Docker Compose |
 
 The cloud image is pinned to a dated serial path on purpose: the `noble/current/` path moves, and a
