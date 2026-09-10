@@ -13,9 +13,13 @@ set -a; . ./.env; set +a
 ADMIN_USER=${ITENTIAL_ADMIN_USER:-admin@itential}
 PY=.venv/bin/python
 V=itential/versions.yaml
-IT_IP=$(${PY} -c "import yaml;print(yaml.safe_load(open('$V'))['vm']['ip'])")
+# Both are overridable so the production environment can be proved before the cut-over moves the DNS record
+# (ADR 0055): IT_IP=<load balancer> IT_MCP_IP=<tools VM> verify/test-... . After the cut-over the defaults are
+# the production addresses anyway, because the name follows the record.
+IT_IP=${IT_IP:-$(${PY} -c "import yaml;print(yaml.safe_load(open('$V'))['vm']['ip'])")}
 IT_HOST=itential.lab.internal
 MCP_HOST=mcp.lab.internal
+MCP_IP=${IT_MCP_IP:-$IT_IP} # the MCP server has its own VM in the production environment (ADR 0053)
 PLATFORM="https://${IT_HOST}"
 CA=docs/lab-root-ca.crt
 SSH="ssh -o BatchMode=yes -o ConnectTimeout=8 -o StrictHostKeyChecking=accept-new"
@@ -165,7 +169,7 @@ else bad "S4.6 itential VM memory pressure"; sed 's/^/      /' /tmp/verify05.$$;
 # --- S4.7 Claude Code on this Mac reaches mcp.lab.internal and runs a read-only tool -------------
 c7() {
   local url="http://${MCP_HOST}:8000/mcp" tools res
-  ${PY} -c "import socket;assert socket.gethostbyname('${MCP_HOST}')=='${IT_IP}','${MCP_HOST} resolves elsewhere'" || return 1
+  ${PY} -c "import socket;assert socket.gethostbyname('${MCP_HOST}')=='${MCP_IP}','${MCP_HOST} resolves elsewhere'" || return 1
   tools=$(${PY} verify/mcpcall.py "$url" tools) || { echo "$tools"; return 1; }
   echo "$tools" | grep -qx get_health || { echo "get_health not in tools: $(echo "$tools" | tr '\n' ' ')"; return 1; }
   # ADR 0039 amendment: the tools that return node attributes (itential_password) are hidden from MCP clients

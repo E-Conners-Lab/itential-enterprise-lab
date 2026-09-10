@@ -15,7 +15,10 @@ set -a; . ./.env; set +a
 ADMIN_USER=${ITENTIAL_ADMIN_USER:-admin@itential}
 PY=.venv/bin/python
 V=itential/versions.yaml
-IT_IP=$(${PY} -c "import yaml;print(yaml.safe_load(open('$V'))['vm']['ip'])")
+# Both are overridable so the production environment can be proved before the cut-over moves the DNS record
+# (ADR 0055): IT_IP=<load balancer> IT_MCP_IP=<tools VM> verify/test-... . After the cut-over the defaults are
+# the production addresses anyway, because the name follows the record.
+IT_IP=${IT_IP:-$(${PY} -c "import yaml;print(yaml.safe_load(open('$V'))['vm']['ip'])")}
 IT_HOST=itential.lab.internal
 PLATFORM="https://${IT_HOST}"
 CA=docs/lab-root-ca.crt
