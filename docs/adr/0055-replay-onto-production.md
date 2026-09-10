@@ -72,17 +72,21 @@ The environments also differ in three measured ways:
    adapter-based NetBox and ServiceNow instances are replayed as they are, and the conversion to Integration
    Models (ADR 0054) happens afterwards, as that ADR already fixed.
 
-7. **Production gets a real local account, because the image's default user cannot carry a group
-   membership.** Measured on 6.5.2 while replaying: the Platform rewrites the default user's account document
-   on every login, so a `memberOf` written through the authorization API is gone by the next request, and an
-   `assignedRoles` update clears `memberOf` outright. Inventory Manager (and every API with the same check)
-   refuses such a caller - *"User must be a member of at least one of the assigned groups with roles:
-   inventory:read and inventory:update"* - even though the account holds all 175 roles directly. So the oracle
-   now names two accounts: `platform.bootstrap_user` (`admin`, the image's `ITENTIAL_DEFAULT_USER_*`, break-glass
-   and bootstrap only) and `platform.admin_user` (`admin@itential`, a real local account created through the
-   authorization API with every role and membership of admin_group). `admin@itential` is the same username the
-   dev-stack's LDAP administrator has, so every phase 5-7 play and verify works against production unchanged
-   and the identity phase can replace the account in place when LDAP arrives.
+7. **Production runs the same directory the dev-stack runs, because there is no local account to create.**
+   Measured on 6.5.2 while replaying: the image's default user (`ITENTIAL_DEFAULT_USER_*`) cannot hold a group
+   membership - the Platform rewrites its account document on every login, so a `memberOf` written through the
+   authorization API is gone by the next request, and an `assignedRoles` update clears it outright - and
+   Inventory Manager and its peers refuse such a caller: *"User must be a member of at least one of the
+   assigned groups with roles: inventory:read and inventory:update"*, even with all 175 roles held directly.
+   Nor can a replacement be created: Platform 6 exposes no account-creation route (the Admin Essentials bundle
+   only lists and patches accounts), so accounts come from the AAA source or not at all. This is the same wall
+   Phase 5 hit on the dev-stack - *"the built-in local admin's memberOf is ignored by the session; observed"* -
+   and it has the same answer. Production therefore runs the same OpenLDAP image, the same upstream LDIF and
+   the same adapter settings as the dev-stack, on `tools-01` rather than beside the Platform, which ADR 0053
+   already listed among the production components. `platform.admin_user` is `admin@itential`, provisioned by
+   its first login and given every role and membership of admin_group by a write to the replica set - exactly
+   what `itential.yml` does against VM 205's MongoDB. `platform.bootstrap_user` (`admin`) stays for the first
+   login only. `ansible/playbooks/platform-ha2-identity.yml` builds it, after the tools VM exists.
 
 ## Consequences
 
@@ -95,8 +99,12 @@ The environments also differ in three measured ways:
 - Gateway 5 in production runs on `iag-01` with cluster id `lab`, the same id the dev-stack uses, so the
   inventories and the Device Broker replay with no edit; the two clusters never talk to each other because
   each registers with its own Platform.
-- Two accounts on production until the identity phase: the break-glass `admin` and the automation
-  `admin@itential`, both on `ITENTIAL_ADMIN_PASSWORD`. That is one password for two accounts, an accepted
-  interim (the same exception the device credentials carry until Vault); the identity phase removes it.
+- Both environments now authenticate the same way, so `admin@itential` is one account name across the lab
+  and the phase 5-7 verifies need no edit at cut-over. The password is the upstream LDIF's own value, which
+  `ITENTIAL_ADMIN_PASSWORD` already carries: an accepted lab exception, recorded in `.env.example` since
+  Phase 5, that the identity phase removes when OpenLDAP moves to k3s behind Keycloak.
+- One more play in the phase 8 sequence (`platform-ha2-identity.yml`) and one more container on `tools-01`.
+  The dev-stack's LDAP block leaves `itential.yml` for `tasks/ldap-admin.yml`, parameterised by `ldap_url`
+  and the mongosh invocation, so the two environments share the definition rather than copying it.
 - The Ollama profile differs per environment, so `verify/test-06` S4c's provider-profile check passes on
   production only once `tools-01`'s Ollama has the pinned models pulled; that pull is part of the replay.

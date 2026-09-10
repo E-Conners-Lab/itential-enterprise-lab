@@ -6,10 +6,26 @@
 platform_target: ha2-platform[0]
 # the production compose publishes the Platform on the node's OOB address, not on the loopback
 platform_api: http://10.100.0.72:3000
-# the local automation account of the oracle (not the image's bootstrap user, which cannot hold a
-# group membership); it carries the same username the dev-stack's LDAP administrator has
+# the directory account of the oracle (platform-ha2-identity.yml provisions it from the OpenLDAP on
+# tools-01); the image's bootstrap user cannot hold a group membership, so it is never used here
 platform_admin_user: admin@itential
-# adapters register new roles; production assigns them through the authorization API, not in the database
-role_resync_tasks: roles-to-admin.yml
+# adapters register new roles; the directory account picks them up through the production replica set,
+# the same database write the dev-stack makes against its own MongoDB
+role_resync_tasks: roles-to-admin-ldap.yml
+mongo_shell_host: mongo-01
+# a folded scalar would put spaces inside the URI, so it is composed from short pieces instead
+mongo_hosts: mongo-01.lab.internal:27017,mongo-02.lab.internal:27017,mongo-03.lab.internal:27017
+mongo_admin_pw: "{{ lookup('ansible.builtin.env', 'MONGO_ADMIN_PASSWORD') | urlencode }}"
+mongo_admin_uri: "mongodb://admin:{{ mongo_admin_pw }}@{{ mongo_hosts }}/itential?replicaSet=rs0&authSource=admin&tls=true"
+mongo_shell_argv:
+  - docker
+  - exec
+  - mongodb
+  - mongosh
+  - --quiet
+  - --tlsCAFile
+  - /etc/mongo/tls/ca.crt
+  - "{{ mongo_admin_uri }}"
+  - --eval
 # Ollama runs on tools-01, not as a Compose service on the Platform node
 ollama_base_url: http://10.100.0.81:11434

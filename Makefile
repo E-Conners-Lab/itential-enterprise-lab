@@ -147,6 +147,7 @@ phase-platform-ha2: ## Phase 8: NetBox VMs -> tofu apply -> Docker hosts -> Mong
 	$(load_env) cd ansible && ansible-playbook -i inventory/netbox.yml playbooks/platform-ha2-redis.yml
 	$(load_env) cd ansible && ansible-playbook -i inventory/netbox.yml playbooks/platform-ha2-platform.yml
 	$(load_env) cd ansible && ansible-playbook -i inventory/netbox.yml playbooks/platform-ha2-gateway.yml
+	$(load_env) cd ansible && ansible-playbook -i inventory/netbox.yml playbooks/platform-ha2-identity.yml
 	verify/run.sh
 
 # Phase 8, S11.5 (ADR 0055): the phase 5-7 assets replayed onto production from the shared task files. The

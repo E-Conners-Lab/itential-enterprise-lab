@@ -42,6 +42,23 @@ services:
           memory: 6g
     restart: unless-stopped
 
+  # the interim directory (ADR 0055): admin@itential and the admins group, from the upstream LDIF
+  openldap:
+    container_name: openldap
+    image: {{ images.ldap.repository }}:{{ images.ldap.tag }}
+    command: --copy-service
+    ports:
+      - "{{ ip }}:{{ ldap.port }}:389"
+    volumes:
+      - type: bind
+        source: ./ldap/openldap.ldif
+        target: /container/service/slapd/assets/config/bootstrap/ldif/custom/01-custom-ldap.ldif
+    environment:
+      LDAP_ORGANISATION: "{{ ldap.organisation }}"
+      LDAP_DOMAIN: "{{ ldap.domain }}"
+      LDAP_ADMIN_PASSWORD: ${ITENTIAL_ADMIN_PASSWORD:?}
+    restart: unless-stopped
+
   node-exporter:
     container_name: node-exporter
     image: {{ images.node_exporter.repository }}:{{ images.node_exporter.tag }}

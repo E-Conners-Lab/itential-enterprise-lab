@@ -204,7 +204,7 @@
       ansible.builtin.debug:
         msg: "Gateway cluster {{ gateway.cluster_id }} is connected to the production Gateway Manager"
 
-- name: The tools VM (MCP and Ollama)
+- name: The tools VM (MCP, Ollama and the directory)
   hosts: ha2-tools
   become: true
   gather_facts: false
@@ -238,6 +238,22 @@
       ansible.builtin.copy:
         src: ../../docs/lab-root-ca.crt
         dest: "{{ dir }}/tls/ca.crt"
+        owner: ubuntu
+        group: ubuntu
+        mode: "0644"
+
+    - name: Directory bootstrap directory
+      ansible.builtin.file:
+        path: "{{ dir }}/ldap"
+        state: directory
+        owner: ubuntu
+        group: ubuntu
+        mode: "0755"
+
+    - name: OpenLDAP bootstrap (admin@itential and the admins group, the same upstream LDIF the dev-stack uses)
+      ansible.builtin.copy:
+        src: "../../{{ ldap.ldif }}"
+        dest: "{{ dir }}/ldap/openldap.ldif"
         owner: ubuntu
         group: ubuntu
         mode: "0644"

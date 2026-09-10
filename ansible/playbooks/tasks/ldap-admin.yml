@@ -1,0 +1,124 @@
+---
+# The Platform's LDAP administrator (ADR 0055), included by ansible/playbooks/itential.yml for the dev-stack
+# and by ansible/playbooks/platform-ha2-platform.yml for production. One definition: the LDAP adapter, the
+# first login that provisions the account, the database write that gives it every role and membership of
+# admin_group, and the proof that whoami sees both.
+#
+# Platform 6 has no API that creates a local account, and the built-in local admin's memberOf is ignored by
+# the session (measured in Phase 5 and again on production in Phase 8), so the directory account is the only
+# administrator that can satisfy an API asking for "a member of a group with role X".
+#
+# The caller provides platform_local, a session in `login`, admin_user / admin_pw, role_total, and - where the
+# directory or the database is not the dev-stack's - ldap_url, mongo_shell_argv and mongo_shell_host.
+# --- LDAP: the dev stack's OpenLDAP gives admin@itential, whose group membership Gateway
+# Manager honours (the built-in local admin's memberOf is ignored by the session; observed).
+# Same calls as upstream configure-ldap.sh. Phase 7 points this adapter at Active Directory.
+- name: LDAP adapter exists?
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/adapters/LDAP"
+    headers: {Cookie: "{{ login.cookies_string }}"}
+    status_code: [200, 404, 500]
+  register: ldap_adapter
+
+- name: Create the LDAP adapter
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/adapters"
+    method: POST
+    headers: {Cookie: "{{ login.cookies_string }}"}
+    body_format: json
+    body: {properties: {name: LDAP, type: Adapter, properties: {id: LDAP, type: LDAP}}}
+    status_code: [200, 201]
+  when: ldap_adapter.status != 200
+
+- name: LDAP adapter properties (activates it)
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/adapters/LDAP/properties"
+    method: PUT
+    headers: {Cookie: "{{ login.cookies_string }}"}
+    body_format: json
+    body:
+      properties:
+        url: "{{ ldap_url | default('ldap://openldap:389') }}"
+        domain: "cn={0},dc=itential,dc=io"
+        bindUsername: cn=admin,dc=itential,dc=io
+        bindPassword: admin
+        baseDN: dc=itential,dc=io
+        baseUserDN: dc=itential,dc=io
+        baseGroupDN: dc=itential,dc=io
+        userSearchFilter: cn
+        groupSearchFilter: "(objectClass=groupOfNames)"
+        userMembershipAttribute: memberOf
+        healthCheckInterval: 5000
+        timeout: 5000
+        connectTimeout: 5000
+        idleTimeout: 5000
+        timeLimit: 10
+        reconnect: true
+        activeDirectory: false
+        tlsOptions: {requestCert: false}
+    status_code: 200
+  when: ldap_adapter.status != 200 or not (ldap_adapter.json.metadata.isActive | default(false))
+  changed_when: true
+
+- name: LDAP adapter active
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/adapters/LDAP"
+    headers: {Cookie: "{{ login.cookies_string }}"}
+  register: ldap_state
+  until: ldap_state.json.metadata.isActive | default(false)
+  retries: 20
+  delay: 3
+
+- name: First LDAP login provisions the account for {{ admin_user }}
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/login"
+    method: POST
+    body_format: json
+    body: {username: "{{ admin_user }}", password: "{{ admin_pw }}"}
+    status_code: 200
+  register: ldap_login
+  retries: 5
+  delay: 3
+  until: ldap_login.status == 200
+  no_log: true
+
+# Upstream does these two through the database as well: the accounts API does not persist them.
+- name: LDAP admin holds every role and is a member of admin_group (database, idempotent)
+  ansible.builtin.command:
+    argv: "{{ mongo_shell_argv | default(['docker', 'exec', 'mongodb', 'mongosh', '--quiet', 'itential', '--eval']) + [ldap_admin_eval] }}"
+  delegate_to: "{{ mongo_shell_host | default(inventory_hostname) }}"
+  vars:
+    ldap_admin_eval: >-
+        const roles = db.roles.find({}, {_id: 1}).toArray().map(r => ({roleId: r._id}));
+        const g = db.groups.findOne({name: 'admin_group'}, {_id: 1});
+        const u = {username: '{{ admin_user }}', provenance: 'LDAP'};
+        const a = db.accounts.findOne(u, {assignedRoles: 1, memberOf: 1});
+        if (!a) { print('NOUSER'); quit(1); }
+        let changed = 0;
+        if ((a.assignedRoles || []).length !== roles.length) { db.accounts.updateOne(u, {$set: {assignedRoles: roles}}); changed++; }
+        if (!(a.memberOf || []).some(m => String(m.groupId) === String(g._id))) {
+          db.accounts.updateOne(u, {$push: {memberOf: {aaaManaged: false, groupId: g._id}}}); changed++; }
+        const grp = db.groups.findOne({_id: g._id}, {assignedRoles: 1});
+        if ((grp.assignedRoles || []).length !== roles.length) {
+          db.groups.updateOne({_id: g._id}, {$set: {assignedRoles: roles}}); changed++; }
+        print(changed ? 'CHANGED' : 'OK');
+  register: ldap_admin_db
+  changed_when: "'CHANGED' in ldap_admin_db.stdout"
+  failed_when: "'OK' not in ldap_admin_db.stdout and 'CHANGED' not in ldap_admin_db.stdout"
+
+- name: Login again with the roles and group as {{ admin_user }}
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/login"
+    method: POST
+    body_format: json
+    body: {username: "{{ admin_user }}", password: "{{ admin_pw }}"}
+    status_code: 200
+  register: login
+  no_log: true
+
+- name: Every application and the group are visible in whoami for {{ admin_user }}
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/whoami"
+    headers: {Cookie: "{{ login.cookies_string }}"}
+  register: whoami
+  failed_when: whoami.json.groups | length == 0 or whoami.json.routes | length < 20

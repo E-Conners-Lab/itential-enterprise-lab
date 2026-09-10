@@ -207,13 +207,18 @@ def test_the_production_overlay_is_held_to_the_oracle() -> None:
     assert prod["platform_api"] == f"http://{vms()[first]['ip']}:{HA2['platform']['http_port']}", "the first node's API"
     assert prod["platform_admin_user"] == HA2["platform"]["admin_user"], "the local administrator of the oracle"
     assert HA2["platform"]["bootstrap_user"] != HA2["platform"]["admin_user"], "the bootstrap user is not the automation account"
-    tasks_text = (TASKS / "local-admin-account.yml").read_text()
-    assert "memberOf" in tasks_text and "admin_group_id" in tasks_text, "the automation account carries the membership"
-    assert "000000000000000000000000" not in tasks_text, "the automation account is not the default user"
     assert "memberOf:" not in (TASKS / "roles-to-admin.yml").read_text(), "the default user cannot hold a membership"
+    # the directory account is provisioned by its first login and its roles are written to the replica set
+    assert prod["role_resync_tasks"] == "roles-to-admin-ldap.yml", "production re-syncs through the database, as dev does"
+    assert prod["mongo_shell_host"] == [v["name"] for v in HA2["vms"] if v["role"] == "mongodb"][0]
+    uri = prod["mongo_admin_uri"]
+    assert f"replicaSet={HA2['mongodb']['replica_set']}" in uri and "tls=true" in uri, "the write must reach the primary over TLS"
+    assert " " not in prod["mongo_hosts"], "a folded scalar would put spaces inside the URI"
+    for member in (v["name"] for v in HA2["vms"] if v["role"] == "mongodb"):
+        assert f"{member}.{HA2['domain']}:{HA2['mongodb']['port']}" in prod["mongo_hosts"], f"{member} missing"
+    assert prod["mongo_shell_argv"][-1] == "--eval" and "{{ mongo_admin_uri }}" in prod["mongo_shell_argv"]
     tools = vms()["tools-01"]
     assert prod["ollama_base_url"] == f"http://{tools['ip']}:{HA2['tools']['ollama_port']}", "Ollama runs on tools-01"
-    assert prod["role_resync_tasks"] == "roles-to-admin.yml", "production re-syncs roles through the authorization API"
 
 
 def test_the_replay_entry_point_runs_the_three_halves_in_order() -> None:

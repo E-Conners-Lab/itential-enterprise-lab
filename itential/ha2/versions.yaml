@@ -66,9 +66,13 @@ platform:
   #    ITENTIAL_ADMIN_PASSWORD). The Platform rewrites its account document on every login, which clears the
   #    group membership, so it can never satisfy an API that asks for "a member of a group holding role X".
   #    It is break-glass and bootstrap only.
-  #  - admin_user is a real local account created through the authorization API, a member of admin_group and
-  #    holding every role. It carries the same name the dev-stack's LDAP administrator has, so every phase 5-7
-  #    play and verify works against production unchanged, and the identity phase can replace it in place.
+  #  - admin_user is the directory account. Platform 6 has no API that creates a local account (the Admin
+  #    Essentials UI only lists and patches them), and the Phase 5 measurement holds here too: "the built-in
+  #    local admin's memberOf is ignored by the session". So production runs the same OpenLDAP the dev-stack
+  #    runs (see `ldap` below), admin@itential is provisioned by its first login, and its roles and group
+  #    membership are written to the database exactly as itential.yml writes them on VM 205. Same username on
+  #    both environments, so every phase 5-7 play and verify replays unchanged, and the identity phase
+  #    (OpenLDAP on k3s behind Keycloak) repoints the adapter without touching an account.
   bootstrap_user: admin
   admin_user: admin@itential
   # the custom-services directory each node mounts; the adapters of itential/versions.yaml are installed twice
@@ -83,6 +87,19 @@ gateway:
   cluster_id: lab # the same Gateway 5 cluster id the dev-stack registers (itential/versions.yaml stack)
   grpc_port: 50051
   etcd_port: 2379
+
+# The interim directory: the same osixia/openldap image, the same upstream LDIF (itential/ldap/openldap.ldif)
+# and the same adapter settings the dev-stack uses, on tools-01 rather than as a Compose service beside the
+# Platform. The identity phase moves it to k3s and federates it with Keycloak; until then admin@itential
+# authenticates here, with ITENTIAL_ADMIN_PASSWORD (the LDIF's own value, an accepted lab exception).
+ldap:
+  port: 389
+  organisation: Itential, LLC.
+  domain: itential.io
+  base_dn: dc=itential,dc=io
+  bind_dn: cn=admin,dc=itential,dc=io
+  user_dn_template: cn={0},dc=itential,dc=io
+  ldif: itential/ldap/openldap.ldif
 
 tools:
   mcp_port: 8000

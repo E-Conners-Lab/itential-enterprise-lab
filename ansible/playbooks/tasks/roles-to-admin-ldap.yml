@@ -1,18 +1,16 @@
 ---
-# The dev-stack's role re-sync (ADR 0055): its administrator is an LDAP account and its MongoDB is a
-# standalone container on the same VM, so the assignment is made in the database, as upstream's
-# sync-admin-roles.sh does. Included by tasks/platform-assets.yml; production uses roles-to-admin.yml.
+# The directory account's role re-sync (ADR 0055). Loading an adapter registers new roles; without this the
+# administrator gets 403 on the new adapter's routes. Upstream's sync-admin-roles.sh does the same thing, and
+# it does it in the database because the accounts API does not persist assignedRoles or memberOf.
+#
+# The dev-stack's defaults reach its own MongoDB container; production passes mongo_shell_argv and
+# mongo_shell_host (vars/itential-prod.yml) so the write goes to the replica set's primary over TLS.
 - name: After the adapters loaded, re-sync every role to admin_group and {{ admin_user }}
   ansible.builtin.command:
-    argv:
-      - docker
-      - exec
-      - mongodb
-      - mongosh
-      - --quiet
-      - itential
-      - --eval
-      - >-
+    argv: "{{ mongo_shell_argv | default(['docker', 'exec', 'mongodb', 'mongosh', '--quiet', 'itential', '--eval']) + [resync_eval] }}"
+  delegate_to: "{{ mongo_shell_host | default(inventory_hostname) }}"
+  vars:
+    resync_eval: >-
         const roles = db.roles.find({}, {_id: 1}).toArray().map(r => ({roleId: r._id}));
         const g = db.groups.findOne({name: 'admin_group'}, {_id: 1});
         const u = {username: '{{ admin_user }}', provenance: 'LDAP'};
