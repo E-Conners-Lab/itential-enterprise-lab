@@ -557,6 +557,32 @@
       loop_control:
         label: "{{ item.name }}"
 
+    # The play creates a host per NetBox record and never removed one, so a retired machine kept alarming:
+    # VM 205 was still a Zabbix host after S11.8 deleted it. The lab's host groups are this play's own, so a
+    # host in them that the documents no longer name is deleted - the contract netbox-seed.yml and
+    # netbox-vms.yml already have for a released address and a retired VM (ADR 0051 criterion 1).
+    - name: Every Zabbix host
+      community.zabbix.zabbix_host_info:
+      register: zbx_hosts_now
+
+    # Only hosts this play stamped with its own path are candidates, so Zabbix's built-ins and anything added
+    # by hand are never touched: the filter fails safe. A stamped host the documents no longer name is one
+    # this play created for a machine that has since been retired.
+    - name: Retired hosts deleted
+      community.zabbix.zabbix_host:
+        host_name: "{{ item }}"
+        state: absent
+      loop: >-
+        {{ zbx_hosts_now.hosts | default([])
+           | selectattr('description', 'defined')
+           | selectattr('description', 'search', 'ansible/playbooks/observability.yml')
+           | map(attribute='host') | list
+           | difference(devices | map(attribute='name') | list
+                        + linux_hosts | map(attribute='name') | list
+                        + zabbix.synthetic_hosts | map(attribute='name') | list) }}
+      loop_control:
+        label: "{{ item }} (retired)"
+
     - name: Read-only user group for Grafana
       community.zabbix.zabbix_usergroup:
         name: lab-readonly

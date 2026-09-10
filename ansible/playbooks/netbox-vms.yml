@@ -18,7 +18,8 @@
       - {name: k3s-01, vcpus: 4, memory: 12288, disk: 80, role: k3s-server, ips: [10.100.0.16], tags: [phase-3, k3s]}
       - {name: k3s-02, vcpus: 4, memory: 12288, disk: 80, role: k3s-server, ips: [10.100.0.17], tags: [phase-3, k3s]}
       - {name: k3s-03, vcpus: 4, memory: 12288, disk: 80, role: k3s-server, ips: [10.100.0.18], tags: [phase-3, k3s]}
-      - {name: itential, vcpus: 8, memory: 24576, disk: 160, role: itential-host, ips: [10.100.0.65], tags: [phase-5]}
+      # VM 205 `itential` (the dev-stack) was retired at S11.8 on 2026-09-10, after the cut-over moved the
+      # service name to iap-lb and S11.5 proved every asset it held exists on production (ADR 0053).
     # Phase 8 (PID S11, ADR 0053): the production environment's VMs come from their own oracle, so the shape
     # is declared once. The NetBox role is `ha2-<role>`, which is also the Ansible group the plays address.
     ha2: "{{ (lookup('ansible.builtin.file', playbook_dir ~ '/../../itential/ha2/versions.yaml') | from_yaml).vms }}"
@@ -30,6 +31,27 @@
       {%- endfor -%}
       {{ out }}
   tasks:
+    # A VM this file no longer lists is deleted, the way netbox-seed.yml deletes a released address: NetBox
+    # must never keep a machine the plan gave back. Scoped to the homelab cluster, which is all this play owns.
+    - name: Virtual machines currently in NetBox
+      ansible.builtin.uri:
+        url: "{{ nb.netbox_url }}/api/virtualization/virtual-machines/?cluster=homelab&limit=200"
+        headers: {Authorization: "Token {{ nb.netbox_token }}"}
+        validate_certs: false
+      register: nb_vms_now
+
+    - name: Retired virtual machines deleted
+      netbox.netbox.netbox_virtual_machine:
+        netbox_url: "{{ nb.netbox_url }}"
+        netbox_token: "{{ nb.netbox_token }}"
+        validate_certs: false
+        data: {name: "{{ item }}", cluster: homelab}
+        state: absent
+      loop: >-
+        {{ nb_vms_now.json.results | map(attribute='name') | difference(all_vms | map(attribute='name') | list) }}
+      loop_control:
+        label: "{{ item }} (retired)"
+
     - name: Site
       netbox.netbox.netbox_site:
         netbox_url: "{{ nb.netbox_url }}"

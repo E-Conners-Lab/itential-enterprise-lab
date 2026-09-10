@@ -45,9 +45,8 @@ addresses:
   - {address: 10.100.0.42, hostname: gitea, placement: k3s-vip, phase: 9, status: reserved}
   - {address: 10.100.0.64, hostname: netbox, placement: proxmox-vm, phase: 2, status: active, description: "VM 110 second NIC"}
   # aliases are extra A records for the same address (unbound on oob-gw renders them).
-  # the S11 cut-over (ADR 0053/0055) moved the service name to the load balancer; VM 205 keeps its own
-  # name until it is deleted, and no longer answers for mcp either - that is tools-01
-  - {address: 10.100.0.65, hostname: itential-dev, placement: proxmox-vm, phase: 5, status: reserved, description: "The dev-stack: Platform + both gateways + MCP as containers (ADR 0035); retires after the cut-over"}
+  # 10.100.0.65 released at S11.8 on 2026-09-10: VM 205, the dev-stack, was deleted once the cut-over moved
+  # the service name to iap-lb and S11.5 proved every asset it held exists on production (ADR 0053/0055).
   - {address: 10.100.0.67, hostname: nios, placement: proxmox-vm, phase: 13, status: reserved, description: "firewall track (ADR 0050)"}
   - {address: 10.100.0.68, hostname: ddi-fallback, placement: proxmox-vm, phase: 11, status: reserved}
   - {address: 10.100.0.70, hostname: panorama, placement: proxmox-vm, phase: 13, status: reserved}

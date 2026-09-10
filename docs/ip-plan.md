@@ -95,7 +95,7 @@ topology; "k3s VIP" means a MetalLB address.
 | 10.100.0.42 | gitea | k3s VIP | Gitea HTTP + SSH (phase 9) |
 | 10.100.0.43 - .63 | *(pool)* | k3s VIP | unassigned MetalLB pool |
 | 10.100.0.64 | netbox | Proxmox (VM 110, second NIC) | NetBox OOB leg (phase 2) |
-| 10.100.0.65 | itential-dev | Proxmox | The dev-stack: Itential Platform, both Automation Gateways and the MCP server as containers on one VM (phase 5, ADR 0035). Renamed at the S11 cut-over, which moved `itential.lab.internal` and `mcp.lab.internal` off it; retires with VM 205 |
+| 10.100.0.65 | *(reserved)* | | released 2026-09-10 at S11.8: VM 205, the dev-stack, retired once the cut-over moved `itential.lab.internal` to `iap-lb` and `mcp.lab.internal` to `tools-01` (ADR 0053) |
 | 10.100.0.66 | *(reserved)* | | released 2026-09-07: the separate `iag` VM was dropped with the container path |
 | 10.100.0.67 | nios | Proxmox | Infoblox NIOS grid master, LAN1 (phase 13, firewall track) |
 | 10.100.0.68 | ddi-fallback | Proxmox | BIND9 + Kea (phase 11) |
@@ -136,7 +136,7 @@ topology; "k3s VIP" means a MetalLB address.
 | 10.100.0.224 | clab | Proxmox | Containerlab CI host (phase 12) |
 | 10.100.0.240 - .254 | *(DHCP pool)* | DDI | first-boot / ZTP |
 
-Phase numbers follow the order of amendment 1.18 (ADR 0050, 0053); `dc01` (10.100.0.69) and `iag` (10.100.0.66) were released and are deleted from NetBox by the seed play (ADR 0051).
+Phase numbers follow the order of amendment 1.18 (ADR 0050, 0053); `dc01` (10.100.0.69), `iag` (10.100.0.66) and the dev-stack VM 205 (10.100.0.65) were released and are deleted from NetBox by the seed play (ADR 0051).
 
 The EVE-NG node list is the *minimum* topology the PID commits to; the
 network-topology phase may add nodes inside the blocks above without changing

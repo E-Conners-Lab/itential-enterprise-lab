@@ -251,7 +251,28 @@ c7() {
 }
 check "S11.7 the official Itential dashboard's MongoDB and Redis rows show the production replica sets" c7
 
-defer "S11.8 VM 205 deleted: a separate owner-approved step at the end of the cut-over (ADR 0053)"
+# --- S11.8 the dev-stack is retired ---------------------------------------------------------------------------
+# Owner-approved and done on 2026-09-10. Every trace of VM 205 is gone: the machine, its NetBox records, its
+# Zabbix host, its DNS name and its address reservation - and the plan no longer lists .65 at all.
+c8() {
+  local errs=0 dev_ip=10.100.0.65
+  pve "cluster/resources?type=vm" | ${PY} -c "import sys,json;d=json.load(sys.stdin)['data'];assert not [x for x in d if x.get('vmid')==205],'VM 205 still exists on the host'" \
+    || { echo "VM 205 still exists in Proxmox"; errs=1; }
+  nb "${NETBOX_URL%/}/api/virtualization/virtual-machines/?name=itential" | grep -q '"count":0' || { echo "NetBox still holds the itential VM"; errs=1; }
+  nb "${NETBOX_URL%/}/api/ipam/ip-addresses/?address=${dev_ip}" | grep -q '"count":0' || { echo "NetBox still holds ${dev_ip}"; errs=1; }
+  ${PY} -c "import yaml;d=yaml.safe_load(open('topology/ipam.yaml'));assert not [a for a in d['addresses'] if a['address']=='${dev_ip}'],'ipam still lists ${dev_ip}'" \
+    || { echo "topology/ipam.yaml still reserves ${dev_ip}"; errs=1; }
+  local r; for r in itential-dev itential; do
+    local got; got=$(${PY} -c "import socket
+try: print(socket.gethostbyname('${r}.lab.internal'))
+except Exception: print('')" )
+    [ "$got" = "$dev_ip" ] && { echo "${r}.lab.internal still resolves to ${dev_ip}"; errs=1; }
+  done
+  ping -c 1 -W 2000 "$dev_ip" >/dev/null 2>&1 && { echo "${dev_ip} still answers"; errs=1; }
+  [ "$errs" = 0 ] || return 1
+  echo "VM 205 is gone from Proxmox, NetBox, Zabbix, DNS and the IP plan; ${dev_ip} released and silent"
+}
+check "S11.8 the dev-stack VM 205 is retired and every trace of it removed" c8
 
 # --- S11.6 failover drills (disruptive; VERIFY_DRILLS=1 only) -----------------------------------------------
 if [ "${VERIFY_DRILLS:-0}" = 1 ]; then

@@ -79,6 +79,16 @@ inventory and host on it **from documents in this repo through plays that addres
    elects a new one within 30 s and the Platform keeps serving, stopping the Redis master fails over through
    Sentinel; the official dashboard's Redis and MongoDB rows show the replica sets.
 
+## Retirement (done 2026-09-10)
+
+The cut-over moved `itential.lab.internal` to `iap-lb` and `mcp.lab.internal` to `tools-01`, and VM 205 was
+deleted with the owner's approval once S11.5 proved every asset it held exists on production. Order mattered:
+NetBox and Zabbix first (a monitored host that vanishes alarms), then `tofu destroy` in `tofu/itential` - one
+resource, `proxmox_virtual_environment_vm.itential` - then the address and the DNS name. Two plays gained the
+pruning they never had: `netbox-vms.yml` deletes a virtual machine it no longer lists, and `observability.yml`
+deletes a Zabbix host it stamped but the documents no longer name. Both fail safe, and both mean a future
+retirement is a document change rather than a cleanup by hand.
+
 ## Consequences
 
 - Eleven more VMs and 49 GB of RAM (`docs/resource-budget.md` section 2 amended); the firewall track's 40 GB stay

@@ -27,7 +27,7 @@ disk (VM 110 NetBox and VM 300 EVE-NG).
 | `k3s-01` | 3 | Ubuntu 24.04 cloud | 4 | 12 | 80 | 30 GB OS + 50 GB Longhorn |
 | `k3s-02` | 3 | Ubuntu 24.04 cloud | 4 | 12 | 80 | |
 | `k3s-03` | 3 | Ubuntu 24.04 cloud | 4 | 12 | 80 | |
-| 205 `itential` | 5 | Ubuntu 24.04 cloud | 8 | 24 | 160 | **Retires at the S11 cut-over (ADR 0053).** Docker host for the itential-dev-stack: Platform, MongoDB 7 (WiredTiger cache capped at 4 GB), Redis 7, Gateway 5, Gateway 4, MCP (ADR 0035; the separate `iag` VM and the Rocky template are dropped). Measured after 24 h by `verify/test-05-itential.sh` S4.6; grows to 32 GB by PR only if above 80 % |
+| ~~205 `itential`~~ | 5 | | ~~8~~ | ~~24~~ | ~~160~~ | **Retired 2026-09-10 at S11.8** (ADR 0053): the dev-stack VM was deleted once the cut-over moved `itential.lab.internal` to `iap-lb` and S11.5 proved every asset it held exists on production. 8 vCPU / 24 GB / 160 GB returned to the host; 10.100.0.65 released |
 | `nios` | 13 | NIOS 9.0.8 IB-V825 | 2 | 16 | 150 | vendor minimum for IB-V825 with the resizable image |
 | `ddi-fallback` | 11 | Ubuntu 24.04 cloud | 2 | 2 | 20 | BIND9 + Kea containers, host networking |
 | `panorama` | 13 | Panorama 11.1 | 8 | 16 | 141 | 81 system + 60 log disk; Management Only mode accepted; **lever 2 pulled with ADR 0053 (24 -> 16 GB)**. Vendor floor is 16/64, EVE-NG and community run 8/16 (manifest 2.2) |
@@ -43,9 +43,9 @@ disk (VM 110 NetBox and VM 300 EVE-NG).
 | `iag-01` | 8 | Ubuntu 24.04 cloud | 4 | 6 | 60 | Gateway 5 cluster (gateway5, etcd, runner) |
 | `tools-01` | 8 | Ubuntu 24.04 cloud | 4 | 8 | 40 | MCP server, Ollama (in-lab model) |
 | `clab` | 12 | Ubuntu 24.04 cloud | 8 | 16 | 60 | Docker + Containerlab, 5 cEOS nodes at ~1.5 GB + runner |
-| **Total** | | | **95** | **296** | **1,455** | dc01 removed (ADR 0050), Panorama 16 GB (lever 2), the eleven S11 VMs added while VM 205 still runs (ADR 0053) |
+| **Total** | | | **87** | **272** | **1,295** | dc01 removed (ADR 0050), Panorama 16 GB (lever 2), the eleven S11 VMs added and VM 205 retired at S11.8 (ADR 0053): 8 vCPU / 24 GB / 160 GB returned |
 | Ceiling | | | 108 | 280 | 1,400 (with the 200 GB `/srv/images` LV: 1,363); disk is thin, usage decides (section 1) | |
-| **Headroom** | | | **13 vCPU** | **-16 GB** | plan; the running hosts stay under the ceiling (see below) |
+| **Headroom** | | | **21 vCPU** | **8 GB** | plan; VM 205's retirement at S11.8 returned 8 vCPU / 24 GB and took the RAM headroom positive again (ADR 0053) |
 
 RAM is the binding constraint. With ADR 0053 the plan sums to 296 GB against the 280 GB ceiling
 because the eleven production VMs are listed next to VM 205 (24 GB), which retires at the S11 cut-over
