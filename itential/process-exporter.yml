@@ -1,0 +1,10 @@
+# process_exporter groups for the Platform host (ADR 0052): one group per Pronghorn process title, which is what
+# the official Itential Platform Monitoring dashboard selects (groupname=~"Pronghorn.* Application|Adapter").
+# Copied next to the Compose files by ansible/playbooks/itential.yml.
+process_names:
+  - name: "{{.Matches.Title}}"
+    cmdline:
+      - '^(?P<Title>Pronghorn .+ (Application|Adapter))'
+  - name: "Pronghorn core"
+    cmdline:
+      - '^Pronghorn core'

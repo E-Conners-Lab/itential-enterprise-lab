@@ -36,6 +36,12 @@ images:
   # (Gateway requires etcd v3.5); the runner is built on the VM from runner_base + the iagctl
   # binary of images.gateway5 (itential/gateway5-runner/Dockerfile). quay.io / Docker Hub 2026-09-07
   etcd: {repository: quay.io/coreos/etcd, tag: v3.5.21, digest: "sha256:a3ccd299377af4b9968d8cbaaf9722fe354297f11908f74a846075e1e5f4ee89"}
+  # Exporters beside the dev-stack for the official Itential Platform Monitoring dashboard (ADR 0052); tags confirmed
+  # on Docker Hub and GitHub releases 2026-09-10
+  node_exporter: {repository: docker.io/prom/node-exporter, tag: v1.12.1} # 2026-07-14
+  process_exporter: {repository: docker.io/ncabatoff/process-exporter, tag: 0.8.7} # 2025-04-21
+  redis_exporter: {repository: docker.io/oliver006/redis_exporter, tag: v1.91.1} # 2026-09-07
+  mongodb_exporter: {repository: docker.io/percona/mongodb_exporter, tag: 0.53.0} # 2026-08-20
   # glibc base for the runner: pyATS ships no musl (Alpine) or Python 3.14 wheels
   runner_base:
     repository: docker.io/library/python
@@ -53,7 +59,7 @@ vm:
 stack:
   # platform + mongodb + redis + gateway5 + mcp + openldap. Gateway 4 deferred (owner decision
   # 2026-09-07: Gateway 5 is the gateway; Golden Config is not in S4), openbao off (Vault in Phase 9)
-  profiles: [platform, gateway5, mcp, ldap, ollama]
+  profiles: [platform, gateway5, mcp, ldap, ollama, monitoring] # monitoring = the Platform host exporters (ADR 0052)
   # itential/ldap/openldap.ldif, vendored from the same upstream commit
   ldif_sha256: 4d22e7a2a80dc5f3b6fabccf35b68e34fe6d6c9fd4c87842c2a6deca53f97cbc
   gateway5_cluster_id: lab

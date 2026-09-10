@@ -104,14 +104,15 @@ spec:
 {% endfor %}
 ---
 # The Platform's native Prometheus route (docs.itential.com/itential-platform/monitor/prometheus-metrics): nine
-# iap_* families, served without a session on 6.5.2; HTTPS through the lab CA.
+# iap_* families, served without a session on 6.5.2; HTTPS through the lab CA. Job iap_exporter and the address
+# as instance, as the official dashboard queries it (ADR 0052).
 apiVersion: monitoring.coreos.com/v1alpha1
 kind: ScrapeConfig
 metadata:
-  name: itential-platform
+  name: iap-exporter
   namespace: {{ obs_namespace }}
 spec:
-  jobName: itential-platform
+  jobName: iap_exporter
   scrapeInterval: 30s
   scheme: HTTPS
   metricsPath: /prometheus_metrics
@@ -120,6 +121,21 @@ spec:
       configMap: {name: lab-ca, key: ca.crt}
     serverName: {{ itential_host }}
   staticConfigs:
-    - targets: ["{{ itential_host }}:443"]
+    - targets: ["{{ itential_ip }}:443"]
       labels:
         platform: itential
+{% for e in host_exporters %}
+---
+apiVersion: monitoring.coreos.com/v1alpha1
+kind: ScrapeConfig
+metadata:
+  name: {{ e.job | replace('_', '-') }}
+  namespace: {{ obs_namespace }}
+spec:
+  jobName: {{ e.job }}
+  scrapeInterval: 30s
+  staticConfigs:
+    - targets: ["{{ itential_ip }}:{{ e.port }}"]
+      labels:
+        platform: itential
+{% endfor %}

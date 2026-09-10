@@ -267,8 +267,8 @@ c7_once() {
   web "${PROM}/api/v1/query" --data-urlencode 'query=itential_workflow_jobs_complete_total' > /tmp/verify07.pj.$$ || return 1
   web "${PROM}/api/v1/query" --data-urlencode 'query=min(itential_application_running)' > /tmp/verify07.pa.$$
   web "${PROM}/api/v1/query" --data-urlencode 'query=min(itential_adapter_online)' > /tmp/verify07.pd.$$
-  # the Platform's own /prometheus_metrics route (docs.itential.com) scraped as job itential-platform
-  local native; native=$(web "${PROM}/api/v1/query" --data-urlencode 'query=iap_active_jobs{job="itential-platform"}' | ${PY} -c 'import sys,json;r=json.load(sys.stdin)["data"]["result"];print(len(r))')
+  # the Platform's own /prometheus_metrics route (docs.itential.com) scraped as job iap_exporter (ADR 0052)
+  local native; native=$(web "${PROM}/api/v1/query" --data-urlencode 'query=iap_active_jobs{job="iap_exporter"}' | ${PY} -c 'import sys,json;r=json.load(sys.stdin)["data"]["result"];print(len(r))')
   [ "$native" = 1 ] || { echo "iap_active_jobs from the Platform's /prometheus_metrics route is not in Prometheus"; return 1; }
   ${PY} - /tmp/verify07.jm.$$ /tmp/verify07.pj.$$ /tmp/verify07.apps.$$ /tmp/verify07.ad.$$ /tmp/verify07.pa.$$ /tmp/verify07.pd.$$ <<'PY' || return 1
 import json, sys
@@ -285,6 +285,30 @@ print(f"{len(api)} workflows: jobsComplete equal in the API and Prometheus; {len
 PY
 }
 check "S7.7 Prometheus holds the Platform job metrics (jobsComplete per workflow equals the API) and every application/adapter is up" c7
+
+# --- S7.8 the official Itential Platform Monitoring dashboard (grafana.com 25527) has data for every family ----------
+c8() {
+  local uid; uid=$(${PY} -c "import yaml;print(yaml.safe_load(open('$V'))['vendored_dashboards']['itential-platform-monitoring']['uid'])")
+  web -u "admin:${GRAFANA_ADMIN_PASSWORD:?}" "${GRAFANA}/api/dashboards/uid/${uid}" | ${PY} -c 'import sys,json;d=json.load(sys.stdin)["dashboard"];print("provisioned:", d["title"], "rows", [p["title"] for p in d["panels"] if p.get("type")=="row"])' || return 1
+  # every metric family the dashboard queries (measured from the JSON, ADR 0052) except the replica-set family
+  local fam rc=0
+  for fam in 'up{job="iap_exporter"}' 'iap_active_sessions' 'itential_job_status_total' 'itential_job_start' 'itential_task_complete' 'itential_up' \
+             'node_cpu_seconds_total{job="node_exporter"}' 'node_filesystem_avail_bytes{job="node_exporter"}' \
+             'namedprocess_namegroup_num_procs{groupname=~"Pronghorn.* Application"}' 'namedprocess_namegroup_num_procs{groupname=~"Pronghorn.* Adapter"}' \
+             'redis_up{job="redis_exporter"}' 'redis_instance_info{job="redis_exporter",role="master"}' 'redis_memory_used_bytes' \
+             'mongodb_ss_connections' 'mongodb_ss_opcounters' 'mongodb_ss_wt_cache_bytes_currently_in_the_cache'; do
+    local n; n=$(web "${PROM}/api/v1/query" --data-urlencode "query=count(${fam})" | ${PY} -c 'import sys,json;r=json.load(sys.stdin)["data"]["result"];print(r[0]["value"][1] if r else 0)')
+    [ "${n:-0}" != 0 ] || { echo "no data: ${fam}"; rc=1; }
+  done
+  [ $rc = 0 ] || return 1
+  # second source: the exporter's job counts equal the Platform's jobs collection (a few jobs may land between the two reads)
+  local api prom
+  api=$(iap "${PLATFORM}/operations-manager/jobs?include=status&limit=1" | ${PY} -c 'import sys,json;print(json.load(sys.stdin)["metadata"]["total"])')
+  prom=$(web "${PROM}/api/v1/query" --data-urlencode 'query=itential_job_start' | ${PY} -c 'import sys,json;r=json.load(sys.stdin)["data"]["result"];print(int(float(r[0]["value"][1])) if r else 0)')
+  [ $((api - prom)) -le 3 ] && [ $((api - prom)) -ge 0 ] || { echo "itential_job_start ${prom} vs jobs collection total ${api}"; return 1; }
+  echo "every dashboard family has data (MongoDB replica-set family excluded: standalone dev-stack database); jobs total ${api} in the API, ${prom} in Prometheus"
+}
+check "S7.8 the official Itential Platform Monitoring dashboard (grafana.com 25527) is provisioned and every metric family it queries has data" c8
 
 defer "S7.5 Grafana login via Keycloak and every dashboard renders with data: identity phase (ADR 0050)"
 

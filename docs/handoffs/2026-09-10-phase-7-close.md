@@ -60,6 +60,12 @@ k3s changes (kubeconfig `~/.kube/lab-k3s.yaml`).
   login (Keycloak front is a phase-9 candidate with S7.5); Grafana dashboards "Firewalls" waits for the
   firewall track.
 
+## Phase 7 follow-up (ADR 0052, branch `phase-7/itential-dashboard`)
+The official Itential Platform Monitoring dashboard (grafana.com 25527) is vendored and provisioned; node/process/
+Redis/MongoDB exporters run beside the dev-stack (Compose profile `monitoring`, `itential/compose.override.yml`);
+the lab exporter supplies the `itential_job_*`/`itential_task_*` series; S7.8 verifies it. MongoDB is standalone
+in the dev-stack, so the dashboard's replica-set panels stay empty by design.
+
 ## Next phase
 Phase 8 config/secrets/code (`phase-8/config-secrets-code`, S8): Oxidized, Vault (takes the device credentials,
 the SNMPv3 passphrases and the company key), Gitea.

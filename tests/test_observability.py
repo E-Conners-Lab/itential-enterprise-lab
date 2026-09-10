@@ -275,7 +275,7 @@ def test_plays_verify_and_make_are_wired() -> None:
     v = ROOT / "verify" / "test-07-observability.sh"
     assert v.exists() and os.access(v, os.X_OK)
     text = v.read_text()
-    for crit in ("S7.1", "S7.2", "S7.3", "S7.4", "S7.6", "S7.7"):
+    for crit in ("S7.1", "S7.2", "S7.3", "S7.4", "S7.6", "S7.7", "S7.8"):
         assert crit in text, crit
     assert "VERIFY_DRILLS" in text and "tokens.sh" not in text
     req = yaml.safe_load((ROOT / "requirements.yml").read_text())
@@ -317,7 +317,8 @@ def test_exporter_renders_the_measured_shapes() -> None:
     )
     apps = json.loads('{"results":[{"id":"AgentExecutionEngine","state":"RUNNING","connection":null}]}')
     adapters = json.loads('{"results":[{"id":"NetBox","state":"RUNNING","connection":{"state":"ONLINE"}}]}')
-    text = ex.render(jobs["results"], tasks["results"], apps["results"], adapters["results"], up=1)
+    text = ex.render(jobs["results"], tasks["results"], apps["results"], adapters["results"], up=1,
+                     job_status={"complete": 300, "error": 4, "canceled": 7, "running": 2})
     assert 'itential_workflow_jobs_complete_total{workflow="wf-backup-all-v1"} 8' in text
     assert 'itential_workflow_sla_missed_total{workflow="wf-branch-vlan-v1"} 1' in text
     assert 'itential_workflow_sla_missed_total{workflow="wf-backup-all-v1"} 0' in text
@@ -327,3 +328,31 @@ def test_exporter_renders_the_measured_shapes() -> None:
     assert 'itential_application_running{app="AgentExecutionEngine"} 1' in text
     assert 'itential_adapter_online{adapter="NetBox"} 1' in text and "itential_up 1" in text
     assert "# TYPE itential_workflow_jobs_complete_total gauge" in text
+    # the official dashboard's series (ADR 0052)
+    assert 'itential_job_status_total{status="running"} 2' in text and "itential_job_start 313" in text
+    assert "itential_job_complete 300" in text and "itential_job_error 4" in text and "itential_job_cancel 7" in text
+    assert "itential_task_complete 181" in text and "itential_task_error 3" in text and "itential_task_start 184" in text
+    assert "itential_watcher_reconnects_total 0" in text
+
+
+def test_vendored_dashboard_is_the_published_revision() -> None:
+    import hashlib
+
+    for name, pin in VERSIONS["vendored_dashboards"].items():
+        path = ROOT / "observability" / "grafana" / "dashboards" / f"{name}.json"
+        assert hashlib.sha256(path.read_bytes()).hexdigest() == pin["sha256"], f"{name}: not the pinned grafana.com revision"
+        doc = json.loads(path.read_text())
+        assert doc["uid"] == pin["uid"]
+        assert name in OBS["grafana"]["vendored"]
+    rows = _manifest_rows("### 4.3 Observability", "### 4.4")
+    assert "25527" in rows["Itential Platform Monitoring dashboard"][1]
+    it = yaml.safe_load((ROOT / "itential" / "versions.yaml").read_text())
+    assert "monitoring" in it["stack"]["profiles"]
+    for key, label in (("node_exporter", "node_exporter"), ("process_exporter", "process_exporter"), ("redis_exporter", "redis_exporter"), ("mongodb_exporter", "mongodb_exporter")):
+        assert it["images"][key]["tag"] in rows[label][1], label
+        assert it["images"][key]["repository"].split("/", 1)[1] in rows[label][3], label
+    override = (ROOT / "itential" / "compose.override.yml").read_text()
+    for svc in ("node-exporter", "process-exporter", "redis-exporter", "mongodb-exporter"):
+        assert f"  {svc}:" in override and 'profiles: ["monitoring"]' in override
+    jobs = {j["job"] for j in OBS["prometheus"]["jobs"]}
+    assert {"iap_exporter", "node_exporter", "process_exporter", "redis_exporter", "mongo_exporter"} <= jobs

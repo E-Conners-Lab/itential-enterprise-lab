@@ -13,6 +13,10 @@ process-level iap_* gauges only; the job, task and health metrics sit behind the
   itential_application_running{app}                 GET /health/applications results[].state == RUNNING
   itential_adapter_online{adapter}                  GET /health/adapters results[].connection.state == ONLINE and RUNNING
   itential_up                                       1 when the last refresh succeeded
+  itential_job_status_total{status}, itential_job_{start,complete,error,cancel}, itential_task_{start,complete,error},
+  itential_watcher_reconnects_total                 the series the official dashboard (grafana.com 25527) reads from
+                                                    Itential's wfe-metrics-exporter, derived here from
+                                                    GET /operations-manager/jobs?include=status and the global task metrics (ADR 0052)
 
 Environment: ITENTIAL_URL, ITENTIAL_USER, ITENTIAL_PASSWORD, ITENTIAL_CA (PEM file), PORT (9120), INTERVAL (60).
 The values are what the API reports (cumulative since the metrics document started), so they are exposed as
@@ -39,9 +43,11 @@ def _esc(v: str) -> str:
     return str(v).replace("\\", "\\\\").replace('"', '\\"').replace("\n", " ")
 
 
-def render(jobs: list, tasks: list, apps: list, adapters: list, up: int) -> str:
-    """Prometheus text format from the four API result lists (the shapes measured on 2026-09-09)."""
+def render(jobs: list, tasks: list, apps: list, adapters: list, up: int, job_status: dict | None = None) -> str:
+    """Prometheus text format from the four API result lists (the shapes measured on 2026-09-09) plus the job
+    counts per status the official dashboard reads (ADR 0052; series named as its wfe-metrics-exporter names them)."""
     out: list[str] = []
+    job_status = job_status or {}
 
     def head(name: str, help_: str, kind: str = "gauge") -> None:
         out.append(f"# HELP {name} {help_}")
@@ -77,6 +83,27 @@ def render(jobs: list, tasks: list, apps: list, adapters: list, up: int) -> str:
         conn = (a.get("connection") or {}).get("state")
         ok = a.get("state") == "RUNNING" and conn in ("ONLINE", None)
         out.append(f'itential_adapter_online{{adapter="{_esc(a["id"])}"}} {1 if ok else 0}')
+    # --- the official dashboard's series (grafana.com 25527), derived from the same APIs -------------------
+    head("itential_job_status_total", "Jobs per status in the Operations Manager jobs collection")
+    for status, n in sorted(job_status.items()):
+        out.append(f'itential_job_status_total{{status="{_esc(status)}"}} {n}')
+    counts = {
+        "itential_job_start": sum(job_status.values()),
+        "itential_job_complete": job_status.get("complete", 0),
+        "itential_job_error": job_status.get("error", 0),
+        "itential_job_cancel": job_status.get("canceled", 0) + job_status.get("cancelled", 0),
+    }
+    for name, n in counts.items():
+        head(name, f"Cumulative jobs ({name.split('_')[-1]}), from the jobs collection")
+        out.append(f"{name} {n}")
+    global_tasks = [r for r in tasks if r.get("global")]
+    t_ok = sum(int(m.get("totalSuccesses") or 0) for r in global_tasks for m in r.get("metrics") or [])
+    t_err = sum(int(m.get("totalErrors") or 0) for r in global_tasks for m in r.get("metrics") or [])
+    for name, n in (("itential_task_start", t_ok + t_err), ("itential_task_complete", t_ok), ("itential_task_error", t_err)):
+        head(name, f"Cumulative task runs ({name.split('_')[-1]}), from the global task metrics")
+        out.append(f"{name} {n}")
+    head("itential_watcher_reconnects_total", "Always 0: this exporter polls the API, it has no change-stream watcher", "counter")
+    out.append("itential_watcher_reconnects_total 0")
     head("itential_up", "1 when the last refresh of the Platform API succeeded")
     out.append(f"itential_up {up}")
     return "\n".join(out) + "\n"
@@ -123,7 +150,21 @@ class Platform:
         tasks = self.paged("/workflow_engine/tasks/metrics")
         apps = self._req("/health/applications").get("results") or []
         adapters = self._req("/health/adapters").get("results") or []
-        return render(jobs, tasks, apps, adapters, up=1)
+        status: dict = {}
+        for j in self.paged_data("/operations-manager/jobs", "include=status"):
+            status[j.get("status") or "unknown"] = status.get(j.get("status") or "unknown", 0) + 1
+        return render(jobs, tasks, apps, adapters, up=1, job_status=status)
+
+    def paged_data(self, path: str, query: str) -> list:
+        """Operations Manager lists: {data: [...], metadata: {total, nextPageSkip}}; include= keeps the documents small."""
+        rows: list = []
+        skip = 0
+        while True:
+            d = self._req(f"{path}?{query}&limit={PAGE}&skip={skip}")
+            rows += d.get("data") or []
+            skip += PAGE
+            if skip >= int((d.get("metadata") or {}).get("total") or 0):
+                return rows
 
 
 STATE = {"text": render([], [], [], [], up=0), "ok": False}

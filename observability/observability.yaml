@@ -61,7 +61,13 @@ prometheus:
     - {job: alloy-logs, count: nodes}
     - {job: alloy-syslog, count: 1}
     - {job: itential-exporter, count: 1}
-    - {job: itential-platform, count: 1} # the Platform's own /prometheus_metrics route (docs.itential.com)
+    # the official Itential Platform Monitoring dashboard's sources (ADR 0052): the Platform's own /prometheus_metrics
+    # route and the four exporters beside the dev-stack on VM 205, with the job names the dashboard queries
+    - {job: iap_exporter, count: 1}
+    - {job: node_exporter, count: 1}
+    - {job: process_exporter, count: 1}
+    - {job: redis_exporter, count: 1}
+    - {job: mongo_exporter, count: 1}
   alerts: # PrometheusRule lab-observability; S7.6 uses LabDeviceDown
     - {name: LabDeviceDown, for: 1m}
     - {name: LabTargetDown, for: 5m}
@@ -83,3 +89,5 @@ syslog:
 
 grafana:
   dashboards: [lab-health, fabric, wan, expiries] # observability/grafana/dashboards/<name>.json; firewalls: firewall track
+  # vendored as published (ADR 0052); id/revision/sha256 in k8s/observability/versions.yaml
+  vendored: [itential-platform-monitoring]
