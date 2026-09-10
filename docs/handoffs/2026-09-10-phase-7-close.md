@@ -42,11 +42,14 @@ k3s changes (kubeconfig `~/.kube/lab-k3s.yaml`).
 - Agents: Zabbix agent 2 7.0.30 + rsyslog forward on all 12 Ubuntu machines (`observability-hosts.yml`).
 
 ## Open items
-- **br1-wan01 after the drill**: the hard stop showed its "Next reload license Level" was empty (the other four
-  routers have `network-advantage` + `dna-advantage`), so it booted without crypto and its IKEv2 tunnels stay
-  down. A governed push of `license boot level network-advantage addon dna-advantage` (job e9709d5667344996be51fd6b,
-  card in Work Center) must be approved, then the router reloaded (`verify/devcmd.py` `reload()` or the EVE-NG
-  API with a graceful stop) so the level takes effect; then re-check `show crypto ikev2 sa` and the tunnel BGP.
+- **br1-wan01 after the drill (resolved 2026-09-10 ~03:10 UTC)**: the hard stop showed its "Next reload license
+  Level" was empty (the other four routers have `network-advantage` + `dna-advantage`), so it booted without
+  crypto. Two governed pushes (licence boot level, job e9709d5667344996be51fd6b; then the IKEv2/IPsec block
+  rendered from `c8000v.j2`, job 566d3b4346b7424bad815e8e, because the crypto-less boot plus `write memory`
+  had dropped it from the startup config) and one reload restored it: 2 IKEv2 SAs READY, both tunnel BGP
+  sessions Established, DC edge pings the branch gateway. Lesson: a C8000v whose next-reload level is empty
+  loses every crypto line on the first reload; check `show version | include Next reload` on every router
+  before any reload drill.
 - Issue #18: the `{#-` after `hostname {{ name }}` in `topology/configs/c8000v.j2` swallowed the newline
   (fixed in this phase, reference configs regenerated); the NTP half of the issue is still open.
 - `docs/ip-plan.md` section 6 regeneration from the YAML (ADR 0048), the Gateway runner's `NETBOX_URL`
