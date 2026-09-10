@@ -1,0 +1,28 @@
+# Every evaluation, licence, token and certificate the lab depends on, with the date it stops working
+# (PID S7 criterion 1, ADR 0051). observability/zabbix/build.py turns this into the Zabbix template
+# lab-expiries (one Script item per entry: days left; trigger when under `warn_days`). tests/test_observability.py
+# holds the dates to their sources where the repo can read them; verify/test-07 cross-checks the live ones.
+warn_days: 14
+expiries:
+  - key: netbox-api-token
+    name: NetBox API token 'automation' (phase 2)
+    expires: "2027-09-06" # NetBox users/tokens id 6: 2027-09-06T18:45:02Z (verify reads it back)
+    source: netbox
+  - key: lab-root-ca
+    name: Lab root CA certificate (docs/lab-root-ca.crt)
+    expires: "2036-09-03" # notAfter of the exported root (test reads the file)
+    source: docs/lab-root-ca.crt
+  - key: eve-ng-pro-licence
+    name: EVE-NG Pro licence
+    expires: "2027-04-15" # docs/resource-budget.md section 6
+    source: docs/resource-budget.md
+  - key: win11-br1-pc01
+    name: Windows 11 Enterprise evaluation br1-pc01 (90 days from install)
+    expires: "2026-12-06" # installed 2026-09-07 (PR #16); the client is unmanaged (ADR 0050), so the date is not read back
+    source: docs/image-manifest.md 2.8
+  - key: win11-br2-pc01
+    name: Windows 11 Enterprise evaluation br2-pc01 (90 days from install)
+    expires: "2026-12-06"
+    source: docs/image-manifest.md 2.8
+# Added when their phases build them: NIOS temp licence (60 days, firewall track), Panorama evaluation,
+# the Vault root token rotation (phase 8).

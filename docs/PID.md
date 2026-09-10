@@ -3,8 +3,8 @@
 | | |
 |---|---|
 | **Name** | itential-enterprise-lab |
-| **Version** | 1.15 |
-| **Date** | 2026-09-08 |
+| **Version** | 1.16 |
+| **Date** | 2026-09-09 |
 | **Author** | Elliot Conner. Claude Code is the build agent; every action it takes is bounded by this document |
 | **Standard** | Project Initiation Standard PIS-01 - PIS-30 (`~/.claude/skills/project-initiation-standard`) |
 | **Companion docs** | `docs/discovery.md` (what exists), `docs/ip-plan.md`, `docs/resource-budget.md`, `docs/image-manifest.md`, `docs/adr/` (why), `docs/manual-steps.md` |
@@ -259,6 +259,7 @@ Conventions: **Placement** is Proxmox VM (OpenTofu + Ansible), k3s (Helm/Kustomi
 
 ### S7 — Observability: Zabbix, Prometheus + Grafana, gNMIc, Loki (Phase 8)
 > **Amendment 1.15 (ADR 0050):** Phase 7, first after the reorder: criterion 5 (Grafana via Keycloak) moves to the identity phase, the PA-VM SNMP templates to the firewall track; the deferred Itential job metrics land here.
+> **Amendment 1.16 (ADR 0051):** design fixed before code. Zabbix owns availability (SNMPv3 devices, agent 2 on every Ubuntu machine, HTTP checks, Expiries, the S7.6 trigger); Prometheus owns metrics (cluster, SNMP exporter for counters, gNMIc on the vEOS fabric only because the loaded C8000v image has no `gnxi`, blackbox for VIPs and UIs, a Platform exporter for the S4d job/task metrics, the S7.6 alert); Loki owns logs (one Alloy syslog receiver on `.38` for devices and the VMs' rsyslog, an Alloy DaemonSet for pods). TLS terminates at Traefik on the planned VIPs (extra LoadBalancer Services select the Traefik pods; `.35` and `.38` are shared with 10051 and 514). Hosts, gNMIc targets and SNMP targets come from NetBox; templates, expiries, web checks, scrape jobs and dashboards are documents in `observability/`. The device lines (SNMPv3 view/group, syslog, EOS gNMI) enter the topology templates and Golden Config; the SNMPv3 user is pushed with its passphrases from `.env` only; every device receives the delta through `wf-config-push-v1` with the owner's approvals. Criterion 1 reads "every NetBox device or VM with status active plus `eve` and `netbox`, except the two unmanaged Windows 11 clients (ADR 0050)"; criterion 6 is a drill (`VERIFY_DRILLS=1`, PIS-09); criterion 7 added for the Platform metrics; the verify is `verify/test-07-observability.sh`.
 
 
 - **Purpose:** know the state of every service and device; feed Itential pre/post checks and expiry alerts.
@@ -271,7 +272,8 @@ Conventions: **Placement** is Proxmox VM (OpenTofu + Ansible), k3s (Helm/Kustomi
   4. Loki returns a syslog line from each vendor within 60 s of triggering a config change.
   5. Grafana login via Keycloak; every provisioned dashboard renders with data.
   6. Shutting down `br1-wan01` raises a Zabbix trigger and an Alertmanager alert within 3 minutes; starting it clears both.
-- **Verification:** `verify/test-08-observability.sh`.
+  7. *(1.16)* Prometheus holds the Platform's job and task metrics: for every workflow the exporter's `jobsComplete` equals `GET /workflow_engine/jobs/metrics`, and every Platform application and adapter reports `RUNNING` / `ONLINE` through it.
+- **Verification:** `verify/test-07-observability.sh` (was `test-08` before amendment 1.15).
 
 ### S8 — Config, secrets, code: Oxidized, Vault, Gitea (Phase 9)
 > **Amendment 1.15 (ADR 0050):** Phase 8: the Anthropic company key (ADR 0049) moves into Vault with the device credentials; the NIOS Oxidized model waits for the firewall track; Gitea SSO is asserted in the identity phase.
@@ -693,4 +695,5 @@ the verify log path and any ADRs added.
 | 1.13 | 2026-09-08 | Phase 6 element 7 (owner request): S4e NetBox enrichment derived from `topology/enterprise.yaml` (addressing on interfaces with peer descriptions, VRFs and ASNs with BGP neighbours in config contexts, racks, provider circuits, config contexts, journal entries; the templates read the YAML, rendered configs unchanged; `netbox-enrich.yml`; `verify/test-06c-netbox.sh`; ADR 0048) |
 | 1.14 | 2026-09-09 | Domain 7: the Anthropic key is the owner's company key with a $15-a-week budget; the platform's session documents are the ledger (`verify/tokens.sh`, `make tokens`, `llm.budget` in versions.yaml), the agent verifies guard it, iteration runs on the local twins or `ONLY=` subsets (ADR 0049) |
 | 1.15 | 2026-09-09 | Reorder (ADR 0050): image-free phases first (7 observability, 8 config/secrets/code, 9 identity without Windows on OpenLDAP + Keycloak + tac_plus, 10 DDI on BIND9 + Kea, 11 Containerlab) and one phase 12 firewall track for NIOS, the PA-VM firewalls and Panorama; Windows Server and the Windows endpoint item dropped, `dc01` released |
+| 1.16 | 2026-09-09 | Phase 7 design (ADR 0051): Zabbix/Prometheus/Loki ownership, TLS at Traefik on the planned VIPs, hosts and targets from NetBox, documents in `observability/`, device lines in the topology templates and Golden Config with governed pushes, gNMIc on vEOS only, the Platform metrics exporter (S7.7), S7.1 host set and S7.6 drill clarified, `verify/test-07-observability.sh`; IP-plan phase labels follow ADR 0050 |
 | 1.5 | 2026-09-07 | Phase 5 (S4b): Gateway 5 is the only gateway (Gateway 4 staged, not deployed); the PDI needs no customisation (stock standard-change template + Network group + one integration user), so S4b.3 is a rebuild record `servicenow/README.md` instead of an update set; S4b.2 evidence is the states ServiceNow returns to the workflow plus the change read back (`sys_audit` is admin-only on a PDI); PDI `dev409097`, Australia; basic auth needs `snc_basic_auth_api_access` on 2026 instances |

@@ -9,3 +9,5 @@ collections:
     version: 3.22.0
   - name: kubernetes.core
     version: 6.3.0
+  - name: community.zabbix
+    version: 4.2.0 # Zabbix API modules over httpapi (phase 7, ADR 0051)
