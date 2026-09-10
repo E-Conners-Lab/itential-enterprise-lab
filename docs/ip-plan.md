@@ -83,24 +83,35 @@ topology; "k3s VIP" means a MetalLB address.
 | 10.100.0.19 | k3s-api | VIP (kube-vip) | Kubernetes API (phase 3) |
 | 10.100.0.20 - .31 | *(reserved)* | | future k3s workers |
 | 10.100.0.32 | ingress | k3s VIP | cluster ingress controller (phase 3) |
-| 10.100.0.33 | keycloak | k3s VIP | identity (phase 9) |
-| 10.100.0.34 | tacacs | k3s VIP | tac_plus (phase 9) |
+| 10.100.0.33 | keycloak | k3s VIP | identity (phase 10) |
+| 10.100.0.34 | tacacs | k3s VIP | tac_plus (phase 10) |
 | 10.100.0.35 | zabbix | k3s VIP | Zabbix server + web (phase 7) |
 | 10.100.0.36 | grafana | k3s VIP | Grafana (phase 7) |
 | 10.100.0.37 | prometheus | k3s VIP | Prometheus, alias `alertmanager` (phase 7, ADR 0051) |
 | 10.100.0.38 | loki | k3s VIP | Loki API + Alloy syslog receiver (phase 7) |
 | 10.100.0.39 | gnmic | k3s VIP | gNMIc metrics (phase 7) |
-| 10.100.0.40 | oxidized | k3s VIP | Oxidized (phase 8) |
-| 10.100.0.41 | vault | k3s VIP | Vault (phase 8) |
-| 10.100.0.42 | gitea | k3s VIP | Gitea HTTP + SSH (phase 8) |
+| 10.100.0.40 | oxidized | k3s VIP | Oxidized (phase 9) |
+| 10.100.0.41 | vault | k3s VIP | Vault (phase 9) |
+| 10.100.0.42 | gitea | k3s VIP | Gitea HTTP + SSH (phase 9) |
 | 10.100.0.43 - .63 | *(pool)* | k3s VIP | unassigned MetalLB pool |
 | 10.100.0.64 | netbox | Proxmox (VM 110, second NIC) | NetBox OOB leg (phase 2) |
 | 10.100.0.65 | itential | Proxmox | Itential Platform, both Automation Gateways and the MCP server as containers on one VM; alias `mcp.lab.internal` (phase 5, ADR 0035) |
 | 10.100.0.66 | *(reserved)* | | released 2026-09-07: the separate `iag` VM was dropped with the container path |
-| 10.100.0.67 | nios | Proxmox | Infoblox NIOS grid master, LAN1 (phase 12, firewall track) |
-| 10.100.0.68 | ddi-fallback | Proxmox | BIND9 + Kea (phase 10) |
-| 10.100.0.70 | panorama | Proxmox | Panorama (phase 12, firewall track) |
-| 10.100.0.71 - .95 | *(reserved)* | | |
+| 10.100.0.67 | nios | Proxmox | Infoblox NIOS grid master, LAN1 (phase 13, firewall track) |
+| 10.100.0.68 | ddi-fallback | Proxmox | BIND9 + Kea (phase 11) |
+| 10.100.0.70 | panorama | Proxmox | Panorama (phase 13, firewall track) |
+| 10.100.0.71 | iap-lb | Proxmox | nginx load balancer for the Platform nodes; alias itential at cut-over (ADR 0053) (phase 8, ADR 0053) |
+| 10.100.0.72 | iap-01 | Proxmox | Platform node 1 (phase 8, ADR 0053) |
+| 10.100.0.73 | iap-02 | Proxmox | Platform node 2 (phase 8, ADR 0053) |
+| 10.100.0.74 | mongo-01 | Proxmox | MongoDB replica set rs0 (phase 8, ADR 0053) |
+| 10.100.0.75 | mongo-02 | Proxmox | MongoDB replica set rs0 (phase 8, ADR 0053) |
+| 10.100.0.76 | mongo-03 | Proxmox | MongoDB replica set rs0 (phase 8, ADR 0053) |
+| 10.100.0.77 | redis-01 | Proxmox | Redis + Sentinel (phase 8, ADR 0053) |
+| 10.100.0.78 | redis-02 | Proxmox | Redis + Sentinel (phase 8, ADR 0053) |
+| 10.100.0.79 | redis-03 | Proxmox | Redis + Sentinel (phase 8, ADR 0053) |
+| 10.100.0.80 | iag-01 | Proxmox | Gateway 5 cluster (gateway5, etcd, runner) (phase 8, ADR 0053) |
+| 10.100.0.81 | tools-01 | Proxmox | MCP server and Ollama (phase 8, ADR 0053) |
+| 10.100.0.82 - .95 | *(reserved)* | | |
 | 10.100.0.128 | dc1-fw01 | EVE-NG | PA-VM, DC HA pair member A |
 | 10.100.0.129 | dc1-fw02 | EVE-NG | PA-VM, DC HA pair member B |
 | 10.100.0.130 | br1-fw01 | EVE-NG | PA-VM, branch 1 |
@@ -122,10 +133,10 @@ topology; "k3s VIP" means a MetalLB address.
 | 10.100.0.194 | br2-pc01 | EVE-NG | Windows 11 client (branch 2) |
 | 10.100.0.195 | br1-host01 | EVE-NG | Alpine/Ubuntu endpoint (branch 1) |
 | 10.100.0.196 | br2-host01 | EVE-NG | Alpine/Ubuntu endpoint (branch 2) |
-| 10.100.0.224 | clab | Proxmox | Containerlab CI host (phase 11) |
+| 10.100.0.224 | clab | Proxmox | Containerlab CI host (phase 12) |
 | 10.100.0.240 - .254 | *(DHCP pool)* | DDI | first-boot / ZTP |
 
-Phase numbers follow the order of amendment 1.15 (ADR 0050); `dc01` (10.100.0.69) and `iag` (10.100.0.66) were released and are deleted from NetBox by the seed play (ADR 0051).
+Phase numbers follow the order of amendment 1.18 (ADR 0050, 0053); `dc01` (10.100.0.69) and `iag` (10.100.0.66) were released and are deleted from NetBox by the seed play (ADR 0051).
 
 The EVE-NG node list is the *minimum* topology the PID commits to; the
 network-topology phase may add nodes inside the blocks above without changing

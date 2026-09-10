@@ -54,12 +54,13 @@ committed. Service specs and acceptance criteria are in `docs/PID.md`.
 | 4 | `phase-4/network-topology` | EVE-NG DC + 2 branches (C8000v, vEOS, endpoints; PA-VM deferred behind `lab.firewalls`) from `topology/` | merged (PR #16) |
 | 5 | `phase-5/itential` | Itential Platform 6.5.2 + Gateway 5.5.2 as the dev-stack containers on VM 205 (ADR 0035), NetBox adapter, Inventory Manager from NetBox, generated workflows incl. `wf-branch-vlan-v1`, MCP for Claude Code; ServiceNow PDI adapter | merged (PR #17) |
 | 6 | `phase-6/flowai` | FlowAI agents over the topology (S4c, ADR 0037/0038: Anthropic + in-lab Ollama profiles, `lab-netops`, Genie/TextFSM on a Gateway 5 runner) and Platform coverage of the lab (S4d, ADR 0039-0047: Configuration Manager through the InventoryBroker, Golden Config + nightly compliance, MOP templates + nightly backups, Lifecycle Manager `branch-vlan` + JSON form approval, NetBox/ServiceNow Integration Models, the five-agent fleet with local twins, Ubuntu hosts in Gateway 5) | merged (PR #19; S4e NetBox enrichment PR #20) |
-| 7 | `phase-7/observability` | Zabbix (CNPG), kube-prometheus-stack + SNMP/blackbox exporters, gNMIc (vEOS), Loki + Alloy syslog, Platform metrics; VIPs .35-.39 behind Traefik (ADR 0051) | in progress |
-| 8 | `phase-8/config-secrets-code` | Oxidized, Vault (takes the device credentials and the company key), Gitea | planned |
-| 9 | `phase-9/identity` | OpenLDAP, Keycloak SSO (Grafana, Gitea), tac_plus; no Windows (ADR 0050) | planned |
-| 10 | `phase-10/ddi` | BIND9 + Kea from NetBox (NIOS joins in the firewall track) | planned |
-| 11 | `phase-11/containerlab` | Containerlab CI/test tier (cEOS mirror of the DC fabric) | planned |
-| 12 | `phase-12/firewall-track` | NIOS grid master, the PA-VM firewalls (`lab.firewalls`), Panorama: once the images exist (ADR 0050) | planned |
+| 7 | `phase-7/observability` | Zabbix (CNPG), kube-prometheus-stack + SNMP/blackbox exporters, gNMIc (vEOS), Loki + Alloy syslog, Platform metrics; VIPs .35-.39 behind Traefik (ADR 0051); the official Itential dashboard (ADR 0052) | merged (PR #22, #23) |
+| 8 | `phase-8/platform-ha2` | Production Itential environment in Itential's HA2 shape at lab sizes: 2 Platform nodes behind nginx, MongoDB replica set, Redis + Sentinel, Gateway 5 on its own VM, TLS and auth everywhere; migration by replay, VM 205 retired (ADR 0053) | in progress |
+| 9 | `phase-9/config-secrets-code` | Oxidized, Vault (takes the device, database and Sentinel credentials and the company key), Gitea | planned |
+| 10 | `phase-10/identity` | OpenLDAP, Keycloak SSO (Grafana, Gitea), tac_plus; no Windows (ADR 0050) | planned |
+| 11 | `phase-11/ddi` | BIND9 + Kea from NetBox (NIOS joins in the firewall track) | planned |
+| 12 | `phase-12/containerlab` | Containerlab CI/test tier (cEOS mirror of the DC fabric) | planned |
+| 13 | `phase-13/firewall-track` | NIOS grid master, the PA-VM firewalls (`lab.firewalls`), Panorama: once the images exist (ADR 0050) | planned |
 
 ## Repo layout
 

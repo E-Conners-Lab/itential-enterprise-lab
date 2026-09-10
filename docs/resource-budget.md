@@ -27,19 +27,32 @@ disk (VM 110 NetBox and VM 300 EVE-NG).
 | `k3s-01` | 3 | Ubuntu 24.04 cloud | 4 | 12 | 80 | 30 GB OS + 50 GB Longhorn |
 | `k3s-02` | 3 | Ubuntu 24.04 cloud | 4 | 12 | 80 | |
 | `k3s-03` | 3 | Ubuntu 24.04 cloud | 4 | 12 | 80 | |
-| 205 `itential` | 5 | Ubuntu 24.04 cloud | 8 | 24 | 160 | Docker host for the itential-dev-stack: Platform, MongoDB 7 (WiredTiger cache capped at 4 GB), Redis 7, Gateway 5, Gateway 4, MCP (ADR 0035; the separate `iag` VM and the Rocky template are dropped). Measured after 24 h by `verify/test-05-itential.sh` S4.6; grows to 32 GB by PR only if above 80 % |
-| `nios` | 6 | NIOS 9.0.8 IB-V825 | 2 | 16 | 150 | vendor minimum for IB-V825 with the resizable image |
-| `ddi-fallback` | 6 | Ubuntu 24.04 cloud | 2 | 2 | 20 | BIND9 + Kea containers, host networking |
-| `dc01` | 7 | Windows Server 2025 eval | 4 | 8 | 80 | AD DS + DNS |
-| `panorama` | 10 | Panorama 11.1 | 8 | 24 | 141 | 81 system + 60 log disk; Management Only mode accepted. Vendor floor is 16/64, EVE-NG and community run 8/16 (manifest 2.2) |
-| `clab` | 11 | Ubuntu 24.04 cloud | 8 | 16 | 60 | Docker + Containerlab, 5 cEOS nodes at ~1.5 GB + runner |
-| **Total** | | | **73** | **263** | **1,131** | |
-| Ceiling | | | 108 | 280 | 1,400 (with the 200 GB `/srv/images` LV: 1,363) | |
-| **Headroom** | | | **35 vCPU** | **17 GB** | ~232 GB | |
+| 205 `itential` | 5 | Ubuntu 24.04 cloud | 8 | 24 | 160 | **Retires at the S11 cut-over (ADR 0053).** Docker host for the itential-dev-stack: Platform, MongoDB 7 (WiredTiger cache capped at 4 GB), Redis 7, Gateway 5, Gateway 4, MCP (ADR 0035; the separate `iag` VM and the Rocky template are dropped). Measured after 24 h by `verify/test-05-itential.sh` S4.6; grows to 32 GB by PR only if above 80 % |
+| `nios` | 13 | NIOS 9.0.8 IB-V825 | 2 | 16 | 150 | vendor minimum for IB-V825 with the resizable image |
+| `ddi-fallback` | 11 | Ubuntu 24.04 cloud | 2 | 2 | 20 | BIND9 + Kea containers, host networking |
+| `panorama` | 13 | Panorama 11.1 | 8 | 16 | 141 | 81 system + 60 log disk; Management Only mode accepted; **lever 2 pulled with ADR 0053 (24 -> 16 GB)**. Vendor floor is 16/64, EVE-NG and community run 8/16 (manifest 2.2) |
+| `iap-lb` | 8 | Ubuntu 24.04 cloud | 1 | 1 | 16 | nginx in front of the two Platform nodes (ADR 0053) |
+| `iap-01` | 8 | Ubuntu 24.04 cloud | 4 | 8 | 60 | Platform 6.5.2 container, node 1 |
+| `iap-02` | 8 | Ubuntu 24.04 cloud | 4 | 8 | 60 | Platform 6.5.2 container, node 2 |
+| `mongo-01` | 8 | Ubuntu 24.04 cloud | 2 | 4 | 40 | MongoDB 7.0 replica set rs0 |
+| `mongo-02` | 8 | Ubuntu 24.04 cloud | 2 | 4 | 40 | MongoDB 7.0 replica set rs0 |
+| `mongo-03` | 8 | Ubuntu 24.04 cloud | 2 | 4 | 40 | MongoDB 7.0 replica set rs0 |
+| `redis-01` | 8 | Ubuntu 24.04 cloud | 1 | 2 | 16 | Redis 7.4 + Sentinel |
+| `redis-02` | 8 | Ubuntu 24.04 cloud | 1 | 2 | 16 | Redis 7.4 + Sentinel |
+| `redis-03` | 8 | Ubuntu 24.04 cloud | 1 | 2 | 16 | Redis 7.4 + Sentinel |
+| `iag-01` | 8 | Ubuntu 24.04 cloud | 4 | 6 | 60 | Gateway 5 cluster (gateway5, etcd, runner) |
+| `tools-01` | 8 | Ubuntu 24.04 cloud | 4 | 8 | 40 | MCP server, Ollama (in-lab model) |
+| `clab` | 12 | Ubuntu 24.04 cloud | 8 | 16 | 60 | Docker + Containerlab, 5 cEOS nodes at ~1.5 GB + runner |
+| **Total** | | | **95** | **296** | **1,455** | dc01 removed (ADR 0050), Panorama 16 GB (lever 2), the nine S11 VMs added while VM 205 still runs (ADR 0053) |
+| Ceiling | | | 108 | 280 | 1,400 (with the 200 GB `/srv/images` LV: 1,363); disk is thin, usage decides (section 1) | |
+| **Headroom** | | | **13 vCPU** | **-16 GB** | plan; the running hosts stay under the ceiling (see below) |
 
-RAM is the binding constraint. The 17 GB of headroom (9 GB before Phase 5 merged
-the two Itential VMs into one) is deliberately not pre-assigned; section 5
-lists the levers in the order they are pulled.
+RAM is the binding constraint. With ADR 0053 the plan sums to 296 GB against the 280 GB ceiling
+because the nine production VMs are listed next to VM 205 (24 GB), which retires at the S11 cut-over
+(the plan is then 272 GB, 8 GB under the ceiling). The running hosts never exceed the
+ceiling: measured 2026-09-10, 197 GB run (eve-ng, netbox, oob-gw, three k3s nodes, VM 205); the nine
+VMs add 49 GB (246 GB), and the firewall-track VMs (`nios`, `panorama`, 32 GB) are not built until VM 205
+is gone. Section 5 lists the levers in the order they are pulled if that sequence slips.
 
 ## 3. EVE-NG internal budget (inside VM 300: 24 vCPU / 128 GB)
 

@@ -166,7 +166,8 @@ def test_budget_total_and_headroom_are_arithmetically_right() -> None:
     assert total[0] == sum(v[0] for v in rows.values()), f"vCPU total {total[0]} != {sum(v[0] for v in rows.values())}"
     assert total[1] == sum(v[1] for v in rows.values()), f"RAM total {total[1]} != {sum(v[1] for v in rows.values())}"
     assert total[2] == sum(v[2] for v in rows.values()), f"disk total {total[2]} != {sum(v[2] for v in rows.values())}"
-    h = re.search(r"\| \*\*Headroom\*\* \| \| \| \*\*(\d+) vCPU\*\* \| \*\*(\d+) GB\*\* \|", text)
+    # the RAM headroom may be negative while VM 205 is listed next to its replacement (ADR 0053); the doc says so
+    h = re.search(r"\| \*\*Headroom\*\* \| \| \| \*\*(-?\d+) vCPU\*\* \| \*\*(-?\d+) GB\*\* \|", text)
     assert h and int(h.group(1)) == 108 - total[0] and int(h.group(2)) == 280 - total[1]
 
 

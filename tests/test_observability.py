@@ -104,12 +104,15 @@ def test_vips_match_ipam() -> None:
 
 def test_ip_plan_phases_follow_adr_0050() -> None:
     by_name = {a["hostname"]: a["phase"] for a in IPAM["addresses"]}
-    assert by_name["keycloak"] == 9 and by_name["tacacs"] == 9
-    assert by_name["oxidized"] == 8 and by_name["vault"] == 8 and by_name["gitea"] == 8
-    assert by_name["ddi-fallback"] == 10 and by_name["nios"] == 12 and by_name["panorama"] == 12 and by_name["clab"] == 11
+    # order of amendment 1.18 (ADR 0050 + 0053): 8 platform-ha2, 9 config/secrets, 10 identity, 11 DDI, 12 clab, 13 firewalls
+    assert by_name["keycloak"] == 10 and by_name["tacacs"] == 10
+    assert by_name["oxidized"] == 9 and by_name["vault"] == 9 and by_name["gitea"] == 9
+    assert by_name["ddi-fallback"] == 11 and by_name["nios"] == 13 and by_name["panorama"] == 13 and by_name["clab"] == 12
+    for h in ("iap-lb", "iap-01", "iap-02", "mongo-01", "mongo-02", "mongo-03", "redis-01", "redis-02", "redis-03", "iag-01", "tools-01"):
+        assert by_name[h] == 8, h
     assert "dc01" not in by_name and "iag" not in by_name
     plan = (ROOT / "docs" / "ip-plan.md").read_text()
-    assert "Zabbix server + web (phase 7)" in plan and "identity (phase 9)" in plan and "Oxidized (phase 8)" in plan
+    assert "Zabbix server + web (phase 7)" in plan and "identity (phase 10)" in plan and "Oxidized (phase 9)" in plan
 
 
 # --- the documents -----------------------------------------------------------------------------------

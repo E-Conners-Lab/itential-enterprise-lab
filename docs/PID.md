@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Name** | itential-enterprise-lab |
-| **Version** | 1.17 |
+| **Version** | 1.18 |
 | **Date** | 2026-09-09 |
 | **Author** | Elliot Conner. Claude Code is the build agent; every action it takes is bounded by this document |
 | **Standard** | Project Initiation Standard PIS-01 - PIS-30 (`~/.claude/skills/project-initiation-standard`) |
@@ -323,6 +323,22 @@ Conventions: **Placement** is Proxmox VM (OpenTofu + Ansible), k3s (Helm/Kustomi
 
 ---
 
+### S11 — Production Itential environment, HA2 shape (Phase 8, amendment 1.18, ADR 0053)
+
+- **Purpose:** run the Platform the way Itential's deployment guide describes production: every component on its own server, a MongoDB replica set, Redis with Sentinel, two Platform nodes behind a load balancer, authentication and TLS between every component; then migrate everything phases 5-7 built and retire the dev-stack VM.
+- **Placement:** nine Proxmox VMs in the service block (`docs/ip-plan.md` 3.2: `iap-lb` .71, `iap-01/02` .72-.73, `mongo-01..03` .74-.76, `redis-01..03` .77-.79, `iag-01` .80, `tools-01` .81), Ubuntu 24.04, containers from Itential's ECR and the official MongoDB/Redis images; `itential.lab.internal` moves to the load balancer at cut-over.
+- **Components:** nginx (TLS with the lab CA, sticky sessions to 3000 on both nodes), Platform 6.5.2 x2 (shared encryption key, adapters per node), MongoDB 7.0.40 replica set `rs0` (keyfile, SCRAM users, TLS), Redis 7.4.11 replication + 3 Sentinels (ACL users, TLS), Gateway 5 cluster (gateway5 + etcd + runner) on `iag-01`, MCP + Ollama on `tools-01`, OpenLDAP on k3s, exporters for the official dashboard on the production VMs.
+- **Acceptance:**
+  1. The nine VMs exist on the host with the vCPU/RAM/disk of `docs/resource-budget.md` and their NetBox records.
+  2. `rs.status()` on any member shows one PRIMARY and two SECONDARY, connections require SCRAM auth over TLS; the Platform's MongoDB URL names all three members.
+  3. Redis: one master and two replicas, three Sentinels agree on the master, ACL users only, TLS; the Platform connects through Sentinel.
+  4. Both Platform nodes answer `/health/server` and the load balancer serves `https://itential.lab.internal` with the lab-CA certificate; a login on one node is valid on the other.
+  5. Every phase 5-7 verify (`test-05`, `test-06`, `test-06b`, `test-06c`, `test-07` S7.7/S7.8) passes against production; Gateway 5 on `iag-01` reaches every device.
+  6. Drills (`VERIFY_DRILLS=1`): stopping `iap-01` keeps the UI and a running job; stopping the MongoDB primary elects a new one within 30 s and a job started during the election completes; stopping the Redis master fails over through Sentinel and the Platform keeps serving.
+  7. The official Itential Platform Monitoring dashboard's Redis and MongoDB rows show the replica sets (S7.8 stays green).
+  8. VM 205 is deleted after the owner's approval; its NetBox, Zabbix and Prometheus records go with it; `docs/resource-budget.md` reflects the result.
+- **Verification:** `verify/test-08-platform-ha2.sh`.
+
 ## Domain 2 — Evaluation Design
 
 **PIS-06/07/08 — Eval cases.** The per-phase verification tests in section 2
@@ -638,13 +654,14 @@ at the end of Phase 2 and this table amended.
 | 5 | `phase-5/itential` | `verify/test-05-itential.sh` | `aws sso login` before image pulls (manual step 6); create the PDI integration user; log into the PDI every 10 days from then on |
 | 6 | `phase-6/flowai` (+ `phase-6/netbox-enrichment`, ADR 0048) | `verify/test-06-flowai.sh`, `verify/test-06b-platform.sh`, `verify/test-06c-netbox.sh` | Provider key in `.env`; Ollama on the Mac Mini optional (ADR 0037) |
 | 7 | `phase-7/observability` | `verify/test-07-observability.sh` | none |
-| 8 | `phase-8/config-secrets-code` | `verify/test-08-config-secrets-code.sh` | Hold Vault unseal keys |
-| 9 | `phase-9/identity` | `verify/test-09-identity.sh` | none (Windows dropped, ADR 0050) |
-| 10 | `phase-10/ddi` | `verify/test-10-ddi.sh` | none (BIND9 + Kea from NetBox; NIOS joins in the firewall track) |
-| 11 | `phase-11/containerlab` | `verify/test-11-containerlab.sh` | Download cEOS-lab (arista.com account) |
-| 12 | `phase-12/firewall-track` | `verify/test-12-firewall-track.sh` | NIOS eval + console licence, PA-VM 11.1 to `/srv/images/pa-vm`, Panorama + evaluation licence |
+| 8 | `phase-8/platform-ha2` | `verify/test-08-platform-ha2.sh` | `aws sso login` for the image pulls; approve the retirement of VM 205 |
+| 9 | `phase-9/config-secrets-code` | `verify/test-09-config-secrets-code.sh` | Hold Vault unseal keys |
+| 10 | `phase-10/identity` | `verify/test-10-identity.sh` | none (Windows dropped, ADR 0050) |
+| 11 | `phase-11/ddi` | `verify/test-11-ddi.sh` | none (BIND9 + Kea from NetBox; NIOS joins in the firewall track) |
+| 12 | `phase-12/containerlab` | `verify/test-12-containerlab.sh` | Download cEOS-lab (arista.com account) |
+| 13 | `phase-13/firewall-track` | `verify/test-13-firewall-track.sh` | NIOS eval + console licence, PA-VM 11.1 to `/srv/images/pa-vm`, Panorama + evaluation licence |
 
-Order as of amendment 1.15 (ADR 0050): image-free phases first; everything behind a paid image lands in one firewall track.
+Order as of amendment 1.18 (ADR 0050, 0053): the production Platform (HA2) comes right after observability, then the image-free phases, then one firewall track.
 
 Each PR description is the phase report: **built / verified / deferred**, with
 the verify log path and any ADRs added.
@@ -696,6 +713,7 @@ the verify log path and any ADRs added.
 | 1.13 | 2026-09-08 | Phase 6 element 7 (owner request): S4e NetBox enrichment derived from `topology/enterprise.yaml` (addressing on interfaces with peer descriptions, VRFs and ASNs with BGP neighbours in config contexts, racks, provider circuits, config contexts, journal entries; the templates read the YAML, rendered configs unchanged; `netbox-enrich.yml`; `verify/test-06c-netbox.sh`; ADR 0048) |
 | 1.14 | 2026-09-09 | Domain 7: the Anthropic key is the owner's company key with a $15-a-week budget; the platform's session documents are the ledger (`verify/tokens.sh`, `make tokens`, `llm.budget` in versions.yaml), the agent verifies guard it, iteration runs on the local twins or `ONLY=` subsets (ADR 0049) |
 | 1.15 | 2026-09-09 | Reorder (ADR 0050): image-free phases first (7 observability, 8 config/secrets/code, 9 identity without Windows on OpenLDAP + Keycloak + tac_plus, 10 DDI on BIND9 + Kea, 11 Containerlab) and one phase 12 firewall track for NIOS, the PA-VM firewalls and Panorama; Windows Server and the Windows endpoint item dropped, `dc01` released |
+| 1.18 | 2026-09-10 | Phase 8 = production Itential environment in the HA2 shape at lab sizes (S11, ADR 0053): nine VMs, containers from ECR, MongoDB replica set, Redis + Sentinel, two Platform nodes behind nginx, migration by replay, VM 205 retired; later phases renumbered 9-13; resource budget: `dc01` removed, VM 205 retiring, Panorama lever 2 pulled |
 | 1.17 | 2026-09-10 | Phase 7 follow-up (ADR 0052, owner request): the official Itential Platform Monitoring dashboard vendored from grafana.com 25527; node/process/Redis/MongoDB exporters beside the dev-stack under the `monitoring` Compose profile; the lab exporter supplies the unpublished wfe-metrics-exporter's series; S7 criterion 8 |
 | 1.16 | 2026-09-09 | Phase 7 design (ADR 0051): Zabbix/Prometheus/Loki ownership, TLS at Traefik on the planned VIPs, hosts and targets from NetBox, documents in `observability/`, device lines in the topology templates and Golden Config with governed pushes, gNMIc on vEOS only, the Platform metrics exporter (S7.7), S7.1 host set and S7.6 drill clarified, `verify/test-07-observability.sh`; IP-plan phase labels follow ADR 0050 |
 | 1.5 | 2026-09-07 | Phase 5 (S4b): Gateway 5 is the only gateway (Gateway 4 staged, not deployed); the PDI needs no customisation (stock standard-change template + Network group + one integration user), so S4b.3 is a rebuild record `servicenow/README.md` instead of an update set; S4b.2 evidence is the states ServiceNow returns to the workflow plus the change read back (`sys_audit` is admin-only on a PDI); PDI `dev409097`, Australia; basic auth needs `snc_basic_auth_api_access` on 2026 instances |
