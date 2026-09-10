@@ -27,6 +27,7 @@ CHAPTERS = {
     "07": "observability",
     "08": "production-ha2-and-migration",
 }
+CRITERION = r"\bS\d+[a-z]?\.\d+[a-z]?\b"  # S4.1, S4b.2, S4d.5a, S11.6c - the PID criteria the verifies check
 SECTIONS = ("Before you start", "The commands, in order", 'What "done" looks like', "Verification", "Troubleshooting")
 # Values that belong to one environment and must never be transcribed (ADR 0056 decision 4). The lab's own
 # 10.100.0.0/24 addresses are deliberately not here: they are private, invented in this repo, and the
@@ -100,6 +101,29 @@ def test_every_chapter_pins_what_was_tested(num: str) -> None:
     t = text(num)
     assert re.search(r"(?i)^#+ .*tested", t, re.M) or re.search(r"(?i)\|\s*version\s*\|", t), \
         f"{num} needs a tested-versions table"
+
+
+@pytest.mark.parametrize("num", sorted(CHAPTERS))
+def test_every_criterion_a_chapter_cites_exists_in_the_verify_it_names(num: str) -> None:
+    """A chapter promises "run this and S4.1 passes". If that criterion is renamed or dropped, the chapter is
+    quietly wrong and nothing else notices - the plainest way a runbook rots (ADR 0056 consequences).
+
+    Cross-referenced against the scripts the chapter itself names, so a chapter that cites no verify script
+    (chapter 00 installs nothing) is vacuously fine.
+    """
+    t = text(num)
+    scripts = [ROOT / s for s in re.findall(r"`(verify/test-[\w.-]+\.sh)`", t)]
+    if not scripts:
+        return
+    known = set()
+    for s in scripts:
+        known |= set(re.findall(CRITERION, s.read_text()))
+    cited = set(re.findall(CRITERION, t))
+    missing = sorted(cited - known)
+    assert not missing, (
+        f"{num} cites {missing}, which none of {[s.name for s in scripts]} defines - "
+        "a renamed or dropped criterion, or the chapter names the wrong script"
+    )
 
 
 def test_the_index_lists_every_chapter() -> None:
