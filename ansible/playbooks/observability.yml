@@ -248,6 +248,15 @@
       delay: 10
       until: zdb.resources | length == 1 and (zdb.resources[0].status.phase | default('')) == 'Cluster in healthy state'
 
+    # --- Traefik VIPs first: the zabbix-server and alloy-syslog Services share .35/.38 with them and MetalLB
+    # assigns a shared address only when every sharer carries the same externalTrafficPolicy ----------------
+    - name: Traefik VIP Services (kube-system)
+      kubernetes.core.k8s:
+        kubeconfig: "{{ kubeconfig }}"
+        state: present
+        template: templates/obs-traefik-vips.yaml.j2
+        apply: true # keys the template drops are removed (a patch would keep them)
+
     # --- charts --------------------------------------------------------------------------------------
     - name: Helm repositories
       kubernetes.core.helm_repository:
@@ -274,14 +283,7 @@
       loop_control:
         label: "{{ item.release }} {{ components[item.key].chart_version }}"
 
-    # --- VIPs, Ingresses, gNMIc, the Platform exporter, scrape objects, rules, dashboards ---------------
-    - name: Traefik VIP Services (kube-system)
-      kubernetes.core.k8s:
-        kubeconfig: "{{ kubeconfig }}"
-        state: present
-        template: templates/obs-traefik-vips.yaml.j2
-        apply: true # keys the template drops are removed (a patch would keep them)
-
+    # --- Ingresses, gNMIc, the Platform exporter, scrape objects, rules, dashboards ---------------------
     - name: Ingresses behind the wildcard lab-CA certificate
       kubernetes.core.k8s:
         kubeconfig: "{{ kubeconfig }}"

@@ -160,7 +160,10 @@ the lab CA, CloudNativePG, Traefik on `.32` with the wildcard `*.lab.internal` c
   behind the lab CA. A Keycloak front (oauth2-proxy) is a phase 9 candidate with S7.5.
 - SNMP over VRF MGMT: IOS XE answers polls arriving on a VRF interface without extra configuration; EOS needs
   `snmp-server vrf MGMT`. Both are in the snippets and in Golden Config.
-- Loki stores device lines unparsed (label `host_ip` from the sender); Grafana/LogQL filters do the parsing.
+- Loki stores device lines unparsed; the `host` label is parsed from the line by Alloy (EOS prints its
+  hostname, IOS XE gets `logging origin-id hostname`). The sender address is not usable: a `Cluster`
+  LoadBalancer SNATs every sender to a node address, and `Local` (which keeps it) lets MetalLB share an address
+  only between Services whose pods sit on one node, so the shared `.35`/`.38` lost their IPs (measured 2026-09-10).
   If the raw listener drops the sender label, the fallback is `rfc3164` with `logging origin-id hostname`.
 - The Grafana admin, the Zabbix admin and the Grafana read-only Zabbix user are three more secrets in `.env`
   until Vault (phase 8).

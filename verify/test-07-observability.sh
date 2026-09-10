@@ -231,8 +231,8 @@ job_status() { iap "${PLATFORM}/operations-manager/jobs/$1" | ${PY} -c 'import s
 wait_job() { local st; for _ in $(seq 1 48); do st=$(job_status "$1"); case "$st" in complete) return 0;; error|canceled|cancelled) echo "job $1 ${st}"; return 1;; esac; sleep 5; done; echo "job $1 timeout (${st})"; return 1; }
 approve_task() { local i; for i in $(seq 1 24); do if iap -X POST "${PLATFORM}/operations-manager/jobs/$1/tasks/$2/finish" -d '{"taskData":{"finish_state":"success","variables":{}}}' -o /dev/null -w '%{http_code}' | grep -qx 200; then return 0; fi; sleep 5; done; echo "approval of $1/$2 never accepted"; return 1; }
 push() { local id; id=$(start_job wf-config-push-v1 "{\"device\":\"$1\",\"config\":\"$2\",\"reason\":\"$3\"}"); [ -n "$id" ] || { echo "wf-config-push-v1 did not start"; return 1; }; sleep 8; approve_task "$id" 2a || return 1; wait_job "$id" || return 1; echo "pushed to $1 (job ${id})"; }
-loki_since() { # loki_since <host ip> <start ns> <pattern> -> prints matching lines
-  web -G "${LOKI}/loki/api/v1/query_range" --data-urlencode "query={job=\"syslog-device\",host_ip=\"$1\"} |~ \"$3\"" --data-urlencode "start=$2" --data-urlencode "limit=20" | ${PY} -c 'import sys,json;d=json.load(sys.stdin)["data"]["result"];[print(v[1][:160]) for s in d for v in s["values"]]'
+loki_since() { # loki_since <host name> <start ns> <pattern> -> prints matching lines (label host parsed from the line by Alloy)
+  web -G "${LOKI}/loki/api/v1/query_range" --data-urlencode "query={job=\"syslog-device\",host=\"$1\"} |~ \"$3\"" --data-urlencode "start=$2" --data-urlencode "limit=20" | ${PY} -c 'import sys,json;d=json.load(sys.stdin)["data"]["result"];[print(v[1][:160]) for s in d for v in s["values"]]'
 }
 c4() {
   iap_login || { echo "platform login failed"; return 1; }
@@ -243,7 +243,7 @@ c4() {
     site=${dev%%-*}
     push "$dev" "snmp-server location ${site}" "verify ${ts} S7.4 no-op config change for syslog" || return 1
     pat="CONFIG"; local i found=""
-    for i in $(seq 1 12); do found=$(loki_since "$ip" "$start" "$pat"); [ -n "$found" ] && break; sleep 5; done
+    for i in $(seq 1 12); do found=$(loki_since "$dev" "$start" "$pat"); [ -n "$found" ] && break; sleep 5; done
     [ -n "$found" ] || { echo "$dev: no syslog line in Loki within 60 s of the push"; rc=1; continue; }
     echo "$dev -> Loki: $(echo "$found" | tail -1)"
     # second source: the device's own log buffer holds the same event after the push started

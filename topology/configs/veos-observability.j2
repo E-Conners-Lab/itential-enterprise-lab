@@ -5,7 +5,6 @@
 {%- set o = lab.observability %}
 logging vrf MGMT source-interface Management1
 logging vrf MGMT host {{ o.syslog }}
-logging trap informational
 !
 snmp-server vrf MGMT
 snmp-server view {{ o.snmp.view }} iso included

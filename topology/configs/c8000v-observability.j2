@@ -4,8 +4,8 @@
     IOS XE answers SNMP polls arriving on a VRF interface without extra configuration. gNMI: the loaded
     17.13.01a image has no gnxi command (ADR 0051), so the routers are read through SNMP. -#}
 {%- set o = lab.observability %}
+logging origin-id hostname
 logging source-interface GigabitEthernet1 vrf MGMT
-logging trap informational
 logging host {{ o.syslog }} vrf MGMT
 snmp-server view {{ o.snmp.view }} iso included
 snmp-server group {{ o.snmp.group }} v3 priv read {{ o.snmp.view }}

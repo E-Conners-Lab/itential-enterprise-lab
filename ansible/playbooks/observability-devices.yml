@@ -78,11 +78,28 @@
       register: running
       no_log: true
 
-    - name: Devices whose running config lacks a line of the snippet
+    # A card may still be waiting from an earlier run (the play waits at most wait_minutes): never start a second
+    # job for a device whose phase-7 push is still running. The jobs API ignores its status filter (measured), so
+    # the status is checked here.
+    - name: Recent jobs
+      ansible.builtin.uri:
+        url: "https://{{ platform_host }}/operations-manager/jobs?limit=100"
+        headers: {Cookie: "{{ cookie }}"}
+        ca_path: "{{ ca_file }}"
+      register: recent_jobs
+
+    - name: Devices with a push job still running (card waiting in Work Center)
+      ansible.builtin.set_fact:
+        already_waiting: >-
+          {{ recent_jobs.json.data | selectattr('name', 'equalto', push_workflow) | selectattr('status', 'equalto', 'running')
+             | map(attribute='description') | select('defined') | select('match', '^phase 7 observability lines for ')
+             | map('regex_replace', '^phase 7 observability lines for (\S+).*$', '\1') | list }}
+
+    - name: Devices whose running config lacks a line of the snippet (and have no card waiting)
       ansible.builtin.set_fact:
         pending: >-
           {%- set out = [] -%}
-          {%- for i in range(device_names | length) -%}
+          {%- for i in range(device_names | length) if device_names[i] not in already_waiting -%}
             {%- set cfg = running.results[i].json.config -%}
             {%- set want = snippets.results[i].stdout_lines | reject('match', '^\s*(!|snmp-server user .*)?$') | map('trim') | list -%}
             {%- set missing = want | reject('in', cfg | regex_findall('(?m)^\s*(.+?)\s*$')) | list -%}
@@ -92,26 +109,6 @@
           {%- endfor -%}
           {{ out }}
       no_log: true
-
-    # A card may still be waiting from an earlier run (the play waits at most wait_minutes): never start a second
-    # job for a device whose phase-7 push is still running.
-    - name: Push jobs still running for these devices
-      ansible.builtin.uri:
-        url: "https://{{ platform_host }}/operations-manager/jobs?limit=100&status=running"
-        headers: {Cookie: "{{ cookie }}"}
-        ca_path: "{{ ca_file }}"
-      register: running_jobs
-
-    - name: Devices with a push already waiting for approval
-      ansible.builtin.set_fact:
-        already_waiting: >-
-          {{ running_jobs.json.data | selectattr('name', 'equalto', push_workflow)
-             | map(attribute='description') | select('defined') | select('match', '^phase 7 observability lines for ')
-             | map('regex_replace', '^phase 7 observability lines for (\S+).*$', '\1') | list }}
-
-    - name: Those leave the pending list
-      ansible.builtin.set_fact:
-        pending: "{{ pending | rejectattr('name', 'in', already_waiting) | list }}"
 
     - name: Devices whose push card is still waiting in Work Center
       ansible.builtin.debug:
