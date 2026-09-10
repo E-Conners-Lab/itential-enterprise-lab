@@ -121,14 +121,6 @@ services:
       ITENTIAL_MCP_PLATFORM_USER: ${MCP_PLATFORM_USER}
       ITENTIAL_MCP_PLATFORM_PASSWORD: ${MCP_PLATFORM_PASSWORD}
 
-volumes:
-  ollama-models:
-    driver: local
-  etcd-data:
-    driver: local
-  gateway5-runner-data:
-    driver: local
-
   # --- Platform host exporters for the official Itential Platform Monitoring dashboard (ADR 0052), profile
   # `monitoring`: job names and series exactly as grafana.com 25527 queries them. Each listens on the OOB
   # address only; Prometheus (k3s) scrapes them. MongoDB and Redis run without credentials in the dev-stack.
@@ -176,3 +168,12 @@ volumes:
     depends_on:
       - mongodb
     restart: unless-stopped
+
+
+volumes:
+  ollama-models:
+    driver: local
+  etcd-data:
+    driver: local
+  gateway5-runner-data:
+    driver: local
