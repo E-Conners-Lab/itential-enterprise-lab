@@ -136,7 +136,7 @@ phase-observability: ## Phase 7: NetBox seed (phase labels, released addresses) 
 # (the inventory source), then the VMs, then the Docker hosts, then the databases, then the Platform nodes and
 # the load balancer, then Gateway 5 and the tools VM. The cut-over (itential.lab.internal -> iap-lb) and the
 # retirement of VM 205 are separate owner-approved steps, not part of this target.
-phase-platform-ha2: ## Phase 8: NetBox VMs -> tofu apply -> Docker hosts -> MongoDB replica set -> Redis + Sentinel -> Platform nodes + nginx -> Gateway 5 + tools -> verify
+phase-platform-ha2: ## Phase 8: NetBox VMs -> tofu apply -> Docker hosts -> MongoDB replica set -> Redis + Sentinel -> Platform nodes + nginx -> tools + directory -> the administrator -> Gateway 5 -> verify
 	$(load_env) cd ansible && ansible-playbook playbooks/netbox-seed.yml
 	$(load_env) cd ansible && ansible-playbook playbooks/netbox-vms.yml
 	$(load_env) cd tofu/platform-ha2 && tofu init -input=false >/dev/null && tofu apply -input=false -auto-approve
@@ -146,8 +146,9 @@ phase-platform-ha2: ## Phase 8: NetBox VMs -> tofu apply -> Docker hosts -> Mong
 	$(load_env) cd ansible && ansible-playbook -i inventory/netbox.yml playbooks/platform-ha2-mongodb.yml
 	$(load_env) cd ansible && ansible-playbook -i inventory/netbox.yml playbooks/platform-ha2-redis.yml
 	$(load_env) cd ansible && ansible-playbook -i inventory/netbox.yml playbooks/platform-ha2-platform.yml
-	$(load_env) cd ansible && ansible-playbook -i inventory/netbox.yml playbooks/platform-ha2-gateway.yml
+	$(load_env) cd ansible && ansible-playbook -i inventory/netbox.yml playbooks/platform-ha2-tools.yml
 	$(load_env) cd ansible && ansible-playbook -i inventory/netbox.yml playbooks/platform-ha2-identity.yml
+	$(load_env) cd ansible && ansible-playbook -i inventory/netbox.yml playbooks/platform-ha2-gateway.yml
 	verify/run.sh
 
 # Phase 8, S11.5 (ADR 0055): the phase 5-7 assets replayed onto production from the shared task files. The

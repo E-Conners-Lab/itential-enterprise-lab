@@ -122,7 +122,15 @@ def test_tofu_module_exists_and_is_driven_by_the_oracle() -> None:
 
 @pytest.mark.parametrize(
     "play",
-    ["platform-ha2-hosts.yml", "platform-ha2-mongodb.yml", "platform-ha2-redis.yml", "platform-ha2-platform.yml", "platform-ha2-gateway.yml"],
+    [
+        "platform-ha2-hosts.yml",
+        "platform-ha2-mongodb.yml",
+        "platform-ha2-redis.yml",
+        "platform-ha2-platform.yml",
+        "platform-ha2-tools.yml",
+        "platform-ha2-identity.yml",
+        "platform-ha2-gateway.yml",
+    ],
 )
 def test_plays_exist_and_read_the_oracle(play: str) -> None:
     p = PLAYS / play
@@ -238,3 +246,15 @@ def test_the_dev_stack_play_keeps_building_the_dev_stack() -> None:
     text = (PLAYS / "itential.yml").read_text()
     for marker in ("compose.override.yml", "gateway5", "ldif", "docker-compose.yml"):
         assert marker in text, f"itential.yml must keep building the dev-stack ({marker})"
+
+
+def test_the_phase_target_builds_the_directory_before_the_administrator_and_the_gateway() -> None:
+    """OpenLDAP lives on tools-01, the directory account needs it, and Gateway Manager filters what it
+    returns by that account's group membership (ADR 0055 decision 7)."""
+    mk = (ROOT / "Makefile").read_text()
+    order = [mk.index(f"playbooks/platform-ha2-{p}.yml") for p in ("platform", "tools", "identity", "gateway")]
+    assert order == sorted(order), "platform, then tools (the directory), then identity, then gateway"
+    tools = (PLAYS / "platform-ha2-tools.yml").read_text()
+    assert "openldap.ldif" in tools and "ha2-tools" in tools, "the directory bootstrap ships with the tools VM"
+    ident = (PLAYS / "platform-ha2-identity.yml").read_text()
+    assert "tasks/ldap-admin.yml" in ident and "tasks/roles-to-admin.yml" in ident

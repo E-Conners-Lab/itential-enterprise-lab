@@ -125,7 +125,9 @@
     alias: "gateway5-{{ gateway.cluster_id }}"
     gw_cert_pem: "{{ hostvars[groups['ha2-gateway'][0]].gw_cert_pem }}"
   tasks:
-    - name: Log in as the local administrator
+    # platform-ha2-identity.yml has run: the directory account is the only one whose group membership the
+    # Platform honours, and Gateway Manager filters what it returns by that membership
+    - name: Log in as {{ platform.admin_user }}
       ansible.builtin.uri:
         url: "{{ api }}/login"
         method: POST
@@ -188,7 +190,7 @@
             readonly: false
             certificates: ["{{ (gm_certs2.json.results | selectattr('alias', 'equalto', alias) | first)._id }}"]
             groups: [admin_group]
-        status_code: [200, 201]
+        status_code: [200, 201, 409] # the bootstrap user sees no group-scoped gateway, so the list can read empty
       when: gateways.json.results | default([]) | selectattr('cluster_id', 'equalto', gateway.cluster_id) | list | length == 0
 
     - name: Gateway 5 connected to Gateway Manager (up to 2 min)
@@ -203,94 +205,3 @@
     - name: Connected
       ansible.builtin.debug:
         msg: "Gateway cluster {{ gateway.cluster_id }} is connected to the production Gateway Manager"
-
-- name: The tools VM (MCP, Ollama and the directory)
-  hosts: ha2-tools
-  become: true
-  gather_facts: false
-  vars_files:
-    - ../../itential/ha2/versions.yaml
-    - ../../itential/versions.yaml
-  vars:
-    ansible_ssh_common_args: -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/dev/null
-    dir: /opt/itential
-    ip: "{{ (vms | selectattr('name', 'equalto', inventory_hostname) | first).ip }}"
-    # the load balancer's own name: the service name still points at the dev-stack until the cut-over
-    service_name: "{{ (vms | selectattr('role', 'equalto', 'loadbalancer') | first).name }}"
-  tasks:
-    - name: Compose file
-      ansible.builtin.template:
-        src: ../../itential/ha2/tools.compose.yml.j2
-        dest: "{{ dir }}/docker-compose.yml"
-        owner: ubuntu
-        group: ubuntu
-        mode: "0644"
-
-    - name: Lab CA for the containers
-      ansible.builtin.file:
-        path: "{{ dir }}/tls"
-        state: directory
-        owner: ubuntu
-        group: ubuntu
-        mode: "0755"
-
-    - name: CA certificate (this VM terminates no TLS, so the host play left it none)
-      ansible.builtin.copy:
-        src: ../../docs/lab-root-ca.crt
-        dest: "{{ dir }}/tls/ca.crt"
-        owner: ubuntu
-        group: ubuntu
-        mode: "0644"
-
-    - name: Directory bootstrap directory
-      ansible.builtin.file:
-        path: "{{ dir }}/ldap"
-        state: directory
-        owner: ubuntu
-        group: ubuntu
-        mode: "0755"
-
-    - name: OpenLDAP bootstrap (admin@itential and the admins group, the same upstream LDIF the dev-stack uses)
-      ansible.builtin.copy:
-        src: "../../{{ ldap.ldif }}"
-        dest: "{{ dir }}/ldap/openldap.ldif"
-        owner: ubuntu
-        group: ubuntu
-        mode: "0644"
-
-    - name: Environment for compose
-      ansible.builtin.copy:
-        dest: "{{ dir }}/.env"
-        owner: ubuntu
-        group: ubuntu
-        mode: "0600"
-        content: |
-          # Rendered by ansible/playbooks/platform-ha2-gateway.yml; do not edit.
-          ITENTIAL_ADMIN_USER={{ platform.admin_user }}
-          ITENTIAL_ADMIN_PASSWORD={{ lookup('ansible.builtin.env', 'ITENTIAL_ADMIN_PASSWORD') }}
-      no_log: true
-
-    - name: Containers up
-      ansible.builtin.command:
-        cmd: docker compose up -d
-        chdir: "{{ dir }}"
-      register: up
-      changed_when: "'Started' in up.stderr or 'Created' in up.stderr or 'Recreated' in up.stderr"
-
-    - name: The local model of ADR 0037
-      ansible.builtin.command:
-        cmd: docker exec ollama ollama pull {{ (llm.profiles | selectattr('name', 'equalto', 'ollama-lab') | first).model }}
-      register: pull
-      changed_when: "'success' in pull.stdout"
-      async: 1800
-      poll: 30
-
-    - name: MCP answers
-      ansible.builtin.uri:
-        url: "http://{{ ip }}:{{ tools.mcp_port }}/mcp"
-        method: GET
-        status_code: [200, 400, 405, 406]
-      register: mcp
-      retries: 20
-      delay: 5
-      until: mcp.status is defined
