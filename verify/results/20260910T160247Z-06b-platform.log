@@ -1,0 +1,54 @@
+# test-06b-platform 20260910T160247Z
+PASS  S4d.1 Golden Config: plan clean on 12 devices; hostname drift on br1-wan01 and br1-sw01 flagged with no false positive; restored through wf-config-push-v1
+      schedule: nightly compliance lab-baseline every 1 day first run 1789095600000
+      run 1: 12 reports, 0 errors, 0 warnings (passes: 516)
+      pushed to br1-wan01 (job 13ba8e4a91934462a9027741)
+      pushed to br1-sw01 (job 250e1bc11f674eb1b802024a)
+      run 2: exactly br1-wan01 and br1-sw01 flagged:
+      br1-wan01 1 0 44 | hostname br1-wan01
+      br1-sw01 1 0 31 | hostname br1-sw01
+      pushed to br1-wan01 (job d524cd13f20c455b92aa432f)
+      pushed to br1-sw01 (job 757ba5b20b3e4e96bb284d9d)
+      run 3: clean again on 12 devices; hostnames restored and confirmed over direct SSH
+      run 4: wf-compliance-run-v1 (the schedule trigger's target) found plan 6aa2c63214cb2fc10a3682a8 and started instance 6aa2d64a9852d55cd53c16eb
+PASS  S4d.2 command templates on br1-wan01 and br1-sw01 with every rule evaluated; analytic pre/post green; nightly backup schedule and a run whose backups equal the running configs
+      br1-wan01: lab-cisco-ios-checks passed, 6 rules over 3 commands
+      2 pre/post rules equal
+      br1-wan01: lab-cisco-ios-prepost pre/post equal
+      br1-sw01: lab-arista-eos-checks passed, 6 rules over 4 commands
+      2 pre/post rules equal
+      br1-sw01: lab-arista-eos-prepost pre/post equal
+      schedule: nightly backups lab every 1 day first run 1789093800000
+      backups: wf-backup-all-v1 job d73cd1014e264314b94c7c69; 12/12 devices' newest backup equals the running config over direct SSH
+FAIL  S4d.3 Lifecycle Manager branch-vlan: instances from NetBox; create -> JSON form approval (Work Center shows branch, VLAN, switch, NetBox reservation) -> instance; rejected push changes nothing; delete -> governed push; history; no-op; rejected create retired
+      actions runnable: Create -> workflow f77fa17e, Delete -> workflow 341e306d
+      form fields: ['branch', 'decision', 'netbox_vlan_id', 'status', 'switch', 'vid', 'vlan_name']
+      instances cover every NetBox branch VLAN: br1-approve-demo 
+      Work Center item 01a08c17-8dfb-75c1-8d20-38b76ebe15ea shows {'branch': 'br2', 'vid': 11, 'vlan_name': 'lcm-20260910t160247z', 'switch': 'br2-sw01', 'netbox_vlan_id': 41, 'status': 'reserved'}
+      instance br2-lcm-20260910t160247z {'branch': 'br2', 'vid': 11, 'vlan_name': 'lcm-20260910t160247z', 'switch': 'br2-sw01', 'netbox_vlan_id': 41, 'status': 'active'}
+      create: VLAN 11 lcm-20260910t160247z active in NetBox (id 41) and on br2-sw01; instance br2-lcm-20260910t160247z recorded (execution 6aa2d6e8df4404b0278c6ecf)
+      rejected push: job 6dc6459c2ce04928bd8075ff in error, delete job 18016e26db384552a8432594 waited, NetBox and br2-sw01 untouched, both cancelled
+      delete: push job 045e6c0380644dbfa4096692 removed VLAN 11 from br2-sw01 after the approval; NetBox VLAN gone; instance br2-lcm-20260910t160247z retired (execution 6aa2d714df4404b0278c6ed1)
+      Traceback (most recent call last):
+        File [35m"<string>"[0m, line [35m6[0m, in [35m<module>[0m
+          assert [1;31mnot missing[0m,('journal entries missing on br2-sw01',missing,c[:4])
+                 [1;31m^^^^^^^^^^^[0m
+      [1;35mAssertionError[0m: [35m('journal entries missing on br2-sw01', ['Lifecycle Manager branch-vlan create: VLAN 11 (lcm-20260910t160247z)', 'Lifecycle Manager branch-vlan delete: VLAN 11 (lcm-20260910t160247z)'], ['Lifecycle Manager branch-vlan create: VLAN 11 (verify-20260908t191519z-snow) configured through Gateway 5 by wf-branch-vlan-v1; NetBox VLAN active', 'Lifecycle Manager branch-vlan delete: VLAN 11 (lcm-20260908t171855z) removed through wf-config-push-v1 by wf-branch-vlan-delete-v1', 'Lifecycle Manager branch-vlan create: VLAN 11 (lcm-20260908t171855z) configured through Gateway 5 by wf-branch-vlan-v1; NetBox VLAN active'])[0m
+PASS  S4d.4 Integration Models lab-netbox and lab-servicenow: instances netbox-api/servicenow-api, every operation an authorized tool; lab-netops reads br1-sw01 and INC0000060 through the integration tools (not the adapters)
+      model lab-netbox:1.0.0: 11 operations
+      integration netbox-api: server http 10.100.0.64 8080 auth ['tokenAuth']
+      tools netbox-api: 11 authorized
+      model lab-servicenow:1.0.0: 5 operations
+      integration servicenow-api: server https dev409097.service-now.com 443 auth ['BasicAuth']
+      tools servicenow-api: 5 authorized
+      NetBox: br1-sw01 is br1 / branch-switch through ['dcim_devices_list']; tokens in=14140 out=118
+      ServiceNow: INC0000060 = 'Unable to connect to email' through ['listIncidents']; tokens in=12700 out=161
+      tokens spent by S4d.4: in=26840 out=279
+PASS  S4d.6 the three Ubuntu hosts are lab-hosts inventory nodes, reachable through Gateway 5 with their uptime (direct SSH agrees), and unknown to Configuration Manager
+      Configuration Manager sees 12 devices, no host
+      br1-host01 (10.100.0.195): reachable, up 3 days, 16 hours, 17 minutes through Gateway 5; direct SSH agrees
+      br2-host01 (10.100.0.196): reachable, up 3 days, 16 hours, 17 minutes through Gateway 5; direct SSH agrees
+      dc1-srv01 (10.100.0.192): reachable, up 3 days, 16 hours, 18 minutes through Gateway 5; direct SSH agrees
+DEFER S4d.6 firewalls: PA-VM image not staged (S3.4 deferral)
+
+passed=4 failed=1 deferred=1

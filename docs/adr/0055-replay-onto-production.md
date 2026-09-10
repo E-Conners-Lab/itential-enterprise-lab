@@ -121,5 +121,10 @@ The environments also differ in three measured ways:
   and `nginx -s reload` re-reads the file it already has - the container is recreated instead; and the
   Platform image carries `wget` but not `curl`, so the compose healthcheck that used `curl` marked both
   nodes unhealthy for as long as they ran.
+- The production Gateway 5 needs `GATEWAY_SERVER_DISTRIBUTED_EXECUTION=true`, which the dev-stack's vendored
+  Compose file sets and the HA2 template had not. Without it the server runs a `runCode` task on its own
+  musl image, where `pip install pyats` fails, and the Platform records the task as *complete* with a null
+  result - so `wf-show-command-v1` returned no parse and `wf-branch-vlan-v1`'s NetBox journal entry was
+  never written, both silently. That is ADR 0038's glibc-runner finding reappearing as a missing flag.
 - The Ollama profile differs per environment, so `verify/test-06` S4c's provider-profile check passes on
   production only once `tools-01`'s Ollama has the pinned models pulled; that pull is part of the replay.

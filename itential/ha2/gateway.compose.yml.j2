@@ -35,6 +35,10 @@ services:
       GATEWAY_CONNECT_INSECURE_TLS: "true"
       GATEWAY_LOG_LEVEL: "INFO"
       GATEWAY_SERVER_USE_TLS: "false"
+      # Without this the server runs a runCode task itself, on its own musl image, where pip cannot
+      # install pyats and the parse fails silently (ADR 0038: Genie needs the glibc runner). It is the
+      # flag that makes the server hand every execution to a registered runner node.
+      GATEWAY_SERVER_DISTRIBUTED_EXECUTION: "true"
       GATEWAY_SERVER_LISTEN_ADDRESS: "0.0.0.0"
       GATEWAY_STORE_BACKEND: etcd
       GATEWAY_STORE_ETCD_HOSTS: "etcd:{{ gateway.etcd_port }}"
