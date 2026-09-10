@@ -211,6 +211,21 @@
       vars:
         ok: "{{ healths.results | default([]) | selectattr('status', 'equalto', 200) | list }}"
 
+    # ADR 0055 decision 9. Gateway Manager holds one connection per gateway cluster, and the Platform hands
+    # job, task and agent execution to every RUNNING node, so a second running node breaks anything that
+    # touches a device: a compliance run stalled at 7 of 12, and a FlowAI session whose tool call landed on
+    # the standby ended FAILED. The worker flags cover the first two; the agent engine has no such flag.
+    # So the environment is Active/Standby, which is one of Itential's own architectures: every node is
+    # built, configured and attached to the same databases - the play proves that above, node by node -
+    # and then every node but the first is parked. The S11.6a drill starts it, and `docker compose start
+    # platform` on that VM is the failover by hand.
+    - name: Standby nodes parked until a failover (unless-stopped keeps them down across a reboot)
+      ansible.builtin.command:
+        cmd: docker compose stop platform
+        chdir: "{{ dir }}"
+      when: inventory_hostname != platform.nodes[0]
+      changed_when: true
+
 - name: The load balancer in front of both nodes
   hosts: ha2-loadbalancer
   become: true

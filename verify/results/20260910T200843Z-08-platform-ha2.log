@@ -1,0 +1,22 @@
+# test-08-platform-ha2 20260910T200843Z
+SKIP  S11.1 the eleven production VMs run with the sizes of the oracle and the budget, and NetBox holds each one
+SKIP  S11.2 MongoDB is a three-member replica set (one PRIMARY, two SECONDARY) with authentication and TLS
+SKIP  S11.3 Redis has one master, two replicas and three Sentinels that agree, with ACL users only
+SKIP  S11.4 the active Platform node serves through the load balancer and the standby is built and parked
+SKIP  S11.5 everything phases 5-7 built exists on production (workflows, Golden Config, MOP, LCM, integrations, agents, inventories)
+SKIP  S11.7 the official Itential dashboard's MongoDB and Redis rows show the production replica sets
+DEFER S11.8 VM 205 deleted: a separate owner-approved step at the end of the cut-over (ADR 0053)
+PASS  S11.6a drill: the standby takes over when the active Platform node is stopped, and is parked again after
+       Container platform Starting 
+       Container platform Started 
+       Container platform Stopping 
+       Container platform Stopped 
+      standby started, active node stopped: the load balancer kept serving (12/12 probes 200); active node restarted and the standby parked again
+PASS  S11.6b drill: stopping the MongoDB primary elects a new one within 30 s and the Platform keeps serving
+      primary before: mongo-01
+      mongo-01 stopped: mongo-02 became PRIMARY after 5s and the Platform kept serving; mongo-01 restarted
+PASS  S11.6c drill: stopping the Redis master promotes a replica through Sentinel and the Platform keeps serving
+      master before: redis-03 (10.100.0.79)
+      redis-03 stopped: Sentinel promoted 10.100.0.77 after 7s and the Platform kept serving; redis-03 restarted
+
+passed=3 failed=0 deferred=1

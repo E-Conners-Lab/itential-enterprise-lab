@@ -143,36 +143,38 @@ c3() {
 }
 check "S11.3 Redis has one master, two replicas and three Sentinels that agree, with ACL users only" c3
 
-# --- S11.4 both Platform nodes healthy behind the load balancer ---------------------------------------------
+# --- S11.4 the active Platform node serves; the standby is built and parked ---------------------------------
+# ADR 0055 decision 9: Gateway Manager holds one connection per gateway cluster, and the Platform distributes
+# job, task and agent execution across every running node, so a second RUNNING node breaks anything that
+# touches a device. The environment is therefore Active/Standby - Itential's own shape: iap-02 is built,
+# configured and attached to the same databases, and its Platform container is parked until a failover.
 c4() {
-  local n code jar
-  for n in "$IAP1" "$IAP2"; do
-    # /health/server is session-authenticated; /login is the unauthenticated liveness endpoint
-    jar="${JAR}.${n}"
-    code=$(curl -s -m 60 --cacert "$CA" --resolve "${SERVICE}:3443:${n}" -c "$jar" -H "Content-Type: application/json" -X POST "https://${SERVICE}:3443/login" -d "{\"username\":\"${ADMIN_USER}\",\"password\":\"${ITENTIAL_ADMIN_PASSWORD}\"}" -o /dev/null -w '%{http_code}')
-    [ "$code" = 200 ] || { echo "node ${n}: login ${code}"; return 1; }
-    code=$(curl -s -m 30 --cacert "$CA" --resolve "${SERVICE}:3443:${n}" -b "$jar" "https://${SERVICE}:3443/health/server" -o /tmp/verify08.h.$$ -w '%{http_code}')
-    [ "$code" = 200 ] || { echo "node ${n}: /health/server ${code}"; return 1; }
-    ${PY} - "$n" "/tmp/verify08.h.$$" <<'PYNODE'
+  local code jar=${JAR}.active
+  # /health/server is session-authenticated; /login is the unauthenticated liveness endpoint
+  code=$(curl -s -m 60 --cacert "$CA" --resolve "${SERVICE}:3443:${IAP1}" -c "$jar" -H "Content-Type: application/json" -X POST "https://${SERVICE}:3443/login" -d "{\"username\":\"${ADMIN_USER}\",\"password\":\"${ITENTIAL_ADMIN_PASSWORD}\"}" -o /dev/null -w '%{http_code}')
+  [ "$code" = 200 ] || { echo "the active node ${IAP1}: login ${code}"; return 1; }
+  code=$(curl -s -m 30 --cacert "$CA" --resolve "${SERVICE}:3443:${IAP1}" -b "$jar" "https://${SERVICE}:3443/health/server" -o /tmp/verify08.h.$$ -w '%{http_code}')
+  [ "$code" = 200 ] || { echo "the active node ${IAP1}: /health/server ${code}"; return 1; }
+  ${PY} - "$IAP1" "/tmp/verify08.h.$$" <<'PYNODE'
 import json, sys
 d = json.load(open(sys.argv[2]))
-print(f"  node {sys.argv[1]}: Platform {d['version']} up {int(d['uptime'])}s")
+print(f"  active node {sys.argv[1]}: Platform {d['version']} up {int(d['uptime'])}s")
 PYNODE
-  done
-  # the load balancer serves the service name with the lab CA
-  code=$(curl -s -m 30 --cacert "$CA" --resolve "${SERVICE}:443:${LB}" "https://${SERVICE}/login" -o /dev/null -w '%{http_code}')
+  # the standby is built and parked: the container exists, is not running, and its host is otherwise up
+  local state
+  state=$($SSH "ubuntu@${IAP2}" "sudo docker inspect platform --format '{{.State.Status}}'" 2>/dev/null)
+  [ -n "$state" ] || { echo "the standby ${IAP2} has no platform container: it is not built"; return 1; }
+  [ "$state" != running ] || { echo "the standby ${IAP2} is RUNNING; ADR 0055 decision 9 parks it until a failover"; return 1; }
+  $SSH "ubuntu@${IAP2}" "sudo docker inspect node-exporter --format '{{.State.Status}}'" 2>/dev/null | grep -qx running \
+    || { echo "the standby ${IAP2} is not otherwise up (node-exporter is not running)"; return 1; }
+  # the load balancer serves the service name with the lab CA, and the name resolves to it after the cut-over
+  code=$(web "https://${SERVICE}/login" -o /dev/null -w '%{http_code}')
   [ "$code" = 200 ] || { echo "the load balancer answers ${code} for https://${SERVICE}/login"; return 1; }
-  # before the cut-over the name still resolves to the dev-stack, so every check here pins it to the VIP
-  # a session created through the load balancer is valid on both nodes (shared Redis session store)
-  code=$(curl -s -m 60 --cacert "$CA" --resolve "${SERVICE}:443:${LB}" -c "$JAR" -H "Content-Type: application/json" -X POST "https://${SERVICE}/login" -d "{\"username\":\"${ADMIN_USER}\",\"password\":\"${ITENTIAL_ADMIN_PASSWORD}\"}" -o /dev/null -w '%{http_code}')
-  [ "$code" = 200 ] || { echo "login through the load balancer: ${code}"; return 1; }
-  for n in "$IAP1" "$IAP2"; do
-    code=$(curl -s -m 30 --cacert "$CA" --resolve "${SERVICE}:3443:${n}" -b "$JAR" "https://${SERVICE}:3443/health/applications" -o /dev/null -w '%{http_code}')
-    [ "$code" = 200 ] || { echo "the session from the load balancer is not valid on ${n}: ${code}"; return 1; }
-  done
-  echo "both nodes healthy; the load balancer serves ${SERVICE} and its session works on either node"
+  local resolved; resolved=$(${PY} -c "import socket;print(socket.gethostbyname('${SERVICE}'))")
+  [ "$resolved" = "$LB" ] || { echo "${SERVICE} resolves to ${resolved}, not the load balancer ${LB} (cut-over not applied)"; return 1; }
+  echo "the active node serves; ${SERVICE} resolves to the load balancer and answers through it; the standby is built and parked (platform ${state})"
 }
-check "S11.4 both Platform nodes answer /health/server and the load balancer serves the service name with one shared session" c4
+check "S11.4 the active Platform node serves through the load balancer and the standby is built and parked" c4
 
 # --- S11.5 everything phases 5-7 built exists on production -------------------------------------------------
 # Every endpoint here is the one the phase 5-7 plays and verifies use, so a PASS means the same API that
@@ -241,9 +243,11 @@ c7() {
   n=$(web "${PROM}/api/v1/query" --data-urlencode 'query=count(redis_connected_slaves > 0)' | ${PY} -c 'import sys,json;r=json.load(sys.stdin)["data"]["result"];print(r[0]["value"][1] if r else 0)')
   [ "${n:-0}" -ge 1 ] || { echo "no Redis instance reports connected replicas"; return 1; }
   # the Platform nodes' own metrics: both scraped, both up
+  # both Platform nodes are scrape targets, but only the active one answers: the standby's Platform is parked
+  # (ADR 0055 decision 9), so exactly one iap_exporter target is up and the dashboard's Platform row is its own
   n=$(web "${PROM}/api/v1/query" --data-urlencode 'query=count(up{job="iap_exporter"} == 1)' | ${PY} -c 'import sys,json;r=json.load(sys.stdin)["data"]["result"];print(r[0]["value"][1] if r else 0)')
-  [ "${n:-0}" = 2 ] || { echo "iap_exporter targets up: ${n}, expected 2 (one per Platform node)"; return 1; }
-  echo "the official dashboard has three replica-set members, one Redis master with replicas, and both Platform nodes"
+  [ "${n:-0}" = 1 ] || { echo "iap_exporter targets up: ${n}, expected 1 (the active Platform node; the standby is parked)"; return 1; }
+  echo "the official dashboard has three replica-set members, one Redis master with replicas, and the active Platform node"
 }
 check "S11.7 the official Itential dashboard's MongoDB and Redis rows show the production replica sets" c7
 
@@ -252,19 +256,35 @@ defer "S11.8 VM 205 deleted: a separate owner-approved step at the end of the cu
 # --- S11.6 failover drills (disruptive; VERIFY_DRILLS=1 only) -----------------------------------------------
 if [ "${VERIFY_DRILLS:-0}" = 1 ]; then
   # 6a: stop one Platform node; the load balancer keeps serving
+  # This is the failover the standby exists for (ADR 0055 decision 9): bring the standby up, take the active
+  # node away, and the load balancer keeps serving from the standby. Restored to Active/Standby at the end.
   d6a() {
-    $SSH "ubuntu@${IAP1}" "sudo docker stop platform" >/dev/null || return 1
+    $SSH "ubuntu@${IAP2}" "cd /opt/itential && sudo docker compose start platform" >/dev/null || return 1
     local i code ok=0
+    for i in $(seq 1 30); do
+      sleep 5
+      code=$(curl -s -m 20 --cacert "$CA" --resolve "${SERVICE}:3443:${IAP2}" "https://${SERVICE}:3443/login" -o /dev/null -w '%{http_code}')
+      [ "$code" = 200 ] && break
+    done
+    [ "$code" = 200 ] || { echo "the standby did not come up within 150 s"; return 1; }
+    $SSH "ubuntu@${IAP1}" "sudo docker stop platform" >/dev/null || return 1
     for i in $(seq 1 12); do
       code=$(curl -s -m 20 --cacert "$CA" --resolve "${SERVICE}:443:${LB}" "https://${SERVICE}/login" -o /dev/null -w '%{http_code}')
       [ "$code" = 200 ] && { ok=$((ok+1)); }
       sleep 5
     done
     $SSH "ubuntu@${IAP1}" "sudo docker start platform" >/dev/null
-    [ "$ok" -ge 10 ] || { echo "the service answered 200 only ${ok} of 12 times while iap-01 was down"; return 1; }
-    echo "iap-01 stopped: the load balancer kept serving (${ok}/12 probes 200); node restarted"
+    for i in $(seq 1 30); do
+      sleep 5
+      code=$(curl -s -m 20 --cacert "$CA" --resolve "${SERVICE}:3443:${IAP1}" "https://${SERVICE}:3443/login" -o /dev/null -w '%{http_code}')
+      [ "$code" = 200 ] && break
+    done
+    # back to Active/Standby: the standby is parked again
+    $SSH "ubuntu@${IAP2}" "cd /opt/itential && sudo docker compose stop platform" >/dev/null
+    [ "$ok" -ge 10 ] || { echo "the service answered 200 only ${ok} of 12 times while the active node was down"; return 1; }
+    echo "standby started, active node stopped: the load balancer kept serving (${ok}/12 probes 200); active node restarted and the standby parked again"
   }
-  check "S11.6a drill: stopping one Platform node leaves the service answering through the load balancer" d6a
+  check "S11.6a drill: the standby takes over when the active Platform node is stopped, and is parked again after" d6a
 
   # 6b: stop the MongoDB primary; a new primary is elected and the Platform keeps serving
   d6b() {

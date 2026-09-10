@@ -123,10 +123,28 @@ The environments also differ in three measured ways:
    **The worker split does not cover the agent engine.** `ITENTIAL_JOB_WORKER_ENABLED` and
    `ITENTIAL_TASK_WORKER_ENABLED` are the only such flags the image has; the agent execution engine
    distributes independently, so a FlowAI session whose tool call lands on the standby ends `FAILED` with
-   *"session is terminal (sibling tool may have failed)"*. Measured: with both nodes up `verify/test-06` is
-   9 of 13; with `iap-02`'s Platform stopped the same three checks pass first try (S4c.2, S4d.5c, S4d.5e).
-   Closing this needs an owner decision - run the standby's Platform stopped (Itential's Active/Standby), or
-   accept the agent limitation - and it is recorded here rather than decided.
+   *"session is terminal (sibling tool may have failed)"*.
+
+   **So the environment is Active/Standby** (owner decision 2026-09-10), which is one of Itential's own
+   architectures rather than a lash-up: every Platform node is built, configured and attached to the same
+   databases - `platform-ha2-platform.yml` proves each one healthy, node by node - and then every node but
+   `platform.nodes[0]` is parked with `docker compose stop platform`. `restart: unless-stopped` keeps a
+   parked node down across a reboot. The failover is `docker compose start platform` on that VM, and drill
+   S11.6a runs exactly that: start the standby, stop the active node, watch the load balancer keep serving,
+   then restore. The whole trade, measured both ways:
+
+   | | standby running | standby parked |
+   |---|---|---|
+   | `test-05` | 12/12 | 12/12 |
+   | `test-06` (agents) | 9/14 | **14/14** |
+   | `test-06b` | 5/5 | 5/5 |
+   | `test-06c` | 6/6 | 6/6 |
+   | `test-08` | 9/9 | 9/9 *(S11.4 reworded)* |
+
+   S11.4 therefore reads "the active Platform node serves through the load balancer and the standby is built
+   and parked" - it checks the standby's container exists and is not running, and that the VM is otherwise
+   up. S11.7 expects one `iap_exporter` target up, not two. Genuine active/active needs a gateway cluster per
+   Platform node, and that stays a later element.
 
 ## Consequences
 

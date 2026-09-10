@@ -280,3 +280,9 @@ def test_only_the_first_platform_node_runs_the_workers() -> None:
     for var in ("ITENTIAL_JOB_WORKER_ENABLED", "ITENTIAL_TASK_WORKER_ENABLED"):
         assert f"{var}: \"{{{{ 'true' if inventory_hostname == platform.nodes[0] else 'false' }}}}\"" in compose, var
     assert HA2["platform"]["nodes"][0] == "iap-01", "the worker node is the first node of the oracle"
+    # and the standby is parked by the play, not by hand (ADR 0055 decision 9)
+    play = (PLAYS / "platform-ha2-platform.yml").read_text()
+    assert "Standby nodes parked until a failover" in play, "the play parks every node but the first"
+    assert "when: inventory_hostname != platform.nodes[0]" in play, "parked by the oracle's node order"
+    verify = (ROOT / "verify" / "test-08-platform-ha2.sh").read_text()
+    assert "the standby is built and parked" in verify, "S11.4 asserts the Active/Standby shape"
