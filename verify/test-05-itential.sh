@@ -17,8 +17,10 @@ V=itential/versions.yaml
 # address: no --resolve is forced any more and these run against whatever the record points at. IT_IP (and
 # IT_MCP_IP, for the MCP server on its own VM) still pin a specific host when one is being proved directly.
 IT_IP=${IT_IP:-}
-# S4.6 measures the dev-stack VM itself, which keeps its own address whatever the service name points at
-DEV_IP=$(${PY} -c "import yaml;print(yaml.safe_load(open('$V'))['vm']['ip'])")
+# S4.6 measures the Platform host. That was VM 205 until S11.8 retired it (ADR 0053), so it is now the active
+# production node - the first of the HA2 oracle's platform nodes, the one the load balancer and the gateway use.
+IAP_IP=${IT_IP:-$(${PY} -c "import yaml;d=yaml.safe_load(open('itential/ha2/versions.yaml'));n=d['platform']['nodes'][0];print(next(v['ip'] for v in d['vms'] if v['name']==n))")}
+MONGO_IP=$(${PY} -c "import yaml;d=yaml.safe_load(open('itential/ha2/versions.yaml'));print(next(v['ip'] for v in d['vms'] if v['role']=='mongodb'))")
 RESOLVE=${IT_IP:+--resolve itential.lab.internal:443:${IT_IP}}
 IT_HOST=itential.lab.internal
 MCP_HOST=mcp.lab.internal
@@ -159,17 +161,18 @@ check "S4.5 licence state (none required, owner decision 2026-09-07) recorded in
 # --- S4.6 memory pressure on the VM after 24 h ------------------------------------------------
 c6() {
   local up used total pct cache
-  up=$($SSH "ubuntu@${DEV_IP}" "cut -d. -f1 /proc/uptime") || { echo "ssh to ${DEV_IP} failed"; return 1; }
-  read -r total used <<<"$($SSH "ubuntu@${DEV_IP}" "free -m | awk '/^Mem:/{print \$2, \$3}'")"
+  up=$($SSH "ubuntu@${IAP_IP}" "cut -d. -f1 /proc/uptime") || { echo "ssh to the Platform node ${IAP_IP} failed"; return 1; }
+  read -r total used <<<"$($SSH "ubuntu@${IAP_IP}" "free -m | awk '/^Mem:/{print \$2, \$3}'")"
   pct=$((used * 100 / total))
-  cache=$($SSH "ubuntu@${DEV_IP}" "docker exec mongodb mongosh --quiet --eval 'const c=db.serverStatus().wiredTiger.cache; print(Math.round(c[\"bytes currently in the cache\"]/1048576)+\" MB in cache of \"+Math.round(c[\"maximum bytes configured\"]/1048576)+\" MB max\")' 2>/dev/null" || echo "cache: n/a")
-  echo "uptime ${up}s; RAM used ${used}/${total} MB (${pct}%); wiredTiger ${cache}"
+  # the database is its own replica set now, so its cache is read from a member rather than from the Platform host
+  cache=$($SSH "ubuntu@${MONGO_IP}" "sudo docker exec mongodb mongosh --quiet --tls --tlsCAFile /etc/mongo/tls/ca.crt --host \$(hostname -f) -u admin -p '${MONGO_ADMIN_PASSWORD:-}' --authenticationDatabase admin --eval 'const c=db.serverStatus().wiredTiger.cache; print(Math.round(c[\"bytes currently in the cache\"]/1048576)+\" MB in cache of \"+Math.round(c[\"maximum bytes configured\"]/1048576)+\" MB max\")' 2>/dev/null" || echo "n/a")
+  echo "Platform node ${IAP_IP}: uptime ${up}s; RAM used ${used}/${total} MB (${pct}%); MongoDB wiredTiger ${cache}"
   [ "$pct" -lt 80 ] || { echo "memory above 80%: apply the budget levers by PR"; return 1; }
   [ "$up" -ge 86400 ] || { echo "MEASURE-EARLY: uptime under 24 h, re-run after $(( (86400 - up) / 3600 )) h"; return 2; }
 }
-if c6 >/tmp/verify05.$$ 2>&1; then ok "S4.6 itential VM memory under 80 % after 24 h"; sed 's/^/      /' /tmp/verify05.$$
+if c6 >/tmp/verify05.$$ 2>&1; then ok "S4.6 the Platform node memory under 80 % after 24 h"; sed 's/^/      /' /tmp/verify05.$$
 elif [ $? = 2 ]; then defer "S4.6 memory under 80 % now, but uptime is under 24 h"; sed 's/^/      /' /tmp/verify05.$$
-else bad "S4.6 itential VM memory pressure"; sed 's/^/      /' /tmp/verify05.$$; fi
+else bad "S4.6 Platform node memory pressure"; sed 's/^/      /' /tmp/verify05.$$; fi
 
 # --- S4.7 Claude Code on this Mac reaches mcp.lab.internal and runs a read-only tool -------------
 c7() {
