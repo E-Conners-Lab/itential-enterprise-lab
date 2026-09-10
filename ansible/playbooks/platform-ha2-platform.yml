@@ -173,34 +173,43 @@
       delay: 10
       until: live.status | default(0) == 200
 
-    - name: Log in to this node as the bootstrap user
+    # The directory account (platform-ha2-identity.yml) is the one whose group membership the Platform
+    # honours; on the very first build it does not exist yet, so the bootstrap user answers for liveness and
+    # the version is read only when a session that /health/server accepts is available.
+    - name: Log in to this node
       ansible.builtin.uri:
         url: "http://{{ ip }}:{{ platform.http_port }}/login"
         method: POST
         body_format: json
         body:
-          username: "{{ platform.bootstrap_user }}"
+          username: "{{ item }}"
           password: "{{ lookup('ansible.builtin.env', 'ITENTIAL_ADMIN_PASSWORD') }}"
         status_code: [200, 401]
-      register: login
+      register: logins
+      loop: ["{{ platform.admin_user }}", "{{ platform.bootstrap_user }}"]
+      loop_control:
+        label: "{{ item }}"
       no_log: true
 
-    - name: Server health (with the session)
+    - name: Server health, with whichever session the Platform accepts
       ansible.builtin.uri:
         url: "http://{{ ip }}:{{ platform.http_port }}/health/server"
-        headers: {Cookie: "{{ login.cookies_string }}"}
-        status_code: 200
-      register: health
-      retries: 30
-      delay: 10
-      until: health.status | default(0) == 200
-      when: login.status == 200
+        headers: {Cookie: "{{ item.cookies_string }}"}
+        status_code: [200, 403]
+      register: healths
+      loop: "{{ logins.results | selectattr('status', 'equalto', 200) | list }}"
+      loop_control:
+        label: "{{ item.item }}"
+      no_log: true
 
     - name: Version
       ansible.builtin.debug:
         msg: >-
-          {{ inventory_hostname }}: Platform {{ health.json.version | default('?') }}
-          {{ '(the bootstrap user was refused: check ITENTIAL_ADMIN_PASSWORD)' if login.status != 200 else '' }}
+          {{ inventory_hostname }}: Platform {{ ok[0].json.version | default('?') if ok else '?' }}
+          {{ '(no session was accepted by /health/server yet; the directory account lands with '
+             ~ 'platform-ha2-identity.yml)' if not ok else '' }}
+      vars:
+        ok: "{{ healths.results | default([]) | selectattr('status', 'equalto', 200) | list }}"
 
 - name: The load balancer in front of both nodes
   hosts: ha2-loadbalancer

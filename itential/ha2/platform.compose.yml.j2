@@ -13,6 +13,8 @@ services:
     ports:
       - "{{ ip }}:{{ platform.http_port }}:{{ platform.http_port }}"
       - "{{ ip }}:{{ platform.https_port }}:{{ platform.https_port }}"
+      # Gateway Manager: Gateway 5 on iag-01 dials this through the load balancer's layer-4 passthrough
+      - "{{ ip }}:{{ platform.gateway_manager_port }}:{{ platform.gateway_manager_port }}"
     volumes:
       - ./volumes/platform/adapters:/opt/itential/platform/services/custom
       - ./volumes/platform/ssl:/etc/ssl/platform:ro
@@ -60,7 +62,7 @@ services:
       ITENTIAL_LOG_LEVEL: "info"
       ITENTIAL_LOG_DIRECTORY: "/var/log/itential"
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:{{ platform.http_port }}/login >/dev/null"]
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:{{ platform.http_port }}/login 2>/dev/null"]
       interval: 30s
       timeout: 10s
       retries: 10

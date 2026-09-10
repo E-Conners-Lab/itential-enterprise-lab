@@ -60,6 +60,11 @@ http {
 # That connection is not HTTP, so it is passed through at layer 4 rather than proxied.
 stream {
     upstream platform_gwmanager {
+        # Gateway 5's registration is a stateful conversation over one WebSocket, and it reconnects on its
+        # own. Round-robin sent successive attempts to different nodes and the gateway rejected the reply it
+        # got back ("received unexpected message from server: tasks/list"), so the connection is pinned by
+        # source address, as the HTTP upstream is by ip_hash. A failed node is still skipped (max_fails).
+        hash $remote_addr consistent;
 {% for n in platform_nodes %}
         server {{ n.ip }}:{{ platform.gateway_manager_port }} max_fails=3 fail_timeout=10s;
 {% endfor %}
