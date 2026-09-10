@@ -13,7 +13,7 @@
     stack_dir: /opt/itential
     profiles: "{{ stack.profiles | map('regex_replace', '^', '--profile ') | join(' ') }}"
     compose: "docker compose -f docker-compose.yml -f compose.override.yml {{ profiles }}"
-    platform_local: http://127.0.0.1:3000
+    platform_local: "{{ platform_api | default('http://127.0.0.1:3000') }}"
     tool_registry_base: tools # app-tool_registry mounts under its pronghorn title
     admin_user: >-
       {{ platform_admin_user | default(lookup('ansible.builtin.env', 'ITENTIAL_ADMIN_USER')

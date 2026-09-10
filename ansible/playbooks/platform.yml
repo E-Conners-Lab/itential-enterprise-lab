@@ -14,7 +14,7 @@
   vars_files:
     - ../../itential/versions.yaml
   vars:
-    platform_local: http://127.0.0.1:3000
+    platform_local: "{{ platform_api | default('http://127.0.0.1:3000') }}"
     admin_user: >-
       {{ platform_admin_user | default(lookup('ansible.builtin.env', 'ITENTIAL_ADMIN_USER')
          | default('admin@itential', true)) }}

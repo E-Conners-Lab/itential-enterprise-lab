@@ -1,0 +1,12 @@
+# test-06c-netbox 20260908T150603Z
+PASS  S4e.1 every addressed interface of the 12 network devices is in NetBox with its address, VRF and 'to <peer>' description; the devices agree (wf-show-all-v1 + direct SSH)
+      12 devices, 64 intent interfaces equal in NetBox and on the devices (addresses + descriptions); direct SSH agrees on br1-wan01 and dc1-leaf01
+PASS  S4e.2 VRFs with route targets, prefixes in PROD, the 7 ASNs on their sites, BGP neighbours and RDs in each device's config context equal to the device (direct SSH), the transit virtual router as an FHRP group
+      VRFs MGMT/WAN/PROD (PROD RT 50001:50001), 7 ASNs on their sites, FHRP group ['dc1-vlan100-varp'] with its members and address, 38 BGP neighbours in the device contexts equal the devices' own tables over direct SSH (12 devices)
+FAIL  S4e.3 one location and one rack per site, every device racked at its derived position (role order top down, unique U)
+      rack wan-rack01 missing
+      rack dc1-rack01 missing
+      rack br1-rack01 missing
+      rack br2-rack01 missing
+
+passed=2 failed=1

@@ -4,8 +4,11 @@
 # keeps VM 205 working until it is retired. tests/test_platform_ha2.py holds every value here to
 # itential/ha2/versions.yaml, so the oracle stays the only source of the addresses and the account name.
 platform_target: ha2-platform[0]
-# the production Platform has no LDAP yet (the identity phase adds it): the local account of the oracle
-platform_admin_user: admin
+# the production compose publishes the Platform on the node's OOB address, not on the loopback
+platform_api: http://10.100.0.72:3000
+# the local automation account of the oracle (not the image's bootstrap user, which cannot hold a
+# group membership); it carries the same username the dev-stack's LDAP administrator has
+platform_admin_user: admin@itential
 # adapters register new roles; production assigns them through the authorization API, not in the database
 role_resync_tasks: roles-to-admin.yml
 # Ollama runs on tools-01, not as a Compose service on the Platform node

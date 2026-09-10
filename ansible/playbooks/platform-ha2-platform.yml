@@ -173,13 +173,13 @@
       delay: 10
       until: live.status | default(0) == 200
 
-    - name: Log in to this node
+    - name: Log in to this node as the bootstrap user
       ansible.builtin.uri:
         url: "http://{{ ip }}:{{ platform.http_port }}/login"
         method: POST
         body_format: json
         body:
-          username: "{{ platform.admin_user }}"
+          username: "{{ platform.bootstrap_user }}"
           password: "{{ lookup('ansible.builtin.env', 'ITENTIAL_ADMIN_PASSWORD') }}"
         status_code: [200, 401]
       register: login
@@ -200,7 +200,7 @@
       ansible.builtin.debug:
         msg: >-
           {{ inventory_hostname }}: Platform {{ health.json.version | default('?') }}
-          {{ '(the local administrator was refused: check ITENTIAL_ADMIN_PASSWORD)' if login.status != 200 else '' }}
+          {{ '(the bootstrap user was refused: check ITENTIAL_ADMIN_PASSWORD)' if login.status != 200 else '' }}
 
 - name: The load balancer in front of both nodes
   hosts: ha2-loadbalancer
@@ -259,3 +259,39 @@
     - name: Reachable
       ansible.builtin.debug:
         msg: "https://{{ service_name }}.{{ domain }} answers {{ lb.status }} from {{ inventory_hostname }}"
+
+# The account everything downstream uses. The image's default user is bootstrap only: the Platform rewrites its
+# account document on every login, so it can never be a member of a group, and Inventory Manager (among others)
+# refuses a caller who is not. This play creates a real local account with the same username the dev-stack's
+# LDAP administrator has, so the phase 5-7 plays and verifies work against production unchanged (ADR 0055).
+- name: The automation account on the Platform
+  hosts: ha2-platform[0]
+  become: true
+  gather_facts: false
+  vars_files:
+    - ../../itential/ha2/versions.yaml
+    - ../../itential/versions.yaml
+  vars:
+    ansible_ssh_common_args: -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/dev/null
+    platform_local: "http://{{ (vms | selectattr('name', 'equalto', inventory_hostname) | first).ip }}:{{ platform.http_port }}"
+  tasks:
+    - name: Log in as the bootstrap user
+      ansible.builtin.uri:
+        url: "{{ platform_local }}/login"
+        method: POST
+        body_format: json
+        body:
+          username: "{{ platform.bootstrap_user }}"
+          password: "{{ lookup('ansible.builtin.env', 'ITENTIAL_ADMIN_PASSWORD') }}"
+        status_code: 200
+      register: login
+      retries: 10
+      delay: 6
+      until: login.status | default(0) == 200
+      no_log: true
+
+    - name: Every role on admin_group and the default user (shared, ADR 0055)
+      ansible.builtin.include_tasks: tasks/roles-to-admin.yml
+
+    - name: The local automation account (shared, ADR 0055)
+      ansible.builtin.include_tasks: tasks/local-admin-account.yml

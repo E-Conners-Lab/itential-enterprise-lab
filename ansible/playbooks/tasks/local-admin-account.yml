@@ -1,0 +1,99 @@
+---
+# The production environment's automation account (ADR 0055 decision 7). The image's default user
+# (platform.bootstrap_user) cannot be used for automation: the Platform rewrites its account document on every
+# login, which clears memberOf, and several APIs - Inventory Manager among them - refuse a caller who holds a
+# role directly but is not a *member of a group* that holds it ("User must be a member of at least one of the
+# assigned groups with roles: inventory:read and inventory:update"). So a real local account is created once,
+# with every role and membership of admin_group, carrying the same username the dev-stack's LDAP administrator
+# has, and everything downstream logs in as that.
+#
+# The caller provides platform_local, a session in `login` (the bootstrap user's), role_ids and the group id.
+- name: Existing accounts
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/authorization/accounts?limit=200"
+    headers: {Cookie: "{{ login.cookies_string }}"}
+  register: accounts
+
+- name: Local automation account with every role and membership of admin_group, {{ platform.admin_user }}
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/authorization/accounts"
+    method: POST
+    headers: {Cookie: "{{ login.cookies_string }}"}
+    body_format: json
+    body:
+      account:
+        username: "{{ platform.admin_user }}"
+        firstname: Lab
+        lastname: Automation
+        email: "{{ platform.admin_user if '@' in platform.admin_user else platform.admin_user ~ '@lab.internal' }}"
+        password: "{{ lookup('ansible.builtin.env', 'ITENTIAL_ADMIN_PASSWORD') }}"
+        provenance: Pronghorn
+        inactive: false
+        assignedRoles: "{{ role_ids }}"
+        memberOf: [{aaaManaged: false, groupId: "{{ admin_group_id }}"}]
+    status_code: [200, 201]
+  when: platform.admin_user not in (accounts.json.results | default([]) | map(attribute='username') | list)
+  no_log: true
+
+- name: Account id
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/authorization/accounts?limit=200"
+    headers: {Cookie: "{{ login.cookies_string }}"}
+  register: accounts2
+
+- name: Every role on the automation account (adapters and applications register more over time)
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/authorization/accounts/{{ automation_id }}"
+    method: PATCH
+    headers: {Cookie: "{{ login.cookies_string }}"}
+    body_format: json
+    body: {updates: {assignedRoles: "{{ role_ids }}"}}
+    status_code: 200
+  vars:
+    automation_id: "{{ (accounts2.json.results | selectattr('username', 'equalto', platform.admin_user) | first)._id }}"
+  changed_when: false
+
+# memberOf is written last: an assignedRoles update clears it (measured on 6.5.2, the reason the bootstrap
+# user can never hold a membership - it is rewritten on every login).
+- name: The automation account is a member of admin_group
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/authorization/accounts/{{ automation_id }}"
+    method: PATCH
+    headers: {Cookie: "{{ login.cookies_string }}"}
+    body_format: json
+    body:
+      updates:
+        memberOf: [{aaaManaged: false, groupId: "{{ admin_group_id }}"}]
+    status_code: 200
+  vars:
+    automation_id: "{{ (accounts2.json.results | selectattr('username', 'equalto', platform.admin_user) | first)._id }}"
+  changed_when: false
+
+- name: The automation account logs in and its membership survived
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/login"
+    method: POST
+    body_format: json
+    body:
+      username: "{{ platform.admin_user }}"
+      password: "{{ lookup('ansible.builtin.env', 'ITENTIAL_ADMIN_PASSWORD') }}"
+    status_code: 200
+  register: automation_login
+  no_log: true
+
+- name: Membership and roles are visible on the account
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/authorization/accounts/{{ automation_id }}"
+    headers: {Cookie: "{{ automation_login.cookies_string }}"}
+  register: automation_account
+  vars:
+    automation_id: "{{ (accounts2.json.results | selectattr('username', 'equalto', platform.admin_user) | first)._id }}"
+  failed_when: >-
+    (automation_account.json.data.memberOf | default([]) | map(attribute='groupId') | list) != [admin_group_id]
+    or (automation_account.json.data.assignedRoles | default([]) | length) != (role_ids | length)
+
+- name: The automation account
+  ansible.builtin.debug:
+    msg: >-
+      {{ platform.admin_user }}: {{ automation_account.json.data.assignedRoles | length }} roles,
+      a member of admin_group; {{ platform.bootstrap_user }} stays break-glass

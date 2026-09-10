@@ -60,10 +60,17 @@ platform:
   https_port: 3443
   gateway_manager_port: 8080 # Gateway 5 on iag-01 dials this through the load balancer (layer 4)
   nodes: [iap-01, iap-02]
-  # Until the identity phase federates LDAP and Keycloak, the Platform's own local account is the only AAA the
-  # production environment has; the compose file sets it explicitly (ITENTIAL_DEFAULT_USER_*) rather than
-  # leaving the image's default, and its password is ITENTIAL_ADMIN_PASSWORD from .env.
-  admin_user: admin
+  # Until the identity phase federates LDAP and Keycloak, local Platform accounts are the only AAA the
+  # production environment has. Two of them, and they are not interchangeable (measured on 6.5.2):
+  #  - bootstrap_user is the image's default user (ITENTIAL_DEFAULT_USER_* in the compose file, password
+  #    ITENTIAL_ADMIN_PASSWORD). The Platform rewrites its account document on every login, which clears the
+  #    group membership, so it can never satisfy an API that asks for "a member of a group holding role X".
+  #    It is break-glass and bootstrap only.
+  #  - admin_user is a real local account created through the authorization API, a member of admin_group and
+  #    holding every role. It carries the same name the dev-stack's LDAP administrator has, so every phase 5-7
+  #    play and verify works against production unchanged, and the identity phase can replace it in place.
+  bootstrap_user: admin
+  admin_user: admin@itential
   # the custom-services directory each node mounts; the adapters of itential/versions.yaml are installed twice
   adapters_dir: /opt/itential/volumes/platform/adapters
 loadbalancer:

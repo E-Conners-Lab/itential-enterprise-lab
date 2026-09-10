@@ -1,0 +1,18 @@
+# test-06c-netbox 20260908T160709Z
+PASS  S4e.1 every addressed interface of the 12 network devices is in NetBox with its address, VRF and 'to <peer>' description; the devices agree (wf-show-all-v1 + direct SSH)
+      12 devices, 64 intent interfaces equal in NetBox and on the devices (addresses + descriptions); direct SSH agrees on br1-wan01 and dc1-leaf01
+PASS  S4e.2 VRFs with route targets, prefixes in PROD, the 7 ASNs on their sites, BGP neighbours and RDs in each device's config context equal to the device (direct SSH), the transit virtual router as an FHRP group
+      VRFs MGMT/WAN/PROD (PROD RT 50001:50001), 7 ASNs on their sites, FHRP group ['dc1-vlan100-varp'] with its members and address, 38 BGP neighbours in the device contexts equal the devices' own tables over direct SSH (12 devices)
+PASS  S4e.3 one location and one rack per site, every device racked at its derived position (role order top down, unique U)
+      4 locations and racks, 21 devices at their positions (wan-rack01: 1U, dc1-rack01: 10U, br1-rack01: 5U, br2-rack01: 5U)
+FAIL  S4e.4 provider circuits with terminations at their sites; the cable trace from each edge port crosses the circuit to the isp-core01 port; no direct provider cable remains
+      ISP-DC1-01: the trace from dc1-wan01 GigabitEthernet2 crosses no circuit termination
+      ISP-DC1-01: the trace ends at None, expected ('isp-core01', 'GigabitEthernet2')
+      ISP-DC1-02: the trace from dc1-wan02 GigabitEthernet2 crosses no circuit termination
+      ISP-DC1-02: the trace ends at None, expected ('isp-core01', 'GigabitEthernet3')
+      ISP-BR1-01: the trace from br1-wan01 GigabitEthernet2 crosses no circuit termination
+      ISP-BR1-01: the trace ends at None, expected ('isp-core01', 'GigabitEthernet4')
+      ISP-BR2-01: the trace from br2-wan01 GigabitEthernet2 crosses no circuit termination
+      ISP-BR2-01: the trace ends at None, expected ('isp-core01', 'GigabitEthernet5')
+
+passed=3 failed=1

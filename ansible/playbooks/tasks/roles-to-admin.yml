@@ -54,27 +54,20 @@
     headers: {Cookie: "{{ login.cookies_string }}"}
   register: groups2
 
-# two PATCHes: a combined memberOf + assignedRoles update leaves memberOf untouched (measured, Phase 5)
-- name: The local administrator holds every role directly
+- name: The admin_group id
+  ansible.builtin.set_fact:
+    admin_group_id: "{{ (groups2.json.results | selectattr('name', 'equalto', 'admin_group') | first)._id }}"
+
+# The default user holds its roles directly, which is enough to bootstrap. It is deliberately NOT made a
+# member of admin_group: the Platform rewrites its account document on every login and the membership is gone
+# again by the next request (measured on 6.5.2). tasks/local-admin-account.yml creates the real account that
+# carries the membership; anything that needs "a member of a group with role X" logs in as that one.
+- name: The default user holds every role directly
   ansible.builtin.uri:
     url: "{{ platform_local }}/authorization/accounts/000000000000000000000000"
     method: PATCH
     headers: {Cookie: "{{ login.cookies_string }}"}
     body_format: json
     body: {updates: {assignedRoles: "{{ role_ids }}"}}
-    status_code: 200
-  changed_when: false
-
-- name: The local administrator is a member of admin_group
-  ansible.builtin.uri:
-    url: "{{ platform_local }}/authorization/accounts/000000000000000000000000"
-    method: PATCH
-    headers: {Cookie: "{{ login.cookies_string }}"}
-    body_format: json
-    body:
-      updates:
-        memberOf:
-          - aaaManaged: false
-            groupId: "{{ (groups2.json.results | selectattr('name', 'equalto', 'admin_group') | first)._id }}"
     status_code: 200
   changed_when: false

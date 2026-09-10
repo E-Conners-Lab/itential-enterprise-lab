@@ -18,7 +18,7 @@
     - ../../itential/ha2/versions.yaml
   vars:
     ansible_ssh_common_args: -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/dev/null
-    platform_local: "http://127.0.0.1:{{ platform.http_port }}"
+    platform_local: "{{ platform_api }}"
     admin_user: "{{ platform_admin_user | default(platform.admin_user) }}"
     admin_pw: "{{ lookup('ansible.builtin.env', 'ITENTIAL_ADMIN_PASSWORD') }}"
     role_resync_tasks: roles-to-admin.yml
@@ -84,7 +84,7 @@
     - ../../itential/ha2/versions.yaml
   vars:
     ansible_ssh_common_args: -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/dev/null
-    platform_local: "http://127.0.0.1:{{ platform.http_port }}"
+    platform_local: "{{ platform_api }}"
     admin_user: "{{ platform_admin_user | default(platform.admin_user) }}"
     admin_pw: "{{ lookup('ansible.builtin.env', 'ITENTIAL_ADMIN_PASSWORD') }}"
     tool_registry_base: tools # app-tool_registry mounts under its pronghorn title

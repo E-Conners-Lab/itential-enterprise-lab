@@ -1,0 +1,14 @@
+# test-06c-netbox 20260908T145221Z
+SKIP  S4e.1 every addressed interface of the 12 network devices is in NetBox with its address, VRF and 'to <peer>' description; the devices agree (wf-show-all-v1 + direct SSH)
+SKIP  S4e.2 VRFs with route targets, prefixes in PROD, the 7 ASNs on their sites, BGP neighbours and RDs in each device's config context equal to the device (direct SSH), the transit virtual router as an FHRP group
+FAIL  S4e.3 one location and one rack per site, every device racked at its derived position (role order top down, unique U)
+      location WAN core room missing at wan
+      rack wan-rack01 missing
+      location DC1 hall A missing at dc1
+      rack dc1-rack01 missing
+      location Branch 1 comms room missing at br1
+      rack br1-rack01 missing
+      location Branch 2 comms room missing at br2
+      rack br2-rack01 missing
+
+passed=0 failed=1

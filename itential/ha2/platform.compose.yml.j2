@@ -27,7 +27,7 @@ services:
       # the local administrator, declared rather than left to the image's default; the identity phase adds
       # LDAP and Keycloak in front of it (ADR 0050)
       ITENTIAL_DEFAULT_USER_ENABLED: "true"
-      ITENTIAL_DEFAULT_USER_USERNAME: "{{ platform.admin_user }}"
+      ITENTIAL_DEFAULT_USER_USERNAME: "{{ platform.bootstrap_user }}"
       ITENTIAL_DEFAULT_USER_PASSWORD: ${ITENTIAL_ADMIN_PASSWORD:?}
 
       # mongodb: the replica set, authenticated and encrypted (the guide's production rule)

@@ -203,7 +203,14 @@ def test_the_production_overlay_is_held_to_the_oracle() -> None:
     assert PROD_VARS.exists(), "ansible/playbooks/vars/itential-prod.yml missing"
     prod = yaml.safe_load(PROD_VARS.read_text())
     assert prod["platform_target"] == "ha2-platform[0]", "the replay runs on the first Platform node"
+    first = HA2["platform"]["nodes"][0]
+    assert prod["platform_api"] == f"http://{vms()[first]['ip']}:{HA2['platform']['http_port']}", "the first node's API"
     assert prod["platform_admin_user"] == HA2["platform"]["admin_user"], "the local administrator of the oracle"
+    assert HA2["platform"]["bootstrap_user"] != HA2["platform"]["admin_user"], "the bootstrap user is not the automation account"
+    tasks_text = (TASKS / "local-admin-account.yml").read_text()
+    assert "memberOf" in tasks_text and "admin_group_id" in tasks_text, "the automation account carries the membership"
+    assert "000000000000000000000000" not in tasks_text, "the automation account is not the default user"
+    assert "memberOf:" not in (TASKS / "roles-to-admin.yml").read_text(), "the default user cannot hold a membership"
     tools = vms()["tools-01"]
     assert prod["ollama_base_url"] == f"http://{tools['ip']}:{HA2['tools']['ollama_port']}", "Ollama runs on tools-01"
     assert prod["role_resync_tasks"] == "roles-to-admin.yml", "production re-syncs roles through the authorization API"

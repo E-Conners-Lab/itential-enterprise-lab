@@ -54,7 +54,7 @@
          | default('admin@itential', true)) }}
     profiles: "{{ stack.profiles | map('regex_replace', '^', '--profile ') | join(' ') }}"
     compose: "docker compose -f docker-compose.yml -f compose.override.yml {{ profiles }}"
-    platform_local: http://127.0.0.1:3000
+    platform_local: "{{ platform_api | default('http://127.0.0.1:3000') }}"
     netbox_oob_host: 10.100.0.64
     netbox_port: 8080
     # NetBox platform slug -> netmiko device_type for Gateway 5's device services

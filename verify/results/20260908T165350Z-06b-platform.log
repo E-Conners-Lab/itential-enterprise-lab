@@ -1,0 +1,44 @@
+# test-06b-platform 20260908T165350Z
+PASS  S4d.1 Golden Config: plan clean on 12 devices; hostname drift on br1-wan01 and br1-sw01 flagged with no false positive; restored through wf-config-push-v1
+      schedule: nightly compliance lab-baseline every 1 day first run 1788836400000
+      run 1: 12 reports, 0 errors, 0 warnings (passes: 435)
+      pushed to br1-wan01 (job ab2d336a8eea4cec8254a952)
+      pushed to br1-sw01 (job e78ba07b1d5c41fc972b7a90)
+      run 2: exactly br1-wan01 and br1-sw01 flagged:
+      br1-wan01 1 0 39 | hostname br1-wan01
+      br1-sw01 1 0 23 | hostname br1-sw01
+      pushed to br1-wan01 (job 5b10a3b16f2b47f2a99bdd77)
+      pushed to br1-sw01 (job a85f019067fd4beb8153f234)
+      run 3: clean again on 12 devices; hostnames restored and confirmed over direct SSH
+      run 4: wf-compliance-run-v1 (the schedule trigger's target) found plan 6a9f3a4d0e7c935f1ff4e233 and started instance 6aa03efec1debe752b919808
+PASS  S4d.2 command templates on br1-wan01 and br1-sw01 with every rule evaluated; analytic pre/post green; nightly backup schedule and a run whose backups equal the running configs
+      br1-wan01: lab-cisco-ios-checks passed, 6 rules over 3 commands
+      2 pre/post rules equal
+      br1-wan01: lab-cisco-ios-prepost pre/post equal
+      br1-sw01: lab-arista-eos-checks passed, 6 rules over 4 commands
+      2 pre/post rules equal
+      br1-sw01: lab-arista-eos-prepost pre/post equal
+      schedule: nightly backups lab every 1 day first run 1788834600000
+      backups: wf-backup-all-v1 job 35b1e860aff94828bd39da96; 12/12 devices' newest backup equals the running config over direct SSH
+FAIL  S4d.3 Lifecycle Manager branch-vlan: instances from NetBox; create -> JSON form approval (Work Center shows branch, VLAN, switch, NetBox reservation) -> instance; rejected push changes nothing; delete -> governed push; history; no-op; rejected create retired
+      actions runnable: Create -> workflow a634c4b9, Delete -> workflow bc97f6ea
+      form fields: ['branch', 'decision', 'netbox_vlan_id', 'status', 'switch', 'vid', 'vlan_name']
+      instances cover every NetBox branch VLAN: br1-approve-demo 
+      Work Center item 01a081f8-9a30-7329-97a9-80981634d59a shows {'branch': 'br2', 'vid': 11, 'vlan_name': 'lcm-20260908t165350z', 'switch': 'br2-sw01', 'netbox_vlan_id': 32, 'status': 'reserved'}
+      job e51fb4570ba646c0aa5d6ea4 error
+cleanup: execution 6aa03fa12acba57fc2a43bfa (br2-lcm-20260908t165350z) is running: rejecting any pending form and cancelling
+cleanup: removing leftover VLAN 11 lcm-20260908t165350z
+FAIL  S4d.4 Integration Models lab-netbox and lab-servicenow: instances netbox-api/servicenow-api, every operation an authorized tool; lab-netops reads br1-sw01 and INC0000060 through the integration tools (not the adapters)
+      Traceback (most recent call last):
+        File "<string>", line 3, in <module>
+          assert ops==sorted('dcim_devices_list,dcim_devices_retrieve,dcim_interfaces_list,ipam_ip_addresses_list,ipam_vlans_list,dcim_sites_list'.split(',')),ops;print('model lab-netbox:1.0.0:',len(ops),'operations')
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+      AssertionError: ['circuits_circuits_list', 'dcim_devices_list', 'dcim_devices_retrieve', 'dcim_interfaces_list', 'dcim_racks_list', 'dcim_sites_list', 'ipam_asns_list', 'ipam_ip_addresses_list', 'ipam_prefixes_list', 'ipam_vlans_list', 'ipam_vrfs_list']
+PASS  S4d.6 the three Ubuntu hosts are lab-hosts inventory nodes, reachable through Gateway 5 with their uptime (direct SSH agrees), and unknown to Configuration Manager
+      Configuration Manager sees 12 devices, no host
+      br1-host01 (10.100.0.195): reachable, up 1 day, 17 hours, 6 minutes through Gateway 5; direct SSH agrees
+      br2-host01 (10.100.0.196): reachable, up 1 day, 17 hours, 6 minutes through Gateway 5; direct SSH agrees
+      dc1-srv01 (10.100.0.192): reachable, up 1 day, 17 hours, 6 minutes through Gateway 5; direct SSH agrees
+DEFER S4d.6 firewalls: PA-VM image not staged (S3.4 deferral)
+
+passed=3 failed=2 deferred=1

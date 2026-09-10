@@ -72,6 +72,18 @@ The environments also differ in three measured ways:
    adapter-based NetBox and ServiceNow instances are replayed as they are, and the conversion to Integration
    Models (ADR 0054) happens afterwards, as that ADR already fixed.
 
+7. **Production gets a real local account, because the image's default user cannot carry a group
+   membership.** Measured on 6.5.2 while replaying: the Platform rewrites the default user's account document
+   on every login, so a `memberOf` written through the authorization API is gone by the next request, and an
+   `assignedRoles` update clears `memberOf` outright. Inventory Manager (and every API with the same check)
+   refuses such a caller - *"User must be a member of at least one of the assigned groups with roles:
+   inventory:read and inventory:update"* - even though the account holds all 175 roles directly. So the oracle
+   now names two accounts: `platform.bootstrap_user` (`admin`, the image's `ITENTIAL_DEFAULT_USER_*`, break-glass
+   and bootstrap only) and `platform.admin_user` (`admin@itential`, a real local account created through the
+   authorization API with every role and membership of admin_group). `admin@itential` is the same username the
+   dev-stack's LDAP administrator has, so every phase 5-7 play and verify works against production unchanged
+   and the identity phase can replace the account in place when LDAP arrives.
+
 ## Consequences
 
 - One definition per asset. A change to a workflow, an inventory or an agent lands in one file and reaches
@@ -83,5 +95,8 @@ The environments also differ in three measured ways:
 - Gateway 5 in production runs on `iag-01` with cluster id `lab`, the same id the dev-stack uses, so the
   inventories and the Device Broker replay with no edit; the two clusters never talk to each other because
   each registers with its own Platform.
+- Two accounts on production until the identity phase: the break-glass `admin` and the automation
+  `admin@itential`, both on `ITENTIAL_ADMIN_PASSWORD`. That is one password for two accounts, an accepted
+  interim (the same exception the device credentials carry until Vault); the identity phase removes it.
 - The Ollama profile differs per environment, so `verify/test-06` S4c's provider-profile check passes on
   production only once `tools-01`'s Ollama has the pinned models pulled; that pull is part of the replay.
