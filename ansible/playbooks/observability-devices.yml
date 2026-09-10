@@ -93,9 +93,33 @@
           {{ out }}
       no_log: true
 
+    # A card may still be waiting from an earlier run (the play waits at most wait_minutes): never start a second
+    # job for a device whose phase-7 push is still running.
+    - name: Push jobs still running for these devices
+      ansible.builtin.uri:
+        url: "https://{{ platform_host }}/operations-manager/jobs?limit=100&status=running"
+        headers: {Cookie: "{{ cookie }}"}
+        ca_path: "{{ ca_file }}"
+      register: running_jobs
+
+    - name: Devices with a push already waiting for approval
+      ansible.builtin.set_fact:
+        already_waiting: >-
+          {{ running_jobs.json.data | selectattr('name', 'equalto', push_workflow)
+             | map(attribute='description') | select('defined') | select('match', '^phase 7 observability lines for ')
+             | map('regex_replace', '^phase 7 observability lines for (\S+).*$', '\1') | list }}
+
+    - name: Those leave the pending list
+      ansible.builtin.set_fact:
+        pending: "{{ pending | rejectattr('name', 'in', already_waiting) | list }}"
+
+    - name: Devices whose push card is still waiting in Work Center
+      ansible.builtin.debug:
+        msg: "{{ already_waiting }}"
+
     - name: Devices already carrying the observability lines
       ansible.builtin.debug:
-        msg: "{{ device_names | difference(pending | map(attribute='name') | list) }}"
+        msg: "{{ device_names | difference(pending | map(attribute='name') | list) | difference(already_waiting) }}"
 
     - name: Lines still missing per device
       ansible.builtin.debug:
