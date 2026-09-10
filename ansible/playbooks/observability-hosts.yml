@@ -1,0 +1,109 @@
+---
+# Phase 7 (PID S7.1, ADR 0051 decision 6): Zabbix agent 2 (passive, polled from the server pods) and an rsyslog
+# forward (RFC 5424 over TCP to the Alloy receiver on the loki VIP) on every Ubuntu machine. Inventory: the
+# NetBox VMs and the Ubuntu EVE-NG endpoints (-i inventory/netbox.yml) plus the two pre-existing machines the
+# phase-2 inventory knows (-i inventory/phase2.yml: eve-ng on Ubuntu 22.04, netbox-vm). Package versions and
+# the release-package checksums come from k8s/observability/versions.yaml. Idempotent.
+- name: Zabbix agent 2 and syslog forwarding on every Ubuntu machine
+  hosts: ubuntu-24-04:ubuntu-22-04:eve:netbox
+  become: true
+  gather_facts: false # facts are gathered below, after the login user is settled
+  vars_files:
+    - ../../k8s/observability/versions.yaml
+  vars:
+    # EVE-NG guests are re-cloned from the golden image (fresh host keys); lab-only relaxation, as lab-endpoints.yml
+    ansible_ssh_common_args: -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/dev/null
+    zabbix_hostname: >-
+      {{ 'eve' if inventory_hostname == 'eve-ng' else ('netbox' if inventory_hostname == 'netbox-vm' else inventory_hostname) }}
+    agent_version: "1:{{ components.zabbix.agent2_version }}+ubuntu{{ ansible_distribution_version }}" # Zabbix debs carry epoch 1
+    release_deb: "zabbix-release_latest_7.0+ubuntu{{ ansible_distribution_version }}_all.deb"
+    release_sha256: "{{ components.zabbix.release_deb_sha256[ansible_distribution_version] }}"
+    oob_prefix: 10.100.0.0/24
+  pre_tasks:
+    # The EVE-NG endpoints (NetBox devices with role server/client) carry the golden image's automation user;
+    # the Proxmox VMs log in as ubuntu (nb_inventory compose) and the phase-2 hosts as their inventory says.
+    - name: Automation user on the EVE-NG endpoints
+      ansible.builtin.set_fact:
+        ansible_user: automation
+      when: "'server' in group_names or 'client' in group_names"
+
+    - name: Facts (distribution version selects the packages)
+      ansible.builtin.setup:
+        gather_subset: [min]
+
+    - name: Ubuntu 24.04 or 22.04 only (the release package and agent build exist for these)
+      ansible.builtin.assert:
+        that: ansible_distribution == 'Ubuntu' and ansible_distribution_version in components.zabbix.release_deb_sha256
+        fail_msg: "{{ inventory_hostname }}: {{ ansible_distribution }} {{ ansible_distribution_version }} has no pinned Zabbix packages"
+        quiet: true
+  tasks:
+    - name: Zabbix release package (checksum pinned in versions.yaml)
+      ansible.builtin.get_url:
+        url: "{{ components.zabbix.apt_repo }}/pool/main/z/zabbix-release/{{ release_deb }}"
+        dest: "/var/cache/apt/{{ release_deb }}"
+        checksum: "sha256:{{ release_sha256 }}"
+        mode: "0644"
+      register: release_pkg
+
+    - name: Zabbix apt repository
+      ansible.builtin.apt:
+        deb: "/var/cache/apt/{{ release_deb }}"
+      when: release_pkg.changed # noqa: no-handler
+
+    - name: Zabbix agent 2 (pinned) and rsyslog
+      ansible.builtin.apt:
+        name:
+          - "zabbix-agent2={{ agent_version }}"
+          - rsyslog
+        update_cache: true # always: the release package above adds the repository without refreshing the index
+        allow_downgrade: true
+
+    - name: Hold the agent at the pinned version
+      ansible.builtin.dpkg_selections:
+        name: zabbix-agent2
+        selection: hold
+
+    - name: Agent configuration (passive checks from the OOB network, hostname as NetBox names the machine)
+      ansible.builtin.copy:
+        dest: /etc/zabbix/zabbix_agent2.d/lab.conf
+        mode: "0644"
+        content: |
+          # ansible/playbooks/observability-hosts.yml (ADR 0051). The Zabbix server pods egress from the k3s nodes.
+          Server={{ oob_prefix }}
+          ServerActive=
+          Hostname={{ zabbix_hostname }}
+          Timeout=10
+      notify: Restart zabbix-agent2
+
+    - name: Agent enabled and running
+      ansible.builtin.service:
+        name: zabbix-agent2
+        state: started
+        enabled: true
+
+    - name: Rsyslog forward to the Alloy receiver (RFC 5424 over TCP)
+      ansible.builtin.copy:
+        dest: /etc/rsyslog.d/60-loki.conf
+        mode: "0644"
+        content: |
+          # ansible/playbooks/observability-hosts.yml (ADR 0051): every message to the lab's syslog receiver.
+          action(type="omfwd" target="{{ vips.loki }}" port="514" protocol="tcp"
+                 template="RSYSLOG_SyslogProtocol23Format"
+                 action.resumeRetryCount="-1" queue.type="LinkedList" queue.size="10000")
+      notify: Restart rsyslog
+
+    - name: Rsyslog enabled and running
+      ansible.builtin.service:
+        name: rsyslog
+        state: started
+        enabled: true
+  handlers:
+    - name: Restart zabbix-agent2
+      ansible.builtin.service:
+        name: zabbix-agent2
+        state: restarted
+
+    - name: Restart rsyslog
+      ansible.builtin.service:
+        name: rsyslog
+        state: restarted

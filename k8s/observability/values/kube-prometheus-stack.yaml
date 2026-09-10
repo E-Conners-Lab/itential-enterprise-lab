@@ -1,0 +1,160 @@
+# kube-prometheus-stack (ADR 0024/0051), release name kps in namespace observability. Everything the lab adds
+# (ServiceMonitors, Probes, ScrapeConfigs, PrometheusRules) is selected, so observability.yaml's job list is
+# what Prometheus scrapes. k3s binds scheduler/controller-manager/etcd to localhost and Cilium replaces
+# kube-proxy: those monitors are off so no declared target can be down. UIs sit behind Traefik.
+fullnameOverride: kps
+defaultRules:
+  create: true
+  rules:
+    etcd: false
+    kubeControllerManager: false
+    kubeProxy: false
+    kubeSchedulerAlerting: false
+    kubeSchedulerRecording: false
+    windows: false
+kubeControllerManager:
+  enabled: false
+kubeScheduler:
+  enabled: false
+kubeProxy:
+  enabled: false
+kubeEtcd:
+  enabled: false
+
+alertmanager:
+  enabled: true
+  config:
+    global:
+      resolve_timeout: 2m
+    route:
+      receiver: lab-null
+      group_by: [alertname, device, instance]
+      group_wait: 15s
+      group_interval: 1m
+      repeat_interval: 12h
+      routes:
+        - receiver: lab-null
+          matchers: ["alertname = Watchdog"]
+    receivers:
+      - name: lab-null # no notification channel in S7; Grafana and the API show the alerts
+  alertmanagerSpec:
+    externalUrl: https://alertmanager.lab.internal
+    retention: 120h
+    resources:
+      requests: {cpu: 20m, memory: 64Mi}
+      limits: {memory: 256Mi}
+    storage:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: longhorn
+          accessModes: [ReadWriteOnce]
+          resources: {requests: {storage: 1Gi}}
+  ingress:
+    enabled: false
+
+grafana:
+  enabled: true
+  defaultDashboardsEnabled: true
+  defaultDashboardsTimezone: utc
+  admin:
+    existingSecret: grafana-admin
+    userKey: admin-user
+    passwordKey: admin-password
+  envFromSecret: grafana-env # ZABBIX_GRAFANA_PASSWORD, expanded by Grafana's provisioning
+  persistence:
+    enabled: true
+    type: pvc
+    storageClassName: longhorn
+    size: 1Gi
+  resources:
+    requests: {cpu: 50m, memory: 192Mi}
+    limits: {memory: 512Mi}
+  plugins:
+    - alexanderzobnin-zabbix-app@6.6.0 # overridden by the play from versions.yaml grafana_zabbix_plugin (id@version)
+  grafana.ini:
+    server:
+      root_url: https://grafana.lab.internal/
+    security:
+      cookie_secure: true
+    analytics:
+      reporting_enabled: false
+      check_for_updates: false
+    plugins:
+      # the Zabbix app is a signed plugin; nothing unsigned is loaded
+      allow_loading_unsigned_plugins: ""
+  sidecar:
+    dashboards:
+      enabled: true
+      label: grafana_dashboard
+      searchNamespace: ALL
+      folderAnnotation: grafana_folder
+      provider:
+        foldersFromFilesStructure: true
+    datasources:
+      enabled: true
+      defaultDatasourceEnabled: true
+      alertmanager:
+        enabled: true
+  # Loki and Zabbix datasources over the in-cluster HTTP services; the Zabbix password comes from grafana-env
+  additionalDataSources:
+    - name: Loki
+      type: loki
+      uid: loki
+      access: proxy
+      url: http://loki:3100
+      editable: false
+    - name: Zabbix
+      type: alexanderzobnin-zabbix-datasource
+      uid: zabbix
+      access: proxy
+      url: http://zabbix-zabbix-web/api_jsonrpc.php
+      editable: false
+      jsonData:
+        username: grafana
+        trends: false
+        cacheTTL: 1m
+        timeout: 30
+      secureJsonData:
+        password: $ZABBIX_GRAFANA_PASSWORD # from the Secret grafana-env (envFromSecret above)
+  service:
+    type: ClusterIP
+  ingress:
+    enabled: false
+
+prometheus:
+  enabled: true
+  ingress:
+    enabled: false
+  prometheusSpec:
+    externalUrl: https://prometheus.lab.internal
+    retention: 10d
+    retentionSize: 8GB
+    scrapeInterval: 30s
+    evaluationInterval: 30s
+    ruleSelectorNilUsesHelmValues: false
+    serviceMonitorSelectorNilUsesHelmValues: false
+    podMonitorSelectorNilUsesHelmValues: false
+    probeSelectorNilUsesHelmValues: false
+    scrapeConfigSelectorNilUsesHelmValues: false
+    resources:
+      requests: {cpu: 200m, memory: 768Mi}
+      limits: {memory: 2Gi}
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: longhorn
+          accessModes: [ReadWriteOnce]
+          resources: {requests: {storage: 10Gi}}
+
+prometheusOperator:
+  resources:
+    requests: {cpu: 50m, memory: 128Mi}
+    limits: {memory: 512Mi}
+kube-state-metrics:
+  resources:
+    requests: {cpu: 20m, memory: 64Mi}
+    limits: {memory: 256Mi}
+prometheus-node-exporter:
+  resources:
+    requests: {cpu: 20m, memory: 32Mi}
+    limits: {memory: 128Mi}

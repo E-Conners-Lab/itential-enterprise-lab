@@ -1,0 +1,41 @@
+# prometheus-community/prometheus-blackbox-exporter (ADR 0051): ICMP to every router and switch (the S7.6
+# alert) and HTTP to every UI through the lab CA. Probes are rendered by the play from NetBox and
+# observability.yaml. ICMP as a non-root container: the safe sysctl net.ipv4.ping_group_range.
+podSecurityContext:
+  sysctls:
+    - {name: net.ipv4.ping_group_range, value: "0 65535"}
+resources:
+  requests: {cpu: 20m, memory: 32Mi}
+  limits: {memory: 128Mi}
+extraConfigmapMounts:
+  - name: lab-ca
+    mountPath: /etc/blackbox/lab-ca
+    configMap: lab-ca
+    readOnly: true
+serviceMonitor:
+  enabled: false # Probe objects from the play; the exporter's own ServiceMonitor is in the same template
+config:
+  modules:
+    icmp:
+      prober: icmp
+      timeout: 5s
+      icmp:
+        preferred_ip_protocol: ip4
+    http_lab:
+      prober: http
+      timeout: 10s
+      http:
+        valid_status_codes: [200]
+        preferred_ip_protocol: ip4
+        follow_redirects: false
+        tls_config:
+          ca_file: /etc/blackbox/lab-ca/ca.crt
+    http_insecure: # EVE-NG serves its own self-signed certificate
+      prober: http
+      timeout: 10s
+      http:
+        valid_status_codes: [200]
+        preferred_ip_protocol: ip4
+        follow_redirects: false
+        tls_config:
+          insecure_skip_verify: true

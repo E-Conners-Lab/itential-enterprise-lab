@@ -1,0 +1,83 @@
+# The Platform metrics exporter (ADR 0051 decision 10): observability/itential-exporter/exporter.py in a
+# ConfigMap, run by the pinned Python image (no image build), credentials from the Secret itential-exporter,
+# the Platform reached by name through the lab CA.
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: itential-exporter
+  namespace: {{ obs_namespace }}
+data:
+  exporter.py: |
+{{ exporter_source | indent(4, true) }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: itential-exporter
+  namespace: {{ obs_namespace }}
+  labels:
+    app.kubernetes.io/name: itential-exporter
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: itential-exporter
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: itential-exporter
+      annotations:
+        checksum/script: "{{ exporter_source | hash('sha256') }}"
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: exporter
+          image: {{ components.itential_exporter.image }}:{{ components.itential_exporter.image_tag }}@{{ components.itential_exporter.digest }}
+          command: ["python3", "-u", "/app/exporter.py"]
+          env:
+            - {name: ITENTIAL_URL, value: "https://{{ itential_host }}"}
+            - {name: ITENTIAL_CA, value: /etc/lab-ca/ca.crt}
+            - {name: PORT, value: "9120"}
+            - {name: INTERVAL, value: "60"}
+            - {name: PYTHONDONTWRITEBYTECODE, value: "1"}
+          envFrom:
+            - secretRef: {name: itential-exporter}
+          ports:
+            - {name: metrics, containerPort: 9120}
+          volumeMounts:
+            - {name: script, mountPath: /app, readOnly: true}
+            - {name: lab-ca, mountPath: /etc/lab-ca, readOnly: true}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          resources:
+            requests: {cpu: 20m, memory: 48Mi}
+            limits: {memory: 128Mi}
+          readinessProbe:
+            httpGet: {path: /-/healthy, port: metrics}
+            initialDelaySeconds: 5
+            periodSeconds: 15
+      volumes:
+        - name: script
+          configMap: {name: itential-exporter}
+        - name: lab-ca
+          configMap: {name: lab-ca}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: itential-exporter
+  namespace: {{ obs_namespace }}
+  labels:
+    app.kubernetes.io/name: itential-exporter
+spec:
+  selector:
+    app.kubernetes.io/name: itential-exporter
+  ports:
+    - {name: metrics, port: 9120, targetPort: metrics}

@@ -16,7 +16,7 @@ PY=.venv/bin/python
 CA=docs/lab-root-ca.crt
 V=k8s/observability/versions.yaml
 OBS=observability/observability.yaml
-NS=$(${PY} -c "import yaml;print(yaml.safe_load(open('$V'))['namespace'])")
+NS=$(${PY} -c "import yaml;print(yaml.safe_load(open('$V'))['obs_namespace'])")
 ZBX=https://zabbix.lab.internal/api_jsonrpc.php
 PROM=https://prometheus.lab.internal
 AM=https://alertmanager.lab.internal
@@ -261,6 +261,9 @@ c7() {
   web "${PROM}/api/v1/query" --data-urlencode 'query=itential_workflow_jobs_complete_total' > /tmp/verify07.pj.$$ || return 1
   web "${PROM}/api/v1/query" --data-urlencode 'query=min(itential_application_running)' > /tmp/verify07.pa.$$
   web "${PROM}/api/v1/query" --data-urlencode 'query=min(itential_adapter_online)' > /tmp/verify07.pd.$$
+  # the Platform's own /prometheus_metrics route (docs.itential.com) scraped as job itential-platform
+  local native; native=$(web "${PROM}/api/v1/query" --data-urlencode 'query=iap_active_jobs{job="itential-platform"}' | ${PY} -c 'import sys,json;r=json.load(sys.stdin)["data"]["result"];print(len(r))')
+  [ "$native" = 1 ] || { echo "iap_active_jobs from the Platform's /prometheus_metrics route is not in Prometheus"; return 1; }
   ${PY} - /tmp/verify07.jm.$$ /tmp/verify07.pj.$$ /tmp/verify07.apps.$$ /tmp/verify07.ad.$$ /tmp/verify07.pa.$$ /tmp/verify07.pd.$$ <<'PY' || return 1
 import json, sys
 api = {r["workflow"]["name"]: r.get("jobsComplete", 0) for r in json.load(open(sys.argv[1]))["results"]}
@@ -288,9 +291,8 @@ if [ "${VERIFY_DRILLS:-0}" = 1 ]; then
     local t0 zp am i
     ${PY} - <<'PY' || return 1
 import sys; sys.path.insert(0, ".")
-from eve.build import Eve, load_topology, eve_from_env
-eve = eve_from_env(); topo = load_topology()
-nid = eve.node_id_by_name("br1-wan01"); eve.stop(nid); print(f"stopped br1-wan01 (node {nid})")
+from eve.build import eve_from_env
+eve = eve_from_env(); nid = eve.nodes()["br1-wan01"]["id"]; eve.stop(nid); print(f"stopped br1-wan01 (node {nid})")
 PY
     t0=$(date +%s); zp=""; am=""
     for i in $(seq 1 36); do
@@ -303,7 +305,7 @@ PY
     ${PY} - <<'PY'
 import sys; sys.path.insert(0, ".")
 from eve.build import eve_from_env
-eve = eve_from_env(); eve.start(eve.node_id_by_name("br1-wan01")); print("started br1-wan01")
+eve = eve_from_env(); eve.start(eve.nodes()["br1-wan01"]["id"]); print("started br1-wan01")
 PY
     [ -n "$zp" ] && [ -n "$am" ] && [ "$dt" -le 180 ] || { echo "after ${dt}s: zabbix='${zp}' alertmanager='${am}' (need both within 180 s)"; return 1; }
     echo "both raised after ${dt}s: Zabbix '${zp}', Alertmanager '${am}'"

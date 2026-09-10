@@ -1,0 +1,31 @@
+# gNMIc configuration (ADR 0051 decision 8), rendered by ansible/playbooks/observability.yml: the targets are the
+# active vEOS devices in NetBox, the subscriptions come from observability/observability.yaml. Credentials
+# arrive as GNMIC_USERNAME / GNMIC_PASSWORD (the automation account) from the Secret gnmic.
+insecure: true
+port: {{ gnmic.port }}
+encoding: json_ietf
+log: false
+targets:
+{% for d in eos_devices %}
+  {{ d.name }}:
+    address: {{ d.ip }}:{{ gnmic.port }}
+{% endfor %}
+subscriptions:
+{% for name, s in gnmic.subscriptions.items() %}
+  {{ name }}:
+    paths:
+      - {{ s.path }}
+    mode: stream
+    stream-mode: sample
+    sample-interval: {{ s.sample_interval }}
+{% endfor %}
+outputs:
+  prom:
+    type: prometheus
+    listen: ":9273"
+    path: /metrics
+    metric-prefix: gnmic
+    append-subscription-name: true
+    strings-as-labels: true
+    export-timestamps: false
+    expiration: 2m

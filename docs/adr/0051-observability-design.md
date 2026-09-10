@@ -16,11 +16,18 @@ the lab CA, CloudNativePG, Traefik on `.32` with the wildcard `*.lab.internal` c
   XE cannot be built on this image. vEOS 4.33.1.1F has `management api gnmi`.
 - The Windows 11 clients (`br1-pc01`, `br2-pc01`) drop ICMP (100 % loss from the workstation): the Windows
   firewall, and ADR 0050 says nothing manages them.
-- The Platform has no Prometheus endpoint (`/prometheus`, `/metrics` are 404); its metrics live behind the
-  session-authenticated API: `GET /workflow_engine/jobs/metrics` (`results[].workflow.name`, `jobsComplete`,
-  `totalRunTime`, `slaTargetsMissed`, paged with `skip`/`limit`/`total`), `GET /workflow_engine/tasks/metrics`
-  (`results[].app`, `name`, `metrics[].totalSuccesses`, `totalErrors`, `totalSuccessRunTime`), and
-  `/health/applications`, `/health/adapters` (`results[].id`, `state`, `connection.state`).
+- The Platform exposes its own Prometheus route, `GET /prometheus_metrics` (documented at
+  [docs.itential.com, "Prometheus metrics and configuration"](https://docs.itential.com/itential-platform/monitor/prometheus-metrics)):
+  nine `iap_*` families (sessions, API calls, active jobs, heap, CPU), served without a session on 6.5.2
+  (measured: 200 unauthenticated; the doc's basic-auth and client-certificate options are properties the lab
+  does not set). The job and task metrics are **not** in that route; they live behind the session-authenticated
+  API: `GET /workflow_engine/jobs/metrics` (`results[].workflow.name`, `jobsComplete`, `totalRunTime`,
+  `slaTargetsMissed`, paged with `skip`/`limit`/`total`; the concepts are documented under
+  [Operations Manager, "Jobs and metrics"](https://docs.itential.com/itential-platform/operations-manager/jobs-and-job-metrics)),
+  `GET /workflow_engine/tasks/metrics` (`results[].app`, `name`, `metrics[].totalSuccesses`, `totalErrors`,
+  `totalSuccessRunTime`), and `/health/applications`, `/health/adapters` (`results[].id`, `state`,
+  `connection.state`; the health routes are the documented monitoring routes: an application whose `state` is not
+  `RUNNING` is unhealthy).
 - `GET /configuration_manager/devices/<name>/configuration` returns the live running config (`config`), so a
   play can tell which device already carries the observability lines without a workflow job.
 - The Zabbix community chart 7.1.0 ships appVersion 7.0.23; the 7.0.30 images of ADR 0024 exist on Docker Hub
@@ -117,8 +124,10 @@ the lab CA, CloudNativePG, Traefik on `.32` with the wildcard `*.lab.internal` c
    localhost (scheduler, controller manager, etcd) and kube-proxy (replaced by Cilium) are disabled in the chart,
    so nothing is declared that cannot be up. A `PrometheusRule` carries the lab alerts (`LabDeviceDown` on the
    blackbox ICMP probe after 1 minute, `LabTargetDown`, `LabUiDown`, `LabBgpSessionDown` on the gNMIc state).
-10. **The Platform exporter** (`observability/itential-exporter/exporter.py`, stdlib only, served by
-    `http.server`) logs in with the admin account (the Accounts API cannot create a local read-only user, memory
+10. **The Platform's own `/prometheus_metrics` route is scraped as job `itential-platform`** (a `ScrapeConfig`
+    over HTTPS with the lab CA, per the documented scrape example), and **the Platform exporter**
+    (`observability/itential-exporter/exporter.py`, stdlib only, served by `http.server`) adds what the native
+    route lacks: it logs in with the admin account (the Accounts API cannot create a local read-only user, memory
     2026-09-07; accepted exception until the identity phase) and exposes gauges/counters:
     `itential_workflow_jobs_complete_total{workflow}`, `itential_workflow_run_time_ms_total{workflow}`,
     `itential_workflow_sla_missed_total{workflow}`, `itential_task_successes_total{app,task}`,

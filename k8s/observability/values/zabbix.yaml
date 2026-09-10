@@ -1,0 +1,69 @@
+# zabbix-community/zabbix (ADR 0024/0051): server + web on the 7.0.30 images, database on the CloudNativePG
+# cluster zabbix-db (secret zabbix-db-app), server trapper port on the zabbix VIP (shared with Traefik),
+# web UI behind Traefik (k8s/observability/manifests). The image tag is set by the play from versions.yaml.
+postgresql:
+  enabled: false
+postgresAccess:
+  existingSecretName: zabbix-db-app # CloudNativePG application secret of cluster zabbix-db
+  secretHostKey: host
+  secretPortKey: port
+  secretUserKey: username
+  secretPasswordKey: password
+  secretDBKey: dbname
+zabbixServer:
+  replicaCount: 1
+  podAntiAffinity: false
+  haNodesAutoClean:
+    enabled: false # HA is off; the cleaner would pull an unpinned postgres:16 image
+  service:
+    type: LoadBalancer
+    port: 10051
+    annotations:
+      metallb.io/loadBalancerIPs: 10.100.0.35
+      metallb.io/allow-shared-ip: zabbix
+  resources:
+    requests: {cpu: 100m, memory: 512Mi}
+    limits: {memory: 1Gi}
+  extraEnv:
+    - {name: ZBX_CACHESIZE, value: 64M}
+    - {name: ZBX_STARTPINGERS, value: "2"}
+    - {name: ZBX_STARTPOLLERS, value: "5"}
+    - {name: ZBX_STARTHTTPPOLLERS, value: "2"}
+  # HTTP agent items verify the lab CA: the image pins SSLCALocation to /var/lib/zabbix/ssl/ssl_ca (measured:
+  # ZBX_SSLCALOCATION is ignored), so the lab-ca ConfigMap (hashed <subject_hash>.0 file) is mounted there
+  extraVolumes:
+    - name: lab-ca
+      configMap: {name: lab-ca}
+  extraVolumeMounts:
+    - {name: lab-ca, mountPath: /var/lib/zabbix/ssl/ssl_ca, readOnly: true}
+zabbixWeb:
+  replicaCount: 1
+  podAntiAffinity: false
+  service:
+    type: ClusterIP
+    port: 80
+  resources:
+    requests: {cpu: 50m, memory: 128Mi}
+    limits: {memory: 512Mi}
+  extraEnv:
+    - {name: PHP_TZ, value: UTC}
+    - {name: ZBX_SERVER_NAME, value: itential-enterprise-lab}
+zabbixWebService:
+  enabled: false # scheduled PDF reports need a Chrome pod; not part of S7
+zabbixAgent:
+  enabled: true # sidecar: the stock "Zabbix server" host stays green
+  runAsSidecar: true
+  runAsDaemonSet: false
+  hostNetwork: false
+  hostRootFsMount: false
+  resources:
+    requests: {cpu: 10m, memory: 32Mi}
+    limits: {memory: 128Mi}
+zabbixProxy:
+  enabled: false
+zabbixJavaGateway:
+  enabled: false
+zabbixBrowserMonitoring:
+  enabled: false
+ingress:
+  enabled: false # k8s/observability/manifests/ingress (Traefik, wildcard lab-CA certificate)

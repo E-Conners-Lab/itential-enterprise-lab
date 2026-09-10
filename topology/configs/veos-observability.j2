@@ -1,0 +1,22 @@
+{#- Observability lines of every vEOS (ADR 0051): syslog to the lab receiver, SNMPv3 (agent in VRF MGMT, view +
+    group) and gNMI (plaintext gRPC in VRF MGMT, the automation account, for gNMIc). Included by veos.j2 and
+    rendered alone by eve.build.render_snippet for the governed push; the SNMPv3 user carries passphrases and is
+    rendered only when the play passes them (never committed). -#}
+{%- set o = lab.observability %}
+logging vrf MGMT source-interface Management1
+logging vrf MGMT host {{ o.syslog }}
+logging trap informational
+!
+snmp-server vrf MGMT
+snmp-server view {{ o.snmp.view }} iso included
+snmp-server group {{ o.snmp.group }} v3 priv read {{ o.snmp.view }}
+snmp-server location {{ node.site }}
+snmp-server contact itential-enterprise-lab
+{%- if snmpv3 %}
+snmp-server user {{ o.snmp.user }} {{ o.snmp.group }} v3 auth sha {{ snmpv3.auth }} priv aes {{ snmpv3.priv }}
+{%- endif %}
+!
+management api gnmi
+   transport grpc default
+      vrf MGMT
+      port {{ o.gnmi.port }}

@@ -49,6 +49,8 @@ ip http authentication local
 ip name-server vrf MGMT {{ lab.dns | join(' ') }}
 ntp server vrf MGMT {{ lab.ntp }}
 !
+{% include 'c8000v-observability.j2' %}
+!
 vrf definition MGMT
  address-family ipv4
 !

@@ -44,10 +44,12 @@ prometheus:
     - {job: coredns, count: 1}
     - {job: kube-state-metrics, count: 1}
     - {job: node-exporter, count: nodes}
-    - {job: prometheus-operator, count: 1}
-    - {job: prometheus, count: 1}
-    - {job: alertmanager, count: 1}
-    - {job: grafana, count: 1}
+    # kube-prometheus-stack names its own jobs after the release (kps); Prometheus and Alertmanager expose a
+    # second endpoint each (the config reloader), measured 2026-09-10
+    - {job: kps-operator, count: 1}
+    - {job: kps-prometheus, count: 2}
+    - {job: kps-alertmanager, count: 2}
+    - {job: kps-grafana, count: 1}
     - {job: snmp-exporter, count: 1}
     - {job: snmp-ios-xe, count: ios-xe}
     - {job: snmp-eos, count: eos}
@@ -59,6 +61,7 @@ prometheus:
     - {job: alloy-logs, count: nodes}
     - {job: alloy-syslog, count: 1}
     - {job: itential-exporter, count: 1}
+    - {job: itential-platform, count: 1} # the Platform's own /prometheus_metrics route (docs.itential.com)
   alerts: # PrometheusRule lab-observability; S7.6 uses LabDeviceDown
     - {name: LabDeviceDown, for: 1m}
     - {name: LabTargetDown, for: 5m}

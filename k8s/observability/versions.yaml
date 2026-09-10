@@ -1,7 +1,7 @@
 # Single oracle for every version and address the phase-7 observability plays use (PID S7, ADR 0051).
 # Values come from docs/image-manifest.md section 4.3 (ADR 0024/0051) and topology/ipam.yaml;
 # tests/test_observability.py fails CI if this file drifts from either. Never 'latest'.
-namespace: observability
+obs_namespace: observability
 
 # MetalLB VIPs from topology/ipam.yaml (hostnames resolve through oob-gw's unbound).
 vips:
@@ -42,7 +42,7 @@ components:
     prometheus_version: v3.14.0
     alertmanager_version: v0.34.0
     grafana_version: 13.2.1
-    grafana_zabbix_plugin: alexanderzobnin-zabbix-app 6.6.0 # grafana.com 2026-07-30, Grafana >= 11.6
+    grafana_zabbix_plugin: alexanderzobnin-zabbix-app@6.6.0 # grafana.com 2026-07-30, Grafana >= 11.6 (id@version)
   snmp_exporter:
     chart_repo: https://prometheus-community.github.io/helm-charts
     chart_name: prometheus-snmp-exporter

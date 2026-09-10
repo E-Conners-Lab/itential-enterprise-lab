@@ -239,25 +239,8 @@ def load_topology() -> dict:
     return yaml.safe_load(TOPO.read_text())
 
 
-def render_config(platform: str, name: str, node: dict, topo: dict) -> str | None:
-    tpl = CONFIG_DIR / f"{platform}.j2"
-    if not tpl.exists():
-        return None
-    import secrets as _secrets
-    import subprocess
-
-    from jinja2 import Environment, FileSystemLoader, StrictUndefined
-
-    secret = os.environ.get("AUTOMATION_PASSWORD")
-    if not secret:
-        raise SystemExit(
-            "AUTOMATION_PASSWORD missing in .env (device-local automation account, moved to Vault in phase 9)"
-        )
-    env = Environment(
-        loader=FileSystemLoader(str(CONFIG_DIR)),
-        undefined=StrictUndefined,
-        keep_trailing_newline=True,
-    )
+def _template_context(name: str, node: dict, topo: dict) -> dict:
+    """Everything a startup-config template (or the observability snippet) reads: the YAML owns every address."""
     firewalls = bool(topo["lab"].get("firewalls", True))
     links = [
         lk
@@ -268,7 +251,7 @@ def render_config(platform: str, name: str, node: dict, topo: dict) -> str | Non
     sys.path.insert(0, str(ROOT))
     from topology.derive import render_context  # the YAML owns every address (ADR 0048)
 
-    return env.get_template(f"{platform}.j2").render(
+    return dict(
         name=name,
         node=node,
         lab=topo["lab"],
@@ -277,6 +260,46 @@ def render_config(platform: str, name: str, node: dict, topo: dict) -> str | Non
         nodes=topo["nodes"],
         firewalls=firewalls,
         **render_context(topo, name),
+    )
+
+
+def _jinja():
+    from jinja2 import Environment, FileSystemLoader, StrictUndefined
+
+    return Environment(
+        loader=FileSystemLoader(str(CONFIG_DIR)),
+        undefined=StrictUndefined,
+        keep_trailing_newline=True,
+    )
+
+
+def render_snippet(platform: str, name: str, topo: dict, snmpv3: dict | None = None) -> str:
+    """The observability lines of one device (ADR 0051): the same include the startup config carries, plus the
+    SNMPv3 user when passphrases are given ({'auth': ..., 'priv': ...}, from .env, never in git)."""
+    ctx = _template_context(name, topo["nodes"][name], topo)
+    return _jinja().get_template(f"{platform}-observability.j2").render(**ctx, snmpv3=snmpv3)
+
+
+def eve_from_env() -> "Eve":
+    topo = load_topology()
+    return Eve(os.environ["EVE_HOST"], os.environ["EVE_USERNAME"], os.environ["EVE_PASSWORD"], topo["lab"]["path"])
+
+
+def render_config(platform: str, name: str, node: dict, topo: dict) -> str | None:
+    tpl = CONFIG_DIR / f"{platform}.j2"
+    if not tpl.exists():
+        return None
+    import secrets as _secrets
+    import subprocess
+
+    secret = os.environ.get("AUTOMATION_PASSWORD")
+    if not secret:
+        raise SystemExit(
+            "AUTOMATION_PASSWORD missing in .env (device-local automation account, moved to Vault in phase 9)"
+        )
+    return _jinja().get_template(f"{platform}.j2").render(
+        **_template_context(name, node, topo),
+        snmpv3=None,
         automation_password=secret,
         # md5-crypt ($1$) is the phash format PAN-OS accepts; python's crypt module is gone in 3.13+
         pan_password_hash=subprocess.run(
@@ -533,9 +556,14 @@ def main() -> None:
     )
     ap.add_argument(
         "action",
-        choices=["plan", "apply", "start", "stop", "status", "export", "push-configs"],
+        choices=["plan", "apply", "start", "stop", "status", "export", "push-configs", "render", "snippet"],
     )
-    ap.add_argument("--only", nargs="*", help="push-configs: limit to these node names")
+    ap.add_argument("--only", nargs="*", help="push-configs / snippet: limit to these node names")
+    ap.add_argument(
+        "--with-snmpv3",
+        action="store_true",
+        help="snippet: include the SNMPv3 user line with SNMPV3_AUTH_PASSWORD / SNMPV3_PRIV_PASSWORD from the environment",
+    )
     ap.add_argument(
         "--allow-missing",
         action="store_true",
@@ -548,6 +576,26 @@ def main() -> None:
     )
     a = ap.parse_args()
     topo = load_topology()
+    if a.action == "snippet":
+        # the observability lines of one node for the governed push (ansible/playbooks/observability-devices.yml)
+        names = a.only or []
+        if len(names) != 1:
+            raise SystemExit("snippet needs exactly one --only <node>")
+        snmpv3 = None
+        if a.with_snmpv3:
+            snmpv3 = {"auth": os.environ["SNMPV3_AUTH_PASSWORD"], "priv": os.environ["SNMPV3_PRIV_PASSWORD"]}
+        node = topo["nodes"][names[0]]
+        sys.stdout.write(render_snippet(node["platform"], names[0], topo, snmpv3))
+        return
+    if a.action == "render":
+        # the committed reference tests/test_topology.py compares against (placeholder password, never the real one)
+        os.environ["AUTOMATION_PASSWORD"] = "__AUTOMATION_PASSWORD__"
+        out = ROOT / "topology" / "generated" / "configs"
+        for name, node in sorted(topo["nodes"].items()):
+            if node["platform"] in ("c8000v", "veos"):
+                (out / f"{name}.cfg").write_text(render_config(node["platform"], name, node, topo))
+                print(f"rendered {name}")
+        return
     eve = Eve(
         os.environ["EVE_HOST"],
         os.environ["EVE_USERNAME"],

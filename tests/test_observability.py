@@ -80,7 +80,7 @@ def test_images_match_manifest() -> None:
     assert c["kube_prometheus_stack"]["grafana_version"] in rows["kube-prometheus-stack"][3]
     assert c["snmp_exporter"]["app_version"] in rows["SNMP exporter"][3]
     assert c["blackbox_exporter"]["app_version"] in rows["Blackbox exporter"][3]
-    assert c["kube_prometheus_stack"]["grafana_zabbix_plugin"].split()[1] in rows["Grafana Zabbix plugin"][1]
+    assert c["kube_prometheus_stack"]["grafana_zabbix_plugin"].split("@")[1] in rows["Grafana Zabbix plugin"][1]
 
 
 def test_exporter_image_is_the_runner_base_and_db_image_the_platform_one() -> None:

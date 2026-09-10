@@ -1,0 +1,24 @@
+# Every vEOS: the stock generic network device SNMP template (Zabbix ships no Arista template) over the
+# host's SNMPv3 interface plus the lab's fast ICMP.
+zabbix_export:
+  version: '7.0'
+  template_groups:
+    - uuid: 3b0d2a6e4c1f4a8e8b2d9c7f1e5a3d01
+      name: Templates/Lab
+  templates:
+    - uuid: 1f8e7d6c5b4a4392853f2e1d0c9b8a01
+      template: lab-eos
+      name: lab-eos
+      description: 'vEOS switches (NetBox platform eos): Network Generic Device by SNMP + lab-network-device (ADR 0051).'
+      templates:
+        - name: 'Network Generic Device by SNMP'
+        - name: lab-network-device
+      groups:
+        - name: Templates/Lab
+      macros:
+        - macro: '{$SNMP.TIMEOUT}'
+          value: 5m
+          description: 'The "No SNMP data collection" trigger threshold.'
+      tags:
+        - tag: platform
+          value: eos

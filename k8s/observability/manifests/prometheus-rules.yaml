@@ -1,0 +1,47 @@
+# Lab alert rules (ADR 0051 decision 9). observability/observability.yaml lists the names and durations;
+# tests/test_observability.py holds this file to it. S7.6 is LabDeviceDown on the blackbox ICMP probe.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: lab-observability
+  namespace: observability
+  labels:
+    role: lab-alert-rules
+spec:
+  groups:
+    - name: lab-availability
+      rules:
+        - alert: LabDeviceDown
+          expr: probe_success{job="blackbox-icmp"} == 0
+          for: 1m
+          labels:
+            severity: critical
+          annotations:
+            summary: "{{ $labels.device }} does not answer ICMP"
+            description: "The blackbox ICMP probe of {{ $labels.device }} ({{ $labels.instance }}) has failed for a minute."
+        - alert: LabTargetDown
+          expr: up == 0
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "scrape target {{ $labels.job }}/{{ $labels.instance }} is down"
+            description: "Prometheus could not scrape {{ $labels.instance }} of job {{ $labels.job }} for 5 minutes."
+        - alert: LabUiDown
+          expr: probe_success{job="blackbox-http"} == 0
+          for: 3m
+          labels:
+            severity: warning
+          annotations:
+            summary: "UI {{ $labels.ui }} does not answer 200"
+            description: "The HTTP probe of {{ $labels.instance }} has failed for 3 minutes."
+    - name: lab-fabric
+      rules:
+        - alert: LabBgpSessionDown
+          expr: max by (source, neighbor_address) ({__name__=~"gnmic_bgp.*session_state", session_state!="ESTABLISHED"}) == 1
+          for: 2m
+          labels:
+            severity: warning
+          annotations:
+            summary: "BGP neighbour {{ $labels.neighbor_address }} of {{ $labels.source }} is not Established"
+            description: "gNMIc reports the session in a state other than ESTABLISHED for 2 minutes."

@@ -1,0 +1,23 @@
+# Every C8000v: the stock Cisco IOS SNMP template over the host's SNMPv3 interface plus the lab's fast ICMP.
+zabbix_export:
+  version: '7.0'
+  template_groups:
+    - uuid: 3b0d2a6e4c1f4a8e8b2d9c7f1e5a3d01
+      name: Templates/Lab
+  templates:
+    - uuid: 2a9b8c7d6e5f4a3b8c1d2e3f4a5b6c01
+      template: lab-ios-xe
+      name: lab-ios-xe
+      description: 'C8000v routers (NetBox platform ios-xe): Cisco IOS by SNMP + lab-network-device (ADR 0051).'
+      templates:
+        - name: 'Cisco IOS by SNMP'
+        - name: lab-network-device
+      groups:
+        - name: Templates/Lab
+      macros:
+        - macro: '{$SNMP.TIMEOUT}'
+          value: 5m
+          description: 'The "No SNMP data collection" trigger threshold.'
+      tags:
+        - tag: platform
+          value: ios-xe

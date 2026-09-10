@@ -1,0 +1,125 @@
+# The scrape objects that make Prometheus' target list equal observability.yaml prometheus.jobs (ADR 0051
+# decision 9): ServiceMonitors for the exporters (job renamed through a relabeling), one Probe per device
+# (blackbox ICMP, label device) and per UI (blackbox HTTP, label ui), one ScrapeConfig per device platform
+# for the SNMP exporter (label device). Devices and UIs come from NetBox and observability.yaml.
+{% for sm in service_monitors %}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ sm.job }}
+  namespace: {{ obs_namespace }}
+  labels:
+    lab/job: {{ sm.job }}
+spec:
+  jobLabel: lab/job
+  selector:
+    matchLabels:
+{% for k, v in sm.selector.items() %}
+      {{ k }}: {{ v }}
+{% endfor %}
+{% if sm.absent is defined %}
+    matchExpressions:
+{% for k in sm.absent %}
+      - {key: {{ k }}, operator: DoesNotExist}
+{% endfor %}
+{% endif %}
+  namespaceSelector:
+    matchNames: ["{{ obs_namespace }}"]
+  endpoints:
+    - port: {{ sm.port }}
+      interval: 30s
+      relabelings:
+        - {targetLabel: job, replacement: {{ sm.job }}}
+{% endfor %}
+{% for d in devices %}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: Probe
+metadata:
+  name: icmp-{{ d.name }}
+  namespace: {{ obs_namespace }}
+spec:
+  jobName: blackbox-icmp
+  interval: 15s
+  scrapeTimeout: 10s
+  module: icmp
+  prober:
+    url: {{ blackbox_service }}:9115
+  targets:
+    staticConfig:
+      static: ["{{ d.ip }}"]
+      labels:
+        device: {{ d.name }}
+        platform: {{ d.platform }}
+        site: {{ d.site }}
+{% endfor %}
+{% for w in web_checks %}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: Probe
+metadata:
+  name: http-{{ w.name }}
+  namespace: {{ obs_namespace }}
+spec:
+  jobName: blackbox-http
+  interval: 60s
+  scrapeTimeout: 15s
+  module: {{ 'http_insecure' if w.insecure | default(false) else 'http_lab' }}
+  prober:
+    url: {{ blackbox_service }}:9115
+  targets:
+    staticConfig:
+      static: ["{{ w.url }}"]
+      labels:
+        ui: {{ w.name }}
+{% endfor %}
+{% for platform in ['ios-xe', 'eos'] %}
+---
+apiVersion: monitoring.coreos.com/v1alpha1
+kind: ScrapeConfig
+metadata:
+  name: snmp-{{ platform }}
+  namespace: {{ obs_namespace }}
+spec:
+  jobName: snmp-{{ platform }}
+  scrapeInterval: 60s
+  scrapeTimeout: 45s
+  metricsPath: /snmp
+  params:
+    module: [if_mib]
+    auth: [lab_v3]
+  staticConfigs:
+{% for d in devices if d.platform == platform %}
+    - targets: ["{{ d.ip }}"]
+      labels:
+        device: {{ d.name }}
+        platform: {{ d.platform }}
+        site: {{ d.site }}
+{% endfor %}
+  relabelings:
+    - {sourceLabels: [__address__], targetLabel: __param_target}
+    - {sourceLabels: [__param_target], targetLabel: instance}
+    - {targetLabel: __address__, replacement: {{ snmp_service }}:9116}
+{% endfor %}
+---
+# The Platform's native Prometheus route (docs.itential.com/itential-platform/monitor/prometheus-metrics): nine
+# iap_* families, served without a session on 6.5.2; HTTPS through the lab CA.
+apiVersion: monitoring.coreos.com/v1alpha1
+kind: ScrapeConfig
+metadata:
+  name: itential-platform
+  namespace: {{ obs_namespace }}
+spec:
+  jobName: itential-platform
+  scrapeInterval: 30s
+  scheme: HTTPS
+  metricsPath: /prometheus_metrics
+  tlsConfig:
+    ca:
+      configMap: {name: lab-ca, key: ca.crt}
+    serverName: {{ itential_host }}
+  staticConfigs:
+    - targets: ["{{ itential_host }}:443"]
+      labels:
+        platform: itential

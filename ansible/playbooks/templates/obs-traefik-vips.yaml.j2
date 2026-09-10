@@ -1,0 +1,25 @@
+# One LoadBalancer Service per observability VIP selecting the k3s Traefik pods (ADR 0051 decision 4): the
+# UIs keep the IP plan's addresses and the phase-3 wildcard lab-CA certificate. The sharing key equals the
+# VIP name, so zabbix-server (10051 on .35) and alloy-syslog (514 on .38) can share their address.
+{% for name, ip in vips.items() %}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: traefik-vip-{{ name }}
+  namespace: {{ traefik.namespace }}
+  labels:
+    lab/role: traefik-vip
+  annotations:
+    metallb.io/loadBalancerIPs: "{{ ip }}"
+    metallb.io/allow-shared-ip: "{{ name }}"
+spec:
+  type: LoadBalancer
+  selector:
+{% for k, v in traefik.selector.items() %}
+    {{ k }}: {{ v }}
+{% endfor %}
+  ports:
+    - {name: web, port: 80, targetPort: web, protocol: TCP}
+    - {name: websecure, port: 443, targetPort: websecure, protocol: TCP}
+{% endfor %}
