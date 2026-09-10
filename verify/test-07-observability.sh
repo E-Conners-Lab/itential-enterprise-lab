@@ -52,7 +52,7 @@ zbx() { # zbx <method> <params json> -> result json (stdout); exit 1 on an API e
 if "error" in d: print(json.dumps(d["error"]), file=sys.stderr); sys.exit(1)
 print(json.dumps(d["result"]))'
 }
-zbx_login() { ZTOKEN=$(zbx user.login "{\"username\":\"Admin\",\"password\":\"${ZABBIX_ADMIN_PASSWORD}\"}" | tr -d '"'); [ -n "$ZTOKEN" ]; }
+zbx_login() { ZTOKEN=""; ZTOKEN=$(zbx user.login "{\"username\":\"Admin\",\"password\":\"${ZABBIX_ADMIN_PASSWORD}\"}" | tr -d '"'); [ -n "$ZTOKEN" ]; }
 zbx_login || { bad "Zabbix API login at ${ZBX} (ZABBIX_ADMIN_PASSWORD)"; }
 
 # expected monitored hosts from NetBox (ADR 0051 decision 12) + the two pre-existing machines
@@ -258,6 +258,10 @@ check "S7.4 Loki returns a syslog line from each vendor within 60 s of a governe
 # --- S7.7 Platform job/task metrics in Prometheus equal the Platform API ---------------------------------
 c7() {
   iap_login || { echo "platform login failed"; return 1; }
+  # the exporter refreshes every 60 s and S7.4 has just completed two jobs: give it one refresh
+  local try; for try in 1 2 3; do c7_once && return 0; [ "$try" = 3 ] || { echo "(retry after the exporter's next refresh)"; sleep 45; }; done; return 1
+}
+c7_once() {
   iap "${PLATFORM}/workflow_engine/jobs/metrics?limit=200" > /tmp/verify07.jm.$$ || return 1
   iap "${PLATFORM}/health/applications" > /tmp/verify07.apps.$$; iap "${PLATFORM}/health/adapters" > /tmp/verify07.ad.$$
   web "${PROM}/api/v1/query" --data-urlencode 'query=itential_workflow_jobs_complete_total' > /tmp/verify07.pj.$$ || return 1

@@ -1,0 +1,13 @@
+# test-07-observability 20260910T024257Z
+SKIP  S7.1 Zabbix monitors every NetBox-active host (+eve, netbox) green with the lab templates; SNMPv3 and the agents confirmed from the workstation
+SKIP  S7.1 Expiries host: one item per manifest expiry (days left agrees with the date, NetBox token and lab CA read back), trigger at 14 days
+SKIP  S7.2 Prometheus target count per job equals observability.yaml (NetBox-sized); no target down; lab rules loaded
+SKIP  S7.5-prep Grafana provisions the lab dashboards and the Prometheus/Alertmanager/Loki/Zabbix datasources (login via Keycloak: phase 9)
+SKIP  S7.3 gNMIc BGP session count for dc1-spine01 equals show bgp summary (and Prometheus agrees)
+SKIP  S7.4 Loki returns a syslog line from each vendor within 60 s of a governed no-op config push (device log agrees)
+SKIP  S7.7 Prometheus holds the Platform job metrics (jobsComplete per workflow equals the API) and every application/adapter is up
+DEFER S7.5 Grafana login via Keycloak and every dashboard renders with data: identity phase (ADR 0050)
+FAIL  S7.6 drill: stopping br1-wan01 raises a Zabbix trigger and an Alertmanager alert within 3 min; starting it clears both
+      {"code": -32602, "message": "Invalid params.", "data": "The \"user.login\" method must be called without authorization header."}
+
+passed=0 failed=1 deferred=1
