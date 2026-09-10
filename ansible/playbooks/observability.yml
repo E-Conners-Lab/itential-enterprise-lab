@@ -61,13 +61,18 @@
     netbox_url: "{{ lookup('ansible.builtin.env', 'NETBOX_URL') }}"
     netbox_headers: {Authorization: "Token {{ lookup('ansible.builtin.env', 'NETBOX_TOKEN') }}"}
     itential_host: itential.{{ domain }}
-    itential_ip: "{{ (lookup('ansible.builtin.file', repo ~ '/itential/versions.yaml') | from_yaml).vm.ip }}"
-    # exporters beside the dev-stack on the Platform host (itential/compose.override.yml, profile monitoring; ADR 0052)
+    # The official dashboard's sources follow the production environment (ADR 0055, PID S11.7): the Platform's
+    # own /prometheus_metrics on each node, node and process exporters on the Platform nodes, the Redis
+    # exporter on each Redis server and the MongoDB exporter on each replica-set member - which is what
+    # finally gives the dashboard's replica-set panels data. The dev-stack's `monitoring` Compose profile on
+    # VM 205 is no longer scraped; it retires with the VM.
+    ha2: "{{ lookup('ansible.builtin.file', repo ~ '/itential/ha2/versions.yaml') | from_yaml }}"
+    platform_nodes: "{{ ha2.vms | selectattr('role', 'equalto', 'platform') | list }}"
     host_exporters:
-      - {job: node_exporter, port: 9100}
-      - {job: process_exporter, port: 9256}
-      - {job: redis_exporter, port: 9121}
-      - {job: mongo_exporter, port: 9216}
+      - {job: node_exporter, port: "{{ ha2.exporters.node }}", role: platform}
+      - {job: process_exporter, port: "{{ ha2.exporters.process }}", role: platform}
+      - {job: redis_exporter, port: "{{ ha2.exporters.redis }}", role: redis}
+      - {job: mongo_exporter, port: "{{ ha2.exporters.mongodb }}", role: mongodb}
     itential_admin_user: "{{ lookup('ansible.builtin.env', 'ITENTIAL_ADMIN_USER') | default('admin@itential', true) }}"
     # release name -> chart key in versions.yaml, values file, and the image tags the oracle sets (`overrides`:
     # a key named `values` is the dict method in Jinja)
@@ -327,6 +332,18 @@
         state: present
         template: templates/obs-scrape.yaml.j2
         apply: true # keys the template drops are removed (a patch would keep them)
+
+    # `apply` prunes keys inside a document but never removes a document the template stopped rendering: the
+    # dev-stack's single iap-exporter ScrapeConfig became one per production node (ADR 0055) and would
+    # otherwise keep scraping VM 205 and make the dashboard's Platform row read three nodes.
+    - name: Superseded scrape objects removed
+      kubernetes.core.k8s:
+        kubeconfig: "{{ kubeconfig }}"
+        state: absent
+        api_version: monitoring.coreos.com/v1alpha1
+        kind: ScrapeConfig
+        namespace: "{{ obs_namespace }}"
+        name: iap-exporter
 
     - name: Lab alert rules
       kubernetes.core.k8s:

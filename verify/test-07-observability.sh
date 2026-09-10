@@ -173,8 +173,12 @@ c2() {
   ${PY} - /tmp/verify07.targets.$$ "$n_nodes" "$n_dev" "$n_eos" "$n_ios" <<'PY' || return 1
 import collections, json, sys, yaml
 obs = yaml.safe_load(open("observability/observability.yaml"))
+ha2 = yaml.safe_load(open("itential/ha2/versions.yaml"))
 nodes, dev, eos, ios = map(int, sys.argv[2:6])
 rule = {"nodes": nodes, "devices": dev, "eos": eos, "ios-xe": ios, "web_checks": len(obs["web_checks"])}
+# the official dashboard's exporters follow the production environment (ADR 0055): one per VM of that role
+for role in ("platform", "redis", "mongodb"):
+    rule[f"ha2-{role}"] = sum(1 for v in ha2["vms"] if v["role"] == role)
 t = json.load(open(sys.argv[1]))["data"]["activeTargets"]
 per = collections.defaultdict(list)
 for x in t: per[x["labels"]["job"]].append(x)
