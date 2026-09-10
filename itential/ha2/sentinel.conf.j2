@@ -1,0 +1,24 @@
+# Redis Sentinel on {{ inventory_hostname }} (PID S11, ADR 0053), monitoring {{ redis.master_name }} with a
+# quorum of {{ redis.quorum }} of three. The user lines and the timings are Itential's own, from the
+# Deployer's roles/redis/templates/sentinel.conf.j2.
+#
+# Written only when absent: Sentinel rewrites this file continuously (known replicas, known sentinels, config
+# epochs, and the current master after a failover). Delete it and re-run the play to start from the template.
+bind {{ ip }} 127.0.0.1
+port {{ redis.sentinel_port }}
+dir /tmp
+sentinel announce-ip {{ ip }}
+sentinel announce-port {{ redis.sentinel_port }}
+sentinel resolve-hostnames yes
+sentinel announce-hostnames yes
+
+sentinel monitor {{ redis.master_name }} {{ master_ip }} {{ redis.port }} {{ redis.quorum }}
+sentinel auth-user {{ redis.master_name }} {{ redis.users.sentineluser.name }}
+sentinel auth-pass {{ redis.master_name }} {{ redis_sentinel_password }}
+sentinel down-after-milliseconds {{ redis.master_name }} 5000
+sentinel parallel-syncs {{ redis.master_name }} 1
+sentinel failover-timeout {{ redis.master_name }} 60000
+
+user default off
+user {{ redis.users.sentineluser.name }} on >{{ redis_sentinel_password }} &* -@all +auth +client|getname +client|id +client|setname +command +hello +ping +role +sentinel|is-master-down-by-addr +sentinel|get-master-addr-by-name +sentinel|master +sentinel|myid +sentinel|replicas +sentinel|sentinels
+user {{ redis.users.monitor.name }} on >{{ redis_monitor_password }} -@all +@connection -command +client -hello +info -auth +sentinel|masters +sentinel|replicas +sentinel|slaves +sentinel|sentinels +sentinel|ckquorum

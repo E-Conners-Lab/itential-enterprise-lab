@@ -129,7 +129,10 @@ def test_plays_exist_and_read_the_oracle(play: str) -> None:
     assert p.exists(), f"{play} missing"
     text = p.read_text()
     assert "ha2/versions.yaml" in text, f"{play} must read the oracle"
-    assert "hosts: localhost" not in text or "add_host" in text or "delegate_to" in text
+    # every play targets the NetBox-derived groups of the production environment, not a hand-written host list
+    assert re.search(r"hosts: (ha2-|itential-ha2)", text), f"{play} must address the ha2 inventory groups"
+    for v in vms():
+        assert f"ansible_host: {v}" not in text, f"{play} hard-codes a host"
 
 
 def test_compose_documents_exist_for_every_role() -> None:

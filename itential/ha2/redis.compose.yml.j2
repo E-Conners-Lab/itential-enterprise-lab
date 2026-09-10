@@ -1,0 +1,59 @@
+# Redis and its Sentinel (PID S11, ADR 0053). Rendered per host by ansible/playbooks/platform-ha2-redis.yml.
+#
+# Host networking for both: Sentinel gossips the addresses it sees, and a bridged network would hand the other
+# hosts a 172.x address they cannot reach. The configuration files live in a mounted directory, not as mounted
+# files, because Redis and Sentinel rewrite them (CONFIG REWRITE after a failover) - the play writes the base
+# files only when they are absent for that reason, and keeps every immutable setting in lab.conf.
+services:
+  redis:
+    container_name: redis
+    image: {{ images.redis.repository }}:{{ images.redis.tag }}
+    network_mode: host
+    command: ["redis-server", "/etc/redis/redis.conf"]
+    volumes:
+      - ./conf:/etc/redis
+      - ./data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -h {{ ip }} -p {{ redis.port }} --user {{ redis.users.monitor.name }} --pass \"$$REDIS_MONITOR_PASSWORD\" --no-auth-warning ping | grep -q PONG"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    environment:
+      REDIS_MONITOR_PASSWORD: ${REDIS_MONITOR_PASSWORD}
+    restart: unless-stopped
+
+  sentinel:
+    container_name: sentinel
+    image: {{ images.redis.repository }}:{{ images.redis.tag }}
+    network_mode: host
+    command: ["redis-sentinel", "/etc/redis/sentinel.conf"]
+    volumes:
+      - ./sentinel:/etc/redis
+    depends_on:
+      - redis
+    restart: unless-stopped
+
+  # the official dashboard's Redis row (ADR 0052): job redis_exporter
+  redis-exporter:
+    container_name: redis-exporter
+    image: {{ images.redis_exporter.repository }}:{{ images.redis_exporter.tag }}
+    network_mode: host
+    environment:
+      REDIS_ADDR: redis://{{ ip }}:{{ redis.port }}
+      REDIS_USER: {{ redis.users.monitor.name }}
+      REDIS_PASSWORD: ${REDIS_MONITOR_PASSWORD}
+      REDIS_EXPORTER_WEB_LISTEN_ADDRESS: "{{ ip }}:{{ exporters.redis }}"
+    depends_on:
+      - redis
+    restart: unless-stopped
+
+  node-exporter:
+    container_name: node-exporter
+    image: {{ images.node_exporter.repository }}:{{ images.node_exporter.tag }}
+    network_mode: host
+    pid: host
+    command: ["--path.rootfs=/host", "--web.listen-address={{ ip }}:{{ exporters.node }}"]
+    volumes:
+      - /:/host:ro,rslave
+    restart: unless-stopped

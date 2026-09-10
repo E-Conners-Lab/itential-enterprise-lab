@@ -1,0 +1,30 @@
+# Redis on {{ inventory_hostname }} (PID S11, ADR 0053). The user lines are Itential's own, copied from the
+# Deployer's roles/redis/templates/redis.conf.j2 (the official install path) with this lab's passwords.
+#
+# Written only when absent: Redis rewrites this file itself (CONFIG REWRITE) whenever Sentinel promotes or
+# demotes this node, so re-rendering it on every play run would push a stale `replicaof` back onto a node that
+# Sentinel has already moved. Delete the file and re-run the play to rebuild it from this template.
+bind {{ ip }} 127.0.0.1
+port {{ redis.port }}
+protected-mode no
+dir /data
+appendonly yes
+appendfsync everysec
+save 900 1
+loglevel notice
+
+# replication: announce the address the other hosts can reach, and authenticate as repluser
+replica-announce-ip {{ ip }}
+replica-announce-port {{ redis.port }}
+masteruser {{ redis.users.repluser.name }}
+masterauth {{ redis_repl_password }}
+{% if not is_master %}
+replicaof {{ master_ip }} {{ redis.port }}
+{% endif %}
+
+# ACL users, verbatim from the Itential Deployer (the default user is off: only these four may connect)
+user default off
+user {{ redis.users.itential.name }} on ~* &* -@all +@read +@write +@stream +@transaction +@sortedset +@list +@hash +@string +@fast +@scripting +@connection +@pubsub +script|load +script|exists -script|flush -flushall -flushdb -save -bgsave -bgrewriteaof -replicaof -psync -replconf -shutdown -failover -cluster -asking -sync -readonly -readwrite +info +role >{{ redis_itential_password }}
+user {{ redis.users.monitor.name }} on sanitize-payload ~* resetchannels -@all +@connection +memory -readonly +strlen +config|get +xinfo +pfcount -quit +zcard +type +xlen -readwrite -command +client -wait +scard +llen +hlen +get +eval +slowlog +cluster|info +cluster|slots +cluster|nodes -hello -echo +info +latency +scan -reset -auth -asking +evalsha +memory|usage +xinfo|stream >{{ redis_monitor_password }}
+user {{ redis.users.repluser.name }} on allchannels +psync +replconf +ping >{{ redis_repl_password }}
+user {{ redis.users.sentineluser.name }} on &* -@all +slaveof +ping +info +role +publish +subscribe +psubscribe +punsubscribe +client|setname +client|kill +multi +exec +replicaof +script|kill +config|rewrite >{{ redis_sentinel_password }}

@@ -1,0 +1,92 @@
+# An Itential Platform node (PID S11, ADR 0053). Rendered per node by ansible/playbooks/platform-ha2-platform.yml.
+# The image is the Phase 5 pin, loaded from the tarball staged on the Proxmox host; the guide's container page
+# says to pin a maintenance release rather than a feature tag, which itential/versions.yaml already does.
+#
+# MongoDB: all three members and the replica set name in the URL, SCRAM over TLS with the lab CA.
+# Redis: through Sentinel (never a fixed host), so a failover needs no change here.
+# Every variable name below was measured in the 6.5.2 image (server/core/Configuration/model.js).
+services:
+  platform:
+    container_name: platform
+    image: {{ images.platform.repository }}:{{ images.platform.tag }}
+    platform: linux/amd64
+    ports:
+      - "{{ ip }}:{{ platform.http_port }}:{{ platform.http_port }}"
+      - "{{ ip }}:{{ platform.https_port }}:{{ platform.https_port }}"
+    volumes:
+      - ./volumes/platform/adapters:/opt/itential/platform/services/custom
+      - ./volumes/platform/ssl:/etc/ssl/platform:ro
+      - ./volumes/platform/logs:/var/log/itential
+      - /opt/itential/tls:/etc/ssl/lab:ro
+    environment:
+      # security
+      ITENTIAL_ENCRYPTION_KEY: ${ITENTIAL_ENCRYPTION_KEY:?ITENTIAL_ENCRYPTION_KEY is required}
+      # this node's identity in the cluster: two nodes share one database, so the id must differ
+      ITENTIAL_SERVER_ID: "{{ inventory_hostname }}"
+
+      # the local administrator, declared rather than left to the image's default; the identity phase adds
+      # LDAP and Keycloak in front of it (ADR 0050)
+      ITENTIAL_DEFAULT_USER_ENABLED: "true"
+      ITENTIAL_DEFAULT_USER_USERNAME: "{{ platform.admin_user }}"
+      ITENTIAL_DEFAULT_USER_PASSWORD: ${ITENTIAL_ADMIN_PASSWORD:?}
+
+      # mongodb: the replica set, authenticated and encrypted (the guide's production rule)
+      ITENTIAL_MONGO_URL: "mongodb://{% for m in mongo_members %}{{ m }}.{{ domain }}:{{ mongodb.port }}{{ ',' if not loop.last }}{% endfor %}/?replicaSet={{ mongodb.replica_set }}"
+      ITENTIAL_MONGO_DB_NAME: "{{ mongodb.database }}"
+      ITENTIAL_MONGO_AUTH_ENABLED: "true"
+      ITENTIAL_MONGO_AUTH_DB: "admin"
+      ITENTIAL_MONGO_USER: "{{ mongodb.users.itential.name }}"
+      ITENTIAL_MONGO_PASSWORD: ${MONGO_ITENTIAL_PASSWORD:?}
+      ITENTIAL_MONGO_TLS_ENABLED: "true"
+      ITENTIAL_MONGO_TLS_CA_FILE: "/etc/ssl/lab/ca.crt"
+
+      # redis through Sentinel: the Platform follows the promotion, it does not need to be told
+      ITENTIAL_REDIS_SENTINELS: '{{ sentinels_json }}'
+      ITENTIAL_REDIS_NAME: "{{ redis.master_name }}"
+      ITENTIAL_REDIS_USERNAME: "{{ redis.users.itential.name }}"
+      ITENTIAL_REDIS_PASSWORD: ${REDIS_ITENTIAL_PASSWORD:?}
+      ITENTIAL_REDIS_SENTINEL_USERNAME: "{{ redis.users.sentineluser.name }}"
+      ITENTIAL_REDIS_SENTINEL_PASSWORD: ${REDIS_SENTINEL_PASSWORD:?}
+      ITENTIAL_REDIS_PERSIST_QUEUES: "true"
+
+      # web server: the load balancer forwards to the HTTP port; HTTPS stays on for a direct check
+      ITENTIAL_WEBSERVER_HTTP_PORT: "{{ platform.http_port }}"
+      ITENTIAL_WEBSERVER_HTTPS_ENABLED: "true"
+      ITENTIAL_WEBSERVER_HTTPS_PORT: "{{ platform.https_port }}"
+      ITENTIAL_WEBSERVER_HTTPS_KEY: "/etc/ssl/platform/key.pem"
+      ITENTIAL_WEBSERVER_HTTPS_CERT: "/etc/ssl/platform/cert.pem"
+
+      # logging: the rsyslog forward of phase 7 carries these to Loki
+      ITENTIAL_LOG_LEVEL: "info"
+      ITENTIAL_LOG_DIRECTORY: "/var/log/itential"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:{{ platform.http_port }}/login >/dev/null"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 180s
+    restart: unless-stopped
+
+  # the official dashboard's Platform Process row (ADR 0052): the Pronghorn process titles live in the
+  # container's PID namespace, which `pid: host` exposes to the exporter
+  node-exporter:
+    container_name: node-exporter
+    image: {{ images.node_exporter.repository }}:{{ images.node_exporter.tag }}
+    network_mode: host
+    pid: host
+    command: ["--path.rootfs=/host", "--web.listen-address={{ ip }}:{{ exporters.node }}"]
+    volumes:
+      - /:/host:ro,rslave
+    restart: unless-stopped
+
+  process-exporter:
+    container_name: process-exporter
+    image: {{ images.process_exporter.repository }}:{{ images.process_exporter.tag }}
+    network_mode: host
+    pid: host
+    privileged: true
+    command: ["--procfs=/host/proc", "--config.path=/config/process-exporter.yml", "--web.listen-address={{ ip }}:{{ exporters.process }}"]
+    volumes:
+      - /proc:/host/proc:ro
+      - ./process-exporter.yml:/config/process-exporter.yml:ro
+    restart: unless-stopped

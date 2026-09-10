@@ -19,6 +19,16 @@
       - {name: k3s-02, vcpus: 4, memory: 12288, disk: 80, role: k3s-server, ips: [10.100.0.17], tags: [phase-3, k3s]}
       - {name: k3s-03, vcpus: 4, memory: 12288, disk: 80, role: k3s-server, ips: [10.100.0.18], tags: [phase-3, k3s]}
       - {name: itential, vcpus: 8, memory: 24576, disk: 160, role: itential-host, ips: [10.100.0.65], tags: [phase-5]}
+    # Phase 8 (PID S11, ADR 0053): the production environment's VMs come from their own oracle, so the shape
+    # is declared once. The NetBox role is `ha2-<role>`, which is also the Ansible group the plays address.
+    ha2: "{{ (lookup('ansible.builtin.file', playbook_dir ~ '/../../itential/ha2/versions.yaml') | from_yaml).vms }}"
+    all_vms: >-
+      {%- set out = vms | list -%}
+      {%- for v in ha2 -%}
+        {%- set _ = out.append({'name': v.name, 'vcpus': v.cores, 'memory': v.memory_mb, 'disk': v.disk_gb,
+                                'role': 'ha2-' ~ v.role, 'ips': [v.ip], 'tags': ['phase-8', 'itential-ha2']}) -%}
+      {%- endfor -%}
+      {{ out }}
   tasks:
     - name: Site
       netbox.netbox.netbox_site:
@@ -47,7 +57,7 @@
         netbox_token: "{{ nb.netbox_token }}"
         validate_certs: false
         data: {name: "{{ item }}", slug: "{{ item }}"}
-      loop: [k3s, phase-3, oob-gateway, k3s-server, phase-5, itential-host]
+      loop: "{{ (all_vms | map(attribute='tags') | flatten | list) + (all_vms | map(attribute='role') | list) | unique | sort }}"
 
     - name: Device roles for VMs
       netbox.netbox.netbox_device_role:
@@ -55,7 +65,7 @@
         netbox_token: "{{ nb.netbox_token }}"
         validate_certs: false
         data: {name: "{{ item }}", slug: "{{ item }}", vm_role: true, color: "2196f3"}
-      loop: "{{ vms | map(attribute='role') | unique | list }}"
+      loop: "{{ all_vms | map(attribute='role') | unique | sort }}"
 
     - name: Platform ubuntu-24.04
       netbox.netbox.netbox_platform:
@@ -80,7 +90,7 @@
           virtual_machine_role: "{{ item.role }}"
           platform: ubuntu-24.04
           tags: "{{ item.tags + [item.role] }}"
-      loop: "{{ vms }}"
+      loop: "{{ all_vms }}"
       loop_control:
         label: "{{ item.name }}"
 
@@ -90,7 +100,7 @@
         netbox_token: "{{ nb.netbox_token }}"
         validate_certs: false
         data: {virtual_machine: "{{ item.name }}", name: eth0, enabled: true, description: vmbr1}
-      loop: "{{ vms }}"
+      loop: "{{ all_vms }}"
       loop_control:
         label: "{{ item.name }}"
 
@@ -101,7 +111,7 @@
         url: "{{ nb.netbox_url }}/api/virtualization/interfaces/?virtual_machine={{ item.name }}&name=eth0"
         headers: {Authorization: "Token {{ nb.netbox_token }}"}
       register: vm_ifaces
-      loop: "{{ vms }}"
+      loop: "{{ all_vms }}"
       loop_control:
         label: "{{ item.name }}"
       failed_when: vm_ifaces.json.count != 1
@@ -111,7 +121,7 @@
         url: "{{ nb.netbox_url }}/api/ipam/ip-addresses/?address={{ item.ips[0] }}/24"
         headers: {Authorization: "Token {{ nb.netbox_token }}"}
       register: vm_ips
-      loop: "{{ vms }}"
+      loop: "{{ all_vms }}"
       loop_control:
         label: "{{ item.name }} {{ item.ips[0] }}"
       failed_when: vm_ips.json.count != 1
@@ -140,6 +150,6 @@
           name: "{{ item.name }}"
           cluster: homelab
           primary_ip4: "{{ item.ips[0] }}/24"
-      loop: "{{ vms }}"
+      loop: "{{ all_vms }}"
       loop_control:
         label: "{{ item.name }} {{ item.ips[0] }}"

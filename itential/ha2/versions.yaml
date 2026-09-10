@@ -58,7 +58,12 @@ redis:
 platform:
   http_port: 3000 # the load balancer forwards here (Deployer nginx guide)
   https_port: 3443
+  gateway_manager_port: 8080 # Gateway 5 on iag-01 dials this through the load balancer (layer 4)
   nodes: [iap-01, iap-02]
+  # Until the identity phase federates LDAP and Keycloak, the Platform's own local account is the only AAA the
+  # production environment has; the compose file sets it explicitly (ITENTIAL_DEFAULT_USER_*) rather than
+  # leaving the image's default, and its password is ITENTIAL_ADMIN_PASSWORD from .env.
+  admin_user: admin
   # the custom-services directory each node mounts; the adapters of itential/versions.yaml are installed twice
   adapters_dir: /opt/itential/volumes/platform/adapters
 loadbalancer:

@@ -1,0 +1,180 @@
+---
+# Phase 8, slice C (PID S11, ADR 0053): Redis replication with Sentinel, the second half of what Itential's
+# HA2 architecture calls for. Three Redis servers, one master and two replicas, each with a Sentinel; the ACL
+# users and the Sentinel timings are Itential's own, taken from the Deployer's redis role.
+#
+# The base configuration files are written only when absent: Redis and Sentinel rewrite them themselves after
+# a failover, so re-rendering on every run would push a stale master back at a cluster that has already moved.
+- name: Phase 8 Redis secrets, persisted before use
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars_files:
+    - ../../itential/ha2/versions.yaml
+  vars:
+    ansible_python_interpreter: "{{ playbook_dir }}/../../.venv/bin/python"
+    env_file: "{{ playbook_dir }}/../../.env"
+    secret_keys: "{{ redis.users.values() | map(attribute='env') | list }}"
+  tasks:
+    - name: Current values from .env
+      ansible.builtin.set_fact:
+        redis_secrets: "{{ redis_secrets | default({}) | combine({item: lookup('ansible.builtin.env', item)}) }}"
+      loop: "{{ secret_keys }}"
+      no_log: true
+
+    - name: Generate the missing ones (24 alphanumerics; the ACL syntax has no room for punctuation)
+      ansible.builtin.set_fact:
+        redis_secrets: >-
+          {{ redis_secrets | combine({item:
+             lookup('ansible.builtin.password', '/dev/null', length=24, chars=['ascii_letters', 'digits'])}) }}
+      loop: "{{ secret_keys }}"
+      when: redis_secrets[item] | length == 0
+      no_log: true
+
+    - name: Persist to .env before use
+      ansible.builtin.lineinfile:
+        path: "{{ env_file }}"
+        regexp: "^{{ item }}="
+        line: "{{ item }}={{ redis_secrets[item] }}"
+      loop: "{{ secret_keys }}"
+      no_log: true
+
+- name: Redis and Sentinel
+  hosts: ha2-redis
+  become: true
+  gather_facts: false
+  vars_files:
+    - ../../itential/ha2/versions.yaml
+    - ../../itential/versions.yaml
+  vars:
+    ansible_ssh_common_args: -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/dev/null
+    dir: /opt/itential/redis
+    secrets: "{{ hostvars['localhost'].redis_secrets }}"
+    me: "{{ vms | selectattr('name', 'equalto', inventory_hostname) | first }}"
+    ip: "{{ (vms | selectattr('name', 'equalto', inventory_hostname) | first).ip }}"
+    is_master: "{{ (vms | selectattr('name', 'equalto', inventory_hostname) | first).master | default(false) }}"
+    master_ip: "{{ (vms | selectattr('role', 'equalto', 'redis') | selectattr('master', 'defined') | first).ip }}"
+    # the templates read these names rather than the .env keys, so the oracle stays the only place that maps them
+    redis_itential_password: "{{ secrets[redis.users.itential.env] }}"
+    redis_repl_password: "{{ secrets[redis.users.repluser.env] }}"
+    redis_sentinel_password: "{{ secrets[redis.users.sentineluser.env] }}"
+    redis_monitor_password: "{{ secrets[redis.users.monitor.env] }}"
+  tasks:
+    - name: Directories
+      ansible.builtin.file:
+        path: "{{ dir }}/{{ item }}"
+        state: directory
+        owner: ubuntu
+        group: ubuntu
+        mode: "0755"
+      loop: ["", conf, sentinel, data]
+
+    # 999 is the redis user in the official image; it must be able to rewrite the files it owns
+    - name: Configuration directories writable by the redis user
+      ansible.builtin.file:
+        path: "{{ dir }}/{{ item }}"
+        state: directory
+        owner: "999"
+        group: "999"
+        mode: "0770"
+      loop: [conf, sentinel, data]
+
+    - name: Redis configuration (written once; Redis rewrites it after a failover)
+      ansible.builtin.template:
+        src: ../../itential/ha2/redis.conf.j2
+        dest: "{{ dir }}/conf/redis.conf"
+        owner: "999"
+        group: "999"
+        mode: "0640"
+        force: false
+      no_log: true
+
+    - name: Sentinel configuration (written once; Sentinel rewrites it continuously)
+      ansible.builtin.template:
+        src: ../../itential/ha2/sentinel.conf.j2
+        dest: "{{ dir }}/sentinel/sentinel.conf"
+        owner: "999"
+        group: "999"
+        mode: "0640"
+        force: false
+      no_log: true
+
+    - name: Compose file
+      ansible.builtin.template:
+        src: ../../itential/ha2/redis.compose.yml.j2
+        dest: "{{ dir }}/docker-compose.yml"
+        owner: ubuntu
+        group: ubuntu
+        mode: "0644"
+
+    - name: Environment for compose (the exporter's and the health check's password)
+      ansible.builtin.copy:
+        content: "REDIS_MONITOR_PASSWORD={{ redis_monitor_password }}\n"
+        dest: "{{ dir }}/.env"
+        owner: ubuntu
+        group: ubuntu
+        mode: "0600"
+      no_log: true
+
+    - name: Containers up
+      ansible.builtin.command:
+        cmd: docker compose up -d
+        chdir: "{{ dir }}"
+      register: up
+      changed_when: "'Started' in up.stderr or 'Created' in up.stderr or 'Recreated' in up.stderr"
+
+    - name: Wait for Redis to answer as an ACL user
+      ansible.builtin.command:
+        cmd: >-
+          docker exec redis redis-cli -h {{ ip }} -p {{ redis.port }}
+          --user {{ redis.users.monitor.name }} --pass {{ redis_monitor_password }} --no-auth-warning ping
+      register: ping
+      changed_when: false
+      retries: 20
+      delay: 5
+      until: "'PONG' in ping.stdout"
+      no_log: true
+
+- name: The cluster agrees on one master
+  hosts: ha2-redis
+  become: true
+  gather_facts: false
+  run_once: true
+  vars_files:
+    - ../../itential/ha2/versions.yaml
+  vars:
+    ansible_ssh_common_args: -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/dev/null
+    secrets: "{{ hostvars['localhost'].redis_secrets }}"
+  tasks:
+    - name: Sentinel knows the master
+      ansible.builtin.command:
+        cmd: >-
+          docker exec sentinel redis-cli -p {{ redis.sentinel_port }}
+          --user {{ redis.users.sentineluser.name }} --pass {{ secrets[redis.users.sentineluser.env] }}
+          --no-auth-warning sentinel get-master-addr-by-name {{ redis.master_name }}
+      register: master_addr
+      changed_when: false
+      retries: 20
+      delay: 5
+      until: master_addr.stdout_lines | length == 2
+      no_log: true
+
+    - name: Sentinel sees the other two Sentinels and both replicas
+      ansible.builtin.command:
+        cmd: >-
+          docker exec sentinel redis-cli -p {{ redis.sentinel_port }}
+          --user {{ redis.users.sentineluser.name }} --pass {{ secrets[redis.users.sentineluser.env] }}
+          --no-auth-warning sentinel {{ item }} {{ redis.master_name }}
+      register: peers
+      changed_when: false
+      retries: 20
+      delay: 5
+      until: peers.stdout_lines | select('equalto', 'name') | list | length == 2
+      loop: [sentinels, replicas]
+      no_log: true
+
+    - name: Cluster state
+      ansible.builtin.debug:
+        msg: >-
+          master {{ master_addr.stdout_lines | join(':') }};
+          two replicas and two peer Sentinels seen by {{ inventory_hostname }}

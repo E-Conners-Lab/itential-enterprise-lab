@@ -102,11 +102,38 @@ itential_load() { # staged tarballs -> the itential VM's Docker, through this wo
   $VM "docker images --format '{{.Repository}}:{{.Tag}} {{.Size}}' | grep ecr"
 }
 
+itential_load_ha2() { # staged tarballs -> the production VMs' Docker (PID S11, ADR 0053)
+  # The Proxmox host has no address on the OOB network (ADR 0004), so the workstation relays, exactly as
+  # itential-load does for the dev-stack. Each production VM gets only the image its role runs.
+  local targets
+  targets=$(.venv/bin/python -c 'import yaml
+ha2 = yaml.safe_load(open("itential/ha2/versions.yaml"))
+want = {"platform": "platform", "gateway": "gateway5"}
+for v in ha2["vms"]:
+    if v["role"] in want:
+        print(v["ip"], want[v["role"]])')
+  [ -n "$targets" ] || { echo "no platform/gateway VMs in itential/ha2/versions.yaml"; exit 1; }
+  local vm_ip which name repo tag digest
+  while read -r vm_ip which; do
+    local VM="ssh -o BatchMode=yes -o ConnectTimeout=8 -o StrictHostKeyChecking=accept-new ubuntu@${vm_ip}"
+    $VM 'docker version --format "{{.Server.Version}}"' >/dev/null </dev/null || { echo "docker not reachable on ${vm_ip} (run ansible/playbooks/platform-ha2-hosts.yml first)"; exit 1; }
+    while read -r name repo tag digest; do
+      [ "$name" = "$which" ] || continue
+      local image="${repo}:${tag}" tar="${name}-${tag}.tar"
+      if $VM "docker image inspect ${image} >/dev/null 2>&1" </dev/null; then echo "present on ${vm_ip}: ${image}"; continue; fi
+      $SSH "cd ${STAGING} && grep ' itential/${tar}$' MANIFEST.sha256 | sha256sum -c --quiet" </dev/null || { echo "checksum failed for ${tar}"; exit 1; }
+      echo "loading ${tar} into ${vm_ip}"
+      $SSH "cat ${STAGING}/itential/${tar}" </dev/null | $VM "docker load" >/dev/null
+    done < <(ecr_images)
+  done <<< "$targets"
+}
+
 case "$what" in
   microsoft) microsoft ;;
   arista) arista ;;
   itential) itential ;;
   itential-load) itential_load ;;
+  itential-load-ha2) itential_load_ha2 ;;
   all) microsoft; arista ;;
-  *) echo "usage: $0 {microsoft|arista|itential|itential-load|all}"; exit 1 ;;
+  *) echo "usage: $0 {microsoft|arista|itential|itential-load|itential-load-ha2|all}"; exit 1 ;;
 esac

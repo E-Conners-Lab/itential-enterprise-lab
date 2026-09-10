@@ -123,15 +123,18 @@
         netbox_token: "{{ nb_token }}"
         validate_certs: false
         data:
-          address: "{{ item.address }}"
+          address: "{{ item }}"
         state: absent
       loop: >-
-        {{ nb_addrs.json.results
-           | selectattr('tags', 'defined')
-           | selectattr('tags', 'map', 'attribute=slug')
-           | list }}
+        {%- set keep = addresses | map(attribute='address') | list -%}
+        {%- set out = [] -%}
+        {%- for a in nb_addrs.json.results -%}
+          {%- set slugs = a.tags | map(attribute='slug') | list -%}
+          {%- if (slugs | select('in', placement_tags) | list | length) > 0
+                 and (a.address | ansible.utils.ipaddr('address')) not in keep -%}
+            {%- set _ = out.append(a.address) -%}
+          {%- endif -%}
+        {%- endfor -%}
+        {{ out }}
       loop_control:
-        label: "{{ item.address }} {{ item.dns_name | default('') }}"
-      when:
-        - item.tags | map(attribute='slug') | intersect(placement_tags) | length > 0
-        - item.address | ansible.utils.ipaddr('address') not in addresses | map(attribute='address') | list
+        label: "{{ item }}"

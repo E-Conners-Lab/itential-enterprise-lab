@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Name** | itential-enterprise-lab |
-| **Version** | 1.18 |
+| **Version** | 1.19 |
 | **Date** | 2026-09-09 |
 | **Author** | Elliot Conner. Claude Code is the build agent; every action it takes is bounded by this document |
 | **Standard** | Project Initiation Standard PIS-01 - PIS-30 (`~/.claude/skills/project-initiation-standard`) |
@@ -196,6 +196,7 @@ Conventions: **Placement** is Proxmox VM (OpenTofu + Ansible), k3s (Helm/Kustomi
 - **Verification:** `verify/test-06-flowai.sh`; a criterion that spends provider tokens records the cost in the log.
 
 ### S4d — Platform coverage of the EVE-NG lab (Phase 6, amendment 1.8, ADR 0040)
+> **Amendment 1.19 (ADR 0054):** S4d.4's Integration Models become the way the lab reaches NetBox and ServiceNow; the npm adapters are converted away after the Phase 8 cut-over, except the NetBox adapter the InventoryBroker consumes.
 
 - **Purpose:** every Platform application operates the lab devices, so the agents in S4c have governed tools for configuration standards, checks, backups, service lifecycle and tickets, not only ad-hoc show commands.
 - **Placement:** the Platform on VM 205; devices through the InventoryBroker adapter (ADR 0039) and Gateway 5 only. No new VM, no Gateway 4.
@@ -713,6 +714,7 @@ the verify log path and any ADRs added.
 | 1.13 | 2026-09-08 | Phase 6 element 7 (owner request): S4e NetBox enrichment derived from `topology/enterprise.yaml` (addressing on interfaces with peer descriptions, VRFs and ASNs with BGP neighbours in config contexts, racks, provider circuits, config contexts, journal entries; the templates read the YAML, rendered configs unchanged; `netbox-enrich.yml`; `verify/test-06c-netbox.sh`; ADR 0048) |
 | 1.14 | 2026-09-09 | Domain 7: the Anthropic key is the owner's company key with a $15-a-week budget; the platform's session documents are the ledger (`verify/tokens.sh`, `make tokens`, `llm.budget` in versions.yaml), the agent verifies guard it, iteration runs on the local twins or `ONLY=` subsets (ADR 0049) |
 | 1.15 | 2026-09-09 | Reorder (ADR 0050): image-free phases first (7 observability, 8 config/secrets/code, 9 identity without Windows on OpenLDAP + Keycloak + tac_plus, 10 DDI on BIND9 + Kea, 11 Containerlab) and one phase 12 firewall track for NIOS, the PA-VM firewalls and Panorama; Windows Server and the Windows endpoint item dropped, `dc01` released |
+| 1.19 | 2026-09-10 | Integration Models generated from OpenAPI specifications are the default integration; an npm adapter only where the Platform itself requires one (InventoryBroker, LDAP, Gateway Manager). NetBox and ServiceNow convert as the first element after the Phase 8 cut-over, with their specifications pinned in the repo (ADR 0054, owner instruction) |
 | 1.18 | 2026-09-10 | Phase 8 = production Itential environment in the HA2 shape at lab sizes (S11, ADR 0053): nine VMs, containers from ECR, MongoDB replica set, Redis + Sentinel, two Platform nodes behind nginx, migration by replay, VM 205 retired; later phases renumbered 9-13; resource budget: `dc01` removed, VM 205 retiring, Panorama lever 2 pulled |
 | 1.17 | 2026-09-10 | Phase 7 follow-up (ADR 0052, owner request): the official Itential Platform Monitoring dashboard vendored from grafana.com 25527; node/process/Redis/MongoDB exporters beside the dev-stack under the `monitoring` Compose profile; the lab exporter supplies the unpublished wfe-metrics-exporter's series; S7 criterion 8 |
 | 1.16 | 2026-09-09 | Phase 7 design (ADR 0051): Zabbix/Prometheus/Loki ownership, TLS at Traefik on the planned VIPs, hosts and targets from NetBox, documents in `observability/`, device lines in the topology templates and Golden Config with governed pushes, gNMIc on vEOS only, the Platform metrics exporter (S7.7), S7.1 host set and S7.6 drill clarified, `verify/test-07-observability.sh`; IP-plan phase labels follow ADR 0050 |

@@ -1,0 +1,261 @@
+---
+# Phase 8, slice D (PID S11, ADR 0053): the two Itential Platform nodes and the load balancer in front of them.
+# Itential's HA2 architecture puts two Platform servers behind a load balancer, sharing one MongoDB replica set
+# and one Redis cluster; that is what this play builds. The container image and the adapter tags are the Phase 5
+# pins (itential/versions.yaml), loaded from the tarballs staged on the Proxmox host.
+#
+# The encryption key is the one already in .env: it protects every adapter secret the Platform stores, so both
+# nodes must carry the same value, and keeping the dev-stack's key means a database restored from VM 205 would
+# still decrypt (the migration replays instead, but the option costs nothing).
+- name: Platform nodes
+  hosts: ha2-platform
+  become: true
+  gather_facts: false
+  vars_files:
+    - ../../itential/ha2/versions.yaml
+    - ../../itential/versions.yaml
+  vars:
+    ansible_ssh_common_args: -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/dev/null
+    dir: /opt/itential
+    ip: "{{ (vms | selectattr('name', 'equalto', inventory_hostname) | first).ip }}"
+    mongo_members: "{{ vms | selectattr('role', 'equalto', 'mongodb') | map(attribute='name') | list }}"
+    # the Platform's ioredis client takes the Sentinel list as JSON (the variable names were measured in the
+    # 6.5.2 image: server/core/Configuration/model.js)
+    sentinels_json: >-
+      {{ vms | selectattr('role', 'equalto', 'redis')
+         | map(attribute='ip') | map('regex_replace', '^(.*)$', '{"host": "\1", "port": ' ~ redis.sentinel_port | string ~ '}')
+         | join(', ') | regex_replace('^(.*)$', '[\1]') }}
+    enc_key: "{{ lookup('ansible.builtin.env', 'ITENTIAL_ENCRYPTION_KEY') }}"
+  tasks:
+    - name: The encryption key must already exist (Phase 5 generated it; both nodes share it)
+      ansible.builtin.assert:
+        that: enc_key | length == 64
+        fail_msg: ITENTIAL_ENCRYPTION_KEY missing from .env
+        quiet: true
+
+    - name: Directories
+      ansible.builtin.file:
+        path: "{{ dir }}/{{ item.path }}"
+        state: directory
+        owner: "{{ item.owner | default('ubuntu') }}"
+        group: "{{ item.owner | default('ubuntu') }}"
+        mode: "0755"
+      loop:
+        - {path: volumes/platform/adapters, owner: "1001"}
+        - {path: volumes/platform/ssl, owner: "1001"}
+        - {path: volumes/platform/logs, owner: "1001"}
+      loop_control:
+        label: "{{ item.path }}"
+
+    # the host play issued this node's certificate into /opt/itential/tls; the Platform reads it as uid 1001
+    - name: Server certificate for the Platform (uid 1001)
+      ansible.builtin.copy:
+        src: "{{ dir }}/tls/{{ item.src }}"
+        dest: "{{ dir }}/volumes/platform/ssl/{{ item.dest }}"
+        remote_src: true
+        owner: "1001"
+        group: "1001"
+        mode: "{{ item.mode }}"
+      loop:
+        - {src: cert.pem, dest: cert.pem, mode: "0644"}
+        - {src: key.pem, dest: key.pem, mode: "0600"}
+      loop_control:
+        label: "{{ item.dest }}"
+
+    - name: Process groups for the official dashboard (the Pronghorn process titles, ADR 0052)
+      ansible.builtin.copy:
+        src: ../../itential/process-exporter.yml
+        dest: "{{ dir }}/process-exporter.yml"
+        owner: ubuntu
+        group: ubuntu
+        mode: "0644"
+
+    - name: Compose file
+      ansible.builtin.template:
+        src: ../../itential/ha2/platform.compose.yml.j2
+        dest: "{{ dir }}/docker-compose.yml"
+        owner: ubuntu
+        group: ubuntu
+        mode: "0644"
+
+    - name: Environment for compose (secrets only; every other setting is in the compose file)
+      ansible.builtin.copy:
+        dest: "{{ dir }}/.env"
+        owner: ubuntu
+        group: ubuntu
+        mode: "0600"
+        content: |
+          # Rendered by ansible/playbooks/platform-ha2-platform.yml; do not edit.
+          ITENTIAL_ENCRYPTION_KEY={{ enc_key }}
+          MONGO_ITENTIAL_PASSWORD={{ lookup('ansible.builtin.env', mongodb.users.itential.env) }}
+          REDIS_ITENTIAL_PASSWORD={{ lookup('ansible.builtin.env', redis.users.itential.env) }}
+          REDIS_SENTINEL_PASSWORD={{ lookup('ansible.builtin.env', redis.users.sentineluser.env) }}
+          ITENTIAL_ADMIN_PASSWORD={{ lookup('ansible.builtin.env', 'ITENTIAL_ADMIN_PASSWORD') }}
+      no_log: true
+
+    # --- the open-source adapters, installed on every node exactly as Phase 5 installs them -------------
+    - name: Git trusts the adapter checkouts (owned by uid 1001, managed as root)
+      community.general.git_config:
+        name: safe.directory
+        scope: global
+        value: "*"
+
+    - name: Adapter sources at the pinned tags
+      ansible.builtin.git:
+        repo: "{{ item.value.repo }}"
+        dest: "{{ dir }}/volumes/platform/adapters/adapter-{{ item.key }}"
+        version: "{{ item.value.tag }}"
+        depth: 1
+        force: true
+      loop: "{{ adapters | dict2items }}"
+      loop_control:
+        label: "adapter-{{ item.key }} {{ item.value.tag }}"
+      register: adapter_src
+
+    - name: Adapter files owned by the platform uid
+      ansible.builtin.file:
+        path: "{{ dir }}/volumes/platform/adapters"
+        owner: "1001"
+        group: "1001"
+        recurse: true
+      changed_when: false
+
+    - name: Adapter dependencies (npm in the platform image, as uid 1001)
+      ansible.builtin.command:
+        argv:
+          - docker
+          - run
+          - --rm
+          - -u
+          - "1001:1001"
+          - -e
+          - HOME=/tmp
+          - -v
+          - "{{ dir }}/volumes/platform/adapters/adapter-{{ item.key }}:/w"
+          - -w
+          - /w
+          - --entrypoint
+          - npm
+          - "{{ images.platform.repository }}:{{ images.platform.tag }}"
+          - install
+          - --omit=dev
+          - --no-audit
+          - --no-fund
+        creates: >-
+          {{ dir }}/volumes/platform/adapters/adapter-{{ item.key }}/node_modules/@itentialopensource/adapter-utils/package.json
+      loop: "{{ adapters | dict2items }}"
+      loop_control:
+        label: "adapter-{{ item.key }}"
+      register: adapter_npm
+
+    - name: Containers up
+      ansible.builtin.command:
+        cmd: docker compose up -d
+        chdir: "{{ dir }}"
+      register: up
+      changed_when: "'Started' in up.stderr or 'Created' in up.stderr or 'Recreated' in up.stderr"
+
+    - name: Platform reloads the custom services after a package change
+      ansible.builtin.command:
+        cmd: docker compose restart platform
+        chdir: "{{ dir }}"
+      when: (adapter_src is changed or adapter_npm is changed) and up is not changed
+      changed_when: true
+
+    # /login is the unauthenticated liveness endpoint (the image's own healthcheck uses it); /health/server
+    # needs a session, so the version is read after logging in
+    - name: This node serves the login page
+      ansible.builtin.uri:
+        url: "http://{{ ip }}:{{ platform.http_port }}/login"
+        status_code: 200
+      register: live
+      retries: 60
+      delay: 10
+      until: live.status | default(0) == 200
+
+    - name: Log in to this node
+      ansible.builtin.uri:
+        url: "http://{{ ip }}:{{ platform.http_port }}/login"
+        method: POST
+        body_format: json
+        body:
+          username: "{{ platform.admin_user }}"
+          password: "{{ lookup('ansible.builtin.env', 'ITENTIAL_ADMIN_PASSWORD') }}"
+        status_code: [200, 401]
+      register: login
+      no_log: true
+
+    - name: Server health (with the session)
+      ansible.builtin.uri:
+        url: "http://{{ ip }}:{{ platform.http_port }}/health/server"
+        headers: {Cookie: "{{ login.cookies_string }}"}
+        status_code: 200
+      register: health
+      retries: 30
+      delay: 10
+      until: health.status | default(0) == 200
+      when: login.status == 200
+
+    - name: Version
+      ansible.builtin.debug:
+        msg: >-
+          {{ inventory_hostname }}: Platform {{ health.json.version | default('?') }}
+          {{ '(the local administrator was refused: check ITENTIAL_ADMIN_PASSWORD)' if login.status != 200 else '' }}
+
+- name: The load balancer in front of both nodes
+  hosts: ha2-loadbalancer
+  become: true
+  gather_facts: false
+  vars_files:
+    - ../../itential/ha2/versions.yaml
+    - ../../itential/versions.yaml
+  vars:
+    ansible_ssh_common_args: -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/dev/null
+    dir: /opt/itential
+    ip: "{{ (vms | selectattr('name', 'equalto', inventory_hostname) | first).ip }}"
+    platform_nodes: "{{ vms | selectattr('role', 'equalto', 'platform') | list }}"
+  tasks:
+    - name: Nginx configuration
+      ansible.builtin.template:
+        src: ../../itential/ha2/nginx.conf.j2
+        dest: "{{ dir }}/nginx.conf"
+        owner: ubuntu
+        group: ubuntu
+        mode: "0644"
+      register: nginx_conf
+
+    - name: Compose file
+      ansible.builtin.template:
+        src: ../../itential/ha2/loadbalancer.compose.yml.j2
+        dest: "{{ dir }}/docker-compose.yml"
+        owner: ubuntu
+        group: ubuntu
+        mode: "0644"
+
+    - name: Containers up
+      ansible.builtin.command:
+        cmd: docker compose up -d
+        chdir: "{{ dir }}"
+      register: up
+      changed_when: "'Started' in up.stderr or 'Created' in up.stderr or 'Recreated' in up.stderr"
+
+    - name: Nginx reloads a changed configuration
+      ansible.builtin.command:
+        cmd: docker compose exec -T nginx nginx -s reload
+        chdir: "{{ dir }}"
+      when: nginx_conf is changed and up is not changed
+      changed_when: true
+
+    - name: The service name answers through the load balancer
+      ansible.builtin.uri:
+        url: "https://{{ service_name }}.{{ domain }}/login"
+        ca_path: "{{ dir }}/tls/ca.crt"
+        status_code: 200
+      register: lb
+      retries: 30
+      delay: 5
+      until: lb.status | default(0) == 200
+
+    - name: Reachable
+      ansible.builtin.debug:
+        msg: "https://{{ service_name }}.{{ domain }} answers {{ lb.status }} from {{ inventory_hostname }}"

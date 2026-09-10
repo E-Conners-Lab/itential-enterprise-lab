@@ -1,0 +1,259 @@
+---
+# Phase 8, slice A (PID S11, ADR 0053): the eleven production VMs as Docker hosts, and the lab-CA server
+# certificates the guide's "authentication and TLS between components" rule needs. Runs after
+# tofu/platform-ha2 created the VMs. Inventory: the NetBox tag itential-ha2 (netbox-vms.yml), whose per-role
+# tags (ha2-platform, ha2-mongodb, ...) are the groups the later slices address. Idempotent.
+#
+# Certificates (cert-manager on k3s, ClusterIssuer lab-ca, as Phase 5 does for the dev-stack):
+#   every MongoDB member  -> its own name, for intra-cluster TLS and client TLS
+#   every Platform node   -> its own name and itential.lab.internal, so a direct :3443 check works
+#   the load balancer     -> itential.lab.internal, the name every client uses after the cut-over
+- name: Prepare the production Docker hosts
+  hosts: itential-ha2
+  become: true
+  gather_facts: true
+  vars_files:
+    - ../../itential/versions.yaml
+  vars:
+    ansible_ssh_common_args: -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/dev/null
+    stack_dir: /opt/itential
+    docker_apt_version: "5:{{ docker_ce }}"
+  tasks:
+    - name: Wait for cloud-init
+      ansible.builtin.command: cloud-init status --wait
+      changed_when: false
+      failed_when: false
+
+    - name: Hostname equals the NetBox name
+      ansible.builtin.hostname:
+        name: "{{ inventory_hostname }}"
+
+    - name: Baseline packages
+      ansible.builtin.apt:
+        name: [chrony, qemu-guest-agent, ca-certificates, curl, gnupg, jq]
+        state: present
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Guest agent running
+      ansible.builtin.systemd:
+        name: qemu-guest-agent
+        enabled: true
+        state: started
+
+    - name: Time from oob-gw
+      ansible.builtin.copy:
+        dest: /etc/chrony/sources.d/lab.sources
+        content: "server 10.100.0.1 iburst prefer\n"
+        mode: "0644"
+      notify: Restart chrony
+
+    - name: Lab root CA trusted system-wide
+      ansible.builtin.copy:
+        src: ../../docs/lab-root-ca.crt
+        dest: /usr/local/share/ca-certificates/lab-root-ca.crt
+        mode: "0644"
+      notify: Update CA trust
+
+    - name: Docker apt key
+      ansible.builtin.get_url:
+        url: https://download.docker.com/linux/ubuntu/gpg
+        dest: /etc/apt/keyrings/docker.asc
+        mode: "0644"
+
+    - name: Docker apt repository
+      ansible.builtin.apt_repository:
+        repo: >-
+          deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.asc]
+          https://download.docker.com/linux/ubuntu {{ ansible_facts.distribution_release }} stable
+        filename: docker
+        state: present
+
+    - name: Docker CE + Compose plugin at {{ docker_ce }}
+      ansible.builtin.apt:
+        name:
+          - "docker-ce={{ docker_apt_version }}"
+          - "docker-ce-cli={{ docker_apt_version }}"
+          - containerd.io
+          - docker-compose-plugin
+        state: present
+        allow_downgrade: true
+
+    - name: Hold the Docker packages at the pin
+      ansible.builtin.dpkg_selections:
+        name: "{{ item }}"
+        selection: hold
+      loop: [docker-ce, docker-ce-cli]
+
+    - name: Docker daemon settings (log rotation)
+      ansible.builtin.copy:
+        dest: /etc/docker/daemon.json
+        content: "{{ {'log-driver': 'json-file', 'log-opts': {'max-size': '20m', 'max-file': '5'}} | to_nice_json }}\n"
+        mode: "0644"
+      notify: Restart docker
+
+    - name: Docker running
+      ansible.builtin.systemd:
+        name: docker
+        enabled: true
+        state: started
+
+    - name: Operator user in the docker group
+      ansible.builtin.user:
+        name: ubuntu
+        groups: docker
+        append: true
+
+    - name: Stack directory
+      ansible.builtin.file:
+        path: "{{ stack_dir }}"
+        state: directory
+        owner: ubuntu
+        group: ubuntu
+        mode: "0755"
+  handlers:
+    - name: Restart chrony
+      ansible.builtin.systemd:
+        name: chrony
+        state: restarted
+
+    - name: Update CA trust
+      ansible.builtin.command: update-ca-certificates
+      changed_when: true
+
+    - name: Restart docker
+      ansible.builtin.systemd:
+        name: docker
+        state: restarted
+
+# --- certificates from the lab CA, one per host that terminates TLS -----------------------------------------
+- name: Issue the production certificates from the lab CA
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars_files:
+    - ../../itential/ha2/versions.yaml
+  vars:
+    ansible_python_interpreter: "{{ playbook_dir }}/../../.venv/bin/python"
+    kubeconfig: >-
+      {{ lookup('ansible.builtin.env', 'KUBECONFIG_PATH')
+         | default(lookup('ansible.builtin.env', 'HOME') ~ '/.kube/lab-k3s.yaml', true) }}
+    service_fqdn: "{{ service_name }}.{{ domain }}"
+    # role -> the names its certificate must carry; Redis TLS waits for Vault-issued certs (ADR 0053)
+    tls_hosts: >-
+      {%- set out = [] -%}
+      {%- for v in vms if v.role in ['mongodb', 'platform', 'loadbalancer'] -%}
+        {%- set names = [v.name ~ '.' ~ domain] -%}
+        {%- if v.role in ['platform', 'loadbalancer'] -%}{%- set names = names + [service_fqdn] -%}{%- endif -%}
+        {%- set _ = out.append({'name': v.name, 'role': v.role, 'ip': v.ip, 'dns': names}) -%}
+      {%- endfor -%}
+      {{ out }}
+  tasks:
+    - name: Namespace itential-ha2 (holds only these certificates)
+      kubernetes.core.k8s:
+        kubeconfig: "{{ kubeconfig }}"
+        definition: {apiVersion: v1, kind: Namespace, metadata: {name: itential-ha2}}
+
+    - name: Certificate per host from ClusterIssuer lab-ca
+      kubernetes.core.k8s:
+        kubeconfig: "{{ kubeconfig }}"
+        definition:
+          apiVersion: cert-manager.io/v1
+          kind: Certificate
+          metadata: {name: "{{ item.name }}", namespace: itential-ha2}
+          spec:
+            secretName: "{{ item.name }}-tls"
+            duration: 8760h # one year; re-run this play to refresh the copies on the VMs after renewal
+            renewBefore: 720h
+            commonName: "{{ item.dns[0] }}"
+            dnsNames: "{{ item.dns }}"
+            ipAddresses: ["{{ item.ip }}"]
+            usages: [server auth, client auth, digital signature, key encipherment]
+            issuerRef: {name: lab-ca, kind: ClusterIssuer}
+        wait: true
+        wait_condition: {type: Ready, status: "True"}
+        wait_timeout: 180
+      loop: "{{ tls_hosts }}"
+      loop_control:
+        label: "{{ item.name }} {{ item.dns | join(',') }}"
+
+    - name: Read the issued secrets
+      kubernetes.core.k8s_info:
+        kubeconfig: "{{ kubeconfig }}"
+        kind: Secret
+        namespace: itential-ha2
+        name: "{{ item.name }}-tls"
+      register: tls_secrets
+      loop: "{{ tls_hosts }}"
+      loop_control:
+        label: "{{ item.name }}"
+      failed_when: tls_secrets.resources | default([]) | length != 1
+      no_log: true
+
+    - name: Hand the PEMs to the host play
+      ansible.builtin.set_fact:
+        ha2_tls: >-
+          {%- set out = {} -%}
+          {%- for r in tls_secrets.results -%}
+            {%- set _ = out.update({r.item.name: {'cert': r.resources[0].data['tls.crt'] | b64decode,
+                                                  'key': r.resources[0].data['tls.key'] | b64decode,
+                                                  'ca': r.resources[0].data['ca.crt'] | b64decode}}) -%}
+          {%- endfor -%}
+          {{ out }}
+      no_log: true
+
+- name: Install the certificates on the hosts that terminate TLS
+  hosts: ha2-mongodb:ha2-platform:ha2-loadbalancer
+  become: true
+  gather_facts: false
+  vars:
+    ansible_ssh_common_args: -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/dev/null
+    tls_dir: /opt/itential/tls
+    pem: "{{ hostvars['localhost'].ha2_tls[inventory_hostname] }}"
+  tasks:
+    - name: TLS directory
+      ansible.builtin.file:
+        path: "{{ tls_dir }}"
+        state: directory
+        owner: ubuntu
+        group: ubuntu
+        mode: "0755"
+
+    - name: Server certificate and CA
+      ansible.builtin.copy:
+        content: "{{ item.content }}"
+        dest: "{{ tls_dir }}/{{ item.name }}"
+        owner: ubuntu
+        group: ubuntu
+        mode: "0644"
+      loop:
+        - {name: cert.pem, content: "{{ pem.cert }}{{ pem.ca }}"}
+        - {name: ca.crt, content: "{{ pem.ca }}"}
+      loop_control:
+        label: "{{ item.name }}"
+
+    - name: Private key
+      ansible.builtin.copy:
+        content: "{{ pem.key }}"
+        dest: "{{ tls_dir }}/key.pem"
+        owner: ubuntu
+        group: ubuntu
+        mode: "0640"
+      no_log: true
+
+    # MongoDB wants one file holding the key and the certificate (certificateKeyFile), readable by uid 999
+    - name: Combined PEM for MongoDB
+      ansible.builtin.copy:
+        content: "{{ pem.key }}{{ pem.cert }}"
+        dest: "{{ tls_dir }}/server.pem"
+        owner: "999"
+        group: "999"
+        mode: "0600"
+      when: "'ha2-mongodb' in group_names"
+      no_log: true
+
+    - name: The certificate names this host
+      ansible.builtin.command: openssl x509 -in {{ tls_dir }}/cert.pem -noout -ext subjectAltName
+      register: san
+      changed_when: false
+      failed_when: inventory_hostname not in san.stdout

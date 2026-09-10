@@ -137,9 +137,12 @@ phase-observability: ## Phase 7: NetBox seed (phase labels, released addresses) 
 # the load balancer, then Gateway 5 and the tools VM. The cut-over (itential.lab.internal -> iap-lb) and the
 # retirement of VM 205 are separate owner-approved steps, not part of this target.
 phase-platform-ha2: ## Phase 8: NetBox VMs -> tofu apply -> Docker hosts -> MongoDB replica set -> Redis + Sentinel -> Platform nodes + nginx -> Gateway 5 + tools -> verify
+	$(load_env) cd ansible && ansible-playbook playbooks/netbox-seed.yml
 	$(load_env) cd ansible && ansible-playbook playbooks/netbox-vms.yml
 	$(load_env) cd tofu/platform-ha2 && tofu init -input=false >/dev/null && tofu apply -input=false -auto-approve
+	$(load_env) cd ansible && ansible-playbook playbooks/oob-gw.yml --tags dns
 	$(load_env) cd ansible && ansible-playbook -i inventory/netbox.yml playbooks/platform-ha2-hosts.yml
+	images/fetch.sh itential-load-ha2
 	$(load_env) cd ansible && ansible-playbook -i inventory/netbox.yml playbooks/platform-ha2-mongodb.yml
 	$(load_env) cd ansible && ansible-playbook -i inventory/netbox.yml playbooks/platform-ha2-redis.yml
 	$(load_env) cd ansible && ansible-playbook -i inventory/netbox.yml playbooks/platform-ha2-platform.yml

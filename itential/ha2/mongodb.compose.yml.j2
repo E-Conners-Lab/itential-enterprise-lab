@@ -1,0 +1,61 @@
+# MongoDB member of replica set {{ mongodb.replica_set }} (PID S11, ADR 0053). Rendered per host by
+# ansible/playbooks/platform-ha2-mongodb.yml from itential/ha2/versions.yaml; the image is the Phase 5 pin.
+#
+# Host networking: replica-set members advertise the names in rs.initiate(), and the TLS certificate names this
+# VM, so a bridged network with published ports would only add a NAT hop and an address mismatch.
+# Authentication and TLS are the guide's production rule: keyFile for intra-cluster auth, SCRAM for clients,
+# requireTLS with the lab CA (clients present no certificate, so the keyFile is what authenticates members).
+services:
+  mongodb:
+    container_name: mongodb
+    image: {{ images.mongodb.repository }}:{{ images.mongodb.tag }}
+    network_mode: host
+    command:
+      - mongod
+      - --replSet={{ mongodb.replica_set }}
+      - --bind_ip_all
+      - --port={{ mongodb.port }}
+      - --keyFile=/etc/mongo/keyfile
+      - --tlsMode=requireTLS
+      - --tlsCertificateKeyFile=/etc/mongo/tls/server.pem
+      - --tlsCAFile=/etc/mongo/tls/ca.crt
+      - --tlsAllowConnectionsWithoutCertificates
+      - --wiredTigerCacheSizeGB={{ mongodb.wired_tiger_cache_gb }}
+    volumes:
+      - ./data:/data/db
+      - ./keyfile:/etc/mongo/keyfile:ro
+      - /opt/itential/tls:/etc/mongo/tls:ro
+    healthcheck:
+      test: ["CMD-SHELL", "mongosh --quiet --tls --tlsCAFile /etc/mongo/tls/ca.crt --host {{ inventory_hostname }}.{{ domain }} --eval 'db.adminCommand({ping:1})' >/dev/null"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+    restart: unless-stopped
+
+  # the official Itential Platform Monitoring dashboard's MongoDB row (ADR 0052): job mongo_exporter
+  mongodb-exporter:
+    container_name: mongodb-exporter
+    image: {{ images.mongodb_exporter.repository }}:{{ images.mongodb_exporter.tag }}
+    network_mode: host
+    command:
+      - --mongodb.uri=mongodb://{{ mongodb.users.monitor.name }}:${MONGO_MONITOR_PASSWORD}@{{ inventory_hostname }}.{{ domain }}:{{ mongodb.port }}/admin?tls=true&tlsCAFile=/etc/mongo/tls/ca.crt&directConnection=true
+      - --collect-all
+      - --compatible-mode
+      - --web.listen-address={{ ip }}:{{ exporters.mongodb }}
+    volumes:
+      - /opt/itential/tls:/etc/mongo/tls:ro
+    depends_on:
+      - mongodb
+    restart: unless-stopped
+
+  # the dashboard's node row for this host
+  node-exporter:
+    container_name: node-exporter
+    image: {{ images.node_exporter.repository }}:{{ images.node_exporter.tag }}
+    network_mode: host
+    pid: host
+    command: ["--path.rootfs=/host", "--web.listen-address={{ ip }}:{{ exporters.node }}"]
+    volumes:
+      - /:/host:ro,rslave
+    restart: unless-stopped
