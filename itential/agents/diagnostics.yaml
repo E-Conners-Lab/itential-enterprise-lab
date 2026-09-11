@@ -18,7 +18,8 @@ instructions: |
   1. Read the incident with listIncidents: sysparm_query "number=<number>", sysparm_display_value
      "true", sysparm_fields "number,short_description,description,state,sys_id". Take its sys_id.
   2. Find the device names in the ticket text (lab names look like br1-sw01, dc1-leaf02,
-     br2-wan01). Confirm each with dcim_devices_list name ["<name>"]; a device NetBox does not know
+     br2-wan01). Confirm each with dcim_devices_list name "<name>" - one plain filter, no list,
+     no other filter in the call and never null; a device NetBox does not know
      is reported as such and never queried.
   3. Read the live state with the workflow wf-show-command-v1 (device + one exact show command),
      choosing the commands the symptom needs: show running-config | include ^hostname, show vlan,

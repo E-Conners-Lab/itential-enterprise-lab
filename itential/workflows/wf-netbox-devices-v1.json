@@ -1,0 +1,319 @@
+{
+  "name": "wf-netbox-devices-v1",
+  "type": "automation",
+  "description": "Lists NetBox devices reduced to name, site, role, platform, status and primary_ip4, optionally filtered by one value matched against name, site or role; the local twins' inventory tool, because the raw device objects are 52 fields each and overrun a CPU model's inference timeout (PID S4d.5, ADR 0046)",
+  "tasks": {
+    "1a": {
+      "name": "dcim_devices_list",
+      "canvasName": "dcim_devices_list",
+      "summary": "every device in NetBox",
+      "description": "every device in NetBox",
+      "location": "Adapter",
+      "locationType": "lab-netbox:1.0.0",
+      "app": "lab-netbox:1.0.0",
+      "type": "automatic",
+      "displayName": "lab-netbox:1.0.0",
+      "groups": [],
+      "nodeLocation": {
+        "x": 0,
+        "y": 0
+      },
+      "variables": {
+        "incoming": {
+          "adapter_id": "netbox-api",
+          "limit": 500
+        },
+        "outgoing": {
+          "response": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "1b": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "the device list",
+      "description": "the device list",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 300,
+        "y": 0
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "body.results",
+          "obj": "$var.1a.response"
+        },
+        "outgoing": {
+          "return_data": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "1c": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "devices for the runner",
+      "description": "devices for the runner",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 600,
+        "y": 0
+      },
+      "variables": {
+        "incoming": {
+          "obj": {},
+          "path": [
+            "devices"
+          ],
+          "value": "$var.1b.return_data"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "1d": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "filter for the runner",
+      "description": "filter for the runner",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 900,
+        "y": 0
+      },
+      "variables": {
+        "incoming": {
+          "obj": "$var.1c.object",
+          "path": [
+            "filter"
+          ],
+          "value": "$var.job.filter"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "2a": {
+      "name": "runCode",
+      "canvasName": "runCode",
+      "summary": "filter and reduce to six fields per device (Python on the runner)",
+      "description": "filter and reduce to six fields per device (Python on the runner)",
+      "location": "Application",
+      "locationType": null,
+      "app": "GatewayManager",
+      "type": "automatic",
+      "displayName": "GatewayManager",
+      "groups": [],
+      "nodeLocation": {
+        "x": 1800,
+        "y": 0
+      },
+      "variables": {
+        "incoming": {
+          "clusterId": "lab",
+          "language": "python",
+          "code": "import json, sys\nd = json.loads(sys.stdin.read() or \"{}\")\nraw = d.get(\"filter\")\n# A 7B model hands a single string input an object: measured 2026-09-11, filter arrived as\n# {\"site\": \"br1\", \"summary\": \"Devices at site br1\"}. The Platform does not type-check a workflow\n# input, so it arrives here intact - this is the boundary, so coerce it here rather than trust it.\ncoerced = False\nif isinstance(raw, dict):\n    coerced = True\n    for k in (\"filter\", \"value\", \"name\", \"site\", \"role\", \"device\", \"q\"):\n        v = raw.get(k)\n        if isinstance(v, str) and v.strip():\n            raw = v\n            break\n    else:\n        vals = [v for v in raw.values() if isinstance(v, str) and v.strip() and \" \" not in v.strip()]\n        raw = vals[0] if len(vals) == 1 else \"\"\nelif isinstance(raw, list):\n    coerced = True\n    raw = next((v for v in raw if isinstance(v, str) and v.strip()), \"\")\nf = str(raw or \"\").strip().lower()\nout = []\nfor x in d.get(\"devices\") or []:\n    def slug(field):\n        v = x.get(field) or {}\n        return (v.get(\"slug\") or v.get(\"value\") or \"\") if isinstance(v, dict) else str(v or \"\")\n    row = {\n        \"name\": x.get(\"name\") or \"\",\n        \"site\": slug(\"site\"),\n        \"role\": slug(\"role\"),\n        \"platform\": slug(\"platform\"),\n        \"status\": slug(\"status\"),\n        \"primary_ip4\": ((x.get(\"primary_ip4\") or {}) or {}).get(\"address\") or \"\",\n    }\n    if f and f not in (row[\"name\"].lower(), row[\"site\"].lower(), row[\"role\"].lower()):\n        continue\n    out.append(row)\nout.sort(key=lambda r: r[\"name\"])\nmatched = \"\"\nif f and out:\n    matched = (\"name\" if f == out[0][\"name\"].lower()\n               else \"site\" if f == out[0][\"site\"].lower() else \"role\")\nres = {\"count\": len(out), \"filter\": f, \"matched\": matched, \"devices\": out}\nif coerced:\n    # never let a malformed filter read as \"no such device\": that answer is confidently wrong\n    res[\"filter_was_not_a_string\"] = True\n    if not out:\n        res[\"error\"] = (\"filter must be a plain string such as 'br1'; it arrived as \"\n                        + type(d.get(\"filter\")).__name__ + \". Retry with one string value.\")\nprint(json.dumps(res))\n",
+          "data": "$var.1d.object",
+          "safety": {
+            "timeout": 30
+          },
+          "packages": []
+        },
+        "outgoing": {
+          "result": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "2b": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "summary",
+      "description": "summary",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 2100,
+        "y": 0
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "stdout_json",
+          "obj": "$var.2a.result"
+        },
+        "outgoing": {
+          "return_data": "$var.job.summary"
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "2c": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "count",
+      "description": "count",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 2400,
+        "y": 0
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "stdout_json.count",
+          "obj": "$var.2a.result"
+        },
+        "outgoing": {
+          "return_data": "$var.job.count"
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "workflow_start": {
+      "name": "workflow_start",
+      "summary": "workflow_start",
+      "groups": [],
+      "nodeLocation": {
+        "x": -600,
+        "y": 0
+      }
+    },
+    "workflow_end": {
+      "name": "workflow_end",
+      "summary": "workflow_end",
+      "groups": [],
+      "nodeLocation": {
+        "x": 1800,
+        "y": 0
+      }
+    }
+  },
+  "transitions": {
+    "workflow_start": {
+      "1a": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "1a": {
+      "1b": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "1b": {
+      "1c": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "1c": {
+      "1d": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "1d": {
+      "2a": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "2a": {
+      "2b": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "2b": {
+      "2c": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "2c": {
+      "workflow_end": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "workflow_end": {}
+  },
+  "groups": [],
+  "canvasVersion": 3,
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "filter": {
+        "type": "string",
+        "required": true,
+        "description": "One value: a device name (br2-sw01), a site slug (br1) or a role slug (leaf). Empty string for every device."
+      }
+    },
+    "required": [
+      "filter"
+    ]
+  },
+  "outputSchema": {
+    "type": "object",
+    "properties": {
+      "summary": {
+        "type": "object"
+      },
+      "count": {
+        "type": "number"
+      }
+    }
+  },
+  "tags": [],
+  "preAutomationTime": 300000,
+  "sla": 600000,
+  "font_size": 12,
+  "decorators": []
+}

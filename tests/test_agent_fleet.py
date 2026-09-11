@@ -221,3 +221,144 @@ def test_verify_pid_and_adr_cover_s4d5() -> None:
     ):
         assert s in text, f"verify 06 S4d.5 lacks {s}"
     assert "| 1.11 |" in PID.read_text() and ADR.exists()
+
+
+INTEGRATIONS = ROOT / "itential" / "integrations"
+
+
+def integration_params() -> dict[str, dict[str, str]]:
+    """operationId -> {parameter name: declared JSON Schema type}, over every Integration Model."""
+    import json
+
+    out: dict[str, dict[str, str]] = {}
+    for spec in sorted(INTEGRATIONS.glob("*.json")):
+        doc = json.loads(spec.read_text())
+        for operations in doc["paths"].values():
+            for op in operations.values():
+                if isinstance(op, dict) and "operationId" in op:
+                    out[op["operationId"]] = {
+                        p["name"]: p["schema"].get("type", "string")
+                        for p in op.get("parameters", [])
+                    }
+    return out
+
+
+def test_no_instruction_shows_a_list_filter_for_a_single_valued_parameter(
+    docs: dict,
+) -> None:
+    """S4f turned every NetBox filter from an array into a single value, because a workflow's
+    `$var` does not resolve inside an array (ADR 0054, itential/integrations/build.py). The prompts
+    kept teaching the array form, so a model that followed them sent name ["br1-sw01"] into a
+    string parameter and the Platform rejected the call as invalid-tool-input. Measured
+    2026-09-11 on netbox-sot-local."""
+    params = integration_params()
+    for name, doc in sorted(docs.items()):
+        text = doc["instructions"]
+        for tool in doc["tools"]:
+            if tool.get("kind") != "integration":
+                continue
+            for param, typ in params.get(tool["reference"], {}).items():
+                if typ == "array":
+                    continue
+                assert not re.search(rf"\b{re.escape(param)}\s*\[", text), (
+                    f"{name}: instructions show {param} as a list, but "
+                    f"{tool['reference']} declares it {typ}"
+                )
+
+
+def test_every_agent_with_integration_tools_forbids_a_null_filter(docs: dict) -> None:
+    """A 7B model fills every declared property, null included, and a null fails validation before
+    the call leaves the Platform (invalid-tool-input, measured 2026-09-11). Each prompt has to say
+    to leave an unused filter out of the call."""
+    for name, doc in sorted(docs.items()):
+        if not any(t.get("kind") == "integration" for t in doc["tools"]):
+            continue
+        text = doc["instructions"].lower()
+        assert "null" in text, f"{name}: instructions never forbid a null filter"
+
+
+WORKFLOWS = ROOT / "itential" / "workflows"
+REDUCING_DEVICE_TOOL = "wf-netbox-devices-v1"
+
+
+def test_the_local_twins_read_inventory_through_the_reducing_workflow() -> None:
+    """A 7B model on CPU cannot be handed raw NetBox device objects: 52 fields each, five devices at br1
+    are 17.9 kB, and the prompt reached 7,823 tokens - ~350 s of ingestion at ~22 tokens/sec on tools-01,
+    past the Platform's inference timeout, reported as "ollama model invocation failed" while Ollama was
+    still working (measured 2026-09-11). wf-netbox-devices-v1 reduces the list on the runner first. The
+    Claude agents keep the raw operations: they need the full objects and ingest them in a second."""
+    docs = {p.stem: yaml.safe_load(p.read_text()) for p in AGENTS.glob("*.yaml")}
+    for name, doc in sorted(docs.items()):
+        if doc["profile"] != "ollama-lab":
+            continue
+        tools = tool_names(doc)
+        assert "dcim_devices_list" not in tools, (
+            f"{name}: a local twin must not read the raw device list; use {REDUCING_DEVICE_TOOL}"
+        )
+        if REDUCING_DEVICE_TOOL in tools:
+            assert REDUCING_DEVICE_TOOL in doc["instructions"], (
+                f"{name}: holds {REDUCING_DEVICE_TOOL} but never tells the model to run it"
+            )
+
+
+def test_the_reducing_workflow_passes_no_filter_to_the_integration() -> None:
+    """The filters are workflow inputs, matched in Python. The operation is called with `limit` only, so
+    there is no optional filter for a model to fill with null and no array for a `$var` to fall into
+    (ADR 0054)."""
+    import json
+
+    wf = json.loads((WORKFLOWS / f"{REDUCING_DEVICE_TOOL}.json").read_text())
+    calls = [
+        t for t in wf["tasks"].values() if t.get("name") == "dcim_devices_list"
+    ]
+    assert len(calls) == 1, f"{REDUCING_DEVICE_TOOL} should read the device list exactly once"
+    incoming = calls[0]["variables"]["incoming"]
+    assert set(incoming) == {"adapter_id", "limit"}, (
+        f"the operation takes adapter_id and limit only, got {sorted(incoming)}"
+    )
+    # One input: Operations Manager refuses a job start unless EVERY declared input is supplied
+    # (measured 2026-09-11: site alone -> 500, metadata.error ["name", "role"]), so three declared
+    # filters would mean three keys on every call from a 7B model - the fragility this avoids.
+    assert set(wf["inputSchema"]["properties"]) == {"filter"}
+    assert wf["inputSchema"]["required"] == ["filter"]
+
+
+def test_the_reducing_workflow_survives_a_filter_that_is_not_a_string() -> None:
+    """Measured 2026-09-11: qwen2.5:7b sent `filter` as {"site": "br1", "summary": "Devices at site
+    br1"}. The Platform does not type-check a workflow input, so it reached the runner intact, the
+    code stringified the dict, nothing matched, and the agent answered "not in NetBox" - confidently
+    wrong, which is worse than an error. The runner coerces and flags it instead."""
+    import importlib.util
+    import json
+    import subprocess
+    import sys
+
+    spec = importlib.util.spec_from_file_location("b", ROOT / "itential" / "workflows" / "build.py")
+    build = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(build)
+    devices = [
+        {"name": "br1-sw01", "site": {"slug": "br1"}, "role": {"slug": "leaf"},
+         "platform": {"slug": "eos"}, "status": {"value": "active"},
+         "primary_ip4": {"address": "10.100.0.165/24"}},
+        {"name": "br2-sw01", "site": {"slug": "br2"}, "role": {"slug": "leaf"},
+         "platform": {"slug": "eos"}, "status": {"value": "active"}, "primary_ip4": None},
+    ]
+
+    def run(f: object) -> dict:
+        r = subprocess.run(
+            [sys.executable, "-c", build.DEVICES_CODE],
+            input=json.dumps({"devices": devices, "filter": f}),
+            capture_output=True, text=True,
+        )
+        assert r.returncode == 0, r.stderr
+        return json.loads(r.stdout)
+
+    assert run("br1")["count"] == 1 and run("br1")["matched"] == "site"
+    nested = run({"site": "br1", "summary": "Devices at site br1"})
+    assert nested["count"] == 1, "the object the model actually sent must still find br1"
+    assert nested["filter_was_not_a_string"] is True
+    assert run(["br2-sw01"])["count"] == 1, "a list must coerce too"
+    assert run("")["count"] == 2, "empty means every device"
+    miss = run("nope-99")
+    assert miss["count"] == 0 and not miss.get("error"), "a genuine miss is not an error"
+    assert run({"summary": "nothing usable"}).get("filter_was_not_a_string") is True

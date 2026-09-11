@@ -96,8 +96,11 @@ discovery and asserts every operation is an authorized tool.
 | `diagnostics` | Reads, plus **one** write: a "Proposed fix" work note on an incident | Suggest |
 | `remediation` | Reads, plus `wf-config-push-v1` behind the Work Center card | Act, gated |
 
-Each has an `ollama-lab` twin with one to three tools. The twins **do not get the raw gateway tool** — a
-small model given it invented node names.
+Each has an `ollama-lab` twin with one to three tools, and the twins are given **reducing workflows
+rather than raw tools**, for two separately measured reasons: a small model handed the raw gateway tool
+invented node names, and one handed the raw `dcim_devices_list` overran the Platform's inference timeout
+on 52-field device objects (see Troubleshooting). So the twins read inventory through
+`wf-netbox-devices-v1`, which returns six fields per device.
 
 ---
 
@@ -117,9 +120,10 @@ evaluating twelve devices.
   and NetBox reservation; approving it puts the VLAN on the switch and the instance active; rejecting it
   changes nothing and rolls the reservation back; deleting it removes the VLAN through an approval card
   and retires the instance.
-- Integrations: eleven authorized tools across the two models, and an agent answers a device question
-  through `dcim_devices_list` and an incident question through `listIncidents` — **never** through an
-  adapter method.
+- Integrations: eleven authorized tools across the two models, and a Claude agent answers a device
+  question through `dcim_devices_list` and an incident question through `listIncidents` — **never**
+  through an adapter method. The `ollama-lab` twins reach the same data through `wf-netbox-devices-v1`,
+  which calls that operation once on the runner and reduces the result.
 - Agents: each agent in the fleet answers its own question, and the answer matches the second source. The
   compliance agent's run costs about 3.5k input tokens through the summary workflow.
 
@@ -164,6 +168,14 @@ tool that is not there. A zero-token failure is the tell — a session that genu
 costs tokens. This bites hardest when you import a single workflow **by hand** to test a change, which
 is exactly when you are least likely to think about re-running the agent play afterwards.
 
+**You changed only a prompt and do not want to re-run the play.** `make agents-push` (or
+`CHECK=1 make agents-push` to diff first) PATCHes `prompt.instructions` on the agents that already
+exist, from `itential/agents/*.yaml`, touching no tool binding, provider or operator. It reads the
+prompt back afterwards, because the PATCH answering 200 is not proof the prompt stored. It cannot
+create an agent - that needs the resolved tool ids - and after any workflow import the play is still
+the path, for the uuid reason above. The MCP server is no help here: it can read agents but exposes
+no agent-update tool.
+
 **An Integration Model will not update.** `PUT /integration-models` answers 500 on 6.5.2, and the
 documentation says to delete and re-import. The play compares the export's paths against the document and,
 when they differ, removes the integration, deletes and re-creates the model, then re-creates the
@@ -189,9 +201,31 @@ literal is rejected outright. The integration documents drop it. Also set `OLLAM
 enough for the payload — twelve parsed devices needs 16384 — or the model silently truncates its input and
 answers about the devices it happened to see.
 
+**A tool call fails `invalid_input` before it reaches the external system.** Two causes, both in the
+prompt rather than the model. First, **a filter passed as a list**: S4f turned every NetBox filter from
+an array into a single value, because a workflow's `$var` does not resolve *inside* an array (ADR 0054),
+and the agent prompts went on teaching `name ["br1-sw01"]` for another day. Second, **a filter set to
+`null`**: a 7B model fills in every property the schema declares, and `null` is not a string, so the
+Platform rejects the call with `[invalid-tool-input] Input validation failed` and an `input` block full
+of nulls. Say in the prompt that each filter is one plain value and that an unused filter is left out of
+the call entirely. `tests/test_agent_fleet.py` now compares every prompt's filter examples against the
+parameter types in `itential/integrations/*.json`, so the array form cannot come back.
+
 **A local twin invents node names.** That is why the twins do not get the raw gateway tool. A small model
 handed an unconstrained `sendCommand` will confidently make up a hostname; handed a workflow that takes a
 device from a fixed inventory, it cannot.
+
+**A local twin fails with "ollama model invocation failed" while Ollama is working fine.** That
+string is the *Platform's* inference timeout, not an error from Ollama. Check Ollama's own log before
+believing it: measured 2026-09-11, `dcim_devices_list` handed straight to `netbox-sot-local` returned
+five br1 devices of 52 fields each (17.9 kB), the prompt reached **7,823 tokens**, and qwen2.5:7b on
+the four CPU cores of tools-01 ingests at **~22 tokens/sec** - about 350 s. The Platform gave up, marked
+the session FAILED and **deleted the session record** (so `GET /sessions/<id>` 404s for a session the
+list endpoint just showed you), while llama-server finished the same request successfully at 16:55:13,
+`truncated = 0`. The fix is the same one as the entry below: reduce the data before it reaches the
+model. `wf-netbox-devices-v1` reads the list once and hands back six fields per device - br1 goes from
+17.9 kB to 730 bytes - and the twins hold that workflow instead of the raw operation. The Claude agents
+keep the raw operations: they need the full objects and ingest them in a second.
 
 **An agent burns an enormous number of tokens.** Measured: the raw compliance-report tools cost the
 compliance agent **638k input tokens** in one session. `wf-compliance-report-v1` reduces the reports on the

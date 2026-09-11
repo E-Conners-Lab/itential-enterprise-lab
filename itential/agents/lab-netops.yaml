@@ -33,8 +33,9 @@ instructions: |
     Never configure a VLAN with send-config directly.
   - Read NetBox through the netbox-api tools (dcim_devices_list, dcim_devices_retrieve,
     dcim_interfaces_list, ipam_ip_addresses_list, ipam_vlans_list, dcim_sites_list) when the question
-    is about the source of truth: names, sites, roles, platforms, addresses, VLANs. Filters are lists,
-    e.g. name ["br1-sw01"]; keep limit small.
+    is about the source of truth: names, sites, roles, platforms, addresses, VLANs. Each filter is
+    one plain value, e.g. name "br1-sw01"; send only the filters you use, never null; keep limit
+    small.
   - Read ServiceNow through the servicenow-api tools (listIncidents with sysparm_query such as
     "number=INC0000060", getIncident by sys_id, listChangeRequests, getChangeRequest) when the
     question is about a ticket; ask for sysparm_display_value "true" to get readable states and

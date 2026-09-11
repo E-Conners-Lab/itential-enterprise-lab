@@ -2243,6 +2243,133 @@ def compliance_report() -> dict:
     )
 
 
+# --- wf-netbox-devices-v1 (S4d.5, ADR 0046): one cheap NetBox inventory tool for the local twins -------
+# Measured 2026-09-11: `dcim_devices_list` handed straight to a 7B model returns NetBox device objects of
+# 52 fields each - five devices at br1 are 17.9 kB, and with the tool schemas the prompt reached 7,823
+# tokens. qwen2.5:7b on the four CPU cores of tools-01 ingests at ~22 tokens/sec, so the Platform's
+# inference timeout fired at around 350 s and reported "ollama model invocation failed" while Ollama was
+# still working (it finished the same request at 16:55:13, truncated = 0). This is the wf-compliance-
+# report-v1 shape applied to inventory: read the list once, reduce it on the Gateway 5 runner, and hand
+# the model six fields per device. All 21 lab devices reduce to 2.8 kB; br1 alone to about 700 bytes.
+#
+# The filters are workflow inputs rather than integration parameters on purpose. The operation is called
+# with `limit` only, so there is no filter to leave out and no null to reject (ADR 0054), and the
+# matching happens in Python where an absent filter is simply an absent filter.
+DEVICES_CODE = """import json, sys
+d = json.loads(sys.stdin.read() or "{}")
+raw = d.get("filter")
+# A 7B model hands a single string input an object: measured 2026-09-11, filter arrived as
+# {"site": "br1", "summary": "Devices at site br1"}. The Platform does not type-check a workflow
+# input, so it arrives here intact - this is the boundary, so coerce it here rather than trust it.
+coerced = False
+if isinstance(raw, dict):
+    coerced = True
+    for k in ("filter", "value", "name", "site", "role", "device", "q"):
+        v = raw.get(k)
+        if isinstance(v, str) and v.strip():
+            raw = v
+            break
+    else:
+        vals = [v for v in raw.values() if isinstance(v, str) and v.strip() and " " not in v.strip()]
+        raw = vals[0] if len(vals) == 1 else ""
+elif isinstance(raw, list):
+    coerced = True
+    raw = next((v for v in raw if isinstance(v, str) and v.strip()), "")
+f = str(raw or "").strip().lower()
+out = []
+for x in d.get("devices") or []:
+    def slug(field):
+        v = x.get(field) or {}
+        return (v.get("slug") or v.get("value") or "") if isinstance(v, dict) else str(v or "")
+    row = {
+        "name": x.get("name") or "",
+        "site": slug("site"),
+        "role": slug("role"),
+        "platform": slug("platform"),
+        "status": slug("status"),
+        "primary_ip4": ((x.get("primary_ip4") or {}) or {}).get("address") or "",
+    }
+    if f and f not in (row["name"].lower(), row["site"].lower(), row["role"].lower()):
+        continue
+    out.append(row)
+out.sort(key=lambda r: r["name"])
+matched = ""
+if f and out:
+    matched = ("name" if f == out[0]["name"].lower()
+               else "site" if f == out[0]["site"].lower() else "role")
+res = {"count": len(out), "filter": f, "matched": matched, "devices": out}
+if coerced:
+    # never let a malformed filter read as "no such device": that answer is confidently wrong
+    res["filter_was_not_a_string"] = True
+    if not out:
+        res["error"] = ("filter must be a plain string such as 'br1'; it arrived as "
+                        + type(d.get("filter")).__name__ + ". Retry with one string value.")
+print(json.dumps(res))
+"""
+
+
+def netbox_devices() -> dict:
+    def put(tid: str, key: str, obj_ref: str, value: str, x: int) -> dict:
+        return task(
+            "setObjectKey",
+            "WorkFlowEngine",
+            f"{key} for the runner",
+            {"obj": obj_ref, "path": [key], "value": value},
+            {"object": None},
+            display="Tools",
+            x=x,
+        )
+
+    tasks = {
+        # no filter parameters: the whole list once, reduced below. 21 devices today; limit is the guard.
+        "1a": nbi("dcim_devices_list", "every device in NetBox", {"limit": 500}, x=0),
+        "1b": jq("the device list", "$var.1a.response", "body.results", x=300),
+        "1c": put("1c", "devices", {}, "$var.1b.return_data", 600),
+        "1d": put("1d", "filter", "$var.1c.object", "$var.job.filter", 900),
+        "2a": task(
+            "runCode",
+            "GatewayManager",
+            "filter and reduce to six fields per device (Python on the runner)",
+            {
+                "clusterId": CLUSTER,
+                "language": "python",
+                "code": DEVICES_CODE,
+                "data": "$var.1d.object",
+                "safety": {"timeout": 30},
+                "packages": [],
+            },
+            {"result": None},
+            x=1800,
+        ),
+        "2b": jq("summary", "$var.2a.result", "stdout_json", x=2100, to_job="summary"),
+        "2c": jq("count", "$var.2a.result", "stdout_json.count", x=2400, to_job="count"),
+    }
+    return workflow(
+        "wf-netbox-devices-v1",
+        "Lists NetBox devices reduced to name, site, role, platform, status and primary_ip4, "
+        "optionally filtered by one value matched against name, site or role; the local twins' inventory "
+        "tool, because the raw "
+        "device objects are 52 fields each and overrun a CPU model's inference timeout (PID S4d.5, ADR 0046)",
+        {
+            # ONE input on purpose. Operations Manager `jobs/start` refuses a job unless EVERY declared
+            # input is supplied - `required` does not make one optional (measured 2026-09-11: starting
+            # this workflow with site alone answered 500, metadata.error ["name", "role"]). Three
+            # declared filters therefore meant three keys on every call, which is the null-filling
+            # fragility this workflow exists to avoid. One value, matched against name, site or role
+            # in Python; the slugs do not collide in this lab.
+            "filter": {
+                "type": "string",
+                "required": True,
+                "description": "One value: a device name (br2-sw01), a site slug (br1) or a role "
+                "slug (leaf). Empty string for every device.",
+            },
+        },
+        tasks,
+        chain("1a", "1b", "1c", "1d", "2a", "2b", "2c"),
+        {"summary": {"type": "object"}, "count": {"type": "number"}},
+    )
+
+
 if __name__ == "__main__":
     for wf in (
         device_count(),
@@ -2254,6 +2381,7 @@ if __name__ == "__main__":
         config_push(),
         compliance_run(),
         compliance_report(),
+        netbox_devices(),
         backup_all(),
     ):
         out = HERE / f"{wf['name']}.json"
