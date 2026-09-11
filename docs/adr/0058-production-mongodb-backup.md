@@ -1,6 +1,6 @@
 # 0058 — The production MongoDB is backed up nightly by `mongodump` on a secondary, and the verify restores it
 
-- **Status:** proposed (owner instruction 2026-09-11, after asking whether the lab is ready to test Itential marketplace assets: "as long as we have rollback capability")
+- **Status:** accepted (PR #30, 2026-09-11) — the nightly dump runs and S11.9 restores it
 - **Date:** 2026-09-11
 - **Related:** ADR 0053 (the production environment), ADR 0031 (CNPG backs up to Garage; phase 9 copies backups off-host), ADR 0002, PID S11 amendment 1.24
 

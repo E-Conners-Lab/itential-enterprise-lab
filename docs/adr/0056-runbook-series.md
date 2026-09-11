@@ -1,6 +1,6 @@
 # 0056 — A nine-chapter runbook series in `docs/runbooks/`, parameterised and adaptable, with the blog posts drafted on top later
 
-- **Status:** proposed (owner request 2026-09-10, after Phase 8 closed: "when we're done with phase 8 I want to create some runbooks")
+- **Status:** accepted (PR #26, 2026-09-11) — all nine chapters exist and 66 document tests hold them to the repo
 - **Date:** 2026-09-10
 - **Related:** every phase ADR (each chapter is one track); PID amendment 1.21
 

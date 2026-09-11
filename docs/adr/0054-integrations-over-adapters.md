@@ -1,6 +1,6 @@
 # 0054 — Integration Models built from OpenAPI specifications are the default; an adapter only where the Platform itself requires one
 
-- **Status:** proposed (owner instruction 2026-09-10: "going forward I would like to use the integrations over the adapters when possible. I want to use the openapi specs as much as possible also")
+- **Status:** accepted (PR #27 and #28, 2026-09-11) — no workflow reaches an adapter; S4f.1-S4f.6 pass
 - **Date:** 2026-09-10
 - **Related:** ADR 0039 (Configuration Manager through the InventoryBroker adapter), ADR 0045 (Integration Models for NetBox and ServiceNow as agent tools), ADR 0048 (NetBox enrichment; journal entries through the NetBox adapter's generic request), ADR 0053 (the production environment), PID S4b/S4d.4/S11 (amendment 1.19)
 
