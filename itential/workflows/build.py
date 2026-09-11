@@ -267,6 +267,18 @@ def chain(*ids: str) -> dict:
     }
 
 
+def show_command_transitions() -> dict:
+    """chain() plus the one failure edge: sendCommand -> the message task -> workflow_end."""
+    tr = chain("0a", "0b", "1a", "1b", "2a", "3a", "3b", "3c", "4a", "4b", "4c", "4d")
+    # "error", not "failure": a Gateway task that 404s lands in state `error`, and a `failure` edge does
+    # not fire for it - the job reported "5a could have led to the workflow end task, but did not" while
+    # the failure edge sat right there (measured 2026-09-11). branch_vlan already guards its sendConfig
+    # this way. `failure` is for a task that COMPLETES unsuccessfully: an evaluate, or a rejected form.
+    tr["2a"]["5a"] = {"state": "error", "type": "standard"}
+    tr["5a"] = t("", "workflow_end")
+    return tr
+
+
 # --- wf-netbox-device-count-v1 (S4.2): NetBox adapter page -> job variable device_count -----------
 def device_count() -> dict:
     tasks = {
@@ -432,6 +444,20 @@ def flag(summary: str, value: str, job_var: str, x: int, y: int = 0) -> dict:
         "WorkFlowEngine",
         summary,
         {"input": value, "outputType": "boolean", "variables": ""},
+        {"output": f"$var.job.{job_var}"},
+        display="Tools",
+        x=x,
+        y=y,
+    )
+
+
+def note(summary: str, value: str, job_var: str, x: int, y: int = 0) -> dict:
+    """A literal string published as a job variable; `flag`'s sibling for a message rather than a bool."""
+    return task(
+        "makeData",
+        "WorkFlowEngine",
+        summary,
+        {"input": value, "outputType": "string", "variables": ""},
         {"output": f"$var.job.{job_var}"},
         display="Tools",
         x=x,
@@ -1325,6 +1351,19 @@ def show_command() -> dict:
         ),
     }
     tasks["0a"], tasks["0b"] = selector("$var.job.device", x=-600)
+    # Gateway 5 answers 404 "Missing nodes - Inventory 'lab': [X]" for a device that is not there.
+    # Without a failure transition the job dead-ends ("Job has no available transitions") and the
+    # calling agent session never gets a result back - it hangs for ever, holding Ollama's one slot
+    # (measured 2026-09-11: device-ops-local invented "R1"; the job errored in 69 s and the session
+    # was still RUNNING 18 minutes later). This ends the job with a message the agent can report.
+    tasks["5a"] = note(
+        "the device is not in the inventory",
+        "the device is not in the Inventory Manager inventory 'lab'; check the name and do not retry",
+        "device_error",
+        x=600,
+        y=-300,
+    )
+
     return workflow(
         "wf-show-command-v1",
         "Runs one show command on an inventory node through Gateway 5 and returns the raw output plus structured data: "
@@ -1342,9 +1381,10 @@ def show_command() -> dict:
             },
         },
         tasks,
-        chain("0a", "0b", "1a", "1b", "2a", "3a", "3b", "3c", "4a", "4b", "4c", "4d"),
+        show_command_transitions(),
         {
             "raw": {"type": "object"},
+            "device_error": {"type": "string"},
             "parsed": {"type": ["object", "array", "null"]},
             "parser": {"type": "string"},
             "parse_error": {"type": "string"},
@@ -1598,6 +1638,33 @@ def config_push() -> dict:
     tr[
         "9a"
     ] = {}  # rejected: no transition to the end, the job ends in error with nothing pushed
+    # A device the inventory does not have is NOT the rejection case: sendConfig answers 404 and,
+    # with no failure edge, the job dead-ends and the calling agent session hangs for ever (measured
+    # 2026-09-11 on wf-show-command-v1). This ends the job cleanly with changed = false and a message.
+    # The reject path above keeps its deliberate error-end: that semantic is a separate decision.
+    tasks["6a"] = note(
+        "the device is not in the inventory",
+        "the device is not in the Inventory Manager inventory 'lab'; nothing was pushed",
+        "device_error",
+        x=900,
+        y=-400,
+    )
+    tasks["6b"] = flag("changed = false (no such device)", "false", "changed", x=1200, y=-400)
+    tr["3a"]["6a"] = {"state": "error", "type": "standard"}  # Gateway error, not a failure finish
+    tr["6a"] = t("", "6b")
+    tr["6b"] = t("", "workflow_end")
+    # `write memory` failing is not the same case: the configuration IS on the device, so the job
+    # still ends with changed = true and says the save did not happen. Without this edge it would
+    # dead-end and hang the caller exactly like 3a did.
+    tasks["7a"] = note(
+        "the save did not happen",
+        "the configuration was applied but 'write memory' failed; it is not persisted across a reload",
+        "save_error",
+        x=1500,
+        y=-400,
+    )
+    tr["4a"]["7a"] = {"state": "error", "type": "standard"}
+    tr["7a"] = t("", "5a")
     return workflow(
         "wf-config-push-v1",
         "Pushes operator-supplied configuration lines to one inventory node through Gateway 5 after a Work Center "
@@ -1625,6 +1692,8 @@ def config_push() -> dict:
             "changed": {"type": "boolean"},
             "config_result": {"type": "object"},
             "save_result": {"type": "object"},
+            "device_error": {"type": "string"},
+            "save_error": {"type": "string"},
         },
     )
 

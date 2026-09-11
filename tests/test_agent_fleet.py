@@ -362,3 +362,84 @@ def test_the_reducing_workflow_survives_a_filter_that_is_not_a_string() -> None:
     miss = run("nope-99")
     assert miss["count"] == 0 and not miss.get("error"), "a genuine miss is not an error"
     assert run({"summary": "nothing usable"}).get("filter_was_not_a_string") is True
+
+
+DEVICE_WORKFLOWS = ("wf-show-command-v1", "wf-config-push-v1")
+
+
+def test_a_device_the_inventory_lacks_ends_the_job_instead_of_hanging_the_agent() -> None:
+    """Measured 2026-09-11: device-ops-local invented the device "R1"; Gateway 5 answered 404
+    "Missing nodes - Inventory 'lab': [R1]", the job dead-ended ("Job has no available transitions")
+    and the agent session was STILL RUNNING 18 minutes later, holding Ollama's single slot. A job
+    that ends in error at least returns; one with no path to workflow_end never does. Every task that
+    sends to a device needs a failure edge that reaches the end and publishes device_error."""
+    import json
+
+    for name in DEVICE_WORKFLOWS:
+        wf = json.loads((WORKFLOWS / f"{name}.json").read_text())
+        tasks, tr = wf["tasks"], wf["transitions"]
+        senders = [
+            tid for tid, t in tasks.items()
+            if t.get("name") in ("sendCommand", "sendConfig")
+            and "inventory" in (t.get("variables", {}).get("incoming") or {})
+        ]
+        assert senders, f"{name}: no device-sending task found"
+        for tid in senders:
+            edges = tr.get(tid, {})
+            # It must be `error`, not `failure`. A Gateway task that 404s lands in state `error` and a
+            # `failure` edge never fires for it: measured 2026-09-11, the job said "5a could have led to
+            # the workflow end task, but did not" with the failure edge present and correct.
+            fail = [b for b, e in edges.items() if e.get("state") == "error"]
+            assert fail, (
+                f"{name}: {tid} ({tasks[tid]['name']}) has no `error` transition; a device the "
+                "inventory lacks dead-ends the job and hangs the calling agent for ever "
+                "(a `failure` edge does not fire for an errored Gateway task)"
+            )
+            # and that branch must actually reach the end
+            seen, stack = set(), list(fail)
+            while stack:
+                a = stack.pop()
+                if a in seen:
+                    continue
+                seen.add(a)
+                stack += list(tr.get(a, {}))
+            assert "workflow_end" in seen, (
+                f"{name}: {tid}'s failure branch never reaches workflow_end"
+            )
+        assert "device_error" in wf["outputSchema"]["properties"], (
+            f"{name}: publishes no device_error for the agent to report"
+        )
+
+
+def test_no_twin_is_told_never_to_invent_a_name_without_a_way_to_look_one_up() -> None:
+    """device-ops-local's prompt said "you never invent a device name" while its only tools ran show
+    commands - it had no source of real names, so the instruction was unfollowable and the model
+    invented "R1" (measured 2026-09-11). A prompt that forbids inventing a name has to be paired with
+    a tool that supplies them."""
+    docs = {p.stem: yaml.safe_load(p.read_text()) for p in AGENTS.glob("*.yaml")}
+    lookups = {"wf-netbox-devices-v1", "dcim_devices_list", "wf-show-all-v1"}
+    for name, doc in sorted(docs.items()):
+        text = doc["instructions"].lower()
+        # "never invent device output" (lab-netops-mac) is a different instruction: it forbids
+        # fabricating command results, not names, and that agent does constrain devices to the
+        # inventory. Only the name form needs a tool that supplies real names.
+        if not re.search(r"invent (a |any )?(device |node )?names?\b", text):
+            continue
+        held = tool_names(doc)
+        assert held & lookups, (
+            f"{name}: forbids inventing a device name but holds no tool that returns real ones "
+            f"({sorted(held)})"
+        )
+
+
+def test_the_verify_runs_every_local_twin(docs: dict) -> None:
+    """The twins cost no provider tokens, so there was never a budget reason for four of the five to be
+    the untested ones - and that is exactly where the unfollowable prompt survived (device-ops-local,
+    measured 2026-09-11). Every ollama-lab document runs in the verify."""
+    text = VERIFY.read_text()
+    for name, doc in sorted(docs.items()):
+        if doc["profile"] != "ollama-lab":
+            continue
+        assert re.search(rf"run_agent {re.escape(name)}\b", text), (
+            f"{name} is never exercised by verify/test-06-flowai.sh"
+        )
