@@ -102,22 +102,42 @@ check "S4f.3/4/5 the NetBox writes, the journal entries and the ServiceNow chang
 
 # --- S4f.6 the adapter is gone; the three the Platform requires are still running ------------------
 c6() {
-  local health; health=$(iap "${PLATFORM}/health/adapters")
-  ${PY} - "$health" <<'EOF'
+  local health cfg
+  health=$(iap "${PLATFORM}/health/adapters")
+  cfg=$(iap "${PLATFORM}/adapters?limit=50")
+  ${PY} - "$health" "$cfg" <<'EOF'
 import json, sys, yaml
-a = json.loads(sys.argv[1]); a = a.get("results", a)
-state = {x["id"]: x.get("state") for x in a}
-# match on the npm package, not a substring of the instance name: the id is "ServiceNow" with a
-# capital N, and a lower-cased substring silently matches nothing (this check passed vacuously once)
-pkg = {x["id"]: x.get("package_id", "") for x in a}
-left = [k for k, v in pkg.items() if "adapter-servicenow" in v]
-assert not left, f"adapter-servicenow is still installed: {left}"
-for required in ("InventoryBroker", "LDAP", "NetBox"):
-    assert state.get(required) == "RUNNING", f"{required} is {state.get(required)}, expected RUNNING"
+
+health = json.loads(sys.argv[1]); health = health.get("results", health)
+cfg = json.loads(sys.argv[2]).get("results", [])
+configured = {c["data"]["name"]: c["data"].get("model", "") for c in cfg if "data" in c}
+
+# What "removed" means, in the order the platform actually holds it:
+#   1. no adapter *configuration* - the record this play creates and therefore owns;
+#   2. no running service - /adapters/<name> DELETE answers "The service <name> does not exist";
+#   3. nothing pinned in the oracle, so a later run cannot put it back.
+# Match on the npm package, never on a substring of the instance name: the id is "ServiceNow" with a
+# capital N, and a lower-cased substring silently matches nothing (this check passed vacuously once).
+left = [n for n, model in configured.items() if "adapter-servicenow" in model]
+assert not left, f"adapter-servicenow is still configured: {left}"
+
 adapters = yaml.safe_load(open("itential/versions.yaml")).get("adapters", {})
 assert "servicenow" not in adapters, "itential/versions.yaml still pins adapter-servicenow"
 assert "netbox" in adapters, "adapter-netbox must stay: the InventoryBroker consumes an adapter (ADR 0039)"
-print(f"  adapters running: {sorted(k for k, v in state.items() if v == 'RUNNING')}")
+
+state = {x["id"]: x.get("state") for x in health}
+for required in ("InventoryBroker", "LDAP", "NetBox"):
+    assert state.get(required) == "RUNNING", f"{required} is {state.get(required)}, expected RUNNING"
+
+# /health/adapters is a runtime view and keeps a STOPPED row for an adapter whose configuration and
+# service are both gone (measured 2026-09-11, 6.5.2); it clears when the Platform process restarts.
+# A residue is tolerated, a running one never is - that would mean the removal did not take.
+residue = [k for k, v in state.items() if k not in configured]
+running = [k for k in residue if state.get(k) == "RUNNING"]
+assert not running, f"a removed adapter is still RUNNING: {running}"
+print(f"  configured: {sorted(configured)}")
+if residue:
+    print(f"  health residue (no configuration, not running, clears on a Platform restart): {sorted(residue)}")
 EOF
 }
 check "S4f.6 adapter-servicenow is gone; InventoryBroker, LDAP and NetBox are RUNNING" c6
