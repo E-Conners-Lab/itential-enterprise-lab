@@ -363,3 +363,60 @@ def test_vendored_dashboard_is_the_published_revision() -> None:
         assert f"  {svc}:" in override and 'profiles: ["monitoring"]' in override
     jobs = {j["job"] for j in OBS["prometheus"]["jobs"]}
     assert {"iap_exporter", "node_exporter", "process_exporter", "redis_exporter", "mongo_exporter"} <= jobs
+
+
+# --- ADR 0057 / PID 1.23: monitoring follows the estate ----------------------------------------------------
+MAKEFILE = ROOT / "Makefile"
+# A phase that registers a host: the NetBox VM play is the repo's one way in (ADR 0002 - nothing gets an
+# address that is not reserved in NetBox first), so naming it is what makes a phase host-adding.
+REGISTERS_A_HOST = "netbox-vms.yml"
+REFRESH = "observability-refresh"
+
+
+def _phase_order() -> list[str]:
+    mk = MAKEFILE.read_text()
+    line = next(ln for ln in mk.splitlines() if ln.startswith("PHASES"))
+    return line.split(":=", 1)[1].split()
+
+
+def _phase_bodies() -> dict[str, str]:
+    """Each implemented `phase-*:` target and the recipe under it. The unimplemented phases are a pattern
+    rule that fails loud, so they never appear here - a phase joins this test when it is built."""
+    mk = MAKEFILE.read_text().splitlines()
+    bodies, current = {}, None
+    for ln in mk:
+        m = re.match(r"^(phase-[a-z0-9-]+):", ln)
+        if m:
+            current = m.group(1)
+            bodies[current] = ""
+        elif current and (ln.startswith("\t") or ln.startswith("    ")):
+            bodies[current] += ln + "\n"
+        elif ln and not ln.startswith((" ", "\t", "#")):
+            current = None
+    return bodies
+
+
+def test_the_refresh_target_exists_and_skips_the_governed_device_pushes() -> None:
+    mk = MAKEFILE.read_text()
+    assert re.search(rf"^{REFRESH}:", mk, re.M), f"the Makefile needs an `{REFRESH}` target (ADR 0057)"
+    body = _phase_bodies().get(REFRESH, "") or mk.split(f"{REFRESH}:", 1)[1].split("\n\n", 1)[0]
+    assert "observability.yml" in body and "observability-hosts.yml" in body
+    assert "observability-devices.yml" not in body, \
+        "the refresh must not start governed device pushes: they raise a Work Center card per device (ADR 0057 decision 1)"
+
+
+def test_every_later_phase_that_adds_a_host_refreshes_observability() -> None:
+    """The defect ADR 0057 closes. Phase 8 registered eleven VMs after phase 7 built the monitoring that
+    sizes itself from NetBox, and nothing re-ran it - so S7.1 and S7.2 were red from the moment it merged
+    and the phase that broke them could not see it. Five later phases would each do the same."""
+    order = _phase_order()
+    after_obs = order[order.index("observability") + 1:]
+    bodies = _phase_bodies()
+    for phase in after_obs:
+        body = bodies.get(f"phase-{phase}")
+        if body is None or REGISTERS_A_HOST not in body:
+            continue  # not implemented yet, or it adds no host
+        assert REFRESH in body, (
+            f"phase-{phase} registers a host but never refreshes observability, so Zabbix and Prometheus "
+            f"- both sized from NetBox - will not know about it. Append `make {REFRESH}` (ADR 0057)."
+        )

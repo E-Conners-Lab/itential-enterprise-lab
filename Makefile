@@ -8,7 +8,7 @@ SHELL := /bin/bash
 
 PHASES := oob-network platform network-topology itential flowai observability platform-ha2 config-secrets-code identity ddi containerlab firewall-track
 
-.PHONY: help bootstrap lint test up verify discover netbox-enrich tokens plan-oob plan-platform plan-itential plan-platform-ha2 $(addprefix phase-,$(PHASES))
+.PHONY: help bootstrap lint test up verify discover netbox-enrich tokens observability-refresh plan-oob plan-platform plan-itential plan-platform-ha2 $(addprefix phase-,$(PHASES))
 
 help: ## Show targets
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-22s\033[0m %s\n", $$1, $$2}'
@@ -51,6 +51,13 @@ tokens: ## Anthropic spend of the last 7 days from the platform's session ledger
 
 netbox-enrich: ## NetBox enrichment derived from topology/enterprise.yaml (addresses, VRFs, racks, circuits, contexts; ADR 0048)
 	$(load_env) cd ansible && ansible-playbook playbooks/netbox-enrich.yml
+
+# Monitoring is built in phase 7 and sizes itself from NetBox, so anything registered after that is
+# invisible to it until this runs (ADR 0057). Idempotent. Deliberately NOT observability-devices.yml:
+# those are governed pushes that raise a Work Center card per device and need a person.
+observability-refresh: ## Make Zabbix and Prometheus catch up with the hosts NetBox now holds (ADR 0057)
+	$(load_env) cd ansible && ansible-playbook playbooks/observability.yml
+	$(load_env) cd ansible && ansible-playbook -i inventory/netbox.yml -i inventory/phase2.yml playbooks/observability-hosts.yml
 
 discover: ## Phase 0: read-only inventory of Proxmox, EVE-NG, NetBox (writes verify/results/)
 	verify/discover.sh
@@ -149,6 +156,7 @@ phase-platform-ha2: ## Phase 8: NetBox VMs -> tofu apply -> Docker hosts -> Mong
 	$(load_env) cd ansible && ansible-playbook -i inventory/netbox.yml playbooks/platform-ha2-tools.yml
 	$(load_env) cd ansible && ansible-playbook -i inventory/netbox.yml playbooks/platform-ha2-identity.yml
 	$(load_env) cd ansible && ansible-playbook -i inventory/netbox.yml playbooks/platform-ha2-gateway.yml
+	$(MAKE) observability-refresh
 	verify/run.sh
 
 # Phase 8, S11.5 (ADR 0055): the phase 5-7 assets replayed onto production from the shared task files. The
