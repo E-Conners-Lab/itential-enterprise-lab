@@ -1,0 +1,37 @@
+# test-06c-netbox 20260911T231947Z
+Anthropic token meter, last 7 days (189 sessions; prices per MTok in=2.0 out=10.0, anthropic only is billed)
+  anthropic  claude-sonnet-5    sessions= 148 in=  2011919 out=  42407  $  4.45
+  ollama     qwen2.5:7b         sessions=  40 in=   118729 out=   3389  $  0.00
+  ?          ?                  sessions=   1 in=     5923 out=    203  $  0.00
+spent $4.45 of the $15.00 weekly budget; $10.55 left
+  largest: lab-netops 2026-09-10T16:29 in=32822 (COMPLETE)
+  largest: lab-netops 2026-09-10T17:52 in=32771 (COMPLETE)
+  largest: netbox-sot 2026-09-10T18:16 in=26326 (COMPLETE)
+SKIP  S4e.1 every addressed interface of the 12 network devices is in NetBox with its address, VRF and 'to <peer>' description; the devices agree (wf-show-all-v1 + direct SSH)
+SKIP  S4e.2 VRFs with route targets, prefixes in PROD, the 7 ASNs on their sites, BGP neighbours and RDs in each device's config context equal to the device (direct SSH), the transit virtual router as an FHRP group
+SKIP  S4e.3 one location and one rack per site, every device racked at its derived position (role order top down, unique U)
+SKIP  S4e.4 provider circuits with terminations at their sites; the cable trace from each edge port crosses the circuit to the isp-core01 port; no direct provider cable remains
+SKIP  S4e.5 journal entries: every site carries netbox-enrich.yml entries naming a real commit; br2-sw01 carries the LCM create and delete entries
+PASS  S4e.6 the play re-runs with changed=0; netbox-sot answers address/VRF/peer, site ASNs, rack position, circuit and context questions equal to the NetBox API; the compliance plan stays clean with the interface intent in the device leaves
+      netbox-enrich.yml re-run (2nd of 2): localhost : ok=36 changed=0 unreachable=0 failed=0 skipped=14 rescued=0 ignored=0 
+      netbox-sot: 'Which address does interface GigabitEthernet2 of br1-wan01 carry, in which VRF, and what does its description say?' -> Here's what NetBox reports for **br1-wan01 / GigabitEthernet2**:
+      
+      - **IP address:** `10.103.0.10/30`
+      - **VRF:* (tokens in=11205 out=455)
+      netbox-sot: 'Which autonomous system numbers are assigned to site br1?' -> Site **br1** (Branch 1) has one ASN assigned:
+      
+      - **AS65201** — RIR: `private`, description "br1 (br1)", tagged (tokens in=9030 out=164)
+      netbox-sot: 'In which rack and at which rack unit position is dc1-leaf01 installed?' -> **dc1-leaf01** is installed in rack **dc1-rack01** at position **36** (front face), located in **DC1 hall A**  (tokens in=10983 out=177)
+      netbox-sot: 'Which circuit terminates at site br1 and who is its provider?' -> One circuit terminates at site **br1** (Branch 1):
+      
+      - **Circuit ID (cid):** ISP-BR1-01
+      - **Provider:** Simulat (tokens in=9606 out=303)
+      netbox-sot: 'What NTP server and domain does the rendered config context of br2-sw01 give?' -> According to the rendered config context for **br2-sw01** (id 19):
+      
+      - **NTP server:** `10.100.0.1`
+      - **Domain: (tokens in=10303 out=170)
+      compliance lab-baseline: 12 device reports, 0 errors, 0 warnings (passes: 516) with the interface intent rendered from NetBox
+
+tokens spent this run: in=51127 out=1269 (Anthropic)
+
+passed=1 failed=0

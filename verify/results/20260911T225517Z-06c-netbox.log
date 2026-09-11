@@ -1,0 +1,25 @@
+# test-06c-netbox 20260911T225517Z
+Anthropic token meter, last 7 days (189 sessions; prices per MTok in=2.0 out=10.0, anthropic only is billed)
+  anthropic  claude-sonnet-5    sessions= 148 in=  2011919 out=  42407  $  4.45
+  ollama     qwen2.5:7b         sessions=  40 in=   118729 out=   3389  $  0.00
+  ?          ?                  sessions=   1 in=     5923 out=    203  $  0.00
+spent $4.45 of the $15.00 weekly budget; $10.55 left
+  largest: lab-netops 2026-09-10T16:29 in=32822 (COMPLETE)
+  largest: lab-netops 2026-09-10T17:52 in=32771 (COMPLETE)
+  largest: netbox-sot 2026-09-10T18:16 in=26326 (COMPLETE)
+PASS  S4e.1 every addressed interface of the 12 network devices is in NetBox with its address, VRF and 'to <peer>' description; the devices agree (wf-show-all-v1 + direct SSH)
+      12 devices, 64 intent interfaces equal in NetBox and on the devices (addresses + descriptions); direct SSH agrees on br1-wan01 and dc1-leaf01
+PASS  S4e.2 VRFs with route targets, prefixes in PROD, the 7 ASNs on their sites, BGP neighbours and RDs in each device's config context equal to the device (direct SSH), the transit virtual router as an FHRP group
+      VRFs MGMT/WAN/PROD (PROD RT 50001:50001), 7 ASNs on their sites, FHRP group ['dc1-vlan100-varp'] with its members and address, 38 BGP neighbours in the device contexts equal the devices' own tables over direct SSH (12 devices)
+PASS  S4e.3 one location and one rack per site, every device racked at its derived position (role order top down, unique U)
+      4 locations and racks, 21 devices at their positions (wan-rack01: 1U, dc1-rack01: 10U, br1-rack01: 5U, br2-rack01: 5U)
+PASS  S4e.4 provider circuits with terminations at their sites; the cable trace from each edge port crosses the circuit to the isp-core01 port; no direct provider cable remains
+      4 circuits of ['Simulated ISP'] with A/Z terminations at their sites; every edge port traces through its circuit to the isp-core01 port; 37 cables (no direct cable to the provider core)
+PASS  S4e.5 journal entries: every site carries netbox-enrich.yml entries naming a real commit; br2-sw01 carries the LCM create and delete entries
+      45 play entries over 5 sites naming commits ['0a208fe', '75cf9a2', '7fde422', '8bff499', 'b4dca82', 'fff885b']; br2-sw01 carries 23 LCM entries (newest: 'Lifecycle Manager branch-vlan delete: VLAN 11 (lcm-20260911t224303z) r')
+FAIL  S4e.6 the play re-runs with changed=0; netbox-sot answers address/VRF/peer, site ASNs, rack position, circuit and context questions equal to the NetBox API; the compliance plan stays clean with the interface intent in the device leaves
+      netbox-enrich.yml is not idempotent: localhost                  : ok=39   changed=1    unreachable=0    failed=0    skipped=11   rescued=0    ignored=0   
+
+tokens spent this run: in=0 out=0 (Anthropic)
+
+passed=5 failed=1
