@@ -91,7 +91,9 @@ def test_show_command_workflow_parses_per_vendor(versions: dict) -> None:
     assert inc["clusterId"] == versions["stack"]["gateway5_cluster_id"]
     assert inc["code"].startswith("$var."), "the parse code is rendered per device (platform slug replaced)"
     assert inc["data"].startswith("$var.") and inc["safety"]["timeout"] >= 120
-    assert any(t.get("name") == "getDcimDevices" for t in tasks.values()), "the platform comes from NetBox"
+    # S4f (ADR 0054): the NetBox lookup is the lab-netbox integration's operation now, not the adapter's
+    # method. The intent is unchanged - the parser is chosen from the platform NetBox holds for the device.
+    assert any(t.get("name") == "dcim_devices_list" for t in tasks.values()), "the platform comes from NetBox"
     assert set(wf["outputSchema"]["properties"]) >= {"raw", "parsed", "parser"}
 
 
