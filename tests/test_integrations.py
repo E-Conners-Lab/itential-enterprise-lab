@@ -63,13 +63,15 @@ def test_documents_generated_and_scoped(integrations: dict, docs: dict) -> None:
         assert m["auth"] in doc["components"]["securitySchemes"], "the auth scheme the play fills is declared"
         ops = [(p, verb, o["operationId"]) for p, item in doc["paths"].items() for verb, o in item.items()]
         assert ops and all(o[2] for o in ops)
-        assert len(ops) <= 12, f"{key}: an agent tool set stays small ({len(ops)} operations)"
+        # ADR 0045 capped this at 12 to keep an *agent* tool set small. S4f (ADR 0054) adds the workflow
+        # writes to the same model, and those are never granted to an agent - the cap that matters now is
+        # the read set, held below by test_no_read_tier_agent_is_granted_a_write_operation.
+        reads = [o for o in ops if o[1] == "get"]
+        assert len(reads) <= 12, f"{key}: the agent-facing read set stays small ({len(reads)} operations)"
         for p, verb, oid in ops:
             o = doc["paths"][p][verb]
             assert o["security"] == [{m["auth"]: []}], f"{oid}: every operation is secured by the model's scheme"
-            assert "200" in o["responses"]
-    nb_ops = {verb for item in docs["netbox"]["paths"].values() for verb in item}
-    assert nb_ops == {"get"}, "NetBox through the integration is read-only: writes go through the adapter in workflows"
+            assert any(c.startswith("2") for c in o["responses"]), f"{oid}: declares no success response"
     sn = docs["servicenow"]["paths"]
     assert "get" in sn["/api/now/table/incident"] and "get" in sn["/api/now/table/incident/{sys_id}"]
     assert set(sn["/api/now/table/incident/{sys_id}"]) <= {"get", "patch"}, "the only ServiceNow write is an incident update (work notes)"
@@ -99,3 +101,130 @@ def test_verify_pid_and_adr_cover_s4d4() -> None:
     pid = PID.read_text()
     assert "| 1.10 |" in pid and "lab-netbox" in pid
     assert list(ADRS.glob("0045-*.md"))
+
+
+# --- S4f (ADR 0054): NetBox and ServiceNow are reached through their Integration Models -----------
+# The conversion element. Two assertions in test_documents_generated_and_scoped above encoded the
+# pre-conversion split (NetBox read-only through the integration, its writes through the adapter);
+# they move here and invert, because the decision changed, not because they were wrong.
+
+WORKFLOWS = ROOT / "itential" / "workflows"
+# The documents the conversion touches: the NetBox adapter tasks and every ServiceNow generic request.
+CONVERTED = ("wf-branch-vlan-v1", "wf-branch-vlan-delete-v1", "wf-config-push-v1", "wf-netbox-device-count-v1", "wf-show-command-v1")
+VERIFY_S4F = ROOT / "verify" / "test-06d-integrations.sh"
+
+
+@pytest.fixture(scope="module")
+def generated() -> dict:
+    """The committed workflow documents - what tasks/platform-assets.yml actually imports."""
+    return {p.stem: json.loads(p.read_text()) for p in WORKFLOWS.glob("wf-*.json")}
+
+
+def test_every_model_records_the_specification_it_came_from(integrations: dict, docs: dict) -> None:
+    """S4f.1: a regeneration is reproducible and a drift is visible (ADR 0054 decision 4)."""
+    for key, m in integrations["models"].items():
+        spec = m.get("spec")
+        assert spec, f"{key}: itential/versions.yaml must record the specification source under `spec`"
+        assert re.match(r"https://", spec.get("url", "")), f"{key}: spec.url must be the published specification"
+        assert re.fullmatch(r"\d{4}-\d{2}-\d{2}|v?\d+[\w.-]*", str(spec.get("taken", ""))), \
+            f"{key}: spec.taken must be the date or the release the specification was taken from"
+        recorded = docs[key]["info"].get("x-spec-source", {})
+        assert recorded.get("url") == spec["url"] and str(recorded.get("taken")) == str(spec["taken"]), \
+            f"{key}: the generated document must carry the same provenance as the oracle"
+
+
+def test_the_models_declare_the_write_operations_the_workflows_need(docs: dict) -> None:
+    """S4f.3 and S4f.5: the writes that used to need an adapter or a generic request."""
+    nb_ops = {o["operationId"] for item in docs["netbox"]["paths"].values() for o in item.values()}
+    for op in ("ipam_vlans_create", "ipam_vlans_partial_update", "ipam_vlans_destroy", "extras_journal_entries_create"):
+        assert op in nb_ops, f"lab-netbox must declare {op} (S4f.3/S4f.4)"
+    sn_ops = {o["operationId"] for item in docs["servicenow"]["paths"].values() for o in item.values()}
+    assert any("hange" in o for o in sn_ops), "lab-servicenow must declare the change-request operations (S4f.5)"
+    assert {"post", "patch", "delete"} & {v for item in docs["netbox"]["paths"].values() for v in item}, \
+        "NetBox through the integration is no longer read-only (ADR 0054 supersedes ADR 0045's split)"
+
+
+def test_every_operation_a_workflow_names_exists_in_the_model_it_addresses(integrations: dict, docs: dict, generated: dict) -> None:
+    """S4f.2, the check ADR 0054 decision 4 asks for. An integration task addresses the model by
+    `<title>:<version>` and the instance by adapter_id (measured on 6.5.2, ADR 0045)."""
+    by_app = {f"{m['title']}:{m['version']}": key for key, m in integrations["models"].items()}
+    seen = 0
+    for name, wf in generated.items():
+        for tid, t in wf["tasks"].items():
+            key = by_app.get(t.get("app", ""))
+            if key is None:
+                continue
+            seen += 1
+            ops = {o["operationId"] for item in docs[key]["paths"].values() for o in item.values()}
+            assert t["name"] in ops, f"{name}.{tid} calls {t['name']}, which {docs[key]['info']['title']} does not declare"
+            assert t["variables"]["incoming"].get("adapter_id") == integrations["models"][key]["instance"], \
+                f"{name}.{tid} must address the instance by adapter_id"
+    assert seen, "no workflow task addresses an Integration Model yet (the conversion has not run)"
+
+
+def test_no_converted_workflow_still_reaches_an_adapter(generated: dict) -> None:
+    """S4f.3, S4f.4 and S4f.5: the adapter task, the generic request and the runCode journal all go."""
+    for name in CONVERTED:
+        wf = generated.get(name)
+        assert wf, f"no committed document for {name}"
+        for tid, t in wf["tasks"].items():
+            assert t.get("locationType") not in ("Netbox", "Servicenow"), \
+                f"{name}.{tid} is still an adapter task ({t.get('locationType')})"
+            assert t["name"] != "genericAdapterRequest", f"{name}.{tid} still uses genericAdapterRequest"
+            assert not (t["name"] == "runCode" and "journal" in t["summary"].lower()), \
+                f"{name}.{tid} still writes its journal entry from the runner (S4f.4)"
+
+
+def test_the_servicenow_adapter_is_gone_and_the_required_three_remain(versions: dict) -> None:
+    """S4f.6: the adapters block shrinks to what ADR 0054 decision 2 lists."""
+    adapters = versions.get("adapters", {})
+    assert "servicenow" not in adapters, "adapter-servicenow is removed entirely (ADR 0054 decision 3)"
+    assert "netbox" in adapters, "adapter-netbox stays: the InventoryBroker consumes an adapter (ADR 0039)"
+    assert "InventoryBroker" in (ROOT / "ansible" / "playbooks" / "tasks" / "platform-assets.yml").read_text()
+
+
+def test_s4f_has_its_own_verify_and_the_pid_carries_the_section() -> None:
+    assert VERIFY_S4F.exists(), "verify/test-06d-integrations.sh is S4f's exit test"
+    text = VERIFY_S4F.read_text()
+    for n in range(1, 8):
+        assert f"S4f.{n} " in text, f"verify/test-06d-integrations.sh does not check S4f.{n}"
+    pid = PID.read_text()
+    assert "### S4f " in pid and "| 1.22 |" in pid
+    assert list(ADRS.glob("0054-*.md"))
+
+
+def test_no_read_tier_agent_is_granted_a_write_operation(versions: dict, integrations: dict) -> None:
+    """S4f puts NetBox's writes in the same model the read agents use, so `authorized` no longer implies
+    `safe to grant`. ADR 0046's tiering says a read-tier agent holds no tool that changes anything; the
+    grant is per agent in itential/agents/*.yaml, and this is what holds it to that."""
+    writes = set(integrations["models"]["netbox"].get("write_operations", []))
+    assert writes, "the oracle must name lab-netbox's write operations so the tiering can be checked"
+    read_tier = ("netbox-sot", "device-ops", "compliance")
+    for path in sorted(AGENTS.glob("*.yaml")):
+        doc = yaml.safe_load(path.read_text())
+        if not any(path.stem.startswith(a) for a in read_tier):
+            continue
+        named = {t.get("operation") or t.get("name") or "" for t in doc["tools"]}
+        leaked = named & writes
+        assert not leaked, f"{path.name} is a read-tier agent (ADR 0046) and is granted {sorted(leaked)}"
+
+
+def test_no_task_reads_a_converted_task_the_adapter_way(generated: dict) -> None:
+    """The miss that broke S4.4 on production. Converting a task changes its output name (`result` ->
+    `response`) and the shape underneath it (`response.<x>` -> `body.<x>`), so every *consumer* has to
+    move with it - and a consumer can sit anywhere in the document, not next to the task it reads.
+    Three of them (b3, b4, b5) were missed by reading the lines around each call site; nothing caught it
+    until a live job errored with `obj is null`. This is that scan."""
+    for name, wf in generated.items():
+        tasks = wf["tasks"]
+        converted = {k for k, v in tasks.items() if str(v.get("app", "")).startswith("lab-")}
+        if not converted:
+            continue
+        for tid, t in tasks.items():
+            incoming = json.dumps(t.get("variables", {}).get("incoming", {}))
+            for c in converted:
+                assert f"$var.{c}.result" not in incoming, \
+                    f"{name}.{tid} reads $var.{c}.result, but {c} is an integration task whose output is `response`"
+                if f"$var.{c}." in incoming:
+                    assert '"response.' not in incoming, \
+                        f"{name}.{tid} reads a `response.<x>` path from the integration task {c}; the payload is `body.<x>`"

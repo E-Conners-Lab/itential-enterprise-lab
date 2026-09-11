@@ -113,52 +113,45 @@ def workflow(
     }
 
 
-SNOW_EXPORT = "Servicenow"  # adapter-servicenow pronghorn export
-SNOW_INSTANCE_ID = "ServiceNow"  # the adapter instance the play creates
 SNOW_TEMPLATE = "b1c8d15147810200e90d87e8dee490f7"  # PDI standard change template "Change VLAN on a Cisco switchport"
 SNOW_GROUP = "287ebd7da9fe198100f92cc8d1d2154e"  # PDI assignment group "Network" (the change model requires one)
 
 
-def snow_call(
+_SN_MODEL = VERSIONS["integrations"]["models"]["servicenow"]
+SNOW_INTEGRATION = f"{_SN_MODEL['title']}:{_SN_MODEL['version']}"
+SNOW_INTEGRATION_INSTANCE = _SN_MODEL["instance"]  # servicenow-api
+
+
+def sni(
+    name: str,
     summary: str,
-    method: str,
-    path_ref: str,
-    body,
+    incoming: dict,
     x: int,
     y: int = 0,
-    query: dict | None = None,
+    outgoing: dict | None = None,
 ) -> dict:
-    """adapter-servicenow genericAdapterRequest: the adapter's own change methods return normalised or
-    empty documents, the generic request returns ServiceNow's raw result (sys_id.value,
-    state.display_value, ...) so the workflow can read ids and states back."""
+    """A lab-servicenow Integration Model task (S4f, ADR 0054). Replaces the adapter's
+    genericAdapterRequest: the sys_id is a path parameter, so the workflow no longer builds URL
+    strings, and the reply is the HTTP response object (payload in `response.body`)."""
     return task(
-        "genericAdapterRequest",
-        SNOW_EXPORT,
+        name,
+        SNOW_INTEGRATION,
         summary,
-        {
-            "adapter_id": SNOW_INSTANCE_ID,
-            "uriPath": path_ref,
-            "restMethod": method,
-            "queryData": query or {},
-            "requestBody": body,
-            "addlHeaders": {},
-        },
-        {"result": None},
+        {"adapter_id": SNOW_INTEGRATION_INSTANCE, **incoming},
+        outgoing or {"response": None},
         location="Adapter",
-        location_type=SNOW_EXPORT,
+        location_type=SNOW_INTEGRATION,
         x=x,
         y=y,
     )
 
 
-def snow_state(
-    summary: str, state: str, x: int, y: int, extra: dict | None = None
-) -> dict:
-    return snow_call(
+def snow_state_i(summary: str, state: str, x: int, y: int, extra: dict | None = None) -> dict:
+    """One step of the change model's state walk, through the Change API."""
+    return sni(
+        "updateStandardChange",
         summary,
-        "PATCH",
-        "$var.job.change_path",
-        {"state": state, **(extra or {})},
+        {"sys_id": "$var.d2.return_data", **nbi_body({"state": state, **(extra or {})})},
         x=x,
         y=y,
     )
@@ -190,6 +183,51 @@ def nb(
         outgoing or {"result": None},
         location="Adapter",
         location_type=NETBOX_EXPORT,
+        x=x,
+        y=y,
+    )
+
+
+_NB_MODEL = VERSIONS["integrations"]["models"]["netbox"]
+NETBOX_INTEGRATION = f"{_NB_MODEL['title']}:{_NB_MODEL['version']}"  # the model id, confirmed on 6.5.2
+NETBOX_INTEGRATION_INSTANCE = _NB_MODEL["instance"]  # netbox-api
+
+
+BODY_JSON = "application/json"
+
+
+def nbi_body(payload: str | dict) -> dict:
+    """The two inputs an Integration Model operation with a request body declares (measured on 6.5.2,
+    S4f probe): the payload and its content type. The validator names them if they are missing -
+    `Cannot find match for input: "requestBodyPayload" from model`. A $var binds to the payload."""
+    return {"bodyContentType": BODY_JSON, "requestBodyPayload": payload}
+
+
+def nbi(
+    name: str,
+    summary: str,
+    incoming: dict,
+    x: int,
+    y: int = 0,
+    outgoing: dict | None = None,
+) -> dict:
+    """An Integration Model task (S4f, ADR 0054). An integration is a virtual adapter: the model is
+    addressed by `<title>:<version>` and the instance by adapter_id, as an adapter task addresses its
+    export and instance (measured on 6.5.2, ADR 0045). `name` is the document's operationId."""
+    # Measured on 6.5.2 (S4f probe, 2026-09-10): the platform validates an integration task against the
+    # model on import and refuses the workflow as a draft if it disagrees. Two rules an adapter task did
+    # not have: every input key must be a parameter the operation declares (an adapter took any key), and
+    # the single output is named `response`, not `result` - "Output: \"result\" does not match model
+    # output: \"response\"". So downstream tasks read $var.<id>.response, and the adapter's extra
+    # `response` wrapper inside the value is gone with it.
+    return task(
+        name,
+        NETBOX_INTEGRATION,
+        summary,
+        {"adapter_id": NETBOX_INTEGRATION_INSTANCE, **incoming},
+        outgoing or {"response": None},
+        location="Adapter",
+        location_type=NETBOX_INTEGRATION,
         x=x,
         y=y,
     )
@@ -232,17 +270,17 @@ def chain(*ids: str) -> dict:
 # --- wf-netbox-device-count-v1 (S4.2): NetBox adapter page -> job variable device_count -----------
 def device_count() -> dict:
     tasks = {
-        "1a": nb(
-            "getDcimDevices",
+        "1a": nbi(
+            "dcim_devices_list",
             "One page of devices (count comes with it)",
-            {"limit": 1, "offset": 0},
+            {"limit": 1},  # `offset` is not a parameter the operation declares, and the platform refuses it
             x=0,
-            outgoing={"result": "$var.job.devices"},
+            outgoing={"response": "$var.job.devices"},
         ),
     }
     return workflow(
         "wf-netbox-device-count-v1",
-        "Reads the NetBox device list through the NetBox adapter and returns its count (PID S4.2)",
+        "Reads the NetBox device list through the lab-netbox Integration Model and returns its count (PID S4.2, S4f)",
         {},
         tasks,
         chain("1a"),
@@ -527,30 +565,21 @@ def child_job(
 # rejection deletes the reservation and ends the job in error (no transition to the end).
 NEXT_VID_CODE = """import json, sys
 d = json.loads(sys.stdin.read() or "{}")
-used = {v["vid"] for v in (d.get("response") or {}).get("results", [])}
+used = {v["vid"] for v in (d.get("body") or {}).get("results", [])}
 vid = next((n for n in range(11, 100) if n not in used), None)
 print(json.dumps({"vid": vid, "used": sorted(used)}))
 """
 
-JOURNAL_BODY = '{"device": "__S__", "comment": "__C__"}'
+JOURNAL_BODY = (
+    '{"assigned_object_type": "dcim.device", "assigned_object_id": __D__, '
+    '"kind": "info", "comments": "__C__"}'
+)
 # adapter-netbox 1.0.10 has no journal method and its genericAdapterRequest splits the path on "/" (empty components
 # dropped, each one URL-encoded), so it can never send the trailing slash NetBox's API requires (measured 2026-09-08):
 # python on the Gateway 5 runner posts the entry with the token from the runner's environment (compose.override.yml).
-JOURNAL_CODE = """import json, os, sys, urllib.request
-data = json.load(sys.stdin)
-url = os.environ["NETBOX_URL"].rstrip("/") + "/api/"
-headers = {"Authorization": "Token " + os.environ["NETBOX_TOKEN"], "Content-Type": "application/json", "Accept": "application/json"}
-def call(path, body=None):
-    req = urllib.request.Request(url + path, data=json.dumps(body).encode() if body else None, headers=headers, method="POST" if body else "GET")
-    with urllib.request.urlopen(req, timeout=20) as r:
-        return json.load(r)
-devices = call("dcim/devices/?name=" + data["device"])["results"]
-if not devices:
-    raise SystemExit("device %s not in NetBox" % data["device"])
-entry = call("extras/journal-entries/", {"assigned_object_type": "dcim.device", "assigned_object_id": devices[0]["id"],
-                                         "kind": "info", "comments": data["comment"]})
-print(json.dumps({"journal_entry_id": entry["id"], "device_id": devices[0]["id"]}))
-"""
+
+
+VLAN_BODY = '{"site": {"slug": "__B__"}, "group": {"slug": "__G__"}, "vid": __V__, "name": "__N__", "status": "reserved"}'
 
 
 def journal_chain(
@@ -562,59 +591,75 @@ def journal_chain(
     x: int,
     y: int = 0,
 ) -> tuple[list[str], dict]:
-    """Six tasks that write a NetBox journal entry on the switch (PID S4e.5, ADR 0048): the body (device + comment
-    with __V__ and __N__ filled), parsed, then python on the Gateway 5 runner posts it (see JOURNAL_CODE)."""
-    ids = [f"{prefix}{i}" for i in range(1, 7)]
+    """The NetBox journal entry on the switch (PID S4e.5, ADR 0048; converted by S4f, ADR 0054).
+
+    This used to be python on the Gateway 5 runner, because adapter-netbox 1.0.10 drops the trailing
+    slash `extras/journal-entries/` requires, so there was no way to post one through the adapter at all.
+    The Integration Model keeps the slash, so the entry is two ordinary operations - look the device up,
+    then post - and the runner no longer needs NETBOX_URL and NETBOX_TOKEN in its environment to do it.
+    """
+    ids = [f"{prefix}{i}" for i in range(1, 9)]
     tasks = {
-        ids[0]: replace("journal: device", JOURNAL_BODY, "__S__", switch_ref, x=x, y=y),
-        ids[1]: replace(
-            "journal: comment",
-            f"$var.{ids[0]}.replacedString",
-            "__C__",
-            comment,
+        ids[0]: nbi(
+            "dcim_devices_list",
+            "journal: the switch in NetBox",
+            {"name": switch_ref, "limit": 1},
+            x=x,
+            y=y,
+        ),
+        ids[1]: jq(
+            "journal: device id",
+            f"$var.{ids[0]}.response",
+            "body.results[0].id",
             x=x + 300,
             y=y,
         ),
-        ids[2]: replace(
-            "journal comment: vid",
-            f"$var.{ids[1]}.replacedString",
-            "__V__",
-            vid_ref,
-            x=x + 600,
-            y=y,
-        ),
+        ids[2]: num2str("journal: device id as string", f"$var.{ids[1]}.return_data", x=x + 600, y=y),
         ids[3]: replace(
-            "journal comment: name",
-            f"$var.{ids[2]}.replacedString",
-            "__N__",
-            name_ref,
+            "journal: device",
+            JOURNAL_BODY,
+            "__D__",
+            f"$var.{ids[2]}.numToString",
             x=x + 900,
             y=y,
         ),
-        ids[4]: parse(
-            "journal body object", f"$var.{ids[3]}.replacedString", x=x + 1200, y=y
+        ids[4]: replace(
+            "journal: comment",
+            f"$var.{ids[3]}.replacedString",
+            "__C__",
+            comment,
+            x=x + 1200,
+            y=y,
         ),
-        ids[5]: task(
-            "runCode",
-            "GatewayManager",
-            "journal entry on the switch (python on the runner posts to NetBox)",
-            {
-                "clusterId": CLUSTER,
-                "language": "python",
-                "code": JOURNAL_CODE,
-                "data": f"$var.{ids[4]}.textObject",
-                "safety": {"timeout": 60},
-                "packages": [],
-            },
-            {"result": None},
+        ids[5]: replace(
+            "journal comment: vid",
+            f"$var.{ids[4]}.replacedString",
+            "__V__",
+            vid_ref,
             x=x + 1500,
             y=y,
         ),
+        ids[6]: replace(
+            "journal comment: name",
+            f"$var.{ids[5]}.replacedString",
+            "__N__",
+            name_ref,
+            x=x + 1800,
+            y=y,
+        ),
+        ids[7]: parse(
+            "journal body object", f"$var.{ids[6]}.replacedString", x=x + 2100, y=y
+        ),
     }
+    tasks[f"{prefix}9"] = nbi(
+        "extras_journal_entries_create",
+        "journal entry on the switch",
+        nbi_body(f"$var.{ids[7]}.textObject"),
+        x=x + 2400,
+        y=y,
+    )
+    ids.append(f"{prefix}9")
     return ids, tasks
-
-
-VLAN_BODY = '{"site": {"slug": "__B__"}, "group": {"slug": "__G__"}, "vid": __V__, "name": "__N__", "status": "reserved"}'
 
 
 def branch_vlan() -> dict:
@@ -634,63 +679,51 @@ def branch_vlan() -> dict:
             x=-600,
             y=-800,
         ),
-        "d1": snow_call(
+        "d1": sni(
+            "createStandardChange",
             "create the standard change (PDI VLAN template, Network group)",
-            "POST",
-            "/sn_chg_rest/change/standard/" + SNOW_TEMPLATE,
             {
-                "short_description": "wf-branch-vlan-v1: branch VLAN change (itential-enterprise-lab)",
-                "assignment_group": SNOW_GROUP,
+                "template_sys_id": SNOW_TEMPLATE,
+                **nbi_body(
+                    {
+                        "short_description": "wf-branch-vlan-v1: branch VLAN change (itential-enterprise-lab)",
+                        "assignment_group": SNOW_GROUP,
+                    }
+                ),
             },
             x=-300,
             y=-800,
         ),
         "d2": jq(
             "change sys_id",
-            "$var.d1.result",
-            "response.result.sys_id.value",
+            "$var.d1.response",
+            "body.result.sys_id.value",
             x=0,
             y=-800,
             to_job="change_sys_id",
         ),
         "d3": jq(
             "change number",
-            "$var.d1.result",
-            "response.result.number.value",
+            "$var.d1.response",
+            "body.result.number.value",
             x=0,
             y=-1000,
             to_job="change_number",
         ),
-        "d4": replace(
-            "change API path",
-            "/sn_chg_rest/change/standard/__S__",
-            "__S__",
-            "$var.d2.return_data",
-            x=300,
-            y=-800,
-        ),
-        "d9": replace(
-            "change table path",
-            "/now/table/change_request/__S__",
-            "__S__",
-            "$var.d2.return_data",
-            x=300,
-            y=-1000,
-        ),
-        "d5": snow_state("state: Scheduled", "-2", x=600, y=-800),
+        "d5": snow_state_i("state: Scheduled", "-2", x=600, y=-800),
         "d6": jq(
             "state after scheduled",
-            "$var.d5.result",
-            "response.result.state.display_value",
+            "$var.d5.response",
+            "body.result.state.display_value",
             x=900,
             y=-800,
             to_job="change_state_scheduled",
         ),
-        "d7": snow_state("state: Implement", "-1", x=1200, y=-800),
+        "d7": snow_state_i("state: Implement", "-1", x=1200, y=-800),
         "d8": jq(
             "state after implement",
-            "$var.d7.result",
-            "response.result.state.display_value",
+            "$var.d7.response",
+            "body.result.state.display_value",
             x=1500,
             y=-800,
             to_job="change_state_implement",
@@ -739,19 +772,19 @@ def branch_vlan() -> dict:
             y=-400,
         ),
         # idempotency: does the VLAN already exist in the branch?
-        "2a": nb(
-            "getIpamVlans",
+        "2a": nbi(
+            "ipam_vlans_list",
             "VLAN by site + name",
             {"site": "$var.job.branch", "name": "$var.job.vlan_name"},
             x=900,
         ),
         "2b": evaluate(
-            "already reserved?", "2a", "result", "response.count", ">", 0, x=1200
+            "already reserved?", "2a", "response", "body.count", ">", 0, x=1200
         ),
         "9a": flag("changed = false (no-op)", "false", "changed", x=1500, y=400),
         # reservation: next free VID in the branch VLAN group, chosen on Gateway 5
-        "3a": nb(
-            "getIpamVlans",
+        "3a": nbi(
+            "ipam_vlans_list",
             "VLANs already in the branch group",
             {"group": "$var.1d.replacedString", "limit": 200},
             x=1500,
@@ -765,7 +798,7 @@ def branch_vlan() -> dict:
                 "clusterId": CLUSTER,
                 "language": "python",
                 "code": NEXT_VID_CODE,
-                "data": "$var.3a.result",
+                "data": "$var.3a.response",
                 "safety": {"timeout": 30},
                 "packages": [],
             },
@@ -805,16 +838,16 @@ def branch_vlan() -> dict:
             y=-400,
         ),
         "c3": parse("body object", "$var.c2.replacedString", x=3900, y=-400),
-        "3d": nb(
-            "postIpamVlans",
+        "3d": nbi(
+            "ipam_vlans_create",
             "reserve the VLAN in NetBox",
-            {"data": "$var.c3.textObject"},
+            nbi_body("$var.c3.textObject"),
             x=4200,
             y=-200,
-            outgoing={"result": "$var.job.reservation"},
+            outgoing={"response": "$var.job.reservation"},
         ),
         "a2": jq(
-            "vlan id", "$var.3d.result", "response.id", x=4500, y=-200, to_job="vlan_id"
+            "vlan id", "$var.3d.response", "body.id", x=4500, y=-200, to_job="vlan_id"
         ),
         "e0": evaluate(
             "change request wanted? (work note)",
@@ -852,14 +885,16 @@ def branch_vlan() -> dict:
             y=-800,
         ),
         "e5": parse("work note body object", "$var.e4.replacedString", x=5300, y=-800),
-        "e6": snow_call(
+        "e6": sni(
+            "updateChangeRequest",
             "work note: the NetBox reservation",
-            "PATCH",
-            "$var.job.change_table_path",
-            "$var.e5.textObject",
+            {
+                "sys_id": "$var.d2.return_data",
+                "sysparm_fields": "number,state",
+                **nbi_body("$var.e5.textObject"),
+            },
             x=5450,
             y=-800,
-            query={"sysparm_fields": "number,state"},
         ),
         # approval on the JSON form (ADR 0044): the fields are the instance object with status reserved
         "a3": num2str("vlan id as string", "$var.a2.return_data", x=4700, y=-200),
@@ -889,24 +924,24 @@ def branch_vlan() -> dict:
         # no-op path: the instance from the VLAN NetBox already has (vid, id, status from the search result)
         "b3": jq(
             "existing vid",
-            "$var.2a.result",
-            "response.results[0].vid",
+            "$var.2a.response",
+            "body.results[0].vid",
             x=1500,
             y=400,
             to_job="vid",
         ),
         "b4": jq(
             "existing NetBox id",
-            "$var.2a.result",
-            "response.results[0].id",
+            "$var.2a.response",
+            "body.results[0].id",
             x=1800,
             y=400,
             to_job="vlan_id",
         ),
         "b5": jq(
             "existing status",
-            "$var.2a.result",
-            "response.results[0].status.value",
+            "$var.2a.response",
+            "body.results[0].status.value",
             x=2100,
             y=400,
         ),
@@ -952,10 +987,10 @@ def branch_vlan() -> dict:
             x=6300,
             y=-200,
         ),
-        "6a": nb(
-            "patchIpamVlansId",
+        "6a": nbi(
+            "ipam_vlans_partial_update",
             "NetBox VLAN active",
-            {"id": "$var.a2.return_data", "data": {"status": "active"}},
+            {"id": "$var.a2.return_data", **nbi_body({"status": "active"})},
             x=6600,
             y=-200,
         ),
@@ -969,16 +1004,16 @@ def branch_vlan() -> dict:
             x=6750,
             y=-600,
         ),
-        "f1": snow_state("state: Review", "0", x=6900, y=-800),
+        "f1": snow_state_i("state: Review", "0", x=6900, y=-800),
         "f2": jq(
             "state after review",
-            "$var.f1.result",
-            "response.result.state.display_value",
+            "$var.f1.response",
+            "body.result.state.display_value",
             x=7050,
             y=-800,
             to_job="change_state_review",
         ),
-        "f3": snow_state(
+        "f3": snow_state_i(
             "state: Closed",
             "3",
             x=7200,
@@ -990,16 +1025,16 @@ def branch_vlan() -> dict:
         ),
         "f4": jq(
             "state after close",
-            "$var.f3.result",
-            "response.result.state.display_value",
+            "$var.f3.response",
+            "body.result.state.display_value",
             x=7350,
             y=-800,
             to_job="change_state_closed",
         ),
         "7a": flag("changed = true", "true", "changed", x=6900, y=-200),
         # rollback: remove the reservation; no transition to the end, so the job ends in error
-        "8a": nb(
-            "deleteIpamVlansId",
+        "8a": nbi(
+            "ipam_vlans_destroy",
             "rollback: delete the NetBox reservation",
             {"id": "$var.a2.return_data"},
             x=6300,
@@ -1008,10 +1043,6 @@ def branch_vlan() -> dict:
         "8b": flag("rolled_back = true", "true", "rolled_back", x=6600, y=400),
     }
     tasks["1a"]["variables"]["outgoing"] = {"replacedString": "$var.job.switch"}
-    tasks["d4"]["variables"]["outgoing"] = {"replacedString": "$var.job.change_path"}
-    tasks["d9"]["variables"]["outgoing"] = {
-        "replacedString": "$var.job.change_table_path"
-    }
     tasks["7c"]["variables"]["outgoing"] = {"textObject": "$var.job.instance"}
     form_ids = ["a4", "a5", "a6", "a7", "a8", "b1", "a9"]
     tasks.update(
@@ -1068,8 +1099,9 @@ def branch_vlan() -> dict:
         "0a": {"state": "failure", "type": "standard"},
     }
     for a, b in zip(
-        ["d1", "d2", "d3", "d4", "d9", "d5", "d6", "d7", "d8"],
-        ["d2", "d3", "d4", "d9", "d5", "d6", "d7", "d8", "0a"],
+        # d4/d9 built the two change URLs by string replacement; S4f made the sys_id a path parameter
+        ["d1", "d2", "d3", "d5", "d6", "d7", "d8"],
+        ["d2", "d3", "d5", "d6", "d7", "d8", "0a"],
     ):
         tr[a] = t("", b)
     tr["0a"] = {
@@ -1231,8 +1263,8 @@ def show_command() -> dict:
             x=600,
         ),
         # the parser engine follows the node's NetBox platform
-        "3a": nb(
-            "getDcimDevices",
+        "3a": nbi(
+            "dcim_devices_list",
             "the node in NetBox",
             {"name": "$var.job.device", "limit": 1},
             x=0,
@@ -1240,8 +1272,8 @@ def show_command() -> dict:
         ),
         "3b": jq(
             "platform slug",
-            "$var.3a.result",
-            "response.results[0].platform.slug",
+            "$var.3a.response",
+            "body.results[0].platform.slug",
             x=300,
             y=300,
         ),
@@ -1726,21 +1758,21 @@ def branch_vlan_delete() -> dict:
         "2f": num2str("NetBox id as string", "$var.1e.return_data", x=1800, y=-300),
         "2a": flag("changed = false (nothing yet)", "false", "changed", x=2700, y=-300),
         # NetBox: the VLAN by site + name (the same lookup the create uses), deleted when present
-        "3a": nb(
-            "getIpamVlans",
+        "3a": nbi(
+            "ipam_vlans_list",
             "the VLAN in NetBox",
             {"site": "$var.1a.return_data", "name": "$var.1c.return_data"},
             x=3000,
             y=-300,
         ),
         "3b": evaluate(
-            "still in NetBox?", "3a", "result", "response.count", ">", 0, x=3300, y=-300
+            "still in NetBox?", "3a", "response", "body.count", ">", 0, x=3300, y=-300
         ),
         "3c": jq(
-            "its NetBox id", "$var.3a.result", "response.results[0].id", x=3600, y=-500
+            "its NetBox id", "$var.3a.response", "body.results[0].id", x=3600, y=-500
         ),
-        "3d": nb(
-            "deleteIpamVlansId",
+        "3d": nbi(
+            "ipam_vlans_destroy",
             "delete the NetBox VLAN",
             {"id": "$var.3c.return_data"},
             x=3900,

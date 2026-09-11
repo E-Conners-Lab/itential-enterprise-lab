@@ -39,7 +39,15 @@ SNOW_ONE = {"type": "object", "properties": {"result": OBJ}}
 
 
 def q(name: str, description: str, *, typ: str = "string", multi: bool = False) -> dict:
-    """A query parameter; multi = repeated ?name=a&name=b (NetBox filters), style form / explode true."""
+    """A query parameter; multi = repeated ?name=a&name=b (NetBox filters), style form / explode true.
+
+    NetBox's filters are all repeatable, and every one of them was declared `multi=True` for the agent
+    tool schemas in phase 6 (ADR 0045). S4f (ADR 0054) put the workflows on the same operations and that
+    turned out to matter: a workflow passes values by reference, and a `$var` resolves at the top level
+    of a task input but **not inside an array** - so an array-typed filter given `["$var.job.device"]`
+    completes, sends the literal text `$var.job.device`, and returns nothing. Measured 2026-09-10.
+    The lab filters by one value everywhere, so single-value is the default and `multi` stays available
+    for a caller that genuinely needs a repeated filter."""
     schema = {"type": "array", "items": {"type": typ}} if multi else {"type": typ}
     p = {
         "name": name,
@@ -71,17 +79,20 @@ def op(
     security: str,
     *,
     body: dict | None = None,
+    success: str = "200",
 ) -> dict:
+    # A create answers 201 and a delete 204: declaring 200 for them would be a document that does not
+    # describe the API, and the platform reads these codes when it maps the response.
+    ok: dict = {"description": "success"}
+    if success != "204":
+        ok["content"] = {"application/json": {"schema": response}}
     o = {
         "operationId": operation_id,
         "summary": summary,
         "description": summary,
         "parameters": params,
         "responses": {
-            "200": {
-                "description": "success",
-                "content": {"application/json": {"schema": response}},
-            },
+            success: ok,
             "default": {"description": "error"},
         },
         "security": [{security: []}],
@@ -104,6 +115,10 @@ def model(
             "title": m["title"],
             "version": str(m["version"]),
             "description": description,
+            # S4f.1 (ADR 0054 decision 4): where this document came from, so a regeneration is
+            # reproducible and a drift is visible. kind=openapi was trimmed from a published
+            # specification; kind=documentation was written from a vendor reference by hand.
+            "x-spec-source": m["spec"],
         },
         "servers": [{"url": server_url}],
         "paths": paths,
@@ -125,12 +140,12 @@ def netbox() -> dict:
                 "dcim_devices_list",
                 "List devices; filter by name, site, role, platform, status or tag",
                 [
-                    q("name", "Device name", multi=True),
-                    q("site", "Site slug", multi=True),
-                    q("role", "Role slug", multi=True),
-                    q("platform", "Platform slug", multi=True),
-                    q("status", "Status (active, planned, ...)", multi=True),
-                    q("tag", "Tag slug", multi=True),
+                    q("name", "Device name"),
+                    q("site", "Site slug"),
+                    q("role", "Role slug"),
+                    q("platform", "Platform slug"),
+                    q("status", "Status (active, planned, ...)"),
+                    q("tag", "Tag slug"),
                     NB_Q,
                     NB_LIMIT,
                 ],
@@ -152,8 +167,8 @@ def netbox() -> dict:
                 "dcim_interfaces_list",
                 "List interfaces; filter by device or name",
                 [
-                    q("device", "Device name", multi=True),
-                    q("name", "Interface name", multi=True),
+                    q("device", "Device name"),
+                    q("name", "Interface name"),
                     NB_Q,
                     NB_LIMIT,
                 ],
@@ -166,9 +181,9 @@ def netbox() -> dict:
                 "ipam_ip_addresses_list",
                 "List IP addresses; filter by device, address or interface",
                 [
-                    q("device", "Device name", multi=True),
-                    q("address", "Address with prefix length", multi=True),
-                    q("interface", "Interface name", multi=True),
+                    q("device", "Device name"),
+                    q("address", "Address with prefix length"),
+                    q("interface", "Interface name"),
                     NB_Q,
                     NB_LIMIT,
                 ],
@@ -181,11 +196,11 @@ def netbox() -> dict:
                 "ipam_vlans_list",
                 "List VLANs; filter by site, group, name, vid or status",
                 [
-                    q("site", "Site slug", multi=True),
-                    q("group", "VLAN group slug", multi=True),
-                    q("name", "VLAN name", multi=True),
-                    q("vid", "802.1Q id", typ="integer", multi=True),
-                    q("status", "Status", multi=True),
+                    q("site", "Site slug"),
+                    q("group", "VLAN group slug"),
+                    q("name", "VLAN name"),
+                    q("vid", "802.1Q id", typ="integer"),
+                    q("status", "Status"),
                     NB_Q,
                     NB_LIMIT,
                 ],
@@ -198,8 +213,8 @@ def netbox() -> dict:
                 "dcim_sites_list",
                 "List sites",
                 [
-                    q("name", "Site name", multi=True),
-                    q("slug", "Site slug", multi=True),
+                    q("name", "Site name"),
+                    q("slug", "Site slug"),
                     NB_LIMIT,
                 ],
                 PAGE,
@@ -212,8 +227,8 @@ def netbox() -> dict:
                 "dcim_racks_list",
                 "List racks; filter by site or name (devices carry rack and position)",
                 [
-                    q("site", "Site slug", multi=True),
-                    q("name", "Rack name", multi=True),
+                    q("site", "Site slug"),
+                    q("name", "Rack name"),
                     NB_LIMIT,
                 ],
                 PAGE,
@@ -225,9 +240,9 @@ def netbox() -> dict:
                 "circuits_circuits_list",
                 "List circuits; filter by site (termination), provider or cid",
                 [
-                    q("site", "Site slug of a termination", multi=True),
-                    q("provider", "Provider slug", multi=True),
-                    q("cid", "Circuit id", multi=True),
+                    q("site", "Site slug of a termination"),
+                    q("provider", "Provider slug"),
+                    q("cid", "Circuit id"),
                     NB_LIMIT,
                 ],
                 PAGE,
@@ -239,8 +254,8 @@ def netbox() -> dict:
                 "ipam_asns_list",
                 "List autonomous system numbers; filter by site or asn",
                 [
-                    q("site", "Site slug", multi=True),
-                    q("asn", "AS number", typ="integer", multi=True),
+                    q("site", "Site slug"),
+                    q("asn", "AS number", typ="integer"),
                     NB_LIMIT,
                 ],
                 PAGE,
@@ -251,7 +266,7 @@ def netbox() -> dict:
             "get": op(
                 "ipam_vrfs_list",
                 "List VRFs (route targets included); filter by name",
-                [q("name", "VRF name", multi=True), NB_LIMIT],
+                [q("name", "VRF name"), NB_LIMIT],
                 PAGE,
                 a,
             )
@@ -261,9 +276,9 @@ def netbox() -> dict:
                 "ipam_prefixes_list",
                 "List prefixes; filter by site, vrf, role, vlan_vid or within",
                 [
-                    q("site", "Site slug", multi=True),
-                    q("vrf", "VRF name", multi=True),
-                    q("role", "Prefix role slug", multi=True),
+                    q("site", "Site slug"),
+                    q("vrf", "VRF name"),
+                    q("role", "Prefix role slug"),
                     q("vlan_vid", "VLAN id", typ="integer"),
                     q("within", "Parent prefix"),
                     NB_LIMIT,
@@ -273,9 +288,70 @@ def netbox() -> dict:
             )
         },
     }
+    # --- S4f (ADR 0054): the writes the workflows used to make through adapter-netbox. Every path keeps
+    # its trailing slash, which is the whole point: adapter-netbox 1.0.10 strips it, which is why
+    # available-vlans was unreachable and the journal entries went out from the runner (ADR 0048).
+    paths["/api/ipam/vlans/"]["post"] = op(
+        "ipam_vlans_create",
+        "Reserve a VLAN (wf-branch-vlan-v1: created status=reserved, set active once the switch takes it)",
+        [],
+        OBJ,
+        a,
+        body={
+            "type": "object",
+            "required": ["vid", "name"],
+            "properties": {
+                "vid": {"type": "integer", "description": "VLAN id"},
+                "name": {"type": "string"},
+                "site": {"type": "integer", "description": "Site id"},
+                "group": {"type": "integer", "description": "VLAN group id (the branch group)"},
+                "status": {"type": "string", "description": "reserved | active"},
+            },
+        },
+    )
+    paths["/api/ipam/vlans/{id}/"] = {
+        "patch": op(
+            "ipam_vlans_partial_update",
+            "Change a VLAN in place (wf-branch-vlan-v1: reserved -> active once the push succeeded)",
+            [path_param("id", "NetBox VLAN id", "integer")],
+            OBJ,
+            a,
+            body={"type": "object", "properties": {"status": {"type": "string"}, "name": {"type": "string"}}},
+        ),
+        "delete": op(
+            "ipam_vlans_destroy",
+            "Delete a VLAN (wf-branch-vlan-v1 rollback and wf-branch-vlan-delete-v1)",
+            [path_param("id", "NetBox VLAN id", "integer")],
+            OBJ,
+            a,
+            success="204",
+        ),
+    }
+    paths["/api/extras/journal-entries/"] = {
+        "post": op(
+            "extras_journal_entries_create",
+            "Write a journal entry on an object (the governed VLAN workflows record the push on the switch)",
+            [],
+            OBJ,
+            a,
+            body={
+                "type": "object",
+                "required": ["assigned_object_type", "assigned_object_id", "comments"],
+                "properties": {
+                    "assigned_object_type": {"type": "string", "description": "e.g. dcim.device"},
+                    "assigned_object_id": {"type": "integer"},
+                    "kind": {"type": "string", "description": "info | success | warning | danger"},
+                    "comments": {"type": "string"},
+                },
+            },
+            success="201",
+        )
+    }
+
     return model(
         "netbox",
-        "NetBox, the lab's source of truth: read-only device, interface, address, VLAN, site, rack, circuit, ASN, VRF and prefix queries (PID S4d.4/S4e, ADR 0045/0048)",
+        "NetBox, the lab's source of truth: device, interface, address, VLAN, site, rack, circuit, ASN, VRF and prefix queries, "
+        "plus the VLAN and journal writes the governed workflows make (PID S4d.4/S4e/S4f, ADR 0045/0048/0054)",
         paths,
         {
             "type": "apiKey",
@@ -297,6 +373,19 @@ SN_DISPLAY = q(
     "sysparm_display_value",
     "true returns display values (state names, user names) instead of sys_ids",
 )
+
+
+CHANGE_BODY = {
+    "type": "object",
+    "properties": {
+        "state": {"type": "string"},
+        "work_notes": {"type": "string"},
+        "close_code": {"type": "string"},
+        "close_notes": {"type": "string"},
+        "assignment_group": {"type": "string"},
+        "short_description": {"type": "string"},
+    },
+}
 
 
 def servicenow() -> dict:
@@ -356,6 +445,46 @@ def servicenow() -> dict:
             )
         },
     }
+    # S4f (ADR 0054): the change-request writes wf-branch-vlan-v1 and wf-config-push-v1 reached through
+    # the adapter's genericAdapterRequest. The Change API (/sn_chg_rest) is a different surface from the
+    # Table API above: it is what applies a standard-change template and enforces the change model's
+    # state order, which is why the state walk cannot simply PATCH the table record.
+    paths["/api/sn_chg_rest/change/standard/{template_sys_id}"] = {
+        "post": op(
+            "createStandardChange",
+            "Open a standard change from a PDI template (the change model requires an assignment group)",
+            [path_param("template_sys_id", "sys_id of the standard change template")],
+            SNOW_ONE,
+            a,
+            body={
+                "type": "object",
+                "properties": {
+                    "short_description": {"type": "string"},
+                    "assignment_group": {"type": "string", "description": "sys_id of the group"},
+                },
+            },
+            success="200",
+        )
+    }
+    paths["/api/sn_chg_rest/change/standard/{sys_id}"] = {
+        "patch": op(
+            "updateStandardChange",
+            "Move a standard change through its states (-2 Scheduled, -1 Implement, 0 Review, 3 Closed)",
+            [path_param("sys_id", "sys_id of the change request")],
+            SNOW_ONE,
+            a,
+            body=CHANGE_BODY,
+        )
+    }
+    paths["/api/now/table/change_request/{sys_id}"]["patch"] = op(
+        "updateChangeRequest",
+        "Write to the change's table record (the work note carrying the NetBox reservation)",
+        [path_param("sys_id", "sys_id of the change request"), SN_FIELDS],
+        SNOW_ONE,
+        a,
+        body=CHANGE_BODY,
+    )
+
     return model(
         "servicenow",
         "ServiceNow PDI: incidents and change requests through the Table API (PID S4d.4, ADR 0045)",

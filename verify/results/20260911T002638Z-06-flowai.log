@@ -1,0 +1,31 @@
+# test-06-flowai 20260911T002638Z
+Anthropic token meter, last 7 days (139 sessions; prices per MTok in=2.0 out=10.0, anthropic only is billed)
+  anthropic  claude-sonnet-5    sessions= 114 in=  1546493 out=  32235  $  3.42
+  ollama     qwen2.5:7b         sessions=  24 in=    74785 out=   1661  $  0.00
+  ?          ?                  sessions=   1 in=     5923 out=    203  $  0.00
+spent $3.42 of the $15.00 weekly budget; $11.58 left
+  largest: lab-netops 2026-09-10T16:29 in=32822 (COMPLETE)
+  largest: lab-netops 2026-09-10T17:52 in=32771 (COMPLETE)
+  largest: netbox-sot 2026-09-10T18:16 in=26326 (COMPLETE)
+SKIP  S4c.1 provider profiles anthropic (claude-sonnet-5) and ollama-lab (qwen2.5:7b) answer and list their pinned models
+SKIP  S4c.2 lab-netops answers the running version of br1-wan01 and br1-sw01 via the Gateway 5 tool; equals direct SSH
+PASS  S4c.3 lab-netops adds agent-20260911t002638z to br1 through wf-branch-vlan-v1 with the approval; second request is a no-op
+      approved job 70e607791f2a4e728cbd6a54
+      tokens in=13029 out=287
+      run 1: VLAN 12 agent-20260911t002638z reserved, approved, configured
+      tokens in=11943 out=354
+      run 2: no-op (still exactly VLAN 12)
+SKIP  S4c.4 lab-netops refuses core-router-99 (not in the inventory) without touching the gateway; session records token usage
+SKIP  S4c.5 lab-netops-local (ollama-lab qwen2.5:7b) answers the br1-sw01 version; response time and VM memory recorded
+SKIP  S4c.6 Claude Code's MCP tools start a lab-netops session (trigger_automation) and read the answer back (describe_session)
+SKIP  S4c.7 wf-show-command-v1 returns structured 'show version': Genie on br1-wan01, TextFSM on br1-sw01, equal to direct SSH
+SKIP  S4d.5a netbox-sot counts the active devices of dc1 through the NetBox integration; equals the NetBox API
+SKIP  S4d.5b device-ops reports br2-sw01's software version through the show-command workflow; equals direct SSH
+SKIP  S4d.5c compliance runs lab-baseline and reports the result; the batch reports read directly agree
+SKIP  S4d.5d diagnostics reads a verify-created incident about br2-sw01, checks the device and writes one 'Proposed fix' work note
+SKIP  S4d.5e remediation fixes the br2-sw01 hostname drift only through wf-config-push-v1; the card approved here; direct SSH confirms
+SKIP  S4d.5f netbox-sot-local (ollama-lab qwen2.5:7b) answers br2-sw01's site; response time and VM memory recorded
+SKIP  S4d.5g wf-show-all-v1 parses 'show version' on every lab device in one call (direct SSH agrees); lab-netops-local answers an all-devices question from it
+
+tokens spent this run: in=24972 out=641 (Anthropic + local)
+passed=1 failed=0

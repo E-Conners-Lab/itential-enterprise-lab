@@ -7,32 +7,10 @@
 # The caller provides: platform_local (the Platform API, always this node's own 127.0.0.1:3000), a fresh
 # session registered as `login`, admin_user / admin_pw, netbox_oob_host / netbox_port, platform_map, and
 # role_resync_tasks (the task file that re-syncs the roles this environment's administrator holds).
-# Adapter instances (NetBox through the open-source adapter). Gateway 5 is not an adapter: it
-# is registered with Gateway Manager above. Gateway 4 is deferred (owner decision 2026-09-07).
-# The ServiceNow instance (S4b) is configured only once the PDI details are in .env
-# (SNOW_INSTANCE, SNOW_USER, SNOW_PASSWORD, manual step 7); basic auth is the documented method.
-- name: ServiceNow adapter instance (when the PDI details are in .env)
-  ansible.builtin.set_fact:
-    snow_instances: >-
-      {{ [] if not snow_host else [{
-        'name': 'ServiceNow', 'model': '@itentialopensource/adapter-servicenow', 'type': adapters.servicenow.export,
-        'properties': {
-          'host': snow_host ~ '.service-now.com', 'port': 443, 'protocol': 'https', 'base_path': '/api', 'version': '', 'stub': false,
-          'authentication': {'auth_method': 'basic user_password',
-                             'username': lookup('ansible.builtin.env', 'SNOW_USER'),
-                             'password': lookup('ansible.builtin.env', 'SNOW_PASSWORD'),
-                             'token_timeout': 180000, 'token_cache': 'local', 'invalid_token_error': 401,
-                             'auth_field': 'header.headers.Authorization',
-                             'auth_field_format': 'Basic {b64}{username}:{password}{/b64}', 'auth_logging': false},
-          'healthcheck': {'type': 'startup', 'frequency': 300000, 'query_object': {}, 'addlHeaders': {}},
-          'request': {'number_redirects': 0, 'number_retries': 3, 'limit_retry_error': 401, 'attempt_timeout': 15000,
-                      'healthcheck_on_timeout': true, 'return_raw': false, 'archiving': false},
-          'ssl': {'ecdhCurve': '', 'enabled': true, 'accept_invalid_cert': false, 'ca_file': '', 'ca_file_content': '',
-                  'key_file': '', 'cert_file': '', 'secure_protocol': '', 'ciphers': ''}}}] }}
-  vars:
-    snow_host: "{{ lookup('ansible.builtin.env', 'SNOW_INSTANCE') }}"
-  no_log: true
-
+# Adapter instances. NetBox keeps its adapter because the InventoryBroker consumes an adapter and not
+# an integration (ADR 0039); ServiceNow's was removed by S4f (ADR 0054) - the PDI is reached through the
+# lab-servicenow Integration Model, which holds the same credentials from .env. Gateway 5 is not an
+# adapter: it is registered with Gateway Manager above. Gateway 4 is deferred (owner decision 2026-09-07).
 - name: Adapter instances
   ansible.builtin.set_fact:
     adapter_instances:
@@ -67,11 +45,6 @@
           ssl: {enabled: false, accept_invalid_cert: false}
   no_log: true
 
-- name: Adapter instances including ServiceNow when configured
-  ansible.builtin.set_fact:
-    adapter_instances: "{{ adapter_instances + snow_instances }}"
-  no_log: true
-
 - name: Existing adapter instances
   ansible.builtin.uri:
     url: "{{ platform_local }}/adapters/{{ item.name }}"
@@ -99,6 +72,37 @@
   loop_control:
     label: "{{ item.item.name }}"
   when: item.status != 200
+
+# S4f (ADR 0054): an adapter the documents stop naming is removed, the same way netbox-vms.yml and
+# observability.yml prune a VM and a Zabbix host (ADR 0053 S11.8). Without this, dropping
+# adapter-servicenow from the oracle left it installed and RUNNING on every node - the instance is
+# created by this play but was never owned by it afterwards. The filter is deliberately narrow: only
+# an @itentialopensource adapter this play knows how to create is ever a candidate, so the
+# Platform's own adapters (InventoryBroker, LDAP) and anything added by hand are never touched.
+- name: Adapters currently installed
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/health/adapters"
+    headers: {Cookie: "{{ login.cookies_string }}"}
+    status_code: 200
+  register: health_adapters
+
+- name: Adapter instances the documents no longer name
+  ansible.builtin.set_fact:
+    stale_adapters: >-
+      {{ (health_adapters.json.results | default([]))
+         | selectattr('package_id', 'defined')
+         | selectattr('package_id', 'search', '@itentialopensource/adapter-')
+         | rejectattr('id', 'in', adapter_instances | map(attribute='name') | list)
+         | map(attribute='id') | list }}
+
+- name: Remove the adapter instances the documents no longer name
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/adapters/{{ item }}"
+    method: DELETE
+    headers: {Cookie: "{{ login.cookies_string }}"}
+    status_code: [200, 204, 404]
+  loop: "{{ stale_adapters }}"
+  changed_when: true
 
 - name: Configure adapter instances (activates them)
   ansible.builtin.uri:

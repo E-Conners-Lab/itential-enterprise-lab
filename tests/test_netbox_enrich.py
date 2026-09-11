@@ -403,16 +403,16 @@ def test_branch_vlan_workflows_write_a_journal_entry_on_the_switch() -> None:
         ("wf-branch-vlan-delete-v1", "branch-vlan delete"),
     ):
         wf = json.loads((ROOT / "itential" / "workflows" / f"{name}.json").read_text())
-        posts = [
-            t
+        # S4f (ADR 0054): the entry is the integration's own operation now. ADR 0048 needed python on
+        # the runner only because adapter-netbox drops the trailing slash extras/journal-entries/ wants;
+        # the model keeps it, so the runner no longer needs NETBOX_TOKEN in its environment for this.
+        posts = [t for t in wf["tasks"].values() if t.get("name") == "extras_journal_entries_create"]
+        assert len(posts) == 1, f"{name}: one task posts the journal entry"
+        assert not any(
+            "extras/journal-entries/" in t["variables"]["incoming"].get("code", "")
             for t in wf["tasks"].values()
             if t.get("name") == "runCode"
-            and "extras/journal-entries/" in t["variables"]["incoming"].get("code", "")
-        ]
-        assert len(posts) == 1, f"{name}: one runCode task posts the journal entry"
-        assert "NETBOX_TOKEN" in posts[0]["variables"]["incoming"]["code"], (
-            "the token comes from the runner's environment, never from job variables"
-        )
+        ), f"{name}: the runner no longer posts journal entries"
         assert marker in json.dumps(wf), f"{name}: the journal comment names the action"
 
 
@@ -437,8 +437,17 @@ def test_integration_model_reads_the_enriched_objects() -> None:
         assert (
             path in doc["paths"] and doc["paths"][path]["get"]["operationId"] == op_id
         ), f"lab-netbox lacks {op_id}"
-    assert all("post" not in v and "delete" not in v for v in doc["paths"].values()), (
-        "the NetBox model stays read-only"
+    # ADR 0048 asserted the model was read-only. ADR 0054 (S4f) moved the governed workflows' VLAN and
+    # journal writes onto it, so the guardrail narrows rather than disappears: every write the document
+    # declares must be one the oracle names, so an accidental one is still caught here.
+    import yaml as _yaml
+
+    declared = set(
+        _yaml.safe_load((ROOT / "itential" / "versions.yaml").read_text())["integrations"]["models"]["netbox"]["write_operations"]
+    )
+    written = {o["operationId"] for item in doc["paths"].values() for verb, o in item.items() if verb != "get"}
+    assert written <= declared, (
+        f"lab-netbox declares undeclared write operations {sorted(written - declared)}"
     )
 
 

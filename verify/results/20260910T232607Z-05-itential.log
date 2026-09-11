@@ -1,0 +1,20 @@
+# test-05-itential 20260910T232740Z
+PASS  S4.1 https://itential.lab.internal serves a lab-CA cert for itential.lab.internal, runs Platform 6.5.2, Gateway 5 registered and connected
+PASS  S4.2 wf-netbox-device-count-v1 through the lab-netbox integration returns NetBox's count == GET /api/dcim/devices/
+PASS  S4.3 wf-show-version-v1 via IAG: br1-wan01 = 17.13.01a, br1-sw01 = 4.33.1.1F, cross-checked over direct SSH
+FAIL  S4.4 wf-branch-vlan-v1: reserve + configure with approval; second run no-op; NetBox rollback on device failure
+      run 1: VLAN 12 verify-20260910t232740z in NetBox and on br1-sw01
+      job 3453a4e3a9c5460f821721ad error
+PASS  S4.5 licence state (none required, owner decision 2026-09-07) recorded in manifest 3.5
+DEFER S4.6 memory under 80 % now, but uptime is under 24 h
+      Platform node 10.100.0.72: uptime 40043s; RAM used 3393/7941 MB (42%); MongoDB wiredTiger 60 MB in cache of 1024 MB max
+      MEASURE-EARLY: uptime under 24 h, re-run after 12 h
+PASS  S4.7 mcp.lab.internal answers streamable HTTP from this Mac; get_health returns Platform 6.5.2; .mcp.json matches
+PASS  S4b.1 adapter-servicenow RUNNING in /health/adapters
+PASS  S4b.2 wf-branch-vlan-v1 with change_request=true opens a standard change, work-notes the NetBox reservation, walks New->Scheduled->Implement->Review->Closed
+PASS  S4b.3 servicenow/README.md is the PDI rebuild record; the stock VLAN change template and the Network group exist on the instance
+PASS  S4b.4 SNOW_INSTANCE in .env and the manifest with its release family; password nowhere in the repo
+PASS  S4b.5 PDI admin interactive login within 10 days
+
+passed=10 failed=1 deferred=1 hibernated=0
+RESULT: FAIL

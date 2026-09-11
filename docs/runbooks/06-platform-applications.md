@@ -157,6 +157,13 @@ re-import gives a workflow a new UUID. Always run `itential.yml` → `platform.y
 order; `make phase-flowai` does. The failure appears at session time as a tool the model cannot call, not
 at build time.
 
+Know the symptom, because it does not look like a broken reference: the session ends `FAILED`
+**within about two seconds**, having spent **zero tokens**, with one `inference-succeeded` message and
+then a `tool-execution` that never returns. The agent said what it was about to do and then called a
+tool that is not there. A zero-token failure is the tell — a session that genuinely tried and failed
+costs tokens. This bites hardest when you import a single workflow **by hand** to test a change, which
+is exactly when you are least likely to think about re-running the agent play afterwards.
+
 **An Integration Model will not update.** `PUT /integration-models` answers 500 on 6.5.2, and the
 documentation says to delete and re-import. The play compares the export's paths against the document and,
 when they differ, removes the integration, deletes and re-creates the model, then re-creates the

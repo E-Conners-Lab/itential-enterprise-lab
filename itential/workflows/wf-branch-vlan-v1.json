@@ -50,15 +50,15 @@
       }
     },
     "d1": {
-      "name": "genericAdapterRequest",
-      "canvasName": "genericAdapterRequest",
+      "name": "createStandardChange",
+      "canvasName": "createStandardChange",
       "summary": "create the standard change (PDI VLAN template, Network group)",
       "description": "create the standard change (PDI VLAN template, Network group)",
       "location": "Adapter",
-      "locationType": "Servicenow",
-      "app": "Servicenow",
+      "locationType": "lab-servicenow:1.0.0",
+      "app": "lab-servicenow:1.0.0",
       "type": "automatic",
-      "displayName": "Servicenow",
+      "displayName": "lab-servicenow:1.0.0",
       "groups": [],
       "nodeLocation": {
         "x": -300,
@@ -66,18 +66,16 @@
       },
       "variables": {
         "incoming": {
-          "adapter_id": "ServiceNow",
-          "uriPath": "/sn_chg_rest/change/standard/b1c8d15147810200e90d87e8dee490f7",
-          "restMethod": "POST",
-          "queryData": {},
-          "requestBody": {
+          "adapter_id": "servicenow-api",
+          "template_sys_id": "b1c8d15147810200e90d87e8dee490f7",
+          "bodyContentType": "application/json",
+          "requestBodyPayload": {
             "short_description": "wf-branch-vlan-v1: branch VLAN change (itential-enterprise-lab)",
             "assignment_group": "287ebd7da9fe198100f92cc8d1d2154e"
-          },
-          "addlHeaders": {}
+          }
         },
         "outgoing": {
-          "result": null
+          "response": null
         },
         "error": "",
         "decorators": []
@@ -103,8 +101,8 @@
       "variables": {
         "incoming": {
           "pass_on_null": false,
-          "query": "response.result.sys_id.value",
-          "obj": "$var.d1.result"
+          "query": "body.result.sys_id.value",
+          "obj": "$var.d1.response"
         },
         "outgoing": {
           "return_data": "$var.job.change_sys_id"
@@ -131,8 +129,8 @@
       "variables": {
         "incoming": {
           "pass_on_null": false,
-          "query": "response.result.number.value",
-          "obj": "$var.d1.result"
+          "query": "body.result.number.value",
+          "obj": "$var.d1.response"
         },
         "outgoing": {
           "return_data": "$var.job.change_number"
@@ -141,76 +139,16 @@
         "decorators": []
       }
     },
-    "d4": {
-      "name": "replace",
-      "canvasName": "replace",
-      "summary": "change API path",
-      "description": "change API path",
-      "location": "Application",
-      "locationType": null,
-      "app": "WorkFlowEngine",
-      "type": "automatic",
-      "displayName": "Tools",
-      "groups": [],
-      "nodeLocation": {
-        "x": 300,
-        "y": -800
-      },
-      "variables": {
-        "incoming": {
-          "str": "/sn_chg_rest/change/standard/__S__",
-          "substr": "__S__",
-          "newSubstr": "$var.d2.return_data"
-        },
-        "outgoing": {
-          "replacedString": "$var.job.change_path"
-        },
-        "error": "",
-        "decorators": []
-      },
-      "actor": "Pronghorn",
-      "scheduled": false
-    },
-    "d9": {
-      "name": "replace",
-      "canvasName": "replace",
-      "summary": "change table path",
-      "description": "change table path",
-      "location": "Application",
-      "locationType": null,
-      "app": "WorkFlowEngine",
-      "type": "automatic",
-      "displayName": "Tools",
-      "groups": [],
-      "nodeLocation": {
-        "x": 300,
-        "y": -1000
-      },
-      "variables": {
-        "incoming": {
-          "str": "/now/table/change_request/__S__",
-          "substr": "__S__",
-          "newSubstr": "$var.d2.return_data"
-        },
-        "outgoing": {
-          "replacedString": "$var.job.change_table_path"
-        },
-        "error": "",
-        "decorators": []
-      },
-      "actor": "Pronghorn",
-      "scheduled": false
-    },
     "d5": {
-      "name": "genericAdapterRequest",
-      "canvasName": "genericAdapterRequest",
+      "name": "updateStandardChange",
+      "canvasName": "updateStandardChange",
       "summary": "state: Scheduled",
       "description": "state: Scheduled",
       "location": "Adapter",
-      "locationType": "Servicenow",
-      "app": "Servicenow",
+      "locationType": "lab-servicenow:1.0.0",
+      "app": "lab-servicenow:1.0.0",
       "type": "automatic",
-      "displayName": "Servicenow",
+      "displayName": "lab-servicenow:1.0.0",
       "groups": [],
       "nodeLocation": {
         "x": 600,
@@ -218,17 +156,15 @@
       },
       "variables": {
         "incoming": {
-          "adapter_id": "ServiceNow",
-          "uriPath": "$var.job.change_path",
-          "restMethod": "PATCH",
-          "queryData": {},
-          "requestBody": {
+          "adapter_id": "servicenow-api",
+          "sys_id": "$var.d2.return_data",
+          "bodyContentType": "application/json",
+          "requestBodyPayload": {
             "state": "-2"
-          },
-          "addlHeaders": {}
+          }
         },
         "outgoing": {
-          "result": null
+          "response": null
         },
         "error": "",
         "decorators": []
@@ -254,8 +190,8 @@
       "variables": {
         "incoming": {
           "pass_on_null": false,
-          "query": "response.result.state.display_value",
-          "obj": "$var.d5.result"
+          "query": "body.result.state.display_value",
+          "obj": "$var.d5.response"
         },
         "outgoing": {
           "return_data": "$var.job.change_state_scheduled"
@@ -265,15 +201,15 @@
       }
     },
     "d7": {
-      "name": "genericAdapterRequest",
-      "canvasName": "genericAdapterRequest",
+      "name": "updateStandardChange",
+      "canvasName": "updateStandardChange",
       "summary": "state: Implement",
       "description": "state: Implement",
       "location": "Adapter",
-      "locationType": "Servicenow",
-      "app": "Servicenow",
+      "locationType": "lab-servicenow:1.0.0",
+      "app": "lab-servicenow:1.0.0",
       "type": "automatic",
-      "displayName": "Servicenow",
+      "displayName": "lab-servicenow:1.0.0",
       "groups": [],
       "nodeLocation": {
         "x": 1200,
@@ -281,17 +217,15 @@
       },
       "variables": {
         "incoming": {
-          "adapter_id": "ServiceNow",
-          "uriPath": "$var.job.change_path",
-          "restMethod": "PATCH",
-          "queryData": {},
-          "requestBody": {
+          "adapter_id": "servicenow-api",
+          "sys_id": "$var.d2.return_data",
+          "bodyContentType": "application/json",
+          "requestBodyPayload": {
             "state": "-1"
-          },
-          "addlHeaders": {}
+          }
         },
         "outgoing": {
-          "result": null
+          "response": null
         },
         "error": "",
         "decorators": []
@@ -317,8 +251,8 @@
       "variables": {
         "incoming": {
           "pass_on_null": false,
-          "query": "response.result.state.display_value",
-          "obj": "$var.d7.result"
+          "query": "body.result.state.display_value",
+          "obj": "$var.d7.response"
         },
         "outgoing": {
           "return_data": "$var.job.change_state_implement"
@@ -522,15 +456,15 @@
       "scheduled": false
     },
     "2a": {
-      "name": "getIpamVlans",
-      "canvasName": "getIpamVlans",
+      "name": "ipam_vlans_list",
+      "canvasName": "ipam_vlans_list",
       "summary": "VLAN by site + name",
       "description": "VLAN by site + name",
       "location": "Adapter",
-      "locationType": "Netbox",
-      "app": "Netbox",
+      "locationType": "lab-netbox:1.0.0",
+      "app": "lab-netbox:1.0.0",
       "type": "automatic",
-      "displayName": "Netbox",
+      "displayName": "lab-netbox:1.0.0",
       "groups": [],
       "nodeLocation": {
         "x": 900,
@@ -538,12 +472,12 @@
       },
       "variables": {
         "incoming": {
-          "adapter_id": "NetBox",
+          "adapter_id": "netbox-api",
           "site": "$var.job.branch",
           "name": "$var.job.vlan_name"
         },
         "outgoing": {
-          "result": null
+          "response": null
         },
         "error": "",
         "decorators": []
@@ -574,9 +508,9 @@
               "all_true_flag": true,
               "evaluations": [
                 {
-                  "query": "response.count",
+                  "query": "body.count",
                   "operand_1": {
-                    "variable": "result",
+                    "variable": "response",
                     "task": "2a"
                   },
                   "operator": ">",
@@ -628,15 +562,15 @@
       "scheduled": false
     },
     "3a": {
-      "name": "getIpamVlans",
-      "canvasName": "getIpamVlans",
+      "name": "ipam_vlans_list",
+      "canvasName": "ipam_vlans_list",
       "summary": "VLANs already in the branch group",
       "description": "VLANs already in the branch group",
       "location": "Adapter",
-      "locationType": "Netbox",
-      "app": "Netbox",
+      "locationType": "lab-netbox:1.0.0",
+      "app": "lab-netbox:1.0.0",
       "type": "automatic",
-      "displayName": "Netbox",
+      "displayName": "lab-netbox:1.0.0",
       "groups": [],
       "nodeLocation": {
         "x": 1500,
@@ -644,12 +578,12 @@
       },
       "variables": {
         "incoming": {
-          "adapter_id": "NetBox",
+          "adapter_id": "netbox-api",
           "group": "$var.1d.replacedString",
           "limit": 200
         },
         "outgoing": {
-          "result": null
+          "response": null
         },
         "error": "",
         "decorators": []
@@ -676,8 +610,8 @@
         "incoming": {
           "clusterId": "lab",
           "language": "python",
-          "code": "import json, sys\nd = json.loads(sys.stdin.read() or \"{}\")\nused = {v[\"vid\"] for v in (d.get(\"response\") or {}).get(\"results\", [])}\nvid = next((n for n in range(11, 100) if n not in used), None)\nprint(json.dumps({\"vid\": vid, \"used\": sorted(used)}))\n",
-          "data": "$var.3a.result",
+          "code": "import json, sys\nd = json.loads(sys.stdin.read() or \"{}\")\nused = {v[\"vid\"] for v in (d.get(\"body\") or {}).get(\"results\", [])}\nvid = next((n for n in range(11, 100) if n not in used), None)\nprint(json.dumps({\"vid\": vid, \"used\": sorted(used)}))\n",
+          "data": "$var.3a.response",
           "safety": {
             "timeout": 30
           },
@@ -898,15 +832,15 @@
       "scheduled": false
     },
     "3d": {
-      "name": "postIpamVlans",
-      "canvasName": "postIpamVlans",
+      "name": "ipam_vlans_create",
+      "canvasName": "ipam_vlans_create",
       "summary": "reserve the VLAN in NetBox",
       "description": "reserve the VLAN in NetBox",
       "location": "Adapter",
-      "locationType": "Netbox",
-      "app": "Netbox",
+      "locationType": "lab-netbox:1.0.0",
+      "app": "lab-netbox:1.0.0",
       "type": "automatic",
-      "displayName": "Netbox",
+      "displayName": "lab-netbox:1.0.0",
       "groups": [],
       "nodeLocation": {
         "x": 4200,
@@ -914,11 +848,12 @@
       },
       "variables": {
         "incoming": {
-          "adapter_id": "NetBox",
-          "data": "$var.c3.textObject"
+          "adapter_id": "netbox-api",
+          "bodyContentType": "application/json",
+          "requestBodyPayload": "$var.c3.textObject"
         },
         "outgoing": {
-          "result": "$var.job.reservation"
+          "response": "$var.job.reservation"
         },
         "error": "",
         "decorators": []
@@ -944,8 +879,8 @@
       "variables": {
         "incoming": {
           "pass_on_null": false,
-          "query": "response.id",
-          "obj": "$var.3d.result"
+          "query": "body.id",
+          "obj": "$var.3d.response"
         },
         "outgoing": {
           "return_data": "$var.job.vlan_id"
@@ -1148,15 +1083,15 @@
       "scheduled": false
     },
     "e6": {
-      "name": "genericAdapterRequest",
-      "canvasName": "genericAdapterRequest",
+      "name": "updateChangeRequest",
+      "canvasName": "updateChangeRequest",
       "summary": "work note: the NetBox reservation",
       "description": "work note: the NetBox reservation",
       "location": "Adapter",
-      "locationType": "Servicenow",
-      "app": "Servicenow",
+      "locationType": "lab-servicenow:1.0.0",
+      "app": "lab-servicenow:1.0.0",
       "type": "automatic",
-      "displayName": "Servicenow",
+      "displayName": "lab-servicenow:1.0.0",
       "groups": [],
       "nodeLocation": {
         "x": 5450,
@@ -1164,17 +1099,14 @@
       },
       "variables": {
         "incoming": {
-          "adapter_id": "ServiceNow",
-          "uriPath": "$var.job.change_table_path",
-          "restMethod": "PATCH",
-          "queryData": {
-            "sysparm_fields": "number,state"
-          },
-          "requestBody": "$var.e5.textObject",
-          "addlHeaders": {}
+          "adapter_id": "servicenow-api",
+          "sys_id": "$var.d2.return_data",
+          "sysparm_fields": "number,state",
+          "bodyContentType": "application/json",
+          "requestBodyPayload": "$var.e5.textObject"
         },
         "outgoing": {
-          "result": null
+          "response": null
         },
         "error": "",
         "decorators": []
@@ -1361,8 +1293,8 @@
       "variables": {
         "incoming": {
           "pass_on_null": false,
-          "query": "response.results[0].vid",
-          "obj": "$var.2a.result"
+          "query": "body.results[0].vid",
+          "obj": "$var.2a.response"
         },
         "outgoing": {
           "return_data": "$var.job.vid"
@@ -1389,8 +1321,8 @@
       "variables": {
         "incoming": {
           "pass_on_null": false,
-          "query": "response.results[0].id",
-          "obj": "$var.2a.result"
+          "query": "body.results[0].id",
+          "obj": "$var.2a.response"
         },
         "outgoing": {
           "return_data": "$var.job.vlan_id"
@@ -1417,8 +1349,8 @@
       "variables": {
         "incoming": {
           "pass_on_null": false,
-          "query": "response.results[0].status.value",
-          "obj": "$var.2a.result"
+          "query": "body.results[0].status.value",
+          "obj": "$var.2a.response"
         },
         "outgoing": {
           "return_data": null
@@ -1622,15 +1554,15 @@
       }
     },
     "6a": {
-      "name": "patchIpamVlansId",
-      "canvasName": "patchIpamVlansId",
+      "name": "ipam_vlans_partial_update",
+      "canvasName": "ipam_vlans_partial_update",
       "summary": "NetBox VLAN active",
       "description": "NetBox VLAN active",
       "location": "Adapter",
-      "locationType": "Netbox",
-      "app": "Netbox",
+      "locationType": "lab-netbox:1.0.0",
+      "app": "lab-netbox:1.0.0",
       "type": "automatic",
-      "displayName": "Netbox",
+      "displayName": "lab-netbox:1.0.0",
       "groups": [],
       "nodeLocation": {
         "x": 6600,
@@ -1638,14 +1570,15 @@
       },
       "variables": {
         "incoming": {
-          "adapter_id": "NetBox",
+          "adapter_id": "netbox-api",
           "id": "$var.a2.return_data",
-          "data": {
+          "bodyContentType": "application/json",
+          "requestBodyPayload": {
             "status": "active"
           }
         },
         "outgoing": {
-          "result": null
+          "response": null
         },
         "error": "",
         "decorators": []
@@ -1700,15 +1633,15 @@
       }
     },
     "f1": {
-      "name": "genericAdapterRequest",
-      "canvasName": "genericAdapterRequest",
+      "name": "updateStandardChange",
+      "canvasName": "updateStandardChange",
       "summary": "state: Review",
       "description": "state: Review",
       "location": "Adapter",
-      "locationType": "Servicenow",
-      "app": "Servicenow",
+      "locationType": "lab-servicenow:1.0.0",
+      "app": "lab-servicenow:1.0.0",
       "type": "automatic",
-      "displayName": "Servicenow",
+      "displayName": "lab-servicenow:1.0.0",
       "groups": [],
       "nodeLocation": {
         "x": 6900,
@@ -1716,17 +1649,15 @@
       },
       "variables": {
         "incoming": {
-          "adapter_id": "ServiceNow",
-          "uriPath": "$var.job.change_path",
-          "restMethod": "PATCH",
-          "queryData": {},
-          "requestBody": {
+          "adapter_id": "servicenow-api",
+          "sys_id": "$var.d2.return_data",
+          "bodyContentType": "application/json",
+          "requestBodyPayload": {
             "state": "0"
-          },
-          "addlHeaders": {}
+          }
         },
         "outgoing": {
-          "result": null
+          "response": null
         },
         "error": "",
         "decorators": []
@@ -1752,8 +1683,8 @@
       "variables": {
         "incoming": {
           "pass_on_null": false,
-          "query": "response.result.state.display_value",
-          "obj": "$var.f1.result"
+          "query": "body.result.state.display_value",
+          "obj": "$var.f1.response"
         },
         "outgoing": {
           "return_data": "$var.job.change_state_review"
@@ -1763,15 +1694,15 @@
       }
     },
     "f3": {
-      "name": "genericAdapterRequest",
-      "canvasName": "genericAdapterRequest",
+      "name": "updateStandardChange",
+      "canvasName": "updateStandardChange",
       "summary": "state: Closed",
       "description": "state: Closed",
       "location": "Adapter",
-      "locationType": "Servicenow",
-      "app": "Servicenow",
+      "locationType": "lab-servicenow:1.0.0",
+      "app": "lab-servicenow:1.0.0",
       "type": "automatic",
-      "displayName": "Servicenow",
+      "displayName": "lab-servicenow:1.0.0",
       "groups": [],
       "nodeLocation": {
         "x": 7200,
@@ -1779,19 +1710,17 @@
       },
       "variables": {
         "incoming": {
-          "adapter_id": "ServiceNow",
-          "uriPath": "$var.job.change_path",
-          "restMethod": "PATCH",
-          "queryData": {},
-          "requestBody": {
+          "adapter_id": "servicenow-api",
+          "sys_id": "$var.d2.return_data",
+          "bodyContentType": "application/json",
+          "requestBodyPayload": {
             "state": "3",
             "close_code": "successful",
             "close_notes": "VLAN configured by wf-branch-vlan-v1; NetBox VLAN active"
-          },
-          "addlHeaders": {}
+          }
         },
         "outgoing": {
-          "result": null
+          "response": null
         },
         "error": "",
         "decorators": []
@@ -1817,8 +1746,8 @@
       "variables": {
         "incoming": {
           "pass_on_null": false,
-          "query": "response.result.state.display_value",
-          "obj": "$var.f3.result"
+          "query": "body.result.state.display_value",
+          "obj": "$var.f3.response"
         },
         "outgoing": {
           "return_data": "$var.job.change_state_closed"
@@ -1858,15 +1787,15 @@
       "scheduled": false
     },
     "8a": {
-      "name": "deleteIpamVlansId",
-      "canvasName": "deleteIpamVlansId",
+      "name": "ipam_vlans_destroy",
+      "canvasName": "ipam_vlans_destroy",
       "summary": "rollback: delete the NetBox reservation",
       "description": "rollback: delete the NetBox reservation",
       "location": "Adapter",
-      "locationType": "Netbox",
-      "app": "Netbox",
+      "locationType": "lab-netbox:1.0.0",
+      "app": "lab-netbox:1.0.0",
       "type": "automatic",
-      "displayName": "Netbox",
+      "displayName": "lab-netbox:1.0.0",
       "groups": [],
       "nodeLocation": {
         "x": 6300,
@@ -1874,11 +1803,11 @@
       },
       "variables": {
         "incoming": {
-          "adapter_id": "NetBox",
+          "adapter_id": "netbox-api",
           "id": "$var.a2.return_data"
         },
         "outgoing": {
-          "result": null
+          "response": null
         },
         "error": "",
         "decorators": []
@@ -2333,15 +2262,15 @@
       "scheduled": false
     },
     "ea1": {
-      "name": "replace",
-      "canvasName": "replace",
-      "summary": "journal: device",
-      "description": "journal: device",
-      "location": "Application",
-      "locationType": null,
-      "app": "WorkFlowEngine",
+      "name": "dcim_devices_list",
+      "canvasName": "dcim_devices_list",
+      "summary": "journal: the switch in NetBox",
+      "description": "journal: the switch in NetBox",
+      "location": "Adapter",
+      "locationType": "lab-netbox:1.0.0",
+      "app": "lab-netbox:1.0.0",
       "type": "automatic",
-      "displayName": "Tools",
+      "displayName": "lab-netbox:1.0.0",
       "groups": [],
       "nodeLocation": {
         "x": 6600,
@@ -2349,12 +2278,12 @@
       },
       "variables": {
         "incoming": {
-          "str": "{\"device\": \"__S__\", \"comment\": \"__C__\"}",
-          "substr": "__S__",
-          "newSubstr": "$var.job.switch"
+          "adapter_id": "netbox-api",
+          "name": "$var.job.switch",
+          "limit": 1
         },
         "outgoing": {
-          "replacedString": null
+          "response": null
         },
         "error": "",
         "decorators": []
@@ -2363,15 +2292,15 @@
       "scheduled": false
     },
     "ea2": {
-      "name": "replace",
-      "canvasName": "replace",
-      "summary": "journal: comment",
-      "description": "journal: comment",
+      "name": "query",
+      "canvasName": "query",
+      "summary": "journal: device id",
+      "description": "journal: device id",
       "location": "Application",
       "locationType": null,
       "app": "WorkFlowEngine",
-      "type": "automatic",
-      "displayName": "Tools",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
         "x": 6900,
@@ -2379,24 +2308,22 @@
       },
       "variables": {
         "incoming": {
-          "str": "$var.ea1.replacedString",
-          "substr": "__C__",
-          "newSubstr": "Lifecycle Manager branch-vlan create: VLAN __V__ (__N__) configured through Gateway 5 by wf-branch-vlan-v1; NetBox VLAN active"
+          "pass_on_null": false,
+          "query": "body.results[0].id",
+          "obj": "$var.ea1.response"
         },
         "outgoing": {
-          "replacedString": null
+          "return_data": null
         },
         "error": "",
         "decorators": []
-      },
-      "actor": "Pronghorn",
-      "scheduled": false
+      }
     },
     "ea3": {
-      "name": "replace",
-      "canvasName": "replace",
-      "summary": "journal comment: vid",
-      "description": "journal comment: vid",
+      "name": "numberToString",
+      "canvasName": "numberToString",
+      "summary": "journal: device id as string",
+      "description": "journal: device id as string",
       "location": "Application",
       "locationType": null,
       "app": "WorkFlowEngine",
@@ -2409,12 +2336,11 @@
       },
       "variables": {
         "incoming": {
-          "str": "$var.ea2.replacedString",
-          "substr": "__V__",
-          "newSubstr": "$var.b2.numToString"
+          "num": "$var.ea2.return_data",
+          "radix": 10
         },
         "outgoing": {
-          "replacedString": null
+          "numToString": null
         },
         "error": "",
         "decorators": []
@@ -2425,8 +2351,8 @@
     "ea4": {
       "name": "replace",
       "canvasName": "replace",
-      "summary": "journal comment: name",
-      "description": "journal comment: name",
+      "summary": "journal: device",
+      "description": "journal: device",
       "location": "Application",
       "locationType": null,
       "app": "WorkFlowEngine",
@@ -2439,9 +2365,9 @@
       },
       "variables": {
         "incoming": {
-          "str": "$var.ea3.replacedString",
-          "substr": "__N__",
-          "newSubstr": "$var.job.vlan_name"
+          "str": "{\"assigned_object_type\": \"dcim.device\", \"assigned_object_id\": __D__, \"kind\": \"info\", \"comments\": \"__C__\"}",
+          "substr": "__D__",
+          "newSubstr": "$var.ea3.numToString"
         },
         "outgoing": {
           "replacedString": null
@@ -2453,10 +2379,10 @@
       "scheduled": false
     },
     "ea5": {
-      "name": "parse",
-      "canvasName": "parse",
-      "summary": "journal body object",
-      "description": "journal body object",
+      "name": "replace",
+      "canvasName": "replace",
+      "summary": "journal: comment",
+      "description": "journal: comment",
       "location": "Application",
       "locationType": null,
       "app": "WorkFlowEngine",
@@ -2469,7 +2395,97 @@
       },
       "variables": {
         "incoming": {
-          "text": "$var.ea4.replacedString"
+          "str": "$var.ea4.replacedString",
+          "substr": "__C__",
+          "newSubstr": "Lifecycle Manager branch-vlan create: VLAN __V__ (__N__) configured through Gateway 5 by wf-branch-vlan-v1; NetBox VLAN active"
+        },
+        "outgoing": {
+          "replacedString": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "ea6": {
+      "name": "replace",
+      "canvasName": "replace",
+      "summary": "journal comment: vid",
+      "description": "journal comment: vid",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 8100,
+        "y": -1100
+      },
+      "variables": {
+        "incoming": {
+          "str": "$var.ea5.replacedString",
+          "substr": "__V__",
+          "newSubstr": "$var.b2.numToString"
+        },
+        "outgoing": {
+          "replacedString": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "ea7": {
+      "name": "replace",
+      "canvasName": "replace",
+      "summary": "journal comment: name",
+      "description": "journal comment: name",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 8400,
+        "y": -1100
+      },
+      "variables": {
+        "incoming": {
+          "str": "$var.ea6.replacedString",
+          "substr": "__N__",
+          "newSubstr": "$var.job.vlan_name"
+        },
+        "outgoing": {
+          "replacedString": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "ea8": {
+      "name": "parse",
+      "canvasName": "parse",
+      "summary": "journal body object",
+      "description": "journal body object",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 8700,
+        "y": -1100
+      },
+      "variables": {
+        "incoming": {
+          "text": "$var.ea7.replacedString"
         },
         "outgoing": {
           "textObject": null
@@ -2480,34 +2496,29 @@
       "actor": "Pronghorn",
       "scheduled": false
     },
-    "ea6": {
-      "name": "runCode",
-      "canvasName": "runCode",
-      "summary": "journal entry on the switch (python on the runner posts to NetBox)",
-      "description": "journal entry on the switch (python on the runner posts to NetBox)",
-      "location": "Application",
-      "locationType": null,
-      "app": "GatewayManager",
+    "ea9": {
+      "name": "extras_journal_entries_create",
+      "canvasName": "extras_journal_entries_create",
+      "summary": "journal entry on the switch",
+      "description": "journal entry on the switch",
+      "location": "Adapter",
+      "locationType": "lab-netbox:1.0.0",
+      "app": "lab-netbox:1.0.0",
       "type": "automatic",
-      "displayName": "GatewayManager",
+      "displayName": "lab-netbox:1.0.0",
       "groups": [],
       "nodeLocation": {
-        "x": 8100,
+        "x": 9000,
         "y": -1100
       },
       "variables": {
         "incoming": {
-          "clusterId": "lab",
-          "language": "python",
-          "code": "import json, os, sys, urllib.request\ndata = json.load(sys.stdin)\nurl = os.environ[\"NETBOX_URL\"].rstrip(\"/\") + \"/api/\"\nheaders = {\"Authorization\": \"Token \" + os.environ[\"NETBOX_TOKEN\"], \"Content-Type\": \"application/json\", \"Accept\": \"application/json\"}\ndef call(path, body=None):\n    req = urllib.request.Request(url + path, data=json.dumps(body).encode() if body else None, headers=headers, method=\"POST\" if body else \"GET\")\n    with urllib.request.urlopen(req, timeout=20) as r:\n        return json.load(r)\ndevices = call(\"dcim/devices/?name=\" + data[\"device\"])[\"results\"]\nif not devices:\n    raise SystemExit(\"device %s not in NetBox\" % data[\"device\"])\nentry = call(\"extras/journal-entries/\", {\"assigned_object_type\": \"dcim.device\", \"assigned_object_id\": devices[0][\"id\"],\n                                         \"kind\": \"info\", \"comments\": data[\"comment\"]})\nprint(json.dumps({\"journal_entry_id\": entry[\"id\"], \"device_id\": devices[0][\"id\"]}))\n",
-          "data": "$var.ea5.textObject",
-          "safety": {
-            "timeout": 60
-          },
-          "packages": []
+          "adapter_id": "netbox-api",
+          "bodyContentType": "application/json",
+          "requestBodyPayload": "$var.ea8.textObject"
         },
         "outgoing": {
-          "result": null
+          "response": null
         },
         "error": "",
         "decorators": []
@@ -2588,18 +2599,6 @@
       }
     },
     "d3": {
-      "d4": {
-        "state": "success",
-        "type": "standard"
-      }
-    },
-    "d4": {
-      "d9": {
-        "state": "success",
-        "type": "standard"
-      }
-    },
-    "d9": {
       "d5": {
         "state": "success",
         "type": "standard"
@@ -2988,6 +2987,24 @@
       }
     },
     "ea6": {
+      "ea7": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "ea7": {
+      "ea8": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "ea8": {
+      "ea9": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "ea9": {
       "f0": {
         "state": "success",
         "type": "standard"

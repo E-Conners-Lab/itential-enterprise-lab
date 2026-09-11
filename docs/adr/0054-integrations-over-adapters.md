@@ -58,6 +58,34 @@ is exactly what an Integration Model does from a specification, with typed input
    5-7 built so the existing verifies prove the new infrastructure, not new content. It runs as the first
    element after the cut-over, before the dev-stack is retired, so both environments can be compared.
 
+## Amendment 2026-09-10 — decision 5's premise expired; the conversion runs against production only
+
+Decision 5 placed this element "after the cut-over, before the dev-stack is retired, so both environments can
+be compared". Phase 8 did both in one PR: the cut-over moved `itential.lab.internal` onto the load balancer
+and S11.8 then retired VM 205, released `10.100.0.65` and deleted every trace of the dev-stack (PR #24). By
+the time this element starts there is no second environment to compare against.
+
+Owner decision 2026-09-10, asked before any code was written: **implement without the comparison.** Rebuilding
+a throw-away dev-stack would re-open something deliberately retired for a comparison the verifies already
+make unnecessary, and converting behind a feature flag would double the generator's branches to buy a
+rollback that a `git revert` already provides.
+
+What carries the risk instead, and why it is enough:
+
+- **The workflows are generated, not drawn.** A revert is `git revert` plus a play re-run, because
+  `ansible/playbooks/tasks/platform-assets.yml` re-imports every document on every run. Nothing is edited in
+  a UI, so nothing has to be un-edited.
+- **The write paths keep their approvals.** `wf-config-push-v1` is still the only workflow that writes to a
+  device and still raises a Work Center card; the conversion changes how a call is made, never what it does
+  or who approves it.
+- **The regression set is the comparison.** S4f acceptance 7 re-runs `test-05`, `test-06`, `test-06b` and
+  `test-06c` unchanged against the converted environment. Phase 8 established that this works: running the
+  phase 6b verify against production is what caught the missing `GATEWAY_SERVER_DISTRIBUTED_EXECUTION`
+  flag, a fault that was otherwise completely silent.
+- **The order still holds.** Decision 3's "NetBox and ServiceNow, in that order" is independent of the
+  comparison, so the element stays staged: NetBox converts and the full verify set runs green before
+  ServiceNow starts.
+
 ## Consequences
 
 - One credential per external system instead of two, one place to pin, and nothing to `npm install` on a

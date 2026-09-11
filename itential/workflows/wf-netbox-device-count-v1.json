@@ -1,18 +1,18 @@
 {
   "name": "wf-netbox-device-count-v1",
   "type": "automation",
-  "description": "Reads the NetBox device list through the NetBox adapter and returns its count (PID S4.2)",
+  "description": "Reads the NetBox device list through the lab-netbox Integration Model and returns its count (PID S4.2, S4f)",
   "tasks": {
     "1a": {
-      "name": "getDcimDevices",
-      "canvasName": "getDcimDevices",
+      "name": "dcim_devices_list",
+      "canvasName": "dcim_devices_list",
       "summary": "One page of devices (count comes with it)",
       "description": "One page of devices (count comes with it)",
       "location": "Adapter",
-      "locationType": "Netbox",
-      "app": "Netbox",
+      "locationType": "lab-netbox:1.0.0",
+      "app": "lab-netbox:1.0.0",
       "type": "automatic",
-      "displayName": "Netbox",
+      "displayName": "lab-netbox:1.0.0",
       "groups": [],
       "nodeLocation": {
         "x": 0,
@@ -20,12 +20,11 @@
       },
       "variables": {
         "incoming": {
-          "adapter_id": "NetBox",
-          "limit": 1,
-          "offset": 0
+          "adapter_id": "netbox-api",
+          "limit": 1
         },
         "outgoing": {
-          "result": "$var.job.devices"
+          "response": "$var.job.devices"
         },
         "error": "",
         "decorators": []
