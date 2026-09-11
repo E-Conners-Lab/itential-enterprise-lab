@@ -329,6 +329,14 @@ presents its own certificate; node and process exporters on both Platform nodes;
 three Redis servers; and the MongoDB exporter on all three replica-set members, which is what finally gives
 the dashboard's replica-set panels data.
 
+**`flowai.yml` fails on production trying to start Ollama.** It is the dev-stack play, where every
+component shares one VM. In the HA2 shape Ollama and the MCP server live on the tools VM, not on a
+Platform node, which is why the replay is a play *per target* rather than one play with a different
+host. `ansible/playbooks/platform-ha2-replay.yml` (`make replay-platform-ha2`) is the entry point for
+production; running a phase 5–7 play against it directly works only for the ones that touch a single
+component. The failure is loud — a `docker compose` error for a service that is not on that host — so
+this one costs minutes rather than hours, but it is easy to reach for the familiar play.
+
 **A drill passes and leaves the environment broken.** The Redis failover left all four adapters `DEAD` on
 the active Platform node, so the directory account could not log in until the Platform was restarted — and
 the *next* check was blamed for it. Each drill now ends by waiting for the directory account to log in
