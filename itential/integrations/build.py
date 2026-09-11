@@ -39,7 +39,15 @@ SNOW_ONE = {"type": "object", "properties": {"result": OBJ}}
 
 
 def q(name: str, description: str, *, typ: str = "string", multi: bool = False) -> dict:
-    """A query parameter; multi = repeated ?name=a&name=b (NetBox filters), style form / explode true."""
+    """A query parameter; multi = repeated ?name=a&name=b (NetBox filters), style form / explode true.
+
+    NetBox's filters are all repeatable, and every one of them was declared `multi=True` for the agent
+    tool schemas in phase 6 (ADR 0045). S4f (ADR 0054) put the workflows on the same operations and that
+    turned out to matter: a workflow passes values by reference, and a `$var` resolves at the top level
+    of a task input but **not inside an array** - so an array-typed filter given `["$var.job.device"]`
+    completes, sends the literal text `$var.job.device`, and returns nothing. Measured 2026-09-10.
+    The lab filters by one value everywhere, so single-value is the default and `multi` stays available
+    for a caller that genuinely needs a repeated filter."""
     schema = {"type": "array", "items": {"type": typ}} if multi else {"type": typ}
     p = {
         "name": name,
@@ -132,12 +140,12 @@ def netbox() -> dict:
                 "dcim_devices_list",
                 "List devices; filter by name, site, role, platform, status or tag",
                 [
-                    q("name", "Device name", multi=True),
-                    q("site", "Site slug", multi=True),
-                    q("role", "Role slug", multi=True),
-                    q("platform", "Platform slug", multi=True),
-                    q("status", "Status (active, planned, ...)", multi=True),
-                    q("tag", "Tag slug", multi=True),
+                    q("name", "Device name"),
+                    q("site", "Site slug"),
+                    q("role", "Role slug"),
+                    q("platform", "Platform slug"),
+                    q("status", "Status (active, planned, ...)"),
+                    q("tag", "Tag slug"),
                     NB_Q,
                     NB_LIMIT,
                 ],
@@ -159,8 +167,8 @@ def netbox() -> dict:
                 "dcim_interfaces_list",
                 "List interfaces; filter by device or name",
                 [
-                    q("device", "Device name", multi=True),
-                    q("name", "Interface name", multi=True),
+                    q("device", "Device name"),
+                    q("name", "Interface name"),
                     NB_Q,
                     NB_LIMIT,
                 ],
@@ -173,9 +181,9 @@ def netbox() -> dict:
                 "ipam_ip_addresses_list",
                 "List IP addresses; filter by device, address or interface",
                 [
-                    q("device", "Device name", multi=True),
-                    q("address", "Address with prefix length", multi=True),
-                    q("interface", "Interface name", multi=True),
+                    q("device", "Device name"),
+                    q("address", "Address with prefix length"),
+                    q("interface", "Interface name"),
                     NB_Q,
                     NB_LIMIT,
                 ],
@@ -188,11 +196,11 @@ def netbox() -> dict:
                 "ipam_vlans_list",
                 "List VLANs; filter by site, group, name, vid or status",
                 [
-                    q("site", "Site slug", multi=True),
-                    q("group", "VLAN group slug", multi=True),
-                    q("name", "VLAN name", multi=True),
-                    q("vid", "802.1Q id", typ="integer", multi=True),
-                    q("status", "Status", multi=True),
+                    q("site", "Site slug"),
+                    q("group", "VLAN group slug"),
+                    q("name", "VLAN name"),
+                    q("vid", "802.1Q id", typ="integer"),
+                    q("status", "Status"),
                     NB_Q,
                     NB_LIMIT,
                 ],
@@ -205,8 +213,8 @@ def netbox() -> dict:
                 "dcim_sites_list",
                 "List sites",
                 [
-                    q("name", "Site name", multi=True),
-                    q("slug", "Site slug", multi=True),
+                    q("name", "Site name"),
+                    q("slug", "Site slug"),
                     NB_LIMIT,
                 ],
                 PAGE,
@@ -219,8 +227,8 @@ def netbox() -> dict:
                 "dcim_racks_list",
                 "List racks; filter by site or name (devices carry rack and position)",
                 [
-                    q("site", "Site slug", multi=True),
-                    q("name", "Rack name", multi=True),
+                    q("site", "Site slug"),
+                    q("name", "Rack name"),
                     NB_LIMIT,
                 ],
                 PAGE,
@@ -232,9 +240,9 @@ def netbox() -> dict:
                 "circuits_circuits_list",
                 "List circuits; filter by site (termination), provider or cid",
                 [
-                    q("site", "Site slug of a termination", multi=True),
-                    q("provider", "Provider slug", multi=True),
-                    q("cid", "Circuit id", multi=True),
+                    q("site", "Site slug of a termination"),
+                    q("provider", "Provider slug"),
+                    q("cid", "Circuit id"),
                     NB_LIMIT,
                 ],
                 PAGE,
@@ -246,8 +254,8 @@ def netbox() -> dict:
                 "ipam_asns_list",
                 "List autonomous system numbers; filter by site or asn",
                 [
-                    q("site", "Site slug", multi=True),
-                    q("asn", "AS number", typ="integer", multi=True),
+                    q("site", "Site slug"),
+                    q("asn", "AS number", typ="integer"),
                     NB_LIMIT,
                 ],
                 PAGE,
@@ -258,7 +266,7 @@ def netbox() -> dict:
             "get": op(
                 "ipam_vrfs_list",
                 "List VRFs (route targets included); filter by name",
-                [q("name", "VRF name", multi=True), NB_LIMIT],
+                [q("name", "VRF name"), NB_LIMIT],
                 PAGE,
                 a,
             )
@@ -268,9 +276,9 @@ def netbox() -> dict:
                 "ipam_prefixes_list",
                 "List prefixes; filter by site, vrf, role, vlan_vid or within",
                 [
-                    q("site", "Site slug", multi=True),
-                    q("vrf", "VRF name", multi=True),
-                    q("role", "Prefix role slug", multi=True),
+                    q("site", "Site slug"),
+                    q("vrf", "VRF name"),
+                    q("role", "Prefix role slug"),
                     q("vlan_vid", "VLAN id", typ="integer"),
                     q("within", "Parent prefix"),
                     NB_LIMIT,

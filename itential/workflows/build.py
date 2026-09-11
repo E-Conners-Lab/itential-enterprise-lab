@@ -562,7 +562,7 @@ def child_job(
 # rejection deletes the reservation and ends the job in error (no transition to the end).
 NEXT_VID_CODE = """import json, sys
 d = json.loads(sys.stdin.read() or "{}")
-used = {v["vid"] for v in (d.get("response") or {}).get("results", [])}
+used = {v["vid"] for v in (d.get("body") or {}).get("results", [])}
 vid = next((n for n in range(11, 100) if n not in used), None)
 print(json.dumps({"vid": vid, "used": sorted(used)}))
 """
@@ -774,19 +774,19 @@ def branch_vlan() -> dict:
             y=-400,
         ),
         # idempotency: does the VLAN already exist in the branch?
-        "2a": nb(
-            "getIpamVlans",
+        "2a": nbi(
+            "ipam_vlans_list",
             "VLAN by site + name",
             {"site": "$var.job.branch", "name": "$var.job.vlan_name"},
             x=900,
         ),
         "2b": evaluate(
-            "already reserved?", "2a", "result", "response.count", ">", 0, x=1200
+            "already reserved?", "2a", "response", "body.count", ">", 0, x=1200
         ),
         "9a": flag("changed = false (no-op)", "false", "changed", x=1500, y=400),
         # reservation: next free VID in the branch VLAN group, chosen on Gateway 5
-        "3a": nb(
-            "getIpamVlans",
+        "3a": nbi(
+            "ipam_vlans_list",
             "VLANs already in the branch group",
             {"group": "$var.1d.replacedString", "limit": 200},
             x=1500,
@@ -800,7 +800,7 @@ def branch_vlan() -> dict:
                 "clusterId": CLUSTER,
                 "language": "python",
                 "code": NEXT_VID_CODE,
-                "data": "$var.3a.result",
+                "data": "$var.3a.response",
                 "safety": {"timeout": 30},
                 "packages": [],
             },
@@ -924,24 +924,24 @@ def branch_vlan() -> dict:
         # no-op path: the instance from the VLAN NetBox already has (vid, id, status from the search result)
         "b3": jq(
             "existing vid",
-            "$var.2a.result",
-            "response.results[0].vid",
+            "$var.2a.response",
+            "body.results[0].vid",
             x=1500,
             y=400,
             to_job="vid",
         ),
         "b4": jq(
             "existing NetBox id",
-            "$var.2a.result",
-            "response.results[0].id",
+            "$var.2a.response",
+            "body.results[0].id",
             x=1800,
             y=400,
             to_job="vlan_id",
         ),
         "b5": jq(
             "existing status",
-            "$var.2a.result",
-            "response.results[0].status.value",
+            "$var.2a.response",
+            "body.results[0].status.value",
             x=2100,
             y=400,
         ),
@@ -1266,8 +1266,8 @@ def show_command() -> dict:
             x=600,
         ),
         # the parser engine follows the node's NetBox platform
-        "3a": nb(
-            "getDcimDevices",
+        "3a": nbi(
+            "dcim_devices_list",
             "the node in NetBox",
             {"name": "$var.job.device", "limit": 1},
             x=0,
@@ -1275,8 +1275,8 @@ def show_command() -> dict:
         ),
         "3b": jq(
             "platform slug",
-            "$var.3a.result",
-            "response.results[0].platform.slug",
+            "$var.3a.response",
+            "body.results[0].platform.slug",
             x=300,
             y=300,
         ),
@@ -1761,18 +1761,18 @@ def branch_vlan_delete() -> dict:
         "2f": num2str("NetBox id as string", "$var.1e.return_data", x=1800, y=-300),
         "2a": flag("changed = false (nothing yet)", "false", "changed", x=2700, y=-300),
         # NetBox: the VLAN by site + name (the same lookup the create uses), deleted when present
-        "3a": nb(
-            "getIpamVlans",
+        "3a": nbi(
+            "ipam_vlans_list",
             "the VLAN in NetBox",
             {"site": "$var.1a.return_data", "name": "$var.1c.return_data"},
             x=3000,
             y=-300,
         ),
         "3b": evaluate(
-            "still in NetBox?", "3a", "result", "response.count", ">", 0, x=3300, y=-300
+            "still in NetBox?", "3a", "response", "body.count", ">", 0, x=3300, y=-300
         ),
         "3c": jq(
-            "its NetBox id", "$var.3a.result", "response.results[0].id", x=3600, y=-500
+            "its NetBox id", "$var.3a.response", "body.results[0].id", x=3600, y=-500
         ),
         "3d": nb(
             "deleteIpamVlansId",

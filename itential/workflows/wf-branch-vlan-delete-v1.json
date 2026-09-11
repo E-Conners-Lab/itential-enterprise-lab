@@ -232,15 +232,15 @@
       "scheduled": false
     },
     "3a": {
-      "name": "getIpamVlans",
-      "canvasName": "getIpamVlans",
+      "name": "ipam_vlans_list",
+      "canvasName": "ipam_vlans_list",
       "summary": "the VLAN in NetBox",
       "description": "the VLAN in NetBox",
       "location": "Adapter",
-      "locationType": "Netbox",
-      "app": "Netbox",
+      "locationType": "lab-netbox:1.0.0",
+      "app": "lab-netbox:1.0.0",
       "type": "automatic",
-      "displayName": "Netbox",
+      "displayName": "lab-netbox:1.0.0",
       "groups": [],
       "nodeLocation": {
         "x": 3000,
@@ -248,12 +248,12 @@
       },
       "variables": {
         "incoming": {
-          "adapter_id": "NetBox",
+          "adapter_id": "netbox-api",
           "site": "$var.1a.return_data",
           "name": "$var.1c.return_data"
         },
         "outgoing": {
-          "result": null
+          "response": null
         },
         "error": "",
         "decorators": []
@@ -284,9 +284,9 @@
               "all_true_flag": true,
               "evaluations": [
                 {
-                  "query": "response.count",
+                  "query": "body.count",
                   "operand_1": {
-                    "variable": "result",
+                    "variable": "response",
                     "task": "3a"
                   },
                   "operator": ">",
@@ -325,8 +325,8 @@
       "variables": {
         "incoming": {
           "pass_on_null": false,
-          "query": "response.results[0].id",
-          "obj": "$var.3a.result"
+          "query": "body.results[0].id",
+          "obj": "$var.3a.response"
         },
         "outgoing": {
           "return_data": null

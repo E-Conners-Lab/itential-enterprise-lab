@@ -28,13 +28,8 @@
             "required": false,
             "description": "Device name",
             "schema": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            },
-            "style": "form",
-            "explode": true
+              "type": "string"
+            }
           },
           {
             "name": "site",
@@ -42,13 +37,8 @@
             "required": false,
             "description": "Site slug",
             "schema": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            },
-            "style": "form",
-            "explode": true
+              "type": "string"
+            }
           },
           {
             "name": "role",
@@ -56,13 +46,8 @@
             "required": false,
             "description": "Role slug",
             "schema": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            },
-            "style": "form",
-            "explode": true
+              "type": "string"
+            }
           },
           {
             "name": "platform",
@@ -70,13 +55,8 @@
             "required": false,
             "description": "Platform slug",
             "schema": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            },
-            "style": "form",
-            "explode": true
+              "type": "string"
+            }
           },
           {
             "name": "status",
@@ -84,13 +64,8 @@
             "required": false,
             "description": "Status (active, planned, ...)",
             "schema": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            },
-            "style": "form",
-            "explode": true
+              "type": "string"
+            }
           },
           {
             "name": "tag",
@@ -98,13 +73,8 @@
             "required": false,
             "description": "Tag slug",
             "schema": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            },
-            "style": "form",
-            "explode": true
+              "type": "string"
+            }
           },
           {
             "name": "q",
@@ -220,13 +190,8 @@
             "required": false,
             "description": "Device name",
             "schema": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            },
-            "style": "form",
-            "explode": true
+              "type": "string"
+            }
           },
           {
             "name": "name",
@@ -234,13 +199,8 @@
             "required": false,
             "description": "Interface name",
             "schema": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            },
-            "style": "form",
-            "explode": true
+              "type": "string"
+            }
           },
           {
             "name": "q",
@@ -318,13 +278,8 @@
             "required": false,
             "description": "Device name",
             "schema": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            },
-            "style": "form",
-            "explode": true
+              "type": "string"
+            }
           },
           {
             "name": "address",
@@ -332,13 +287,8 @@
             "required": false,
             "description": "Address with prefix length",
             "schema": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            },
-            "style": "form",
-            "explode": true
+              "type": "string"
+            }
           },
           {
             "name": "interface",
@@ -346,13 +296,8 @@
             "required": false,
             "description": "Interface name",
             "schema": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            },
-            "style": "form",
-            "explode": true
+              "type": "string"
+            }
           },
           {
             "name": "q",
@@ -430,13 +375,8 @@
             "required": false,
             "description": "Site slug",
             "schema": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            },
-            "style": "form",
-            "explode": true
+              "type": "string"
+            }
           },
           {
             "name": "group",
@@ -444,13 +384,8 @@
             "required": false,
             "description": "VLAN group slug",
             "schema": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            },
-            "style": "form",
-            "explode": true
+              "type": "string"
+            }
           },
           {
             "name": "name",
@@ -458,13 +393,8 @@
             "required": false,
             "description": "VLAN name",
             "schema": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            },
-            "style": "form",
-            "explode": true
+              "type": "string"
+            }
           },
           {
             "name": "vid",
@@ -472,13 +402,8 @@
             "required": false,
             "description": "802.1Q id",
             "schema": {
-              "type": "array",
-              "items": {
-                "type": "integer"
-              }
-            },
-            "style": "form",
-            "explode": true
+              "type": "integer"
+            }
           },
           {
             "name": "status",
@@ -486,13 +411,8 @@
             "required": false,
             "description": "Status",
             "schema": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            },
-            "style": "form",
-            "explode": true
+              "type": "string"
+            }
           },
           {
             "name": "q",
@@ -631,13 +551,8 @@
             "required": false,
             "description": "Site name",
             "schema": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            },
-            "style": "form",
-            "explode": true
+              "type": "string"
+            }
           },
           {
             "name": "slug",
@@ -645,13 +560,8 @@
             "required": false,
             "description": "Site slug",
             "schema": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            },
-            "style": "form",
-            "explode": true
+              "type": "string"
+            }
           },
           {
             "name": "limit",
@@ -720,13 +630,8 @@
             "required": false,
             "description": "Site slug",
             "schema": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            },
-            "style": "form",
-            "explode": true
+              "type": "string"
+            }
           },
           {
             "name": "name",
@@ -734,13 +639,8 @@
             "required": false,
             "description": "Rack name",
             "schema": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            },
-            "style": "form",
-            "explode": true
+              "type": "string"
+            }
           },
           {
             "name": "limit",
@@ -809,13 +709,8 @@
             "required": false,
             "description": "Site slug of a termination",
             "schema": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            },
-            "style": "form",
-            "explode": true
+              "type": "string"
+            }
           },
           {
             "name": "provider",
@@ -823,13 +718,8 @@
             "required": false,
             "description": "Provider slug",
             "schema": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            },
-            "style": "form",
-            "explode": true
+              "type": "string"
+            }
           },
           {
             "name": "cid",
@@ -837,13 +727,8 @@
             "required": false,
             "description": "Circuit id",
             "schema": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            },
-            "style": "form",
-            "explode": true
+              "type": "string"
+            }
           },
           {
             "name": "limit",
@@ -912,13 +797,8 @@
             "required": false,
             "description": "Site slug",
             "schema": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            },
-            "style": "form",
-            "explode": true
+              "type": "string"
+            }
           },
           {
             "name": "asn",
@@ -926,13 +806,8 @@
             "required": false,
             "description": "AS number",
             "schema": {
-              "type": "array",
-              "items": {
-                "type": "integer"
-              }
-            },
-            "style": "form",
-            "explode": true
+              "type": "integer"
+            }
           },
           {
             "name": "limit",
@@ -1001,13 +876,8 @@
             "required": false,
             "description": "VRF name",
             "schema": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            },
-            "style": "form",
-            "explode": true
+              "type": "string"
+            }
           },
           {
             "name": "limit",
@@ -1076,13 +946,8 @@
             "required": false,
             "description": "Site slug",
             "schema": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            },
-            "style": "form",
-            "explode": true
+              "type": "string"
+            }
           },
           {
             "name": "vrf",
@@ -1090,13 +955,8 @@
             "required": false,
             "description": "VRF name",
             "schema": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            },
-            "style": "form",
-            "explode": true
+              "type": "string"
+            }
           },
           {
             "name": "role",
@@ -1104,13 +964,8 @@
             "required": false,
             "description": "Prefix role slug",
             "schema": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            },
-            "style": "form",
-            "explode": true
+              "type": "string"
+            }
           },
           {
             "name": "vlan_vid",

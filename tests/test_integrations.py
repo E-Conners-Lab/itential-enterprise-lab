@@ -207,3 +207,24 @@ def test_no_read_tier_agent_is_granted_a_write_operation(versions: dict, integra
         named = {t.get("operation") or t.get("name") or "" for t in doc["tools"]}
         leaked = named & writes
         assert not leaked, f"{path.name} is a read-tier agent (ADR 0046) and is granted {sorted(leaked)}"
+
+
+def test_no_task_reads_a_converted_task_the_adapter_way(generated: dict) -> None:
+    """The miss that broke S4.4 on production. Converting a task changes its output name (`result` ->
+    `response`) and the shape underneath it (`response.<x>` -> `body.<x>`), so every *consumer* has to
+    move with it - and a consumer can sit anywhere in the document, not next to the task it reads.
+    Three of them (b3, b4, b5) were missed by reading the lines around each call site; nothing caught it
+    until a live job errored with `obj is null`. This is that scan."""
+    for name, wf in generated.items():
+        tasks = wf["tasks"]
+        converted = {k for k, v in tasks.items() if str(v.get("app", "")).startswith("lab-")}
+        if not converted:
+            continue
+        for tid, t in tasks.items():
+            incoming = json.dumps(t.get("variables", {}).get("incoming", {}))
+            for c in converted:
+                assert f"$var.{c}.result" not in incoming, \
+                    f"{name}.{tid} reads $var.{c}.result, but {c} is an integration task whose output is `response`"
+                if f"$var.{c}." in incoming:
+                    assert '"response.' not in incoming, \
+                        f"{name}.{tid} reads a `response.<x>` path from the integration task {c}; the payload is `body.<x>`"

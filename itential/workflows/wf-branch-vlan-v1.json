@@ -522,15 +522,15 @@
       "scheduled": false
     },
     "2a": {
-      "name": "getIpamVlans",
-      "canvasName": "getIpamVlans",
+      "name": "ipam_vlans_list",
+      "canvasName": "ipam_vlans_list",
       "summary": "VLAN by site + name",
       "description": "VLAN by site + name",
       "location": "Adapter",
-      "locationType": "Netbox",
-      "app": "Netbox",
+      "locationType": "lab-netbox:1.0.0",
+      "app": "lab-netbox:1.0.0",
       "type": "automatic",
-      "displayName": "Netbox",
+      "displayName": "lab-netbox:1.0.0",
       "groups": [],
       "nodeLocation": {
         "x": 900,
@@ -538,12 +538,12 @@
       },
       "variables": {
         "incoming": {
-          "adapter_id": "NetBox",
+          "adapter_id": "netbox-api",
           "site": "$var.job.branch",
           "name": "$var.job.vlan_name"
         },
         "outgoing": {
-          "result": null
+          "response": null
         },
         "error": "",
         "decorators": []
@@ -574,9 +574,9 @@
               "all_true_flag": true,
               "evaluations": [
                 {
-                  "query": "response.count",
+                  "query": "body.count",
                   "operand_1": {
-                    "variable": "result",
+                    "variable": "response",
                     "task": "2a"
                   },
                   "operator": ">",
@@ -628,15 +628,15 @@
       "scheduled": false
     },
     "3a": {
-      "name": "getIpamVlans",
-      "canvasName": "getIpamVlans",
+      "name": "ipam_vlans_list",
+      "canvasName": "ipam_vlans_list",
       "summary": "VLANs already in the branch group",
       "description": "VLANs already in the branch group",
       "location": "Adapter",
-      "locationType": "Netbox",
-      "app": "Netbox",
+      "locationType": "lab-netbox:1.0.0",
+      "app": "lab-netbox:1.0.0",
       "type": "automatic",
-      "displayName": "Netbox",
+      "displayName": "lab-netbox:1.0.0",
       "groups": [],
       "nodeLocation": {
         "x": 1500,
@@ -644,12 +644,12 @@
       },
       "variables": {
         "incoming": {
-          "adapter_id": "NetBox",
+          "adapter_id": "netbox-api",
           "group": "$var.1d.replacedString",
           "limit": 200
         },
         "outgoing": {
-          "result": null
+          "response": null
         },
         "error": "",
         "decorators": []
@@ -676,8 +676,8 @@
         "incoming": {
           "clusterId": "lab",
           "language": "python",
-          "code": "import json, sys\nd = json.loads(sys.stdin.read() or \"{}\")\nused = {v[\"vid\"] for v in (d.get(\"response\") or {}).get(\"results\", [])}\nvid = next((n for n in range(11, 100) if n not in used), None)\nprint(json.dumps({\"vid\": vid, \"used\": sorted(used)}))\n",
-          "data": "$var.3a.result",
+          "code": "import json, sys\nd = json.loads(sys.stdin.read() or \"{}\")\nused = {v[\"vid\"] for v in (d.get(\"body\") or {}).get(\"results\", [])}\nvid = next((n for n in range(11, 100) if n not in used), None)\nprint(json.dumps({\"vid\": vid, \"used\": sorted(used)}))\n",
+          "data": "$var.3a.response",
           "safety": {
             "timeout": 30
           },
@@ -1361,8 +1361,8 @@
       "variables": {
         "incoming": {
           "pass_on_null": false,
-          "query": "response.results[0].vid",
-          "obj": "$var.2a.result"
+          "query": "body.results[0].vid",
+          "obj": "$var.2a.response"
         },
         "outgoing": {
           "return_data": "$var.job.vid"
@@ -1389,8 +1389,8 @@
       "variables": {
         "incoming": {
           "pass_on_null": false,
-          "query": "response.results[0].id",
-          "obj": "$var.2a.result"
+          "query": "body.results[0].id",
+          "obj": "$var.2a.response"
         },
         "outgoing": {
           "return_data": "$var.job.vlan_id"
@@ -1417,8 +1417,8 @@
       "variables": {
         "incoming": {
           "pass_on_null": false,
-          "query": "response.results[0].status.value",
-          "obj": "$var.2a.result"
+          "query": "body.results[0].status.value",
+          "obj": "$var.2a.response"
         },
         "outgoing": {
           "return_data": null

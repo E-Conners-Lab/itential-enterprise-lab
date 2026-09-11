@@ -92,15 +92,15 @@
       "scheduled": false
     },
     "3a": {
-      "name": "getDcimDevices",
-      "canvasName": "getDcimDevices",
+      "name": "dcim_devices_list",
+      "canvasName": "dcim_devices_list",
       "summary": "the node in NetBox",
       "description": "the node in NetBox",
       "location": "Adapter",
-      "locationType": "Netbox",
-      "app": "Netbox",
+      "locationType": "lab-netbox:1.0.0",
+      "app": "lab-netbox:1.0.0",
       "type": "automatic",
-      "displayName": "Netbox",
+      "displayName": "lab-netbox:1.0.0",
       "groups": [],
       "nodeLocation": {
         "x": 0,
@@ -108,12 +108,12 @@
       },
       "variables": {
         "incoming": {
-          "adapter_id": "NetBox",
+          "adapter_id": "netbox-api",
           "name": "$var.job.device",
           "limit": 1
         },
         "outgoing": {
-          "result": null
+          "response": null
         },
         "error": "",
         "decorators": []
@@ -139,8 +139,8 @@
       "variables": {
         "incoming": {
           "pass_on_null": false,
-          "query": "response.results[0].platform.slug",
-          "obj": "$var.3a.result"
+          "query": "body.results[0].platform.slug",
+          "obj": "$var.3a.response"
         },
         "outgoing": {
           "return_data": null
