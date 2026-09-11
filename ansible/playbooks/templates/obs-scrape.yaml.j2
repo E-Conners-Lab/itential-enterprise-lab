@@ -104,9 +104,16 @@ spec:
 {% endfor %}
 ---
 # The Platform's native Prometheus route (docs.itential.com/itential-platform/monitor/prometheus-metrics): nine
-# iap_* families, served without a session on 6.5.2. One ScrapeConfig per production Platform node, because
+# iap_* families, served without a session on 6.5.2. One ScrapeConfig per node that actually serves it, because
 # each presents its own certificate and the dashboard's Platform row is per instance (ADR 0052/0055).
-{% for n in platform_nodes %}
+#
+# Only the ACTIVE node. ADR 0055 decision 9 parks every Platform node but platform.nodes[0] with
+# `docker compose stop platform`, so a standby's :3443 is closed by design and scraping it produces a target
+# that is permanently down - which fails S7.2's "no target down" and says nothing true about the estate.
+# S11.7 already expects one iap_exporter target up; this is the other half of that decision, which phase 8
+# stated in the verify but never applied to the scrape objects. node_exporter and process_exporter still run
+# on every Platform VM, because those watch the machine rather than the Platform process.
+{% for n in platform_nodes if n.name == ha2.platform.nodes[0] %}
 apiVersion: monitoring.coreos.com/v1alpha1
 kind: ScrapeConfig
 metadata:

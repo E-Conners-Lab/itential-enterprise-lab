@@ -65,7 +65,9 @@ prometheus:
     # environment since ADR 0055: the Platform's own /prometheus_metrics route on each node, node and process
     # exporters on the Platform nodes, and one exporter per Redis server and per replica-set member - which is
     # what gives the dashboard's MongoDB replica-set panels data. Counts come from itential/ha2/versions.yaml.
-    - {job: iap_exporter, count: ha2-platform}
+    # only the active node serves /prometheus_metrics: the standby's Platform is parked (ADR 0055
+    # decision 9), so a second target would be permanently down. node/process exporters stay per VM.
+    - {job: iap_exporter, count: 1}
     - {job: node_exporter, count: ha2-platform}
     - {job: process_exporter, count: ha2-platform}
     - {job: redis_exporter, count: ha2-redis}

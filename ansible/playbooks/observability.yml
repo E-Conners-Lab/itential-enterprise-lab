@@ -336,6 +336,11 @@
     # `apply` prunes keys inside a document but never removes a document the template stopped rendering: the
     # dev-stack's single iap-exporter ScrapeConfig became one per production node (ADR 0055) and would
     # otherwise keep scraping VM 205 and make the dashboard's Platform row read three nodes.
+    # `apply` prunes keys inside a document but never a document that stopped being rendered, so every
+    # scrape object this play no longer emits has to be named here: the dev-stack's single `iap-exporter`
+    # (VM 205, retired at S11.8) and the per-node object for any Platform node that is parked, since only
+    # the active one serves /prometheus_metrics (ADR 0055 decision 9). Left behind, a parked node's object
+    # keeps a target permanently down and fails S7.2 while saying nothing true about the estate.
     - name: Superseded scrape objects removed
       kubernetes.core.k8s:
         kubeconfig: "{{ kubeconfig }}"
@@ -343,7 +348,11 @@
         api_version: monitoring.coreos.com/v1alpha1
         kind: ScrapeConfig
         namespace: "{{ obs_namespace }}"
-        name: iap-exporter
+        name: "{{ item }}"
+      loop: >-
+        {{ ['iap-exporter']
+           + (platform_nodes | rejectattr('name', 'equalto', ha2.platform.nodes[0])
+              | map(attribute='name') | map('regex_replace', '^', 'iap-exporter-') | list) }}
 
     - name: Lab alert rules
       kubernetes.core.k8s:

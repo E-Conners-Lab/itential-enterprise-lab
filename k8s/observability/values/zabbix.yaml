@@ -21,9 +21,14 @@ zabbixServer:
     annotations:
       metallb.io/loadBalancerIPs: 10.100.0.35
       metallb.io/allow-shared-ip: zabbix
+  # Sized for the estate, not for the phase 7 estate. Measured 2026-09-11: at 1Gi the server sat at
+  # 1000Mi and had been OOMKilled (exit 137) 12 times in 35 h - roughly every three hours, a steady climb
+  # to the ceiling rather than a leak - which is what puts "Zabbix server is down" on the frontend, since
+  # the web pod reports the server unreachable while it restarts. Phase 8 then added eleven production
+  # VMs to poll, so 1Gi was going from marginal to insufficient.
   resources:
-    requests: {cpu: 100m, memory: 512Mi}
-    limits: {memory: 1Gi}
+    requests: {cpu: 100m, memory: 768Mi}
+    limits: {memory: 2Gi}
   extraEnv:
     - {name: ZBX_CACHESIZE, value: 64M}
     - {name: ZBX_STARTPINGERS, value: "2"}
