@@ -37,9 +37,15 @@ mongodb:
     admin: {name: admin, role: root, env: MONGO_ADMIN_PASSWORD}
     itential: {name: itential, role: readWrite, env: MONGO_ITENTIAL_PASSWORD}
     monitor: {name: monitor, role: clusterMonitor, env: MONGO_MONITOR_PASSWORD}
+    # S11.9 (ADR 0058): its own least-privilege account. MongoDB's built-in `backup` role reads everything
+    # and writes nothing, which is what a nightly dump needs and all it needs - `admin` is root.
+    backup: {name: backup, role: backup, env: MONGO_BACKUP_PASSWORD}
   keyfile_env: MONGO_KEYFILE # 1024-char base64 shared secret for intra-cluster auth, generated once
   wired_tiger_cache_gb: 1 # 4 GB VMs: half of (RAM - 1 GB) is the MongoDB default and too much here
   tls: true
+  # The dump runs on the LAST member so it is never the initial primary (priority 10 is the first), and the
+  # member comes from here rather than a hostname in a script. Kept seven days, the same as NetBox's.
+  backup: {dir: /var/backups/mongodb, keep_days: 7, hour: 3, minute: 20}
 
 # Redis replication + Sentinel (guide: 3 Redis with Sentinel; Sentinel quorum 2 of 3).
 redis:

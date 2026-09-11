@@ -286,3 +286,62 @@ def test_only_the_first_platform_node_runs_the_workers() -> None:
     assert "when: inventory_hostname != platform.nodes[0]" in play, "parked by the oracle's node order"
     verify = (ROOT / "verify" / "test-08-platform-ha2.sh").read_text()
     assert "the standby is built and parked" in verify, "S11.4 asserts the Active/Standby shape"
+
+
+# --- S11.9 (ADR 0058, PID 1.24): the production MongoDB is backed up, and the verify restores it ------------
+MONGO_PLAY = PLAYS / "platform-ha2-mongodb.yml"
+VERIFY_08 = ROOT / "verify" / "test-08-platform-ha2.sh"
+
+
+def test_the_oracle_names_a_least_privilege_backup_account() -> None:
+    """ADR 0058 decision 2: not `admin`. A credential that reads everything nightly should not also be
+    able to write everything."""
+    users = HA2["mongodb"]["users"]
+    assert "backup" in users, "itential/ha2/versions.yaml must name the backup account (ADR 0058)"
+    b = users["backup"]
+    assert b["role"] == "backup", f"the built-in `backup` role, not {b['role']!r}"
+    assert b["env"].startswith("MONGO_") and b["env"].endswith("_PASSWORD")
+    assert b["env"] != users["admin"]["env"], "the backup account has its own generated password"
+
+
+def test_the_play_dumps_on_a_secondary_chosen_by_the_oracle() -> None:
+    """ADR 0058 decision 1: on the last member, connected directly so the driver cannot redirect the dump
+    to the primary, and never with the member hard-coded."""
+    play = MONGO_PLAY.read_text()
+    assert "mongodump" in play, "platform-ha2-mongodb.yml takes no backup (ADR 0058)"
+    assert re.search(r"selectattr\('role', 'equalto', 'mongodb'\).*last", play), \
+        "the member comes from the oracle's last entry, not from a hard-coded hostname"
+    assert "mongodb.backup.dir" in play, "the directory comes from the oracle (ADR 0058 decision 3)"
+    assert "no_log: true" in play, "the backup credential is never logged"
+
+    # The dump itself lives in the template the play renders.
+    script = (PLAYS / "templates" / "mongo-backup.sh.j2").read_text()
+    assert "mongodump" in script and "--gzip" in script and "--archive" in script
+    # A direct connection, which is what `--host <host>:<port>` is: a replica-set URI would let the driver
+    # discover the set and send the dump to the PRIMARY, defeating the point of running it on a secondary.
+    assert re.search(r'--host\s+"\{\{ backup_member \}\}', script), \
+        "dump this member directly by its own FQDN (the TLS cert is issued for it), not through a set URI"
+    assert "replicaSet=" not in script, "a replica-set URI would be redirected to the primary"
+    assert "--readPreference=secondary" in script
+    assert "users.backup.name" in script and "users.backup.env" in script, "the least-privilege account"
+    assert "mtime" in script and "keep_days" in script, "seven-day rotation, from the oracle"
+    assert ".part" in script, "a half-written archive must never be the newest one S11.9 restores"
+
+
+def test_s11_9_restores_the_archive_rather_than_asserting_a_filename() -> None:
+    """ADR 0058 decision 4, and the whole point of the criterion. A dump that has never been restored is a
+    claim about a filename."""
+    v = VERIFY_08.read_text()
+    assert "S11.9" in v, "verify/test-08-platform-ha2.sh does not check S11.9"
+    body = v[v.index("S11.9"):]
+    assert "mongorestore" in v, "S11.9 must restore the archive, not stat it"
+    # ADR 0058 decision 4: into a throw-away mongod, never into the replica set. The first version restored
+    # into a database on production and took all three members down.
+    assert "docker run -d --rm" in v and "wiredTigerCacheSizeGB" in v, \
+        "the restore must run in a standalone container, not against the live replica set"
+    assert "docker rm -f" in v, "the throw-away instance is removed again"
+    assert "rs.status" not in body.split("check ")[0] or "--host '${rs_uri}'" not in v, \
+        "S11.9 must not write to the replica set"
+    pid = (ROOT / "docs" / "PID.md").read_text()
+    assert "| 1.24 |" in pid and "and it restores" in pid
+    assert (ROOT / "docs" / "adr" / "0058-production-mongodb-backup.md").exists()

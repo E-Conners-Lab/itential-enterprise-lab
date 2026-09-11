@@ -1,0 +1,15 @@
+# test-08-platform-ha2 20260911T141313Z
+SKIP  S11.1 the eleven production VMs run with the sizes of the oracle and the budget, and NetBox holds each one
+SKIP  S11.2 MongoDB is a three-member replica set (one PRIMARY, two SECONDARY) with authentication and TLS
+SKIP  S11.3 Redis has one master, two replicas and three Sentinels that agree, with ACL users only
+SKIP  S11.4 the active Platform node serves through the load balancer and the standby is built and parked
+SKIP  S11.5 everything phases 5-7 built exists on production (workflows, Golden Config, MOP, LCM, integrations, agents, inventories)
+SKIP  S11.7 the official Itential dashboard's MongoDB and Redis rows show the production replica sets
+SKIP  S11.8 the dev-stack VM 205 is retired and every trace of it removed
+FAIL  S11.9 the newest mongodump on the backup member is under 24 h old and restores to the live collection count
+      mongorestore failed on mongo-03: /var/backups/mongodb/rs0-20260911T141244Z.archive.gz
+      the restored copy has no collections
+      restored 0 collections, live itential has 73
+SKIP  S11.6 failover drills (set VERIFY_DRILLS=1 to run; they stop a Platform node, the MongoDB primary and the Redis master in turn)
+
+passed=0 failed=1 deferred=0
