@@ -1,6 +1,6 @@
 # 0057 — Every phase that adds a host refreshes observability, and a unit test enforces it
 
-- **Status:** proposed (owner instruction 2026-09-11: "fix the ordering defect so later phases don't recreate it")
+- **Status:** accepted (PR #29, 2026-09-11) — make observability-refresh is wired in and the enforcing test is negative-tested
 - **Date:** 2026-09-11
 - **Related:** ADR 0051 (observability design), ADR 0053/0055 (the production environment), PID S7, amendment 1.23
 

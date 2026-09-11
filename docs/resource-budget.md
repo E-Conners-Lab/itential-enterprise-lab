@@ -47,12 +47,12 @@ disk (VM 110 NetBox and VM 300 EVE-NG).
 | Ceiling | | | 108 | 280 | 1,400 (with the 200 GB `/srv/images` LV: 1,363); disk is thin, usage decides (section 1) | |
 | **Headroom** | | | **21 vCPU** | **8 GB** | plan; VM 205's retirement at S11.8 returned 8 vCPU / 24 GB and took the RAM headroom positive again (ADR 0053) |
 
-RAM is the binding constraint. With ADR 0053 the plan sums to 296 GB against the 280 GB ceiling
-because the eleven production VMs are listed next to VM 205 (24 GB), which retires at the S11 cut-over
-(the plan is then 272 GB, 8 GB under the ceiling). The running hosts never exceed the
-ceiling: measured 2026-09-10, 197 GB run (eve-ng, netbox, oob-gw, three k3s nodes, VM 205); the eleven
-VMs add 49 GB (246 GB), and the firewall-track VMs (`nios`, `panorama`, 32 GB) are not built until VM 205
-is gone. Section 5 lists the levers in the order they are pulled if that sequence slips.
+RAM is the binding constraint. The plan sums to **272 GB against the 280 GB ceiling**, 8 GB under it: the
+eleven production VMs of ADR 0053 are in, and VM 205 came out when S11.8 retired the dev-stack (2026-09-10),
+which returned 8 vCPU / 24 GB and took the headroom positive again. Measured on the hypervisor
+**2026-09-11: 17 VMs running, 67 vCPU, 222 GB** — `eve-ng`, `netbox-prod`, `oob-gw`, the three k3s nodes and
+the eleven production VMs. The firewall-track VMs (`nios`, `panorama`, 32 GB) fit the remaining plan
+headroom only with the levers in section 5. Section 5 lists the levers in the order they are pulled if that sequence slips.
 
 ## 3. EVE-NG internal budget (inside VM 300: 24 vCPU / 128 GB)
 

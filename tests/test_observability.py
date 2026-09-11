@@ -420,3 +420,16 @@ def test_every_later_phase_that_adds_a_host_refreshes_observability() -> None:
             f"phase-{phase} registers a host but never refreshes observability, so Zabbix and Prometheus "
             f"- both sized from NetBox - will not know about it. Append `make {REFRESH}` (ADR 0057)."
         )
+
+
+def test_the_zabbix_frontend_is_pointed_at_the_server_service() -> None:
+    """The frontend defaults to a host called `zabbix-server`, which does not exist - the chart names the
+    Service `<release>-zabbix-server`. Unset, every page reads "Zabbix server is not running" while the
+    server is healthy, and S7.1 passes throughout because it reads the API and the collected data, not the
+    frontend's socket to the server. Measured 2026-09-11; it had been wrong since phase 7."""
+    values = yaml.safe_load((ROOT / "k8s" / "observability" / "values" / "zabbix.yaml").read_text())
+    env = {e["name"]: e.get("value") for e in values["zabbixWeb"]["extraEnv"]}
+    assert env.get("ZBX_SERVER_HOST"), "zabbixWeb must set ZBX_SERVER_HOST or the frontend reports the server down"
+    assert env["ZBX_SERVER_HOST"].endswith("zabbix-server"), \
+        f"ZBX_SERVER_HOST={env['ZBX_SERVER_HOST']!r} must name the chart's server Service"
+    assert str(env.get("ZBX_SERVER_PORT")) == "10051"

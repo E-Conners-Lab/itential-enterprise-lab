@@ -199,6 +199,7 @@ verify/test-08-platform-ha2.sh
 | S11.5 | Everything chapters 05–07 built exists on production, and a **live device call** succeeds |
 | S11.7 | The official dashboard's MongoDB and Redis rows show the production replica sets |
 | S11.8 | The dev-stack VM is retired and every trace of it removed |
+| S11.9 | A `mongodump` newer than 24 h exists on the backup member **and restores** — into a throw-away `mongod`, with its collection count equal to the live database (ADR 0058) |
 | S11.6a/b/c | The three failover drills, behind `VERIFY_DRILLS=1` |
 
 The final run was **7 passed, 0 failed, 0 deferred** — the first run in the whole series with nothing
@@ -342,6 +343,30 @@ the active Platform node, so the directory account could not log in until the Pl
 the *next* check was blamed for it. Each drill now ends by waiting for the directory account to log in
 again. If you write a drill, make it prove recovery, not just failure.
 
+**The backup restores nothing, and says it restored everything.** Three separate traps in one check,
+and none of them is visible until you actually attempt a restore:
+
+- `mongorestore --archive=<path>` **inside the container** finds no file and restores nothing, silently —
+  the dump writes to a *host* path because the script redirects the container's stdout into it. Pipe the
+  archive back in on stdin instead.
+- A restore is a write, so aimed at the member holding the archive it fails `NotWritablePrimary` **after**
+  logging every collection as restored. The `priority` in the oracle decides only the *initial* election;
+  a later failover can leave the backup member as primary, so never assume which member is writable.
+- Restoring into a throw-away database **on the live replica set** doubles the database's storage. On
+  these 4 GB members that took all three `mongod` processes down. **A backup check must not risk the
+  thing it is backing up** — restore into a standalone container with a small cache and delete it after,
+  which is closer to what a real recovery does anyway.
+
+**The dump directory looks empty to the verify and is not.** `sudo ls /var/backups/mongodb/*.gz` expands
+the glob in the *unprivileged* shell before `sudo` runs, and the directory is `0700 root`. Expand it
+inside: `sudo bash -c 'ls ...'`.
+
+**`platform-ha2-mongodb.yml` tries to initiate a replica set that is already running.** Its probes used
+the localhost exception, which stops working the moment authentication is on: `rs.status()` throws, the
+catch reports `'none'`, and the play concludes the set does not exist. It asks as the administrator now
+when the set is already there. Worth knowing because it only appears the *first time anyone re-runs the
+play* — this one was latent from the phase 8 build until 2026-09-11.
+
 **Smaller things measured on the way.** The Platform's Sentinel list is **JSON**
 (`ITENTIAL_REDIS_SENTINELS`). The MCP image binds loopback unless `ITENTIAL_MCP_SERVER_HOST` is set. The
 OpenTofu provider's guest-agent wait is capped at two minutes here, because the Ubuntu template carries no
@@ -363,6 +388,7 @@ the released-reservation cleanup had silently done nothing for a phase.
 | MCP server | `ghcr.io/itential/itential-mcp` v0.14.0, on the tools VM |
 | Exporters | node `v1.12.1`, process `0.8.7`, plus Redis and MongoDB exporters per server |
 | Environment | Eleven VMs, 49 GB, Active/Standby |
+| Backup | Nightly `mongodump` on the last replica-set member, 7-day rotation, restore-verified by S11.9 |
 
 `itential/ha2/versions.yaml` owns the topology; images are **not** repeated there — they come from
 `itential/versions.yaml`, so production and the dev stack cannot drift on a version.
@@ -375,10 +401,15 @@ Production is the Platform. The dev-stack VM is gone, its address is released, a
 developed on it now lives on an environment built entirely from documents in this repo — which is the only
 claim in this series that a restore-from-backup migration could not have made.
 
-Two things are decided and not yet built: [ADR 0054](../adr/0054-integrations-over-adapters.md) converts
-NetBox and ServiceNow from npm adapters to Integration Models built from OpenAPI, and genuine
-active/active needs a gateway cluster per Platform node. Both are elements after this series, not gaps in
-it.
+Built since: [ADR 0054](../adr/0054-integrations-over-adapters.md) converted NetBox and ServiceNow from
+their npm adapters to Integration Models, so no workflow reaches an adapter any more;
+[ADR 0057](../adr/0057-monitoring-follows-the-estate.md) made observability follow the estate, because the
+eleven VMs this chapter builds had left phase 7's monitoring behind and nothing noticed; and
+[ADR 0058](../adr/0058-production-mongodb-backup.md) added the nightly `mongodump` this environment had
+been running without — a three-member replica set is availability, not backup.
+
+Still decided and not built: genuine active/active needs a gateway cluster per Platform node, and copying
+backups off-host belongs to phase 9, which already owns that for NetBox and Garage.
 
 ---
 

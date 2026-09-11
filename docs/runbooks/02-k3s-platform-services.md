@@ -184,6 +184,30 @@ two separate things and a root with no trust setting signs nothing a browser acc
 and so never exercises the system trust store. To prove the fix, run `curl https://<a lab name>` **without**
 `--cacert` and expect a 200.
 
+**A pod fails with `exec format error` on one node and runs fine on the others.** Not an architecture
+mismatch, if the nodes are identical: containerd's *unpacked snapshot* for that layer is corrupt. It
+survives everything you would reach for first, because none of these touch snapshots — `ctr images rm`
+and a re-pull reuse them (watch the pull move 30 KB instead of megabytes, the tell that nothing was
+re-fetched), `ctr content prune` leaves them, a `k3s` restart leaves them, and even an explicit
+`--platform linux/amd64` pull *and* run still fails. The blobs themselves verify against their digests,
+which is what rules out content corruption.
+
+The fix is to delete that node's containerd state and let it rebuild:
+
+```
+systemctl stop k3s && rm -rf /var/lib/rancher/k3s/agent/containerd && systemctl start k3s
+```
+
+Longhorn data is in `/var/lib/longhorn`, untouched by this. **Then reboot the node** — and that step is
+not optional. Stopping k3s does **not** kill its containers: their `containerd-shim` processes keep
+running and holding ports, so the replacement pods come back with `errno=98` (address in use) and
+`failed to start TCP listener`. This lab found 39 shims still alive five days after they started. The
+sequence is stop → delete → **reboot**, and the volumes rebuild themselves afterwards.
+
+**A CNPG check fails right after a node restart and passes later with no intervention.** S2.5 is
+timing-sensitive while the operator settles; it failed twice here and passed on the third run. Re-run
+before investigating.
+
 **S2.6 fails after you resized a node.** The size on the hypervisor and `docs/resource-budget.md` disagree.
 That check exists because a VM quietly grown to fix a problem is how a lab runs out of RAM three phases
 later. Change `tofu/platform/variables.tf` and the budget together, in one commit.

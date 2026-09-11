@@ -1,6 +1,6 @@
 # 0048 — NetBox enrichment derived from the topology YAML: addressing on interfaces, VRFs and ASNs, racks, circuits, config contexts, journal entries
 
-- **Status:** proposed (owner review; design before code per PID rule)
+- **Status:** accepted (PR #20, 2026-09-11) — the enrichment is built and S4e.1-S4e.6 pass
 - **Date:** 2026-09-08
 - **Related:** ADR 0002 (NetBox = network source of truth, `topology/` = the one input), ADR 0034 (the design the addresses implement), ADR 0040 (Golden Config: interface intent waits for NetBox), ADR 0045/0046 (netbox-sot reads through the Integration Model), PID S4e (amendment 1.13)
 

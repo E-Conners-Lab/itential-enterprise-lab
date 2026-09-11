@@ -167,6 +167,24 @@ chart's own PostgreSQL is a plain StatefulSet with no backups, which is why it i
 `current_passwd` alongside the new `passwd` when changing your own user's password. Omit it and the call is
 rejected with an error that does not name the missing parameter.
 
+**Every Zabbix page says "Zabbix server is not running" and the server is perfectly healthy.** The
+frontend defaults to looking for a host called `zabbix-server`; the chart names the Service
+`<release>-zabbix-server`, so there is no such DNS record and the frontend's socket to the server never
+connects. Set `ZBX_SERVER_HOST` (and `ZBX_SERVER_PORT`) on the web component to the real Service name.
+
+This one is worth dwelling on: **the data is unaffected**. Hosts are polled, items populate, the API
+answers, and S7.1 passes — because the criterion reads the API and the collected data, never the
+frontend's connection to the server. So the one signal a person actually looks at was wrong for weeks
+while every automated check was green. Confirm the fix from inside the web pod:
+`getent hosts $ZBX_SERVER_HOST` must resolve.
+
+**The Zabbix server restarts every few hours and the UI flickers between working and "not running".**
+That is a different fault with the same banner: the server container being OOMKilled (exit 137). Check
+`kubectl -n observability get pod -l app.kubernetes.io/name=zabbix-server` for a climbing restart count
+and `lastState.terminated.reason`. At 1Gi this lab was killed twelve times in 35 hours, sitting at
+1000Mi; 2Gi holds it. Adding hosts to monitor makes a marginal limit insufficient, so re-check it after
+any phase that adds VMs.
+
 **The Zabbix agent package will not install at the pinned version.** Two separate causes that look
 identical. Zabbix `.deb` packages carry **epoch 1**, so a version string without it does not match. And the
 release package adds the repository *without refreshing the index*, so the pinned version is not there yet
@@ -218,7 +236,7 @@ helper has to clear the bearer token first.
 
 | Component | Version |
 |---|---|
-| Zabbix | chart 7.1.0, images `alpine-7.0.30`, agent 2 `7.0.30-1` (Ubuntu 24.04 and 22.04) |
+| Zabbix | chart 7.1.0, images `alpine-7.0.30`, agent 2 `7.0.30-1` (Ubuntu 24.04 and 22.04). Server memory **2Gi** — at 1Gi it was OOMKilled twelve times in 35 h |
 | Zabbix database | CloudNativePG, PostgreSQL 18.6, 10 Gi |
 | kube-prometheus-stack | chart 89.2.3 — operator `v0.93.1`, Prometheus `v3.14.0`, Alertmanager `v0.34.0`, Grafana 13.2.1 |
 | Grafana Zabbix plugin | `alexanderzobnin-zabbix-app@6.6.0` |
@@ -232,6 +250,24 @@ helper has to clear the bearer token first.
 
 `k8s/observability/versions.yaml` is the oracle and `tests/test_observability.py` fails CI if it drifts
 from the image manifest or the IP plan. Nothing is `latest`.
+
+---
+
+## When the estate changes
+
+Monitoring is built here, in phase 7, and **sizes itself from NetBox** — so anything registered afterwards is
+invisible to it until the plays re-run. That is not hypothetical: chapter 08 adds eleven VMs, and S7.1 and
+S7.2 were red from the moment that phase merged until somebody noticed, because a clean `make up` builds
+monitoring and *then* builds hosts it has never heard of.
+
+```
+make observability-refresh
+```
+
+runs the stack and the host plays again, both NetBox-derived, and deliberately **not** the governed device
+pushes — those raise a Work Center card per device and need a person. Every phase after this one that
+registers a host ends with it, and `tests/test_observability.py` fails any that does not
+([ADR 0057](../adr/0057-monitoring-follows-the-estate.md)). Run it by hand after adding a VM outside a phase.
 
 ---
 

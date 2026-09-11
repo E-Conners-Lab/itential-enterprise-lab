@@ -1,6 +1,6 @@
 # 0055 — The phase 5-7 assets replay onto production from shared task files, targeted by a variable
 
-- **Status:** proposed
+- **Status:** accepted (PR #24, 2026-09-11) — the replay, the cut-over and the retirement are done and S11.5 passes
 - **Date:** 2026-09-10
 - **Related:** ADR 0035 (the dev-stack), ADR 0037/0038 (FlowAI), ADR 0039 (the Device Broker), ADR 0040 (Platform coverage), ADR 0053 (the production environment; S11.5 "migration by replay"), ADR 0054 (integrations over adapters), PID S11 (amendment 1.20)
 

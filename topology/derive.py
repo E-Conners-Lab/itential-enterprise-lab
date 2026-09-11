@@ -566,8 +566,74 @@ def circuits(topo: dict) -> list[dict]:
     return out
 
 
+
+SECTION6_HEADING = "## 6. In-band allocation (Phase 4, ADR 0034)"
+
+
+def ip_plan_section6(topo: dict) -> str:
+    """docs/ip-plan.md section 6, rendered from topology/enterprise.yaml.
+
+    Sections 1-5 of the IP plan are the OOB network and are held to topology/ipam.yaml row for row by
+    tests/test_ipam.py. Section 6 is the in-band allocation, which lives in enterprise.yaml, and was
+    hand-maintained until now - so it drifted the moment the topology changed. Generating it means the
+    document cannot disagree with the thing it describes; tests/test_ipam.py holds the file to this.
+    """
+    sites = topo.get("sites", {})
+    rows = []
+    for p in topo["inband_prefixes"]:
+        site = p.get("site", "")
+        label = sites.get(site, {}).get("name", site) if isinstance(sites.get(site), dict) else site
+        extra = []
+        if p.get("vlan"):
+            extra.append(f"VLAN {p['vlan']}")
+        if p.get("vrf"):
+            extra.append(f"VRF `{p['vrf']}`")
+        desc = p.get("description", "")
+        if extra:
+            desc = f"{desc} ({', '.join(extra)})" if desc else ", ".join(extra)
+        rows.append(f"| `{p['prefix']}` | {label} | {p.get('role', '')} | {desc} |")
+
+    asn = topo["routing"]["asn"]
+    asn_line = ", ".join(f"{k.replace('_', ' ')} {v}" for k, v in asn.items())
+
+    vrfs = topo.get("vrfs", {})
+    vrf_rows = []
+    for name, v in vrfs.items():
+        bits = [v.get("description", "")]
+        if v.get("rd"):
+            bits.append(f"RD `{v['rd']}`")
+        if v.get("vni"):
+            bits.append(f"L3VNI {v['vni']}")
+        if v.get("route_targets"):
+            bits.append("RT " + ", ".join(f"`{rt}`" for rt in v["route_targets"]))
+        vrf_rows.append(f"| `{name}` | {', '.join(b for b in bits if b)} | {', '.join(v.get('platforms', []))} |")
+
+    return "\n".join(
+        [
+            SECTION6_HEADING,
+            "",
+            "**Generated** from `topology/enterprise.yaml` by `topology/derive.py --section6`; "
+            "`tests/test_ipam.py` fails if this file and the topology disagree. Seeded into NetBox by "
+            "`ansible/playbooks/netbox-topology.yml` and enriched by `netbox-enrich.yml` (ADR 0048).",
+            "",
+            "| Prefix | Site | Role | Purpose |",
+            "|---|---|---|---|",
+            *rows,
+            "",
+            f"**Autonomous systems:** {asn_line}.",
+            "",
+            "| VRF | Detail | Platforms |",
+            "|---|---|---|",
+            *vrf_rows,
+            "",
+        ]
+    )
+
 if __name__ == "__main__":
     topology = load_topology()
+    if "--section6" in sys.argv:
+        sys.stdout.write(ip_plan_section6(topology))
+        raise SystemExit(0)
     per_device = interfaces(topology)
     flat = [
         dict(row, device=device)

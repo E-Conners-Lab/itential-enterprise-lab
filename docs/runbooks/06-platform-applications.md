@@ -258,14 +258,17 @@ key attribute**, so those nodes need password login enabled for the automation u
 | TextFSM / ntc-templates | 2.1.0 / 9.2.0 (Arista parsing) |
 | Ollama | 0.33.3, `qwen2.5:7b` in-lab on CPU, 10 GB limit, loopback only |
 | Anthropic model | `claude-sonnet-5`, budget-guarded at $15/week |
-| `adapter-netbox` / `adapter-servicenow` | v1.0.10 / v3.0.11 |
-| Integration Models | `lab-netbox:1.0.0` (11 read operations), `lab-servicenow:1.0.0` (5 operations) |
+| `adapter-netbox` | v1.0.10 — the only npm adapter left, because the `InventoryBroker` consumes an adapter (ADR 0039) |
+| Integration Models | `lab-netbox:1.0.0` (15 operations), `lab-servicenow:1.0.0` (8 operations) — both grew write operations when S4f converted the workflows |
 
-> **Direction of travel.** [ADR 0054](../adr/0054-integrations-over-adapters.md) makes Integration Models
-> built from OpenAPI the default and keeps an adapter only where the Platform itself requires one — the
-> Inventory Manager and Configuration Manager brokers. Today both paths exist, which means two code paths
-> to the same API and two credentials to rotate. That conversion is the next build element after this
-> series; until it lands, this chapter describes what is actually running.
+> **Done since this chapter was written.** [ADR 0054](../adr/0054-integrations-over-adapters.md) made
+> Integration Models built from OpenAPI the default and keeps an npm adapter only where the Platform itself
+> requires one. That conversion has run: **no workflow holds an adapter task or a `genericAdapterRequest`
+> any more**, `adapter-servicenow` is gone entirely, and `adapter-netbox` stays only because the
+> `InventoryBroker` consumes an adapter rather than an integration (ADR 0039). The journal entries moved too
+> — `extras_journal_entries_create` replaced the Python on the Gateway 5 runner that ADR 0048 needed only
+> because the adapter dropped a trailing slash. Chapter 05 still installs `adapter-netbox`; it no longer
+> installs `adapter-servicenow`.
 
 ---
 
