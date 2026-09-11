@@ -96,8 +96,11 @@ discovery and asserts every operation is an authorized tool.
 | `diagnostics` | Reads, plus **one** write: a "Proposed fix" work note on an incident | Suggest |
 | `remediation` | Reads, plus `wf-config-push-v1` behind the Work Center card | Act, gated |
 
-Each has an `ollama-lab` twin with one to three tools. The twins **do not get the raw gateway tool** — a
-small model given it invented node names.
+Each has an `ollama-lab` twin with one to three tools, and the twins are given **reducing workflows
+rather than raw tools**, for two separately measured reasons: a small model handed the raw gateway tool
+invented node names, and one handed the raw `dcim_devices_list` overran the Platform's inference timeout
+on 52-field device objects (see Troubleshooting). So the twins read inventory through
+`wf-netbox-devices-v1`, which returns six fields per device.
 
 ---
 
@@ -117,9 +120,10 @@ evaluating twelve devices.
   and NetBox reservation; approving it puts the VLAN on the switch and the instance active; rejecting it
   changes nothing and rolls the reservation back; deleting it removes the VLAN through an approval card
   and retires the instance.
-- Integrations: eleven authorized tools across the two models, and an agent answers a device question
-  through `dcim_devices_list` and an incident question through `listIncidents` — **never** through an
-  adapter method.
+- Integrations: eleven authorized tools across the two models, and a Claude agent answers a device
+  question through `dcim_devices_list` and an incident question through `listIncidents` — **never**
+  through an adapter method. The `ollama-lab` twins reach the same data through `wf-netbox-devices-v1`,
+  which calls that operation once on the runner and reduces the result.
 - Agents: each agent in the fleet answers its own question, and the answer matches the second source. The
   compliance agent's run costs about 3.5k input tokens through the summary workflow.
 
@@ -210,6 +214,18 @@ parameter types in `itential/integrations/*.json`, so the array form cannot come
 **A local twin invents node names.** That is why the twins do not get the raw gateway tool. A small model
 handed an unconstrained `sendCommand` will confidently make up a hostname; handed a workflow that takes a
 device from a fixed inventory, it cannot.
+
+**A local twin fails with "ollama model invocation failed" while Ollama is working fine.** That
+string is the *Platform's* inference timeout, not an error from Ollama. Check Ollama's own log before
+believing it: measured 2026-09-11, `dcim_devices_list` handed straight to `netbox-sot-local` returned
+five br1 devices of 52 fields each (17.9 kB), the prompt reached **7,823 tokens**, and qwen2.5:7b on
+the four CPU cores of tools-01 ingests at **~22 tokens/sec** - about 350 s. The Platform gave up, marked
+the session FAILED and **deleted the session record** (so `GET /sessions/<id>` 404s for a session the
+list endpoint just showed you), while llama-server finished the same request successfully at 16:55:13,
+`truncated = 0`. The fix is the same one as the entry below: reduce the data before it reaches the
+model. `wf-netbox-devices-v1` reads the list once and hands back six fields per device - br1 goes from
+17.9 kB to 730 bytes - and the twins hold that workflow instead of the raw operation. The Claude agents
+keep the raw operations: they need the full objects and ingest them in a second.
 
 **An agent burns an enormous number of tokens.** Measured: the raw compliance-report tools cost the
 compliance agent **638k input tokens** in one session. `wf-compliance-report-v1` reduces the reports on the

@@ -19,13 +19,15 @@ instructions: |
   - Several devices or all devices: run the workflow wf-show-all-v1 once with the show command.
     Its results are keyed by device name; devices_checked is the number of devices that answered.
     Answer from those results only.
-  - To find real device names, or when unsure a device exists, call dcim_devices_list with
-    name "<name>" or site "<site>" - one plain filter, no list, and no other filter in the call;
-    a filter set to null is rejected before it reaches NetBox. Use the names it returns. If it
-    returns nothing, say the device is not in NetBox and call no other tool.
+  - To find real device names, or when unsure a device exists, run the workflow
+    wf-netbox-devices-v1. It takes one input named filter whose value is a plain string and never
+    an object: send exactly {"filter": "br2-sw01"} for one device, {"filter": "br1"} for a site, or
+    {"filter": ""} for every device. Its summary carries count and a devices list of name, site,
+    role, platform, status and primary_ip4. Use the names it returns. If count is 0 and there is no
+    error in the summary, say the device is not in NetBox and call no other tool.
 
   The operator's request: {{request}}
 tools:
   - {reference: wf-show-command-v1, kind: workflow}
   - {reference: wf-show-all-v1, kind: workflow}
-  - {reference: dcim_devices_list, kind: integration, model: netbox}
+  - {reference: wf-netbox-devices-v1, kind: workflow}
