@@ -319,6 +319,96 @@
       "actor": "Pronghorn",
       "scheduled": false
     },
+    "6a": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "the device is not in the inventory",
+      "description": "the device is not in the inventory",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 900,
+        "y": -400
+      },
+      "variables": {
+        "incoming": {
+          "input": "the device is not in the Inventory Manager inventory 'lab'; nothing was pushed",
+          "outputType": "string",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.device_error"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "6b": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "changed = false (no such device)",
+      "description": "changed = false (no such device)",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 1200,
+        "y": -400
+      },
+      "variables": {
+        "incoming": {
+          "input": "false",
+          "outputType": "boolean",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.changed"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "7a": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "the save did not happen",
+      "description": "the save did not happen",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 1500,
+        "y": -400
+      },
+      "variables": {
+        "incoming": {
+          "input": "the configuration was applied but 'write memory' failed; it is not persisted across a reload",
+          "outputType": "string",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.save_error"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
     "workflow_start": {
       "name": "workflow_start",
       "summary": "workflow_start",
@@ -383,6 +473,10 @@
       "3b": {
         "state": "success",
         "type": "standard"
+      },
+      "6a": {
+        "state": "error",
+        "type": "standard"
       }
     },
     "3b": {
@@ -395,6 +489,10 @@
       "5a": {
         "state": "success",
         "type": "standard"
+      },
+      "7a": {
+        "state": "error",
+        "type": "standard"
       }
     },
     "5a": {
@@ -404,6 +502,24 @@
       }
     },
     "9a": {},
+    "6a": {
+      "6b": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "6b": {
+      "workflow_end": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "7a": {
+      "5a": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
     "workflow_end": {}
   },
   "groups": [],
@@ -444,6 +560,12 @@
       },
       "save_result": {
         "type": "object"
+      },
+      "device_error": {
+        "type": "string"
+      },
+      "save_error": {
+        "type": "string"
       }
     }
   },

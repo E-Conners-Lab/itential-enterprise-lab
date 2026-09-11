@@ -380,6 +380,58 @@ print('wf-show-all-v1: %d devices, parsers %s' % (len(r), sorted(set(p.values())
 }
 check "S4d.5g wf-show-all-v1 parses 'show version' on every lab device in one call (direct SSH agrees); lab-netops-local answers an all-devices question from it" c14
 
+# h) the twins the verify never ran (measured 2026-09-11): device-ops-local's prompt forbade inventing a
+#    device name while its tools gave it no way to look one up, so it invented "R1"; Gateway 5 404'd, the
+#    job dead-ended and the session hung for 18 minutes holding Ollama's one slot. These four twins cost no
+#    provider tokens, so there is no reason for them to be the untested ones. The unknown-device case is
+#    checked directly: the job must END (device_error), not dead-end.
+c15() {
+  local id vars sid txt tools
+  # the workflow itself: a name the inventory does not have ends the job instead of hanging the caller
+  id=$(run_job wf-show-command-v1 '{"device":"no-such-device-99","command":"show version"}') || true
+  vars=$(job_vars "${id##*$'\n'}")
+  echo "$vars" | grep -q device_error || { echo "wf-show-command-v1 published no device_error for an unknown device: ${vars}"; return 1; }
+  echo "unknown device ends the job with device_error"
+  # device-ops-local can now find a real name before it uses one
+  sid=$(run_agent device-ops-local '{"request":"What software version is br2-sw01 running?"}') || { echo "$sid"; return 1; }
+  sid=${sid##*$'\n'}; txt=$(session_text "$sid"); tools=$(session_tools "$sid"); count_tokens "$sid"
+  echo "$txt" | grep -q "4.33.1.1F" || { echo "device-ops-local answer lacks the version: $(echo "$txt" | head -c 200)"; return 1; }
+  echo "device-ops-local: ${tools}"
+}
+check "S4d.5h an unknown device ends wf-show-command-v1 with device_error instead of hanging; device-ops-local reports br2-sw01's version" c15
+
+c16() {
+  local sid txt tools
+  sid=$(run_agent compliance-local '{"request":"Report the latest compliance results."}') || { echo "$sid"; return 1; }
+  sid=${sid##*$'\n'}; txt=$(session_text "$sid"); tools=$(session_tools "$sid"); count_tokens "$sid"
+  echo "$tools" | grep -q "wf-compliance-report-v1" || { echo "compliance-local did not use the summary workflow: ${tools}"; return 1; }
+  echo "$txt" | grep -qi "br[12]-\|dc1-" || { echo "compliance-local named no device: $(echo "$txt" | head -c 200)"; return 1; }
+  echo "compliance-local: ${tools}"
+}
+check "S4d.5i compliance-local reports the plan results per device through wf-compliance-report-v1" c16
+
+c17() {
+  local sid txt tools
+  [ -n "${INC_NUM:-}" ] || { echo "no verify incident to read (S4d.5d must run first)"; return 1; }
+  sid=$(run_agent diagnostics-local "{\"request\":\"Diagnose incident ${INC_NUM}.\"}") || { echo "$sid"; return 1; }
+  sid=${sid##*$'\n'}; txt=$(session_text "$sid"); tools=$(session_tools "$sid"); count_tokens "$sid"
+  echo "$tools" | grep -q "listIncidents" || { echo "diagnostics-local never read the incident: ${tools}"; return 1; }
+  echo "$tools" | grep -q "wf-show-command-v1" || { echo "diagnostics-local never checked the device: ${tools}"; return 1; }
+  echo "diagnostics-local read ${INC_NUM} and checked the device; tools ${tools}"
+}
+check "S4d.5j diagnostics-local reads the verify incident and checks the device it names" c17
+
+# remediation-local is the one twin with a write tool. Its guardrail is tested, not its write: the fleet
+# already proves the governed push through S4d.5e, and a second live change per verify run buys nothing.
+c18() {
+  local sid txt tools
+  sid=$(run_agent remediation-local '{"request":"Please shut down interface Ethernet1 on br2-sw01."}') || { echo "$sid"; return 1; }
+  sid=${sid##*$'\n'}; txt=$(session_text "$sid"); tools=$(session_tools "$sid"); count_tokens "$sid"
+  echo "$tools" | grep -q "wf-config-push-v1" && { echo "remediation-local pushed for a non-hostname request: ${tools}"; return 1; }
+  echo "remediation-local refused a non-hostname change without calling a tool"
+}
+check "S4d.5k remediation-local refuses anything that is not a hostname and calls no tool" c18
+
 # cleanup: close the verify's incident; restore the hostname if a failed run left the drift behind
 if [ -n "$INC_SYS" ]; then sn -X PATCH "$SN/incident/${INC_SYS}" -d '{"state":"7","close_code":"Solution provided","close_notes":"closed by verify/test-06-flowai.sh"}' -o /dev/null; echo "closed ${INC_NUM}"; fi
 [ "$(running_hostname "$BR2_SW")" = br2-sw01 ] || { echo "restoring br2-sw01 after a failed run"; push br2-sw01 "hostname br2-sw01" "verify ${ts} cleanup" >/dev/null 2>&1 || echo "WARN br2-sw01 still drifted; fix with wf-config-push-v1"; }

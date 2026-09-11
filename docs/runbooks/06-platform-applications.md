@@ -211,6 +211,31 @@ of nulls. Say in the prompt that each filter is one plain value and that an unus
 the call entirely. `tests/test_agent_fleet.py` now compares every prompt's filter examples against the
 parameter types in `itential/integrations/*.json`, so the array form cannot come back.
 
+**An agent session runs for ever and no job is running.** Look for a job that *errored* with
+`Job has no available transitions. <task> could have led to the workflow end task, but did not.` A
+workflow task with no failure edge dead-ends, and a dead-ended job never returns a result to the agent
+that called it: the session stays `RUNNING` indefinitely. Measured 2026-09-11: `device-ops-local`
+invented the device `R1`, Gateway 5 answered `404 Missing nodes - Inventory 'lab': [R1]`, the job
+errored in 69 s and the session was still running eighteen minutes later. Because Ollama runs
+`OLLAMA_NUM_PARALLEL=1`, that one session held the only local inference slot the whole time — every
+other twin queues behind it. Distinguish it from the stale-UUID failure above: that one **ends** in ~2 s
+having spent zero tokens; this one never ends at all. `wf-show-command-v1` and `wf-config-push-v1` now
+publish `device_error` and reach their end (ADR 0059). **The transition state matters:** a Gateway task
+that 404s lands in state `error`, and a `failure` edge does *not* fire for it — a correct-looking
+`failure` edge still produced "5a could have led to the workflow end task, but did not". Use
+`{"state": "error"}` for a Gateway task, and keep `failure` for a task that *completes* unsuccessfully
+(an `evaluate`, or a rejected approval form). `tests/test_agent_fleet.py` fails a device-sending task
+that has no `error` edge reaching `workflow_end`.
+
+**A twin ignores an instruction in its prompt.** Check it *can* obey. `device-ops-local` was told "you
+never invent a device name" while holding only the two show-command workflows — nothing that returns a
+real name — so the instruction was unfollowable and the model invented one. `wf-show-command-v1` takes
+`device` as free text, so the workflow does not constrain the name either. Pair any such prohibition
+with a tool that supplies the values: that twin now holds `wf-netbox-devices-v1`. Note that a static
+audit of all thirteen documents passed clean while this was broken — tools resolved, no prompt named a
+tool its agent lacked, every name cited existed in NetBox. This class of defect is behavioural, and only
+running the agent finds it, which is why every `ollama-lab` twin now runs in the verify (S4d.5h-k).
+
 **A local twin invents node names.** That is why the twins do not get the raw gateway tool. A small model
 handed an unconstrained `sendCommand` will confidently make up a hostname; handed a workflow that takes a
 device from a fixed inventory, it cannot.

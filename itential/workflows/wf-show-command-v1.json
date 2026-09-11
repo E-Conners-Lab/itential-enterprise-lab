@@ -361,6 +361,36 @@
       "actor": "Pronghorn",
       "scheduled": false
     },
+    "5a": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "the device is not in the inventory",
+      "description": "the device is not in the inventory",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 600,
+        "y": -300
+      },
+      "variables": {
+        "incoming": {
+          "input": "the device is not in the Inventory Manager inventory 'lab'; check the name and do not retry",
+          "outputType": "string",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.device_error"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
     "workflow_start": {
       "name": "workflow_start",
       "summary": "workflow_start",
@@ -415,6 +445,10 @@
       "3a": {
         "state": "success",
         "type": "standard"
+      },
+      "5a": {
+        "state": "error",
+        "type": "standard"
       }
     },
     "3a": {
@@ -459,6 +493,12 @@
         "type": "standard"
       }
     },
+    "5a": {
+      "workflow_end": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
     "workflow_end": {}
   },
   "groups": [],
@@ -487,6 +527,9 @@
     "properties": {
       "raw": {
         "type": "object"
+      },
+      "device_error": {
+        "type": "string"
       },
       "parsed": {
         "type": [
