@@ -274,6 +274,55 @@ except Exception: print('')" )
 }
 check "S11.8 the dev-stack VM 205 is retired and every trace of it removed" c8
 
+# --- S11.9 the production MongoDB is backed up, and the archive restores ------------------------------------
+# A dump that has never been restored is a claim about a filename. This restores the newest archive into a
+# throw-away database on the member that took it and compares a collection count against the live one, then
+# drops the copy - so a backup that cannot be read back fails here rather than on the day it is needed.
+c9() {
+  local member dir keep newest age ip rc=0 tag="verifyrestore$$"
+  member=$(val "[v['name'] for v in d['vms'] if v['role']=='mongodb'][-1]")
+  dir=$(val "d['mongodb']['backup']['dir']")
+  keep=$(val "d['mongodb']['backup']['keep_days']")
+  local mdb img; mdb=$(val "d['mongodb']['database']")
+  img=$(${PY} -c "import yaml;d=yaml.safe_load(open('itential/versions.yaml'))['images']['mongodb'];print(d['repository']+':'+str(d['tag']))")
+  ip=$(host "$member")
+
+  # the glob must be expanded INSIDE sudo: the directory is 0700 root, so the login shell matches nothing
+  newest=$($SSH "ubuntu@${ip}" "sudo bash -c 'ls -t ${dir}/*.archive.gz 2>/dev/null | head -1'") || true
+  [ -n "$newest" ] || { echo "no archive in ${dir} on ${member}"; return 1; }
+  age=$($SSH "ubuntu@${ip}" "sudo stat -c %Y '${newest}'")
+  age=$(( ( $(date -u +%s) - age ) / 3600 ))
+  [ "$age" -lt 24 ] || { echo "the newest archive on ${member} is ${age} h old (${newest})"; rc=1; }
+
+  # a .part left behind means a dump died half-written; it must never be mistaken for the newest archive
+  $SSH "ubuntu@${ip}" "sudo bash -c 'ls ${dir}/*.part'" >/dev/null 2>&1 && { echo "an incomplete .part archive is present"; rc=1; }
+
+  # Restore into a THROW-AWAY mongod, never into the replica set. Restoring a full copy of the database
+  # back into production doubles its storage, and on these 4 GB members it took all three mongod processes
+  # down when this check was first written (2026-09-11) - a backup check must not risk the thing it backs
+  # up. A standalone container with a small cache is also closer to what a real recovery does: prove the
+  # archive reconstitutes a database somewhere clean.
+  local live restored
+  live=$(mongosh_on "$member" "db.getSiblingDB('${mdb}').getCollectionNames().length" | tr -d '\r')
+  $SSH "ubuntu@${ip}" "sudo docker run -d --rm --name ${tag} ${img} --wiredTigerCacheSizeGB 0.25 >/dev/null 2>&1" || {
+    echo "could not start the throw-away mongod"; return 1; }
+  local i
+  for i in $(seq 1 20); do
+    $SSH "ubuntu@${ip}" "sudo docker exec ${tag} mongosh --quiet --eval 'db.adminCommand({ping:1}).ok'" 2>/dev/null | grep -q 1 && break
+    sleep 2
+  done
+  $SSH "ubuntu@${ip}" "sudo bash -c \"cat '${newest}' | docker exec -i ${tag} mongorestore --quiet --gzip --archive\"" >/dev/null 2>&1 \
+    || { echo "mongorestore into the throw-away instance failed: ${newest}"; rc=1; }
+  restored=$($SSH "ubuntu@${ip}" "sudo docker exec ${tag} mongosh --quiet --eval \"db.getSiblingDB('${mdb}').getCollectionNames().length\"" 2>/dev/null | tr -d '\r')
+  $SSH "ubuntu@${ip}" "sudo docker rm -f ${tag}" >/dev/null 2>&1
+
+  [ -n "$restored" ] && [ "$restored" -gt 0 ] 2>/dev/null || { echo "the restored copy has no collections"; rc=1; }
+  [ "$restored" = "$live" ] || { echo "restored ${restored} collections, live ${mdb} has ${live}"; rc=1; }
+  [ "$rc" = 0 ] || return 1
+  echo "${member}: $(basename "$newest") is ${age} h old; restored ${restored} collections into a throw-away mongod, equal to live ${mdb}; kept ${keep} days"
+}
+check "S11.9 the newest mongodump on the backup member is under 24 h old and restores to the live collection count" c9
+
 # --- S11.6 failover drills (disruptive; VERIFY_DRILLS=1 only) -----------------------------------------------
 if [ "${VERIFY_DRILLS:-0}" = 1 ]; then
   # A drill takes a database or a node away, and the Platform reconnects when it comes back - but its

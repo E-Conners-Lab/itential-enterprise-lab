@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+# Nightly production MongoDB backup (PID S11.9, ADR 0058). Rendered by platform-ha2-mongodb.yml.
+#
+# Runs on {{ backup_member }}, the last replica-set member the oracle lists, so it is never the initial
+# primary. `--host <member>:<port>` is a DIRECT connection - a replica-set URI would let the driver discover
+# the set and send the dump to the PRIMARY, which is exactly what running this on a secondary avoids. The
+# member's own FQDN, not localhost: the TLS certificate is issued for the FQDN, and connecting by
+# localhost fails verification rather than quietly skipping it.
+#
+# The credential is the `backup` account (MongoDB's built-in `backup` role): reads everything, writes
+# nothing. Kept {{ mongodb.backup.keep_days }} days. Copying it off-host is phase 9, which already owns
+# that for the NetBox and Garage backups (ADR 0031) - until then this survives a bad write, a bad asset
+# and a bad migration, but not the loss of this VM.
+set -euo pipefail
+
+DIR={{ mongodb.backup.dir }}
+KEEP={{ mongodb.backup.keep_days }}
+ts=$(date -u +%Y%m%dT%H%M%SZ)
+out="${DIR}/{{ mongodb.replica_set }}-${ts}.archive.gz"
+
+docker exec mongodb mongodump \
+  --host "{{ backup_member }}.{{ domain }}:{{ mongodb.port }}" \
+  --username {{ mongodb.users.backup.name }} \
+  --password '{{ secrets[mongodb.users.backup.env] }}' \
+  --authenticationDatabase admin \
+{% if mongodb.tls %}
+  --ssl --sslCAFile /etc/mongo/tls/ca.crt \
+{% endif %}
+  --readPreference=secondary \
+  --gzip --archive > "${out}.part"
+
+# only a complete dump gets the real name, so a half-written archive is never the newest one S11.9 restores
+mv "${out}.part" "${out}"
+chmod 600 "${out}"
+
+find "${DIR}" -name '*.archive.gz' -mtime "+${KEEP}" -delete
+find "${DIR}" -name '*.part' -mtime +1 -delete
+
+echo "$(date -u +%FT%TZ) wrote ${out} ($(stat -c %s "${out}") bytes)"

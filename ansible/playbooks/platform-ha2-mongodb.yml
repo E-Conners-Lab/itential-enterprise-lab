@@ -59,6 +59,8 @@
     - ../../itential/ha2/versions.yaml
     - ../../itential/versions.yaml
   vars:
+    # the dump runs here: the last member the oracle lists, never the initial primary
+    backup_member: "{{ (vms | selectattr('role', 'equalto', 'mongodb') | list | last).name }}"
     ansible_ssh_common_args: -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/dev/null
     dir: /opt/itential/mongodb
     secrets: "{{ hostvars['localhost'].ha2_secrets }}"
@@ -122,6 +124,51 @@
       delay: 5
       until: ping.rc == 0 and '1' in ping.stdout
 
+    # --- S11.9 (ADR 0058): nightly mongodump on a secondary --------------------------------------------
+    # The replica set is availability, not backup: it replicates a bad write to all three members in
+    # milliseconds. This is what makes rollback true for the Platform estate - every workflow, job, LCM
+    # instance and Work Center item lives here, and the repo owns assets, not history.
+    #
+    # The LAST member in the oracle, so it is never the initial primary (the first has priority 10), and
+    # directConnection=true so the driver cannot helpfully redirect the dump to the primary anyway.
+    - name: Backup directory
+      ansible.builtin.file:
+        path: "{{ mongodb.backup.dir }}"
+        state: directory
+        mode: "0700"
+      when: inventory_hostname == backup_member
+
+    - name: Backup script (mongodump on this member, with the oracle's rotation)
+      ansible.builtin.template:
+        src: templates/mongo-backup.sh.j2
+        dest: /usr/local/sbin/mongo-backup.sh
+        mode: "0700"
+      when: inventory_hostname == backup_member
+      no_log: true
+
+    - name: Nightly backup cron at the hour the oracle names
+      ansible.builtin.cron:
+        name: mongodb-backup
+        hour: "{{ mongodb.backup.hour }}"
+        minute: "{{ mongodb.backup.minute }}"
+        job: /usr/local/sbin/mongo-backup.sh
+        user: root
+      when: inventory_hostname == backup_member
+
+    - name: Existing archives
+      ansible.builtin.find:
+        paths: "{{ mongodb.backup.dir }}"
+        patterns: "*.archive.gz"
+      register: mongo_dumps
+      when: inventory_hostname == backup_member
+
+    # so S11.9 has something to restore on the first run; the cron owns it from then on
+    - name: Run the backup once now if none exists yet
+      ansible.builtin.command:
+        cmd: /usr/local/sbin/mongo-backup.sh
+      when: inventory_hostname == backup_member and (mongo_dumps.files | default([]) | length) == 0
+      changed_when: true
+
 - name: Replica set and its accounts
   hosts: ha2-mongodb[0]
   become: true
@@ -142,11 +189,31 @@
       --tlsAllowInvalidHostnames --host 127.0.0.1
       -u {{ mongodb.users.admin.name }} -p '{{ secrets[mongodb.users.admin.env] }}' --authenticationDatabase admin
   tasks:
-    - name: Is the replica set initiated?
+    # Ask as the administrator first. The unauthenticated probe below works only on a fresh member, through
+    # the localhost exception: once the set is initiated and auth is on, rs.status() throws "requires
+    # authentication", the catch reports 'none', and this play would then try to initiate a running replica
+    # set - which is exactly how it failed the first time anyone re-ran it (2026-09-11).
+    - name: Is the replica set initiated (as the administrator)
+      ansible.builtin.command:
+        cmd: "{{ mongosh_admin }} --eval \"try { rs.status().set } catch (e) { 'none' }\""
+      register: rs_auth
+      changed_when: false
+      failed_when: false
+      no_log: true
+
+    - name: Is the replica set initiated (fresh member, before the administrator exists)
       ansible.builtin.command:
         cmd: "{{ mongosh }} --eval \"try { rs.status().set } catch (e) { 'none' }\""
-      register: rs_state
+      register: rs_open
       changed_when: false
+      failed_when: false
+      when: rs_auth.rc != 0 or mongodb.replica_set not in (rs_auth.stdout | default(''))
+
+    - name: The replica set exists if either probe saw it
+      ansible.builtin.set_fact:
+        rs_initiated: >-
+          {{ (mongodb.replica_set | default('__unset__'))
+             in ((rs_auth.stdout | default('')) ~ (rs_open.stdout | default(''))) }}
 
     - name: Initiate the replica set (the higher priority makes the first member the initial primary)
       ansible.builtin.command:
@@ -156,17 +223,23 @@
           host: '{{ m.name }}.{{ domain }}:{{ mongodb.port }}',
           priority: {{ m.priority }}}{{ ',' if not loop.last }}{% endfor %}
           ]}).ok"
-      when: mongodb.replica_set not in rs_state.stdout
+      when: not (rs_initiated | bool)
       changed_when: true
       register: initiated
 
+    # Which client depends on where we are: on a fresh set the administrator does not exist yet and the
+    # localhost exception is all there is, but on a re-run rs.status() needs credentials - unauthenticated
+    # it throws, the catch returns 0, and this waits thirty times for a PRIMARY that has been there all along.
     - name: Wait for a PRIMARY
       ansible.builtin.command:
-        cmd: "{{ mongosh }} --eval \"try { rs.status().members.filter(m => m.stateStr == 'PRIMARY').length } catch (e) { 0 }\""
+        cmd: >-
+          {{ (rs_initiated | bool) | ternary(mongosh_admin, mongosh) }}
+          --eval "try { rs.status().members.filter(m => m.stateStr == 'PRIMARY').length } catch (e) { 0 }"
       register: primary
       changed_when: false
       retries: 30
       delay: 5
+      no_log: true
       until: primary.stdout | trim == '1'
 
     - name: Does the admin account exist?
@@ -198,6 +271,7 @@
       loop:
         - "{{ mongodb.users.itential }}"
         - "{{ mongodb.users.monitor }}"
+        - "{{ mongodb.users.backup }}"  # S11.9 (ADR 0058): reads everything nightly, writes nothing
       loop_control:
         label: "{{ item.name }}"
       register: users
