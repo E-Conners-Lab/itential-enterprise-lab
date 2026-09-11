@@ -73,6 +73,51 @@ and only running the agent finds it.
   inference slot is no longer deniable by one bad name.
 - The verify grows four criteria that cost no provider tokens.
 - The static audit stays available but is not trusted as coverage: it passed while the fleet was broken.
-- Not addressed: `wf-show-command-v1` still accepts any string as `device`. Constraining it to the
-  inventory at the schema level would be stronger than asking the model to check first, and is left as
-  a later element.
+- `wf-show-command-v1` accepting any string as `device` was left open here and closed immediately
+  after (below).
+
+
+## Amendment 2026-09-11 — the input schema cannot constrain anything; the attempt is recorded, not kept
+
+The open item above proposed constraining `device` to the inventory "at the schema level". That was
+tried and **reverted**, because two measurements say a workflow input schema has no effect on either the
+Platform or the model.
+
+**It is not enforced.** A throwaway workflow whose input declared `enum: ["br1-sw01", "br2-sw01"]`:
+
+```
+start with device "br1-sw01"  ->  "Successfully started job"
+start with device "R1"        ->  "Successfully started job"
+```
+
+The Platform does not validate a workflow input against its schema at all - the same reason a 7B model's
+object reached the runner intact through a `type: string` input (PR #32).
+
+**It does not reach the model either.** The fallback justification was that an enum would at least appear
+in the tool schema an agent reads, so a small model would pick a real name. It does not: the import
+**strips** it. Generated document, imported workflow, and the tool registry entry an agent is handed:
+
+```
+local     device: {type: string, required: true, enum: [...12 nodes...], description: "..."}
+imported  device: {"type": "string"}
+tool      device: {"type": "string"}
+```
+
+`enum`, `description` and the per-property `required` are all discarded; only the type and the top-level
+`required` list survive. So an enum in a workflow document is inert in both directions, and keeping one
+would be worse than nothing - it reads as a constraint, and a test asserting it would give false
+confidence in a guard that does not exist.
+
+**What this leaves.** The constraint has to live where something actually reads it:
+
+- the **`error` edge to `device_error`** (decision 1) - the only real guarantee, and it works: an unknown
+  device ends the job in five seconds and the agent reports it;
+- the **agent prompt**, which is delivered verbatim and demonstrably obeyed - `device-ops-local` checked
+  NetBox and refused `core-router-99` without touching the gateway;
+- a **tool that returns real names** (decision 3), which is live rather than a list that can go stale.
+
+Real input enforcement would need an in-workflow existence check before the send.
+`application:InventoryManager:getNodesByInventory` exists for it, but `params.search` is a substring
+match and `$var` does not resolve inside a nested object, so it costs five or six tasks plus a
+fuzzy-match caveat on every show command. Not taken: `device_error` already ends the job cleanly, and the
+three layers above cover the agent path that actually motivated this.
