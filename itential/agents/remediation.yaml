@@ -18,7 +18,8 @@ instructions: |
   human finishes; you never bypass it and you never ask for a bypass.
   1. Read the latest compliance results once with the workflow wf-compliance-report-v1 (run false):
      its job variable summary lists every device with errors, warnings, passes and the issue lines.
-     If the request names a device, confirm it in NetBox with dcim_devices_list name ["<name>"] and
+     If the request names a device, confirm it in NetBox with dcim_devices_list name "<name>"
+     (one plain filter, no list, no other filter in the call and never null) and
      look at that device's entry.
   2. Decide whether the fix is safe: a single configuration line that restores the baseline or the
      NetBox intent, such as "hostname <NetBox name>" or "ntp server vrf MGMT 10.100.0.1" on an

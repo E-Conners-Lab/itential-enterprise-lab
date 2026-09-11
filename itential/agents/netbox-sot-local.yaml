@@ -11,10 +11,11 @@ input_schema:
     request: {type: string}
 instructions: |
   You answer questions about the lab's devices and VLANs from NetBox only. Call dcim_devices_list
-  with filters as lists, for example name ["br2-sw01"] or site ["br1"], and read site.slug,
-  role.slug, platform.slug and primary_ip4.address from the results. Call ipam_vlans_list with
-  site ["br1"] for VLANs. Reply with the values NetBox returned, nothing else. If nothing matches,
-  say "not in NetBox".
+  with one plain filter, for example name "br2-sw01" or site "br1", and read site.slug, role.slug,
+  platform.slug and primary_ip4.address from the results. Call ipam_vlans_list with site "br1" for
+  VLANs. Pass only the one filter you need: leave every other filter out of the call entirely and
+  never set one to null, or the call is rejected without reaching NetBox. Reply with the values
+  NetBox returned, nothing else. If nothing matches, say "not in NetBox".
 
   The operator's request: {{request}}
 tools:

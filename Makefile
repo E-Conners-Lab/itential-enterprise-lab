@@ -8,7 +8,7 @@ SHELL := /bin/bash
 
 PHASES := oob-network platform network-topology itential flowai observability platform-ha2 config-secrets-code identity ddi containerlab firewall-track
 
-.PHONY: help bootstrap lint test up verify discover netbox-enrich tokens observability-refresh plan-oob plan-platform plan-itential plan-platform-ha2 $(addprefix phase-,$(PHASES))
+.PHONY: help bootstrap lint test up verify discover netbox-enrich tokens agents-push observability-refresh plan-oob plan-platform plan-itential plan-platform-ha2 $(addprefix phase-,$(PHASES))
 
 help: ## Show targets
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-22s\033[0m %s\n", $$1, $$2}'
@@ -127,6 +127,12 @@ phase-flowai: ## Phase 6: workflows re-imported -> Platform applications wired t
 	$(load_env) cd ansible && ansible-playbook -i inventory/netbox.yml playbooks/platform.yml
 	$(load_env) cd ansible && ansible-playbook -i inventory/netbox.yml playbooks/flowai.yml
 	verify/run.sh
+
+# A prompt-only change: PATCH prompt.instructions on agents that already exist, touching no tool
+# binding (itential/agents/push.py). `make phase-flowai` is still the path after a workflow import,
+# because a re-imported workflow gets a new uuid and the tool references have to be re-resolved.
+agents-push: ## Push itential/agents/*.yaml prompts to the Platform (CHECK=1 to diff only)
+	$(load_env) .venv/bin/python itential/agents/push.py $(if $(CHECK),--check,) $(AGENT)
 
 # Phase 7 (PID S7, ADR 0051). The stack and its Zabbix configuration on k3s, the agents on every Ubuntu machine
 # (NetBox inventory for the VMs and EVE-NG endpoints, phase2.yml for the two pre-existing machines), then the

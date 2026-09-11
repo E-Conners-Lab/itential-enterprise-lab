@@ -164,6 +164,14 @@ tool that is not there. A zero-token failure is the tell — a session that genu
 costs tokens. This bites hardest when you import a single workflow **by hand** to test a change, which
 is exactly when you are least likely to think about re-running the agent play afterwards.
 
+**You changed only a prompt and do not want to re-run the play.** `make agents-push` (or
+`CHECK=1 make agents-push` to diff first) PATCHes `prompt.instructions` on the agents that already
+exist, from `itential/agents/*.yaml`, touching no tool binding, provider or operator. It reads the
+prompt back afterwards, because the PATCH answering 200 is not proof the prompt stored. It cannot
+create an agent - that needs the resolved tool ids - and after any workflow import the play is still
+the path, for the uuid reason above. The MCP server is no help here: it can read agents but exposes
+no agent-update tool.
+
 **An Integration Model will not update.** `PUT /integration-models` answers 500 on 6.5.2, and the
 documentation says to delete and re-import. The play compares the export's paths against the document and,
 when they differ, removes the integration, deletes and re-creates the model, then re-creates the
@@ -188,6 +196,16 @@ does not say which half is wrong. The Platform's own OpenAPI document is at
 literal is rejected outright. The integration documents drop it. Also set `OLLAMA_CONTEXT_LENGTH` high
 enough for the payload — twelve parsed devices needs 16384 — or the model silently truncates its input and
 answers about the devices it happened to see.
+
+**A tool call fails `invalid_input` before it reaches the external system.** Two causes, both in the
+prompt rather than the model. First, **a filter passed as a list**: S4f turned every NetBox filter from
+an array into a single value, because a workflow's `$var` does not resolve *inside* an array (ADR 0054),
+and the agent prompts went on teaching `name ["br1-sw01"]` for another day. Second, **a filter set to
+`null`**: a 7B model fills in every property the schema declares, and `null` is not a string, so the
+Platform rejects the call with `[invalid-tool-input] Input validation failed` and an `input` block full
+of nulls. Say in the prompt that each filter is one plain value and that an unused filter is left out of
+the call entirely. `tests/test_agent_fleet.py` now compares every prompt's filter examples against the
+parameter types in `itential/integrations/*.json`, so the array form cannot come back.
 
 **A local twin invents node names.** That is why the twins do not get the raw gateway tool. A small model
 handed an unconstrained `sendCommand` will confidently make up a hostname; handed a workflow that takes a

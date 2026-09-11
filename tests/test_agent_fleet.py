@@ -221,3 +221,57 @@ def test_verify_pid_and_adr_cover_s4d5() -> None:
     ):
         assert s in text, f"verify 06 S4d.5 lacks {s}"
     assert "| 1.11 |" in PID.read_text() and ADR.exists()
+
+
+INTEGRATIONS = ROOT / "itential" / "integrations"
+
+
+def integration_params() -> dict[str, dict[str, str]]:
+    """operationId -> {parameter name: declared JSON Schema type}, over every Integration Model."""
+    import json
+
+    out: dict[str, dict[str, str]] = {}
+    for spec in sorted(INTEGRATIONS.glob("*.json")):
+        doc = json.loads(spec.read_text())
+        for operations in doc["paths"].values():
+            for op in operations.values():
+                if isinstance(op, dict) and "operationId" in op:
+                    out[op["operationId"]] = {
+                        p["name"]: p["schema"].get("type", "string")
+                        for p in op.get("parameters", [])
+                    }
+    return out
+
+
+def test_no_instruction_shows_a_list_filter_for_a_single_valued_parameter(
+    docs: dict,
+) -> None:
+    """S4f turned every NetBox filter from an array into a single value, because a workflow's
+    `$var` does not resolve inside an array (ADR 0054, itential/integrations/build.py). The prompts
+    kept teaching the array form, so a model that followed them sent name ["br1-sw01"] into a
+    string parameter and the Platform rejected the call as invalid-tool-input. Measured
+    2026-09-11 on netbox-sot-local."""
+    params = integration_params()
+    for name, doc in sorted(docs.items()):
+        text = doc["instructions"]
+        for tool in doc["tools"]:
+            if tool.get("kind") != "integration":
+                continue
+            for param, typ in params.get(tool["reference"], {}).items():
+                if typ == "array":
+                    continue
+                assert not re.search(rf"\b{re.escape(param)}\s*\[", text), (
+                    f"{name}: instructions show {param} as a list, but "
+                    f"{tool['reference']} declares it {typ}"
+                )
+
+
+def test_every_agent_with_integration_tools_forbids_a_null_filter(docs: dict) -> None:
+    """A 7B model fills every declared property, null included, and a null fails validation before
+    the call leaves the Platform (invalid-tool-input, measured 2026-09-11). Each prompt has to say
+    to leave an unused filter out of the call."""
+    for name, doc in sorted(docs.items()):
+        if not any(t.get("kind") == "integration" for t in doc["tools"]):
+            continue
+        text = doc["instructions"].lower()
+        assert "null" in text, f"{name}: instructions never forbid a null filter"

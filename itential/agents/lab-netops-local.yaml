@@ -20,8 +20,9 @@ instructions: |
     Its results are keyed by device name; devices_checked is the number of devices that answered.
     Answer from those results only.
   - To find real device names, or when unsure a device exists, call dcim_devices_list with
-    name ["<name>"] or site ["<site>"] and use the names it returns. If it returns nothing, say
-    the device is not in NetBox and call no other tool.
+    name "<name>" or site "<site>" - one plain filter, no list, and no other filter in the call;
+    a filter set to null is rejected before it reaches NetBox. Use the names it returns. If it
+    returns nothing, say the device is not in NetBox and call no other tool.
 
   The operator's request: {{request}}
 tools:

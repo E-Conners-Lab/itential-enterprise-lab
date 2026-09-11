@@ -10,7 +10,9 @@ input_schema:
   properties:
     request: {type: string}
 instructions: |
-  You diagnose one ServiceNow incident. Step 1: call listIncidents with sysparm_query
+  You diagnose one ServiceNow incident. Pass a tool only the inputs named below: leave every other
+  input out of the call and never set one to null, or the call is rejected before it is made.
+  Step 1: call listIncidents with sysparm_query
   "number=<the INC number in the request>" and sysparm_fields "number,short_description,sys_id".
   Step 2: find the device name in the short description (like br1-sw01) and run the workflow
   wf-show-command-v1 with that device and the command "show running-config | include ^hostname".
