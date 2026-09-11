@@ -86,15 +86,14 @@ parsers:
 
 # Open-source adapters (GitLab itentialopensource/adapters, manifest 3.2), installed into the
 # platform's custom services mount from the tag's commit; npm deps resolved at install time.
+# Only what the Platform itself requires an adapter for (ADR 0054 decision 2): the InventoryBroker
+# consumes an adapter, so NetBox keeps one. adapter-servicenow was removed by S4f - the PDI is reached
+# through the lab-servicenow Integration Model.
 adapters:
   netbox:
     repo: https://gitlab.com/itentialopensource/adapters/adapter-netbox.git
     tag: v1.0.10 # commit c3bd5098, 2026-08-31
     export: Netbox
-  servicenow:
-    repo: https://gitlab.com/itentialopensource/adapters/adapter-servicenow.git
-    tag: v3.0.11 # commit 7af088d9, 2026-08-31
-    export: Servicenow # pronghorn.json export (adapter tasks: app/locationType)
 
 workflows:
   device_count: wf-netbox-device-count-v1
@@ -208,7 +207,9 @@ integrations:
       # honestly - "documentation" means a regeneration is a re-read by a person, not a re-run of a script.
       spec: {url: "https://www.servicenow.com/docs/bundle/zurich-api-reference/page/integrate/inbound-rest/concept/c_TableAPI.html",
              taken: "2026-09-08", kind: documentation}
-      operations: [listIncidents, getIncident, updateIncident, listChangeRequests, getChangeRequest]
+      operations: [listIncidents, getIncident, updateIncident, listChangeRequests, getChangeRequest,
+                   # S4f (ADR 0054): the change writes the workflows reached through genericAdapterRequest
+                   createStandardChange, updateStandardChange, updateChangeRequest]
 
 # --- S4d.6 (ADR 0047): the Ubuntu hosts as Gateway 5 inventory nodes in their own inventory (stack.host_inventory),
 # so Configuration Manager (InventoryBroker publishes only stack.inventory) never backs them up or checks them.

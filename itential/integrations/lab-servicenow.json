@@ -356,6 +356,221 @@
             "BasicAuth": []
           }
         ]
+      },
+      "patch": {
+        "operationId": "updateChangeRequest",
+        "summary": "Write to the change's table record (the work note carrying the NetBox reservation)",
+        "description": "Write to the change's table record (the work note carrying the NetBox reservation)",
+        "parameters": [
+          {
+            "name": "sys_id",
+            "in": "path",
+            "required": true,
+            "description": "sys_id of the change request",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "sysparm_fields",
+            "in": "query",
+            "required": false,
+            "description": "Comma-separated fields to return",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "result": {
+                      "type": "object"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "error"
+          }
+        },
+        "security": [
+          {
+            "BasicAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "state": {
+                    "type": "string"
+                  },
+                  "work_notes": {
+                    "type": "string"
+                  },
+                  "close_code": {
+                    "type": "string"
+                  },
+                  "close_notes": {
+                    "type": "string"
+                  },
+                  "assignment_group": {
+                    "type": "string"
+                  },
+                  "short_description": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/sn_chg_rest/change/standard/{template_sys_id}": {
+      "post": {
+        "operationId": "createStandardChange",
+        "summary": "Open a standard change from a PDI template (the change model requires an assignment group)",
+        "description": "Open a standard change from a PDI template (the change model requires an assignment group)",
+        "parameters": [
+          {
+            "name": "template_sys_id",
+            "in": "path",
+            "required": true,
+            "description": "sys_id of the standard change template",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "result": {
+                      "type": "object"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "error"
+          }
+        },
+        "security": [
+          {
+            "BasicAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "short_description": {
+                    "type": "string"
+                  },
+                  "assignment_group": {
+                    "type": "string",
+                    "description": "sys_id of the group"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/sn_chg_rest/change/standard/{sys_id}": {
+      "patch": {
+        "operationId": "updateStandardChange",
+        "summary": "Move a standard change through its states (-2 Scheduled, -1 Implement, 0 Review, 3 Closed)",
+        "description": "Move a standard change through its states (-2 Scheduled, -1 Implement, 0 Review, 3 Closed)",
+        "parameters": [
+          {
+            "name": "sys_id",
+            "in": "path",
+            "required": true,
+            "description": "sys_id of the change request",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "result": {
+                      "type": "object"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "error"
+          }
+        },
+        "security": [
+          {
+            "BasicAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "state": {
+                    "type": "string"
+                  },
+                  "work_notes": {
+                    "type": "string"
+                  },
+                  "close_code": {
+                    "type": "string"
+                  },
+                  "close_notes": {
+                    "type": "string"
+                  },
+                  "assignment_group": {
+                    "type": "string"
+                  },
+                  "short_description": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
       }
     }
   },

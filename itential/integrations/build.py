@@ -375,6 +375,19 @@ SN_DISPLAY = q(
 )
 
 
+CHANGE_BODY = {
+    "type": "object",
+    "properties": {
+        "state": {"type": "string"},
+        "work_notes": {"type": "string"},
+        "close_code": {"type": "string"},
+        "close_notes": {"type": "string"},
+        "assignment_group": {"type": "string"},
+        "short_description": {"type": "string"},
+    },
+}
+
+
 def servicenow() -> dict:
     a = MODELS["servicenow"]["auth"]
     incident_update = {
@@ -432,6 +445,46 @@ def servicenow() -> dict:
             )
         },
     }
+    # S4f (ADR 0054): the change-request writes wf-branch-vlan-v1 and wf-config-push-v1 reached through
+    # the adapter's genericAdapterRequest. The Change API (/sn_chg_rest) is a different surface from the
+    # Table API above: it is what applies a standard-change template and enforces the change model's
+    # state order, which is why the state walk cannot simply PATCH the table record.
+    paths["/api/sn_chg_rest/change/standard/{template_sys_id}"] = {
+        "post": op(
+            "createStandardChange",
+            "Open a standard change from a PDI template (the change model requires an assignment group)",
+            [path_param("template_sys_id", "sys_id of the standard change template")],
+            SNOW_ONE,
+            a,
+            body={
+                "type": "object",
+                "properties": {
+                    "short_description": {"type": "string"},
+                    "assignment_group": {"type": "string", "description": "sys_id of the group"},
+                },
+            },
+            success="200",
+        )
+    }
+    paths["/api/sn_chg_rest/change/standard/{sys_id}"] = {
+        "patch": op(
+            "updateStandardChange",
+            "Move a standard change through its states (-2 Scheduled, -1 Implement, 0 Review, 3 Closed)",
+            [path_param("sys_id", "sys_id of the change request")],
+            SNOW_ONE,
+            a,
+            body=CHANGE_BODY,
+        )
+    }
+    paths["/api/now/table/change_request/{sys_id}"]["patch"] = op(
+        "updateChangeRequest",
+        "Write to the change's table record (the work note carrying the NetBox reservation)",
+        [path_param("sys_id", "sys_id of the change request"), SN_FIELDS],
+        SNOW_ONE,
+        a,
+        body=CHANGE_BODY,
+    )
+
     return model(
         "servicenow",
         "ServiceNow PDI: incidents and change requests through the Table API (PID S4d.4, ADR 0045)",

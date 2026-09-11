@@ -118,7 +118,8 @@ def test_create_workflow_approves_on_the_form_and_publishes_the_instance(version
     gate = tasks[nxt.pop()]
     ev = gate["variables"]["incoming"]["evaluation_groups"][0]["evaluations"][0]
     assert gate["name"] == "evaluation" and ev["query"] == "decision" and ev["operand_2"]["variable"] == "approve" and ev["operator"] == "=="
-    rollback = [k for k, t in tasks.items() if t.get("name") == "deleteIpamVlansId"]
+    # S4f (ADR 0054): the NetBox delete is the integration's operation now, not the adapter's method.
+    rollback = [k for k, t in tasks.items() if t.get("name") == "ipam_vlans_destroy"]
     assert len(rollback) == 1
     gate_id = next(k for k, t in tasks.items() if t is gate)
     assert tr[gate_id].get(rollback[0], {}).get("state") == "failure"
@@ -141,7 +142,7 @@ def test_delete_workflow_writes_to_the_device_only_through_the_governed_push(ver
     cfg = child[0]["variables"]["incoming"]["variables"]["config"]
     src = tasks[cfg["task"]]["variables"]["incoming"]
     assert "no vlan " in json.dumps(src), "the push is exactly `no vlan <vid>`"
-    assert any(t.get("name") == "deleteIpamVlansId" for t in tasks.values()), "the NetBox VLAN goes too"
+    assert any(t.get("name") == "ipam_vlans_destroy" for t in tasks.values()), "the NetBox VLAN goes too"
     show = [t for t in tasks.values() if t.get("name") == "sendCommand"]
     assert show and "show vlan" in json.dumps([t.get("variables", {}).get("incoming") for t in tasks.values()]), \
         "the switch is read before it is written: `no vlan` is pushed only when the VLAN exists (no-op when absent)"
