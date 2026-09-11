@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Name** | itential-enterprise-lab |
-| **Version** | 1.22 |
+| **Version** | 1.23 |
 | **Date** | 2026-09-10 |
 | **Author** | Elliot Conner. Claude Code is the build agent; every action it takes is bounded by this document |
 | **Standard** | Project Initiation Standard PIS-01 - PIS-30 (`~/.claude/skills/project-initiation-standard`) |
@@ -743,6 +743,7 @@ the verify log path and any ADRs added.
 | 1.13 | 2026-09-08 | Phase 6 element 7 (owner request): S4e NetBox enrichment derived from `topology/enterprise.yaml` (addressing on interfaces with peer descriptions, VRFs and ASNs with BGP neighbours in config contexts, racks, provider circuits, config contexts, journal entries; the templates read the YAML, rendered configs unchanged; `netbox-enrich.yml`; `verify/test-06c-netbox.sh`; ADR 0048) |
 | 1.14 | 2026-09-09 | Domain 7: the Anthropic key is the owner's company key with a $15-a-week budget; the platform's session documents are the ledger (`verify/tokens.sh`, `make tokens`, `llm.budget` in versions.yaml), the agent verifies guard it, iteration runs on the local twins or `ONLY=` subsets (ADR 0049) |
 | 1.15 | 2026-09-09 | Reorder (ADR 0050): image-free phases first (7 observability, 8 config/secrets/code, 9 identity without Windows on OpenLDAP + Keycloak + tac_plus, 10 DDI on BIND9 + Kea, 11 Containerlab) and one phase 12 firewall track for NIOS, the PA-VM firewalls and Panorama; Windows Server and the Windows endpoint item dropped, `dc01` released |
+| 1.23 | 2026-09-11 | Monitoring follows the estate: every phase target after `observability` in the build order that registers a host ends with `make observability-refresh`, and `tests/test_observability.py` fails if one does not. Phase 8 added eleven VMs that phase 7's stack was never told about, which left S7.1 and S7.2 red from the moment it merged; five later phases would each have recreated it (ADR 0057, owner instruction) |
 | 1.22 | 2026-09-10 | S4f: NetBox and ServiceNow convert from their npm adapters to their Integration Models (ADR 0054 decision 3) as an element of their own, with `verify/test-06d-integrations.sh` as its exit test. The conversion runs against production only: ADR 0054 decision 5 expected the dev-stack to still be up as a comparison, and S11.8 retired it first (owner decision 2026-09-10: implement without the comparison) |
 | 1.21 | 2026-09-10 | A nine-chapter runbook series in `docs/runbooks/`, one per track, each with the same five sections and a troubleshooting section carrying the traps the phases measured; parameterised so no environment-specific value is transcribed, adaptable with the tested versions pinned, and the blog posts drafted on top in a later pass (ADR 0056, owner request) |
 | 1.20 | 2026-09-10 | The phase 5-7 assets replay onto production from shared task files under `ansible/playbooks/tasks/`, targeted by `platform_target` and the `vars/itential-prod.yml` overlay, so the replay is provable before the cut-over; `platform-ha2-replay.yml` and `make replay-platform-ha2`; S11 criterion 5 reworded (ADR 0055) |
