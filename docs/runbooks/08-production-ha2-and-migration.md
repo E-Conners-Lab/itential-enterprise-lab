@@ -343,6 +343,30 @@ the active Platform node, so the directory account could not log in until the Pl
 the *next* check was blamed for it. Each drill now ends by waiting for the directory account to log in
 again. If you write a drill, make it prove recovery, not just failure.
 
+**The backup restores nothing, and says it restored everything.** Three separate traps in one check,
+and none of them is visible until you actually attempt a restore:
+
+- `mongorestore --archive=<path>` **inside the container** finds no file and restores nothing, silently —
+  the dump writes to a *host* path because the script redirects the container's stdout into it. Pipe the
+  archive back in on stdin instead.
+- A restore is a write, so aimed at the member holding the archive it fails `NotWritablePrimary` **after**
+  logging every collection as restored. The `priority` in the oracle decides only the *initial* election;
+  a later failover can leave the backup member as primary, so never assume which member is writable.
+- Restoring into a throw-away database **on the live replica set** doubles the database's storage. On
+  these 4 GB members that took all three `mongod` processes down. **A backup check must not risk the
+  thing it is backing up** — restore into a standalone container with a small cache and delete it after,
+  which is closer to what a real recovery does anyway.
+
+**The dump directory looks empty to the verify and is not.** `sudo ls /var/backups/mongodb/*.gz` expands
+the glob in the *unprivileged* shell before `sudo` runs, and the directory is `0700 root`. Expand it
+inside: `sudo bash -c 'ls ...'`.
+
+**`platform-ha2-mongodb.yml` tries to initiate a replica set that is already running.** Its probes used
+the localhost exception, which stops working the moment authentication is on: `rs.status()` throws, the
+catch reports `'none'`, and the play concludes the set does not exist. It asks as the administrator now
+when the set is already there. Worth knowing because it only appears the *first time anyone re-runs the
+play* — this one was latent from the phase 8 build until 2026-09-11.
+
 **Smaller things measured on the way.** The Platform's Sentinel list is **JSON**
 (`ITENTIAL_REDIS_SENTINELS`). The MCP image binds loopback unless `ITENTIAL_MCP_SERVER_HOST` is set. The
 OpenTofu provider's guest-agent wait is capped at two minutes here, because the Ubuntu template carries no

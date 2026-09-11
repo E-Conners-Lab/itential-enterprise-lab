@@ -167,6 +167,24 @@ chart's own PostgreSQL is a plain StatefulSet with no backups, which is why it i
 `current_passwd` alongside the new `passwd` when changing your own user's password. Omit it and the call is
 rejected with an error that does not name the missing parameter.
 
+**Every Zabbix page says "Zabbix server is not running" and the server is perfectly healthy.** The
+frontend defaults to looking for a host called `zabbix-server`; the chart names the Service
+`<release>-zabbix-server`, so there is no such DNS record and the frontend's socket to the server never
+connects. Set `ZBX_SERVER_HOST` (and `ZBX_SERVER_PORT`) on the web component to the real Service name.
+
+This one is worth dwelling on: **the data is unaffected**. Hosts are polled, items populate, the API
+answers, and S7.1 passes — because the criterion reads the API and the collected data, never the
+frontend's connection to the server. So the one signal a person actually looks at was wrong for weeks
+while every automated check was green. Confirm the fix from inside the web pod:
+`getent hosts $ZBX_SERVER_HOST` must resolve.
+
+**The Zabbix server restarts every few hours and the UI flickers between working and "not running".**
+That is a different fault with the same banner: the server container being OOMKilled (exit 137). Check
+`kubectl -n observability get pod -l app.kubernetes.io/name=zabbix-server` for a climbing restart count
+and `lastState.terminated.reason`. At 1Gi this lab was killed twelve times in 35 hours, sitting at
+1000Mi; 2Gi holds it. Adding hosts to monitor makes a marginal limit insufficient, so re-check it after
+any phase that adds VMs.
+
 **The Zabbix agent package will not install at the pinned version.** Two separate causes that look
 identical. Zabbix `.deb` packages carry **epoch 1**, so a version string without it does not match. And the
 release package adds the repository *without refreshing the index*, so the pinned version is not there yet
