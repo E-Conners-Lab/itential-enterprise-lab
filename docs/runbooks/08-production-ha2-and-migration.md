@@ -199,6 +199,7 @@ verify/test-08-platform-ha2.sh
 | S11.5 | Everything chapters 05–07 built exists on production, and a **live device call** succeeds |
 | S11.7 | The official dashboard's MongoDB and Redis rows show the production replica sets |
 | S11.8 | The dev-stack VM is retired and every trace of it removed |
+| S11.9 | A `mongodump` newer than 24 h exists on the backup member **and restores** — into a throw-away `mongod`, with its collection count equal to the live database (ADR 0058) |
 | S11.6a/b/c | The three failover drills, behind `VERIFY_DRILLS=1` |
 
 The final run was **7 passed, 0 failed, 0 deferred** — the first run in the whole series with nothing
@@ -363,6 +364,7 @@ the released-reservation cleanup had silently done nothing for a phase.
 | MCP server | `ghcr.io/itential/itential-mcp` v0.14.0, on the tools VM |
 | Exporters | node `v1.12.1`, process `0.8.7`, plus Redis and MongoDB exporters per server |
 | Environment | Eleven VMs, 49 GB, Active/Standby |
+| Backup | Nightly `mongodump` on the last replica-set member, 7-day rotation, restore-verified by S11.9 |
 
 `itential/ha2/versions.yaml` owns the topology; images are **not** repeated there — they come from
 `itential/versions.yaml`, so production and the dev stack cannot drift on a version.
@@ -375,10 +377,15 @@ Production is the Platform. The dev-stack VM is gone, its address is released, a
 developed on it now lives on an environment built entirely from documents in this repo — which is the only
 claim in this series that a restore-from-backup migration could not have made.
 
-Two things are decided and not yet built: [ADR 0054](../adr/0054-integrations-over-adapters.md) converts
-NetBox and ServiceNow from npm adapters to Integration Models built from OpenAPI, and genuine
-active/active needs a gateway cluster per Platform node. Both are elements after this series, not gaps in
-it.
+Built since: [ADR 0054](../adr/0054-integrations-over-adapters.md) converted NetBox and ServiceNow from
+their npm adapters to Integration Models, so no workflow reaches an adapter any more;
+[ADR 0057](../adr/0057-monitoring-follows-the-estate.md) made observability follow the estate, because the
+eleven VMs this chapter builds had left phase 7's monitoring behind and nothing noticed; and
+[ADR 0058](../adr/0058-production-mongodb-backup.md) added the nightly `mongodump` this environment had
+been running without — a three-member replica set is availability, not backup.
+
+Still decided and not built: genuine active/active needs a gateway cluster per Platform node, and copying
+backups off-host belongs to phase 9, which already owns that for NetBox and Garage.
 
 ---
 

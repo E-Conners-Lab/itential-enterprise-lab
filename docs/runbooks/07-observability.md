@@ -218,7 +218,7 @@ helper has to clear the bearer token first.
 
 | Component | Version |
 |---|---|
-| Zabbix | chart 7.1.0, images `alpine-7.0.30`, agent 2 `7.0.30-1` (Ubuntu 24.04 and 22.04) |
+| Zabbix | chart 7.1.0, images `alpine-7.0.30`, agent 2 `7.0.30-1` (Ubuntu 24.04 and 22.04). Server memory **2Gi** — at 1Gi it was OOMKilled twelve times in 35 h |
 | Zabbix database | CloudNativePG, PostgreSQL 18.6, 10 Gi |
 | kube-prometheus-stack | chart 89.2.3 — operator `v0.93.1`, Prometheus `v3.14.0`, Alertmanager `v0.34.0`, Grafana 13.2.1 |
 | Grafana Zabbix plugin | `alexanderzobnin-zabbix-app@6.6.0` |
@@ -232,6 +232,24 @@ helper has to clear the bearer token first.
 
 `k8s/observability/versions.yaml` is the oracle and `tests/test_observability.py` fails CI if it drifts
 from the image manifest or the IP plan. Nothing is `latest`.
+
+---
+
+## When the estate changes
+
+Monitoring is built here, in phase 7, and **sizes itself from NetBox** — so anything registered afterwards is
+invisible to it until the plays re-run. That is not hypothetical: chapter 08 adds eleven VMs, and S7.1 and
+S7.2 were red from the moment that phase merged until somebody noticed, because a clean `make up` builds
+monitoring and *then* builds hosts it has never heard of.
+
+```
+make observability-refresh
+```
+
+runs the stack and the host plays again, both NetBox-derived, and deliberately **not** the governed device
+pushes — those raise a Work Center card per device and need a person. Every phase after this one that
+registers a host ends with it, and `tests/test_observability.py` fails any that does not
+([ADR 0057](../adr/0057-monitoring-follows-the-estate.md)). Run it by hand after adding a VM outside a phase.
 
 ---
 

@@ -148,3 +148,24 @@ def test_yaml_matches_ip_plan_markdown(ipam: dict) -> None:
     assert set(md) == set(ya), f"only in markdown: {set(md) - set(ya)}; only in yaml: {set(ya) - set(md)}"
     for name, ip in md.items():
         assert ya[name] == ip, f"{name}: markdown {ip} vs yaml {ya[name]}"
+
+
+def test_ip_plan_section_6_is_generated_not_maintained() -> None:
+    """Section 6 is the in-band allocation, which lives in topology/enterprise.yaml. It was hand-written
+    and drifted from the topology it describes - carried as an open item since phase 7. It is rendered by
+    `topology/derive.py --section6` now, and this is what stops it drifting again."""
+    import subprocess
+    import sys
+
+    out = subprocess.run(
+        [sys.executable, "topology/derive.py", "--section6"],
+        capture_output=True, text=True, cwd=ROOT, check=False,
+    )
+    assert out.returncode == 0, f"derive.py --section6 failed: {out.stderr[-800:]}"
+    plan = (ROOT / "docs" / "ip-plan.md").read_text()
+    assert "## 6. In-band allocation" in plan
+    section = plan[plan.index("## 6. In-band allocation"):]
+    assert section == out.stdout, (
+        "docs/ip-plan.md section 6 differs from topology/enterprise.yaml.\n"
+        "Regenerate it: python topology/derive.py --section6 and replace the section."
+    )

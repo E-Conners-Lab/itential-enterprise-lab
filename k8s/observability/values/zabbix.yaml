@@ -53,6 +53,13 @@ zabbixWeb:
   extraEnv:
     - {name: PHP_TZ, value: UTC}
     - {name: ZBX_SERVER_NAME, value: itential-enterprise-lab}
+    # Without these the frontend looks for a host called `zabbix-server`, which does not exist - the chart
+    # names the Service `<release>-zabbix-server` - so every page shows "Zabbix server is not running" while
+    # the server is perfectly healthy. Measured 2026-09-11: `zabbix-server` has no DNS record in the
+    # namespace, `zabbix-zabbix-server` resolves. The API and the collected data are unaffected, which is
+    # why S7.1 passed throughout and only the banner said otherwise.
+    - {name: ZBX_SERVER_HOST, value: zabbix-zabbix-server}
+    - {name: ZBX_SERVER_PORT, value: "10051"}
 zabbixWebService:
   enabled: false # scheduled PDF reports need a Chrome pod; not part of S7
 zabbixAgent:

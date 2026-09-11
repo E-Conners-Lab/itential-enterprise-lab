@@ -171,24 +171,30 @@ this plan.
 
 ## 6. In-band allocation (Phase 4, ADR 0034)
 
-Seeded into NetBox by `ansible/playbooks/netbox-topology.yml` from `topology/*.yaml`.
+**Generated** from `topology/enterprise.yaml` by `topology/derive.py --section6`; `tests/test_ipam.py` fails if this file and the topology disagree. Seeded into NetBox by `ansible/playbooks/netbox-topology.yml` and enriched by `netbox-enrich.yml` (ADR 0048).
 
-| Prefix | Site | Role |
+| Prefix | Site | Role | Purpose |
+|---|---|---|---|
+| `10.103.0.0/24` | WAN | wan-transit | ISP-to-site /30s |
+| `10.103.100.0/24` | WAN | wan-transit | GRE/IPsec tunnels |
+| `10.103.255.0/24` | WAN | wan-transit | router loopbacks |
+| `10.101.255.0/24` | DC1 | dc-inband | fabric underlay /31s |
+| `10.101.254.0/24` | DC1 | dc-inband | fabric loopbacks |
+| `10.101.253.0/24` | DC1 | dc-inband | VTEP loopbacks |
+| `10.101.252.0/30` | DC1 | dc-inband | MLAG peer link |
+| `10.101.2.0/24` | DC1 | dc-inband | WAN edge to firewall routed /30s |
+| `10.101.3.0/24` | DC1 | dc-inband | firewall bypass /30s (lab.firewalls false) |
+| `10.101.1.0/24` | DC1 | dc-inband | VLAN 100 transit, VRF PROD (VLAN 100, VRF `PROD`) |
+| `10.101.10.0/24` | DC1 | dc-inband | server VLAN 10 (VLAN 10, VRF `PROD`) |
+| `10.102.16.0/20` | Branch 1 | branch-inband | branch 1 |
+| `10.102.17.0/24` | Branch 1 | branch-inband | branch 1 users VLAN 10 (VLAN 10) |
+| `10.102.32.0/20` | Branch 2 | branch-inband | branch 2 |
+| `10.102.33.0/24` | Branch 2 | branch-inband | branch 2 users VLAN 10 (VLAN 10) |
+
+**Autonomous systems:** isp 65000, dc1 edge 65100, dc1 spine 65101, dc1 leaf 65102, dc1 fw 65103, br1 65201, br2 65202.
+
+| VRF | Detail | Platforms |
 |---|---|---|
-| 10.103.0.0/24 | WAN | ISP-to-site /30s: dc1-wan01 .0/30, dc1-wan02 .4/30, br1 .8/30, br2 .12/30 |
-| 10.103.100.0/24 | WAN | FlexVPN (IKEv2 sVTI) tunnels, /30 per DC-edge-to-branch pair |
-| 10.103.255.0/24 | WAN | router loopbacks (isp .1, dc1-wan01 .11, dc1-wan02 .12, br1 .21, br2 .22) |
-| 10.101.255.0/24 | DC1 | fabric underlay /31s |
-| 10.101.254.0/24 | DC1 | fabric loopbacks (spine01 .1, spine02 .2, leaf01 .11, leaf02 .12) |
-| 10.101.253.0/24 | DC1 | VTEP loopbacks (leaf pair anycast .1) |
-| 10.101.252.0/30 | DC1 | MLAG peer link |
-| 10.101.2.0/24 | DC1 | routed /30s WAN edge to firewall: wan01-fw01 .0/30, wan01-fw02 .4/30, wan02-fw01 .8/30, wan02-fw02 .12/30, wan01-wan02 .248/30 (eBGP, no HSRP) |
-| 10.101.3.0/24 | DC1 | firewall bypass /30s while `lab.firewalls: false`: wan01-leaf01 .0/30, wan02-leaf02 .4/30 |
-| 10.101.1.0/24 | DC1 | VLAN 100 transit in VRF PROD: fw .1, leaf01 .252, leaf02 .253, virtual .254 (eBGP fw to both leaves) |
-| 10.101.10.0/24 | DC1 | server VLAN 10 (gateway .1 anycast, dc1-srv01 .10) |
-| 10.102.16.0/20 | br1 | branch 1: .16.0/30 wan-fw link, VLAN 10 users 10.102.17.0/24 (gateway .1 = firewall, or the router while bypassed; DHCP .100-.199) |
-| 10.102.32.0/20 | br2 | branch 2: .32.0/30 wan-fw link, VLAN 10 users 10.102.33.0/24 (gateway .1 = firewall, or the router while bypassed; DHCP .100-.199) |
-
-Autonomous systems: ISP 65000, DC1 edge 65100, DC1 spines 65101, DC1 leaves 65102, br1 65201, br2 65202.
-Tenant VRF `PROD` on the leaves (L3VNI 50001) holds VLAN 10, VLAN 100 and the bypass links; the WAN
-transport sits in front-door VRF `WAN` on every site router (ISP peering), tunnels terminate in global.
+| `MGMT` | OOB management (pnet1) | c8000v, veos |
+| `WAN` | front-door VRF: provider transport only, RD `<asn>:1` | c8000v |
+| `PROD` | DC1 tenant VRF (L3VNI 50001), RD `<router-id>:50001`, L3VNI 50001, RT `50001:50001` | veos |

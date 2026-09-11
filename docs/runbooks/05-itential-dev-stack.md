@@ -228,7 +228,7 @@ next day.
 | etcd (runner store) | v3.5.21 — Gateway 5 requires etcd v3.5 |
 | Docker CE | 29.8.0, pinned and held |
 | `adapter-netbox` | v1.0.10 |
-| `adapter-servicenow` | v3.0.11 |
+| ~~`adapter-servicenow`~~ | Removed by ADR 0054 — the PDI is reached through the `lab-servicenow` Integration Model (chapter 06) |
 | VM | 8 vCPU / 24 GB / 160 GB, Ubuntu 24.04 |
 | Licence | **None required** for this lab (owner decision, recorded in the manifest and checked by S4.5) |
 

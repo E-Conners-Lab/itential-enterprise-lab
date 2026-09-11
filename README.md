@@ -17,8 +17,18 @@ network source of truth.
 > The load-balancing policy is **Active/Standby**, not active/active, and deliberately so: Gateway Manager
 > accepts one connection per gateway cluster, and only the Platform node holding it can reach a device, so the
 > standby is built, attached to the same databases and parked until a failover. The measurement and the trade
-> are in ADR 0055 decision 9. Next: the runbook series (ADR 0056), then NetBox and ServiceNow move from npm
-> adapters to Integration Models built from OpenAPI specifications (ADR 0054).
+> are in ADR 0055 decision 9.
+>
+> **Since Phase 8 closed.** The nine-chapter runbook series in [`docs/runbooks/`](docs/runbooks/) (ADR 0056);
+> NetBox and ServiceNow moved off their npm adapters onto Integration Models built from OpenAPI, leaving no
+> adapter task or generic request in any workflow (ADR 0054); observability was made to follow the estate
+> after Phase 8's eleven VMs had left it behind, with a test that fails any later phase which adds a host
+> without refreshing monitoring (ADR 0057); and the production MongoDB is backed up nightly with the verify
+> **restoring** the archive rather than asserting a filename (ADR 0058). Every verification script in
+> `verify/` is green.
+>
+> Next: testing Itential marketplace integrations and assets on this environment — rollback now covers both
+> halves, the repo's own assets by `git revert` plus a replay and the database by the nightly dump.
 
 ## Architecture (target)
 
