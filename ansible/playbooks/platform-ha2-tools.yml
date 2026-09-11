@@ -76,13 +76,15 @@
       register: up
       changed_when: "'Started' in up.stderr or 'Created' in up.stderr or 'Recreated' in up.stderr"
 
-    - name: The local model of ADR 0037
+    # ADR 0060 moved every local model to the Mac Mini: tools-01 has no GPU and its Ollama ran at
+    # 91% of a 6 GiB cap until llama-server crashed mid-verify. Nothing to pull here any more; the
+    # model lives on the Mac and flowai.yml asserts it is present before touching an agent.
+    - name: No Ollama container is left on tools-01
       ansible.builtin.command:
-        cmd: docker exec ollama ollama pull {{ (llm.profiles | selectattr('name', 'equalto', 'ollama-lab') | first).model }}
-      register: pull
-      changed_when: "'success' in pull.stdout"
-      async: 1800
-      poll: 30
+        cmd: docker rm -f ollama
+      register: ollama_gone
+      changed_when: ollama_gone.rc == 0
+      failed_when: false
 
     - name: MCP answers
       ansible.builtin.uri:

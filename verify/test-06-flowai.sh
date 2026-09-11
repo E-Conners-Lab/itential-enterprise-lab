@@ -19,7 +19,15 @@ V=itential/versions.yaml
 # IT_MCP_IP, for the MCP server on its own VM) still pin a specific host when one is being proved directly.
 IT_IP=${IT_IP:-}
 # the local-model checks report the memory of the VM running Ollama, which is tools-01 in production
-OLLAMA_IP=${IT_OLLAMA_IP:-$(${PY} -c "import socket;print(socket.gethostbyname('ollama.lab.internal'))" 2>/dev/null)}
+# ADR 0060: inference is the Mac Mini, not a lab VM. ollama.lab.internal resolves to it (unbound,
+# from topology/ipam.yaml home_lan.inference_host). There is no ssh into it for `free -m`, so the
+# local-model checks report what the endpoint itself reports instead of the host's RAM.
+OLLAMA_URL=${IT_OLLAMA_URL:-http://ollama.lab.internal:11434}
+# loaded model + how much it is holding, straight from the endpoint (empty if nothing is loaded yet)
+ollama_loaded() { curl -s -m 10 "${OLLAMA_URL}/api/ps" | ${PY} -c 'import sys,json
+try: m=json.load(sys.stdin).get("models") or []
+except Exception: print("unreadable"); raise SystemExit
+print(", ".join(f"{x.get(\"name\")} {round(x.get(\"size\",0)/1e9,1)}GB" for x in m) or "nothing loaded")'; }
 RESOLVE=${IT_IP:+--resolve itential.lab.internal:443:${IT_IP}}
 IT_HOST=itential.lab.internal
 PLATFORM="https://${IT_HOST}"
@@ -68,14 +76,14 @@ else
   echo "budget guard bypassed (ANTHROPIC_VERIFY=force)"
 fi
 ANTHROPIC_MODEL=$(${PY} -c "import yaml;p={x['name']:x for x in yaml.safe_load(open('$V'))['llm']['profiles']};print(p['anthropic']['model'])")
-OLLAMA_MODEL=$(${PY} -c "import yaml;p={x['name']:x for x in yaml.safe_load(open('$V'))['llm']['profiles']};print(p['ollama-lab']['model'])")
+OLLAMA_MODEL=$(${PY} -c "import yaml;p={x['name']:x for x in yaml.safe_load(open('$V'))['llm']['profiles']};print(p['ollama-mac']['model'])")
 
 # --- S4c.1 two provider profiles answer; pinned models present --------------------------------
 c1() {
   local profiles; profiles=$(iap "${PLATFORM}/model-registry-service/profiles")
-  echo "$profiles" | ${PY} -c 'import sys,json;d=json.load(sys.stdin);p=d.get("profiles") or d.get("data") or d;names={x["name"]:x for x in p};assert {"anthropic","ollama-lab"}<=set(names),list(names);print("profiles:",sorted(names))' || return 1
+  echo "$profiles" | ${PY} -c 'import sys,json;d=json.load(sys.stdin);p=d.get("profiles") or d.get("data") or d;names={x["name"]:x for x in p};assert {"anthropic","ollama-mac"}<=set(names),list(names);print("profiles:",sorted(names))' || return 1
   local pid m
-  for p in anthropic ollama-lab; do
+  for p in anthropic ollama-mac; do
     pid=$(echo "$profiles" | ${PY} -c "import sys,json;print([x for x in json.load(sys.stdin)['profiles'] if x['name']=='$p'][0]['id'])")
     m=$([ "$p" = anthropic ] && echo "$ANTHROPIC_MODEL" || echo "$OLLAMA_MODEL")
     # the profile document carries the models the registry enabled for it (the agent references them by id)
@@ -84,7 +92,7 @@ c1() {
     iap -X POST "${PLATFORM}/model-registry-service/providers/$([ "$p" = anthropic ] && echo anthropic || echo ollama)/fetch-models" -d "{\"profileId\":\"${pid}\",\"credential\":null}" | ${PY} -c "import sys,json;d=json.load(sys.stdin);print('$p provider answered:',bool(d.get('success')),len(d.get('models') or []),'models listed')" || return 1
   done
 }
-check "S4c.1 provider profiles anthropic (${ANTHROPIC_MODEL}) and ollama-lab (${OLLAMA_MODEL}) answer and list their pinned models" c1
+check "S4c.1 provider profiles anthropic (${ANTHROPIC_MODEL}) and ollama-mac (${OLLAMA_MODEL}) answer and list their pinned models" c1
 
 # --- S4c.2 version question answered from the device through the Gateway 5 tool ----------------
 c2() {
@@ -157,10 +165,9 @@ c5() {
   sid=$(run_agent lab-netops-local '{"request":"What software version is running on br1-sw01? Reply with the version string only."}') || { echo "$sid"; return 1; }
   t1=$(date +%s); sid=${sid##*$'\n'}; txt=$(session_text "$sid"); count_tokens "$sid"
   echo "$txt" | grep -q "4.33.1.1F" || { echo "local model answer lacks 4.33.1.1F: $(echo "$txt" | head -c 300)"; return 1; }
-  read -r total used <<<"$($SSH "ubuntu@${OLLAMA_IP}" "free -m | awk '/^Mem:/{print \$2, \$3}'")"
-  echo "ollama-lab (${OLLAMA_MODEL}) answered in $((t1-t0)) s; VM RAM used ${used}/${total} MB"
+  echo "ollama-mac (${OLLAMA_MODEL}) answered in $((t1-t0)) s; loaded on the Mac: $(ollama_loaded)"
 }
-check "S4c.5 lab-netops-local (ollama-lab ${OLLAMA_MODEL}) answers the br1-sw01 version; response time and VM memory recorded" c5
+check "S4c.5 lab-netops-local (ollama-mac ${OLLAMA_MODEL}) answers the br1-sw01 version; response time and what the Mac has loaded recorded" c5
 
 # --- S4c.6 Claude Code on the Mac drives an agent session through the MCP server ------------------
 # The agent is exposed as an Operations Manager automation with the endpoint route "lab-netops"
@@ -350,10 +357,9 @@ c13() {
   sid=$(run_agent netbox-sot-local '{"request":"Which site is the device br2-sw01 in? Reply with the site slug only."}') || { echo "$sid"; return 1; }
   t1=$(date +%s); sid=${sid##*$'\n'}; txt=$(session_text "$sid"); count_tokens "$sid"
   echo "$txt" | grep -qi "br2" || { echo "local twin answer lacks br2: $(echo "$txt" | head -c 200)"; return 1; }
-  read -r total used <<<"$($SSH "ubuntu@${OLLAMA_IP}" "free -m | awk '/^Mem:/{print \$2, \$3}'")"
-  echo "netbox-sot-local (${OLLAMA_MODEL}) answered in $((t1-t0)) s; VM RAM used ${used}/${total} MB"
+  echo "netbox-sot-local (${OLLAMA_MODEL}) answered in $((t1-t0)) s; loaded on the Mac: $(ollama_loaded)"
 }
-check "S4d.5f netbox-sot-local (ollama-lab ${OLLAMA_MODEL}) answers br2-sw01's site; response time and VM memory recorded" c13
+check "S4d.5f netbox-sot-local (ollama-mac ${OLLAMA_MODEL}) answers br2-sw01's site; response time and what the Mac has loaded recorded" c13
 # g) the fleet-wide read: wf-show-all-v1 parses one command on every lab device in one call (direct SSH agrees on one device per
 #    vendor); the local generalist answers an all-devices question from it with the device count NetBox confirms
 c14() {

@@ -30,31 +30,47 @@ def test_llm_section_pins_providers_and_models(versions: dict) -> None:
     llm = versions["llm"]
     assert llm["default_profile"] == "anthropic"
     profiles = {p["name"]: p for p in llm["profiles"]}
-    assert set(profiles) >= {"anthropic", "ollama-lab"}
+    assert set(profiles) >= {"anthropic", "ollama-mac"}
     assert profiles["anthropic"]["provider"] == "anthropic"
     assert profiles["anthropic"]["model"].startswith("claude-"), "Anthropic model must be pinned by id"
-    assert profiles["ollama-lab"]["provider"] == "ollama"
-    assert profiles["ollama-lab"]["base_url"] == "http://ollama:11434", "in-lab Ollama is a Compose service"
-    assert re.search(r":\d|:[a-z0-9]+-", profiles["ollama-lab"]["model"]), "Ollama model must carry a tag"
+    mac = profiles["ollama-mac"]
+    assert mac["provider"] == "ollama"
+    # ADR 0060: inference left the lab. The URL must be the DNS name, never a raw home-LAN address -
+    # the Mac sits in the router's DHCP pool, so the address is a reservation that can move and DNS
+    # is the single place that knows it (topology/ipam.yaml home_lan.inference_host).
+    assert mac["base_url"] == "http://ollama.lab.internal:11434", (
+        "the inference host is reached by name, not by address"
+    )
+    assert re.search(r":\d|:[a-z0-9]+-", mac["model"]), "Ollama model must carry a tag"
+    assert "optional" not in mac, (
+        "the Mac is the only inference host now: marking it optional would let the play skip it and "
+        "leave six agents pointing at nothing"
+    )
+    assert not any(p.get("base_url", "").startswith("http://ollama:") for p in profiles.values()), (
+        "http://ollama:11434 was the Compose service on the Platform host; it no longer exists"
+    )
     for name, p in profiles.items():
         assert "key" not in p and "apiKey" not in p, f"{name}: keys live in .env only"
-    mac = profiles.get("ollama-mac")
-    if mac:
-        assert mac["optional"] is True and mac["provider"] == "ollama"
 
 
-def test_ollama_image_pinned_in_versions_manifest_and_override(versions: dict) -> None:
-    img = versions["images"]["ollama"]
-    assert img["repository"] == "docker.io/ollama/ollama" and re.fullmatch(r"\d+\.\d+\.\d+", str(img["tag"]))
+def test_no_ollama_runs_in_the_lab_any_more(versions: dict) -> None:
+    """ADR 0060: the owner chose to run no inference on the server. The lab has no GPU, and tools-01's
+    Ollama sat at 91% of a 6 GiB cap on a 7.8 GiB VM until llama-server crashed mid-verify and took a
+    local-twin criterion with it. Nothing should be left that starts a container or pins its image -
+    a dormant service definition is how it comes back."""
+    assert "ollama" not in versions["images"], (
+        "the Ollama image pin is dead: no lab host runs the container"
+    )
+    assert "ollama" not in versions["stack"]["profiles"], "the compose profile would start it again"
     ov = yaml.safe_load(OVERRIDE.read_text())
-    svc = ov["services"]["ollama"]
-    assert "${OLLAMA_IMAGE}" in svc["image"] or "ollama/ollama" in svc["image"]
-    assert any("11434" in str(p) for p in svc.get("ports", [])) is False or all(str(p).startswith("127.") for p in svc["ports"]), "Ollama is not exposed on the OOB address"
-    assert svc["deploy"]["resources"]["limits"]["memory"], "Ollama needs a memory limit on the shared VM"
+    assert "ollama" not in ov["services"], "the Platform host still defines an ollama service"
+    assert "ollama-models" not in (ov.get("volumes") or {}), "the model volume would hold GBs for nothing"
+    tools = (ROOT / "itential" / "ha2" / "tools.compose.yml.j2").read_text()
+    assert "\n  ollama:" not in tools, "tools-01 still defines an ollama service"
+    # and the model is pinned where it now lives
     text = MANIFEST.read_text()
-    assert f"`{img['tag']}`" in text and "ollama/ollama" in text, "manifest must pin the Ollama image"
     for p in versions["llm"]["profiles"]:
-        if p["provider"] == "ollama" and not p.get("optional"):
+        if p["provider"] == "ollama":
             assert f"`{p['model']}`" in text, f"manifest must pin the Ollama model {p['model']}"
 
 

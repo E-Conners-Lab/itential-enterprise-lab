@@ -3,7 +3,7 @@
 project: lab-netops
 name: lab-netops-local
 description: lab-netops on the in-lab Ollama model (qwen2.5:7b, CPU)
-profile: ollama-lab
+profile: ollama-mac
 input_schema:
   type: object
   additionalProperties: false

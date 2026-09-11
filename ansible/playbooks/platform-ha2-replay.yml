@@ -57,22 +57,15 @@
   vars:
     ansible_ssh_common_args: -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/dev/null
   tasks:
-    - name: Ollama answers
-      ansible.builtin.uri:
-        url: "http://{{ (vms | selectattr('name', 'equalto', inventory_hostname) | first).ip }}:{{ tools.ollama_port }}/api/tags"
-      register: ollama_tags
-      until: ollama_tags.status | default(0) == 200
-      retries: 20
-      delay: 3
-
-    - name: Pinned local models pulled (first pull downloads a few GB through oob-gw)
+    # ADR 0060: inference is on the Mac Mini, not here. flowai-assets.yml asserts the endpoint answers
+    # and carries the pinned model before it touches an agent, so this play only makes sure the old
+    # container is not left behind holding 6 GiB of a 7.8 GiB VM.
+    - name: No Ollama container is left on tools-01
       ansible.builtin.command:
-        cmd: "docker exec ollama ollama pull {{ item }}"
-      loop: >-
-        {{ llm.profiles | rejectattr('optional', 'defined') | selectattr('provider', 'equalto', 'ollama')
-           | map(attribute='model') | unique | list }}
-      when: item not in (ollama_tags.json.models | default([]) | map(attribute='name') | list)
-      changed_when: true
+        cmd: docker rm -f ollama
+      register: ollama_gone
+      changed_when: ollama_gone.rc == 0
+      failed_when: false
 
 - name: The FlowAI assets of phase 6 on production
   hosts: "{{ platform_target | default('ha2-platform[0]') }}"

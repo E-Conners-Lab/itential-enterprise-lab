@@ -110,7 +110,8 @@ ldap:
 
 tools:
   mcp_port: 8000
-  ollama_port: 11434
+  # ollama_port removed with the container (ADR 0060): inference is the Mac Mini,
+  # reached as ollama.lab.internal:11434 (itential/versions.yaml llm.profiles).
 
 # Exporters for the official Itential Platform Monitoring dashboard (ADR 0052) follow the components:
 # node+process on both Platform nodes, redis_exporter on each Redis VM, mongodb_exporter on each MongoDB VM.

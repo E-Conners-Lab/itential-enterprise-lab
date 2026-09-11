@@ -2,7 +2,7 @@
 project: lab-netops
 name: device-ops-local
 description: device-ops on the in-lab Ollama model (qwen2.5:7b), read-only show commands
-profile: ollama-lab
+profile: ollama-mac
 input_schema:
   type: object
   additionalProperties: false

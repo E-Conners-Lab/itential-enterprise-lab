@@ -51,7 +51,7 @@ def test_every_fleet_agent_exists_on_claude_with_a_local_twin(
         )
         assert (
             docs[name]["profile"] == "anthropic"
-            and docs[f"{name}-local"]["profile"] == "ollama-lab"
+            and docs[f"{name}-local"]["profile"] == "ollama-mac"
         )
         assert docs[name]["project"] == docs[f"{name}-local"]["project"] == "lab-netops"
         assert {docs[name]["profile"], docs[f"{name}-local"]["profile"]} <= profiles
@@ -192,8 +192,14 @@ def test_show_all_workflow_fans_out_deterministically(versions: dict) -> None:
     }
     assert wf["inputSchema"]["required"] == ["command"]
     override = (ROOT / "itential" / "compose.override.yml").read_text()
-    assert 'OLLAMA_CONTEXT_LENGTH: "16384"' in override, (
-        "the local model must hold a twelve-device result"
+    # The context length used to be pinned on the lab's Ollama container. ADR 0060 moved inference to
+    # the Mac Mini, whose Ollama is Homebrew-managed and not configured from this repo, so the pin
+    # moved with it: the requirement is the same (a twelve-device result must fit), but it is now the
+    # Mac's OLLAMA_CONTEXT_LENGTH, set by scripts/mac-ollama.sh.
+    mac_script = (ROOT / "scripts" / "mac-ollama.sh").read_text()
+    assert "OLLAMA_CONTEXT_LENGTH" in mac_script and "16384" in mac_script, (
+        "the local model must hold a twelve-device result: set OLLAMA_CONTEXT_LENGTH=16384 on the "
+        "Mac's ollama LaunchAgent (scripts/mac-ollama.sh)"
     )
 
 
@@ -289,7 +295,7 @@ def test_the_local_twins_read_inventory_through_the_reducing_workflow() -> None:
     Claude agents keep the raw operations: they need the full objects and ingest them in a second."""
     docs = {p.stem: yaml.safe_load(p.read_text()) for p in AGENTS.glob("*.yaml")}
     for name, doc in sorted(docs.items()):
-        if doc["profile"] != "ollama-lab":
+        if doc["profile"] != "ollama-mac":
             continue
         tools = tool_names(doc)
         assert "dcim_devices_list" not in tools, (
@@ -435,10 +441,10 @@ def test_no_twin_is_told_never_to_invent_a_name_without_a_way_to_look_one_up() -
 def test_the_verify_runs_every_local_twin(docs: dict) -> None:
     """The twins cost no provider tokens, so there was never a budget reason for four of the five to be
     the untested ones - and that is exactly where the unfollowable prompt survived (device-ops-local,
-    measured 2026-09-11). Every ollama-lab document runs in the verify."""
+    measured 2026-09-11). Every ollama-mac document runs in the verify."""
     text = VERIFY.read_text()
     for name, doc in sorted(docs.items()):
-        if doc["profile"] != "ollama-lab":
+        if doc["profile"] != "ollama-mac":
             continue
         assert re.search(rf"run_agent {re.escape(name)}\b", text), (
             f"{name} is never exercised by verify/test-06-flowai.sh"

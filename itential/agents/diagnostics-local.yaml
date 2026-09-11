@@ -2,7 +2,7 @@
 project: lab-netops
 name: diagnostics-local
 description: diagnostics on the in-lab Ollama model (qwen2.5:7b), ticket read, one show command, one work note
-profile: ollama-lab
+profile: ollama-mac
 input_schema:
   type: object
   additionalProperties: false

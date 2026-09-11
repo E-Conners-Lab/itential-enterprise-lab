@@ -15,6 +15,13 @@ server:
   local-data: "{{ alias }}.{{ domain }}. A {{ a.address }}"
 {% endfor %}
 {% endfor %}
+{% if home_lan.inference_host is defined %}
+  # The inference host is on the home LAN, not the lab (ADR 0060): ollama.lab.internal answers here.
+  local-data: "{{ home_lan.inference_host.hostname }}.{{ domain }}. A {{ home_lan.inference_host.address }}"
+{% for alias in home_lan.inference_host.aliases | default([]) %}
+  local-data: "{{ alias }}.{{ domain }}. A {{ home_lan.inference_host.address }}"
+{% endfor %}
+{% endif %}
 
 forward-zone:
   name: "."
