@@ -169,3 +169,36 @@ def test_ip_plan_section_6_is_generated_not_maintained() -> None:
         "docs/ip-plan.md section 6 differs from topology/enterprise.yaml.\n"
         "Regenerate it: python topology/derive.py --section6 and replace the section."
     )
+
+
+def test_the_inference_host_is_declared_and_its_address_is_pinned(ipam: dict) -> None:
+    """Every FlowAI local profile resolves ollama.lab.internal, which answers with the Mac Mini
+    (ADR 0060). Its address is on the home LAN and inside the router's DHCP pool, so it is only stable
+    while the router holds a reservation - without one the lease can move and every local agent fails
+    at once, with nothing in the lab to blame. Declaring the reservation here is the closest this repo
+    can get to enforcing something on the home router, so at least the requirement is not tacit."""
+    host = ipam["home_lan"].get("inference_host")
+    assert host, "home_lan.inference_host is missing: ollama.lab.internal would resolve nowhere"
+    addr = ipaddress.ip_address(host["address"])
+    assert addr in ipaddress.ip_network("192.168.68.0/22")
+    assert "ollama" in host.get("aliases", []), "ollama.lab.internal must point at the inference host"
+
+    pool = (
+        ipaddress.ip_address(ipam["home_lan"]["dhcp_pool_start"]),
+        ipaddress.ip_address(ipam["home_lan"]["dhcp_pool_end"]),
+    )
+    if pool[0] <= addr <= pool[1]:
+        assert host.get("dhcp_reservation") is True, (
+            f"{addr} is inside the home DHCP pool {pool[0]}-{pool[1]}: either move it below "
+            f"{pool[0]} or record the router reservation with dhcp_reservation: true"
+        )
+
+
+def test_the_ollama_alias_left_tools_01(ipam: dict) -> None:
+    """Inference moved off the lab entirely (ADR 0060). tools-01 keeps mcp; if `ollama` were still an
+    alias here, unbound would render two A records for the same name and resolution would be a
+    coin toss."""
+    tools = next(r for r in _addr_rows(ipam) if r["hostname"] == "tools-01")
+    assert "ollama" not in tools.get("aliases", []), (
+        "tools-01 still claims the ollama alias; ollama.lab.internal must answer only the Mac Mini"
+    )

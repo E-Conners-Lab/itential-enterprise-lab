@@ -12,6 +12,18 @@ home_lan:
   dhcp_pool_end: 192.168.71.250
   gateway: 192.168.68.1
   known_statics: [192.168.68.1, 192.168.68.110, 192.168.68.161, 192.168.68.240]
+  # The Mac Mini serves every local model (ADR 0060): the lab has no GPU and tools-01's Ollama ran at
+  # 91% of a 6 GiB cap until llama-server crashed mid-verify. `ollama.lab.internal` resolves here, so
+  # the URL in itential/versions.yaml never carries a raw address.
+  # This address IS inside the router's DHCP pool, so it is only stable while the router holds a
+  # reservation for it - hence dhcp_reservation: true, which tests/test_ipam.py insists on for any
+  # pool address. Without the reservation the lease can move and every local agent fails at once.
+  inference_host:
+    hostname: mac-mini
+    address: 192.168.68.142
+    aliases: [ollama]
+    dhcp_reservation: true
+    description: "Ollama for every FlowAI local profile (ADR 0060)"
 
 prefixes:
   - {prefix: 10.100.0.0/14, status: container, role: lab-supernet, description: "Everything this lab allocates (ADR 0003)"}
@@ -61,7 +73,7 @@ addresses:
   - {address: 10.100.0.78, hostname: redis-02, placement: proxmox-vm, phase: 8, status: reserved, description: "Redis + Sentinel"}
   - {address: 10.100.0.79, hostname: redis-03, placement: proxmox-vm, phase: 8, status: reserved, description: "Redis + Sentinel"}
   - {address: 10.100.0.80, hostname: iag-01, placement: proxmox-vm, phase: 8, status: reserved, description: "Gateway 5 cluster (gateway5, etcd, runner)"}
-  - {address: 10.100.0.81, hostname: tools-01, placement: proxmox-vm, phase: 8, status: reserved, aliases: [mcp, ollama], description: "MCP server and Ollama"}
+  - {address: 10.100.0.81, hostname: tools-01, placement: proxmox-vm, phase: 8, status: reserved, aliases: [mcp], description: "MCP server (Ollama moved to the Mac Mini, ADR 0060)"}
   - {address: 10.100.0.128, hostname: dc1-fw01, placement: eve-firewall, phase: 4, status: reserved}
   - {address: 10.100.0.129, hostname: dc1-fw02, placement: eve-firewall, phase: 4, status: reserved}
   - {address: 10.100.0.130, hostname: br1-fw01, placement: eve-firewall, phase: 4, status: reserved}

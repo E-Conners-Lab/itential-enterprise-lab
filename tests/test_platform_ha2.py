@@ -75,7 +75,7 @@ def test_load_balancer_forwards_to_the_platform_http_port() -> None:
 def test_images_come_from_the_phase_5_pins_not_a_second_list() -> None:
     text = (HA2_DIR / "versions.yaml").read_text()
     assert "images:" not in text, "images live in itential/versions.yaml; this file owns the topology"
-    for key in ("platform", "mongodb", "redis", "gateway5", "etcd", "mcp", "ollama"):
+    for key in ("platform", "mongodb", "redis", "gateway5", "etcd", "mcp"):  # ollama left the lab (ADR 0060)
         assert key in ITENTIAL["images"], key
     # the versions the guide's system-requirements page allows for Platform 6
     assert ITENTIAL["images"]["mongodb"]["tag"].startswith(("6.0", "7.0", "8.0")), "MongoDB 6.0/7.0/8.0"
@@ -226,7 +226,11 @@ def test_the_production_overlay_is_held_to_the_oracle() -> None:
         assert f"{member}.{HA2['domain']}:{HA2['mongodb']['port']}" in prod["mongo_hosts"], f"{member} missing"
     assert prod["mongo_shell_argv"][-1] == "--eval" and "{{ mongo_admin_uri }}" in prod["mongo_shell_argv"]
     tools = vms()["tools-01"]
-    assert prod["ollama_base_url"] == f"http://{tools['ip']}:{HA2['tools']['ollama_port']}", "Ollama runs on tools-01"
+    # ADR 0060: inference is the Mac Mini, reached by name so the DHCP reservation lives in one place.
+    assert prod["ollama_base_url"].startswith("http://ollama.lab.internal:"), (
+        "the production overlay must reach inference by name, not at tools-01"
+    )
+    assert tools["ip"] not in prod["ollama_base_url"], "tools-01 no longer runs Ollama"
 
 
 def test_the_replay_entry_point_runs_the_three_halves_in_order() -> None:

@@ -28,4 +28,4 @@ mongo_shell_argv:
   - "{{ mongo_admin_uri }}"
   - --eval
 # Ollama runs on tools-01, not as a Compose service on the Platform node
-ollama_base_url: http://10.100.0.81:11434
+ollama_base_url: http://ollama.lab.internal:11434 # the Mac Mini (ADR 0060)

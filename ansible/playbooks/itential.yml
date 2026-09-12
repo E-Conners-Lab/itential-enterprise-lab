@@ -127,7 +127,6 @@
           MONGO_VERSION={{ images.mongodb.tag }}
           REDIS_VERSION={{ images.redis.tag }}
           MCP_VERSION={{ images.mcp.tag }}
-          OLLAMA_IMAGE={{ images.ollama.repository }}:{{ images.ollama.tag }}
           ETCD_IMAGE={{ images.etcd.repository }}:{{ images.etcd.tag }}
           GATEWAY5_RUNNER_IMAGE={{ stack.runner_image }}
           NODE_EXPORTER_IMAGE={{ images.node_exporter.repository }}:{{ images.node_exporter.tag }}

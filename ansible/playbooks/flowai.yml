@@ -23,8 +23,12 @@
     optional_profiles: "{{ llm.profiles | selectattr('optional', 'defined') | list }}"
     agent_docs: "{{ lookup('ansible.builtin.fileglob', playbook_dir ~ '/../../' ~ agents.documents ~ '/*.yaml', wantlist=True) | sort }}"
   tasks:
-    # --- in-lab local models -------------------------------------------------------------------
-    - name: Compose files current (itential.yml renders the stack .env incl. OLLAMA_IMAGE)
+    # --- local models: not in the lab any more -----------------------------------------------
+    # ADR 0060: every local model runs on the Mac Mini. The lab has no GPU, and tools-01's Ollama
+    # container ran at 91% of a 6 GiB cap until llama-server crashed mid-verify. Nothing is started
+    # here; the Model Registry reaches ollama.lab.internal, which unbound points at the Mac
+    # (topology/ipam.yaml home_lan.inference_host). The compose file no longer defines the service.
+    - name: Compose files current
       ansible.builtin.copy:
         src: "../../itential/{{ item }}"
         dest: "{{ stack_dir }}/{{ item }}"
@@ -33,50 +37,64 @@
         mode: "0644"
       loop: [docker-compose.yml, compose.override.yml]
 
-    - name: Stack env carries the Ollama image (run itential.yml first otherwise)
-      ansible.builtin.lineinfile:
-        path: "{{ stack_dir }}/.env"
-        regexp: "^OLLAMA_IMAGE="
-        line: "OLLAMA_IMAGE={{ images.ollama.repository }}:{{ images.ollama.tag }}"
-
-    - name: Ollama up (profile ollama)
+    - name: No Ollama container is left running on the Platform host
       ansible.builtin.command:
-        cmd: "{{ compose }} up -d ollama"
-        chdir: "{{ stack_dir }}"
-      register: ollama_up
-      changed_when: "'Started' in ollama_up.stderr or 'Created' in ollama_up.stderr"
-
-    - name: Ollama answers
-      ansible.builtin.uri:
-        url: http://127.0.0.1:11434/api/tags
-      register: ollama_tags
-      until: ollama_tags.status == 200
-      retries: 20
-      delay: 3
-
-    - name: Pinned local models pulled (first pull downloads a few GB through oob-gw)
-      ansible.builtin.command:
-        cmd: "docker exec ollama ollama pull {{ item }}"
-      loop: "{{ required_profiles | selectattr('provider', 'equalto', 'ollama') | map(attribute='model') | unique | list }}"
-      when: item not in (ollama_tags.json.models | default([]) | map(attribute='name') | list)
-      changed_when: true
+        cmd: docker rm -f ollama
+      register: ollama_gone
+      changed_when: ollama_gone.rc == 0
+      failed_when: false
 
     # Optional endpoints (the owner's Mac) join only when they answer from the VM right now.
-    - name: Optional Ollama endpoints reachable?
+    # The Mac is required now, not optional (ADR 0060), so an unreachable one fails the play with a
+    # message that names the cause instead of leaving six agents pointing at nothing. There is no
+    # in-lab fallback by design: the owner chose to run no inference on the server.
+    # Retried on purpose: the first connection after a DNS change or a cold Mac has been seen to
+    # time out and then succeed immediately (measured twice, 2026-09-11). One attempt would turn a
+    # warm-up into a failed play.
+    - name: Every Ollama endpoint answers
       ansible.builtin.uri:
         url: "{{ item.base_url }}/api/tags"
-        timeout: 5
-      loop: "{{ optional_profiles }}"
+        timeout: 10
+      loop: "{{ required_profiles | selectattr('provider', 'equalto', 'ollama') | list }}"
       loop_control:
         label: "{{ item.name }} {{ item.base_url }}"
-      register: optional_probe
+      register: ollama_probe
+      until: ollama_probe.status | default(0) == 200
+      retries: 5
+      delay: 3
       failed_when: false
+
+    - name: An unreachable inference host is the whole local fleet
+      ansible.builtin.assert:
+        that: "item.status | default(0) == 200"
+        fail_msg: >-
+          {{ item.item.name }} did not answer at {{ item.item.base_url }}.
+          Inference runs on the Mac Mini (ADR 0060) and the lab keeps no fallback, so every
+          ollama-mac agent is down until it answers. Check: the Mac is awake; `ollama serve` is
+          running (scripts/mac-ollama.sh); the Homebrew ollama binary is allowed through the macOS
+          firewall; and ollama.lab.internal still resolves to its address
+          (topology/ipam.yaml home_lan.inference_host - the router reservation may have moved).
+        success_msg: "{{ item.item.name }} answers at {{ item.item.base_url }}"
+      loop: "{{ ollama_probe.results }}"
+      loop_control:
+        label: "{{ item.item.name }}"
 
     - name: Profiles to manage this run
       ansible.builtin.set_fact:
-        llm_profiles: >-
-          {{ required_profiles + (optional_probe.results | selectattr('status', 'defined')
-                                  | selectattr('status', 'equalto', 200) | map(attribute='item') | list) }}
+        llm_profiles: "{{ required_profiles }}"
+
+    - name: Pinned local models present on the inference host
+      ansible.builtin.assert:
+        that: "item.model in (probe.json.models | default([]) | map(attribute='name') | list)"
+        fail_msg: >-
+          {{ item.model }} is not on {{ item.base_url }}. Pull it on the Mac:
+          `ollama pull {{ item.model }}` (scripts/mac-ollama.sh does it).
+        success_msg: "{{ item.model }} present on {{ item.name }}"
+      loop: "{{ required_profiles | selectattr('provider', 'equalto', 'ollama') | list }}"
+      loop_control:
+        label: "{{ item.model }}"
+      vars:
+        probe: "{{ ollama_probe.results | selectattr('item.name', 'equalto', item.name) | first }}"
 
     - name: Profiles this run
       ansible.builtin.debug:
