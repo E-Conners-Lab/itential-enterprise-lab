@@ -55,8 +55,16 @@ def test_every_fleet_agent_exists_on_claude_with_a_local_twin(
         )
         assert docs[name]["project"] == docs[f"{name}-local"]["project"] == "lab-netops"
         assert {docs[name]["profile"], docs[f"{name}-local"]["profile"]} <= profiles
-        assert 1 <= len(docs[f"{name}-local"]["tools"]) <= 3, (
-            f"{name}-local: a 7B model gets one to three tools"
+        # The old cap was three, justified as "a 7B model loses its way with more" - a measured
+        # property of qwen2.5:7b on four CPU cores, not a law. Re-measured on gemma4:26b (ADR 0062):
+        # netbox-sot-local went from two tools to four and got BETTER, answering a six-clause question
+        # 6/6 with no wasted call, where at two tools it burned one and returned a false "not in
+        # NetBox". The cap stays, because tool schemas cost input tokens on every request (that same
+        # question went 10.5k -> 18.6k) and an unbounded list is how a twin ends up holding the wide
+        # reads that caused the timeout of ADR 0059 - but it is now set from measurement, not from a
+        # model nobody runs. Raise it again the same way: measure first, then move the number.
+        assert 1 <= len(docs[f"{name}-local"]["tools"]) <= 6, (
+            f"{name}-local: a local twin gets one to six tools (ADR 0062 - re-measure before raising)"
         )
         assert len(docs[f"{name}-local"]["tools"]) <= len(docs[name]["tools"])
 
