@@ -1,7 +1,7 @@
-# device-ops on the in-lab Ollama model (qwen2.5:7b, CPU): the single-device and the fleet-wide workflows only.
+# device-ops on the Mac Mini's Ollama (gemma4:26b, ADR 0060/0061): the single-device and the fleet-wide workflows only.
 project: lab-netops
 name: device-ops-local
-description: device-ops on the in-lab Ollama model (qwen2.5:7b), read-only show commands
+description: device-ops on the Mac Mini's Ollama (gemma4:26b), read-only show commands
 profile: ollama-mac
 input_schema:
   type: object

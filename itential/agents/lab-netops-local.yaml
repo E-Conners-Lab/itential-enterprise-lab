@@ -1,8 +1,8 @@
-# Same agent on the in-lab Ollama model (PID S4c.5): proves the local path end to end. Three tools, one per job
+# Same agent on the Mac Mini's Ollama (PID S4c.5, ADR 0060/0061): proves the local path end to end. Three tools, one per job
 # (single device, all devices, name lookup); a small model given a raw gateway tool invents node names (measured).
 project: lab-netops
 name: lab-netops-local
-description: lab-netops on the in-lab Ollama model (qwen2.5:7b, CPU)
+description: lab-netops on the Mac Mini's Ollama (gemma4:26b, ADR 0060/0061)
 profile: ollama-mac
 input_schema:
   type: object

@@ -45,14 +45,20 @@
     label: "{{ item.name }}"
   no_log: true
 
-# A profile is CREATE-ONLY on 6.5.2: PATCH /model-registry-service/profiles/<id> answers 200 and
-# silently ignores the body, wrapped or not (measured 2026-09-11), exactly like an Integration Model
-# (runbook 06, "will not update ... delete and re-import"). So a profile whose base URL or pinned model
-# no longer matches itential/versions.yaml is removed and rebuilt. Without this the play is unable to
-# change a model at all: ADR 0061's switch failed on `model_ids ... sequence was empty` because the
-# live profile still offered only the old model, and ADR 0060's move to ollama.lab.internal had never
-# reached the Platform - the profile still held the raw address it was created with.
-- name: Provider profiles that have drifted from the repo
+# A profile IS updatable, but only through the documented shape: PATCH
+# /model-registry-service/profiles/<id> with the body wrapped in {"update": {...}}, and every
+# models[] entry carrying BOTH name and enabled (create takes name alone). Send any other shape -
+# {"profile": {...}}, which is the CREATE wrapper, or a bare {"models": [...]} - and the API answers
+# 200 and silently ignores it, which is easy to misread as "profiles cannot be updated" (I did,
+# 2026-09-11). itential-builder:flowagent documents the real contract.
+#
+# THE HAZARD, which that skill does not mention: rewriting models[] REISSUES each model's UUID, and an
+# agent's provider.model is that UUID. A profile PATCH therefore orphans every agent bound to it -
+# measured: agentCount went 6 -> 0 and the twins stopped resolving. So the tasks below re-resolve
+# model_ids and PATCH every agent's provider afterwards, which this play already did for other
+# reasons; the ordering is what makes it safe. Delete-and-recreate would also work and is what this
+# task used to do, but it is an irreversible hard delete of a profile that agents depend on.
+- name: Provider profiles live now
   ansible.builtin.uri:
     url: "{{ platform_local }}/model-registry-service/profiles/{{ item.id }}"
     headers: {Cookie: "{{ login.cookies_string }}"}
@@ -63,32 +69,39 @@
     label: "{{ item.name }}"
   register: mr_live
 
-- name: Profiles to rebuild (base URL or pinned model changed)
+- name: Profiles whose base URL or pinned model has drifted from the repo
   ansible.builtin.set_fact:
-    stale_profiles: "{{ stale_profiles | default([]) + ([item.json] if not ok else []) }}"
+    drifted_profiles: >-
+      {{ drifted_profiles | default([])
+         + ([{'id': item.json.id, 'name': item.json.name, 'want': want}] if not ok else []) }}
   loop: "{{ mr_live.results | default([]) | selectattr('json', 'defined') | list }}"
   loop_control:
-    label: "{{ item.json.name }}: {{ 'ok' if ok else 'rebuild' }}"
+    label: "{{ item.json.name }}: {{ 'ok' if ok else 'update' }}"
   vars:
     want: "{{ llm_profiles | selectattr('name', 'equalto', item.json.name) | first }}"
-    # anthropic profiles carry a write-only key and nothing comparable, so they are never rebuilt
+    # anthropic profiles carry a write-only key and nothing comparable, so they are never touched
     ok: >-
       {{ item.json.provider != 'ollama'
          or ((item.json.credential.baseUrl | default('')) == want.base_url
              and want.model in (item.json.models | default([]) | map(attribute='name') | list)) }}
 
-- name: Drifted profiles removed so they can be rebuilt
+- name: Drifted profiles updated in place
   ansible.builtin.uri:
     url: "{{ platform_local }}/model-registry-service/profiles/{{ item.id }}"
-    method: DELETE
+    method: PATCH
     headers: {Cookie: "{{ login.cookies_string }}"}
-    status_code: [200, 204, 404]
-  loop: "{{ stale_profiles | default([]) }}"
+    body_format: json
+    body:
+      update:
+        credential: {type: ollama, baseURL: "{{ item.want.base_url }}"}
+        models: [{name: "{{ item.want.model }}", enabled: true}]
+    status_code: 200
+  loop: "{{ drifted_profiles | default([]) }}"
   loop_control:
-    label: "{{ item.name }} ({{ item.credential.baseUrl | default('?') }} -> rebuild)"
+    label: "{{ item.name }} -> {{ item.want.model }} at {{ item.want.base_url }}"
   changed_when: true
 
-- name: Existing provider profiles after the rebuild sweep
+- name: Existing provider profiles after the update sweep
   ansible.builtin.uri:
     url: "{{ platform_local }}/model-registry-service/profiles"
     headers: {Cookie: "{{ login.cookies_string }}"}

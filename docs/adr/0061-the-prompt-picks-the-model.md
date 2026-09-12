@@ -65,3 +65,38 @@ The agent prompt is the one thing this repo owns end to end. That makes it the d
 - Not addressed: the twins' prompts still carry constraints shaped by a 7B model on CPU (three tools
   each, heavy reduction). A 26B model may not need them, but relaxing those is a behavioural change to
   make against measurements, not alongside a model swap.
+
+
+## Amendment 2026-09-11 — the profile IS updatable; the "create-only" finding was my wrong body shape
+
+This ADR shipped saying Model Registry profiles cannot be updated, because
+`PATCH /model-registry-service/profiles/<id>` answered 200 and changed nothing. That conclusion was
+wrong and the play built on it was more destructive than it needed to be.
+
+The `itential-builder:flowagent` skill documents the real contract: the body is wrapped in
+`{"update": {...}}`, and every `models[]` entry needs **both** `name` and `enabled` (create takes
+`name` alone). What I sent was `{"profile": {...}}` - which is the **create** wrapper - and then a bare
+`{"models": [...]}`. The API answers **200 and silently ignores an unrecognised body**, which reads
+exactly like "updates are not supported". Verified after loading the skill:
+
+```
+PATCH {"update":{"models":[{"name":"gemma4:26b","enabled":true},{"name":"qwen3:8b","enabled":true}]}}
+-> 200, and the profile then listed both models
+```
+
+**The hazard the skill does not mention, and it is the important part.** Rewriting `models[]`
+**reissues each model's UUID**, and an agent's `provider.model` *is* that UUID. So a profile PATCH
+silently orphans every agent bound to it: measured, `agentCount` went **6 → 0** and all six twins
+stopped resolving their model until each was re-PATCHed with the new id. Any profile update must be
+followed by re-resolving `model_ids` and re-binding every agent - which `flowai-assets.yml` already
+does further down, so the fix was ordering, not new machinery.
+
+`flowai-assets.yml` now updates a drifted profile in place instead of deleting it. Deleting worked, but
+it is an **irreversible hard delete** of a profile that agents depend on, and the skill documents
+`GET /model-registry-service/profiles/{id}/agent-impact` for checking what breaks first - an endpoint
+this repo did not know about and did not call before deleting a profile with six agents attached.
+
+The wider lesson is about method rather than this API: the Itential skills document these services, and
+reverse-engineering an undocumented shape by probing produced a confident, wrong, written-down
+conclusion. Check `itential-builder:flowagent` before probing the Agent Project, Model Registry, Tools
+or Session Manager services.

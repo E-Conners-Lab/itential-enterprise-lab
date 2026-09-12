@@ -1,7 +1,7 @@
-# netbox-sot on the in-lab Ollama model (qwen2.5:7b, CPU): two tools only, a small model loses its way with more.
+# netbox-sot on the Mac Mini's Ollama (gemma4:26b, ADR 0060/0061): two tools only, a small model loses its way with more.
 project: lab-netops
 name: netbox-sot-local
-description: netbox-sot on the in-lab Ollama model (qwen2.5:7b), NetBox devices and VLANs only
+description: netbox-sot on the Mac Mini's Ollama (gemma4:26b), NetBox devices and VLANs only
 profile: ollama-mac
 input_schema:
   type: object
