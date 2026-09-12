@@ -441,11 +441,18 @@ check "S4e.5 journal entries: every site carries netbox-enrich.yml entries namin
 # --- S4e.6 idempotency, the agent on the enriched objects, Golden Config with the interface intent --------------------
 COMPLIANCE_PLAN=$(${PY} -c "import yaml;print(yaml.safe_load(open('$V'))['golden_config']['plan'])")
 c6() {
-  # 1) a second run of the play changes nothing
-  local out
-  out=$(cd ansible && NETBOX_API="$NETBOX_URL" ansible-playbook playbooks/netbox-enrich.yml < /dev/null 2>&1) || { echo "$out" | grep -E 'ERROR|failed:' | head -5; return 1; }
-  echo "$out" | grep -E '^localhost' | grep -q 'changed=0 ' || { echo "netbox-enrich.yml is not idempotent: $(echo "$out" | grep -E '^localhost')"; return 1; }
-  echo "netbox-enrich.yml re-run: $(echo "$out" | grep -E '^localhost' | sed 's/  */ /g')"
+  # 1) the play is idempotent: run it TWICE and assert on the second.
+  # It used to run once and assert changed=0, which silently depended on someone having already run it
+  # at the current commit. The journal task writes one entry per site per git commit by design
+  # (`journal_wanted` is true when `journal_this_commit.count == 0`), so the first run after any merge
+  # legitimately reports changed=5 and the criterion failed for a reason that was not a defect
+  # (measured 2026-09-11, after three PRs merged: run one changed=5, run two changed=0).
+  local out run
+  for run in 1 2; do
+    out=$(cd ansible && NETBOX_API="$NETBOX_URL" ansible-playbook playbooks/netbox-enrich.yml < /dev/null 2>&1) || { echo "$out" | grep -E 'ERROR|failed:' | head -5; return 1; }
+  done
+  echo "$out" | grep -E '^localhost' | grep -q 'changed=0 ' || { echo "netbox-enrich.yml is not idempotent on a second consecutive run: $(echo "$out" | grep -E '^localhost')"; return 1; }
+  echo "netbox-enrich.yml re-run (2nd of 2): $(echo "$out" | grep -E '^localhost' | sed 's/  */ /g')"
   # 2) netbox-sot answers one question per object type; every answer is checked against the NetBox API
   local sid txt q want
   while IFS='|' read -r q want; do

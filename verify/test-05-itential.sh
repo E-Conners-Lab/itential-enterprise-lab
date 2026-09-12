@@ -194,7 +194,7 @@ check "S4.7 mcp.lab.internal answers streamable HTTP from this Mac; get_health r
 # =============================== S4b ServiceNow PDI ==============================================
 snow() { curl -s -m 30 -u "${SNOW_USER}:${SNOW_PASSWORD}" -H "Accept: application/json" "$@"; }
 if [ -z "${SNOW_INSTANCE:-}" ] || [ -z "${SNOW_USER:-}" ] || [ -z "${SNOW_PASSWORD:-}" ]; then
-  for c in "S4b.1 adapter-servicenow health" "S4b.2 change request lifecycle" "S4b.3 update set in servicenow/" "S4b.4 instance recorded" "S4b.5 interactive login age"; do bad "$c: SNOW_INSTANCE/SNOW_USER/SNOW_PASSWORD missing from .env"; done
+  for c in "S4b.1 servicenow-api integration tools" "S4b.2 change request lifecycle" "S4b.3 update set in servicenow/" "S4b.4 instance recorded" "S4b.5 interactive login age"; do bad "$c: SNOW_INSTANCE/SNOW_USER/SNOW_PASSWORD missing from .env"; done
 else
   SNOW_URL="https://${SNOW_INSTANCE}.service-now.com"
   code=$(snow -o /dev/null -w '%{http_code}' "${SNOW_URL}/api/now/table/sys_properties?sysparm_limit=1")
@@ -202,9 +202,42 @@ else
     echo "HIBERNATED  PDI ${SNOW_INSTANCE} answered HTTP ${code}: wake it at developer.servicenow.com and re-run (S4b.1-S4b.5 not evaluated, not passed)"
     hibernated=5
   else
-    # --- S4b.1 adapter health green ---
-    c8() { iap "${PLATFORM}/health/adapters" | ${PY} -c 'import sys,json;a=json.load(sys.stdin);a=a.get("results",a);r=[x for x in a if "servicenow" in (x.get("id") or x.get("_id") or "").lower()];assert r,"no servicenow adapter";assert all(x.get("state")=="RUNNING" for x in r),r'; }
-    check "S4b.1 adapter-servicenow RUNNING in /health/adapters" c8
+    # --- S4b.1 the Platform's path to the PDI ---
+    # Was "adapter-servicenow RUNNING in /health/adapters" until 2026-09-11. S4f (ADR 0054 decision 3)
+    # removed that adapter entirely - itential/versions.yaml says so and
+    # tests/test_integrations.py::test_the_servicenow_adapter_is_gone_and_the_required_three_remain
+    # asserts it - so this criterion had been asserting the opposite of S4f.6 in
+    # verify/test-06d-integrations.sh ("adapter-servicenow is gone"). Both could not pass; this one
+    # only kept passing while the adapter lingered on a Platform the play had not replayed yet.
+    # The S4f replacement is the Integration Model: the PDI is reached through servicenow-api, and an
+    # operation the lab uses is an authorized tool. NOT an integration health check - an integration is
+    # a virtual adapter and reports STOPPED while every operation works (runbook 06).
+    c8() {
+      local refs got
+      refs=$(${PY} -c "
+import json, yaml
+v = yaml.safe_load(open('itential/versions.yaml'))['integrations']['models']['servicenow']
+ops = ['listIncidents', 'updateIncident']
+print(json.dumps({'referenceIds': [f\"integration:{v['title']}%3A{v['version']}:{v['instance']}:{o}\" for o in ops],
+                  'queryOptions': {'limit': 20}}))") || return 1
+      got=$(iap -X POST "${PLATFORM}/tools/bulk" -d "$refs") || return 1
+      echo "$got" | ${PY} -c '
+import sys, json
+d = json.load(sys.stdin)
+d = d.get("data") or d.get("results") or []
+assert d, "tools/bulk returned nothing for the servicenow-api operations"
+unauth = [t["referenceId"].split(":")[-1] for t in d if not t.get("authorized", True)]
+assert not unauth, f"not authorized: {unauth}"
+print(f"  servicenow-api: {len(d)} operations are authorized tools")' || return 1
+      # and the adapter really is gone, so this can never drift back to contradicting S4f.6
+      iap "${PLATFORM}/health/adapters" | ${PY} -c '
+import sys, json
+a = json.load(sys.stdin); a = a.get("results", a)
+r = [x for x in a if "servicenow" in (x.get("id") or x.get("_id") or "").lower()]
+assert not r, f"adapter-servicenow is back; S4f (ADR 0054) removed it: {r}"
+print("  adapter-servicenow absent, as S4f requires")'
+    }
+    check "S4b.1 the PDI is reached through the servicenow-api Integration Model (authorized tools), and adapter-servicenow is gone" c8
     # --- S4b.2 change request opened, work-noted with the NetBox reservation, closed ---
     c9() {
       local id chg sid

@@ -1,0 +1,18 @@
+# test-03-platform 20260911T222306Z
+PASS  S2.1 three Ready nodes at k3s v1.36.4+k3s1 via 10.100.0.19; cilium status ok; hubble observes flows
+PASS  S2.3 LoadBalancer Service gets 10.100.0.43 from MetalLB and answers from the Mac and from EVE-NG
+PASS  S2.4 ClusterIssuer lab-ca issues test.lab.internal chained to docs/lab-root-ca.crt
+FAIL  S2.5 CNPG cluster healthy, pg_isready, at least one completed Backup in the object store
+      no completed Backup object
+      NAME                                 AGE     CLUSTER       METHOD   PHASE       ERROR
+      platform-db-initial                  5d      platform-db   plugin   completed   
+      platform-db-nightly-20260907023000   4d19h   platform-db   plugin   completed   
+      platform-db-nightly-20260908023000   3d19h   platform-db   plugin   completed   
+      platform-db-nightly-20260909023000   2d19h   platform-db   plugin   completed   
+      platform-db-nightly-20260910023000   43h     platform-db   plugin   completed   
+      platform-db-nightly-20260911023000   19h     platform-db   plugin   completed   
+PASS  S2.6 k3s node vCPU/RAM/disk on the host equal docs/resource-budget.md
+SKIP  S2.2 node-loss drill (set VERIFY_DRILLS=1 to run; disruptive)
+
+passed=4 failed=1
+RESULT: FAIL

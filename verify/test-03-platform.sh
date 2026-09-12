@@ -92,10 +92,38 @@ c5() {
   kubectl -n cnpg-system get clusters.postgresql.cnpg.io "$cl" -o jsonpath='{.status.phase}' | grep -q "healthy" || { kubectl -n cnpg-system get clusters.postgresql.cnpg.io "$cl"; return 1; }
   kubectl -n cnpg-system get clusters.postgresql.cnpg.io "$cl" -o jsonpath='{.status.conditions[?(@.type=="ContinuousArchiving")].status}' | grep -qx True || { echo "WAL archiving not working"; return 1; }
   kubectl -n cnpg-system exec "${cl}-1" -c postgres -- pg_isready -q || { echo "pg_isready failed"; return 1; }
-  # full resource name: 'backup' alone is ambiguous once Longhorn's backups CRD exists
-  kubectl -n cnpg-system get backups.postgresql.cnpg.io -o jsonpath='{range .items[*]}{.metadata.name} {.status.phase}{"\n"}{end}' | grep -q " completed" || { echo "no completed Backup object"; kubectl -n cnpg-system get backups.postgresql.cnpg.io; return 1; }
+  # full resource name: 'backup' alone is ambiguous once Longhorn's backups CRD exists.
+  # This used to pipe kubectl straight into `grep -q " completed"`, which threw away kubectl's exit
+  # status: a transient API error then reported "no completed Backup object" while six completed
+  # backups existed, and the diagnostic `kubectl get` printed right underneath it said so (measured
+  # 2026-09-11). Capture the output and the status separately so an API failure cannot masquerade as
+  # a missing backup.
+  local backups rc
+  backups=$(kubectl -n cnpg-system get backups.postgresql.cnpg.io \
+    -o jsonpath='{range .items[*]}{.metadata.name} {.status.phase} {.metadata.creationTimestamp}{"\n"}{end}' 2>&1); rc=$?
+  [ "$rc" -eq 0 ] || { echo "kubectl could not read the Backup objects (rc=${rc}): ${backups}"; return 1; }
+  echo "$backups" | grep -q " completed " || { echo "no completed Backup object"; echo "$backups"; return 1; }
+  # "at least one completed" is satisfied for ever by platform-db-initial, so a dead nightly schedule
+  # would never be noticed: require a completed backup newer than BACKUP_MAX_AGE_H (default 48h, which
+  # tolerates one missed 02:30 run).
+  echo "$backups" | python3 -c '
+import sys, datetime
+max_h = float("'"${BACKUP_MAX_AGE_H:-48}"'")
+now = datetime.datetime.now(datetime.timezone.utc)
+done = []
+for line in sys.stdin:
+    parts = line.split()
+    if len(parts) == 3 and parts[1] == "completed":
+        done.append((parts[0], datetime.datetime.fromisoformat(parts[2].replace("Z", "+00:00"))))
+assert done, "no completed Backup object"
+name, ts = max(done, key=lambda x: x[1])
+age_h = (now - ts).total_seconds() / 3600
+assert age_h <= max_h, (
+    f"newest completed backup {name} is {age_h:.0f}h old (limit {max_h:.0f}h): the nightly schedule has stopped"
+)
+print(f"  {len(done)} completed backups; newest {name} is {age_h:.0f}h old")' || return 1
 }
-check "S2.5 CNPG cluster healthy, pg_isready, at least one completed Backup in the object store" c5
+check "S2.5 CNPG cluster healthy, pg_isready, a completed Backup in the object store newer than ${BACKUP_MAX_AGE_H:-48}h" c5
 
 # --- S2.6 allocation matches docs/resource-budget.md ---------------------------------------------
 c6() {

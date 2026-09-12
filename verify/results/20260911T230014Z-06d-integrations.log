@@ -1,0 +1,14 @@
+# test-06d-integrations 20260911T230014Z
+PASS  S4f.1 every Integration Model records the specification it was generated from
+PASS  S4f.2 every operation a workflow names is declared, and every declared operation is a tool
+PASS  S4f.3/4/5 the NetBox writes, the journal entries and the ServiceNow changes all go through the models
+PASS  S4f.6 adapter-servicenow is gone; InventoryBroker, LDAP and NetBox are RUNNING
+PASS  S4f.6 Configuration Manager still lists the lab devices through the InventoryBroker
+S4f.7 regression: run these after any change to the models or the converted workflows
+      verify/test-05-itential.sh   S4.2 S4.4 (NetBox reads and writes), S4b.2 (the change lifecycle), S4b.1 rewritten for the integration
+      verify/test-06-flowai.sh     S4c.3 (agent-driven VLAN), S4d.5a (netbox-sot through the integration)
+      verify/test-06b-platform.sh  S4d.3 (lifecycle create and delete), S4d.4 (the models and their tools)
+      verify/test-06c-netbox.sh    S4e.5 (journal entries), S4e.6 (idempotency and the agent)
+DEFER S4f.7 the phase 5-7 regression set is run separately (it writes to devices and the PDI)
+
+passed=5 failed=0 deferred=1
