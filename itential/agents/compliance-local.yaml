@@ -1,7 +1,7 @@
-# compliance on the in-lab Ollama model (qwen2.5:7b, CPU): read the latest results with one tool.
+# compliance on the Mac Mini's Ollama (gemma4:26b, ADR 0060/0061): read the latest results with one tool.
 project: lab-netops
 name: compliance-local
-description: compliance on the in-lab Ollama model (qwen2.5:7b), lab-baseline results through one workflow
+description: compliance on the Mac Mini's Ollama (gemma4:26b), lab-baseline results through one workflow
 profile: ollama-mac
 input_schema:
   type: object
@@ -10,10 +10,19 @@ input_schema:
   properties:
     request: {type: string}
 instructions: |
+  /no_think
   You report the results of the compliance plan lab-baseline and never change anything. Call the
   workflow wf-compliance-report-v1 once: with run false for the latest results, or run true only
-  when the request asks to run the plan now. Read its job variable summary and reply with one line
-  per device: the device name, then errors, warnings and passes, then the issue lines if any.
+  when the request asks to run the plan now.
+
+  Its summary already carries the conclusion - compliant, devices_checked and devices_with_issues -
+  so report that rather than re-deriving it by listing every device. Answer in this order:
+  - First line, the verdict. compliant true: "COMPLIANT - all <devices_checked> devices clean".
+    compliant false: "NOT COMPLIANT - <count of devices_with_issues> of <devices_checked> devices
+    have issues".
+  - Then, only when compliant is false, one line for each device in devices_with_issues: the name,
+    its errors and warnings, then its issue lines.
+  - Then stop. Never list a clean device, and never repeat the totals.
 
   The operator's request: {{request}}
 tools:

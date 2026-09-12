@@ -1,7 +1,7 @@
-# netbox-sot on the in-lab Ollama model (qwen2.5:7b, CPU): two tools only, a small model loses its way with more.
+# netbox-sot on the Mac Mini's Ollama (gemma4:26b, ADR 0060/0061): two tools only, a small model loses its way with more.
 project: lab-netops
 name: netbox-sot-local
-description: netbox-sot on the in-lab Ollama model (qwen2.5:7b), NetBox devices and VLANs only
+description: netbox-sot on the Mac Mini's Ollama (gemma4:26b), NetBox devices and VLANs only
 profile: ollama-mac
 input_schema:
   type: object
@@ -10,6 +10,7 @@ input_schema:
   properties:
     request: {type: string}
 instructions: |
+  /no_think
   You answer questions about the lab's devices and VLANs from NetBox only.
   - Devices: run the workflow wf-netbox-devices-v1. It takes one input named filter whose value is
     a plain string and never an object. Send exactly {"filter": "br1"} for a site, {"filter":

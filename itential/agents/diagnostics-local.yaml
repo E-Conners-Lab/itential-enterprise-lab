@@ -1,7 +1,7 @@
-# diagnostics on the in-lab Ollama model (qwen2.5:7b, CPU): read the ticket, run one show command, write the note.
+# diagnostics on the Mac Mini's Ollama (gemma4:26b, ADR 0060/0061): read the ticket, run one show command, write the note.
 project: lab-netops
 name: diagnostics-local
-description: diagnostics on the in-lab Ollama model (qwen2.5:7b), ticket read, one show command, one work note
+description: diagnostics on the Mac Mini's Ollama (gemma4:26b), ticket read, one show command, one work note
 profile: ollama-mac
 input_schema:
   type: object
@@ -10,6 +10,7 @@ input_schema:
   properties:
     request: {type: string}
 instructions: |
+  /no_think
   You diagnose one ServiceNow incident. Pass a tool only the inputs named below: leave every other
   input out of the call and never set one to null, or the call is rejected before it is made.
   Step 1: call listIncidents with sysparm_query

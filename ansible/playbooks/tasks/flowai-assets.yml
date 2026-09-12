@@ -45,6 +45,68 @@
     label: "{{ item.name }}"
   no_log: true
 
+# A profile IS updatable, but only through the documented shape: PATCH
+# /model-registry-service/profiles/<id> with the body wrapped in {"update": {...}}, and every
+# models[] entry carrying BOTH name and enabled (create takes name alone). Send any other shape -
+# {"profile": {...}}, which is the CREATE wrapper, or a bare {"models": [...]} - and the API answers
+# 200 and silently ignores it, which is easy to misread as "profiles cannot be updated" (I did,
+# 2026-09-11). itential-builder:flowagent documents the real contract.
+#
+# THE HAZARD, which that skill does not mention: rewriting models[] REISSUES each model's UUID, and an
+# agent's provider.model is that UUID. A profile PATCH therefore orphans every agent bound to it -
+# measured: agentCount went 6 -> 0 and the twins stopped resolving. So the tasks below re-resolve
+# model_ids and PATCH every agent's provider afterwards, which this play already did for other
+# reasons; the ordering is what makes it safe. Delete-and-recreate would also work and is what this
+# task used to do, but it is an irreversible hard delete of a profile that agents depend on.
+- name: Provider profiles live now
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/model-registry-service/profiles/{{ item.id }}"
+    headers: {Cookie: "{{ login.cookies_string }}"}
+  loop: >-
+    {{ (mr_profiles.json.profiles | default(mr_profiles.json.data | default([])))
+       | selectattr('name', 'in', llm_profiles | map(attribute='name') | list) | list }}
+  loop_control:
+    label: "{{ item.name }}"
+  register: mr_live
+
+- name: Profiles whose base URL or pinned model has drifted from the repo
+  ansible.builtin.set_fact:
+    drifted_profiles: >-
+      {{ drifted_profiles | default([])
+         + ([{'id': item.json.id, 'name': item.json.name, 'want': want}] if not ok else []) }}
+  loop: "{{ mr_live.results | default([]) | selectattr('json', 'defined') | list }}"
+  loop_control:
+    label: "{{ item.json.name }}: {{ 'ok' if ok else 'update' }}"
+  vars:
+    want: "{{ llm_profiles | selectattr('name', 'equalto', item.json.name) | first }}"
+    # anthropic profiles carry a write-only key and nothing comparable, so they are never touched
+    ok: >-
+      {{ item.json.provider != 'ollama'
+         or ((item.json.credential.baseUrl | default('')) == want.base_url
+             and want.model in (item.json.models | default([]) | map(attribute='name') | list)) }}
+
+- name: Drifted profiles updated in place
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/model-registry-service/profiles/{{ item.id }}"
+    method: PATCH
+    headers: {Cookie: "{{ login.cookies_string }}"}
+    body_format: json
+    body:
+      update:
+        credential: {type: ollama, baseURL: "{{ item.want.base_url }}"}
+        models: [{name: "{{ item.want.model }}", enabled: true}]
+    status_code: 200
+  loop: "{{ drifted_profiles | default([]) }}"
+  loop_control:
+    label: "{{ item.name }} -> {{ item.want.model }} at {{ item.want.base_url }}"
+  changed_when: true
+
+- name: Existing provider profiles after the update sweep
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/model-registry-service/profiles"
+    headers: {Cookie: "{{ login.cookies_string }}"}
+  register: mr_profiles
+
 - name: Provider profiles created once (credentials are write-only in the platform)
   ansible.builtin.uri:
     url: "{{ platform_local }}/model-registry-service/profiles"

@@ -1,7 +1,7 @@
-# remediation on the in-lab Ollama model (qwen2.5:7b, CPU): the hostname fix only, still behind the approval.
+# remediation on the Mac Mini's Ollama (gemma4:26b, ADR 0060/0061): the hostname fix only, still behind the approval.
 project: lab-netops
 name: remediation-local
-description: remediation on the in-lab Ollama model (qwen2.5:7b), hostname fixes through wf-config-push-v1 only
+description: remediation on the Mac Mini's Ollama (gemma4:26b), hostname fixes through wf-config-push-v1 only
 profile: ollama-mac
 input_schema:
   type: object
@@ -10,6 +10,7 @@ input_schema:
   properties:
     request: {type: string}
 instructions: |
+  /no_think
   You fix hostname drift on one lab device and nothing else. The request names the device and its
   correct hostname (its NetBox name). Start the workflow wf-config-push-v1 exactly once with device
   "<device>", config "hostname <correct name>" and reason "hostname drift (remediation-local)".

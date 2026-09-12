@@ -7,6 +7,14 @@ local twins.
 Everything here is built through the API from documents in the repo, against the twelve devices chapter 04
 built. Nothing is drawn in a UI, and every re-run updates in place.
 
+> **Before reverse-engineering any FlowAI API, read the `itential-builder:flowagent` skill.** It documents
+> the Agent Project Service, Model Registry Service, Tools Service and Agent Session Manager - request
+> shapes, the create/update field asymmetries, and endpoints like
+> `GET /model-registry-service/profiles/{id}/agent-impact` that are easy to miss. Probing these services by
+> hand instead produced a confident, wrong, *written-down* conclusion here on 2026-09-11 ("profiles are
+> create-only"), a needlessly destructive fix built on it, and six broken agents while correcting it. The
+> skill is a map rather than a guarantee, so still verify against the live API - but start from the map.
+
 ---
 
 ## Before you start
@@ -251,6 +259,40 @@ list endpoint just showed you), while llama-server finished the same request suc
 model. `wf-netbox-devices-v1` reads the list once and hands back six fields per device - br1 goes from
 17.9 kB to 730 bytes - and the twins hold that workflow instead of the raw operation. The Claude agents
 keep the raw operations: they need the full objects and ingest them in a second.
+
+**A local twin is slow and its answer starts with its own reasoning.** The model is thinking, and you
+are paying for every trace in wall-clock. Measured 2026-09-11 on the answer turn (model reads a tool
+result, writes the reply): thinking costs **6-8x** - `gemma4:26b` goes 9.9 s/137 tokens to
+1.6 s/39. There are three ways to switch it off and only one is available here: Ollama's API
+`think: false` works but **the Platform does not send it**; `PARAMETER think false` is **not a
+Modelfile parameter** (`Error: unknown parameter 'think'`); and `/no_think` in the prompt is obeyed by
+**gemma only** - the Qwen family ignores it (`qwen3:8b` stayed at 703 thinking characters,
+`qwen3:30b-a3b` at 1175). So the prompt decides the model, not the other way round: that is why the
+twins run `gemma4:26b` with `/no_think` as the **first** line (ADR 0061). Re-take the decision by
+re-running `scripts/model-bakeoff.py`, which scores candidates on the tool-call shapes that caused real
+incidents here rather than on a leaderboard.
+
+**A change to a Model Registry profile does not reach the Platform.** The profile *is* updatable, but
+only through the documented shape: `PATCH /model-registry-service/profiles/<id>` with the body wrapped
+in `{"update": {...}}` and every `models[]` entry carrying **both** `name` and `enabled` (create takes
+`name` alone). Any other shape - `{"profile": {...}}`, which is the *create* wrapper, or a bare
+`{"models": [...]}` - answers **200 and is silently ignored**, which reads exactly like "profiles cannot
+be updated" (it did to me, 2026-09-11, and that wrong conclusion reached an ADR). **`itential-builder:flowagent`
+documents this service - read it before probing the API by hand.**
+
+**Updating a profile's models orphans every agent bound to it.** Rewriting `models[]` **reissues each
+model's UUID**, and an agent's `provider.model` *is* that UUID: measured 2026-09-11, one profile PATCH
+took `agentCount` from **6 to 0** and every twin stopped resolving until re-bound. Always re-resolve the
+model ids and re-PATCH each agent's provider afterwards (the play does). Before deleting a profile
+instead, call `GET /model-registry-service/profiles/{id}/agent-impact` - deletion is an irreversible
+hard delete. So a base URL or a pinned model edited in
+`itential/versions.yaml` stays whatever the profile was created with, and the symptom is not an error:
+ADR 0060's move to `ollama.lab.internal` sat unapplied for a day while the profile held the raw address
+it was born with, and the lab worked because that address happened to still be right. **Check the
+profile document, not DNS resolution**, when you want to know what the Platform is using. The play now
+compares each live profile against the repo and deletes the drifted ones so the create step rebuilds
+them; before that it could not change a model at all - the failure was
+`model_ids ... No first item, sequence was empty`, which names nothing useful.
 
 **An agent burns an enormous number of tokens.** Measured: the raw compliance-report tools cost the
 compliance agent **638k input tokens** in one session. `wf-compliance-report-v1` reduces the reports on the
