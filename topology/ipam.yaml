@@ -17,7 +17,9 @@ home_lan:
   # the URL in itential/versions.yaml never carries a raw address.
   # This address IS inside the router's DHCP pool, so it is only stable while the router holds a
   # reservation for it - hence dhcp_reservation: true, which tests/test_ipam.py insists on for any
-  # pool address. Without the reservation the lease can move and every local agent fails at once.
+  # pool address. Confirmed set on the main router 2026-09-11 (owner). The consequence still stands if
+  # it is ever removed: the lease can move and every local agent fails at once, with nothing in the
+  # lab to blame - so re-check here before suspecting the Platform.
   inference_host:
     hostname: mac-mini
     address: 192.168.68.142
