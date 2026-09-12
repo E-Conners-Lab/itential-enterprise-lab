@@ -1,0 +1,77 @@
+# test-06-flowai 20260911T222503Z
+Anthropic token meter, last 7 days (169 sessions; prices per MTok in=2.0 out=10.0, anthropic only is billed)
+  anthropic  claude-sonnet-5    sessions= 135 in=  1819463 out=  38403  $  4.02
+  ollama     qwen2.5:7b         sessions=  33 in=   104367 out=   2829  $  0.00
+  ?          ?                  sessions=   1 in=     5923 out=    203  $  0.00
+spent $4.02 of the $15.00 weekly budget; $10.98 left
+  largest: lab-netops 2026-09-10T16:29 in=32822 (COMPLETE)
+  largest: lab-netops 2026-09-10T17:52 in=32771 (COMPLETE)
+  largest: netbox-sot 2026-09-10T18:16 in=26326 (COMPLETE)
+PASS  S4c.1 provider profiles anthropic (claude-sonnet-5) and ollama-lab (qwen2.5:7b) answer and list their pinned models
+      profiles: ['anthropic', 'ollama-lab', 'ollama-mac']
+      anthropic: claude-sonnet-5 enabled (id b2f044fe...)
+      anthropic provider answered: True 11 models listed
+      ollama-lab: qwen2.5:7b enabled (id e3d42212...)
+      ollama-lab provider answered: False 0 models listed
+PASS  S4c.2 lab-netops answers the running version of br1-wan01 and br1-sw01 via the Gateway 5 tool; equals direct SSH
+      tokens in=24136 out=236
+      br1-wan01: agent said 17.13.01a; tools ['dcim_devices_list', 'wf-show-version-v1']
+      tokens in=12363 out=122
+      br1-sw01: agent said 4.33.1.1F; tools ['wf-show-command-v1']
+PASS  S4c.3 lab-netops adds agent-20260911t222503z to br1 through wf-branch-vlan-v1 with the approval; second request is a no-op
+      approved job fd47bc0b56d943b0936aed25
+      tokens in=13637 out=356
+      run 1: VLAN 12 agent-20260911t222503z reserved, approved, configured
+      tokens in=11985 out=356
+      run 2: no-op (still exactly VLAN 12)
+PASS  S4c.4 lab-netops refuses core-router-99 (not in the inventory) without touching the gateway; session records token usage
+      tokens in=12001 out=187
+      refused: core-router-99 is not found in NetBox (0 results), so it's not part of the "lab" inventory. I can't run any gateway commands against it. Please confirm the corr
+PASS  S4c.5 lab-netops-local (ollama-lab qwen2.5:7b) answers the br1-sw01 version; response time and VM memory recorded
+      tokens in=2378 out=57
+      ollama-lab (qwen2.5:7b) answered in 93 s; VM RAM used 6404/7941 MB
+PASS  S4c.6 Claude Code's MCP tools start a lab-netops session (trigger_automation) and read the answer back (describe_session)
+      tokens in=12355 out=122
+      MCP trigger_automation(lab-netops) -> session 66b5a370-4e01-4099-960d-15f952a3ed1c -> 4.33.1.1F via describe_session
+PASS  S4c.7 wf-show-command-v1 returns structured 'show version': Genie on br1-wan01, TextFSM on br1-sw01, equal to direct SSH
+      br1-wan01: genie -> version.xe_version = 17.13.01a; matches direct SSH
+      br1-sw01: textfsm -> 0.image = 4.33.1.1F; matches direct SSH
+PASS  S4d.5a netbox-sot counts the active devices of dc1 through the NetBox integration; equals the NetBox API
+      tokens in=25725 out=109
+      netbox-sot: dc1 has 8 active devices (NetBox agrees); tools ['dcim_devices_list']
+PASS  S4d.5b device-ops reports br2-sw01's software version through the show-command workflow; equals direct SSH
+      tokens in=11812 out=256
+      device-ops: br2-sw01 runs 4.33.1.1F (direct SSH agrees); tools ['dcim_devices_list', 'wf-show-command-v1']
+PASS  S4d.5c compliance runs lab-baseline and reports the result; the batch reports read directly agree
+      tokens in=3533 out=119
+      compliance: lab-baseline clean on 12 devices; agent said 'all compliant'; tools ['wf-compliance-report-v1']
+PASS  S4d.5d diagnostics reads a verify-created incident about br2-sw01, checks the device and writes one 'Proposed fix' work note
+      tokens in=26173 out=1043
+      diagnostics: INC0010013 got the note 'Proposed fix: host'; tools ['dcim_devices_list', 'listIncidents', 'updateIncident', 'wf-show-command-v1']; push job b48f30d22007463c8404c15e made the drift
+PASS  S4d.5e remediation fixes the br2-sw01 hostname drift only through wf-config-push-v1; the card approved here; direct SSH confirms
+      tokens in=12753 out=822
+      remediation: proposed 'hostname br2-sw01', push job 6760b935d94a4248b28b9bdf approved here, br2-sw01 restored (direct SSH); tools ['dcim_devices_list', 'wf-compliance-report-v1', 'wf-config-push-v1']
+PASS  S4d.5f netbox-sot-local (ollama-lab qwen2.5:7b) answers br2-sw01's site; response time and VM memory recorded
+      tokens in=1627 out=47
+      netbox-sot-local (qwen2.5:7b) answered in 46 s; VM RAM used 6467/7941 MB
+PASS  S4d.5g wf-show-all-v1 parses 'show version' on every lab device in one call (direct SSH agrees); lab-netops-local answers an all-devices question from it
+      wf-show-all-v1: 12 devices, parsers ['genie', 'textfsm']
+      tokens in=4944 out=46
+      lab-netops-local counted 12 devices from one wf-show-all-v1 call in 166 s; tools ['wf-show-all-v1']
+PASS  S4d.5h an unknown device ends wf-show-command-v1 with device_error instead of hanging; device-ops-local reports br2-sw01's version
+      unknown device ends the job with device_error
+      tokens in=3521 out=103
+      device-ops-local: ['wf-netbox-devices-v1', 'wf-show-command-v1']
+PASS  S4d.5i compliance-local reports the plan results per device through wf-compliance-report-v1
+      tokens in=1504 out=249
+      compliance-local: ['wf-compliance-report-v1']
+FAIL  S4d.5j diagnostics-local reads the verify incident and checks the device it names
+      668d5075-2c72-463e-b02f-1582f4d679b9
+      session 668d5075-2c72-463e-b02f-1582f4d679b9 failed
+PASS  S4d.5k remediation-local refuses anything that is not a hostname and calls no tool
+      tokens in=388 out=58
+      remediation-local refused a non-hostname change without calling a tool
+closed INC0010013
+
+tokens spent this run: in=180835 out=4288 (Anthropic + local)
+passed=17 failed=1
