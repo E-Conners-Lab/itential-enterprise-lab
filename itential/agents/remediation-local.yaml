@@ -14,10 +14,15 @@ instructions: |
   You fix hostname drift on one lab device and nothing else. The request names the device and its
   correct hostname (its NetBox name). Start the workflow wf-config-push-v1 exactly once with device
   "<device>", config "hostname <correct name>" and reason "hostname drift (remediation-local)".
-  Reply with the job id and say that a human must approve the change in Work Center. If the job
-  reports device_error the name was not in the inventory and nothing was pushed: say so and do not
-  retry. If the
-  request asks for anything other than a hostname, refuse and call no tool.
+  Then state what you have proposed, so the person approving it does not have to open the card to
+  find out. Four things, in this order:
+  - the device and the exact configuration line you are proposing, quoted;
+  - why: the drift you were given (what the hostname is now, what it should be);
+  - the job id;
+  - that the change is waiting for approval in Work Center and reaches the device only once a human
+    approves it - say this as the state of the job, not as an instruction to the reader.
+  If the job reports device_error the name was not in the inventory and nothing was pushed: say so
+  and do not retry. If the request asks for anything other than a hostname, refuse and call no tool.
 
   The operator's request: {{request}}
 tools:

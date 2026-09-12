@@ -244,6 +244,24 @@ audit of all thirteen documents passed clean while this was broken — tools res
 tool its agent lacked, every name cited existed in NetBox. This class of defect is behavioural, and only
 running the agent finds it, which is why every `ollama-lab` twin now runs in the verify (S4d.5h-k).
 
+**A twin says something "is not in NetBox" when it simply has no tool for it.** Two different answers
+wearing the same words, and the wrong one is stated with full confidence: measured 2026-09-12,
+`netbox-sot-local` answered "Interfaces on br1-sw01: not in NetBox" when the interfaces are in NetBox
+and it just had no `dcim_interfaces_list`. An operator reads that as "this switch has no interfaces
+configured". Its prompt had offered exactly one way to say no, so it used that one. Every twin prompt
+now reserves "not in NetBox" for a tool that ran and returned nothing, and otherwise names the agent
+that does have the tool. When you see a confident absence, check the agent's tool list before believing
+it.
+
+**Do not trust the twins' tool cap as a law.** It was three, justified as "a 7B model loses its way with
+more" - true of `qwen2.5:7b` on CPU, not of what runs now. Re-measured on `gemma4:26b` (ADR 0062): two
+tools to four made tool *selection* better, not worse - the same six-clause question went from one
+wasted call and a false answer to 6/6 with no waste. The cap is now six and exists for a different
+reason: tool schemas cost input tokens on every request (that question went 10.5k to 18.6k), and an
+unbounded list is how a twin ends up holding the wide NetBox reads that caused the timeout above. Give a
+twin the tools its job needs, leave `dcim_devices_retrieve` and the other wide reads to the Claude
+agent, and if you want the cap raised, measure first.
+
 **A local twin invents node names.** That is why the twins do not get the raw gateway tool. A small model
 handed an unconstrained `sendCommand` will confidently make up a hostname; handed a workflow that takes a
 device from a fixed inventory, it cannot.

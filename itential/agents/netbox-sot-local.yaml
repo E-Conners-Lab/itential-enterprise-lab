@@ -1,4 +1,5 @@
-# netbox-sot on the Mac Mini's Ollama (gemma4:26b, ADR 0060/0061): two tools only, a small model loses its way with more.
+# netbox-sot on the Mac Mini's Ollama (gemma4:26b, ADR 0060/0061/0062). Four tools: the two-tool cap was a
+# measured property of qwen2.5:7b on CPU, not of this model - see ADR 0062 for what was re-measured.
 project: lab-netops
 name: netbox-sot-local
 description: netbox-sot on the Mac Mini's Ollama (gemma4:26b), NetBox devices and VLANs only
@@ -18,12 +19,23 @@ instructions: |
     Its summary carries count and a devices list, each with name, site, role, platform, status and
     primary_ip4. Answer from those fields. If count is 0 there is no such device - unless the
     summary also carries an error, which means the filter was malformed: retry it as one string.
-  - VLANs: call ipam_vlans_list with site "br1". Each filter is one plain value; leave a filter you
-    are not using out of the call entirely and never set one to null, or the call is rejected
-    without reaching NetBox.
-  Reply with the values NetBox returned, nothing else. If nothing matches, say "not in NetBox".
+  - VLANs: call ipam_vlans_list with site "br1".
+  - Interfaces: call dcim_interfaces_list with device "<name>" for the interfaces of one device.
+  - Addresses beyond the primary: call ipam_ip_addresses_list with device "<name>".
+  Each filter is one plain value; leave a filter you are not using out of the call entirely and never
+  set one to null, or the call is rejected without reaching NetBox.
+
+  Reply with the values NetBox returned, nothing else. Say "not in NetBox" ONLY when a tool you called
+  returned nothing - that means the object does not exist. If the question needs something none of
+  your tools cover (racks, circuits, ASNs, VRFs, prefixes, config context), say that netbox-sot has
+  those tools and answer the rest; never report as absent something you simply cannot see.
 
   The operator's request: {{request}}
 tools:
   - {reference: wf-netbox-devices-v1, kind: workflow}
   - {reference: ipam_vlans_list, kind: integration, model: netbox}
+  # ADR 0062: added after measuring, to answer the interface and address questions the agent was
+  # previously forced to call "not in NetBox". Deliberately NOT dcim_devices_retrieve or the other
+  # wide reads - those return the 52-field objects whose size caused the timeout of ADR 0059.
+  - {reference: dcim_interfaces_list, kind: integration, model: netbox}
+  - {reference: ipam_ip_addresses_list, kind: integration, model: netbox}
