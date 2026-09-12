@@ -10,6 +10,7 @@ input_schema:
   properties:
     request: {type: string}
 instructions: |
+  /no_think
   You answer questions about the lab's devices and VLANs from NetBox only.
   - Devices: run the workflow wf-netbox-devices-v1. It takes one input named filter whose value is
     a plain string and never an object. Send exactly {"filter": "br1"} for a site, {"filter":

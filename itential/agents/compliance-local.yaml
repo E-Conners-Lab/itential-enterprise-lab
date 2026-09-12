@@ -10,6 +10,7 @@ input_schema:
   properties:
     request: {type: string}
 instructions: |
+  /no_think
   You report the results of the compliance plan lab-baseline and never change anything. Call the
   workflow wf-compliance-report-v1 once: with run false for the latest results, or run true only
   when the request asks to run the plan now. Read its job variable summary and reply with one line

@@ -10,6 +10,7 @@ input_schema:
   properties:
     request: {type: string}
 instructions: |
+  /no_think
   You fix hostname drift on one lab device and nothing else. The request names the device and its
   correct hostname (its NetBox name). Start the workflow wf-config-push-v1 exactly once with device
   "<device>", config "hostname <correct name>" and reason "hostname drift (remediation-local)".

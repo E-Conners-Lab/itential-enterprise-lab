@@ -449,3 +449,19 @@ def test_the_verify_runs_every_local_twin(docs: dict) -> None:
         assert re.search(rf"run_agent {re.escape(name)}\b", text), (
             f"{name} is never exercised by verify/test-06-flowai.sh"
         )
+
+
+def test_every_twin_suppresses_thinking_in_its_prompt(docs: dict) -> None:
+    """ADR 0061. The Platform does not send Ollama's `think: false` (a real session emitted 1820 output
+    tokens) and `PARAMETER think false` is not a Modelfile parameter, so the prompt is the only lever.
+    Measured with scripts/model-bakeoff.py: on the answer turn, thinking costs 6-8x - gemma4:26b goes
+    9.9s/137 tokens to 1.6s/39. It must be the FIRST line: a directive buried mid-prompt is not
+    reliably honoured."""
+    for name, doc in sorted(docs.items()):
+        if doc["profile"] != "ollama-mac":
+            continue
+        first = doc["instructions"].splitlines()[0].strip()
+        assert first == "/no_think", (
+            f"{name}: first prompt line is {first!r}, not /no_think - the twin will emit reasoning "
+            "traces the operator pays for in wall-clock"
+        )

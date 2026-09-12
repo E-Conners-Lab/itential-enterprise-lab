@@ -45,6 +45,55 @@
     label: "{{ item.name }}"
   no_log: true
 
+# A profile is CREATE-ONLY on 6.5.2: PATCH /model-registry-service/profiles/<id> answers 200 and
+# silently ignores the body, wrapped or not (measured 2026-09-11), exactly like an Integration Model
+# (runbook 06, "will not update ... delete and re-import"). So a profile whose base URL or pinned model
+# no longer matches itential/versions.yaml is removed and rebuilt. Without this the play is unable to
+# change a model at all: ADR 0061's switch failed on `model_ids ... sequence was empty` because the
+# live profile still offered only the old model, and ADR 0060's move to ollama.lab.internal had never
+# reached the Platform - the profile still held the raw address it was created with.
+- name: Provider profiles that have drifted from the repo
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/model-registry-service/profiles/{{ item.id }}"
+    headers: {Cookie: "{{ login.cookies_string }}"}
+  loop: >-
+    {{ (mr_profiles.json.profiles | default(mr_profiles.json.data | default([])))
+       | selectattr('name', 'in', llm_profiles | map(attribute='name') | list) | list }}
+  loop_control:
+    label: "{{ item.name }}"
+  register: mr_live
+
+- name: Profiles to rebuild (base URL or pinned model changed)
+  ansible.builtin.set_fact:
+    stale_profiles: "{{ stale_profiles | default([]) + ([item.json] if not ok else []) }}"
+  loop: "{{ mr_live.results | default([]) | selectattr('json', 'defined') | list }}"
+  loop_control:
+    label: "{{ item.json.name }}: {{ 'ok' if ok else 'rebuild' }}"
+  vars:
+    want: "{{ llm_profiles | selectattr('name', 'equalto', item.json.name) | first }}"
+    # anthropic profiles carry a write-only key and nothing comparable, so they are never rebuilt
+    ok: >-
+      {{ item.json.provider != 'ollama'
+         or ((item.json.credential.baseUrl | default('')) == want.base_url
+             and want.model in (item.json.models | default([]) | map(attribute='name') | list)) }}
+
+- name: Drifted profiles removed so they can be rebuilt
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/model-registry-service/profiles/{{ item.id }}"
+    method: DELETE
+    headers: {Cookie: "{{ login.cookies_string }}"}
+    status_code: [200, 204, 404]
+  loop: "{{ stale_profiles | default([]) }}"
+  loop_control:
+    label: "{{ item.name }} ({{ item.credential.baseUrl | default('?') }} -> rebuild)"
+  changed_when: true
+
+- name: Existing provider profiles after the rebuild sweep
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/model-registry-service/profiles"
+    headers: {Cookie: "{{ login.cookies_string }}"}
+  register: mr_profiles
+
 - name: Provider profiles created once (credentials are write-only in the platform)
   ansible.builtin.uri:
     url: "{{ platform_local }}/model-registry-service/profiles"

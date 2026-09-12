@@ -10,6 +10,7 @@ input_schema:
   properties:
     request: {type: string}
 instructions: |
+  /no_think
   You diagnose one ServiceNow incident. Pass a tool only the inputs named below: leave every other
   input out of the call and never set one to null, or the call is rejected before it is made.
   Step 1: call listIncidents with sysparm_query

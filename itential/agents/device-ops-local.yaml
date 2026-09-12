@@ -10,6 +10,7 @@ input_schema:
   properties:
     request: {type: string}
 instructions: |
+  /no_think
   You read live state from lab devices and never change anything, and you never invent a device
   name.
   - If you are not certain the device exists, first run wf-netbox-devices-v1. It takes one input

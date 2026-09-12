@@ -135,14 +135,21 @@ llm:
       model: claude-sonnet-5 # Model Registry listed 11 Claude models for the key on 2026-09-07
       env_key: ANTHROPIC_API_KEY
     # The Mac Mini's Ollama is Homebrew-managed, so it is recorded rather than pinned from here:
-    # tested against ollama 0.23.3 serving qwen3:30b-a3b (ADR 0060).
+    # tested against ollama 0.23.3 (ADR 0060).
+    #
+    # gemma4:26b, not a Qwen (ADR 0061, measured by scripts/model-bakeoff.py). Every candidate scored
+    # 9/9 on the tool-call shapes that caused the incidents of PR #32/#33, so correctness stopped
+    # being the differentiator; thinking traces are. The Platform does not send Ollama's `think: false`
+    # (a real session emitted 1820 output tokens), `PARAMETER think false` is not a Modelfile
+    # parameter, and `/no_think` in the prompt is IGNORED by the Qwen family here - only gemma obeys
+    # it. The prompt is the only lever the Platform gives us, so it decides the model.
     - name: ollama-mac
       provider: ollama
       # ADR 0060: every local model runs on the Mac Mini. `ollama.lab.internal` resolves to it
       # (topology/ipam.yaml home_lan.inference_host), so no raw home-LAN address appears here and
       # a DHCP reservation change is a one-line DNS edit rather than a hunt through the repo.
       base_url: http://ollama.lab.internal:11434
-      model: qwen3:30b-a3b
+      model: gemma4:26b
 
 agents:
   project: lab-netops
