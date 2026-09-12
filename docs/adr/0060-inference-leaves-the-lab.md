@@ -52,8 +52,10 @@ The owner's instruction: **no inference on the server; the Mac Mini is the infer
    `tools-01` to the Mac, declared once in `topology/ipam.yaml` as `home_lan.inference_host` and
    rendered into unbound by `oob-gw.yml`. The Mac's address is **inside the router's DHCP pool**, so
    it is only stable while the router holds a reservation: `dhcp_reservation: true` records that, and
-   `tests/test_ipam.py` refuses a pool address without it. This is the weakest link in the design and
-   it is deliberately written down rather than left tacit.
+   `tests/test_ipam.py` refuses a pool address without it. **The reservation was set on the main
+   router and confirmed by the owner on 2026-09-11**, so the address is now a property of the router
+   rather than an assumption - but the field and its test stay, because the requirement is what they
+   assert and the failure mode returns the moment the reservation does not.
 4. **An unreachable Mac fails the play loudly.** There is no in-lab fallback *by design*, so
    `flowai.yml` asserts the endpoint answers and carries the pinned model before touching an agent,
    and names every cause in the failure message: Mac asleep, `ollama serve` down, firewall, or a moved
@@ -70,9 +72,11 @@ The owner's instruction: **no inference on the server; the Mac Mini is the infer
 - **The lab is no longer self-contained, and `verify` now requires the Mac awake.** ADR 0037's
   premise is reversed knowingly: a sleeping Mac is a red suite, not a skipped criterion. The failure
   messages say so, so it reads as a missing dependency rather than a lab fault.
-- Two manual steps exist that no play can perform, both recorded in `scripts/mac-ollama.sh`: the macOS
-  firewall allowance (which must be repeated after a `brew upgrade`, since the Cellar path changes)
-  and the router's DHCP reservation.
+- Two manual steps exist that no play can perform, both recorded in `scripts/mac-ollama.sh`. The
+  router's DHCP reservation is **done** (2026-09-11). The macOS firewall allowance is done but cannot
+  be locked in the same way: macOS keys it to the resolved binary path, so a `brew upgrade ollama`
+  changes the Cellar version and the allowance has to be re-added. That one remains the standing
+  manual dependency.
 - Not addressed: the twins' prompts were tuned for a 7B model - three tools each, heavy reduction. A
   30B MoE may not need those constraints, but that is a behavioural change to make with measurements,
   not with this migration.
