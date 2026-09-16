@@ -161,7 +161,15 @@ of this one.
 
 **Zabbix cannot reach its database.** The chart takes an external PostgreSQL through
 `postgresAccess.existingSecretName`, which lines up with CloudNativePG's `<cluster>-app` secret; the
-chart's own PostgreSQL is a plain StatefulSet with no backups, which is why it is not used.
+chart's own PostgreSQL is a plain StatefulSet outside the operator, which is why it is not used. Neither is backed
+up: the Zabbix configuration is rebuilt from the repo, and only metric history is lost with the database
+([ADR 0064](../adr/0064-lab-databases-are-rebuildable-not-backed-up.md)).
+
+**Zabbix is down and `zabbix-db` says "Not enough disk space", its postgres crash-looping.** The database
+volume is full. When this lab archived WAL to Garage, a full Garage stopped the archiver and the unarchived WAL
+filled the volume; that is why nothing archives any more. A full volume still has to grow before postgres will
+start: raise `storage.size` in the manifest (CNPG resizes the PVC through Longhorn) rather than deleting WAL by
+hand. Check `kubectl -n observability get cluster zabbix-db` for the phase and the PVC's capacity.
 
 **Rotating the stock Zabbix password fails and the API will not say why.** `user.update` requires
 `current_passwd` alongside the new `passwd` when changing your own user's password. Omit it and the call is
@@ -237,7 +245,7 @@ helper has to clear the bearer token first.
 | Component | Version |
 |---|---|
 | Zabbix | chart 7.1.0, images `alpine-7.0.30`, agent 2 `7.0.30-1` (Ubuntu 24.04 and 22.04). Server memory **2Gi** — at 1Gi it was OOMKilled twelve times in 35 h |
-| Zabbix database | CloudNativePG, PostgreSQL 18.6, 10 Gi |
+| Zabbix database | CloudNativePG, PostgreSQL 18.6, 12 Gi, not backed up (ADR 0064) |
 | kube-prometheus-stack | chart 89.2.3 — operator `v0.93.1`, Prometheus `v3.14.0`, Alertmanager `v0.34.0`, Grafana 13.2.1 |
 | Grafana Zabbix plugin | `alexanderzobnin-zabbix-app@6.6.0` |
 | SNMP exporter | chart 9.17.1, `v0.30.1` (expands `${VAR}` so passphrases stay in a Secret) |

@@ -20,7 +20,7 @@ traefik:
 zabbix_db:
   name: zabbix-db
   postgres_image: ghcr.io/cloudnative-pg/postgresql:18.6 # = k8s/platform/versions.yaml components.cnpg.postgres_image
-  storage_gb: 10
+  storage_gb: 12 # ADR 0064: grown once so a full volume lets postgres start
 
 components:
   zabbix:

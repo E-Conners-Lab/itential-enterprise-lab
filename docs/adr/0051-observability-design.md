@@ -1,6 +1,6 @@
 # 0051 — Observability (S7): what Zabbix owns and what Prometheus owns, TLS at Traefik on the planned VIPs, exporters, the device telemetry lines, and what this phase leaves out
 
-- **Status:** accepted (owner approval 2026-09-10, PR #22)
+- **Status:** accepted (owner approval 2026-09-10, PR #22); decision 3 amended 2026-09-16 by ADR 0064 (`zabbix-db` is not backed up, 12 Gi)
 - **Date:** 2026-09-09
 - **Related:** ADR 0024 (chart versions, kept), ADR 0034 (device design), ADR 0040/0041 (`wf-config-push-v1` is the only device write path), ADR 0048 (the topology YAML is the only oracle for device config), ADR 0050 (phase order, Windows dropped), PID S7 (amendment 1.16)
 
@@ -70,7 +70,8 @@ the lab CA, CloudNativePG, Traefik on `.32` with the wildcard `*.lab.internal` c
    89.2.4 and 90.0.0 exist (2026-09) and are not taken: the manifest was verified against 89.2.3.
 3. **One namespace `observability`**, a CloudNativePG cluster `zabbix-db` (PostgreSQL 18.6, 10 Gi Longhorn,
    WAL archiving and a nightly base backup to Garage through the Barman Cloud plugin exactly like
-   `platform-db`; the Garage credentials are copied into the namespace by the play), Longhorn volumes for
+   `platform-db`; the Garage credentials are copied into the namespace by the play; *amended by ADR 0064:
+   12 Gi, no archiving, no backup, no Garage credentials in the namespace*), Longhorn volumes for
    Prometheus (10 Gi, 10 days / 8 GB retention), Loki (10 Gi, 7 days), Grafana and Alertmanager (1 Gi each).
    RAM requests stay inside the `docs/resource-budget.md` section 4 rows (Zabbix 1.5 GB, kube-prometheus-stack
    3 GB, Loki + Alloy 2.5 GB, gNMIc 0.3 GB).
