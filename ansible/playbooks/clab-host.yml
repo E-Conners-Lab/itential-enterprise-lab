@@ -1,0 +1,320 @@
+---
+# The Containerlab host for the dev topology (ADR 0063; PID S10.6). Runs after tofu/clab created VM 230 and
+# netbox-vms.yml registered it (role clab-host). OS baseline copied from itential-host.yml (cloud-init wait,
+# hostname, chrony, lab CA, Docker CE pinned), then nested KVM, containerlab at the oracle's version, the
+# routed mgmt network with its DOCKER-USER allowlist, vrnetlab at the pinned commit and the two images.
+# Run twice by `make clab-dev`: before `images/fetch.sh clab-load` (Docker and /srv/stage exist, images are
+# skipped) and after it (cEOS imported, the vrnetlab C8000v image built). clab-dev.yml asserts both images.
+- name: Prepare the Containerlab host
+  hosts: clab-host
+  become: true
+  gather_facts: true
+  vars_files:
+    - ../../clab/versions.yaml
+  vars:
+    # Docker CE has one pin in the repo; the clab host runs the same engine as the dev stack
+    docker_ce: "{{ (lookup('ansible.builtin.file', playbook_dir ~ '/../../itential/versions.yaml') | from_yaml).docker_ce }}"
+    docker_apt_version: "5:{{ docker_ce }}"
+    # checksums.txt of the GitHub release v{{ containerlab }} (2026-08-21); a new pin needs a new checksum
+    containerlab_deb: containerlab_{{ containerlab }}_linux_amd64.deb
+    containerlab_deb_sha256: a399d92a622b4664d8d1231bc9b7f53a1d210255a0306fa091c3f63779f65f13
+    vrnetlab_dir: /opt/vrnetlab
+    stage_dir: /srv/stage
+    c8000v_file: "{{ images.c8000v.staged | basename }}"
+    ceos_file: cEOS64-lab-{{ images.ceos.version }}.tar.xz
+  tasks:
+    - name: Wait for cloud-init
+      ansible.builtin.command: cloud-init status --wait
+      changed_when: false
+      failed_when: false
+
+    - name: Hostname equals the NetBox name
+      ansible.builtin.hostname:
+        name: "{{ inventory_hostname }}"
+
+    - name: Baseline packages (+ KVM tooling for vrnetlab, paramiko for the licence check in clab-dev.yml)
+      ansible.builtin.apt:
+        name: [chrony, qemu-guest-agent, ca-certificates, curl, gnupg, jq, git, make, qemu-kvm, cpu-checker, python3-paramiko, iptables]
+        state: present
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Guest agent running
+      ansible.builtin.systemd:
+        name: qemu-guest-agent
+        enabled: true
+        state: started
+
+    - name: Time from oob-gw
+      ansible.builtin.copy:
+        dest: /etc/chrony/sources.d/lab.sources
+        content: "server 10.100.0.1 iburst prefer\n"
+        mode: "0644"
+      notify: Restart chrony
+
+    - name: Lab root CA trusted system-wide
+      ansible.builtin.copy:
+        src: ../../docs/lab-root-ca.crt
+        dest: /usr/local/share/ca-certificates/lab-root-ca.crt
+        mode: "0644"
+      notify: Update CA trust
+
+    # --- nested KVM: the C8000v nodes are QEMU VMs inside vrnetlab containers --------------------
+    - name: KVM acceleration is usable (tofu/clab sets cpu type host; without vmx this fails)
+      ansible.builtin.command: kvm-ok
+      changed_when: false
+
+    - name: /dev/kvm exists
+      ansible.builtin.stat:
+        path: /dev/kvm
+      register: dev_kvm
+      failed_when: not dev_kvm.stat.exists
+
+    - name: Sysctls for many containers (cEOS agents exhaust the default inotify instances)
+      ansible.posix.sysctl:
+        name: "{{ item.name }}"
+        value: "{{ item.value }}"
+        sysctl_file: /etc/sysctl.d/90-clab.conf
+        reload: true
+      loop:
+        - {name: fs.inotify.max_user_instances, value: "1024"}
+        - {name: fs.inotify.max_user_watches, value: "1048576"}
+      loop_control:
+        label: "{{ item.name }}={{ item.value }}"
+
+    # --- Docker CE, pinned (itential/versions.yaml docker_ce) ---------------------------------------
+    - name: Docker apt key
+      ansible.builtin.get_url:
+        url: https://download.docker.com/linux/ubuntu/gpg
+        dest: /etc/apt/keyrings/docker.asc
+        mode: "0644"
+
+    - name: Docker apt repository
+      ansible.builtin.apt_repository:
+        repo: >-
+          deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.asc]
+          https://download.docker.com/linux/ubuntu {{ ansible_facts.distribution_release }} stable
+        filename: docker
+        state: present
+
+    - name: Docker CE at {{ docker_ce }}
+      ansible.builtin.apt:
+        name:
+          - "docker-ce={{ docker_apt_version }}"
+          - "docker-ce-cli={{ docker_apt_version }}"
+          - containerd.io
+          - docker-buildx-plugin # vrnetlab's `docker build`; the legacy builder is deprecated on 29.x
+        state: present
+        allow_downgrade: true
+
+    - name: Hold the Docker packages at the pin
+      ansible.builtin.dpkg_selections:
+        name: "{{ item }}"
+        selection: hold
+      loop: [docker-ce, docker-ce-cli]
+
+    - name: Docker daemon settings (log rotation)
+      ansible.builtin.copy:
+        dest: /etc/docker/daemon.json
+        content: "{{ {'log-driver': 'json-file', 'log-opts': {'max-size': '20m', 'max-file': '5'}} | to_nice_json }}\n"
+        mode: "0644"
+      notify: Restart docker
+
+    - name: Docker running
+      ansible.builtin.systemd:
+        name: docker
+        enabled: true
+        state: started
+
+    - name: Operator user in the docker group (fetch.sh clab-load runs as ubuntu)
+      ansible.builtin.user:
+        name: ubuntu
+        groups: docker
+        append: true
+
+    - name: Staging directory for images/fetch.sh clab-load
+      ansible.builtin.file:
+        path: "{{ stage_dir }}"
+        state: directory
+        owner: ubuntu
+        group: ubuntu
+        mode: "0755"
+
+    # --- containerlab, pinned ------------------------------------------------------------------------
+    # The release .deb with its published checksum rather than `curl | bash` of get.containerlab.dev: the same
+    # version, but the bytes are verified before they are installed.
+    - name: Containerlab package {{ containerlab }}
+      ansible.builtin.get_url:
+        url: https://github.com/srl-labs/containerlab/releases/download/v{{ containerlab }}/{{ containerlab_deb }}
+        dest: /var/cache/{{ containerlab_deb }}
+        checksum: sha256:{{ containerlab_deb_sha256 }}
+        mode: "0644"
+
+    - name: Containerlab installed
+      ansible.builtin.apt:
+        deb: /var/cache/{{ containerlab_deb }}
+        allow_downgrade: true
+
+    - name: Containerlab version
+      ansible.builtin.command: containerlab version
+      register: clab_version
+      changed_when: false
+
+    - name: Containerlab version equals clab/versions.yaml
+      ansible.builtin.assert:
+        that: clab_version.stdout is search('version:\s+' ~ (containerlab | regex_escape) ~ '\b')
+        fail_msg: "containerlab reports {{ clab_version.stdout_lines | select('search', 'version') | list }}, oracle {{ containerlab }}"
+        quiet: true
+
+    # --- the routed mgmt network (ADR 0063, ADR 0030) -----------------------------------------------
+    # Pre-created so its bridge name and gateway are the oracle's, not containerlab's defaults. nat-unprotected
+    # keeps outbound NAT for the nodes (NTP, DNS) without Docker 28+'s block on routed inbound traffic; replies
+    # to inbound flows are never NATed, so the Mac sees the node's own address (symmetric via oob-gw).
+    - name: Existing mgmt network
+      ansible.builtin.command: docker network inspect {{ mgmt.network }}
+      register: mgmt_net
+      changed_when: false
+      failed_when: false
+
+    - name: Mgmt network created with the oracle subnet, gateway and bridge {{ mgmt.network }}
+      ansible.builtin.command: >-
+        docker network create --driver bridge
+        --subnet {{ mgmt.prefix }} --gateway {{ mgmt.gateway }}
+        -o com.docker.network.bridge.name={{ mgmt.bridge }}
+        -o com.docker.network.bridge.gateway_mode_ipv4=nat-unprotected
+        {{ mgmt.network }}
+      when: mgmt_net.rc != 0
+      changed_when: true
+
+    - name: Mgmt network as Docker holds it
+      ansible.builtin.command: docker network inspect {{ mgmt.network }}
+      register: mgmt_net_now
+      changed_when: false
+
+    - name: Mgmt network matches the oracle (a stale network with another subnet is never reused silently)
+      ansible.builtin.assert:
+        that:
+          - net.IPAM.Config[0].Subnet == mgmt.prefix
+          - net.IPAM.Config[0].Gateway == mgmt.gateway
+          - net.Options['com.docker.network.bridge.name'] == mgmt.bridge
+        fail_msg: "docker network {{ mgmt.network }} differs from clab/versions.yaml mgmt; containerlab destroy, docker network rm, re-run"
+        quiet: true
+      vars:
+        net: "{{ mgmt_net_now.stdout | from_json | first }}"
+
+    # Owner decision 2026-09-16: only access_allow may open connections to the nodes. Persisted as a script
+    # plus a unit bound to docker.service, because Docker rebuilds its FORWARD chains on every start.
+    - name: DOCKER-USER allowlist script (clab/docker-user.sh.j2)
+      ansible.builtin.template:
+        src: ../../clab/docker-user.sh.j2
+        dest: /usr/local/sbin/clab-dev-access.sh
+        mode: "0755"
+      register: access_script
+
+    - name: Unit that re-applies the allowlist whenever Docker starts
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/clab-dev-access.service
+        mode: "0644"
+        content: |
+          [Unit]
+          Description=DOCKER-USER allowlist for the clab dev mgmt network (ADR 0063)
+          After=docker.service
+          Requires=docker.service
+          PartOf=docker.service
+
+          [Service]
+          Type=oneshot
+          RemainAfterExit=true
+          ExecStart=/usr/local/sbin/clab-dev-access.sh
+
+          [Install]
+          WantedBy=docker.service
+      register: access_unit
+
+    - name: Allowlist unit enabled and applied now
+      ansible.builtin.systemd:
+        name: clab-dev-access
+        enabled: true
+        state: "{{ 'restarted' if (access_script is changed or access_unit is changed) else 'started' }}"
+        daemon_reload: "{{ access_unit is changed }}"
+
+    - name: The allowlist is live (jump first in DOCKER-USER, one ACCEPT per access_allow entry)
+      ansible.builtin.command: iptables -w -S CLAB-DEV-MGMT
+      register: access_rules
+      changed_when: false
+      failed_when: >-
+        (access_rules.stdout_lines | select('search', ' -s .* -j ACCEPT') | map('regex_replace', '^.* -s (\S+) .*$', '\\1') | list)
+        != access_allow
+
+    # --- vrnetlab at the pinned commit, and the images -----------------------------------------------
+    - name: Vrnetlab at {{ images.c8000v.vrnetlab_commit[:12] }}
+      ansible.builtin.git:
+        repo: "{{ images.c8000v.vrnetlab_repo }}"
+        dest: "{{ vrnetlab_dir }}"
+        version: "{{ images.c8000v.vrnetlab_commit }}"
+        force: false # the staged qcow2 is untracked (*.qcow2 is in vrnetlab's .gitignore)
+
+    - name: Images already in Docker
+      ansible.builtin.command: docker image inspect {{ item }}
+      loop: ["{{ images.ceos.tag }}", "{{ images.c8000v.tag }}"]
+      register: have_images
+      changed_when: false
+      failed_when: false
+
+    - name: Staged files from images/fetch.sh clab-load
+      ansible.builtin.stat:
+        path: "{{ stage_dir }}/{{ item }}"
+        get_checksum: false
+      loop: ["{{ ceos_file }}", "{{ c8000v_file }}"]
+      register: staged
+
+    - name: Import cEOS as {{ images.ceos.tag }}
+      ansible.builtin.command: docker import {{ stage_dir }}/{{ ceos_file }} {{ images.ceos.tag }}
+      when: have_images.results[0].rc != 0 and staged.results[0].stat.exists
+      changed_when: true
+
+    - name: C8000v qcow2 in the vrnetlab build directory (the filename carries the version vrnetlab parses)
+      ansible.builtin.copy:
+        src: "{{ stage_dir }}/{{ c8000v_file }}"
+        dest: "{{ vrnetlab_dir }}/cisco/c8000v/{{ c8000v_file }}"
+        remote_src: true
+        mode: "0644"
+      when: have_images.results[1].rc != 0 and staged.results[1].stat.exists
+
+    # Only the autonomous variant: `make docker-image` would also build the SD-WAN controller variant, which
+    # the dev topology never runs. The build boots the VM once under KVM to set the serial console (10-20 min).
+    - name: Build the C8000v image with vrnetlab {{ images.c8000v.tag }}
+      ansible.builtin.command:
+        cmd: make IMAGE={{ c8000v_file }} MODE=autonomous docker-build
+        chdir: "{{ vrnetlab_dir }}/cisco/c8000v"
+      when: have_images.results[1].rc != 0 and staged.results[1].stat.exists
+      changed_when: true
+      async: 3600
+      poll: 30
+
+    - name: Images present now
+      ansible.builtin.command: docker image inspect {{ item }}
+      loop: ["{{ images.ceos.tag }}", "{{ images.c8000v.tag }}"]
+      register: have_images_after
+      changed_when: false
+      failed_when: false
+
+    - name: Missing images are named (expected on the first run, before images/fetch.sh clab-load)
+      ansible.builtin.debug:
+        msg: "not yet in Docker: {{ have_images_after.results | rejectattr('rc', 'equalto', 0) | map(attribute='item') | list }}"
+      when: have_images_after.results | rejectattr('rc', 'equalto', 0) | list | length > 0
+
+  handlers:
+    - name: Restart chrony
+      ansible.builtin.systemd:
+        name: chrony
+        state: restarted
+
+    - name: Update CA trust
+      ansible.builtin.command: update-ca-certificates
+      changed_when: true
+
+    - name: Restart docker
+      ansible.builtin.systemd:
+        name: docker
+        state: restarted

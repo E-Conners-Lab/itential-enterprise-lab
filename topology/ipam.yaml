@@ -33,6 +33,11 @@ prefixes:
   - {prefix: 10.101.0.0/16, status: reserved, role: dc-inband, description: "DC1 in-band, detailed in phase 4"}
   - {prefix: 10.102.0.0/16, status: reserved, role: branch-inband, description: "Branch in-band, one /20 per branch, phase 4"}
   - {prefix: 10.103.0.0/16, status: reserved, role: wan-transit, description: "WAN / transit / loopbacks, phase 4"}
+  # ADR 0063: the Containerlab dev topology. Not 10.100.1.0/24, which ADR 0003 keeps for a second OOB VLAN.
+  # The mgmt /24 is routed via clab (static routes on oob-gw and itential-dev), so the Mac and the dev stack
+  # reach each node on its own address; the in-band /24 never leaves the clab host.
+  - {prefix: 10.100.2.0/24, status: active, role: clab-management, description: "Containerlab mgmt, routed via clab 10.100.0.224 (ADR 0063)"}
+  - {prefix: 10.100.3.0/24, status: reserved, role: clab-inband, description: "clab dev topology links and loopbacks, never routed off clab (ADR 0063)"}
 
 ranges:
   - {start: 10.100.0.32, end: 10.100.0.63, role: metallb-pool, status: reserved, description: "MetalLB L2 pool (phase 3)"}
@@ -59,8 +64,10 @@ addresses:
   - {address: 10.100.0.42, hostname: gitea, placement: k3s-vip, phase: 9, status: reserved}
   - {address: 10.100.0.64, hostname: netbox, placement: proxmox-vm, phase: 2, status: active, description: "VM 110 second NIC"}
   # aliases are extra A records for the same address (unbound on oob-gw renders them).
-  # 10.100.0.65 released at S11.8 on 2026-09-10: VM 205, the dev-stack, was deleted once the cut-over moved
-  # the service name to iap-lb and S11.5 proved every asset it held exists on production (ADR 0053/0055).
+  # 10.100.0.65 was released at S11.8 (2026-09-10, ADR 0053) and returns for the Copilot dev stack (ADR 0063)
+  # under new names only: `itential` and `mcp` stay aliases of production's iap-lb and tools-01, and
+  # tests/test_ipam.py fails if any name or alias appears twice.
+  - {address: 10.100.0.65, hostname: itential-dev, placement: proxmox-vm, phase: 5, status: reserved, aliases: [mcp-dev], description: "dev stack for Copilot prototyping (ADR 0063)"}
   - {address: 10.100.0.67, hostname: nios, placement: proxmox-vm, phase: 13, status: reserved, description: "firewall track (ADR 0050)"}
   - {address: 10.100.0.68, hostname: ddi-fallback, placement: proxmox-vm, phase: 11, status: reserved}
   - {address: 10.100.0.70, hostname: panorama, placement: proxmox-vm, phase: 13, status: reserved}
@@ -97,5 +104,5 @@ addresses:
   - {address: 10.100.0.194, hostname: br2-pc01, placement: eve-endpoint, phase: 4, status: reserved}
   - {address: 10.100.0.195, hostname: br1-host01, placement: eve-endpoint, phase: 4, status: reserved}
   - {address: 10.100.0.196, hostname: br2-host01, placement: eve-endpoint, phase: 4, status: reserved}
-  - {address: 10.100.0.224, hostname: clab, placement: clab, phase: 12, status: reserved}
+  - {address: 10.100.0.224, hostname: clab, placement: clab, phase: 12, status: reserved, description: "Containerlab host; gateway for 10.100.2.0/24 (ADR 0063)"}
   - {address: 10.100.0.239, hostname: verify-scratch, placement: clab, phase: 2, status: reserved, description: "verify/ scratch VM only"}

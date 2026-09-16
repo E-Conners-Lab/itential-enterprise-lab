@@ -1,6 +1,6 @@
 # 0035 — Itential runs as the vendored `itential-dev-stack` containers on one Ubuntu VM with Docker CE
 
-- **Status:** accepted
+- **Status:** accepted — placement amended by ADR 0053 (VM 205 retired at S11.8, `mcp.lab.internal` moved to `tools-01`) and ADR 0063 (the VM returns as `itential-dev` with the alias `mcp-dev`)
 - **Date:** 2026-09-07
 - **Amends:** ADR 0020 (RPM/deployer on two Rocky VMs), PID S4 (v1.4)
 

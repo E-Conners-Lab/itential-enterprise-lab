@@ -5,7 +5,8 @@
 # phase-2 inventory knows (-i inventory/phase2.yml: eve-ng on Ubuntu 22.04, netbox-vm). Package versions and
 # the release-package checksums come from k8s/observability/versions.yaml. Idempotent.
 - name: Zabbix agent 2 and syslog forwarding on every Ubuntu machine
-  hosts: ubuntu-24-04:ubuntu-22-04:eve:netbox
+  # ADR 0063: the sandbox VMs (NetBox roles itential-host, clab-host) are not monitored, so they get no agent
+  hosts: ubuntu-24-04:ubuntu-22-04:eve:netbox:!itential-host:!clab-host
   become: true
   gather_facts: false # facts are gathered below, after the login user is settled
   vars_files:

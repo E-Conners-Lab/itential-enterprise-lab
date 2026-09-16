@@ -80,6 +80,42 @@ def test_oob_prefix_present(ipam: dict) -> None:
     assert OOB in nets and SUPERNET in nets
 
 
+def test_clab_prefixes(ipam: dict) -> None:
+    """ADR 0063: the Containerlab dev topology has a routed management /24 and a host-internal in-band /24.
+    Neither may be 10.100.1.0/24, which ADR 0003 keeps for a second OOB VLAN, and neither may overlap the OOB
+    /24 or each other - an overlap would make the static route on oob-gw swallow live lab addresses."""
+    by_role = {r["role"]: r for r in ipam["prefixes"]}
+    assert "clab-management" in by_role and "clab-inband" in by_role, "the clab prefixes are missing (ADR 0063)"
+    mgmt = ipaddress.ip_network(by_role["clab-management"]["prefix"])
+    inband = ipaddress.ip_network(by_role["clab-inband"]["prefix"])
+    assert mgmt == ipaddress.ip_network("10.100.2.0/24") and inband == ipaddress.ip_network("10.100.3.0/24")
+    assert by_role["clab-management"]["status"] == "active", "the mgmt prefix is routed and in use"
+    second_oob = ipaddress.ip_network("10.100.1.0/24")
+    for net in (mgmt, inband):
+        assert net.subnet_of(SUPERNET), f"{net} is outside {SUPERNET}"
+        assert not net.overlaps(OOB), f"{net} overlaps the OOB /24"
+        assert not net.overlaps(second_oob), f"{net} takes the second-OOB reservation of ADR 0003"
+    assert not mgmt.overlaps(inband), "the clab mgmt and in-band prefixes overlap"
+    clab = next(r for r in _addr_rows(ipam) if r["hostname"] == "clab")
+    assert clab["address"] == "10.100.0.224", "the mgmt prefix is routed via clab at .224"
+
+
+def test_every_name_and_alias_is_unique_across_the_plan(ipam: dict) -> None:
+    """Hostnames and aliases all become A records in one zone (unbound on oob-gw). A name used twice resolves to
+    two addresses and a client picks one at random - the DNS collision ADR 0063 must never cause by giving the
+    dev stack `itential` or `mcp`, which production has carried since the S11 cut-over."""
+    names = []
+    for row in _addr_rows(ipam):
+        names.append(row["hostname"])
+        names.extend(row.get("aliases", []))
+    inference = ipam["home_lan"].get("inference_host")
+    if inference:
+        names.append(inference["hostname"])
+        names.extend(inference.get("aliases", []))
+    duplicates = sorted({n for n in names if names.count(n) > 1})
+    assert not duplicates, f"names resolve to more than one address: {duplicates}"
+
+
 def test_addresses_unique_and_in_oob(ipam: dict) -> None:
     rows = _addr_rows(ipam)
     addrs = [row["address"] for row in rows]

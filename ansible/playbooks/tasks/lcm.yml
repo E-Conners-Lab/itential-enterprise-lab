@@ -149,5 +149,9 @@
   loop: "{{ nb_vlans.json.results }}"
   loop_control:
     label: "{{ item.site.slug }}-{{ item.name }} (vid {{ item.vid }})"
-  when: (item.site.slug ~ '-' ~ item.name) not in (instances_now.json.data | map(attribute='name') | list)
+  # lcm_import_instances defaults to true (production); the dev overlay turns it off because production
+  # NetBox's branch VLANs describe EVE-NG switches the dev stack does not have (ADR 0063)
+  when:
+    - lcm_import_instances | default(true)
+    - (item.site.slug ~ '-' ~ item.name) not in (instances_now.json.data | map(attribute='name') | list)
   changed_when: true

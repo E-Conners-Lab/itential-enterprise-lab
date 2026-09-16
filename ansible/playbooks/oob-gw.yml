@@ -59,6 +59,58 @@
       when: return_path is changed
       changed_when: true
 
+    # Routed lab prefixes that live behind a lab host rather than on the OOB segment (ADR 0063): today the
+    # Containerlab dev mgmt network, behind clab. `--tags routes` runs this alone; values come from
+    # clab/versions.yaml, read as a lookup so its `vm`/`nodes` keys never shadow this play's variables.
+    # Persisted in its own netplan file for the next boot and made live with `ip route replace`. Never
+    # `netplan apply` here: this VM is the lab's only gateway and an apply bounces both legs, dropping every
+    # lab flow. The file is deliberately not registered, so the return-path apply above never fires for it.
+    # nftables is untouched: the forward chain already accepts `lan -> oob` from 192.168.68.0/22 (Mac -> clab
+    # node leaves on the OOB leg towards .224) and `ct state established` carries the replies; OOB hosts reach
+    # it through the existing oob -> oob hairpin. Symmetric for the Mac (ADR 0030): the node replies via its
+    # gateway on clab, clab's default route is this VM, and the table-100 policy route returns it via the router.
+    - name: Routed lab prefixes behind lab hosts
+      tags: [routes]
+      vars:
+        clab: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/../../clab/versions.yaml') | from_yaml }}"
+        lab_routes:
+          - {to: "{{ clab.mgmt.prefix }}", via: "{{ clab.vm.ip }}"}
+      block:
+        - name: The OOB leg is known (pre_tasks do not run under --tags routes)
+          ansible.builtin.assert:
+            that: oob_iface | length > 0
+            fail_msg: "no interface holds {{ oob_gw_ip }}"
+            quiet: true
+
+        - name: Routes persisted for boot (61-lab-routes.yaml, no apply)
+          ansible.builtin.copy:
+            dest: /etc/netplan/61-lab-routes.yaml
+            mode: "0600"
+            content: |
+              network:
+                version: 2
+                ethernets:
+                  {{ oob_iface }}:
+                    routes:
+              {% for r in lab_routes %}
+                      - to: {{ r.to }}
+                        via: {{ r.via }}
+              {% endfor %}
+
+        - name: Routes as the kernel holds them now
+          ansible.builtin.command: ip route show {{ item.to }}
+          loop: "{{ lab_routes }}"
+          register: lab_routes_now
+          changed_when: false
+
+        - name: Routes live now (ip route replace; idempotent, no interface bounce)
+          ansible.builtin.command: ip route replace {{ item.item.to }} via {{ item.item.via }} dev {{ oob_iface }}
+          loop: "{{ lab_routes_now.results }}"
+          loop_control:
+            label: "{{ item.item.to }} via {{ item.item.via }}"
+          when: ("via " ~ item.item.via ~ " dev " ~ oob_iface) not in item.stdout
+          changed_when: true
+
     - name: Packages
       ansible.builtin.apt:
         name: [nftables, unbound, chrony, qemu-guest-agent, dnsmasq]

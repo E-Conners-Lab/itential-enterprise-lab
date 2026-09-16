@@ -7,6 +7,8 @@
 # The caller provides: platform_local (the Platform API, always this node's own 127.0.0.1:3000), a fresh
 # session registered as `login`, admin_user / admin_pw, netbox_oob_host / netbox_port, platform_map, and
 # role_resync_tasks (the task file that re-syncs the roles this environment's administrator holds).
+# Optional, set only by vars/itential-dev.yml (ADR 0063); each defaults to what production has always done:
+# device_source (netbox), inventory_groups ([admin_group]), netbox_vlan_groups_managed (true).
 # Adapter instances. NetBox keeps its adapter because the InventoryBroker consumes an adapter and not
 # an integration (ADR 0039); ServiceNow's was removed by S4f (ADR 0054) - the PDI is reached through the
 # lab-servicenow Integration Model, which holds the same credentials from .env. Gateway 5 is not an
@@ -162,6 +164,8 @@
 # generated from NetBox (routers -> cisco_ios, switches -> arista_eos; firewalls wait for PA-VM,
 # endpoints are not network devices). Device credentials are the lab automation account, stored
 # in the inventory until Vault (Phase 9): accepted SEC exception recorded in the PR.
+# device_source defaults to netbox (production). The dev overlay sets clab: its devices are the Containerlab
+# nodes, which are never registered in NetBox, so production's inventory can never pick them up (ADR 0063).
 - name: Network devices from NetBox (active, with a management address, by platform)
   ansible.builtin.uri:
     url: >-
@@ -170,7 +174,9 @@
   loop: "{{ platform_map.keys() | list }}"
   register: nb_platforms
   no_log: true
+  when: device_source | default('netbox') == 'netbox'
 
+# The loop falls back to [] off NetBox because Ansible templates a loop before it evaluates `when`.
 - name: Inventory nodes
   ansible.builtin.set_fact:
     inv_nodes: >-
@@ -180,10 +186,41 @@
                         'itential_user': 'automation',
                         'itential_password': lookup('ansible.builtin.env', 'AUTOMATION_PASSWORD'),
                         'cluster_id': stack.gateway5_cluster_id}}] }}
-  loop: "{{ nb_platforms.results | map(attribute='json.results') | flatten | list }}"
+  loop: >-
+    {{ (nb_platforms.results | map(attribute='json.results') | flatten | list)
+       if device_source | default('netbox') == 'netbox' else [] }}
   loop_control:
     label: "{{ item.name }}"
   no_log: true
+  when: device_source | default('netbox') == 'netbox'
+
+# Dev (ADR 0063): only the Containerlab nodes, from clab/versions.yaml, with the clab automation account.
+# No Ansible loop, so the oracle is read only when this branch runs, never on production.
+- name: Inventory nodes from the Containerlab oracle (dev only)
+  ansible.builtin.set_fact:
+    inv_nodes: >-
+      {%- set out = [] -%}
+      {%- for n in clab.nodes -%}
+        {%- set _ = out.append({'name': n.name, 'tags': ['clab', n.role, n.netmiko],
+                                'attributes': {'itential_host': n.mgmt_ipv4,
+                                               'itential_platform': n.netmiko,
+                                               'itential_user': clab.credentials.user,
+                                               'itential_password': lookup('ansible.builtin.env', clab.credentials.password_env),
+                                               'cluster_id': stack.gateway5_cluster_id}}) -%}
+      {%- endfor -%}
+      {{ out }}
+  vars:
+    clab: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/../../clab/versions.yaml') | from_yaml }}"
+  no_log: true
+  when: device_source | default('netbox') == 'clab'
+
+- name: The Containerlab device password is in .env (clab-dev.yml generates CLAB_AUTOMATION_PASSWORD)
+  ansible.builtin.assert:
+    that: inv_nodes | map(attribute='attributes.itential_password') | select | list | length == inv_nodes | length
+    fail_msg: "a clab node has no password: run clab-dev.yml first so CLAB_AUTOMATION_PASSWORD is in .env"
+    quiet: true
+  no_log: true
+  when: device_source | default('netbox') == 'clab'
 
 - name: Inventory exists?
   ansible.builtin.uri:
@@ -201,7 +238,8 @@
     body:
       name: "{{ stack.inventory }}"
       description: "Lab network devices from NetBox (ansible/playbooks/itential.yml)"
-      groups: [admin_group]
+      # production keeps admin_group alone; dev adds copilot-builders (ADR 0055 group rule, ADR 0063)
+      groups: "{{ inventory_groups | default(['admin_group']) }}"
       createBrokerActions: true
       defaultClusterId: "{{ stack.gateway5_cluster_id }}"
     status_code: [200, 201]
@@ -240,6 +278,8 @@
   loop: "{{ hosts.netbox_platforms.keys() | list }}"
   register: nb_hosts
   no_log: true
+  # the hosts are EVE-NG endpoints; dev's lab-hosts inventory stays empty (ADR 0063)
+  when: device_source | default('netbox') == 'netbox'
 
 - name: Host nodes (netmiko platform linux, the automation account with its password)
   ansible.builtin.set_fact:
@@ -250,10 +290,13 @@
                         'itential_user': 'automation',
                         'itential_password': lookup('ansible.builtin.env', 'AUTOMATION_PASSWORD'),
                         'cluster_id': stack.gateway5_cluster_id}}] }}
-  loop: "{{ nb_hosts.results | map(attribute='json.results') | flatten | selectattr('role.slug', 'in', hosts.roles) | list }}"
+  loop: >-
+    {{ (nb_hosts.results | map(attribute='json.results') | flatten | selectattr('role.slug', 'in', hosts.roles) | list)
+       if device_source | default('netbox') == 'netbox' else [] }}
   loop_control:
     label: "{{ item.name }}"
   no_log: true
+  when: device_source | default('netbox') == 'netbox'
 
 - name: Host inventory exists?
   ansible.builtin.uri:
@@ -271,7 +314,7 @@
     body:
       name: "{{ stack.host_inventory }}"
       description: "Lab Ubuntu hosts from NetBox for Gateway 5 (ansible/playbooks/itential.yml, PID S4d.6)"
-      groups: [admin_group]
+      groups: "{{ inventory_groups | default(['admin_group']) }}"
       createBrokerActions: false
       defaultClusterId: "{{ stack.gateway5_cluster_id }}"
     status_code: [200, 201]
@@ -430,7 +473,11 @@
   loop: "{{ nb_sites.json.results }}"
   loop_control:
     label: "{{ item.slug }}-user"
-  when: (item.slug ~ '-user') not in (nb_vlan_groups.json.results | map(attribute='slug') | list)
+  # netbox_vlan_groups_managed defaults to true (production owns the groups); dev holds a view-only NetBox
+  # token and must never write production NetBox (ADR 0063)
+  when:
+    - netbox_vlan_groups_managed | default(true)
+    - (item.slug ~ '-user') not in (nb_vlan_groups.json.results | map(attribute='slug') | list)
 
 # --- workflows: the documents in itential/workflows/ are code; every run replaces them ------
 # (Automation Studio import; workflow_builder/import expects an encoded payload). Exported

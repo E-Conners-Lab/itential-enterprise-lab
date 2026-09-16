@@ -4,13 +4,22 @@
 # re-synced to the admin (as itential.yml does after an adapter install), and the operations registered as agent tools.
 # Never call /adapters/<name>/start on an integration: it is not a process, the call only flips its health to STOPPED
 # (measured 2026-09-08). Needs: login, admin_user, integrations_dir.
+# integration_models defaults to every model in itential/versions.yaml, which is what production has always
+# built. The dev overlay narrows it to [netbox]: the ServiceNow PDI is shared with production's change history
+# and SNOW_USER can write, so the dev stack gets no path to it (ADR 0063).
+- name: Integration models this environment builds
+  ansible.builtin.set_fact:
+    int_models: >-
+      {{ integrations.models | dict2items
+         | selectattr('key', 'in', integration_models | default(integrations.models.keys() | list)) | list }}
+
 - name: Integration documents
   ansible.builtin.set_fact:
     int_docs: >-
       {{ int_docs | default({}) | combine({item.key: lookup('ansible.builtin.file', doc_path) | from_json}) }}
   vars:
     doc_path: "{{ integrations_dir }}/{{ item.value.title }}.json"
-  loop: "{{ integrations.models | dict2items }}"
+  loop: "{{ int_models }}"
   loop_control:
     label: "{{ item.key }}"
 
@@ -21,7 +30,7 @@
       - int_docs[item.key].info.version == item.value.version | string
       - item.value.auth in int_docs[item.key].components.securitySchemes
     quiet: true
-  loop: "{{ integrations.models | dict2items }}"
+  loop: "{{ int_models }}"
   loop_control:
     label: "{{ item.key }}"
 
@@ -33,7 +42,7 @@
     body_format: json
     body: {model: "{{ int_docs[item.key] }}"}
     status_code: 200
-  loop: "{{ integrations.models | dict2items }}"
+  loop: "{{ int_models }}"
   loop_control:
     label: "{{ item.value.title }}:{{ item.value.version }}"
 
@@ -51,7 +60,7 @@
     body_format: json
     body: {model: "{{ int_docs[item.key] }}"}
     status_code: [200, 201]
-  loop: "{{ integrations.models | dict2items }}"
+  loop: "{{ int_models }}"
   loop_control:
     label: "{{ item.value.title }}:{{ item.value.version }}"
   when: (item.value.title ~ ':' ~ item.value.version) not in (models_now.json.integrationModels | map(attribute='versionId') | list)
@@ -60,7 +69,7 @@
   ansible.builtin.uri:
     url: "{{ platform_local }}/integration-models/{{ item.value.title }}:{{ item.value.version }}/export"
     headers: {Cookie: "{{ login.cookies_string }}"}
-  loop: "{{ integrations.models | dict2items }}"
+  loop: "{{ int_models }}"
   loop_control:
     label: "{{ item.value.title }}:{{ item.value.version }}"
   register: models_export
@@ -119,7 +128,7 @@
                                             'password': lookup('ansible.builtin.env', 'SNOW_PASSWORD')}})}] }}
   vars:
     snow_host: "{{ lookup('ansible.builtin.env', 'SNOW_INSTANCE') }}"
-  loop: "{{ integrations.models | dict2items }}"
+  loop: "{{ int_models }}"
   loop_control:
     label: "{{ item.value.instance }}"
   no_log: true
@@ -127,9 +136,9 @@
 - name: PDI details present in .env (SNOW_INSTANCE, SNOW_USER, SNOW_PASSWORD)
   ansible.builtin.assert:
     that:
-      - lookup('ansible.builtin.env', 'SNOW_INSTANCE') | length > 0
-      - lookup('ansible.builtin.env', 'SNOW_USER') | length > 0
-      - lookup('ansible.builtin.env', 'SNOW_PASSWORD') | length > 0
+      - "'servicenow' not in (int_models | map(attribute='key') | list) or lookup('ansible.builtin.env', 'SNOW_INSTANCE') | length > 0"
+      - "'servicenow' not in (int_models | map(attribute='key') | list) or lookup('ansible.builtin.env', 'SNOW_USER') | length > 0"
+      - "'servicenow' not in (int_models | map(attribute='key') | list) or lookup('ansible.builtin.env', 'SNOW_PASSWORD') | length > 0"
       - lookup('ansible.builtin.env', 'NETBOX_TOKEN') | length > 0
     quiet: true
 
@@ -222,7 +231,7 @@
     int_tool_ids: >-
       {{ int_tool_ids | default([]) + ['integration:' ~ m.title ~ '%3A' ~ m.version ~ ':' ~ m.instance ~ ':' ~ item.1] }}
   loop: >-
-    {{ integrations.models | dict2items | subelements('value.operations') }}
+    {{ int_models | subelements('value.operations') }}
   vars:
     m: "{{ item.0.value }}"
   loop_control:

@@ -25,9 +25,9 @@ and enough RAM that the nested topology is not fighting the VMs for it.
 | | Tested on | What actually matters |
 |---|---|---|
 | Hypervisor | Dell R640, 2× Xeon Gold 6154 (72 threads), 314 GB RAM, 1.6 TB thin LVM | Enough for the allocation below, plus headroom for the host |
-| vCPU allocated | 87 of a 108 ceiling (1.5:1 oversubscription) | Oversubscription is fine; these VMs are mostly idle |
-| RAM allocated | 272 GB of a 280 GB ceiling | **RAM is the binding constraint.** Do not oversubscribe it |
-| Disk allocated | 1,295 GB thin of a 1.4 TB ceiling | Thin provisioning; watch *usage*, not allocation |
+| vCPU allocated | 95 of a 108 ceiling (1.5:1 oversubscription) | Oversubscription is fine; these VMs are mostly idle |
+| RAM allocated | 296 GB of a 296 GB ceiling | **RAM is the binding constraint.** Do not oversubscribe it |
+| Disk allocated | 1,455 GB thin of a 1.5 TB ceiling | Thin provisioning; watch *usage*, not allocation |
 | Nested lab | EVE-NG host, 21 nodes, 47 vCPU, 111 GB | Can be a VM on the same hypervisor or its own machine |
 
 If you have less, the lab still works — build fewer branch sites, or skip the production HA environment in

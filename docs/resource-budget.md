@@ -10,8 +10,8 @@ sizing change.
 | Resource | Host | Ceiling | Rule |
 |---|---|---|---|
 | vCPU | 72 threads (2x Xeon Gold 6154) | **108 vCPU allocated** | 1.5:1 oversubscription (kickoff) |
-| RAM | 314 GB usable | **280 GB allocated** | leaves ~34 GB for the Proxmox host, ZFS-free page cache and KSM churn |
-| Disk | `local-lvm` thin pool 1.6 TB, `pve-root` 96 GB | **thin allocation <= 1.4 TB; alert at 80 % *data* usage** | thin-provisioned, so allocation may exceed usage; usage is what pauses VMs |
+| RAM | 314 GB usable | **296 GB allocated** | leaves ~18 GB for the Proxmox host, ZFS-free page cache and KSM churn; raised from 280 GB by the owner when the dev stack returned (ADR 0063) |
+| Disk | `local-lvm` thin pool 1.6 TB, `pve-root` 96 GB | **thin allocation <= 1.5 TB; alert at 80 % *data* usage** | thin-provisioned, so allocation may exceed usage; usage is what pauses VMs. Raised from 1.4 TB by ADR 0063: the usage alert is the real guard, the allocation ceiling is bookkeeping |
 | EVE-NG internal | 24 vCPU / 128 GB given to VM 300 | nodes sized so that summed RAM <= 115 GB | EVE-NG oversubscribes CPU freely; RAM is the real limit (KSM helps but is not counted) |
 
 Already allocated before this project (discovery §1): 28 vCPU, 136 GB, 264 GB
@@ -27,7 +27,7 @@ disk (VM 110 NetBox and VM 300 EVE-NG).
 | `k3s-01` | 3 | Ubuntu 24.04 cloud | 4 | 12 | 80 | 30 GB OS + 50 GB Longhorn |
 | `k3s-02` | 3 | Ubuntu 24.04 cloud | 4 | 12 | 80 | |
 | `k3s-03` | 3 | Ubuntu 24.04 cloud | 4 | 12 | 80 | |
-| ~~205 `itential`~~ | 5 | | ~~8~~ | ~~24~~ | ~~160~~ | **Retired 2026-09-10 at S11.8** (ADR 0053): the dev-stack VM was deleted once the cut-over moved `itential.lab.internal` to `iap-lb` and S11.5 proved every asset it held exists on production. 8 vCPU / 24 GB / 160 GB returned to the host; 10.100.0.65 released |
+| 205 `itential-dev` | 5 | Ubuntu 24.04 cloud | 8 | 24 | 160 | dev stack for Copilot prototyping, returned by ADR 0063 (2026-09-16) under a new name. The VM `itential` was retired 2026-09-10 at S11.8 (ADR 0053); its names `itential` and `mcp` stay with production |
 | `nios` | 13 | NIOS 9.0.8 IB-V825 | 2 | 16 | 150 | vendor minimum for IB-V825 with the resizable image |
 | `ddi-fallback` | 11 | Ubuntu 24.04 cloud | 2 | 2 | 20 | BIND9 + Kea containers, host networking |
 | `panorama` | 13 | Panorama 11.1 | 8 | 16 | 141 | 81 system + 60 log disk; Management Only mode accepted; **lever 2 pulled with ADR 0053 (24 -> 16 GB)**. Vendor floor is 16/64, EVE-NG and community run 8/16 (manifest 2.2) |
@@ -42,17 +42,19 @@ disk (VM 110 NetBox and VM 300 EVE-NG).
 | `redis-03` | 8 | Ubuntu 24.04 cloud | 1 | 2 | 16 | Redis 7.4 + Sentinel |
 | `iag-01` | 8 | Ubuntu 24.04 cloud | 4 | 6 | 60 | Gateway 5 cluster (gateway5, etcd, runner) |
 | `tools-01` | 8 | Ubuntu 24.04 cloud | 4 | 8 | 40 | MCP server, Ollama (in-lab model) |
-| `clab` | 12 | Ubuntu 24.04 cloud | 8 | 16 | 60 | Docker + Containerlab, 5 cEOS nodes at ~1.5 GB + runner |
-| **Total** | | | **87** | **272** | **1,295** | dc01 removed (ADR 0050), Panorama 16 GB (lever 2), the eleven S11 VMs added and VM 205 retired at S11.8 (ADR 0053): 8 vCPU / 24 GB / 160 GB returned |
-| Ceiling | | | 108 | 280 | 1,400 (with the 200 GB `/srv/images` LV: 1,363); disk is thin, usage decides (section 1) | |
-| **Headroom** | | | **21 vCPU** | **8 GB** | plan; VM 205's retirement at S11.8 returned 8 vCPU / 24 GB and took the RAM headroom positive again (ADR 0053) |
+| `clab` | 12 | Ubuntu 24.04 cloud | 8 | 16 | 60 | VM 230, CPU type `host` for nested KVM. Docker + Containerlab, built now for the dev topology (ADR 0063): 2 C8000v (vrnetlab, ~4 GB each) + 2 cEOS (~1.5 GB each); the S10 CI twin later |
+| **Total** | | | **95** | **296** | **1,455** | dc01 removed (ADR 0050), Panorama 16 GB (lever 2), the eleven S11 VMs added and VM 205 retired at S11.8 (ADR 0053), VM 205 back as `itential-dev` (ADR 0063): +8 vCPU / 24 GB / 160 GB |
+| Ceiling | | | 108 | 296 | 1,500 | VMs only; the 200 GB `/srv/images` thin LV takes the pool's allocation to 1,655, which only thin provisioning allows: disk is thin, usage decides (section 1) |
+| **Headroom** | | | **13 vCPU** | **0 GB** | plan; the dev stack's return took the 8 GB that S11.8 gave back plus the 16 GB the ceiling was raised by (ADR 0063) |
 
-RAM is the binding constraint. The plan sums to **272 GB against the 280 GB ceiling**, 8 GB under it: the
-eleven production VMs of ADR 0053 are in, and VM 205 came out when S11.8 retired the dev-stack (2026-09-10),
-which returned 8 vCPU / 24 GB and took the headroom positive again. Measured on the hypervisor
+RAM is the binding constraint. The plan sums to **296 GB against the 296 GB ceiling**, exactly on it: the
+eleven production VMs of ADR 0053 are in, VM 205 came out when S11.8 retired the dev-stack (2026-09-10), and it
+came back as `itential-dev` (ADR 0063, 2026-09-16) because Copilot needs a sandbox that is not production; the
+owner raised the ceiling from 280 to 296 GB to hold it. Measured on the hypervisor
 **2026-09-11: 17 VMs running, 67 vCPU, 222 GB** — `eve-ng`, `netbox-prod`, `oob-gw`, the three k3s nodes and
-the eleven production VMs. The firewall-track VMs (`nios`, `panorama`, 32 GB) fit the remaining plan
-headroom only with the levers in section 5. Section 5 lists the levers in the order they are pulled if that sequence slips.
+the eleven production VMs; `itential-dev` and `clab` add 40 GB, about 262 GB of 314. The firewall-track VMs
+(`nios`, `panorama`, 32 GB) are inside the total, but with no plan headroom left the firewall track now
+depends on the levers in section 5: they are pulled, in order, before those VMs are built.
 
 ## 3. EVE-NG internal budget (inside VM 300: 24 vCPU / 128 GB)
 
@@ -109,9 +111,12 @@ to 128 GB. Recorded here so that Phase 3 does not discover it.
 1. **Trim EVE-NG from 128 GB to 120 GB** (frees 8 GB; requires an EVE-NG
    restart, an approval-gated action). Internal budget is 111 GB so this is
    safe.
-2. **Panorama 24 -> 16 GB** (frees 8 GB) if it runs in Management Only mode
-   without complaint; verified by `show system resources` in Phase 10.
-3. **Containerlab 16 -> 12 GB** (frees 4 GB) if only five cEOS nodes are used.
+2. ~~**Panorama 24 -> 16 GB** (frees 8 GB) if it runs in Management Only mode
+   without complaint; verified by `show system resources` in Phase 10.~~ Pulled with ADR 0053.
+3. ~~**Containerlab 16 -> 12 GB** (frees 4 GB) if only five cEOS nodes are used.~~ No longer holds: the dev
+   topology runs two C8000v at ~4 GB each in nested KVM (ADR 0063), so 16 GB is its floor. What replaces it
+   is operational: **stop the dev topology, or the dev stack's containers,** while the firewall track needs
+   the RAM (frees up to 40 GB of use, not of allocation) - both rebuild from the repo.
 4. **k3s nodes 12 -> 10 GB** (frees 6 GB) only if section 4 requests stay under
    18 GB.
 

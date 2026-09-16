@@ -29,6 +29,29 @@
     forms_dir: "{{ playbook_dir }}/../../{{ forms.documents }}"
     integrations_dir: "{{ playbook_dir }}/../../{{ integrations.documents }}"
   tasks:
+    # ADR 0063: platform-ha2-replay.yml imports this play with the production overlay (platform_target set),
+    # and the dev targets pass vars/itential-dev.yml; with neither, the default group is the dev VM.
+    # `| bool`: `-e dev_overlay=false` arrives as the string 'false', which is truthy without it.
+    - name: Exactly one overlay (dev or production)
+      ansible.builtin.assert:
+        that: (platform_target is defined) != (dev_overlay | default(false) | bool)
+        fail_msg: "pass exactly one overlay: vars/itential-dev.yml (dev) or vars/itential-prod.yml (production)"
+        quiet: true
+
+    # ADR 0063: the Makefile's load_env_dev swaps NETBOX_DEV_RO_TOKEN into NETBOX_TOKEN; this is the play's own
+    # check that it did, so a dev run can never read (or write) production NetBox with the full token.
+    - name: Dev runs with the read-only NetBox token
+      ansible.builtin.assert:
+        that:
+          - lookup('ansible.builtin.env', 'NETBOX_DEV_RO_TOKEN') | length > 0
+          - lookup('ansible.builtin.env', 'NETBOX_TOKEN') == lookup('ansible.builtin.env', 'NETBOX_DEV_RO_TOKEN')
+        fail_msg: >-
+          the dev overlay needs NETBOX_TOKEN to be the read-only NETBOX_DEV_RO_TOKEN: run `make netbox-token-dev`,
+          then the play through a make target that uses load_env_dev (Makefile), never with the full token
+        quiet: true
+      when: dev_overlay | default(false) | bool
+      no_log: true
+
     - name: Login as {{ admin_user }}
       ansible.builtin.uri:
         url: "{{ platform_local }}/login"
@@ -40,6 +63,9 @@
       no_log: true
 
     # --- NetBox intent: the same active network devices itential.yml puts in the inventory ---------
+    # Production only (device_source defaults to netbox). The dev stack's devices are the Containerlab nodes,
+    # which are never registered in NetBox (ADR 0063), so it reads them from clab/versions.yaml further down.
+    # The loops over earlier results fall back to [] because Ansible templates a loop before it evaluates `when`.
     - name: Network devices from NetBox, per Golden Config tree
       ansible.builtin.uri:
         url: "{{ netbox_url }}/api/dcim/devices/?limit=0&status=active&has_primary_ip=true&platform={{ item.value.netbox_platform }}"
@@ -49,26 +75,29 @@
         label: "{{ item.key }}"
       register: nb_by_tree
       no_log: true
+      when: device_source | default('netbox') == 'netbox'
 
     - name: Primary addresses with their interfaces
       ansible.builtin.uri:
         url: "{{ netbox_url }}/api/ipam/ip-addresses/?limit=0&device={{ item.name }}"
         headers: "{{ netbox_headers }}"
-      loop: "{{ nb_by_tree.results | map(attribute='json.results') | flatten }}"
+      loop: "{{ (nb_by_tree.results | map(attribute='json.results') | flatten) if device_source | default('netbox') == 'netbox' else [] }}"
       loop_control:
         label: "{{ item.name }}"
       register: nb_ips
       no_log: true
+      when: device_source | default('netbox') == 'netbox'
 
     - name: Interfaces with their descriptions and VRFs (S4e interface intent, ADR 0048)
       ansible.builtin.uri:
         url: "{{ netbox_url }}/api/dcim/interfaces/?limit=0&device={{ item.name }}&mgmt_only=false"
         headers: "{{ netbox_headers }}"
-      loop: "{{ nb_by_tree.results | map(attribute='json.results') | flatten }}"
+      loop: "{{ (nb_by_tree.results | map(attribute='json.results') | flatten) if device_source | default('netbox') == 'netbox' else [] }}"
       loop_control:
         label: "{{ item.name }}"
       register: nb_ifaces
       no_log: true
+      when: device_source | default('netbox') == 'netbox'
 
     - name: FHRP groups and their assignments (the virtual-router addresses on the leaf SVIs)
       ansible.builtin.uri:
@@ -77,6 +106,7 @@
       loop: [fhrp-groups, fhrp-group-assignments]
       register: nb_fhrp
       no_log: true
+      when: device_source | default('netbox') == 'netbox'
 
     # one flat list: name, site, role, tree (deviceType), mgmt_ip, mgmt_if, interfaces (intent)
     - name: Device intent
@@ -93,9 +123,35 @@
                                     template_vars={'ifaces': item.2.json.results, 'ips': item.1.json.results,
                                                    'groups': nb_fhrp.results[0].json.results,
                                                    'fhrp': nb_fhrp.results[1].json.results}) | from_json}] }}
-      loop: "{{ (nb_by_tree.results | map(attribute='json.results') | flatten) | zip(nb_ips.results, nb_ifaces.results) | list }}"
+      loop: >-
+        {{ ((nb_by_tree.results | map(attribute='json.results') | flatten) | zip(nb_ips.results, nb_ifaces.results) | list)
+           if device_source | default('netbox') == 'netbox' else [] }}
       loop_control:
         label: "{{ item.0.name }}"
+      when: device_source | default('netbox') == 'netbox'
+
+    # Dev (ADR 0063): the Containerlab nodes from their oracle, in the same shape. The tree is the Golden
+    # Config tree whose netmiko driver the node uses; interfaces stay empty because clab has no NetBox intent,
+    # which is also why vars/itential-dev.yml leaves golden_config out of platform_elements. No Ansible loop:
+    # a loop would be templated (and the oracle read) on production too, before `when` is evaluated.
+    - name: Device intent from the Containerlab oracle (dev)
+      ansible.builtin.set_fact:
+        gc_devices: >-
+          {%- set out = [] -%}
+          {%- for n in clab.nodes -%}
+            {%- set _ = out.append({'name': n.name, 'site': 'clab', 'role': n.role,
+                                    'tree': (golden_config.trees | dict2items
+                                             | selectattr('value.netmiko', 'equalto', n.netmiko) | first).key,
+                                    'mgmt_ip': n.mgmt_ipv4,
+                                    'mgmt_if': clab_mgmt_if[n.kind],
+                                    'interfaces': []}) -%}
+          {%- endfor -%}
+          {{ out }}
+      vars:
+        clab: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/../../clab/versions.yaml') | from_yaml }}"
+        # vrnetlab's C8000v keeps GigabitEthernet1 for management; cEOS in containerlab uses Management0
+        clab_mgmt_if: {cisco_c8000v: GigabitEthernet1, ceos: Management0}
+      when: device_source | default('netbox') == 'clab'
 
     - name: Intent summary
       ansible.builtin.debug:
@@ -113,14 +169,19 @@
         (gc_devices | map(attribute='name') | difference(cm_devices.json.list | map(attribute='name'))) | length > 0
       no_log: true
 
+    # platform_elements defaults to all four, which is production; the dev overlay leaves golden_config out.
     - name: Element 1 - device groups, Golden Config trees, compliance plan, nightly schedule
       ansible.builtin.include_tasks: tasks/golden-config.yml
+      when: "'golden_config' in platform_elements | default(['golden_config', 'mop', 'lcm', 'integrations'])"
 
     - name: Element 2 - command templates (MOP) and the nightly backups
       ansible.builtin.include_tasks: tasks/mop.yml
+      when: "'mop' in platform_elements | default(['golden_config', 'mop', 'lcm', 'integrations'])"
 
     - name: Element 3 - JSON form, Lifecycle Manager model and its instances (ADR 0043/0044)
       ansible.builtin.include_tasks: tasks/lcm.yml
+      when: "'lcm' in platform_elements | default(['golden_config', 'mop', 'lcm', 'integrations'])"
 
     - name: Element 4 - Integration Models, integrations and their tools (ADR 0045)
       ansible.builtin.include_tasks: tasks/integrations.yml
+      when: "'integrations' in platform_elements | default(['golden_config', 'mop', 'lcm', 'integrations'])"

@@ -103,11 +103,15 @@ def test_every_vm_is_in_the_resource_budget() -> None:
 
 
 def test_the_environment_fits_once_the_dev_stack_retires() -> None:
-    """The nine production VMs plus what runs today must be under the 280 GB ceiling once VM 205 is gone."""
+    """The HA2 environment stays inside its design size, and its sizing was argued against VM 205's RAM.
+
+    ADR 0053 made room for production by retiring VM 205; ADR 0063 brings it back as `itential-dev` inside a
+    raised ceiling (docs/resource-budget.md), so the arithmetic below still records the original trade.
+    """
     new_ram = sum(v["memory_mb"] for v in HA2["vms"]) // 1024
     assert new_ram <= 60, f"the HA2 environment is {new_ram} GB; the design budgeted about 51"
     dev = ITENTIAL["vm"]["memory_mb"] // 1024
-    assert new_ram - dev <= 40, "retiring VM 205 must offset most of the new RAM"
+    assert new_ram - dev <= 40, "the dev stack's RAM must stay comparable to most of what production added"
 
 
 # --- the build artifacts read the oracle -----------------------------------------------------------------
@@ -243,6 +247,19 @@ def test_the_replay_entry_point_runs_the_three_halves_in_order() -> None:
     assert "ha2/versions.yaml" in text, "the replay reads the oracle"
     mk = (ROOT / "Makefile").read_text()
     assert "replay-platform-ha2:" in mk and "itential-prod.yml" in mk, "make replay-platform-ha2 passes the overlay"
+
+
+def test_the_replay_refuses_the_dev_overlay() -> None:
+    """ADR 0063: the replay defaults to production and the dev overlay sets no platform_target, so a dev run through
+    it would write dev settings onto production. Its first task must stop that before any API call."""
+    text = (PLAYS / "platform-ha2-replay.yml").read_text()
+    plays = yaml.safe_load(text)
+    first_task = plays[0]["tasks"][0]
+    assert "ansible.builtin.assert" in first_task, "the first task of the replay is the dev-overlay guard"
+    assert first_task["ansible.builtin.assert"]["that"] == "not (dev_overlay | default(false) | bool)"
+    # the replay imports platform.yml, whose own guard needs platform_target: the production overlay sets it
+    prod = yaml.safe_load(PROD_VARS.read_text())
+    assert "platform_target" in prod and "dev_overlay" not in prod, "the production overlay passes platform.yml's guard"
 
 
 def test_the_dev_stack_play_keeps_building_the_dev_stack() -> None:

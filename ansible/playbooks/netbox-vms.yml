@@ -18,8 +18,14 @@
       - {name: k3s-01, vcpus: 4, memory: 12288, disk: 80, role: k3s-server, ips: [10.100.0.16], tags: [phase-3, k3s]}
       - {name: k3s-02, vcpus: 4, memory: 12288, disk: 80, role: k3s-server, ips: [10.100.0.17], tags: [phase-3, k3s]}
       - {name: k3s-03, vcpus: 4, memory: 12288, disk: 80, role: k3s-server, ips: [10.100.0.18], tags: [phase-3, k3s]}
-      # VM 205 `itential` (the dev-stack) was retired at S11.8 on 2026-09-10, after the cut-over moved the
-      # service name to iap-lb and S11.5 proved every asset it held exists on production (ADR 0053).
+      # ADR 0063: VM 205 returns as the dev stack for Copilot prototyping under its own name (the pre-retirement
+      # row, renamed: `itential` belongs to iap-lb since S11), and clab joins as the host of its dev topology.
+      # Only the two VMs are registered; the clab devices never reach NetBox, where every status=active
+      # consumer (production's inventory, observability, verify S7.1) would pick them up.
+      - {name: itential-dev, vcpus: 8, memory: 24576, disk: 160, role: itential-host, ips: [10.100.0.65], tags: [phase-5]}
+      # No `clab` tag: tags become inventory groups, and a group named like the host `clab` collides with it in
+      # the NetBox inventory. The plays address the role group `clab-host`.
+      - {name: clab, vcpus: 8, memory: 16384, disk: 60, role: clab-host, ips: [10.100.0.224], tags: [phase-12]}
     # Phase 8 (PID S11, ADR 0053): the production environment's VMs come from their own oracle, so the shape
     # is declared once. The NetBox role is `ha2-<role>`, which is also the Ansible group the plays address.
     ha2: "{{ (lookup('ansible.builtin.file', playbook_dir ~ '/../../itential/ha2/versions.yaml') | from_yaml).vms }}"

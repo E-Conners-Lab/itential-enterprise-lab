@@ -76,6 +76,7 @@ committed. Service specs and acceptance criteria are in `docs/PID.md`.
 | 11 | `phase-11/ddi` | BIND9 + Kea from NetBox (NIOS joins in the firewall track) | planned |
 | 12 | `phase-12/containerlab` | Containerlab CI/test tier (cEOS mirror of the DC fabric) | planned |
 | 13 | `phase-13/firewall-track` | NIOS grid master, the PA-VM firewalls (`lab.firewalls`), Panorama: once the images exist (ADR 0050) | planned |
+| dev | `feat/dev-stack-clab` | The Copilot prototyping tier (PID S12, ADR 0063): the dev stack back on VM 205 as `itential-dev` (alias `mcp-dev`) with its own encryption key, a view-only NetBox token, no ServiceNow and `ollama-mac` only; a Containerlab host `clab` running topology `dev` (2 C8000v + 2 cEOS 4.33.1.1F) on the routed 10.100.2.0/24, ahead of phase 12 (S10.6-S10.12); `svc-copilot` read-only on production. Verified by `make verify-dev`, never by `make verify` | in progress |
 
 ## What is running
 
@@ -87,6 +88,7 @@ Every name resolves through the lab's own resolver on `10.100.0.1`; run
 |---|---|---|
 | Itential Platform | `https://itential.lab.internal` | nginx on `iap-lb`, in front of the Platform nodes |
 | MCP server | `http://mcp.lab.internal:8000/mcp` | on the tools VM; `.mcp.json` points Claude Code at it |
+| Dev stack (Copilot) | `https://itential-dev.lab.internal`, `http://mcp-dev.lab.internal:8000/mcp` | the sandbox of ADR 0063; the dev MCP server runs as `svc-copilot`, and nothing here is production |
 | NetBox | `http://netbox.lab.internal:8080` | the network source of truth |
 | Grafana | `https://grafana.lab.internal` | lab dashboards and the official Itential Platform Monitoring dashboard |
 | Zabbix | `https://zabbix.lab.internal` | availability: SNMPv3 devices, agent 2 on every Ubuntu machine, HTTP checks |
@@ -118,4 +120,4 @@ docs/runbooks/  how to build the lab, one chapter per track, parameterised so no
 - `main` is protected: PR required, CI green, linear history. One branch and one PR per phase; the merged PR is the approval record.
 - Conventional Commits. Secrets never enter the repo (`gitleaks` runs pre-commit and in CI).
 - Decisions are ADRs in `docs/adr/`. Manual steps are listed in `docs/manual-steps.md` with the reason.
-- Cost is a design input: `docs/resource-budget.md` tracks vCPU/RAM against a 1.5:1 CPU and 280 GB RAM ceiling.
+- Cost is a design input: `docs/resource-budget.md` tracks vCPU/RAM against a 1.5:1 CPU and 296 GB RAM ceiling (raised from 280 GB for the dev stack, ADR 0063).

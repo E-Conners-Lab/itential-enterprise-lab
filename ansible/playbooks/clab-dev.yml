@@ -1,0 +1,284 @@
+---
+# The Containerlab dev topology (ADR 0063; PID S10.7-S10.11). Runs after clab-host.yml loaded both images.
+# Order: device password persisted before use -> topology and startup configs rendered from clab/versions.yaml
+# -> deploy only when something changed or a node is down -> allowlist re-applied -> every node answers SSH as
+# the automation user -> C8000v licence level (one reload when needed) -> OSPF and BGP converge as the oracle
+# says. The devices are never registered in NetBox (clab/versions.yaml header).
+- name: Clab device password, persisted before use
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars_files:
+    - ../../clab/versions.yaml
+  vars:
+    env_file: "{{ playbook_dir }}/../../.env"
+  tasks:
+    - name: Current value
+      ansible.builtin.set_fact:
+        cur_pw: "{{ lookup('ansible.builtin.env', credentials.password_env) }}"
+      no_log: true
+
+    # Its own key, never AUTOMATION_PASSWORD: the dev tier and Copilot see these devices, and a shared
+    # password would open the EVE-NG lab's devices to the same hands (ADR 0063).
+    - name: Password generated once (alphanumeric, safe inside IOS XE and EOS config lines)
+      ansible.builtin.set_fact:
+        clab_password: >-
+          {{ cur_pw if cur_pw | length >= 20
+             else lookup('ansible.builtin.password', '/dev/null', length=32, chars=['ascii_letters', 'digits']) }}
+      no_log: true
+
+    - name: Persist to .env before use
+      ansible.builtin.lineinfile:
+        path: "{{ env_file }}"
+        regexp: "^{{ credentials.password_env }}="
+        line: "{{ credentials.password_env }}={{ clab_password }}"
+      no_log: true
+
+- name: Deploy the dev topology on clab
+  hosts: clab-host
+  become: true
+  gather_facts: false
+  vars_files:
+    - ../../clab/versions.yaml
+  vars:
+    lab_dir: /opt/clab/dev
+    topo: "{{ lab_dir }}/dev.clab.yml"
+    clab_password: "{{ hostvars['localhost'].clab_password }}"
+    devcmd: /opt/clab/devcmd.py
+    routers: "{{ nodes | selectattr('kind', 'equalto', 'cisco_c8000v') | list }}"
+    # OSPF: every link runs area 0 (the routed /31s and the switch pair's Vlan99), so a node's FULL
+    # adjacencies equal its links. BGP: the sessions naming the node.
+    ospf_expected: >-
+      {%- set out = {} -%}
+      {%- for n in nodes -%}
+        {%- set _ = out.update({n.name: links | selectattr('a.node', 'equalto', n.name) | list | length
+                                        + links | selectattr('b.node', 'equalto', n.name) | list | length}) -%}
+      {%- endfor -%}
+      {{ out }}
+    bgp_peers: >-
+      {%- set out = {} -%}
+      {%- for n in nodes -%}
+        {%- set _ = out.update({n.name: routing.bgp | selectattr('a', 'equalto', n.name) | map(attribute='b_ip') | list
+                                        + routing.bgp | selectattr('b', 'equalto', n.name) | map(attribute='a_ip') | list}) -%}
+      {%- endfor -%}
+      {{ out }}
+  tasks:
+    - name: Both images are in Docker (clab-host.yml after images/fetch.sh clab-load)
+      ansible.builtin.command: docker image inspect {{ item }}
+      loop: ["{{ images.ceos.tag }}", "{{ images.c8000v.tag }}"]
+      changed_when: false
+
+    - name: Lab directories, 0700 because the configs carry the device password
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        mode: "0700"
+      loop: ["/opt/clab", "{{ lab_dir }}", "{{ lab_dir }}/configs"]
+
+    - name: Topology (clab/dev.clab.yml.j2, no secret)
+      ansible.builtin.template:
+        src: ../../clab/dev.clab.yml.j2
+        dest: "{{ topo }}"
+        mode: "0600"
+      register: topo_file
+
+    - name: Startup configs (clab/configs/<kind>.cfg.j2)
+      ansible.builtin.template:
+        src: "../../clab/configs/{{ 'c8000v' if node.kind == 'cisco_c8000v' else 'ceos' }}.cfg.j2"
+        dest: "{{ lab_dir }}/configs/{{ node.name }}.cfg"
+        mode: "0600"
+      loop: "{{ nodes }}"
+      loop_control:
+        loop_var: node
+        label: "{{ node.name }}"
+      register: cfg_files
+      no_log: true
+
+    - name: Device SSH helper (verify/devcmd.py, the same code the verify runs from the Mac)
+      ansible.builtin.copy:
+        src: ../../verify/devcmd.py
+        dest: "{{ devcmd }}"
+        mode: "0755"
+
+    - name: What is running now
+      ansible.builtin.command: containerlab inspect -t {{ topo }} --format json
+      register: inspect_before
+      changed_when: false
+      failed_when: false
+
+    # Parsed only when the output is JSON: with no lab deployed, containerlab can exit 0 and print a plain-text
+    # notice, and from_json on that would fail the first run of the play. Anything else counts as zero running.
+    - name: Running node count
+      ansible.builtin.set_fact:
+        running_before: >-
+          {%- set out = inspect_before.stdout | default('') | trim -%}
+          {%- set j = (out | from_json) if inspect_before.rc == 0 and out[:1] in ['{', '['] else [] -%}
+          {%- set rows = (j.values() | list | flatten) if j is mapping else j -%}
+          {{ rows | selectattr('state', 'equalto', 'running') | list | length }}
+
+    # --reconfigure rebuilds the lab directory so a changed startup config is really applied; the C8000v
+    # nodes then boot again (10-20 min nested), which is why an unchanged, healthy lab is left alone.
+    - name: Deploy (only when a rendered file changed or a node is not running)
+      ansible.builtin.command:
+        cmd: containerlab deploy -t {{ topo }} --reconfigure
+        chdir: "{{ lab_dir }}"
+      when: topo_file is changed or cfg_files is changed or (running_before | int) < (nodes | length)
+      changed_when: true
+
+    - name: Allowlist re-applied after the deploy (clab-host.yml installed it)
+      ansible.builtin.command: /usr/local/sbin/clab-dev-access.sh
+      changed_when: false
+
+    - name: Containers after the deploy
+      ansible.builtin.command: containerlab inspect -t {{ topo }} --format json
+      register: inspect_after
+      changed_when: false
+
+    - name: Every node running with its oracle mgmt address
+      ansible.builtin.assert:
+        that: (nodes | map(attribute='mgmt_ipv4') | sort) == running_ips
+        fail_msg: "running {{ running_ips }}, oracle {{ nodes | map(attribute='mgmt_ipv4') | sort }}"
+        quiet: true
+      vars:
+        j: "{{ inspect_after.stdout | from_json }}"
+        rows: "{{ (j.values() | list | flatten) if j is mapping else j }}"
+        running_ips: >-
+          {{ rows | selectattr('state', 'equalto', 'running') | map(attribute='ipv4_address')
+             | map('regex_replace', '/\\d+$', '') | sort }}
+
+    # vrnetlab opens the container's port 22 before IOS XE is up, so readiness is a real login, not a port
+    - name: Every node answers SSH as the automation user (C8000v nested boot up to 30 min)
+      ansible.builtin.command: python3 {{ devcmd }} {{ node.mgmt_ipv4 }} "show version"
+      environment:
+        AUTOMATION_PASSWORD: "{{ clab_password }}"
+      loop: "{{ nodes }}"
+      loop_control:
+        loop_var: node
+        label: "{{ node.name }}"
+      register: ssh_ready
+      until: ssh_ready.rc == 0
+      retries: 90
+      delay: 20
+      changed_when: false
+      no_log: true
+
+    # --- C8000v licence level (lab-build-lessons: 17.13.01a boots with an empty level; vrnetlab's install
+    # step sets network-premier). The startup config sets network-advantage for the next boot; writing memory
+    # and one reload make it the running level.
+    - name: Licence level on each router
+      ansible.builtin.command: python3 {{ devcmd }} {{ node.mgmt_ipv4 }} "show version"
+      environment:
+        AUTOMATION_PASSWORD: "{{ clab_password }}"
+      loop: "{{ routers }}"
+      loop_control:
+        loop_var: node
+        label: "{{ node.name }}"
+      register: licence_before
+      changed_when: false
+      no_log: true
+
+    - name: Routers whose running level is not network-advantage
+      ansible.builtin.set_fact:
+        needs_reload: >-
+          {{ licence_before.results
+             | rejectattr('stdout', 'search', '(?m)^\s*License Level:\s*network-advantage\s*$')
+             | map(attribute='node') | list }}
+
+    - name: Next-boot level is network-advantage before any reload (else the startup config did not apply)
+      ansible.builtin.assert:
+        that: item.stdout is search('(?mi)^\s*Next reload license Level:\s*network-advantage\s*$')
+        fail_msg: "{{ item.node.name }}: next reload level is not network-advantage; check {{ lab_dir }}/configs/{{ item.node.name }}.cfg"
+        quiet: true
+      loop: "{{ licence_before.results | selectattr('node', 'in', needs_reload) | list }}"
+      loop_control:
+        label: "{{ item.node.name }}"
+
+    - name: Write memory
+      ansible.builtin.command: python3 {{ devcmd }} {{ node.mgmt_ipv4 }} "write memory"
+      environment:
+        AUTOMATION_PASSWORD: "{{ clab_password }}"
+      loop: "{{ needs_reload }}"
+      loop_control:
+        loop_var: node
+        label: "{{ node.name }}"
+      changed_when: true
+      no_log: true
+
+    - name: Reload once
+      ansible.builtin.command: >-
+        python3 -c "import sys; sys.path.insert(0, '/opt/clab'); import devcmd; devcmd.reload('{{ node.mgmt_ipv4 }}')"
+      environment:
+        AUTOMATION_PASSWORD: "{{ clab_password }}"
+      loop: "{{ needs_reload }}"
+      loop_control:
+        loop_var: node
+        label: "{{ node.name }}"
+      changed_when: true
+      no_log: true
+
+    - name: Give the reloading routers time to go down
+      ansible.builtin.pause:
+        seconds: 90
+      when: needs_reload | length > 0
+
+    - name: Every router runs network-advantage
+      ansible.builtin.command: python3 {{ devcmd }} {{ node.mgmt_ipv4 }} "show version"
+      environment:
+        AUTOMATION_PASSWORD: "{{ clab_password }}"
+      loop: "{{ routers }}"
+      loop_control:
+        loop_var: node
+        label: "{{ node.name }}"
+      register: licence_after
+      until: licence_after.rc == 0 and licence_after.stdout is search('(?m)^\s*License Level:\s*network-advantage\s*$')
+      retries: 90
+      delay: 20
+      changed_when: false
+      no_log: true
+
+    # --- routing converges as the oracle says ---------------------------------------------------------
+    - name: OSPF adjacencies FULL equal the node's links
+      ansible.builtin.command: python3 {{ devcmd }} {{ node.mgmt_ipv4 }} "show ip ospf neighbor"
+      environment:
+        AUTOMATION_PASSWORD: "{{ clab_password }}"
+      loop: "{{ nodes }}"
+      loop_control:
+        loop_var: node
+        label: "{{ node.name }} expects {{ ospf_expected[node.name] }}"
+      register: ospf
+      until: ospf.rc == 0 and (ospf.stdout_lines | select('search', 'FULL') | list | length) == (ospf_expected[node.name] | int)
+      retries: 30
+      delay: 20
+      changed_when: false
+      no_log: true
+
+    - name: BGP sessions Established on both ends
+      ansible.builtin.command: >-
+        python3 {{ devcmd }} {{ node.mgmt_ipv4 }}
+        "{{ 'show ip bgp summary | json' if node.kind == 'ceos' else 'show ip bgp summary' }}"
+      environment:
+        AUTOMATION_PASSWORD: "{{ clab_password }}"
+      loop: "{{ nodes }}"
+      loop_control:
+        loop_var: node
+        label: "{{ node.name }}"
+      register: bgp
+      # EOS: peerState in JSON. IOS XE: an established neighbour's last column is its prefix count (a number);
+      # any other state prints the state name there.
+      until: >-
+        bgp.rc == 0 and (
+          (node.kind == 'ceos'
+           and bgp_peers[node.name]
+               | difference((bgp.stdout | from_json).vrfs.default.peers | dict2items
+                            | selectattr('value.peerState', 'equalto', 'Established') | map(attribute='key') | list)
+               | length == 0)
+          or
+          (node.kind != 'ceos'
+           and bgp.stdout_lines
+               | select('match', '^(' ~ (bgp_peers[node.name] | map('regex_escape') | join('|'))
+                                 ~ ')\\s+4(\\s+\\d+){6}\\s+\\S+\\s+\\d+\\s*$')
+               | list | length == bgp_peers[node.name] | length))
+      retries: 30
+      delay: 20
+      changed_when: false
+      no_log: true
