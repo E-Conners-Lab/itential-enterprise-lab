@@ -708,10 +708,33 @@ def test_devcmd_waits_long_enough_for_nested_veos() -> None:
     probe = "import importlib.util as u,sys;s=u.spec_from_file_location('d',sys.argv[1]);m=u.module_from_spec(s);s.loader.exec_module(m);print(m.DEFAULT_TIMEOUT, m.run.__defaults__)"
     default = subprocess.run([sys.executable, "-c", probe, str(ROOT / "verify" / "devcmd.py")],
                              env=env, capture_output=True, text=True, check=True).stdout
-    assert default.startswith("90 ") and "90" in default.split(" ", 1)[1], default
+    assert default.startswith("150 ") and "150" in default.split(" ", 1)[1], default
     override = subprocess.run([sys.executable, "-c", probe, str(ROOT / "verify" / "devcmd.py")],
-                              env={**env, "DEVCMD_TIMEOUT": "120"}, capture_output=True, text=True, check=True).stdout
-    assert override.startswith("120 "), override
+                              env={**env, "DEVCMD_TIMEOUT": "200"}, capture_output=True, text=True, check=True).stdout
+    assert override.startswith("200 "), override
+
+
+def test_devcmd_gives_authentication_the_same_limit(tmp_path: Path) -> None:
+    """vEOS took up to 95 s to accept a login (2026-09-16); paramiko's default auth limit is 30 s, so S10.7 and S10.10
+    failed on healthy switches with BadAuthenticationType. Runs devcmd.py against a stand-in paramiko that records
+    what connect() was given."""
+    (tmp_path / "paramiko.py").write_text(
+        "import json\n"
+        "class AutoAddPolicy: pass\n"
+        "class _Out:\n"
+        "    def read(self): return b''\n"
+        "class SSHClient:\n"
+        "    def set_missing_host_key_policy(self, p): pass\n"
+        "    def connect(self, ip, **kw):\n"
+        "        print(json.dumps({k: kw[k] for k in ('timeout', 'banner_timeout', 'auth_timeout') if k in kw}))\n"
+        "    def exec_command(self, c, timeout=None): return None, _Out(), _Out()\n"
+        "    def close(self): pass\n"
+    )
+    env = {k: v for k, v in os.environ.items() if k != "DEVCMD_TIMEOUT"}
+    env.update(PYTHONPATH=str(tmp_path), AUTOMATION_PASSWORD="not-a-real-password")
+    out = subprocess.run([sys.executable, str(ROOT / "verify" / "devcmd.py"), "192.0.2.1", "show clock"],
+                         env=env, capture_output=True, text=True, check=True).stdout
+    assert json.loads(out) == {"timeout": 150, "banner_timeout": 150, "auth_timeout": 150}, out
 
 
 def test_only_the_standalone_clab_build_may_defer_the_itential_dev_checks() -> None:

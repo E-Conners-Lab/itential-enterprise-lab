@@ -13,8 +13,10 @@ import paramiko
 
 # Seconds to connect and to wait for output. vEOS under nested KVM (the clab dev topology) took 23 s to answer its
 # first `show version | json` and 9-11 s for other JSON commands (measured 2026-09-16), past the old 20 s, so the
-# default is 90; DEVCMD_TIMEOUT overrides it. A read-only show command waiting longer costs nothing.
-DEFAULT_TIMEOUT = int(os.environ.get("DEVCMD_TIMEOUT", "90"))
+# default covers it; DEVCMD_TIMEOUT overrides it. A read-only show command waiting longer costs nothing. The same limit
+# applies to authentication: vEOS took 0.4-95 s to accept a login (measured 2026-09-16) while paramiko's own auth
+# limit is 30 s, and an auth timeout surfaces as BadAuthenticationType from the keyboard-interactive fallback.
+DEFAULT_TIMEOUT = int(os.environ.get("DEVCMD_TIMEOUT", "150"))
 
 
 def run(ip: str, command: str, user: str = "automation", timeout: int = DEFAULT_TIMEOUT) -> str:
@@ -23,7 +25,7 @@ def run(ip: str, command: str, user: str = "automation", timeout: int = DEFAULT_
         raise SystemExit("AUTOMATION_PASSWORD missing in .env")
     c = paramiko.SSHClient()
     c.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    c.connect(ip, username=user, password=pw, look_for_keys=False, allow_agent=False, timeout=timeout, banner_timeout=timeout, disabled_algorithms=None)
+    c.connect(ip, username=user, password=pw, look_for_keys=False, allow_agent=False, timeout=timeout, banner_timeout=timeout, auth_timeout=timeout, disabled_algorithms=None)
     try:
         _, out, err = c.exec_command(command, timeout=timeout)
         # IOS XE / EOS terminate lines with CRLF; strip CR so shell checks can anchor on $NF
