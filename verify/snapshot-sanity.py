@@ -34,6 +34,7 @@ REQUIRED = (
     "netbox.devices",
 )
 _MISSING = object()
+UNNAMED = "?"
 
 
 def newest(results: Path = RESULTS) -> Path | None:
@@ -68,6 +69,11 @@ def problems(doc: dict) -> list[str]:
             out.append(f"{path}: {value}")
         elif isinstance(value, (dict, list, str)) and len(value) == 0:
             out.append(f"{path}: empty")
+        elif isinstance(value, (dict, list)) and UNNAMED in value:
+            # prod-snapshot.py records "?" when it finds no name in an entry. A section of "?"s still counts
+            # entries, so it looked fine - but a swapped adapter would compare equal (measured 2026-09-16: adapters
+            # and integrations were all "?" until data.name was added to the lookup).
+            out.append(f"{path}: an entry has no name ({UNNAMED!r}), so identity changes would go unseen")
     return out
 
 

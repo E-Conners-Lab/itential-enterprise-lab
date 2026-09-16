@@ -102,7 +102,10 @@ class HttpApi:
             raise SystemExit(f"HTTP {e.code} for {method} {url.split('?')[0]}") from e
         except urllib.error.URLError as e:
             raise SystemExit(f"{method} {url.split('?')[0]}: {e.reason}") from e
-        return (json.loads(raw) if raw.strip() else None), cookies
+        try:
+            return (json.loads(raw) if raw.strip() else None), cookies
+        except json.JSONDecodeError:
+            return raw, cookies  # /login answers with a plain-text token, not JSON
 
     def login(self) -> None:
         body = json.dumps({"username": self.user, "password": self._password}).encode()
@@ -153,7 +156,7 @@ def _total(doc: Any) -> int | None:
 
 
 def _name(item: dict) -> str:
-    return str(item.get("name") or item.get("id") or (item.get("properties") or {}).get("name") or item.get("_id") or "?")
+    return str(item.get("name") or item.get("id") or (item.get("data") or {}).get("name") or (item.get("properties") or {}).get("name") or item.get("_id") or "?")
 
 
 def _first(item: dict, *keys: str) -> Any:

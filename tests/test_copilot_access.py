@@ -397,6 +397,40 @@ def test_the_request_guard_refuses_anything_but_get_and_login(snapshot: ModuleTy
             api._request(method, url, {})
 
 
+class _FakeResponse:
+    def __init__(self, body: str, cookies: list[str]) -> None:
+        self._body, self._cookies = body, cookies
+        self.headers = self
+
+    def get_all(self, name: str) -> list[str]:
+        return self._cookies if name == "Set-Cookie" else []
+
+    def read(self) -> bytes:
+        return self._body.encode()
+
+    def __enter__(self) -> "_FakeResponse":
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        return None
+
+
+def test_login_accepts_a_plain_text_token_and_gets_still_parse_json(snapshot: ModuleType, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Measured on production 2026-09-16: POST /login answers with a plain-text token, not JSON. The first
+    `make prod-snapshot MODE=save` crashed on json.loads before its first GET; the fake HTTP layer above had
+    never exercised the real response body."""
+    bodies = {"/login": "eyJhbGciOiJIUzI1NiJ9.token-not-json", "/health/status": '{"ok": true}'}
+    monkeypatch.setattr(
+        snapshot.urllib.request, "urlopen",
+        lambda req, timeout, context: _FakeResponse(bodies[req.full_url.split("example")[1]], ["token=abc; Path=/"]),
+    )
+    api = object.__new__(snapshot.HttpApi)
+    api.platform, api.user, api._password, api._tls, api._cookie = "http://itential.example", "u", "p", None, ""
+    api.login()
+    assert api._cookie == "token=abc"
+    assert api._request("GET", "http://itential.example/health/status", {})[0] == {"ok": True}
+
+
 class FakeApi:
     def __init__(self, roles_total: int = 186, extra_group: bool = False, wf_updated: str = "2026-09-10") -> None:
         self.calls: list[str] = []
@@ -419,10 +453,11 @@ class FakeApi:
             return {"data": {"items": [{"name": "netbox-sot", "updated": "2026-09-09"}]}}
         if base == "/model-registry-service/profiles":
             return {"profiles": [{"name": "anthropic"}, {"name": "ollama-mac"}]}
+        # the envelope production really returns (measured 2026-09-16): the name is in data.name
         if base == "/integrations":
-            return {"results": [{"name": "netbox-api"}]}
+            return {"results": [{"metadata": {"IsActive": True}, "data": {"name": "netbox-api", "model": "lab-netbox:1.0.0"}}], "total": 1}
         if base == "/adapters":
-            return {"results": [{"id": "NetBox"}]}
+            return {"results": [{"metadata": {"isActive": True}, "data": {"name": "NetBox", "model": "adapter-netbox"}}], "total": 1}
         if base == "/authorization/roles":
             return {"results": [], "total": self.roles_total}
         if base == "/authorization/groups":
@@ -488,6 +523,14 @@ def test_sanity_accepts_the_fingerprint_prod_snapshot_really_writes(sanity: Modu
     assert sanity.main([], results=tmp_path) == 0
 
 
+def test_adapters_and_integrations_are_fingerprinted_by_name(snapshot: ModuleType) -> None:
+    """With production's real envelope the first baseline recorded ['?', '?', '?'] and ['?', '?']: counts only, so a
+    swapped adapter would have compared equal. The names must come through."""
+    fp = snapshot.collect(FakeApi())
+    assert fp["adapters"] == ["NetBox"]
+    assert fp["integrations"] == ["netbox-api"]
+
+
 def _fingerprint(**overrides: object) -> dict:
     fp = {
         "workflows": {"wf-a": "2026-09-10"},
@@ -526,6 +569,9 @@ def _fingerprint(**overrides: object) -> dict:
         ({"authorization__admin_group_roles": None}, "authorization.admin_group_roles: None"),
         ({"netbox__devices": 0}, "netbox.devices: 0"),
         ({"netbox__devices": KeyError}, "netbox.devices: missing"),
+        ({"adapters": ["?", "?", "?"]}, "adapters: an entry has no name ('?'), so identity changes would go unseen"),
+        ({"integrations": ["netbox-api", "?"]}, "integrations: an entry has no name ('?'), so identity changes would go unseen"),
+        ({"workflows": {"?": "2026-09-10"}}, "workflows: an entry has no name ('?'), so identity changes would go unseen"),
     ],
 )
 def test_sanity_refuses_every_empty_required_section(sanity: ModuleType, tmp_path: Path, override: dict, problem: str, capsys: pytest.CaptureFixture) -> None:
