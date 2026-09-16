@@ -1,21 +1,21 @@
-{#- EOS startup config for a clab vEOS-lab switch (ADR 0063, amendment 2026-09-16), rendered per node by clab-dev.yml
+{# EOS startup config for a clab vEOS-lab switch (ADR 0063, amendment 2026-09-16), rendered per node by clab-dev.yml
     from clab/versions.yaml. vrnetlab's arista/veos launch.py logs in on the console, applies its bootstrap
     (Management1 10.0.0.15/24 behind QEMU user-net, stitched to the container's eth0 and the containerlab mgmt
     address; its default route; eAPI over unix-socket; gNMI; NETCONF; hostname) and then types this file line by
     line in `configure terminal`, followed by `end` and `copy running-config startup-config`. So this file
     leaves Management1 and the default route alone and carries no `end` of its own.
     Inputs: the oracle, `node` (one nodes[] row) and `clab_password` (CLAB_AUTOMATION_PASSWORD, never a literal). -#}
-{%- set by_name = {} %}
-{%- for n in nodes %}{% set _ = by_name.update({n.name: n}) %}{% endfor -%}
+{% set by_name = {} %}
+{% for n in nodes %}{% set _ = by_name.update({n.name: n}) %}{% endfor -%}
 hostname {{ node.name }}
 dns domain lab.internal
 !
-{#- the lab's vEOS runs the multi-agent model (topology/configs/veos.j2); on a running vEOS the model changes at the
+{# the lab's vEOS runs the multi-agent model (topology/configs/veos.j2); on a running vEOS the model changes at the
     next boot, and the OSPF and BGP lines below are the same under either model #}
 service routing protocols model multi-agent
 !
 username {{ credentials.user }} privilege 15 role network-admin secret 0 {{ clab_password }}
-{#- containerlab's arista_veos kind starts vrnetlab with its default credentials (admin/admin), and its bootstrap
+{# containerlab's arista_veos kind starts vrnetlab with its default credentials (admin/admin), and its bootstrap
     creates that user before this file is applied, so this line replaces the vendor default; vrnetlab closes the
     console after applying the file and nothing logs in as admin after deploy (PID success criterion 5). #}
 username admin privilege 15 role network-admin secret 0 {{ clab_password }}
@@ -28,13 +28,13 @@ management api http-commands
 management ssh
    no shutdown
 !
-{%- for v in vlans %}
+{% for v in vlans %}
 vlan {{ v.id }}
    name {{ v.name }}
 !
-{%- endfor %}
-{%- for link in links if link.trunk is defined and node.name in [link.a.node, link.b.node] %}
-{%- set side, peer = (link.a, link.b) if link.a.node == node.name else (link.b, link.a) %}
+{% endfor %}
+{% for link in links if link.trunk is defined and node.name in [link.a.node, link.b.node] %}
+{% set side, peer = (link.a, link.b) if link.a.node == node.name else (link.b, link.a) %}
 vlan {{ link.svi.vlan }}
    name TRANSIT
 !
@@ -50,15 +50,15 @@ interface Vlan{{ link.svi.vlan }}
    ip ospf network point-to-point
    ip ospf area {{ routing.ospf.area }}
 !
-{%- endfor %}
-{%- for v in vlans if node.name in v.svi %}
+{% endfor %}
+{% for v in vlans if node.name in v.svi %}
 interface Vlan{{ v.id }}
    description {{ v.name }} gateway
    ip address {{ v.svi[node.name] }}
 !
-{%- endfor %}
-{%- for link in links if link.trunk is not defined %}
-{%- for side, peer in [(link.a, link.b), (link.b, link.a)] if side.node == node.name %}
+{% endfor %}
+{% for link in links if link.trunk is not defined %}
+{% for side, peer in [(link.a, link.b), (link.b, link.a)] if side.node == node.name %}
 interface {{ side.ifname }}
    description to {{ peer.node }}:{{ peer.ifname }}
    no switchport
@@ -67,8 +67,8 @@ interface {{ side.ifname }}
    ip ospf area {{ routing.ospf.area }}
    no shutdown
 !
-{%- endfor %}
-{%- endfor %}
+{% endfor %}
+{% endfor %}
 interface Loopback0
    ip address {{ node.loopback }}/32
    ip ospf area {{ routing.ospf.area }}
@@ -81,21 +81,21 @@ router ospf {{ routing.ospf.process }}
 !
 router bgp {{ node.asn }}
    router-id {{ node.loopback }}
-{%- for s in routing.bgp if node.name in [s.a, s.b] %}
-{%- set peer_name = s.b if s.a == node.name else s.a %}
-{%- set peer_ip = s.b_ip if s.a == node.name else s.a_ip %}
+{% for s in routing.bgp if node.name in [s.a, s.b] %}
+{% set peer_name = s.b if s.a == node.name else s.a %}
+{% set peer_ip = s.b_ip if s.a == node.name else s.a_ip %}
    neighbor {{ peer_ip }} remote-as {{ by_name[peer_name].asn }}
    neighbor {{ peer_ip }} description {{ peer_name }} ({{ s.type }})
-{%- if s.type == 'ibgp' %}
+{% if s.type == 'ibgp' %}
    neighbor {{ peer_ip }} update-source Loopback0
    neighbor {{ peer_ip }} next-hop-self
-{%- endif %}
-{%- endfor %}
-{%- for p in routing.announce.get(node.name, []) %}
+{% endif %}
+{% endfor %}
+{% for p in routing.announce.get(node.name, []) %}
    network {{ p }}
-{%- endfor %}
+{% endfor %}
    address-family ipv4
-{%- for s in routing.bgp if node.name in [s.a, s.b] %}
+{% for s in routing.bgp if node.name in [s.a, s.b] %}
       neighbor {{ s.b_ip if s.a == node.name else s.a_ip }} activate
-{%- endfor %}
+{% endfor %}
 !
