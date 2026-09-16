@@ -147,7 +147,7 @@
         rows: "{{ (j.values() | list | flatten) if j is mapping else j }}"
         running_ips: >-
           {{ rows | selectattr('state', 'equalto', 'running') | map(attribute='ipv4_address')
-             | map('regex_replace', '/\\d+$', '') | sort }}
+             | map('regex_replace', '/[0-9]+$', '') | sort }}
 
     # vrnetlab opens the container's port 22 before IOS XE or EOS is up, and the automation user exists only once
     # vrnetlab has typed the startup config in, so readiness is a real login, not a port

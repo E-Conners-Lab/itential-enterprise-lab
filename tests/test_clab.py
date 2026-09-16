@@ -77,7 +77,7 @@ def test_oracle_has_the_agreed_keys(oracle: dict) -> None:
     assert set(oracle["vm"]) == {"name", "vm_id", "ip", "cores", "memory_mb", "disk_gb"}
     assert set(oracle["mgmt"]) == {"network", "prefix", "gateway", "bridge"}
     assert set(oracle["images"]) == {"veos", "c8000v"}, "the dev topology runs vEOS and C8000v, nothing else"
-    assert set(oracle["images"]["veos"]) == {"version", "source", "staged", "vmdk", "tag", "ram_mb"}
+    assert set(oracle["images"]["veos"]) == {"version", "source", "staged", "vmdk", "tag", "ram_mb", "cpu"}
     assert set(oracle["images"]["c8000v"]) == {"version", "source", "staged", "vrnetlab_repo", "vrnetlab_commit", "tag", "ram_mb"}
     assert oracle["credentials"] == {"user": "automation", "password_env": "CLAB_AUTOMATION_PASSWORD"}
     for node in oracle["nodes"]:
@@ -102,6 +102,8 @@ def test_the_owner_decisions_hold(oracle: dict) -> None:
         "vmdk": "vEOS-lab-4.33.1.1F.vmdk",
         "tag": "vrnetlab/arista_veos:4.33.1.1F",
         "ram_mb": 2048,
+        # nested KVM: the default -cpu host,level=9 aborts on MSR 0x345; the virtual PMU must be off (2026-09-16)
+        "cpu": "host,level=9,pmu=off",
     }
     assert oracle["images"]["c8000v"]["tag"] == f"vrnetlab/cisco_c8000v:{oracle['images']['c8000v']['version']}"
 
@@ -315,7 +317,12 @@ def test_topology_renders_from_the_oracle(env: jinja2.Environment, oracle: dict)
     assert set(topo["topology"]["kinds"]) == {"cisco_c8000v", "arista_veos"}
     assert topo["topology"]["kinds"]["arista_veos"]["image"] == oracle["images"]["veos"]["tag"]
     # vrnetlab reads QEMU_MEMORY (common/vrnetlab.py VM.ram), so the oracle's number is the one QEMU gets
-    assert topo["topology"]["kinds"]["arista_veos"]["env"] == {"QEMU_MEMORY": str(oracle["images"]["veos"]["ram_mb"])}
+    # and QEMU_CPU (VM.cpu): without pmu=off the vEOS VM aborts under nested KVM two seconds after launch
+    assert topo["topology"]["kinds"]["arista_veos"]["env"] == {
+        "QEMU_MEMORY": str(oracle["images"]["veos"]["ram_mb"]),
+        "QEMU_CPU": oracle["images"]["veos"]["cpu"],
+    }
+    assert "pmu=off" in oracle["images"]["veos"]["cpu"].split(",")
     assert topo["topology"]["kinds"]["cisco_c8000v"]["env"] == {"QEMU_MEMORY": str(oracle["images"]["c8000v"]["ram_mb"])}
     assert [l["endpoints"] for l in topo["topology"]["links"]] == [
         [f"{l['a']['node']}:{l['a']['endpoint']}", f"{l['b']['node']}:{l['b']['endpoint']}"] for l in oracle["links"]
@@ -658,14 +665,36 @@ def test_the_containerlab_version_check_matches_real_output() -> None:
     assert check(clab_version={"stdout": "    version: 0.78.0"}, containerlab=pinned) is False
 
 
-def test_no_play_puts_a_backslash_b_in_a_jinja_string() -> None:
-    """'\\b' inside a Jinja string literal is a backspace, never a word boundary - a regex using it silently never
-    matches. Every play and task file is held to it."""
+def test_no_clab_play_uses_an_escape_ansible_and_jinja_read_differently() -> None:
+    """Measured on ansible-core 2.20.3 (2026-09-16): Ansible does not process escapes in Jinja string literals, plain
+    Jinja does. So '\\\\d' stays a double backslash under Ansible and never matches (it stripped nothing from
+    containerlab's `10.100.2.11/24`, and the deploy check failed), while '\\b' is a word boundary under Ansible and a
+    backspace under plain Jinja. A test rendering with jinja2 cannot vouch for either, so the clab plays use neither
+    inside a regex argument; '\\s' and '\\d' read the same in both."""
     offenders = []
-    for path in sorted((ROOT / "ansible" / "playbooks").rglob("*.yml")):
-        for n, line in enumerate(path.read_text().splitlines(), 1):
-            if re.search(r"'[^']*(?<!\\)\\b[^']*'", line) and "{{" not in line.split("#")[0] + "x" and ("search(" in line or "match(" in line or "regex" in line):
-                offenders.append(f"{path.name}:{n}")
-            elif re.search(r"(search|match|regex_\w+)\([^)]*'[^']*(?<!\\)\\b", line):
-                offenders.append(f"{path.name}:{n}")
+    for name in ("clab-dev.yml", "clab-host.yml"):
+        for n, line in enumerate((PLAYBOOKS / name).read_text().splitlines(), 1):
+            code = line.split(" # ")[0]
+            # `x is search('...')`, `regex_replace('...')` and `map('regex_replace', '...')` / `select('match', '...')`
+            patterns = re.findall(r"(?:search|match|regex_\w+)\(\s*'([^']*)'", code)
+            patterns += re.findall(r"'(?:search|match|regex_\w+)'\s*,\s*'([^']*)'", code)
+            for arg in patterns:
+                if "\\\\" in arg or re.search(r"\\b", arg):
+                    offenders.append(f"{name}:{n}: {arg}")
     assert not offenders, offenders
+
+
+def test_the_deploy_check_compares_bare_addresses() -> None:
+    """containerlab 0.79 `inspect --format json` reports ipv4_address with its prefix length (measured 2026-09-16:
+    `10.100.2.11/24`); the oracle holds bare addresses. Runs the play's own expression over the real row shape."""
+    play = yaml.safe_load((PLAYBOOKS / "clab-dev.yml").read_text())
+    task = next(t for p in play for t in p.get("tasks", []) if t.get("name") == "Every node running with its oracle mgmt address")
+    env = jinja2.Environment()
+    env.filters["regex_replace"] = lambda value, pattern, repl="": re.sub(pattern, repl, value)
+    rows = [
+        {"name": "clab-dev-clab-rtr1", "state": "running", "ipv4_address": "10.100.2.11/24"},
+        {"name": "clab-dev-clab-sw1", "state": "exited", "ipv4_address": "10.100.2.21/24"},
+    ]
+    running = yaml.safe_load(env.from_string(task["vars"]["running_ips"]).render(rows=rows))
+    # plain Jinja can't tell '\\d' from '\\\\d' the way Ansible does; the escape test above covers that half
+    assert running == ["10.100.2.11"], "prefix stripped, exited nodes left out"
