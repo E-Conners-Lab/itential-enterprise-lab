@@ -192,6 +192,15 @@ def test_the_ldap_task_never_writes_the_pinned_ldif() -> None:
         assert mod not in {"copy", "template", "lineinfile", "blockinfile", "replace"} or "ldif" not in json.dumps(args)
 
 
+def test_the_ldap_task_uses_only_general_options_ldapsearch_accepts() -> None:
+    """OpenLDAP's -o options are hyphenated. `-o ldif_wrap=no` made ldapsearch exit 1 with "Invalid general option
+    name: ldif_wrap" and stopped make dev-stack (2026-09-16); `ldif-wrap=no` was then run against the dev directory."""
+    accepted = {"ldif-wrap", "nettimeout"}  # ldapsearch --help, general options
+    options = re.findall(r"'-o',\s*'([^'=]+)=", LDAP_TASK.read_text())
+    assert options, "the directory searches pass -o ldif-wrap"
+    assert set(options) <= accepted, options
+
+
 def test_the_ldap_task_passes_passwords_only_on_stdin() -> None:
     commands = [t for t in _tasks(LDAP_TASK) if _module(t)[0] == "command"]
     assert commands
