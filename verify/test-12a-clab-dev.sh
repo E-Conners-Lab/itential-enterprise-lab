@@ -21,7 +21,14 @@ OOB_GW=${OOB_GW:-10.100.0.1}
 TOPO=/opt/clab/dev/dev.clab.yml
 SSH="ssh -o BatchMode=yes -o ConnectTimeout=8 -o StrictHostKeyChecking=accept-new"
 ts=$(date -u +%Y%m%dT%H%M%SZ)
-fail=0; pass=0
+fail=0; pass=0; deferred=0
+# `make clab-dev` builds the topology before `make dev-stack` builds itential-dev, so it runs this with
+# CLAB_DEV_ONLY=1: the itential-dev half of S10.7 and S10.12 is then reported DEFERRED when itential-dev does not
+# answer SSH, instead of failing a first build that cannot pass yet. Without it (`make verify-dev`, which runs after
+# the dev stack) those halves are required.
+CLAB_DEV_ONLY=${CLAB_DEV_ONLY:-0}
+dev_ready() { $SSH "ubuntu@${DEV_IP}" true </dev/null 2>/dev/null; }
+dev_deferred() { [ "$CLAB_DEV_ONLY" = 1 ] && ! dev_ready; }
 ok()  { echo "PASS  $1"; pass=$((pass+1)); }
 bad() { echo "FAIL  $1"; fail=$((fail+1)); }
 # ONLY="S10.9" runs a subset while iterating (every criterion still runs by default)
@@ -104,6 +111,10 @@ PY
     esac
     # itential-dev holds no clab password of its own for the verify, so from there the proof is the SSH server's
     # banner over the routed path (TCP through clab's DOCKER-USER allowlist); the login itself is proved above
+    if dev_deferred; then
+      echo "${name} ${ip}: login from the Mac; from itential-dev DEFERRED (not built yet, CLAB_DEV_ONLY=1)"
+      continue
+    fi
     banner=$($SSH "ubuntu@${DEV_IP}" "timeout 8 bash -c 'exec 3<>/dev/tcp/${ip}/22; head -c 7 <&3'" </dev/null 2>/dev/null)
     [ "$banner" = "SSH-2.0" ] || { echo "${name} ${ip}: no SSH banner from itential-dev (${DEV_IP}): '${banner}'"; return 1; }
     echo "${name} ${ip}: login from the Mac, SSH banner from itential-dev"
@@ -285,12 +296,18 @@ check "S10.11 VLANs 10 and 20 active on both switches and allowed on the switch-
 # --- S10.12 routes on oob-gw and itential-dev via clab; the DOCKER-USER allowlist holds; clab RAM under its line ---
 c12() {
   local prefix; prefix=$(oracle mgmt.prefix)
-  local host route
-  for host in "$OOB_GW" "$DEV_IP"; do
+  local host route hosts="$OOB_GW $DEV_IP"
+  if dev_deferred; then
+    hosts="$OOB_GW"
+    echo "itential-dev route DEFERRED (not built yet, CLAB_DEV_ONLY=1)"
+  fi
+  for host in $hosts; do
     route=$($SSH "ubuntu@${host}" "ip -j route show ${prefix}" </dev/null) || { echo "ssh ubuntu@${host} failed"; return 1; }
     echo "$route" | ${PY} -c "import json,sys;r=json.load(sys.stdin);assert len(r)==1 and r[0].get('gateway')==sys.argv[1], r" "$CLAB_IP" || { echo "${host}: route to ${prefix} is not via ${CLAB_IP}: ${route}"; return 1; }
   done
-  $SSH "ubuntu@${OOB_GW}" "test -s /etc/netplan/61-lab-routes.yaml && grep -q '${prefix}' /etc/netplan/61-lab-routes.yaml" </dev/null || { echo "oob-gw: route not persisted in /etc/netplan/61-lab-routes.yaml"; return 1; }
+  # netplan files are root-only (0600, oob-gw.yml), so the read needs sudo; without it grep is refused and a
+  # correctly persisted route looked missing (2026-09-16)
+  $SSH "ubuntu@${OOB_GW}" "sudo -n test -s /etc/netplan/61-lab-routes.yaml && sudo -n grep -q '${prefix}' /etc/netplan/61-lab-routes.yaml" </dev/null || { echo "oob-gw: route not persisted in /etc/netplan/61-lab-routes.yaml"; return 1; }
   # the allowlist, both sides: the rules on clab equal the oracle, and a source outside it (oob-gw's own OOB
   # address, which routes to the prefix) is really dropped
   $SSH "ubuntu@${CLAB_IP}" 'sudo -n iptables -w -S CLAB-DEV-MGMT; echo ===; sudo -n iptables -w -S DOCKER-USER; echo ===; systemctl is-enabled clab-dev-access; echo ===; free -m | awk "/^Mem:/{print \$2, \$3}"' > "$WORK/access.txt" </dev/null || { echo "ssh ubuntu@${CLAB_IP} failed"; return 1; }
@@ -320,10 +337,11 @@ if errs:
     print("\n".join(errs)); sys.exit(1)
 print(f"allowlist {allowed} + DROP, jump first in DOCKER-USER, unit enabled; RAM {used}/{total} MB")
 PY
-  echo "oob-gw and itential-dev route ${prefix} via ${CLAB_IP} (oob-gw persisted); oob-gw itself is refused at the allowlist"
+  echo "$(echo "$hosts" | sed "s/${OOB_GW}/oob-gw/; s/${DEV_IP}/itential-dev/; s/ / and /") route ${prefix} via ${CLAB_IP} (oob-gw persisted); oob-gw itself is refused at the allowlist"
 }
 check "S10.12 oob-gw and itential-dev route the clab mgmt prefix via clab; the DOCKER-USER allowlist equals the oracle and drops other sources; clab RAM under its budget line" c12
 
+dev_deferred && deferred=1
 echo
-echo "passed=${pass} failed=${fail}"
+echo "passed=${pass} failed=${fail}$([ "$deferred" = 1 ] && echo " (itential-dev parts of S10.7/S10.12 deferred: run make verify-dev after make dev-stack)")"
 [ "$fail" -eq 0 ]
