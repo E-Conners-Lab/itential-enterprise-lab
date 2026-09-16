@@ -11,6 +11,7 @@ import json
 import os
 import re
 import subprocess
+import sys
 from pathlib import Path
 
 import jinja2
@@ -705,10 +706,10 @@ def test_devcmd_waits_long_enough_for_nested_veos() -> None:
     devcmd.py gave up at 20 s and S10.8, S10.10 and S10.11 failed on healthy devices."""
     env = {k: v for k, v in os.environ.items() if k != "DEVCMD_TIMEOUT"}
     probe = "import importlib.util as u,sys;s=u.spec_from_file_location('d',sys.argv[1]);m=u.module_from_spec(s);s.loader.exec_module(m);print(m.DEFAULT_TIMEOUT, m.run.__defaults__)"
-    default = subprocess.run([str(ROOT / ".venv" / "bin" / "python"), "-c", probe, str(ROOT / "verify" / "devcmd.py")],
+    default = subprocess.run([sys.executable, "-c", probe, str(ROOT / "verify" / "devcmd.py")],
                              env=env, capture_output=True, text=True, check=True).stdout
     assert default.startswith("90 ") and "90" in default.split(" ", 1)[1], default
-    override = subprocess.run([str(ROOT / ".venv" / "bin" / "python"), "-c", probe, str(ROOT / "verify" / "devcmd.py")],
+    override = subprocess.run([sys.executable, "-c", probe, str(ROOT / "verify" / "devcmd.py")],
                               env={**env, "DEVCMD_TIMEOUT": "120"}, capture_output=True, text=True, check=True).stdout
     assert override.startswith("120 "), override
 
