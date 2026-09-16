@@ -33,7 +33,7 @@ variable "vm" {
     vm_id     = 230
     ip        = "10.100.0.224"
     cores     = 8
-    memory_mb = 16384
+    memory_mb = 20480
     disk_gb   = 60
   }
 }

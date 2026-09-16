@@ -25,7 +25,7 @@
       - {name: itential-dev, vcpus: 8, memory: 24576, disk: 160, role: itential-host, ips: [10.100.0.65], tags: [phase-5]}
       # No `clab` tag: tags become inventory groups, and a group named like the host `clab` collides with it in
       # the NetBox inventory. The plays address the role group `clab-host`.
-      - {name: clab, vcpus: 8, memory: 16384, disk: 60, role: clab-host, ips: [10.100.0.224], tags: [phase-12]}
+      - {name: clab, vcpus: 8, memory: 20480, disk: 60, role: clab-host, ips: [10.100.0.224], tags: [phase-12]}
     # Phase 8 (PID S11, ADR 0053): the production environment's VMs come from their own oracle, so the shape
     # is declared once. The NetBox role is `ha2-<role>`, which is also the Ansible group the plays address.
     ha2: "{{ (lookup('ansible.builtin.file', playbook_dir ~ '/../../itential/ha2/versions.yaml') | from_yaml).vms }}"

@@ -202,3 +202,15 @@ syslinux with Aboot embedded, partition 2 the 4 GB filesystem with `vEOS-lab.swi
 
 **Unchanged:** every isolation rule of this ADR (routed mgmt prefix, DOCKER-USER allowlist, no NetBox
 registration, own device password, dev-only verification), the addressing, VLANs and routing of the topology.
+
+## Amendment 2026-09-17 — the vEOS switches get 4 GB, `clab` 20 GB, the RAM ceiling 300 GB
+
+- **Measured 2026-09-16:** at vrnetlab's 2 GB default both switches ran out of memory in a loop: about 70 OOM kills
+  each (OpenConfig, ReloadCauseAgent), 48 MB free, a load average of 20 inside the switch, 1.7-1.8 host cores per
+  switch container. It surfaced as SSH logins of 1-95 s and intermittent login failures in S10.7, S10.10 and
+  S10.11, and as a Gateway 5 banner timeout; the timeout changes of PRs #51 and #53 treated those symptoms.
+- **Decision (owner):** `images.veos.ram_mb` 4096, what the EVE-NG lab's vEOS gets (`topology/enterprise.yaml`).
+  `clab` grows from 8 vCPU / 16 GB to 8 vCPU / 20 GB (4 x 4 GB of guest RAM plus the host), and the RAM ceiling
+  in `docs/resource-budget.md` rises from 296 to 300 GB. The hypervisor had about 266 GB of 314 GB in use.
+- The earlier amendment's cost line ("`clab` stays 8 vCPU / 16 GB: 2 x 4 GB C8000v + 2 x 2 GB vEOS is 12 GB of
+  guest RAM") no longer holds. The timeouts stay: they cost nothing on a healthy device.

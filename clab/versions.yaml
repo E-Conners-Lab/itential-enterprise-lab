@@ -13,7 +13,7 @@ vm:
   vm_id: 230 # 200 oob, 201-203 k3s, 205 itential-dev, 210-220 ha2, 9000/9001 templates (owner decision)
   ip: 10.100.0.224
   cores: 8
-  memory_mb: 16384
+  memory_mb: 20480 # 2 x 4 GB C8000v + 2 x 4 GB vEOS + host (ADR 0063 amendment 2026-09-17)
   disk_gb: 60
 
 containerlab: 0.79.0 # docs/image-manifest.md section 4.5, released 2026-08-21
@@ -42,7 +42,10 @@ images:
     vmdk: vEOS-lab-4.33.1.1F.vmdk
     # $(REGISTRY)$(vendor)_$(name):$(VERSION), VENDOR=Arista NAME=vEOS lower-cased (makefile.include)
     tag: vrnetlab/arista_veos:4.33.1.1F
-    ram_mb: 2048 # vrnetlab's default for vEOS (launch.py ram=2048); passed as QEMU_MEMORY like the C8000v
+    # vrnetlab's default is 2048 (launch.py), and at 2048 both switches ran out of memory in a loop (about 70 OOM kills
+    # each of OpenConfig and ReloadCauseAgent, 48 MB free, load 20; measured 2026-09-16), which surfaced as slow or
+    # failed SSH logins. 4096 is what the EVE-NG lab's vEOS gets (topology/enterprise.yaml). Passed as QEMU_MEMORY.
+    ram_mb: 4096
     # passed as QEMU_CPU (vrnetlab's VM.cpu). vrnetlab's default `-cpu host,level=9` aborts under nested KVM on
     # this Proxmox host: "failed to set MSR 0x345 to 0x2000" (IA32_PERF_CAPABILITIES) and a kvm_buf_set_msrs
     # assertion, two seconds after launch (measured 2026-09-16). With the virtual PMU off, Aboot and the SWI boot.

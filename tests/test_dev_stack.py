@@ -423,7 +423,7 @@ def test_netbox_registers_the_dev_vm_and_clab_only() -> None:
     vms = {v["name"]: v for v in play["vars"]["vms"]}
     assert vms["itential-dev"] == {"name": "itential-dev", "vcpus": 8, "memory": 24576, "disk": 160,
                                    "role": "itential-host", "ips": ["10.100.0.65"], "tags": ["phase-5"]}
-    assert vms["clab"] == {"name": "clab", "vcpus": 8, "memory": 16384, "disk": 60,
+    assert vms["clab"] == {"name": "clab", "vcpus": 8, "memory": 20480, "disk": 60,
                            "role": "clab-host", "ips": ["10.100.0.224"], "tags": ["phase-12"]}
     vm = ITENTIAL["vm"]
     assert (vm["cores"], vm["memory_mb"], vm["disk_gb"], vm["ip"]) == (8, 24576, 160, "10.100.0.65")

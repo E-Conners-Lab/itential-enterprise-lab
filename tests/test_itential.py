@@ -188,13 +188,14 @@ def test_budget_total_and_headroom_are_arithmetically_right() -> None:
 
 
 def test_budget_ceilings_are_the_owner_approved_ones() -> None:
-    """ADR 0063: the owner raised RAM 280 -> 296 GB and thin disk allocation 1,400 -> 1,500 GB for the dev stack.
+    """ADR 0063: the owner raised RAM 280 -> 296 GB and thin disk allocation 1,400 -> 1,500 GB for the dev stack, then
+    RAM 296 -> 300 GB for 4 GB vEOS on clab (2026-09-17, PID 1.32).
     Section 1 states the rule and section 2 does the arithmetic; they must name the same numbers, or a later
     edit to one quietly re-opens a decision the other still records."""
     cpu, ram, disk = _budget_ceilings()
-    assert (cpu, ram, disk) == (108, 296, 1500), f"section 2 ceilings {(cpu, ram, disk)} are not the approved 108/296/1,500"
+    assert (cpu, ram, disk) == (108, 300, 1500), f"section 2 ceilings {(cpu, ram, disk)} are not the approved 108/300/1,500"
     text = BUDGET.read_text()
-    assert "**108 vCPU allocated**" in text and "**296 GB allocated**" in text, "section 1 must state the same ceilings"
+    assert "**108 vCPU allocated**" in text and "**300 GB allocated**" in text, "section 1 must state the same ceilings"
     assert "**thin allocation <= 1.5 TB;" in text, "section 1 must state the 1.5 TB thin allocation ceiling"
 
 
