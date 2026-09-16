@@ -715,8 +715,10 @@ def test_devcmd_waits_long_enough_for_nested_veos() -> None:
 
 
 def test_only_the_standalone_clab_build_may_defer_the_itential_dev_checks() -> None:
-    """`make clab-dev` runs before `make dev-stack` builds itential-dev, so its verify may defer the itential-dev half of
-    S10.7/S10.12; `make verify-dev` runs after the dev stack and must require it. Deferral is opt-in, never default."""
+    """`make clab-dev` runs before `make dev-stack` builds itential-dev, so its verify defers the itential-dev half of
+    S10.7/S10.12; `make verify-dev` runs after the dev stack and must require it. Deferral is opt-in, never default,
+    and does not depend on whether itential-dev answers: on 2026-09-16 the VM answered SSH before its host play had
+    added the clab route, the probe-based gate required the checks, and `make dev-stack` stopped at its prerequisite."""
     make = MAKEFILE.read_text()
     clab = re.search(r"^clab-dev:.*?\n((?:\t[^\n]*\n)+)", make, re.M).group(1)
     verify_dev = re.search(r"^verify-dev:.*?\n((?:\t[^\n]*\n)+)", make, re.M).group(1)
@@ -724,15 +726,16 @@ def test_only_the_standalone_clab_build_may_defer_the_itential_dev_checks() -> N
     assert "CLAB_DEV_ONLY" not in verify_dev and "\tverify/test-12a-clab-dev.sh\n" in verify_dev
     script = VERIFY.read_text()
     assert "CLAB_DEV_ONLY=${CLAB_DEV_ONLY:-0}" in script, "strict unless the caller opts in"
-    assert 'dev_deferred() { [ "$CLAB_DEV_ONLY" = 1 ] && ! dev_ready; }' in script, "defers only when opted in AND unreachable"
+    assert 'dev_deferred() { [ "$CLAB_DEV_ONLY" = 1 ]; }' in script, "the flag alone decides; no reachability probe"
+    assert "dev_ready" not in script, "a reachable itential-dev is not a finished one (the route comes later)"
     # both itential-dev halves go through the gate, and nothing else does
     assert script.count("if dev_deferred; then") == 2
     c7 = script.split("c7() {", 1)[1].split("\n}\n", 1)[0]
     c12 = script.split("c12() {", 1)[1].split("\n}\n", 1)[0]
     assert "dev_deferred" in c7 and "dev_deferred" in c12
-    # with the flag unset, the gate is closed: run it the way bash will
-    gate = 'SSH=false; DEV_IP=x; CLAB_DEV_ONLY=${CLAB_DEV_ONLY:-0}\n' + "\n".join(
-        l for l in script.splitlines() if l.startswith(("dev_ready()", "dev_deferred()"))) + "\ndev_deferred && echo defer || echo require"
+    # with the flag unset, the gate is closed; with it set, it defers even when itential-dev answers (SSH=true)
+    gate = 'SSH=true; DEV_IP=x; CLAB_DEV_ONLY=${CLAB_DEV_ONLY:-0}\n' + "\n".join(
+        l for l in script.splitlines() if l.startswith("dev_deferred()")) + "\ndev_deferred && echo defer || echo require"
     assert subprocess.run(["bash", "-c", gate], capture_output=True, text=True, env={"PATH": os.environ["PATH"]}).stdout.strip() == "require"
     assert subprocess.run(["bash", "-c", gate], capture_output=True, text=True, env={"PATH": os.environ["PATH"], "CLAB_DEV_ONLY": "1"}).stdout.strip() == "defer"
 

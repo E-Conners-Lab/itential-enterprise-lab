@@ -23,12 +23,12 @@ SSH="ssh -o BatchMode=yes -o ConnectTimeout=8 -o StrictHostKeyChecking=accept-ne
 ts=$(date -u +%Y%m%dT%H%M%SZ)
 fail=0; pass=0; deferred=0
 # `make clab-dev` builds the topology before `make dev-stack` builds itential-dev, so it runs this with
-# CLAB_DEV_ONLY=1: the itential-dev half of S10.7 and S10.12 is then reported DEFERRED when itential-dev does not
-# answer SSH, instead of failing a first build that cannot pass yet. Without it (`make verify-dev`, which runs after
-# the dev stack) those halves are required.
+# CLAB_DEV_ONLY=1: the itential-dev half of S10.7 and S10.12 is then always reported DEFERRED - clab-dev verifies the
+# clab tier, and the itential-dev integration belongs to `make verify-dev`, which runs at the end of `make dev-stack`
+# after itential-host.yml has added the route, and requires those halves. (The first rule deferred only while
+# itential-dev did not answer SSH; on 2026-09-16 the VM existed but had no route yet, and dev-stack stopped here.)
 CLAB_DEV_ONLY=${CLAB_DEV_ONLY:-0}
-dev_ready() { $SSH "ubuntu@${DEV_IP}" true </dev/null 2>/dev/null; }
-dev_deferred() { [ "$CLAB_DEV_ONLY" = 1 ] && ! dev_ready; }
+dev_deferred() { [ "$CLAB_DEV_ONLY" = 1 ]; }
 ok()  { echo "PASS  $1"; pass=$((pass+1)); }
 bad() { echo "FAIL  $1"; fail=$((fail+1)); }
 # ONLY="S10.9" runs a subset while iterating (every criterion still runs by default)
@@ -112,7 +112,7 @@ PY
     # itential-dev holds no clab password of its own for the verify, so from there the proof is the SSH server's
     # banner over the routed path (TCP through clab's DOCKER-USER allowlist); the login itself is proved above
     if dev_deferred; then
-      echo "${name} ${ip}: login from the Mac; from itential-dev DEFERRED (not built yet, CLAB_DEV_ONLY=1)"
+      echo "${name} ${ip}: login from the Mac; from itential-dev DEFERRED to make verify-dev (CLAB_DEV_ONLY=1)"
       continue
     fi
     banner=$($SSH "ubuntu@${DEV_IP}" "timeout 8 bash -c 'exec 3<>/dev/tcp/${ip}/22; head -c 7 <&3'" </dev/null 2>/dev/null)
@@ -299,7 +299,7 @@ c12() {
   local host route hosts="$OOB_GW $DEV_IP"
   if dev_deferred; then
     hosts="$OOB_GW"
-    echo "itential-dev route DEFERRED (not built yet, CLAB_DEV_ONLY=1)"
+    echo "itential-dev route DEFERRED to make verify-dev (CLAB_DEV_ONLY=1)"
   fi
   for host in $hosts; do
     route=$($SSH "ubuntu@${host}" "ip -j route show ${prefix}" </dev/null) || { echo "ssh ubuntu@${host} failed"; return 1; }
