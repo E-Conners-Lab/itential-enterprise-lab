@@ -1,19 +1,19 @@
-{#- IOS XE startup config for a clab C8000v (ADR 0063), rendered per node by clab-dev.yml from clab/versions.yaml.
+{# IOS XE startup config for a clab C8000v (ADR 0063), rendered per node by clab-dev.yml from clab/versions.yaml.
     vrnetlab prepends its own bootstrap (hostname, its admin user, GigabitEthernet1 in VRF clab-mgmt with the
     containerlab mgmt address), so this file never touches GigabitEthernet1.
     Inputs: the oracle, `node` (one nodes[] row) and `clab_password` (CLAB_AUTOMATION_PASSWORD, never a literal). -#}
-{%- set masks = {'31': '255.255.255.254', '32': '255.255.255.255'} %}
-{%- set by_name = {} %}
-{%- for n in nodes %}{% set _ = by_name.update({n.name: n}) %}{% endfor -%}
+{% set masks = {'31': '255.255.255.254', '32': '255.255.255.255'} %}
+{% set by_name = {} %}
+{% for n in nodes %}{% set _ = by_name.update({n.name: n}) %}{% endfor -%}
 hostname {{ node.name }}
-{#- 17.13.01a boots with an empty licence level (lab-build-lessons); vrnetlab's install step sets
+{# 17.13.01a boots with an empty licence level (lab-build-lessons); vrnetlab's install step sets
     network-premier. The level takes effect on the next boot, so clab-dev.yml writes memory and reloads each
     router once when `show version` is not yet network-advantage. #}
 license boot level network-advantage addon dna-advantage
 ip domain name lab.internal
 no ip domain lookup
 username {{ credentials.user }} privilege 15 secret 0 {{ clab_password }}
-{#- vrnetlab's bootstrap creates admin/admin (containerlab's default credentials) and appends this file after it,
+{# vrnetlab's bootstrap creates admin/admin (containerlab's default credentials) and appends this file after it,
     so this line replaces the vendor default; nothing logs in as admin after boot (PID success criterion 5). #}
 username admin privilege 15 secret 0 {{ clab_password }}
 aaa new-model
@@ -28,9 +28,9 @@ interface Loopback0
  ip address {{ node.loopback }} 255.255.255.255
  ip ospf {{ routing.ospf.process }} area {{ routing.ospf.area }}
 !
-{%- for link in links %}
-{%- for side, peer in [(link.a, link.b), (link.b, link.a)] if side.node == node.name and side.ip is defined %}
-{%- set addr, plen = side.ip.split('/') %}
+{% for link in links %}
+{% for side, peer in [(link.a, link.b), (link.b, link.a)] if side.node == node.name and side.ip is defined %}
+{% set addr, plen = side.ip.split('/') %}
 interface {{ side.ifname }}
  description to {{ peer.node }}:{{ peer.ifname }}
  ip address {{ addr }} {{ masks[plen] }}
@@ -38,35 +38,35 @@ interface {{ side.ifname }}
  ip ospf {{ routing.ospf.process }} area {{ routing.ospf.area }}
  no shutdown
 !
-{%- endfor %}
-{%- endfor %}
+{% endfor %}
+{% endfor %}
 router ospf {{ routing.ospf.process }}
  router-id {{ node.loopback }}
 !
 router bgp {{ node.asn }}
  bgp router-id {{ node.loopback }}
  bgp log-neighbor-changes
-{%- for s in routing.bgp if node.name in [s.a, s.b] %}
-{%- set peer_name = s.b if s.a == node.name else s.a %}
-{%- set peer_ip = s.b_ip if s.a == node.name else s.a_ip %}
+{% for s in routing.bgp if node.name in [s.a, s.b] %}
+{% set peer_name = s.b if s.a == node.name else s.a %}
+{% set peer_ip = s.b_ip if s.a == node.name else s.a_ip %}
  neighbor {{ peer_ip }} remote-as {{ by_name[peer_name].asn }}
  neighbor {{ peer_ip }} description {{ peer_name }} ({{ s.type }})
-{%- if s.type == 'ibgp' %}
+{% if s.type == 'ibgp' %}
  neighbor {{ peer_ip }} update-source Loopback0
-{%- endif %}
-{%- endfor %}
+{% endif %}
+{% endfor %}
  address-family ipv4
-{%- for s in routing.bgp if node.name in [s.a, s.b] %}
-{%- set peer_ip = s.b_ip if s.a == node.name else s.a_ip %}
+{% for s in routing.bgp if node.name in [s.a, s.b] %}
+{% set peer_ip = s.b_ip if s.a == node.name else s.a_ip %}
   neighbor {{ peer_ip }} activate
-{%- if s.type == 'ibgp' %}
+{% if s.type == 'ibgp' %}
   neighbor {{ peer_ip }} next-hop-self
-{%- endif %}
-{%- endfor %}
-{%- for p in routing.announce.get(node.name, []) %}
-{%- set net, plen = p.split('/') %}
+{% endif %}
+{% endfor %}
+{% for p in routing.announce.get(node.name, []) %}
+{% set net, plen = p.split('/') %}
   network {{ net }} mask {{ masks[plen] }}
-{%- endfor %}
+{% endfor %}
  exit-address-family
 !
 end
