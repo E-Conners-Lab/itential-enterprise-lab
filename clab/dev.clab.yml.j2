@@ -22,6 +22,7 @@ topology:
       image: {{ images.veos.tag }}
       env:
         QEMU_MEMORY: "{{ images.veos.ram_mb }}"
+        QEMU_CPU: "{{ images.veos.cpu }}"
   nodes:
 {% for node in nodes %}
     {{ node.name }}:

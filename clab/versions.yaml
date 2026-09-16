@@ -43,6 +43,10 @@ images:
     # $(REGISTRY)$(vendor)_$(name):$(VERSION), VENDOR=Arista NAME=vEOS lower-cased (makefile.include)
     tag: vrnetlab/arista_veos:4.33.1.1F
     ram_mb: 2048 # vrnetlab's default for vEOS (launch.py ram=2048); passed as QEMU_MEMORY like the C8000v
+    # passed as QEMU_CPU (vrnetlab's VM.cpu). vrnetlab's default `-cpu host,level=9` aborts under nested KVM on
+    # this Proxmox host: "failed to set MSR 0x345 to 0x2000" (IA32_PERF_CAPABILITIES) and a kvm_buf_set_msrs
+    # assertion, two seconds after launch (measured 2026-09-16). With the virtual PMU off, Aboot and the SWI boot.
+    cpu: host,level=9,pmu=off
   c8000v:
     version: 17.13.01a # docs/image-manifest.md section 2.3 "Running: 17.13.01a", the image the EVE-NG lab runs
     source: eve:/opt/unetlab/addons/qemu/c8000v-17.13.01a/virtioa.qcow2
