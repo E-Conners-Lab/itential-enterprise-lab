@@ -1,17 +1,23 @@
-{#- EOS startup config for a clab cEOS switch (ADR 0063), rendered per node by clab-dev.yml from clab/versions.yaml.
-    containerlab adds Management0's address and default route when the node boots, so this file leaves
-    Management0 alone. Inputs: the oracle, `node` (one nodes[] row) and `clab_password`
-    (CLAB_AUTOMATION_PASSWORD, never a literal). -#}
+{#- EOS startup config for a clab vEOS-lab switch (ADR 0063, amendment 2026-09-16), rendered per node by clab-dev.yml
+    from clab/versions.yaml. vrnetlab's arista/veos launch.py logs in on the console, applies its bootstrap
+    (Management1 10.0.0.15/24 behind QEMU user-net, stitched to the container's eth0 and the containerlab mgmt
+    address; its default route; eAPI over unix-socket; gNMI; NETCONF; hostname) and then types this file line by
+    line in `configure terminal`, followed by `end` and `copy running-config startup-config`. So this file
+    leaves Management1 and the default route alone and carries no `end` of its own.
+    Inputs: the oracle, `node` (one nodes[] row) and `clab_password` (CLAB_AUTOMATION_PASSWORD, never a literal). -#}
 {%- set by_name = {} %}
 {%- for n in nodes %}{% set _ = by_name.update({n.name: n}) %}{% endfor -%}
 hostname {{ node.name }}
 dns domain lab.internal
 !
+{#- the lab's vEOS runs the multi-agent model (topology/configs/veos.j2); on a running vEOS the model changes at the
+    next boot, and the OSPF and BGP lines below are the same under either model #}
 service routing protocols model multi-agent
 !
 username {{ credentials.user }} privilege 15 role network-admin secret 0 {{ clab_password }}
-{#- containerlab's cEOS default is admin/admin; with a startup config this line replaces it, and containerlab
-    never logs in as admin after deploy (PID success criterion 5). #}
+{#- containerlab's arista_veos kind starts vrnetlab with its default credentials (admin/admin), and its bootstrap
+    creates that user before this file is applied, so this line replaces the vendor default; vrnetlab closes the
+    console after applying the file and nothing logs in as admin after deploy (PID success criterion 5). #}
 username admin privilege 15 role network-admin secret 0 {{ clab_password }}
 aaa authorization exec default local
 !
@@ -93,4 +99,3 @@ router bgp {{ node.asn }}
       neighbor {{ s.b_ip if s.a == node.name else s.a_ip }} activate
 {%- endfor %}
 !
-end

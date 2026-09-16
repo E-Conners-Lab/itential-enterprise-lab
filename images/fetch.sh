@@ -4,11 +4,12 @@
 # EULA clicks, docs/manual-steps.md). Every file's SHA256 lands in /srv/images/MANIFEST.sha256.
 #
 #   images/fetch.sh microsoft   # Windows Server 2025 eval, Windows 11 Enterprise 25H2 eval, virtio-win
-#   images/fetch.sh arista      # cEOS64-lab / vEOS64-lab via eos-downloader (needs ARISTA_TOKEN in .env)
+#   images/fetch.sh arista      # cEOS64-lab via eos-downloader (needs ARISTA_TOKEN in .env); not used by the clab dev topology
 #   images/fetch.sh itential    # Itential images from the private ECR (SSO session here) -> tarballs on the host (ADR 0035)
 #   images/fetch.sh itential-load  # staged tarballs -> the itential VM's Docker
 #   images/fetch.sh c8000v      # the EVE-NG C8000v qcow2 -> /srv/images/c8000v under vrnetlab's filename (ADR 0063)
-#   images/fetch.sh clab-load   # staged cEOS tar.xz + C8000v qcow2 -> the clab VM's /srv/stage (clab-host.yml imports/builds)
+#   images/fetch.sh veos        # the EVE-NG vEOS-lab qcow2 -> /srv/images/veos under vrnetlab's version name (ADR 0063)
+#   images/fetch.sh clab-load   # staged vEOS + C8000v qcow2 -> the clab VM's /srv/stage (clab-host.yml builds both)
 #   images/fetch.sh all         # microsoft + arista (itential needs an SSO session, so it is explicit)
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -40,13 +41,15 @@ microsoft() {
   fetch_url winserver 'https://fedorapeople.org/groups/virt/virtio-win/direct-downloads/archive-virtio/virtio-win-0.1.302-1/virtio-win-0.1.302.iso' "virtio-win 0.1.302"
 }
 
+# Not used by the clab dev topology since 2026-09-16: its switches are vEOS-lab copied from EVE-NG (`veos` below,
+# ADR 0063 amendment), because no arista.com token is at hand. Kept for the S10.1-S10.5 cEOS CI twin later.
 arista() { # eos-downloader (ardl) with the owner's arista.com token; runs in a venv on the host
   : "${ARISTA_TOKEN:?ARISTA_TOKEN missing in .env (arista.com profile > API token)}"
-  # the version is clab/versions.yaml's (ADR 0063: exact parity with the lab's vEOS); ARISTA_CEOS_VERSION overrides
+  # the version defaults to the dev switches' vEOS (clab/versions.yaml, exact parity with the lab); ARISTA_CEOS_VERSION overrides
   # declared apart from the assignment: `local ver=$(...)` returns local's status and hides a failed lookup
   local ver
-  ver=${ARISTA_CEOS_VERSION:-$(clab_value images.ceos.version)}
-  [ -n "$ver" ] || { echo "no cEOS version: ARISTA_CEOS_VERSION unset and clab/versions.yaml images.ceos.version empty"; exit 1; }
+  ver=${ARISTA_CEOS_VERSION:-$(clab_value images.veos.version)}
+  [ -n "$ver" ] || { echo "no cEOS version: ARISTA_CEOS_VERSION unset and clab/versions.yaml images.veos.version empty"; exit 1; }
   $SSH "set -euo pipefail; mkdir -p ${STAGING}/ceos ${STAGING}/veos; [ -x /opt/ardl/bin/ardl ] || { python3 -m venv /opt/ardl && /opt/ardl/bin/pip install -q 'eos-downloader==0.16.0'; }
     cd ${STAGING}/ceos && ARISTA_TOKEN='${ARISTA_TOKEN}' /opt/ardl/bin/ardl get eos --version ${ver} --format cEOS64 --output ${STAGING}/ceos
     cd ${STAGING} && sha256sum ceos/* >> MANIFEST.sha256 && sort -u -k2 MANIFEST.sha256 -o MANIFEST.sha256 && ls -la ceos"
@@ -135,7 +138,7 @@ for v in ha2["vms"]:
 }
 
 # Containerlab dev topology (ADR 0063). clab/versions.yaml is the oracle for every name and version here.
-clab_value() { # clab_value images.ceos.version -> one scalar from clab/versions.yaml
+clab_value() { # clab_value images.veos.version -> one scalar from clab/versions.yaml
   .venv/bin/python -c "import sys,yaml;v=yaml.safe_load(open('clab/versions.yaml'))
 for k in sys.argv[1].split('.'): v=v[k]
 print(v)" "$1"
@@ -162,19 +165,41 @@ c8000v() {
   $SSH "mv ${STAGING}/${key}/${name}.part ${STAGING}/${key}/${name} && cd ${STAGING} && sha256sum ${key}/${name} >> MANIFEST.sha256 && sort -u -k2 MANIFEST.sha256 -o MANIFEST.sha256 && grep ' ${key}/${name}\$' MANIFEST.sha256"
 }
 
+# The vEOS-lab image is the one the EVE-NG lab switches run (no Arista download, ADR 0063 amendment 2026-09-16),
+# copied exactly as the C8000v is: relayed through this workstation, checksum taken on EVE-NG and on the staged
+# copy, the MANIFEST line written only when both agree. The staged name carries the version for vrnetlab's
+# arista/veos Makefile (clab-host.yml converts it to images.veos.vmdk there).
+veos() {
+  : "${EVE_HOST:?EVE_HOST missing in .env}"
+  local src staged key name
+  src=$(clab_value images.veos.source); src=${src#eve:}
+  staged=$(clab_value images.veos.staged); name=$(basename "$staged"); key=veos
+  local EVE="ssh -o BatchMode=yes -o ConnectTimeout=8 root@${EVE_HOST}"
+  if $SSH "grep -q ' ${key}/${name}\$' ${STAGING}/MANIFEST.sha256 2>/dev/null && test -s ${STAGING}/${key}/${name}"; then echo "present: ${key}/${name}"; return 0; fi
+  local want; want=$($EVE "sha256sum '${src}'" | cut -d' ' -f1)
+  [ ${#want} -eq 64 ] || { echo "could not read ${src} on ${EVE_HOST}"; exit 1; }
+  echo "copying ${EVE_HOST}:${src} -> ${STAGING}/${key}/${name}"
+  $SSH "mkdir -p ${STAGING}/${key}"
+  $EVE "cat '${src}'" | $SSH "cat > ${STAGING}/${key}/${name}.part"
+  local got; got=$($SSH "sha256sum ${STAGING}/${key}/${name}.part" | cut -d' ' -f1)
+  [ "$got" = "$want" ] || { $SSH "rm -f ${STAGING}/${key}/${name}.part"; echo "checksum mismatch: EVE-NG ${want}, staged ${got}"; exit 1; }
+  $SSH "mv ${STAGING}/${key}/${name}.part ${STAGING}/${key}/${name} && cd ${STAGING} && sha256sum ${key}/${name} >> MANIFEST.sha256 && sort -u -k2 MANIFEST.sha256 -o MANIFEST.sha256 && grep ' ${key}/${name}\$' MANIFEST.sha256"
+}
+
 # Staged files -> the clab VM's /srv/stage, relayed through this workstation like itential-load (the Proxmox
 # host has no address on the OOB network, ADR 0004). Each file is checked against MANIFEST.sha256 on the host
-# before it leaves and against the same line on the VM after it lands. clab-host.yml then imports cEOS and
-# builds the vrnetlab C8000v image from these.
+# before it leaves and against the same line on the VM after it lands. clab-host.yml then builds the vrnetlab
+# vEOS and C8000v images from these.
 clab_load() {
-  local vm_ip ceos_ver c8000v_name
-  vm_ip=$(clab_value vm.ip); ceos_ver=$(clab_value images.ceos.version)
+  local vm_ip veos_name c8000v_name
+  vm_ip=$(clab_value vm.ip)
+  veos_name=$(basename "$(clab_value images.veos.staged)")
   c8000v_name=$(basename "$(clab_value images.c8000v.staged)")
   local VM="ssh -o BatchMode=yes -o ConnectTimeout=8 -o StrictHostKeyChecking=accept-new ubuntu@${vm_ip}"
   $VM 'test -d /srv/stage && test -w /srv/stage' || { echo "/srv/stage not writable on ${vm_ip} (run ansible/playbooks/clab-host.yml first)"; exit 1; }
   local rel line
-  for rel in "ceos/cEOS64-lab-${ceos_ver}.tar.xz" "c8000v/${c8000v_name}"; do
-    line=$($SSH "grep ' ${rel}\$' ${STAGING}/MANIFEST.sha256" </dev/null) || { echo "${rel} not in ${STAGING}/MANIFEST.sha256 (images/fetch.sh arista / c8000v first)"; exit 1; }
+  for rel in "veos/${veos_name}" "c8000v/${c8000v_name}"; do
+    line=$($SSH "grep ' ${rel}\$' ${STAGING}/MANIFEST.sha256" </dev/null) || { echo "${rel} not in ${STAGING}/MANIFEST.sha256 (images/fetch.sh veos / c8000v first)"; exit 1; }
     if $VM "cd /srv/stage && echo '${line%% *}  $(basename "$rel")' | sha256sum -c --quiet" </dev/null 2>/dev/null; then echo "present on clab: $(basename "$rel")"; continue; fi
     $SSH "cd ${STAGING} && echo '${line}' | sha256sum -c --quiet" </dev/null || { echo "checksum failed on the host for ${rel}"; exit 1; }
     echo "relaying ${rel} -> ${vm_ip}:/srv/stage/"
@@ -191,7 +216,8 @@ case "$what" in
   itential-load) itential_load ;;
   itential-load-ha2) itential_load_ha2 ;;
   c8000v) c8000v ;;
+  veos) veos ;;
   clab-load) clab_load ;;
   all) microsoft; arista ;;
-  *) echo "usage: $0 {microsoft|arista|itential|itential-load|itential-load-ha2|c8000v|clab-load|all}"; exit 1 ;;
+  *) echo "usage: $0 {microsoft|arista|itential|itential-load|itential-load-ha2|c8000v|veos|clab-load|all}"; exit 1 ;;
 esac

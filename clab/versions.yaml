@@ -1,6 +1,6 @@
 # Single oracle for the Containerlab dev topology (ADR 0063; PID S10.6-S10.12). Read by tofu/clab (held by
 # tests/test_clab.py), ansible/playbooks/clab-host.yml, clab-dev.yml, oob-gw.yml --tags routes,
-# itential-host.yml (route to mgmt), the dev overlay's inventory, images/fetch.sh c8000v|arista|clab-load and
+# itential-host.yml (route to mgmt), platform.yml and the dev overlay's inventory, images/fetch.sh c8000v|veos|clab-load and
 # verify/test-12a-clab-dev.sh. tests/test_clab.py holds it to docs/image-manifest.md, topology/ipam.yaml and
 # docs/resource-budget.md. Never 'latest'.
 #
@@ -30,12 +30,19 @@ mgmt:
 inband_prefix: 10.100.3.0/24
 
 images:
-  ceos:
-    # Exact parity with the lab's vEOS 4.33.1.1F (owner decision 2026-09-16, S10.4). Fallback rule if arista.com
-    # offers no cEOS64-lab build of 4.33.1.1F: the newest 4.33.x cEOS64-lab (ADR 0033 train parity), changed
-    # here and in docs/image-manifest.md section 2.5 together.
+  veos:
+    # The image the EVE-NG lab switches run (topology/enterprise.yaml veos-4.33.1.1F, ADR 0033): exact parity, no
+    # Arista download (owner decision 2026-09-16, ADR 0063 amendment). Built with vrnetlab like the C8000v.
     version: 4.33.1.1F
-    tag: ceos:4.33.1.1F
+    source: eve:/opt/unetlab/addons/qemu/veos-4.33.1.1F/hda.qcow2
+    staged: /srv/images/veos/vEOS-lab-4.33.1.1F.qcow2
+    # vrnetlab's arista/veos Makefile takes *.vmdk and reads the version out of the filename
+    # (sed 's/.*-\([0-9]\.\([0-9]\+\.\)\{1,2\}[0-9]\{1,2\}\([A-Z]\|\-EFT[0-9]\)\)\.vmdk$/\1/'); clab-host.yml
+    # converts the staged qcow2 to this name with qemu-img.
+    vmdk: vEOS-lab-4.33.1.1F.vmdk
+    # $(REGISTRY)$(vendor)_$(name):$(VERSION), VENDOR=Arista NAME=vEOS lower-cased (makefile.include)
+    tag: vrnetlab/arista_veos:4.33.1.1F
+    ram_mb: 2048 # vrnetlab's default for vEOS (launch.py ram=2048); passed as QEMU_MEMORY like the C8000v
   c8000v:
     version: 17.13.01a # docs/image-manifest.md section 2.3 "Running: 17.13.01a", the image the EVE-NG lab runs
     source: eve:/opt/unetlab/addons/qemu/c8000v-17.13.01a/virtioa.qcow2
@@ -58,11 +65,12 @@ credentials:
 nodes:
   - {name: clab-rtr1, kind: cisco_c8000v, mgmt_ipv4: 10.100.2.11, netmiko: cisco_ios, role: router, asn: 65010, loopback: 10.100.3.201}
   - {name: clab-rtr2, kind: cisco_c8000v, mgmt_ipv4: 10.100.2.12, netmiko: cisco_ios, role: router, asn: 65010, loopback: 10.100.3.202}
-  - {name: clab-sw1, kind: ceos, mgmt_ipv4: 10.100.2.21, netmiko: arista_eos, role: switch, asn: 65020, loopback: 10.100.3.211}
-  - {name: clab-sw2, kind: ceos, mgmt_ipv4: 10.100.2.22, netmiko: arista_eos, role: switch, asn: 65020, loopback: 10.100.3.212}
+  - {name: clab-sw1, kind: arista_veos, mgmt_ipv4: 10.100.2.21, netmiko: arista_eos, role: switch, asn: 65020, loopback: 10.100.3.211}
+  - {name: clab-sw2, kind: arista_veos, mgmt_ipv4: 10.100.2.22, netmiko: arista_eos, role: switch, asn: 65020, loopback: 10.100.3.212}
 
 # endpoint = the containerlab (Linux) interface; ifname = the device's name for it.
-# cisco_c8000v: eth0 is GigabitEthernet1 (management), ethN is GigabitEthernet(N+1). ceos: ethN is EthernetN.
+# cisco_c8000v: eth0 is GigabitEthernet1 (management), ethN is GigabitEthernet(N+1). arista_veos: eth0 is
+# Management1 (management), ethN is EthernetN.
 # Routed links are /31s (a side even); every routed link and the switch pair's Vlan99 run OSPF area 0.
 links:
   - a: {node: clab-rtr1, endpoint: eth1, ifname: GigabitEthernet2, ip: 10.100.3.0/31}

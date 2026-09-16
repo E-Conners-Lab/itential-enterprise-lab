@@ -4,7 +4,7 @@
 # hostname, chrony, lab CA, Docker CE pinned), then nested KVM, containerlab at the oracle's version, the
 # routed mgmt network with its DOCKER-USER allowlist, vrnetlab at the pinned commit and the two images.
 # Run twice by `make clab-dev`: before `images/fetch.sh clab-load` (Docker and /srv/stage exist, images are
-# skipped) and after it (cEOS imported, the vrnetlab C8000v image built). clab-dev.yml asserts both images.
+# skipped) and after it (the vrnetlab C8000v and vEOS images built). clab-dev.yml asserts both images.
 - name: Prepare the Containerlab host
   hosts: clab-host
   become: true
@@ -21,7 +21,7 @@
     vrnetlab_dir: /opt/vrnetlab
     stage_dir: /srv/stage
     c8000v_file: "{{ images.c8000v.staged | basename }}"
-    ceos_file: cEOS64-lab-{{ images.ceos.version }}.tar.xz
+    veos_file: "{{ images.veos.staged | basename }}"
   tasks:
     - name: Wait for cloud-init
       ansible.builtin.command: cloud-init status --wait
@@ -32,9 +32,12 @@
       ansible.builtin.hostname:
         name: "{{ inventory_hostname }}"
 
+    # qemu-utils: qemu-img converts the staged vEOS qcow2 to the vmdk vrnetlab's arista/veos build takes.
+    # bsdutils: `script`, the terminal that build's `docker run -it` guestfish step needs under Ansible.
     - name: Baseline packages (+ KVM tooling for vrnetlab, paramiko for the licence check in clab-dev.yml)
       ansible.builtin.apt:
-        name: [chrony, qemu-guest-agent, ca-certificates, curl, gnupg, jq, git, make, qemu-kvm, cpu-checker, python3-paramiko, iptables]
+        name: [chrony, qemu-guest-agent, ca-certificates, curl, gnupg, jq, git, make, qemu-kvm, cpu-checker, python3-paramiko, iptables,
+               qemu-utils, bsdutils]
         state: present
         update_cache: true
         cache_valid_time: 3600
@@ -59,7 +62,7 @@
         mode: "0644"
       notify: Update CA trust
 
-    # --- nested KVM: the C8000v nodes are QEMU VMs inside vrnetlab containers --------------------
+    # --- nested KVM: the C8000v and vEOS nodes are QEMU VMs inside vrnetlab containers ------------
     - name: KVM acceleration is usable (tofu/clab sets cpu type host; without vmx this fails)
       ansible.builtin.command: kvm-ok
       changed_when: false
@@ -70,7 +73,7 @@
       register: dev_kvm
       failed_when: not dev_kvm.stat.exists
 
-    - name: Sysctls for many containers (cEOS agents exhaust the default inotify instances)
+    - name: Sysctls for many containers (network OS containers exhaust the default inotify instances)
       ansible.posix.sysctl:
         name: "{{ item.name }}"
         value: "{{ item.value }}"
@@ -256,7 +259,7 @@
 
     - name: Images already in Docker
       ansible.builtin.command: docker image inspect {{ item }}
-      loop: ["{{ images.ceos.tag }}", "{{ images.c8000v.tag }}"]
+      loop: ["{{ images.veos.tag }}", "{{ images.c8000v.tag }}"]
       register: have_images
       changed_when: false
       failed_when: false
@@ -265,13 +268,31 @@
       ansible.builtin.stat:
         path: "{{ stage_dir }}/{{ item }}"
         get_checksum: false
-      loop: ["{{ ceos_file }}", "{{ c8000v_file }}"]
+      loop: ["{{ veos_file }}", "{{ c8000v_file }}"]
       register: staged
 
-    - name: Import cEOS as {{ images.ceos.tag }}
-      ansible.builtin.command: docker import {{ stage_dir }}/{{ ceos_file }} {{ images.ceos.tag }}
+    # vrnetlab's arista/veos Makefile takes *.vmdk named with the version (clab/versions.yaml images.veos.vmdk).
+    # Written to .part first, so an interrupted convert never leaves a truncated vmdk that looks finished.
+    - name: Staged vEOS qcow2 converted to the vmdk in the vrnetlab build directory
+      ansible.builtin.shell:
+        cmd: >-
+          qemu-img convert -O vmdk {{ stage_dir }}/{{ veos_file }} {{ images.veos.vmdk }}.part
+          && mv {{ images.veos.vmdk }}.part {{ images.veos.vmdk }}
+        chdir: "{{ vrnetlab_dir }}/arista/veos"
       when: have_images.results[0].rc != 0 and staged.results[0].stat.exists
       changed_when: true
+
+    # arista/veos's docker-pre-build writes DISABLE=True to /zerotouch-config on the image with `docker run -it
+    # cmattoon/guestfish` (pulled from Docker Hub), and -it refuses to start without a terminal, so `script` gives
+    # make one. No boot at build time: vEOS boots at deploy (about 4 min nested per switch).
+    - name: Build the vEOS image with vrnetlab {{ images.veos.tag }}
+      ansible.builtin.command:
+        cmd: script -qec "make IMAGE={{ images.veos.vmdk }} docker-build" /dev/null
+        chdir: "{{ vrnetlab_dir }}/arista/veos"
+      when: have_images.results[0].rc != 0 and staged.results[0].stat.exists
+      changed_when: true
+      async: 3600
+      poll: 30
 
     - name: C8000v qcow2 in the vrnetlab build directory (the filename carries the version vrnetlab parses)
       ansible.builtin.copy:
@@ -294,7 +315,7 @@
 
     - name: Images present now
       ansible.builtin.command: docker image inspect {{ item }}
-      loop: ["{{ images.ceos.tag }}", "{{ images.c8000v.tag }}"]
+      loop: ["{{ images.veos.tag }}", "{{ images.c8000v.tag }}"]
       register: have_images_after
       changed_when: false
       failed_when: false
@@ -303,6 +324,18 @@
       ansible.builtin.debug:
         msg: "not yet in Docker: {{ have_images_after.results | rejectattr('rc', 'equalto', 0) | map(attribute='item') | list }}"
       when: have_images_after.results | rejectattr('rc', 'equalto', 0) | list | length > 0
+
+    # A file that was staged must have produced its image: a build that exits 0 without tagging fails here, not
+    # at deploy. Unstaged files stay skipped (the first run, before images/fetch.sh clab-load).
+    - name: Every staged image is in Docker under the oracle tag
+      ansible.builtin.assert:
+        that: item.1.rc == 0
+        fail_msg: "{{ item.0.item }} is staged in {{ stage_dir }} but {{ item.1.item }} is not in Docker; see the build output above"
+        quiet: true
+      loop: "{{ staged.results | zip(have_images_after.results) | list }}"
+      loop_control:
+        label: "{{ item.1.item }}"
+      when: item.0.stat.exists
 
   handlers:
     - name: Restart chrony

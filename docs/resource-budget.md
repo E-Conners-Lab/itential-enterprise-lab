@@ -42,7 +42,7 @@ disk (VM 110 NetBox and VM 300 EVE-NG).
 | `redis-03` | 8 | Ubuntu 24.04 cloud | 1 | 2 | 16 | Redis 7.4 + Sentinel |
 | `iag-01` | 8 | Ubuntu 24.04 cloud | 4 | 6 | 60 | Gateway 5 cluster (gateway5, etcd, runner) |
 | `tools-01` | 8 | Ubuntu 24.04 cloud | 4 | 8 | 40 | MCP server, Ollama (in-lab model) |
-| `clab` | 12 | Ubuntu 24.04 cloud | 8 | 16 | 60 | VM 230, CPU type `host` for nested KVM. Docker + Containerlab, built now for the dev topology (ADR 0063): 2 C8000v (vrnetlab, ~4 GB each) + 2 cEOS (~1.5 GB each); the S10 CI twin later |
+| `clab` | 12 | Ubuntu 24.04 cloud | 8 | 16 | 60 | VM 230, CPU type `host` for nested KVM. Docker + Containerlab, built now for the dev topology (ADR 0063): 2 C8000v (~4 GB each) + 2 vEOS-lab (~2 GB each), all vrnetlab in nested KVM (ADR 0063 amendment 2026-09-16); the S10 cEOS CI twin later |
 | **Total** | | | **95** | **296** | **1,455** | dc01 removed (ADR 0050), Panorama 16 GB (lever 2), the eleven S11 VMs added and VM 205 retired at S11.8 (ADR 0053), VM 205 back as `itential-dev` (ADR 0063): +8 vCPU / 24 GB / 160 GB |
 | Ceiling | | | 108 | 296 | 1,500 | VMs only; the 200 GB `/srv/images` thin LV takes the pool's allocation to 1,655, which only thin provisioning allows: disk is thin, usage decides (section 1) |
 | **Headroom** | | | **13 vCPU** | **0 GB** | plan; the dev stack's return took the 8 GB that S11.8 gave back plus the 16 GB the ceiling was raised by (ADR 0063) |

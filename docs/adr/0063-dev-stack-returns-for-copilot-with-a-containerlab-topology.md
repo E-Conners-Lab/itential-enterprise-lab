@@ -1,6 +1,6 @@
 # 0063 — The dev stack returns as `itential-dev` for Copilot, with a Containerlab topology of its own; production stays read-only to Copilot
 
-- **Status:** accepted (owner decisions, 2026-09-16)
+- **Status:** accepted (owner decisions, 2026-09-16); amended 2026-09-16 (the dev switches are vEOS-lab, see the amendment at the end)
 - **Date:** 2026-09-16
 - **Amends:** ADR 0053 (its Retirement section: VM 205 comes back, under new names), ADR 0035 (the placement: the VM is `itential-dev`, `mcp.lab.internal` is not its alias), ADR 0014/0033 (the cEOS version is exactly 4.33.1.1F), `docs/resource-budget.md` ceilings (RAM 280 -> 296 GB, disk 1.4 -> 1.5 TB)
 - **Related:** ADR 0003 (the supernet and the second-OOB reservation), ADR 0030 (symmetric return path), ADR 0055 (the replay and its overlay), ADR 0060 (the Mac serves local inference), PID S4, S10, S11.8, S12 (amendment 1.30)
@@ -167,3 +167,38 @@ not 64 characters, and production reads that same key; and every production cons
 - The guard hook is temporary: it protected the build, not the steady state. After the merge, the isolation
   is carried by the overlay, the asserts and their tests, and by `make prod-snapshot` before any later dev
   change that touches shared task files.
+
+## Amendment 2026-09-16 — the dev switches are vEOS-lab 4.33.1.1F built with vrnetlab, not cEOS
+
+Owner decision, 2026-09-16. Decision 3 named two cEOS 4.33.1.1F switches. cEOS was never downloaded
+(`/srv/images/ceos` is empty) and `images/fetch.sh arista` needs an arista.com API token the owner cannot find.
+The owner already holds vEOS-lab 4.33.1.1F: it is the image the EVE-NG lab switches run
+(`/opt/unetlab/addons/qemu/veos-4.33.1.1F/hda.qcow2`, 610 MB, virtual 4.01 GiB; partition 1 is a 6 MB bootable
+syslinux with Aboot embedded, partition 2 the 4 GB filesystem with `vEOS-lab.swi`, so it boots without the
+`cdrom.iso` beside it).
+
+**Changed**
+
+- `clab-sw1` and `clab-sw2` are containerlab kind `arista_veos`, image `vrnetlab/arista_veos:4.33.1.1F`, built on
+  `clab` by `arista/veos` of srl-labs/vrnetlab at the commit already pinned for the C8000v. `images/fetch.sh veos`
+  copies the EVE-NG image to `/srv/images/veos/vEOS-lab-4.33.1.1F.qcow2` exactly as `c8000v` does (relayed
+  through the workstation, sha256 on both ends before the MANIFEST line); `clab-load` relays it to `clab`, and
+  `clab-host.yml` converts it to `vEOS-lab-4.33.1.1F.vmdk` (vrnetlab's vEOS build takes a vmdk and reads the
+  version from its name) and builds the image. `clab/versions.yaml` `images.veos` is the oracle.
+- Parity with the lab is now exact by construction: the same image file, not a different packaging of the same
+  version. `tests/test_clab.py` holds `images.veos.version` equal to the `veos-<version>` image of every vEOS in
+  `topology/enterprise.yaml`, and `verify/test-12a-clab-dev.sh` S10.8 checks model `vEOS-lab` and the version on
+  the switches.
+- Cost: each switch is a nested QEMU VM, about 2 GB of RAM (vrnetlab's default, `images.veos.ram_mb`) instead of
+  ~1.5 GB for a cEOS container, and about 4 minutes to boot instead of seconds. `clab` stays 8 vCPU / 16 GB:
+  2 x 4 GB C8000v + 2 x 2 GB vEOS is 12 GB of guest RAM.
+- Management on the switches is `Management1`, owned by vrnetlab's bootstrap (10.0.0.15/24 behind QEMU user
+  networking, stitched to the container's containerlab address); the startup config leaves it alone, as the
+  C8000v config leaves `GigabitEthernet1`. The admin password override (PID success criterion 5) stays:
+  containerlab's `arista_veos` kind starts vrnetlab with `admin`/`admin`.
+- The **Amends** entry "ADR 0014/0033 (the cEOS version is exactly 4.33.1.1F)" no longer applies to the dev
+  topology, which runs no cEOS. **cEOS remains the plan for the S10.1-S10.5 CI twin** (phase 12); `images/fetch.sh arista` stays in
+  the script for it, unused by `make clab-dev`.
+
+**Unchanged:** every isolation rule of this ADR (routed mgmt prefix, DOCKER-USER allowlist, no NetBox
+registration, own device password, dev-only verification), the addressing, VLANs and routing of the topology.

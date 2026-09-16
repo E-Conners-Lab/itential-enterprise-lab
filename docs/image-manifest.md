@@ -22,7 +22,8 @@ naming per <https://www.eve-ng.net/index.php/documentation/qemu-image-namings/>.
 | `panorama` | Palo Alto Panorama | 11.1, same maintenance release as `pa-vm` | Proxmox | 8 / 32 GB / 81 GB + 100 GB log disk | eval or 180-day device-management grace: **UNVERIFIED**, see entry | 0011 |
 | `c8000v` | Cisco Catalyst 8000V (IOS XE) | **17.13.01a as loaded** (owner decision 2026-09-06, ADR 0032); upgrade target 17.18.4 | EVE-NG | 2 / 6 GB / 8 GB | Smart Licensing Using Policy, no registration needed, 10 Mbps default throughput (250 Mbps settable) | 0032 (0012 superseded) |
 | `veos` | Arista vEOS-lab | **4.33.1.1F as loaded** (owner decision 2026-09-06, ADR 0033); upgrade target 4.35.6M | EVE-NG | 2 / 4 GB / 4 GB | free with arista.com account, no expiry | 0033 (0013 superseded) |
-| `ceos` | Arista cEOS-lab | **4.33.1.1F** cEOS64-lab, exact parity with `veos` (ADR 0063); fallback newest 4.33.x if that build is not offered | Containerlab (`clab` VM) | ~1.5 GB RAM per node | free with arista.com account | 0014, 0033, 0063 |
+| `ceos` | Arista cEOS-lab | 4.33.1.1F cEOS64-lab for the phase 12 CI twin (parity with `veos`); **not used by the dev topology** (ADR 0063 amendment 2026-09-16) | Containerlab (`clab` VM), phase 12 | ~1.5 GB RAM per node | free with arista.com account | 0014, 0033, 0063 |
+| `veos-vrnetlab` | Arista vEOS-lab in a vrnetlab container | **4.33.1.1F**, built from the EVE-NG image (section 4.5); the dev topology's switches | Containerlab (`clab` VM, nested KVM) | ~2 GB RAM per node | as `veos` | 0033, 0063 |
 | `c8000v-vrnetlab` | Cisco Catalyst 8000V in a vrnetlab container | 17.13.01a, built from the EVE-NG image (section 4.5) | Containerlab (`clab` VM, nested KVM) | ~4 GB RAM per node | as `c8000v` | 0032, 0063 |
 | `nios` | Infoblox NIOS (vNIOS IB-V825) | 9.0.8 | Proxmox | 2 / 16 GB / 150 GB (resizable image) | temp licence **60 days** | 0015 |
 | `winserver` | Windows Server 2025 Standard eval (Desktop Experience) | 2025 eval, build 26100 | Proxmox | 4 / 8 GB / 80 GB | **180 days**, activate within 10 days; rearm count **UNVERIFIED** | 0016 |
@@ -109,12 +110,12 @@ once verified).
 
 | | |
 |---|---|
-| Version | **4.33.1.1F**, 64-bit image (ADR 0063, owner decision 2026-09-16). ~~4.35.6M~~ |
+| Version | **4.33.1.1F**, 64-bit image, for the phase 12 CI twin (S10.1-S10.5). ~~4.35.6M~~. **Not used by the dev topology:** ADR 0063 first chose cEOS for its switches, and its amendment of 2026-09-16 replaced them with vEOS-lab via vrnetlab (section 4.5), because no arista.com token was at hand |
 | Why | Exact parity with the `veos` the lab runs (4.33.1.1F, ADR 0033), so PID S10.4 holds as written and a config proved on the dev topology is proved on the same EOS. cEOS 4.32.0F+ auto-detects cgroups v1/v2 and supports up to 50 nodes/host. **Fallback:** if Arista no longer offers a cEOS build of 4.33.1.1F, the newest 4.33.x cEOS64-lab, recorded here (version, filename, date) when it is used and in `clab/versions.yaml` in the same PR |
-| Download | Same portal, "cEOS Lab" folder; `images/fetch.sh arista` with `ARISTA_TOKEN`, version read from `clab/versions.yaml` |
+| Download | Same portal, "cEOS Lab" folder; `images/fetch.sh arista` with `ARISTA_TOKEN`, version defaulting to `clab/versions.yaml` `images.veos.version` (parity) |
 | Expected filename | `cEOS64-lab-4.33.1.1F.tar.xz` (**UNVERIFIED** exact name); import with `docker import cEOS64-lab-4.33.1.1F.tar.xz ceos:4.33.1.1F` |
 | Licence | As `veos` |
-| Resources | ~1.5 GB RAM per node as budgeted (Arista SE guidance 8 vCPU / 10 GB for 10+ nodes; exact figure **UNVERIFIED**). **Lab: 2 cEOS nodes beside 2 C8000v in the dev topology, `clab` VM 8 vCPU / 16 GB** (ADR 0063) |
+| Resources | ~1.5 GB RAM per node as budgeted (Arista SE guidance 8 vCPU / 10 GB for 10+ nodes; exact figure **UNVERIFIED**) |
 | Containerlab | kind `ceos`, creds admin/admin, gNMI 6030, NETCONF 830, `MGMT_INTF=eth0` ([kind docs](https://containerlab.dev/manual/kinds/ceos/)) |
 | Verified | 2026-09-06 |
 
@@ -337,7 +338,8 @@ was kept where the newest tag was less than three weeks old on 2026-09-06.
 | Component | Version | Install | Verified at |
 |---|---|---|---|
 | Containerlab | 0.79.0 (2026-08-21) | `bash -c "$(curl -sL https://get.containerlab.dev)" -- -v 0.79.0` on `clab` | [releases](https://github.com/srl-labs/containerlab/releases) |
-| cEOS-lab | 4.33.1.1F | section 2.5 | |
+| cEOS-lab | 4.33.1.1F | section 2.5; phase 12 CI twin only, not the dev topology | |
+| `vrnetlab/arista_veos` | 4.33.1.1F | Built on `clab` with `make IMAGE=vEOS-lab-4.33.1.1F.vmdk docker-build` in `arista/veos` of [srl-labs/vrnetlab](https://github.com/srl-labs/vrnetlab) at the commit pinned in `clab/versions.yaml`, from the EVE-NG image `veos-4.33.1.1F/hda.qcow2` (the one section 2.4 runs; it boots without the Aboot `cdrom.iso`, Aboot is embedded in partition 1). `images/fetch.sh veos` stages it as `/srv/images/veos/vEOS-lab-4.33.1.1F.qcow2`, sha256 compared on EVE-NG and the host and recorded in `MANIFEST.sha256` at fetch; `clab-host.yml` converts it with `qemu-img convert -O vmdk` because the vEOS Makefile takes `*.vmdk` and reads the version from the name. The build's pre-step pulls `cmattoon/guestfish` from Docker Hub to write `DISABLE=True` to `/zerotouch-config`. Tag `vrnetlab/arista_veos:4.33.1.1F` (`vrnetlab/` + `arista_veos`, makefile.include). Containerlab kind `arista_veos`, nested KVM, 2048 MB per node (vrnetlab default, `QEMU_MEMORY`), ~4 min boot; management is `Management1`. No new download (ADR 0063 amendment 2026-09-16) | [vrnetlab](https://github.com/srl-labs/vrnetlab), [kind docs](https://containerlab.dev/manual/kinds/vr-veos/) |
 | `vrnetlab/cisco_c8000v` | 17.13.01a | Built on `clab` with `make docker-image` in `cisco/c8000v` of [srl-labs/vrnetlab](https://github.com/srl-labs/vrnetlab) at the commit pinned in `clab/versions.yaml`, from the EVE-NG image `c8000v-17.13.01a/virtioa.qcow2` staged as `c8000v-universalk9_8G_serial.17.13.01a.qcow2` (vrnetlab reads the version from the filename); tag `vrnetlab/cisco_c8000v:17.13.01a`. Containerlab kind `cisco_c8000v`, nested KVM required, ~4 GB per node. No new download: the image is the one section 2.3 runs (ADR 0063) | [vrnetlab](https://github.com/srl-labs/vrnetlab) |
 
 ### 4.6 Existing, unchanged
