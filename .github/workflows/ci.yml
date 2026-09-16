@@ -34,13 +34,27 @@ jobs:
   ansible-lint:
     name: ansible-lint
     runs-on: ubuntu-latest
+    # A hung Galaxy download otherwise holds the check for the 6-hour default. 30 minutes still covers a cache miss
+    # on a slow Galaxy day (the download alone took 19 minutes on 2026-09-16).
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
       - run: pip install "ansible-lint==26.8.0"
-      - run: ansible-galaxy collection install -r requirements.yml
+      # The collections are pinned in requirements.yml, so the same versions were downloaded from Galaxy on every
+      # run - 45 s to 3 min normally, 19 min when Galaxy was slow. Keyed on that file: Galaxy is only contacted when
+      # a pin changes.
+      - name: Cache Ansible collections (keyed on requirements.yml)
+        id: galaxy-cache
+        uses: actions/cache@v6
+        with:
+          path: ~/.ansible/collections
+          key: ansible-collections-${{ runner.os }}-${{ hashFiles('requirements.yml') }}
+      - name: Install Ansible collections from Galaxy (cache miss only)
+        if: steps.galaxy-cache.outputs.cache-hit != 'true'
+        run: ansible-galaxy collection install -r requirements.yml
       - run: ansible-lint --version && ansible-lint ansible/
 
   pytest:
