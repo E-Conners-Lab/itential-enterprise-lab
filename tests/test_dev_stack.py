@@ -627,3 +627,38 @@ def test_phase_itential_brings_the_token_and_the_topology_first() -> None:
     assert prerequisites == ["netbox-token-dev", "clab-dev"], prerequisites
     assert " ".join(_make_prerequisites("up")) == "$(addprefix phase-,$(PHASES))"
     assert "itential" in (ROOT / "Makefile").read_text().split("PHASES := ", 1)[1].split("\n", 1)[0].split()
+
+
+def test_clab_nodes_give_gateway5_time_for_a_slow_banner_and_login() -> None:
+    """S4.3 failed on itential-dev with "Error reading SSH protocol banner" (2026-09-16): the first banner from a
+    clab node took 14.6-15.5 s (netmiko's default is 15 s) and a vEOS login took up to 95 s."""
+    clab = yaml.safe_load((ROOT / "clab" / "versions.yaml").read_text())
+    netmiko = clab["gateway_driver_options"]["netmiko"]
+    assert netmiko["banner_timeout"] >= 60 and netmiko["auth_timeout"] >= 120 and netmiko["conn_timeout"] >= 10
+    tasks = yaml.safe_load((TASKS / "platform-assets.yml").read_text())
+    by_name = {t["name"]: t for t in tasks}
+    body = by_name["Inventory nodes from the Containerlab oracle (dev only)"]["ansible.builtin.set_fact"]["inv_nodes"]
+    assert "'itential_driver_options': clab.gateway_driver_options" in body
+
+
+def test_the_inventory_is_replaced_when_driver_options_differ_and_production_still_compares_by_name() -> None:
+    task = next(t for t in yaml.safe_load((TASKS / "platform-assets.yml").read_text())
+                if t["name"] == "Inventory nodes populated from NetBox (replaces the set when it differs)")
+    env = jinja2.Environment(undefined=jinja2.StrictUndefined)
+    env.filters["zip"] = lambda a, b: list(zip(a, b))
+    v = task["vars"]
+
+    def replaces(existing: list[dict], wanted: list[dict]) -> bool:
+        have = env.from_string(v["have"]).render(have_nodes=existing)
+        want = env.from_string(v["want"]).render(inv_nodes=wanted)
+        return have != want
+
+    opts = {"netmiko": {"conn_timeout": 30, "banner_timeout": 150, "auth_timeout": 150}}
+    prod = [{"name": "br1-sw01", "attributes": {"itential_host": "10.1.1.1"}}, {"name": "br1-rtr01", "attributes": {}}]
+    assert not replaces(prod, list(reversed(prod))), "production: same names, no options -> untouched"
+    assert replaces(prod, prod[:1]), "a node removed from NetBox still replaces the set"
+    old_dev = [{"name": "clab-sw1", "attributes": {"itential_host": "10.100.2.21"}}]
+    new_dev = [{"name": "clab-sw1", "attributes": {"itential_host": "10.100.2.21", "itential_driver_options": opts}}]
+    assert replaces(old_dev, new_dev), "an existing dev inventory picks up the driver options"
+    assert not replaces(new_dev, new_dev), "and is left alone once it has them"
+    assert task["when"] == "have != want"

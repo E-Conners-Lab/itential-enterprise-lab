@@ -206,6 +206,7 @@
                                                'itential_platform': n.netmiko,
                                                'itential_user': clab.credentials.user,
                                                'itential_password': lookup('ansible.builtin.env', clab.credentials.password_env),
+                                               'itential_driver_options': clab.gateway_driver_options,
                                                'cluster_id': stack.gateway5_cluster_id}}) -%}
       {%- endfor -%}
       {{ out }}
@@ -252,7 +253,8 @@
   register: inv_existing
   no_log: true
 
-# /nodes/bulk is populateInventory: it REPLACES the node set, so always send the full list.
+# /nodes/bulk is populateInventory: it REPLACES the node set, so always send the full list. Compared by name and
+# driver options: production nodes carry no driver options on either side, so production still compares by name only.
 - name: Inventory nodes populated from NetBox (replaces the set when it differs)
   ansible.builtin.uri:
     url: "{{ platform_local }}/inventory_manager/v1/nodes/bulk"
@@ -264,8 +266,13 @@
       nodes: "{{ inv_nodes }}"
     status_code: 200
   vars:
-    have: "{{ inv_existing.json.result.data | map(attribute='name') | sort }}"
-    want: "{{ inv_nodes | map(attribute='name') | sort }}"
+    have_nodes: "{{ inv_existing.json.result.data }}"
+    have: >-
+      {{ have_nodes | map(attribute='name') | zip(have_nodes | map(attribute='attributes.itential_driver_options', default={}))
+         | map('list') | sort }}
+    want: >-
+      {{ inv_nodes | map(attribute='name') | zip(inv_nodes | map(attribute='attributes.itential_driver_options', default={}))
+         | map('list') | sort }}
   when: have != want
   no_log: true
 
@@ -434,7 +441,7 @@
         - inventory: "{{ stack.inventory }}"
           nodeNames: ["{{ (inv_nodes | selectattr('attributes.itential_platform', 'equalto', 'arista_eos') | first).name }}"]
     status_code: 200
-    timeout: 120
+    timeout: 300 # a slow first banner and login on the clab nodes (clab/versions.yaml gateway_driver_options)
   register: sv
   failed_when: not (sv.json.result.results | map(attribute='success') | list | min)
   changed_when: false

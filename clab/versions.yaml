@@ -65,6 +65,13 @@ credentials:
   user: automation
   password_env: CLAB_AUTOMATION_PASSWORD
 
+# Gateway 5 netmiko connection limits for the clab nodes (itential_driver_options, passed to ConnectHandler).
+# Measured 2026-09-16 under nested KVM: the first SSH banner to itential-dev took 14.6-15.5 s from a vEOS switch and
+# a C8000v (netmiko's banner default is 15 s, and S4.3 failed with "Error reading SSH protocol banner"); a vEOS login
+# took up to 95 s. The same limits as verify/devcmd.py.
+gateway_driver_options:
+  netmiko: {conn_timeout: 30, banner_timeout: 150, auth_timeout: 150}
+
 # name starts with clab- and never equals a topology/enterprise.yaml device (tests/test_clab.py)
 nodes:
   - {name: clab-rtr1, kind: cisco_c8000v, mgmt_ipv4: 10.100.2.11, netmiko: cisco_ios, role: router, asn: 65010, loopback: 10.100.3.201}
