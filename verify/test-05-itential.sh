@@ -5,6 +5,13 @@
 # themselves (verify/devcmd.py, second source), the VM over SSH, the MCP server from this Mac,
 # and the PDI's REST API. Writes: one NetBox VLAN + one switch VLAN per run (removed at the end),
 # one change request in the PDI. S4b never passes silently: a sleeping PDI prints HIBERNATED.
+#
+# Against the dev stack (ADR 0063) only ONLY="S4.1 S4.7" is meaningful, run as
+#   IT_HOST=itential-dev.lab.internal MCP_HOST=mcp-dev.lab.internal IT_IP=10.100.0.65 IT_MCP_IP=10.100.0.65 \
+#   ONLY="S4.1 S4.7" verify/test-05-itential.sh
+# S4.2-S4.4 use the EVE-NG devices and write NetBox, S4.6 measures the production Platform node, and dev has
+# no ServiceNow, so every other criterion either fails there or reaches production. Dev's own checks are in
+# verify/test-05b-dev-copilot.sh. With no overrides the names are production's, exactly as before.
 set -uo pipefail
 cd "$(dirname "$0")/.."
 [ -f .env ] || { echo "missing .env"; exit 1; }
@@ -21,9 +28,10 @@ IT_IP=${IT_IP:-}
 # production node - the first of the HA2 oracle's platform nodes, the one the load balancer and the gateway use.
 IAP_IP=${IT_IP:-$(${PY} -c "import yaml;d=yaml.safe_load(open('itential/ha2/versions.yaml'));n=d['platform']['nodes'][0];print(next(v['ip'] for v in d['vms'] if v['name']==n))")}
 MONGO_IP=$(${PY} -c "import yaml;d=yaml.safe_load(open('itential/ha2/versions.yaml'));print(next(v['ip'] for v in d['vms'] if v['role']=='mongodb'))")
-RESOLVE=${IT_IP:+--resolve itential.lab.internal:443:${IT_IP}}
-IT_HOST=itential.lab.internal
-MCP_HOST=mcp.lab.internal
+# IT_HOST / MCP_HOST default to production's names; the dev stack passes its own (ADR 0063, header above)
+IT_HOST=${IT_HOST:-itential.lab.internal}
+MCP_HOST=${MCP_HOST:-mcp.lab.internal}
+RESOLVE=${IT_IP:+--resolve ${IT_HOST}:443:${IT_IP}}
 # the MCP server has its own VM in the production environment (ADR 0053): S4.7 holds the name to the
 # HA2 oracle's tools VM, so a stale record on the retiring dev-stack is still caught
 MCP_IP=${IT_MCP_IP:-$(${PY} -c "import yaml;d=yaml.safe_load(open('itential/ha2/versions.yaml'));print(next(v['ip'] for v in d['vms'] if v['role']=='tools'))")}
@@ -187,7 +195,8 @@ c7() {
   res=$(${PY} verify/mcpcall.py "$url" call get_health) || { echo "$res"; return 1; }
   echo "$res" | grep -q "$PLATFORM_VER" || { echo "get_health did not return platform ${PLATFORM_VER}: $(echo "$res" | head -c 300)"; return 1; }
   echo "$(echo "$tools" | wc -l | tr -d ' ') tools; get_health reports ${PLATFORM_VER}"
-  ${PY} -c 'import json;c=json.load(open(".mcp.json"))["mcpServers"]["itential"];assert c["url"]=="'"$url"'",c'
+  # .mcp.json points Claude Code at production's MCP by design; against mcp-dev there is nothing to match
+  [ "$MCP_HOST" != mcp.lab.internal ] || ${PY} -c 'import json;c=json.load(open(".mcp.json"))["mcpServers"]["itential"];assert c["url"]=="'"$url"'",c'
 }
 check "S4.7 mcp.lab.internal answers streamable HTTP from this Mac; get_health returns Platform ${PLATFORM_VER}; .mcp.json matches" c7
 

@@ -206,7 +206,11 @@
 
 - name: Agents created or updated from the documents
   ansible.builtin.include_tasks: tasks/flowai-agent.yml
-  loop: "{{ agent_defs | selectattr('profile', 'in', llm_profiles | map(attribute='name') | list) | list }}"
+  # agent_exclude defaults to none (production builds every agent); dev drops diagnostics-local, whose
+  # lab-servicenow tools do not exist there with ServiceNow off (ADR 0063)
+  loop: >-
+    {{ agent_defs | selectattr('profile', 'in', llm_profiles | map(attribute='name') | list)
+       | rejectattr('name', 'in', agent_exclude | default([])) | list }}
   loop_control:
     loop_var: agent
     label: "{{ agent.name }}"

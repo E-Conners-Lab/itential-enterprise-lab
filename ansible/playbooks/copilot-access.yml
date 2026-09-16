@@ -1,0 +1,232 @@
+---
+# ADR 0063 (PID S12.7): svc-copilot on production, read-only. The dev half runs inside itential.yml with the dev
+# overlay; this play is the production half and is run on its own, with the owner's approval (`make copilot-prod`).
+#
+# What it writes, and nothing else:
+#  - the svc-copilot entry and the copilot-readonly group in the OpenLDAP directory on tools-01 (ldapadd; the
+#    pinned upstream LDIF is never touched)
+#  - three custom roles, copilot-cm-read, copilot-lcm-read and copilot-jst-read, created only when absent
+#  - the assignedRoles of the copilot-readonly group (tasks/ldap-service-account.yml)
+# It never writes admin_group, an existing role, an inventory or a gateway. verify/prod-snapshot.py --compare
+# with the allowlist S12.8 derives from itential/copilot/roles.yaml proves that afterwards.
+- name: The svc-copilot account on production (read-only)
+  hosts: ha2-platform[0]
+  become: true
+  gather_facts: false
+  vars_files:
+    - ../../itential/ha2/versions.yaml
+    - ../../itential/versions.yaml
+  vars:
+    ansible_ssh_common_args: -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/dev/null
+    # production login, exactly as platform-ha2-identity.yml reaches the Platform
+    platform_local: "http://{{ (vms | selectattr('name', 'equalto', inventory_hostname) | first).ip }}:{{ platform.http_port }}"
+    admin_user: "{{ platform.admin_user }}"
+    admin_pw: "{{ lookup('ansible.builtin.env', 'ITENTIAL_ADMIN_PASSWORD') }}"
+    copilot_roles: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/../../itential/copilot/roles.yaml') | from_yaml }}"
+    # Roles an administrator creates carry this provenance on Platform 6 (Admin Essentials); the GET below
+    # confirms the document shape before anything is posted
+    custom_role_provenance: Custom
+    # the fallback path of the shared task writes a membership through mongosh, as the identity play does
+    mongo_members: "{{ vms | selectattr('role', 'equalto', 'mongodb') | map(attribute='name') | list }}"
+    mongo_shell_host: "{{ mongo_members[0] }}"
+    mongo_shell_argv:
+      - docker
+      - exec
+      - mongodb
+      - mongosh
+      - --quiet
+      - --tlsCAFile
+      - /etc/mongo/tls/ca.crt
+      - "{{ mongo_uri }}"
+      - --eval
+    mongo_uri: >-
+      mongodb://admin:{{ lookup('ansible.builtin.env', mongodb.users.admin.env) | urlencode }}@{{
+      mongo_members | map('regex_replace', '$', '.' ~ domain ~ ':' ~ mongodb.port | string) | join(',')
+      }}/{{ mongodb.database }}?replicaSet={{ mongodb.replica_set }}&authSource=admin&tls=true
+  tasks:
+    # The dev overlay makes every shared default point at the dev stack; this play names production explicitly
+    # and must never be combined with it.
+    - name: Not with the dev overlay
+      ansible.builtin.assert:
+        that: not (dev_overlay | default(false) | bool) # `| bool`: -e dev_overlay=true arrives as a string
+        fail_msg: copilot-access.yml is production-only; the dev account is built by itential.yml with vars/itential-dev.yml
+        quiet: true
+
+    - name: The oracle names copilot-readonly for production
+      ansible.builtin.assert:
+        that:
+          - copilot_roles.prod.group == 'copilot-readonly'
+          - copilot_roles.prod.custom | map(attribute='name') | select('match', 'copilot-') | list | length
+            == copilot_roles.prod.custom | length
+        fail_msg: itential/copilot/roles.yaml prod.group or a custom role name is not a copilot- name
+        quiet: true
+
+    - name: Admin password present
+      ansible.builtin.assert:
+        that: admin_pw | length > 0
+        fail_msg: ITENTIAL_ADMIN_PASSWORD missing (run through make copilot-prod, which loads .env)
+        quiet: true
+      no_log: true
+
+    - name: Log in as {{ admin_user }}
+      ansible.builtin.uri:
+        url: "{{ platform_local }}/login"
+        method: POST
+        body_format: json
+        body: {username: "{{ admin_user }}", password: "{{ admin_pw }}"}
+        status_code: 200
+      register: login
+      retries: 5
+      delay: 3
+      until: login.status | default(0) == 200
+      no_log: true
+
+    # --- Custom read roles ----------------------------------------------------------------------------------
+    - name: Every role, page by page
+      ansible.builtin.uri:
+        url: "{{ platform_local }}/authorization/roles?limit=100&skip={{ item }}"
+        headers: {Cookie: "{{ login.cookies_string }}"}
+      register: role_pages
+      loop: [0, 100, 200, 300, 400]
+      loop_control:
+        label: "skip={{ item }}"
+
+    - name: Role list
+      ansible.builtin.set_fact:
+        all_roles: "{{ role_pages.results | map(attribute='json.results') | flatten }}"
+
+    # POST /authorization/roles was not measured before ADR 0063. The body is modelled on what GET returns for
+    # an existing role of the same application, and this assert stops the play before any POST if the document
+    # does not have the fields the body is built from.
+    - name: The role document shape, read from an existing role
+      ansible.builtin.assert:
+        that:
+          - all_roles | length == role_pages.results[0].json.total | int
+          - template_role | length == 1
+          - template_role[0]._id is defined
+          - template_role[0].name is defined
+          - template_role[0].provenance is defined
+          - template_role[0].allowedMethods is defined
+          - template_role[0].allowedMethods | length > 0
+          - template_role[0].allowedMethods[0].name is defined
+          - template_role[0].allowedMethods[0].provenance is defined
+          - template_role[0].allowedViews is defined
+        fail_msg: >-
+          the role document shape is not what the custom-role body assumes; measure POST /authorization/roles by
+          hand before re-running (keys seen: {{ template_role[0].keys() | list if template_role else 'no ConfigurationManager/apiread' }})
+        quiet: true
+      vars:
+        template_role: >-
+          {{ all_roles | selectattr('provenance', 'equalto', 'ConfigurationManager')
+             | selectattr('name', 'equalto', 'apiread') | list }}
+
+    # A glob is resolved against the methods the Platform's own roles for that application already allow, so no
+    # method name is invented here. `exclude` is applied after, and every result must start with a read prefix.
+    - name: Methods of each custom role, resolved from the oracle
+      ansible.builtin.set_fact:
+        custom_methods: "{{ custom_methods | default({}) | combine({item.name: resolved | sort}) }}"
+      vars:
+        universe: >-
+          {{ all_roles | map(attribute='allowedMethods') | flatten
+             | selectattr('provenance', 'equalto', item.provenance) | map(attribute='name') | unique | list }}
+        # '*' becomes a placeholder before regex_escape and '.*' after it, so no backslash escaping is involved
+        include_re: >-
+          ^({{ item.methods | map('replace', '*', 'GLOBSTAR') | map('regex_escape')
+               | map('replace', 'GLOBSTAR', '.*') | join('|') }})$
+        exclude_re: >-
+          {{ '^(' ~ (item.exclude | map('replace', '*', 'GLOBSTAR') | map('regex_escape')
+                     | map('replace', 'GLOBSTAR', '.*') | join('|')) ~ ')$'
+             if item.exclude else '(?!)' }}
+        resolved: "{{ universe | select('match', include_re) | reject('match', exclude_re) | list }}"
+      loop: "{{ copilot_roles.prod.custom }}"
+      loop_control:
+        label: "{{ item.name }}"
+
+    - name: Every custom role resolved to read methods only, and every named method exists
+      ansible.builtin.assert:
+        that:
+          - custom_methods[item.name] | length > 0
+          - custom_methods[item.name] | reject('match', read_re) | list | length == 0
+          - named | difference(custom_methods[item.name]) | length == 0
+        fail_msg: >-
+          {{ item.name }}: resolved {{ custom_methods[item.name] }}; not a read prefix
+          {{ custom_methods[item.name] | reject('match', read_re) | list }}; named but absent
+          {{ named | difference(custom_methods[item.name]) }}
+        quiet: true
+      vars:
+        read_re: "^(get|search|list|export|lookup|is|validate|render|parse|translate|buildSpec|find)"
+        named: "{{ item.methods | reject('search', '[*]') | list }}"
+      loop: "{{ copilot_roles.prod.custom }}"
+      loop_control:
+        label: "{{ item.name }}"
+
+    - name: Custom role created only when absent, {{ item.name }}
+      ansible.builtin.uri:
+        url: "{{ platform_local }}/authorization/roles"
+        method: POST
+        headers: {Cookie: "{{ login.cookies_string }}"}
+        body_format: json
+        body:
+          role:
+            name: "{{ item.name }}"
+            provenance: "{{ custom_role_provenance }}"
+            description: "Read-only {{ item.provenance }} for svc-copilot (ADR 0063, itential/copilot/roles.yaml)"
+            allowedMethods: >-
+              {{ custom_methods[item.name] | map('community.general.dict_kv', 'name')
+                 | map('combine', {'provenance': item.provenance}) | list }}
+            allowedViews: []
+        status_code: [200, 201]
+      loop: "{{ copilot_roles.prod.custom }}"
+      loop_control:
+        label: "{{ item.name }}"
+      when: all_roles | selectattr('name', 'equalto', item.name) | list | length == 0
+      changed_when: true
+
+    - name: Roles re-read
+      ansible.builtin.uri:
+        url: "{{ platform_local }}/authorization/roles?limit=100&skip={{ item }}"
+        headers: {Cookie: "{{ login.cookies_string }}"}
+      register: role_pages2
+      loop: [0, 100, 200, 300, 400]
+      loop_control:
+        label: "skip={{ item }}"
+
+    # An existing copilot-* role that differs is reported, not edited: "writes nothing to existing roles" holds
+    # even for this play's own roles, and a hand change to one deserves a person's look.
+    - name: Each custom role exists once with exactly the resolved methods
+      ansible.builtin.assert:
+        that:
+          - found | length == 1
+          - found[0].allowedMethods | map(attribute='name') | sort == custom_methods[item.name]
+          - found[0].allowedMethods | map(attribute='provenance') | unique | list == [item.provenance]
+        fail_msg: >-
+          {{ item.name }}: {{ found | length }} role(s) by that name; methods on the Platform
+          {{ found[0].allowedMethods | default([]) | map(attribute='name') | sort if found else [] }}, oracle
+          {{ custom_methods[item.name] }}. Fix by hand or delete the role and re-run.
+        quiet: true
+      vars:
+        found: "{{ role_pages2.results | map(attribute='json.results') | flatten | selectattr('name', 'equalto', item.name) | list }}"
+      loop: "{{ copilot_roles.prod.custom }}"
+      loop_control:
+        label: "{{ item.name }}"
+
+    # --- The account and its group (shared with the dev stack) ---------------------------------------------
+    - name: The directory answers on tools-01
+      ansible.builtin.wait_for:
+        host: "{{ (vms | selectattr('role', 'equalto', 'tools') | first).ip }}"
+        port: "{{ ldap.port }}"
+        timeout: 60
+
+    - name: The svc-copilot account in copilot-readonly (shared with itential.yml, ADR 0063)
+      ansible.builtin.include_tasks: tasks/ldap-service-account.yml
+      vars:
+        ldap_container_host: tools-01
+        svc_user: svc-copilot
+        svc_group: copilot-readonly
+        password_env: SVC_COPILOT_PROD_PASSWORD
+        svc_role_set: prod
+        # production's directory takes its admin password from ITENTIAL_ADMIN_PASSWORD (tools.compose.yml.j2)
+        ldap_bind_password: "{{ admin_pw }}"
+        # ADR 0063: if the LDAP group does not keep its roles, production stops with the task's message instead of
+        # writing a copilot-readonly-local group and a MongoDB membership nobody measured; dev keeps the fallback
+        ldap_service_account_fallback: false

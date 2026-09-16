@@ -19,10 +19,37 @@
       {{ platform_admin_user | default(lookup('ansible.builtin.env', 'ITENTIAL_ADMIN_USER')
          | default('admin@itential', true)) }}
     admin_pw: "{{ lookup('ansible.builtin.env', 'ITENTIAL_ADMIN_PASSWORD') }}"
-    required_profiles: "{{ llm.profiles | rejectattr('optional', 'defined') | list }}"
+    # llm_profile_names defaults to every profile in the oracle, which is today's behaviour; the dev overlay
+    # narrows it to ollama-mac so a prototyping stack never spends the Anthropic key (ADR 0063).
+    required_profiles: >-
+      {{ llm.profiles | rejectattr('optional', 'defined')
+         | selectattr('name', 'in', llm_profile_names | default(llm.profiles | map(attribute='name') | list)) | list }}
     optional_profiles: "{{ llm.profiles | selectattr('optional', 'defined') | list }}"
     agent_docs: "{{ lookup('ansible.builtin.fileglob', playbook_dir ~ '/../../' ~ agents.documents ~ '/*.yaml', wantlist=True) | sort }}"
   tasks:
+    # ADR 0063: with the dev VM tagged itential-host, the default target is the dev stack. Exactly one overlay
+    # decides which environment's profiles and agents this run writes.
+    # `| bool`: `-e dev_overlay=false` arrives as the string 'false', which is truthy without it.
+    - name: Exactly one overlay (dev or production)
+      ansible.builtin.assert:
+        that: (platform_target is defined) != (dev_overlay | default(false) | bool)
+        fail_msg: "pass exactly one overlay: vars/itential-dev.yml (dev) or vars/itential-prod.yml (production)"
+        quiet: true
+
+    # ADR 0063: the Makefile's load_env_dev swaps NETBOX_DEV_RO_TOKEN into NETBOX_TOKEN; this is the play's own
+    # check that it did, so the agents' NetBox tools on dev can never carry the full token.
+    - name: Dev runs with the read-only NetBox token
+      ansible.builtin.assert:
+        that:
+          - lookup('ansible.builtin.env', 'NETBOX_DEV_RO_TOKEN') | length > 0
+          - lookup('ansible.builtin.env', 'NETBOX_TOKEN') == lookup('ansible.builtin.env', 'NETBOX_DEV_RO_TOKEN')
+        fail_msg: >-
+          the dev overlay needs NETBOX_TOKEN to be the read-only NETBOX_DEV_RO_TOKEN: run `make netbox-token-dev`,
+          then the play through a make target that uses load_env_dev (Makefile), never with the full token
+        quiet: true
+      when: dev_overlay | default(false) | bool
+      no_log: true
+
     # --- local models: not in the lab any more -----------------------------------------------
     # ADR 0060: every local model runs on the Mac Mini. The lab has no GPU, and tools-01's Ollama
     # container ran at 91% of a 6 GiB cap until llama-server crashed mid-verify. Nothing is started
@@ -102,3 +129,18 @@
 
     - name: The FlowAI assets of phase 6 (shared with the production replay, ADR 0055)
       ansible.builtin.import_tasks: tasks/flowai-assets.yml
+
+    # ADR 0063: copilot-builders holds every role except the administrative ones, resolved against the Platform's
+    # role list when the task runs. itential.yml runs it before the adapters and Integration Models exist, so the
+    # roles they add would never reach the group; this is the last dev play, and the task is idempotent (it
+    # PATCHes only when the set differs). `login` is the administrator session tasks/flowai-assets.yml opened; the
+    # password comes from SVC_COPILOT_DEV_PASSWORD, which itential.yml persisted to .env.
+    - name: The Copilot service account's roles re-synced after every dev asset exists (dev)
+      ansible.builtin.include_tasks: tasks/ldap-service-account.yml
+      vars:
+        ldap_container_host: "{{ inventory_hostname }}"
+        svc_user: "{{ dev.copilot.user }}"
+        svc_group: "{{ dev.copilot.group }}"
+        password_env: "{{ dev.copilot.password_env }}"
+        svc_role_set: dev
+      when: dev_overlay | default(false) | bool

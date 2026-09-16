@@ -1,0 +1,35 @@
+# Rendered by ansible/playbooks/clab-dev.yml from clab/versions.yaml (ADR 0063). Do not edit on the VM.
+# Holds no secret: the device passwords live only in configs/*.cfg (0600).
+name: dev
+
+mgmt:
+  # pre-created by clab-host.yml (routed from the lab, DOCKER-USER allowlist); containerlab reuses it
+  network: {{ mgmt.network }}
+  bridge: {{ mgmt.bridge }}
+  ipv4-subnet: {{ mgmt.prefix }}
+  ipv4-gw: {{ mgmt.gateway }}
+  # clab-host.yml owns the DOCKER-USER rules for this bridge (access_allow); containerlab's own accept-all
+  # rule would sit beside them and let every OOB host in
+  external-access: false
+
+topology:
+  kinds:
+    cisco_c8000v:
+      image: {{ images.c8000v.tag }}
+      env:
+        QEMU_MEMORY: "{{ images.c8000v.ram_mb }}"
+    ceos:
+      image: {{ images.ceos.tag }}
+  nodes:
+{%- for node in nodes %}
+    {{ node.name }}:
+      kind: {{ node.kind }}
+      mgmt-ipv4: {{ node.mgmt_ipv4 }}
+      startup-config: configs/{{ node.name }}.cfg
+      labels:
+        role: {{ node.role }}
+{%- endfor %}
+  links:
+{%- for link in links %}
+    - endpoints: ["{{ link.a.node }}:{{ link.a.endpoint }}", "{{ link.b.node }}:{{ link.b.endpoint }}"]
+{%- endfor %}

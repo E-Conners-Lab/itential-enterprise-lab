@@ -1,6 +1,6 @@
 # 0053 — A production Itential environment in the HA2 shape, at lab sizes, from the Itential container images; the dev-stack retires after migration
 
-- **Status:** accepted (PR #24, 2026-09-11) — the eleven-VM HA2 environment is built and S11.1-S11.8 pass
+- **Status:** accepted (PR #24, 2026-09-11) — the eleven-VM HA2 environment is built and S11.1-S11.8 pass — retirement amended by ADR 0063 (the dev stack returns at .65 as `itential-dev`, never under the names `itential` or `mcp`)
 - **Date:** 2026-09-10
 - **Related:** ADR 0020/0035 (the dev-stack on one VM), ADR 0038 (Gateway 5 cluster with etcd and the glibc runner), ADR 0049 (company key budget), ADR 0050 (phase order), ADR 0051/0052 (observability, the official dashboard), PID S11 (amendment 1.18)
 

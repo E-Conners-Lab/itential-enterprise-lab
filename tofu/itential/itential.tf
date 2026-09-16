@@ -1,13 +1,17 @@
 # One Docker host for the itential-dev-stack (Platform, MongoDB, Redis, Gateway 5, Gateway 4,
 # MCP), single-homed on vmbr1 (ADR 0030, ADR 0035). Cloned from the Ubuntu template; guest
 # configuration is ansible/playbooks/itential.yml.
+#
+# ADR 0063: the VM returns as `itential-dev`, the dev stack for Copilot prototyping. The resource
+# address stays `proxmox_virtual_environment_vm.itential` so the state left empty by the S11.8
+# destroy still matches; only the name, tags and description change.
 
 resource "proxmox_virtual_environment_vm" "itential" {
   node_name   = var.node_name
   vm_id       = var.vm.vm_id
-  name        = "itential"
-  description = "Itential Platform + Automation Gateways + MCP as containers (PID S4, ADR 0035)"
-  tags        = ["phase-5", "itential"]
+  name        = var.vm.name
+  description = "Itential dev stack for Copilot prototyping: Platform, Gateway 5 and MCP as containers (PID S4, ADR 0035, ADR 0063)"
+  tags        = ["phase-5", "itential-dev"]
   on_boot     = true
   started     = true
 

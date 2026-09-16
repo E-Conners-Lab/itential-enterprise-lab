@@ -3,8 +3,8 @@
 | | |
 |---|---|
 | **Name** | itential-enterprise-lab |
-| **Version** | 1.24 |
-| **Date** | 2026-09-10 |
+| **Version** | 1.30 |
+| **Date** | 2026-09-16 |
 | **Author** | Elliot Conner. Claude Code is the build agent; every action it takes is bounded by this document |
 | **Standard** | Project Initiation Standard PIS-01 - PIS-30 (`~/.claude/skills/project-initiation-standard`) |
 | **Companion docs** | `docs/discovery.md` (what exists), `docs/ip-plan.md`, `docs/resource-budget.md`, `docs/image-manifest.md`, `docs/adr/` (why), `docs/manual-steps.md` |
@@ -38,7 +38,7 @@ section 2. In summary, at the end of Phase 11 the lab must:
 8. Back up every device configuration to Oxidized -> Gitea on change, and hold every secret in Vault (no secret in `.env` after Phase 9).
 9. Manage all firewalls from Panorama (templates, device groups, commit/push driven by Itential).
 10. Validate fabric changes in a Containerlab cEOS twin of the DC before Itential pushes them to EVE-NG.
-11. Stay inside the ceilings in `docs/resource-budget.md`: 1.5:1 vCPU oversubscription (108 vCPU) and 280 GB RAM allocated.
+11. Stay inside the ceilings in `docs/resource-budget.md`: 1.5:1 vCPU oversubscription (108 vCPU) and 296 GB RAM allocated (280 until amendment 1.30, ADR 0063).
 12. Prove every one of the above with a committed `verify/` result.
 
 **PIS-03 — Explicit exclusions**
@@ -83,7 +83,7 @@ before any device commit, and post the pre/post diff to the ServiceNow change.
 1. **Rebuild test.** From a fresh clone plus `.env` plus staged images, `make up` reaches Phase 11 and `make verify` passes every test, with human involvement limited to `docs/manual-steps.md`.
 2. **Golden path.** An Itential workflow, triggered by a ServiceNow change request, (a) reserves a VLAN, prefix and gateway IP in NetBox, (b) pushes the VLAN to the DC leaf pair and branch switch, (c) adds the security policy and NAT to the branch firewall via Panorama, (d) creates the DHCP range and DNS records in Infoblox, (e) runs pre/post checks (BGP/EVPN state, ping from the branch client), (f) closes the change with the diff attached. Elapsed time under 10 minutes, zero manual steps, and the Containerlab twin validated the switch change first.
 3. **Cross-checks.** For every device, NetBox (intent), the EVE-NG API (what was built), and the device itself (`show` output via the Itential/Ansible path) agree on hostname, management IP, image version and interface count. Two independent sources must confirm every fact (`verify/` never trusts one API).
-4. **Budget.** Allocated vCPU <= 108 and allocated RAM <= 280 GB, measured from `qm config` on the host, not from the docs.
+4. **Budget.** Allocated vCPU <= 108 and allocated RAM <= 296 GB (1.30, ADR 0063), measured from `qm config` on the host, not from the docs.
 5. **Security floor.** No secret in git (gitleaks), no default vendor password left on any node after its phase, every human-facing UI behind Keycloak or AD, TLS from the lab CA on every HTTP service.
 
 ---
@@ -153,7 +153,7 @@ Conventions: **Placement** is Proxmox VM (OpenTofu + Ansible), k3s (Helm/Kustomi
 ### S4 — Itential Platform + Automation Gateway (Phase 5)
 
 - **Purpose:** the automation brain. Workflows, JSON forms, pre/post checks, adapters to every other service.
-- **Placement (amended 1.4, 2026-09-07):** one **Ubuntu 24.04** Proxmox VM `itential` (VM 205, 10.100.0.65, 8 vCPU / 24 GB / 160 GB) running Docker CE and the vendored `itential-dev-stack` Compose file: Platform, MongoDB 7, Redis 7, Gateway 5, Gateway 4 and the MCP server as containers (ADR 0035). The separate `iag` VM, the Rocky template and 10.100.0.66 are dropped. ~~two **Rocky 9** Proxmox VMs (`itential` all-in-one and `iag`)~~. **Since S11.8 (2026-09-10) VM 205 no longer exists**: these assets were replayed onto the production environment (ADR 0055) and run on `iap-01`, the active Platform node. The placement below is what this phase built, not where it runs today.
+- **Placement (amended 1.4, 2026-09-07):** one **Ubuntu 24.04** Proxmox VM `itential` (VM 205, 10.100.0.65, 8 vCPU / 24 GB / 160 GB) running Docker CE and the vendored `itential-dev-stack` Compose file: Platform, MongoDB 7, Redis 7, Gateway 5, Gateway 4 and the MCP server as containers (ADR 0035). The separate `iag` VM, the Rocky template and 10.100.0.66 are dropped. ~~two **Rocky 9** Proxmox VMs (`itential` all-in-one and `iag`)~~. **Since S11.8 (2026-09-10) VM 205 no longer exists**: these assets were replayed onto the production environment (ADR 0055) and run on `iap-01`, the active Platform node. The placement below is what this phase built, not where it runs today. **Since 1.30 a dev stack runs again at .65 as `itential-dev`** (alias `mcp-dev`): the Copilot sandbox of S12, built by the same plays with the dev overlay (ADR 0063). The names `itential` and `mcp` stay with production.
 - **Components (amended 1.4):** container images per manifest section 3.5 pulled from Itential's private ECR with the owner's company SSO session (ADR 0020 amendment records the tags); ~~installed with `itential.deployer` and `itential.iag5` from the RPM repository~~. Adapters from the open-source library: NetBox, ServiceNow, Panorama, Infoblox, Zabbix, Vault (Phase 9), generic git for Gitea (Phase 9). **There is no adapter for Cisco IOS XE or Arista EOS**: those devices are reached through Gateway (netmiko/NETCONF/Ansible) and the vendor pre-built automations. Local admin account plus LDAP to Active Directory in Phase 7 (Platform supports SAML and LDAP for users, not OIDC).
 - **Licence risk (resolved 1.4):** the owner confirmed on 2026-09-07 that no licence is needed for the lab images and that ECR access via company SSO is the supported path (PIS-04 trigger closed). ~~If access cannot be obtained, this phase is blocked.~~
 - **Acceptance:**
@@ -337,6 +337,8 @@ Conventions: **Placement** is Proxmox VM (OpenTofu + Ansible), k3s (Helm/Kustomi
 
 ### S10 — Containerlab CI/test tier (Phase 11)
 > **Amendment 1.15 (ADR 0050):** Phase 11; cEOS-lab is registration-gated, not purchase-gated.
+>
+> **Amendment 1.30 (ADR 0063):** `clab` is built now, ahead of phase 12, for the dev topology `dev` that the Copilot dev stack (S12) automates: VM 230, 10.100.0.224, 8 vCPU / 16 GB / 60 GB, CPU type `host`, because the two C8000v 17.13.01a nodes run under vrnetlab and **need nested KVM** (the placement line's "not required" held for cEOS only). The other two nodes are cEOS **4.33.1.1F**, exact parity with the vEOS the lab runs; if Arista no longer offers that cEOS build, the newest 4.33.x is the fallback and the manifest records it. Management is the routed 10.100.2.0/24 (`docs/ip-plan.md` 3.3), in-band 10.100.3.0/24 stays inside the host, and the nodes are **not registered in NetBox**: the oracle is `clab/versions.yaml`. Criteria 6-12 cover the dev topology and are checked by `verify/test-12a-clab-dev.sh` through `make verify-dev`, never `make verify`; criteria 1-5 stay the phase 12 CI twin.
 
 
 - **Purpose:** a cheap, fast twin of the DC fabric (cEOS) where Itential validates switch changes before EVE-NG.
@@ -348,7 +350,14 @@ Conventions: **Placement** is Proxmox VM (OpenTofu + Ansible), k3s (Helm/Kustomi
   3. A valid change passes the runner and proceeds; both outcomes visible in Gitea Actions and in the Itential job.
   4. cEOS version equals the vEOS version in the manifest.
   5. Twin RAM usage stays under the `clab` line in the budget.
-- **Verification:** `verify/test-11-containerlab.sh`.
+  6. *(1.30)* The `clab` VM matches the budget (8 vCPU / 16 GB / 60 GB) and has its NetBox record; `/dev/kvm` is present; the Containerlab version equals the manifest.
+  7. *(1.30)* The four nodes of topology `dev` are running with the management addresses of `clab/versions.yaml`, and each answers SSH as the `automation` user both from the Mac and from `itential-dev`.
+  8. *(1.30)* cEOS `show version` equals the oracle and the manifest (4.33.1.1F, the vEOS version, so criterion 4 holds exactly); the C8000v nodes show 17.13.01a with licence level network-advantage.
+  9. *(1.30)* OSPF: every point-to-point adjacency is FULL.
+  10. *(1.30)* BGP: the eBGP session between the router and switch pair and both iBGP sessions are Established, and the switches' VLAN /27s are in the second router's table.
+  11. *(1.30)* VLANs 10 and 20 are active on both switches and carried on the trunk between them.
+  12. *(1.30)* Routes: `oob-gw` and `itential-dev` route 10.100.2.0/24 via 10.100.0.224, and the `clab` VM's RAM use stays under its budget line.
+- **Verification:** `verify/test-11-containerlab.sh` (criteria 1-5, phase 12); `verify/test-12a-clab-dev.sh` (criteria 6-12, amendment 1.30).
 
 ---
 
@@ -366,9 +375,28 @@ Conventions: **Placement** is Proxmox VM (OpenTofu + Ansible), k3s (Helm/Kustomi
   5. *(1.20)* Everything phases 5-7 built exists on production — every workflow, Golden Config tree, the compliance plan, the MOP templates, the LCM model, the Integration Models, the agent project and both inventories — and Configuration Manager sees the lab's devices through the Device Broker on `iag-01`; after the cut-over every phase 5-7 verify (`test-05`, `test-06`, `test-06b`, `test-06c`, `test-07` S7.7/S7.8) passes unchanged, because each addresses `itential.lab.internal`.
   6. Drills (`VERIFY_DRILLS=1`): starting the standby and then stopping the active node keeps the UI serving through the load balancer, and the standby is parked again afterwards; stopping the MongoDB primary elects a new one within 30 s and a job started during the election completes; stopping the Redis master fails over through Sentinel and the Platform keeps serving.
   7. The official Itential Platform Monitoring dashboard's Redis and MongoDB rows show the replica sets (S7.8 stays green).
-  8. *(done 2026-09-10)* VM 205 is deleted after the owner's approval; its NetBox, Zabbix, Prometheus and DNS records go with it, `topology/ipam.yaml` releases 10.100.0.65, and `docs/resource-budget.md` reflects the result (8 vCPU / 24 GB / 160 GB returned; RAM headroom positive again). The plays that create those records now delete what the documents stop naming - `netbox-vms.yml` for a retired VM and `observability.yml` for a retired Zabbix host - so a retirement is a document change, not a cleanup by hand.
+  8. *(done 2026-09-10)* VM 205 is deleted after the owner's approval; its NetBox, Zabbix, Prometheus and DNS records go with it, `topology/ipam.yaml` releases 10.100.0.65, and `docs/resource-budget.md` reflects the result (8 vCPU / 24 GB / 160 GB returned; RAM headroom positive again). The plays that create those records now delete what the documents stop naming - `netbox-vms.yml` for a retired VM and `observability.yml` for a retired Zabbix host - so a retirement is a document change, not a cleanup by hand. *(1.30: the address returns for the Copilot dev stack as `itential-dev`, S12 and ADR 0063; the retirement of the VM `itential` and its names stands.)*
   9. *(1.24, ADR 0058)* The production MongoDB is backed up: a gzipped `mongodump` archive newer than 24 h exists on the replica-set member the oracle names last, taken by a dedicated `backup` account with MongoDB's built-in `backup` role and a password generated into `.env`, rotated at seven days — **and it restores**: the verify restores the newest archive into a throw-away database on that member, compares a collection count against the live `itential` database, and drops the copy. A dump that has never been restored is a claim about a filename, not a backup. Off-host copy is deferred to phase 9, which already owns that for the NetBox and Garage backups (ADR 0031).
 - **Verification:** `verify/test-08-platform-ha2.sh`.
+
+---
+
+### S12 — Copilot prototyping tier: dev stack and read-only production access (amendment 1.30, ADR 0063)
+
+- **Purpose:** somewhere GitHub Copilot can build Itential assets against real devices without being able to change production, and a read-only view of production for it to learn from.
+- **Placement:** VM 205 `itential-dev` (10.100.0.65, 8 vCPU / 24 GB / 160 GB, alias `mcp-dev`), built by the Phase 5-6 plays with `ansible/playbooks/vars/itential-dev.yml`; its devices are the Containerlab topology `dev` on `clab` (S10 criteria 6-12). Production is the S11 environment, unchanged except for the `svc-copilot` account, its group and three custom roles.
+- **Components:** the dev stack (Platform, MongoDB, Redis, Gateway 5, MCP, OpenLDAP) with its own encryption key (`ITENTIAL_DEV_ENCRYPTION_KEY`), its inventory read from `clab/versions.yaml`, production NetBox read with a view-only token (`NETBOX_DEV_RO_TOKEN`), no ServiceNow, FlowAI on `ollama-mac` only; `svc-copilot` in LDAP on both environments with separate passwords (`SVC_COPILOT_DEV_PASSWORD`, `SVC_COPILOT_PROD_PASSWORD`), in `copilot-builders` on dev and `copilot-readonly` on production (read-only built-ins plus `copilot-cm-read`, `copilot-lcm-read`, `copilot-jst-read`; no InventoryManager role, because an inventory read returns device passwords). The dev MCP server runs as `svc-copilot`; there is no production MCP server for Copilot. Isolation is a contract: the overlay, guard asserts in `itential.yml`, `platform.yml` and `flowai.yml`, a replay that refuses `dev_overlay`, and shared task files whose defaults reproduce production.
+- **Acceptance:**
+  1. The dev VM matches the budget; `itential-dev.lab.internal` and `mcp-dev.lab.internal` resolve to 10.100.0.65, and `itential.lab.internal` and `mcp.lab.internal` still resolve to 10.100.0.71 and 10.100.0.81.
+  2. The dev Platform serves `itential-dev.lab.internal` with a lab-CA certificate, reports the pinned version, and its Gateway 5 cluster is connected.
+  3. The dev inventory `lab` holds exactly the node names of `clab/versions.yaml`, Configuration Manager sees the same set, and no `topology/enterprise.yaml` device name appears anywhere on dev.
+  4. The dev NetBox credential is read-only: a POST with `NETBOX_DEV_RO_TOKEN` returns 403 and NetBox shows the token with `write_enabled: false`.
+  5. The dev Model Registry profiles are exactly `[ollama-mac]`, there is no `anthropic` profile, and every agent is a `-local` twin.
+  6. `svc-copilot` on dev logs in, is in `copilot-builders`, creates and deletes a probe workflow `copilot-probe-<timestamp>`, and runs `show version` on a clab switch through Gateway 5.
+  7. `svc-copilot` on production logs in with roles that are a subset of the role oracle; it can list workflows, is refused (401/403, never 200 or 404) when deleting one, cannot read inventory nodes, and a Configuration Manager device read returns no `AUTOMATION_PASSWORD`.
+  8. The production fingerprint (`verify/prod-snapshot.py --compare`) equals the snapshot taken before the dev build, except the documented additions of the Copilot roles and group.
+  9. `mcp-dev` from the Mac: `tools/list` includes `get_health` and excludes `describe_inventory` and `get_devices`, and `get_health` returns the pinned version.
+- **Verification:** `verify/test-05b-dev-copilot.sh`, run by `make verify-dev` and never by `make verify`: a sandbox that is torn down must not turn the production verify red.
 
 ## Domain 2 — Evaluation Design
 
@@ -505,7 +533,7 @@ The named risks first, then the six PIS failure types.
 | **Windows / Infoblox eval expiry** | Windows Server shuts down hourly after 180 days (rearm count conflicting in Microsoft's own answers, and a known bug expires some 2025 evals at ~50 days), Windows 11 eval 90 days, NIOS temp licence 60 days and the software stops at expiry | Expiry dates in the manifest; Zabbix "Expiries" host alerts at 14 days; ADR 0009 keeps DNS alive; rearm/redeploy runbooks in `docs/`; AD is rebuilt from an Ansible play + a `dcpromo` answer file, so a redeploy is < 1 hour | Users must be recreated from the play; Keycloak federation reconnects by config |
 | **PAN-OS boot storms** | Four PA-VMs starting together saturate EVE-NG's 24 vCPU for 10+ minutes and can time out | Builder starts firewalls in waves; `verify/test-04` measures the 20-minute bound (E3); EVE-NG CPU allocation is reviewed if E3 fails | Slower lab start |
 | EVE-NG Pro license expiry 2027-04-15 | Lab stops | Zabbix expiry item; renewal is a manual step | |
-| RAM ceiling | Adding a service breaches 280 GB | Budget doc is a merge gate (E10); EVE-NG allocation can be trimmed from 128 GB because it uses far less at idle | |
+| RAM ceiling | Adding a service breaches 296 GB (280 until 1.30; the plan sits on the ceiling since ADR 0063) | Budget doc is a merge gate (E10); EVE-NG allocation can be trimmed from 128 GB because it uses far less at idle; the dev topology and dev stack can be stopped while the firewall track needs the RAM | |
 | Itential licence / repository access | Software cannot be downloaded, or a licence expires | No public trial or licence-file mechanism exists (manifest 3.2); the owner confirms Nexus/JFrog access and licence terms *before* Phase 5 starts; escalation trigger in PIS-04 | Depends on vendor; Phase 5 may slip |
 | Panorama licence | Unlicensed Panorama may refuse to manage devices, or commits may stop after a 180-day grace | Owner requests an evaluation Panorama licence via the support portal before Phase 10; the phase is planned last-but-one to leave time; firewalls stay Itential-managed directly if Panorama is unlicensed | Panorama phase may reduce to "onboarded, read-only" |
 | Itential all-in-one undersized | Platform slow or MongoDB OOM at 24 GB | Vendor publishes only 16/64 + 16/128 dev sizing; budget section 5 levers free up to 26 GB; measured in S4 criterion 6 | May need EVE-NG trim (restart) |
@@ -691,6 +719,8 @@ at the end of Phase 2 and this table amended.
 | 11 | `phase-11/ddi` | `verify/test-11-ddi.sh` | none (BIND9 + Kea from NetBox; NIOS joins in the firewall track) |
 | 12 | `phase-12/containerlab` | `verify/test-12-containerlab.sh` | Download cEOS-lab (arista.com account) |
 | 13 | `phase-13/firewall-track` | `verify/test-13-firewall-track.sh` | NIOS eval + console licence, PA-VM 11.1 to `/srv/images/pa-vm`, Panorama + evaluation licence |
+| `clab-dev` *(1.30)* | `feat/dev-stack-clab` | `verify/test-12a-clab-dev.sh` (S10.6-S10.12, `make verify-dev`) | `ARISTA_TOKEN` in `.env` for cEOS 4.33.1.1F (manual step 13); the C8000v qcow2 staged from EVE-NG (manual step 13b) |
+| `dev-stack` *(1.30)* | `feat/dev-stack-clab` | `verify/test-05b-dev-copilot.sh` (S12, `make verify-dev`) | `aws sso login` before image pulls (manual step 6); the Mac Mini awake for `ollama-mac` (ADR 0060); `make copilot-prod` is a separate, owner-approved production step |
 
 Order as of amendment 1.18 (ADR 0050, 0053): the production Platform (HA2) comes right after observability, then the image-free phases, then one firewall track.
 
@@ -744,6 +774,7 @@ the verify log path and any ADRs added.
 | 1.13 | 2026-09-08 | Phase 6 element 7 (owner request): S4e NetBox enrichment derived from `topology/enterprise.yaml` (addressing on interfaces with peer descriptions, VRFs and ASNs with BGP neighbours in config contexts, racks, provider circuits, config contexts, journal entries; the templates read the YAML, rendered configs unchanged; `netbox-enrich.yml`; `verify/test-06c-netbox.sh`; ADR 0048) |
 | 1.14 | 2026-09-09 | Domain 7: the Anthropic key is the owner's company key with a $15-a-week budget; the platform's session documents are the ledger (`verify/tokens.sh`, `make tokens`, `llm.budget` in versions.yaml), the agent verifies guard it, iteration runs on the local twins or `ONLY=` subsets (ADR 0049) |
 | 1.15 | 2026-09-09 | Reorder (ADR 0050): image-free phases first (7 observability, 8 config/secrets/code, 9 identity without Windows on OpenLDAP + Keycloak + tac_plus, 10 DDI on BIND9 + Kea, 11 Containerlab) and one phase 12 firewall track for NIOS, the PA-VM firewalls and Panorama; Windows Server and the Windows endpoint item dropped, `dc01` released |
+| 1.30 | 2026-09-16 | The dev stack returns as `itential-dev` (VM 205, .65, alias `mcp-dev`, never the production names `itential` or `mcp`) so GitHub Copilot can build against a Platform that is not production, with a Containerlab host `clab` (VM 230, .224, nested KVM) running topology `dev`: two C8000v 17.13.01a and two cEOS 4.33.1.1F on the routed 10.100.2.0/24, not registered in NetBox. Isolation is a contract: a dev overlay, guard asserts, defaults that reproduce production, a separate dev encryption key and a view-only NetBox token; ServiceNow off and `ollama-mac` only on dev. `svc-copilot` is `copilot-readonly` on production (no InventoryManager role: an inventory read returns device passwords) and `copilot-builders` on dev. S10 gains criteria 6-12 (dev topology), new S12 with criteria 1-9, both run by `make verify-dev` and never `make verify`. RAM ceiling 280 -> 296 GB and thin disk ceiling 1.4 -> 1.5 TB, headroom 0 GB, so the firewall track now depends on the levers (ADR 0063, owner instruction) |
 | 1.29 | 2026-09-12 | A local twin gets the tools its job needs, and the cap moves from three to six, set by measurement: `netbox-sot-local` went two tools to four and answered a six-clause question 6/6 with no wasted call, where at two it burned one and returned a **false** "not in NetBox" about interfaces it simply could not see. The three-tool rule was a measured property of qwen2.5:7b, not a law. The wide NetBox reads stay off the twins for the ADR 0059 payload reason (ADR 0062, owner instruction) |
 | 1.28 | 2026-09-11 | The local model is `gemma4:26b` with `/no_think` as the first line of every twin prompt, chosen by measurement (`scripts/model-bakeoff.py`): every candidate scored 9/9 on the tool-call shapes that caused PR #32/#33, so thinking traces decide it - they cost 6-8x, the Platform does not send Ollama's `think: false`, `PARAMETER think false` is not a Modelfile parameter, and only gemma obeys `/no_think`. ADR 0060's `qwen3:30b-a3b` was the worst of the set, leaking reasoning into the answer (ADR 0061, owner instruction) |
 | 1.27 | 2026-09-11 | Local inference leaves the lab: no host runs Ollama, the six twins move to a single non-optional `ollama-mac` profile reaching `ollama.lab.internal` (the Mac Mini, declared as `home_lan.inference_host` with its DHCP reservation recorded), and an unreachable endpoint fails the play by name. tools-01 has no GPU and ran at 91% of a 6 GiB cap until llama-server crashed mid-verify. S4c/S4d.5 now require the Mac awake - ADR 0037's self-contained premise is reversed knowingly (ADR 0060, owner instruction) |

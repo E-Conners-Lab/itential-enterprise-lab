@@ -149,15 +149,27 @@ def _budget_vm_rows() -> dict[str, tuple[int, int, int]]:
     return rows
 
 
-def test_the_dev_stack_vm_is_retired_from_the_budget(versions: dict) -> None:
-    """S11.8 deleted VM 205 on 2026-09-10 (ADR 0053), so it is struck through in the budget and no longer
-    counts against the host. itential/versions.yaml still describes the Phase 5 build for a fresh clone."""
+def test_the_dev_stack_vm_is_back_in_the_budget(versions: dict) -> None:
+    """S11.8 deleted VM 205 on 2026-09-10 (ADR 0053); ADR 0063 brings it back as `itential-dev`, the Copilot
+    sandbox, so it counts against the host again - under the new name only. A row called `itential` would
+    mean the production service name had been handed back to the sandbox."""
     rows = _budget_vm_rows()
-    assert "iag" not in rows, "budget still lists the separate iag VM (both gateways are containers on itential)"
-    assert "itential" not in rows, "VM 205 was retired at S11.8 and must not count against the host"
-    assert "~~205 `itential`~~" in BUDGET.read_text(), "the retired row stays, struck through, with its reason"
     vm = versions["vm"]
-    assert vm["cores"] == 8 and vm["memory_mb"] == 24576 and vm["disk_gb"] == 160, "the Phase 5 sizing is still recorded"
+    assert vm["name"] == "itential-dev", "the dev stack never takes the production name `itential` (ADR 0063)"
+    assert "itential-dev" in rows, "VM 205 returned by ADR 0063 must count against the host"
+    assert rows["itential-dev"] == (vm["cores"], vm["memory_mb"] // 1024, vm["disk_gb"]) == (8, 24, 160), (
+        f"budget {rows['itential-dev']} vs versions.yaml {vm}"
+    )
+    assert "itential" not in rows, "the name `itential` belongs to production's load balancer since S11"
+    assert "~~205" not in BUDGET.read_text(), "the struck-through retirement row is replaced, not duplicated"
+    assert "iag" not in rows, "budget still lists the separate iag VM (both gateways are containers on one VM)"
+
+
+def _budget_ceilings() -> tuple[int, int, int]:
+    """(vCPU, RAM GB, disk GB) from the Ceiling row of section 2, so the arithmetic follows the document."""
+    m = re.search(r"^\| Ceiling \| \| \| (\d+) \| (\d+) \| ([\d,]+) \|", BUDGET.read_text(), re.M)
+    assert m, "budget Ceiling row not found in section 2"
+    return int(m.group(1)), int(m.group(2)), int(m.group(3).replace(",", ""))
 
 
 def test_budget_total_and_headroom_are_arithmetically_right() -> None:
@@ -169,9 +181,21 @@ def test_budget_total_and_headroom_are_arithmetically_right() -> None:
     assert total[0] == sum(v[0] for v in rows.values()), f"vCPU total {total[0]} != {sum(v[0] for v in rows.values())}"
     assert total[1] == sum(v[1] for v in rows.values()), f"RAM total {total[1]} != {sum(v[1] for v in rows.values())}"
     assert total[2] == sum(v[2] for v in rows.values()), f"disk total {total[2]} != {sum(v[2] for v in rows.values())}"
-    # VM 205 was retired at S11.8, which gave 8 vCPU / 24 GB / 160 GB back (ADR 0053)
+    cpu, ram, disk = _budget_ceilings()
     h = re.search(r"\| \*\*Headroom\*\* \| \| \| \*\*(-?\d+) vCPU\*\* \| \*\*(-?\d+) GB\*\* \|", text)
-    assert h and int(h.group(1)) == 108 - total[0] and int(h.group(2)) == 280 - total[1]
+    assert h and int(h.group(1)) == cpu - total[0] and int(h.group(2)) == ram - total[1], "headroom = ceiling - total"
+    assert total[1] <= ram and total[0] <= cpu and total[2] <= disk, f"plan {total} is over the ceilings {(cpu, ram, disk)}"
+
+
+def test_budget_ceilings_are_the_owner_approved_ones() -> None:
+    """ADR 0063: the owner raised RAM 280 -> 296 GB and thin disk allocation 1,400 -> 1,500 GB for the dev stack.
+    Section 1 states the rule and section 2 does the arithmetic; they must name the same numbers, or a later
+    edit to one quietly re-opens a decision the other still records."""
+    cpu, ram, disk = _budget_ceilings()
+    assert (cpu, ram, disk) == (108, 296, 1500), f"section 2 ceilings {(cpu, ram, disk)} are not the approved 108/296/1,500"
+    text = BUDGET.read_text()
+    assert "**108 vCPU allocated**" in text and "**296 GB allocated**" in text, "section 1 must state the same ceilings"
+    assert "**thin allocation <= 1.5 TB;" in text, "section 1 must state the 1.5 TB thin allocation ceiling"
 
 
 def test_tofu_module_matches_versions(versions: dict) -> None:
@@ -182,45 +206,80 @@ def test_tofu_module_matches_versions(versions: dict) -> None:
         m = re.search(rf"{key}\s*=\s*(\d+)", tf)
         assert m and int(m.group(1)) == vm[key], f"tofu {key}: {m.group(1) if m else None} vs versions.yaml {vm[key]}"
     assert f'"{vm["ip"]}/24"' in tf
+    # ADR 0063: the name is read from the variable, never a literal, so the VM cannot come back as `itential`
+    m = re.search(r'\bname\s*=\s*"([a-z0-9-]+)"', tf)
+    assert m and m.group(1) == vm["name"], f"tofu variables name {m.group(1) if m else None} vs versions.yaml {vm['name']}"
+    main = (TOFU_VARS.parent / "itential.tf").read_text()
+    assert re.search(r"^\s*name\s*=\s*var\.vm\.name\s*$", main, re.M), "tofu/itential/itential.tf must set name = var.vm.name"
 
 
-def test_netbox_registration_retired_the_dev_stack(versions: dict) -> None:
-    """S11.8 retired VM 205 (ADR 0053): netbox-vms.yml no longer lists it, and the play deletes a machine it
-    stops listing - the same contract netbox-seed.yml has for a released address. The Phase 5 build itself
-    (itential/versions.yaml, tofu/itential, itential-host.yml) stays: a fresh clone still builds a dev-stack
-    at Phase 5 and migrates at Phase 8, which is the story the phases tell."""
+def test_netbox_registers_the_dev_stack(versions: dict) -> None:
+    """ADR 0063 brings VM 205 back as `itential-dev`, so netbox-vms.yml lists it again - it is the source of
+    the `itential-host` group the dev plays target. It must never list `itential` or `iag`, and the play keeps
+    pruning what it stops listing (the S11.8 contract, ADR 0053)."""
     text = NETBOX_VMS.read_text()
     play = yaml.safe_load(text)
     vms = play[0]["vars"]["vms"]
-    assert not any(v["name"] == "itential" for v in vms), "VM 205 was retired at S11.8"
-    assert not any(v["name"] == "iag" for v in vms)
+    vm = versions["vm"]
+    dev = [v for v in vms if v["name"] == "itential-dev"]
+    assert len(dev) == 1, f"netbox-vms.yml must list itential-dev exactly once, found {len(dev)}"
+    dev = dev[0]
+    assert dev["role"] == "itential-host", "the dev plays reach the VM through the itential-host group"
+    assert dev["ips"] == [vm["ip"]] == ["10.100.0.65"]
+    assert (dev["vcpus"], dev["memory"], dev["disk"]) == (vm["cores"], vm["memory_mb"], vm["disk_gb"]), dev
+    assert not any(v["name"] in ("itential", "iag") for v in vms), "the production name and the dropped iag VM stay out"
     assert "Retired virtual machines deleted" in text, "the play must prune what it no longer lists"
-    assert versions["vm"]["ip"] == "10.100.0.65", "the Phase 5 build is still described, for a fresh clone"
 
 
-# --- addresses: .65 is itential with the mcp alias, .66 is released -----------------------------
+# --- addresses: .65 is itential-dev with the mcp-dev alias; itential/mcp stay on production ---------
 
 
 def test_ipam_itential_alias_and_released_iag(versions: dict) -> None:
+    """The S11 cut-over (ADR 0053/0055) moved itential.lab.internal to the load balancer and mcp.lab.internal to
+    tools-01. ADR 0063 returns .65 to the dev stack with new names only: if `itential` or `mcp` were ever
+    attached to it, unbound would publish two A records and Claude Code or a verify could land on the sandbox."""
     ipam = yaml.safe_load(IPAM.read_text())
-    by_name = {r["hostname"]: r for r in ipam["addresses"]}
+    rows = ipam["addresses"]
+    by_name = {r["hostname"]: r for r in rows}
+    dev = versions["dev"]
     assert "iag" not in by_name, "10.100.0.66 iag must be released (option 1, approved 2026-09-07)"
-    # the S11 cut-over (ADR 0053/0055) moved itential.lab.internal and mcp.lab.internal off VM 205: the
-    # service name is an alias of the load balancer and the MCP server has its own VM
-    # S11.8 retired VM 205, so .65 leaves the plan entirely and netbox-seed deletes it, as .66 and .69 were
-    assert versions["vm"]["ip"] == "10.100.0.65", "the Phase 5 build is still described, for a fresh clone"
-    assert not any(r["address"] == "10.100.0.65" for r in ipam["addresses"]), "S11.8 released .65"
-    assert "itential-dev" not in by_name and "itential" not in by_name, "the dev-stack names are gone"
-    lb = next(r for r in ipam["addresses"] if r["hostname"] == "iap-lb")
-    assert "itential" in lb.get("aliases", []), "itential.lab.internal must resolve to the load balancer"
-    assert "mcp" in by_name["tools-01"].get("aliases", []), "mcp.lab.internal must be an alias of tools-01"
-    assert not any("10.100.0.66" == r["address"] for r in ipam["addresses"])
+    assert not any("10.100.0.66" == r["address"] for r in rows)
+    dev_row = by_name.get("itential-dev")
+    assert dev_row, "10.100.0.65 itential-dev missing from topology/ipam.yaml (ADR 0063)"
+    assert dev_row["address"] == versions["vm"]["ip"] == "10.100.0.65"
+    assert dev_row["hostname"] == dev["hostname"] == versions["vm"]["name"]
+    assert dev_row.get("aliases") == [dev["mcp_alias"]] == ["mcp-dev"], dev_row.get("aliases")
+    assert "itential" not in by_name, "`itential` is an alias of the load balancer, never a hostname"
+    carriers = {r["hostname"] for r in rows if "itential" in r.get("aliases", [])}
+    assert carriers == {"iap-lb"}, f"only iap-lb may carry the itential alias, found {carriers}"
+    carriers = {r["hostname"] for r in rows if "mcp" in r.get("aliases", [])}
+    assert carriers == {"tools-01"}, f"only tools-01 may carry the mcp alias, found {carriers}"
+
+
+def test_dev_block_names_its_own_secrets(versions: dict) -> None:
+    """ADR 0063: every dev secret is a new .env key, so no dev run can overwrite a production one - above all
+    ITENTIAL_ENCRYPTION_KEY, whose loss loses every stored adapter secret on production."""
+    dev = versions["dev"]
+    production_keys = {"ITENTIAL_ENCRYPTION_KEY", "NETBOX_TOKEN", "ITENTIAL_ADMIN_PASSWORD"}
+    named = {dev["encryption_key_env"], dev["netbox_token_env"], dev["copilot"]["password_env"]}
+    assert named == {"ITENTIAL_DEV_ENCRYPTION_KEY", "NETBOX_DEV_RO_TOKEN", "SVC_COPILOT_DEV_PASSWORD"}, named
+    assert not named & production_keys, f"the dev block reuses a production key: {named & production_keys}"
+    assert dev["copilot"]["user"] == "svc-copilot" and dev["copilot"]["group"] == "copilot-builders"
+
+
+def test_vendored_ldif_is_pinned(versions: dict) -> None:
+    """The upstream LDIF is vendored unchanged; svc-copilot is added with ldapadd by a task file, never by editing
+    it (ADR 0063). The pin was recorded but nothing checked it until now."""
+    ldif = ROOT / "itential" / "ldap" / "openldap.ldif"
+    assert ldif.exists(), f"{ldif} missing"
+    digest = hashlib.sha256(ldif.read_bytes()).hexdigest()
+    assert digest == versions["stack"]["ldif_sha256"], "itential/ldap/openldap.ldif changed; the vendored LDIF is never edited"
 
 
 def test_ip_plan_markdown_agrees() -> None:
     text = IP_PLAN.read_text()
-    # after the S11 cut-over the .65 row is the dev-stack alone; the service name and the mcp alias moved
-    assert re.search(r"\| 10\.100\.0\.65 \| \*\(reserved\)\*", text), "ip-plan .65 row is released (S11.8)"
+    # ADR 0063: .65 is the dev stack again, under new names; the service name and the mcp alias stay on production
+    assert re.search(r"\| 10\.100\.0\.65 \| itential-dev \|.*mcp-dev", text), "ip-plan .65 row is itential-dev with mcp-dev"
     assert re.search(r"\| 10\.100\.0\.71 \| iap-lb \|.*itential\.lab\.internal", text), "the .71 row carries the service name"
     assert re.search(r"\| 10\.100\.0\.81 \| tools-01 \|.*mcp", text), "the .81 row carries the mcp alias"
     assert re.search(r"\| 10\.100\.0\.66 \| \*\(reserved\)\*", text), "ip-plan .66 row must be reserved"

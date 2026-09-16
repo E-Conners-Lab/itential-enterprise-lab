@@ -24,6 +24,10 @@ zabbix:
     ubuntu-24-04: {lab: lab-linux, stock: ["Linux by Zabbix agent"]}
     ubuntu-22-04: {lab: lab-linux, stock: ["Linux by Zabbix agent"]}
   excluded_platforms: [windows-11, panos] # ADR 0050: unmanaged clients; firewalls wait for the firewall track
+  # ADR 0063: the Copilot sandbox (the dev stack and its Containerlab host) is disposable and stopped at will, so
+  # it is not monitored. The VMs stay `active` in NetBox because the Ansible inventory only returns active VMs;
+  # these NetBox VM roles are what keeps them out of Zabbix (observability.yml) and out of S7.1 (test-07).
+  excluded_vm_roles: [itential-host, clab-host]
   # the two pre-existing machines NetBox holds only as active addresses (ADR 0028); the agent play reaches
   # them through inventory/phase2.yml
   extra_hosts:

@@ -12,7 +12,7 @@ NetBox. Nothing here is configured on any device yet.
 | 172.29.129.0/24 | EVE-NG `nat0` | EVE built-in NAT cloud |
 | 172.29.130.0/24 | EVE-NG `wg0` | EVE Pro WireGuard |
 | 172.17.0.0/16, 172.18.0.0/16 | Docker default bridges (EVE-NG, NetBox VM) | `docker0` and the first compose network |
-| 172.20.20.0/24 | Containerlab default management network | Left at default on the Containerlab host; it never leaves that host |
+| 172.20.20.0/24 | Containerlab default management network | Not used by the lab's topologies: the dev topology's mgmt network is 10.100.2.0/24, routed (section 3.3, ADR 0063). Kept here so nothing else ever takes the default |
 | 10.42.0.0/16, 10.43.0.0/16 | k3s pod and service CIDRs (k3s defaults) | Kept at default; Cilium runs in tunnel mode so they never appear on the wire |
 
 Everything this lab allocates lives inside **10.100.0.0/14** (10.100.0.0 -
@@ -23,7 +23,10 @@ Everything this lab allocates lives inside **10.100.0.0/14** (10.100.0.0 -
 | Prefix | Role | Status |
 |---|---|---|
 | 10.100.0.0/24 | **OOB management** (`vmbr1` untagged, EVE-NG `pnet1`) | Allocated in Phase 1, seeded into NetBox in Phase 2 |
-| 10.100.1.0/24 - 10.100.255.0/24 | Reserved for future management / service networks (e.g. a second OOB VLAN if the flat /24 ever fills) | Reserved |
+| 10.100.1.0/24 | Reserved for a second OOB VLAN if the flat /24 ever fills (ADR 0003) | Reserved |
+| 10.100.2.0/24 | **Containerlab management** for the dev topology, routed via `clab` 10.100.0.224 (section 3.3, ADR 0063) | Active |
+| 10.100.3.0/24 | Containerlab in-band: the dev topology's links, loopbacks and VLANs; host-internal to `clab`, never routed off it (ADR 0063) | Reserved |
+| 10.100.4.0/24 - 10.100.255.0/24 | Reserved for future management / service networks | Reserved |
 | 10.101.0.0/16 | Data-centre in-band (spine/leaf underlay, server VLANs, firewall transit) | Detailed in the network-topology phase |
 | 10.102.0.0/16 | Branch in-band (one /20 per branch) | Detailed in the network-topology phase |
 | 10.103.0.0/16 | WAN / transit (simulated ISP, tunnels, loopbacks) | Detailed in the network-topology phase |
@@ -95,7 +98,7 @@ topology; "k3s VIP" means a MetalLB address.
 | 10.100.0.42 | gitea | k3s VIP | Gitea HTTP + SSH (phase 9) |
 | 10.100.0.43 - .63 | *(pool)* | k3s VIP | unassigned MetalLB pool |
 | 10.100.0.64 | netbox | Proxmox (VM 110, second NIC) | NetBox OOB leg (phase 2) |
-| 10.100.0.65 | *(reserved)* | | released 2026-09-10 at S11.8: VM 205, the dev-stack, retired once the cut-over moved `itential.lab.internal` to `iap-lb` and `mcp.lab.internal` to `tools-01` (ADR 0053) |
+| 10.100.0.65 | itential-dev | Proxmox | dev stack for Copilot prototyping, alias `mcp-dev.lab.internal` (phase 5, ADR 0063). Released at S11.8 (ADR 0053) and returned under new names: `itential` and `mcp` stay on `iap-lb` and `tools-01` |
 | 10.100.0.66 | *(reserved)* | | released 2026-09-07: the separate `iag` VM was dropped with the container path |
 | 10.100.0.67 | nios | Proxmox | Infoblox NIOS grid master, LAN1 (phase 13, firewall track) |
 | 10.100.0.68 | ddi-fallback | Proxmox | BIND9 + Kea (phase 11) |
@@ -133,14 +136,38 @@ topology; "k3s VIP" means a MetalLB address.
 | 10.100.0.194 | br2-pc01 | EVE-NG | Windows 11 client (branch 2) |
 | 10.100.0.195 | br1-host01 | EVE-NG | Alpine/Ubuntu endpoint (branch 1) |
 | 10.100.0.196 | br2-host01 | EVE-NG | Alpine/Ubuntu endpoint (branch 2) |
-| 10.100.0.224 | clab | Proxmox | Containerlab CI host (phase 12) |
+| 10.100.0.224 | clab | Proxmox | Containerlab host: the dev topology now, the CI twin in phase 12; gateway for 10.100.2.0/24 (ADR 0063) |
 | 10.100.0.240 - .254 | *(DHCP pool)* | DDI | first-boot / ZTP |
 
-Phase numbers follow the order of amendment 1.18 (ADR 0050, 0053); `dc01` (10.100.0.69), `iag` (10.100.0.66) and the dev-stack VM 205 (10.100.0.65) were released and are deleted from NetBox by the seed play (ADR 0051).
+Phase numbers follow the order of amendment 1.18 (ADR 0050, 0053); `dc01` (10.100.0.69) and `iag` (10.100.0.66) were released and are deleted from NetBox by the seed play (ADR 0051). 10.100.0.65 was released at S11.8 and reassigned to `itential-dev` by ADR 0063.
 
 The EVE-NG node list is the *minimum* topology the PID commits to; the
 network-topology phase may add nodes inside the blocks above without changing
 this plan.
+
+### 3.3 The routed Containerlab management prefix: 10.100.2.0/24 (ADR 0063)
+
+The dev topology's nodes (two C8000v, two cEOS) sit on a Docker network on `clab` whose gateway is the
+host itself (10.100.2.1). The prefix is routed, not NATed, so the Mac and `itential-dev` reach every node
+on its own address:
+
+- **`oob-gw`:** a static route `10.100.2.0/24 via 10.100.0.224`, persisted in a netplan file and applied
+  with `ip route replace`, never `netplan apply` (on the lab's only gateway that drops every flow).
+- **`itential-dev`:** the same static route, on-link, so dev-stack to device traffic never hairpins
+  through `oob-gw`.
+- **Return path (ADR 0030):** a node replies to its gateway on `clab`, which forwards to its default route
+  `oob-gw`; `oob-gw` matches the flow in conntrack and hands the reply to the home router by the same
+  policy route every lab reply uses. Mac-to-node and `itential-dev`-to-node are symmetric; another OOB
+  host reaching a node hairpins through `oob-gw` one way and is not a requirement.
+- **Who may reach it:** a DOCKER-USER allowlist on `clab` admits only `itential-dev` (10.100.0.65), the
+  `clab` host itself and the home LAN; every other OOB host, production included, is dropped.
+- **Not in NetBox:** the prefix and the two VMs are, the nodes are not. Every production consumer reads
+  `status=active` devices with no site filter, so registering them would pull them into production's
+  inventory and monitoring. The dev inventory reads `clab/versions.yaml` instead.
+
+10.100.2.0/24 and not 10.100.1.0/24, because ADR 0003 keeps the latter for a second OOB VLAN; it is inside
+the reserved range, outside every prefix in section 1 and away from the in-band /16s. 10.100.3.0/24 holds
+the topology's point-to-point links, loopbacks and VLANs and never leaves the host.
 
 ## 4. Lab DNS
 

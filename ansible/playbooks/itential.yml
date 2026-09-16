@@ -10,10 +10,38 @@
   gather_facts: false
   vars:
     env_file: "{{ playbook_dir }}/../../.env"
+    # ADR 0063: the dev overlay names its own key (ITENTIAL_DEV_ENCRYPTION_KEY). Without the overlay this is
+    # exactly the key production has always used, so a production run reads and writes the same line as before.
+    enc_key_var: "{{ enc_key_env | default('ITENTIAL_ENCRYPTION_KEY') }}"
   tasks:
+    # ADR 0063: with the dev VM tagged itential-host, the default target is the dev stack, and the production
+    # overlay is what selects production. Running with neither (or both) would build one environment from the
+    # other's settings, so the play stops before it reads or writes a single secret.
+    # `| bool`: `-e dev_overlay=false` arrives as the string 'false', which is truthy without it.
+    - name: Exactly one overlay (dev or production)
+      ansible.builtin.assert:
+        that: (platform_target is defined) != (dev_overlay | default(false) | bool)
+        fail_msg: "pass exactly one overlay: vars/itential-dev.yml (dev) or vars/itential-prod.yml (production)"
+        quiet: true
+
+    # ADR 0063: the dev Platform's adapter, integration and runner all receive NETBOX_TOKEN. The Makefile's
+    # load_env_dev swaps in NETBOX_DEV_RO_TOKEN, and this is the play's own check that it did: a dev run with the
+    # full token would hand a prototype write access to production NetBox.
+    - name: Dev runs with the read-only NetBox token
+      ansible.builtin.assert:
+        that:
+          - lookup('ansible.builtin.env', 'NETBOX_DEV_RO_TOKEN') | length > 0
+          - lookup('ansible.builtin.env', 'NETBOX_TOKEN') == lookup('ansible.builtin.env', 'NETBOX_DEV_RO_TOKEN')
+        fail_msg: >-
+          the dev overlay needs NETBOX_TOKEN to be the read-only NETBOX_DEV_RO_TOKEN: run `make netbox-token-dev`,
+          then the play through a make target that uses load_env_dev (Makefile), never with the full token
+        quiet: true
+      when: dev_overlay | default(false) | bool
+      no_log: true
+
     - name: Current values
       ansible.builtin.set_fact:
-        cur_key: "{{ lookup('ansible.builtin.env', 'ITENTIAL_ENCRYPTION_KEY') }}"
+        cur_key: "{{ lookup('ansible.builtin.env', enc_key_var) }}"
         admin_pw: "{{ lookup('ansible.builtin.env', 'ITENTIAL_ADMIN_PASSWORD') }}"
       no_log: true
 
@@ -31,11 +59,30 @@
              else lookup('ansible.builtin.password', '/dev/null', length=64, chars=['hexdigits']) | lower }}
       no_log: true
 
+    # The regexp is the overlay's key name, never a literal: a dev run must not match production's line.
     - name: Persist to .env before use
       ansible.builtin.lineinfile:
         path: "{{ env_file }}"
-        regexp: "^ITENTIAL_ENCRYPTION_KEY="
-        line: "ITENTIAL_ENCRYPTION_KEY={{ enc_key }}"
+        regexp: "^{{ enc_key_var }}="
+        line: "{{ enc_key_var }}={{ enc_key }}"
+      no_log: true
+
+    # ADR 0063: mcp-dev logs in as svc-copilot, and the stack .env carrying that password is rendered before
+    # tasks/ldap-service-account.yml runs, so the password is generated and persisted here, before either uses it.
+    - name: Copilot service account password (dev), generated once
+      ansible.builtin.set_fact:
+        svc_copilot_pw: >-
+          {{ lookup('ansible.builtin.env', 'SVC_COPILOT_DEV_PASSWORD')
+             | default(lookup('ansible.builtin.password', '/dev/null', length=32, chars=['ascii_letters', 'digits']), true) }}
+      when: dev_overlay | default(false)
+      no_log: true
+
+    - name: Copilot service account password persisted to .env before use (dev)
+      ansible.builtin.lineinfile:
+        path: "{{ env_file }}"
+        regexp: "^SVC_COPILOT_DEV_PASSWORD="
+        line: "SVC_COPILOT_DEV_PASSWORD={{ svc_copilot_pw }}"
+      when: dev_overlay | default(false)
       no_log: true
 
 - name: Bring up the Itential dev stack
@@ -140,8 +187,8 @@
           OOB_ADDRESS={{ oob_address }}
           GATEWAY5_CLUSTER_ID={{ stack.gateway5_cluster_id }}
           LOG_LEVEL=info
-          MCP_PLATFORM_USER={{ admin_user }}
-          MCP_PLATFORM_PASSWORD={{ admin_pw }}
+          MCP_PLATFORM_USER={{ mcp_platform_user | default(admin_user) }}
+          MCP_PLATFORM_PASSWORD={{ mcp_platform_password | default(admin_pw) }}
           LDAP_ADMIN_PASSWORD=admin
           ITENTIAL_ENCRYPTION_KEY={{ enc_key }}
       no_log: true
@@ -354,6 +401,19 @@
     - name: The Platform's LDAP administrator (shared with production, ADR 0055)
       ansible.builtin.import_tasks: tasks/ldap-admin.yml
 
+    # ADR 0063: svc-copilot and its copilot-builders group exist before the gateway cluster and the inventories
+    # below are created with that group; Gateway Manager and Inventory Manager filter by group membership.
+    - name: The Copilot service account (dev)
+      ansible.builtin.include_tasks: tasks/ldap-service-account.yml
+      vars:
+        ldap_container_host: "{{ inventory_hostname }}"
+        svc_user: "{{ dev.copilot.user }}"
+        svc_group: "{{ dev.copilot.group }}"
+        password_env: "{{ dev.copilot.password_env }}"
+        svc_password: "{{ hostvars['localhost'].svc_copilot_pw }}"
+        svc_role_set: dev
+      when: dev_overlay | default(false)
+
     # --- Gateway cluster, created as the LDAP admin ---------------------------------------------
     - name: Existing gateways
       ansible.builtin.uri:
@@ -376,7 +436,7 @@
             readonly: false
             certificates:
               - "{{ (gm_certs2.json.results | selectattr('alias', 'equalto', 'gateway5-' ~ stack.gateway5_cluster_id) | first)._id }}"
-            groups: [admin_group]
+            groups: "{{ gateway_groups | default(['admin_group']) }}" # dev adds copilot-builders (ADR 0063)
         status_code: [200, 201]
       when: gateways.json.results | default([]) | selectattr('cluster_id', 'equalto', stack.gateway5_cluster_id) | list | length == 0
 

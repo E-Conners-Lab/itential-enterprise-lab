@@ -152,7 +152,8 @@
             {%- set _ = out.append({'name': d.name, 'ip': d.primary_ip4.address | ansible.utils.ipaddr('address'),
                                     'platform': d.platform.slug, 'group': zabbix.host_groups.devices | replace('{site}', d.site.slug)}) -%}
           {%- endfor -%}
-          {%- for v in nb_vms.json.results if v.platform and v.platform.slug in zabbix.templates -%}
+          {%- for v in nb_vms.json.results if v.platform and v.platform.slug in zabbix.templates
+                                            and not (v.role and v.role.slug in zabbix.excluded_vm_roles | default([])) -%}
             {%- set _ = out.append({'name': v.name, 'ip': v.primary_ip4.address | ansible.utils.ipaddr('address'),
                                     'platform': v.platform.slug, 'group': zabbix.host_groups.vms}) -%}
           {%- endfor -%}

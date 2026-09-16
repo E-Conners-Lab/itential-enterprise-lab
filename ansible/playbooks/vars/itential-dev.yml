@@ -1,0 +1,57 @@
+---
+# The dev stack's overlay for the phase 5-7 asset plays (ADR 0063), passed as `-e @playbooks/vars/itential-dev.yml`.
+# itential.yml, platform.yml and flowai.yml refuse to run with no overlay or with both, and the production
+# replay refuses this one, so a dev run can never land on the production Platform by default.
+#
+# Deliberately NOT set here: platform_target, platform_api, platform_admin_user. Their defaults are the
+# dev stack itself (the itential-host group, the node's own 127.0.0.1:3000, the dev-stack LDAP admin), and
+# the guard asserts use "platform_target is defined" as the production marker.
+#
+# Every key below is read by a shared task file with `| default(<production behaviour>)`, so this file is
+# the only place the two environments differ; tests/test_dev_stack.py holds both halves of that contract.
+dev_overlay: true
+
+# The dev stack keeps its own encryption key in .env. Production's ITENTIAL_ENCRYPTION_KEY protects every
+# stored adapter secret there, and the secrets play would otherwise regenerate and overwrite it.
+enc_key_env: ITENTIAL_DEV_ENCRYPTION_KEY
+
+# Devices come from the Containerlab oracle (clab/versions.yaml), never from NetBox: clab devices are not
+# registered in NetBox, and the EVE-NG devices NetBox holds belong to production's inventory.
+device_source: clab
+
+# Local inference only (ADR 0060/0063): no Anthropic spend from a prototyping stack.
+llm_profile_names: [ollama-mac]
+
+# ServiceNow stays off on dev (owner decision, ADR 0063): the PDI is shared with production's change
+# history and SNOW_USER can write.
+integration_models: [netbox]
+
+# golden_config is left out on purpose. tasks/golden-config*.yml build device groups from the EVE-NG sites
+# and roles in itential/versions.yaml (dc1, br1, wan-edge, ...) and render every device leaf from NetBox
+# interface and FHRP intent (templates/gc-interfaces.j2). clab devices have neither, so the trees would
+# hold empty groups and every compliance run would report the whole device as a violation.
+platform_elements: [mop, lcm, integrations]
+
+# The LCM instances are imported from production NetBox's branch VLANs; they describe EVE-NG switches.
+lcm_import_instances: false
+
+# Dev reaches NetBox with a view-only token (ADR 0063), so the VLAN-group POST would only ever 403.
+netbox_vlan_groups_managed: false
+
+# copilot-builders (tasks/ldap-service-account.yml) needs Inventory Manager and Gateway Manager group
+# membership to use the devices (ADR 0055: both filter by group). The task sets svc_effective_group, which is
+# copilot-builders-local when its measured fallback was taken, so the grant follows the group svc-copilot holds.
+inventory_groups: "{{ ['admin_group', svc_effective_group | default('copilot-builders')] }}"
+gateway_groups: "{{ ['admin_group', svc_effective_group | default('copilot-builders')] }}"
+
+# diagnostics-local binds lab-servicenow tools (listIncidents, updateIncident), which do not exist without
+# the ServiceNow integration. The other -local twins bind only NetBox, workflow and device tools.
+agent_exclude: [diagnostics-local]
+
+# mcp-dev runs as the Copilot service account, not as the administrator (ADR 0063). The password is
+# SVC_COPILOT_DEV_PASSWORD from .env; on the very first run it is not in the environment yet, so the value
+# itential.yml's secrets play has just generated and persisted is preferred.
+mcp_platform_user: svc-copilot
+mcp_platform_password: >-
+  {{ hostvars['localhost'].svc_copilot_pw
+     | default(lookup('ansible.builtin.env', 'SVC_COPILOT_DEV_PASSWORD'), true) }}

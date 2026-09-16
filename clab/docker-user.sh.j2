@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# Managed by ansible/playbooks/clab-host.yml from clab/versions.yaml access_allow (ADR 0063). Do not edit.
+# Who may open connections into the clab dev mgmt network ({{ mgmt.prefix }} on {{ mgmt.bridge }}).
+# Docker evaluates DOCKER-USER before its own FORWARD rules, so this chain is the one gate. The topology sets
+# containerlab's external-access to false, so nothing else inserts an accept-all for the bridge; the allowed
+# sources get the explicit ACCEPT that external-access would have given everyone (routed access past Docker's
+# own isolation rules, whatever the gateway mode).
+# Run at boot by clab-dev-access.service (after docker, which rebuilds FORWARD on every start) and after
+# every deploy by clab-dev.yml. Idempotent: the chain is rebuilt and the jump kept exactly once, first.
+set -euo pipefail
+CHAIN=CLAB-DEV-MGMT
+BRIDGE={{ mgmt.bridge }}
+
+iptables -w -N "$CHAIN" 2>/dev/null || true
+iptables -w -F "$CHAIN"
+# replies to flows the nodes started (NTP, DNS, package pulls) and to flows already allowed
+iptables -w -A "$CHAIN" -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+# node to node on the same bridge (br_netfilter sends bridged frames through FORWARD)
+iptables -w -A "$CHAIN" -i "$BRIDGE" -j RETURN
+{%- for src in access_allow %}
+iptables -w -A "$CHAIN" -s {{ src }} -j ACCEPT
+{%- endfor %}
+iptables -w -A "$CHAIN" -j DROP
+
+iptables -w -N DOCKER-USER 2>/dev/null || true
+while iptables -w -D DOCKER-USER -o "$BRIDGE" -j "$CHAIN" 2>/dev/null; do :; done
+iptables -w -I DOCKER-USER 1 -o "$BRIDGE" -j "$CHAIN"

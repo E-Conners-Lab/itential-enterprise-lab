@@ -1,0 +1,96 @@
+{#- EOS startup config for a clab cEOS switch (ADR 0063), rendered per node by clab-dev.yml from clab/versions.yaml.
+    containerlab adds Management0's address and default route when the node boots, so this file leaves
+    Management0 alone. Inputs: the oracle, `node` (one nodes[] row) and `clab_password`
+    (CLAB_AUTOMATION_PASSWORD, never a literal). -#}
+{%- set by_name = {} %}
+{%- for n in nodes %}{% set _ = by_name.update({n.name: n}) %}{% endfor -%}
+hostname {{ node.name }}
+dns domain lab.internal
+!
+service routing protocols model multi-agent
+!
+username {{ credentials.user }} privilege 15 role network-admin secret 0 {{ clab_password }}
+{#- containerlab's cEOS default is admin/admin; with a startup config this line replaces it, and containerlab
+    never logs in as admin after deploy (PID success criterion 5). #}
+username admin privilege 15 role network-admin secret 0 {{ clab_password }}
+aaa authorization exec default local
+!
+management api http-commands
+   protocol https
+   no shutdown
+!
+management ssh
+   no shutdown
+!
+{%- for v in vlans %}
+vlan {{ v.id }}
+   name {{ v.name }}
+!
+{%- endfor %}
+{%- for link in links if link.trunk is defined and node.name in [link.a.node, link.b.node] %}
+{%- set side, peer = (link.a, link.b) if link.a.node == node.name else (link.b, link.a) %}
+vlan {{ link.svi.vlan }}
+   name TRANSIT
+!
+interface {{ side.ifname }}
+   description to {{ peer.node }}:{{ peer.ifname }}
+   switchport mode trunk
+   switchport trunk allowed vlan {{ link.trunk | join(',') }}
+   no shutdown
+!
+interface Vlan{{ link.svi.vlan }}
+   description transit to {{ peer.node }}
+   ip address {{ link.svi.a_ip if link.a.node == node.name else link.svi.b_ip }}
+   ip ospf network point-to-point
+   ip ospf area {{ routing.ospf.area }}
+!
+{%- endfor %}
+{%- for v in vlans if node.name in v.svi %}
+interface Vlan{{ v.id }}
+   description {{ v.name }} gateway
+   ip address {{ v.svi[node.name] }}
+!
+{%- endfor %}
+{%- for link in links if link.trunk is not defined %}
+{%- for side, peer in [(link.a, link.b), (link.b, link.a)] if side.node == node.name %}
+interface {{ side.ifname }}
+   description to {{ peer.node }}:{{ peer.ifname }}
+   no switchport
+   ip address {{ side.ip }}
+   ip ospf network point-to-point
+   ip ospf area {{ routing.ospf.area }}
+   no shutdown
+!
+{%- endfor %}
+{%- endfor %}
+interface Loopback0
+   ip address {{ node.loopback }}/32
+   ip ospf area {{ routing.ospf.area }}
+!
+ip routing
+!
+router ospf {{ routing.ospf.process }}
+   router-id {{ node.loopback }}
+   max-lsa 12000
+!
+router bgp {{ node.asn }}
+   router-id {{ node.loopback }}
+{%- for s in routing.bgp if node.name in [s.a, s.b] %}
+{%- set peer_name = s.b if s.a == node.name else s.a %}
+{%- set peer_ip = s.b_ip if s.a == node.name else s.a_ip %}
+   neighbor {{ peer_ip }} remote-as {{ by_name[peer_name].asn }}
+   neighbor {{ peer_ip }} description {{ peer_name }} ({{ s.type }})
+{%- if s.type == 'ibgp' %}
+   neighbor {{ peer_ip }} update-source Loopback0
+   neighbor {{ peer_ip }} next-hop-self
+{%- endif %}
+{%- endfor %}
+{%- for p in routing.announce.get(node.name, []) %}
+   network {{ p }}
+{%- endfor %}
+   address-family ipv4
+{%- for s in routing.bgp if node.name in [s.a, s.b] %}
+      neighbor {{ s.b_ip if s.a == node.name else s.a_ip }} activate
+{%- endfor %}
+!
+end

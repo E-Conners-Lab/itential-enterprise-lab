@@ -26,9 +26,11 @@ variable "dns_servers" {
 
 # Sizing is docs/resource-budget.md section 2 and itential/versions.yaml (tests/test_itential.py
 # holds all three together); verify/test-05-itential.sh S4.6 measures the result after 24 h.
+# name is itential-dev, never `itential` or `mcp`: those names belong to production since S11 (ADR 0063).
 variable "vm" {
-  type = object({ vm_id = number, ip = string, cores = number, memory_mb = number, disk_gb = number })
+  type = object({ name = string, vm_id = number, ip = string, cores = number, memory_mb = number, disk_gb = number })
   default = {
+    name      = "itential-dev"
     vm_id     = 205
     ip        = "10.100.0.65/24"
     cores     = 8

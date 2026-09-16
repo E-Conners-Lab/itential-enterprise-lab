@@ -70,6 +70,9 @@ for d in get("dcim/devices/?status=active&limit=200"):
     if plat and plat not in obs["excluded_platforms"]:
         rows.append((d["name"], plat, d["primary_ip4"]["address"].split("/")[0], d["site"]["slug"]))
 for v in get("virtualization/virtual-machines/?status=active&limit=200"):
+    # ADR 0063: the Copilot sandbox's VMs are active (the inventory needs that) but deliberately unmonitored
+    if (v.get("role") or {}).get("slug") in obs.get("excluded_vm_roles", []):
+        continue
     rows.append((v["name"], (v.get("platform") or {}).get("slug"), v["primary_ip4"]["address"].split("/")[0], "vms"))
 for e in obs["extra_hosts"]:
     rows.append((e["name"], e["platform"], e["address"], "vms"))

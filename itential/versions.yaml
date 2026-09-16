@@ -1,7 +1,8 @@
 # Single oracle for Phase 5 (PID S4, ADR 0035). Read by ansible/playbooks/itential-host.yml,
 # itential.yml, images/fetch.sh itential and verify/test-05-itential.sh; tests/test_itential.py
 # holds it to docs/image-manifest.md 3.5, docs/resource-budget.md, topology/ipam.yaml and
-# tofu/itential. Never 'latest'.
+# tofu/itential. Never 'latest'. Since ADR 0063 (PID 1.30) the VM it describes is the dev stack
+# `itential-dev`, the Copilot sandbox; production reads itential/ha2/versions.yaml for its topology.
 upstream:
   dev_stack_repo: https://github.com/itential/itential-dev-stack
   dev_stack_commit: 2db4b448db683d80f16e532357972e3f3004c0cb # main on 2026-06-24, vendored 2026-09-07
@@ -28,7 +29,6 @@ images:
   mongodb: {repository: docker.io/library/mongo, tag: "7.0.40"} # Platform 6 fully supports 7.0 (manifest 3.2); Docker Hub 2026-09-07
   redis: {repository: docker.io/library/redis, tag: "7.4.11"}
   mcp: {repository: ghcr.io/itential/itential-mcp, tag: v0.14.0} # release 2026-08-13; streamable HTTP transport
-  # in-lab local models on VM 205, CPU inference (ADR 0037); Docker Hub 2026-09-07
   # upstream dev-stack OpenLDAP: admin@itential and the group membership Gateway Manager needs (until Phase 7 AD)
   ldap: {repository: docker.io/osixia/openldap, tag: 1.4.0}
   # Gateway 5 distributed execution (ADR 0038): etcd is the shared store a runner node needs
@@ -51,7 +51,9 @@ images:
     digest: "sha256:78387bc3881b8273120a12ebe6c1ab22b018ccc2c9adf565ae1ac9b536e184ea"
 
 vm:
-  name: itential
+  # itential-dev, never `itential` or `mcp`: since the S11 cut-over those names belong to production's load
+  # balancer (.71) and tools VM (.81), and reusing either would repoint Claude Code or a verify at the sandbox.
+  name: itential-dev
   vm_id: 205
   ip: 10.100.0.65
   cores: 8
@@ -69,6 +71,18 @@ stack:
   host_inventory: lab-hosts # the Ubuntu hosts (S4d.6, ADR 0047): reached by Gateway 5, never by Configuration Manager
   mongo_cache_gb: 4
   runner_image: gateway5-runner:5.5.2-py3.12.14 # local build tag on the VM (ADR 0038)
+
+# --- The dev stack for Copilot prototyping (ADR 0063, PID S12). Production is read-only to Copilot, so it builds
+# here instead. Only ansible/playbooks/vars/itential-dev.yml and the dev Makefile targets read this block; a play
+# run without that overlay keeps its production defaults. Every secret is a new .env key with its own name, so a
+# dev run can never regenerate production's ITENTIAL_ENCRYPTION_KEY (losing it loses every stored adapter
+# secret), and the NetBox token is view-only, so a dev workflow that reserves a VLAN fails with 403 by design.
+dev:
+  hostname: itential-dev
+  mcp_alias: mcp-dev # the dev MCP server runs as svc-copilot, not admin@itential
+  copilot: {user: svc-copilot, group: copilot-builders, password_env: SVC_COPILOT_DEV_PASSWORD}
+  netbox_token_env: NETBOX_DEV_RO_TOKEN
+  encryption_key_env: ITENTIAL_DEV_ENCRYPTION_KEY
 
 # Structured CLI output (PID S4c.7, ADR 0038): the parse step of wf-show-command-v1 is a Gateway 5
 # runCode task whose pip packages are exactly these (one cached venv on the runner, ~790 MB). The

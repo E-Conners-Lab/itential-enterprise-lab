@@ -1,0 +1,99 @@
+# Single oracle for the Containerlab dev topology (ADR 0063; PID S10.6-S10.12). Read by tofu/clab (held by
+# tests/test_clab.py), ansible/playbooks/clab-host.yml, clab-dev.yml, oob-gw.yml --tags routes,
+# itential-host.yml (route to mgmt), the dev overlay's inventory, images/fetch.sh c8000v|arista|clab-load and
+# verify/test-12a-clab-dev.sh. tests/test_clab.py holds it to docs/image-manifest.md, topology/ipam.yaml and
+# docs/resource-budget.md. Never 'latest'.
+#
+# The clab devices are never registered in NetBox: every production consumer of NetBox devices selects
+# status=active with no site filter (production inventory, observability's 5/7 assert, test-07 S7.1), so a
+# clab router in NetBox would leak into production on the next replay (ADR 0063, finding 3).
+
+vm:
+  name: clab
+  vm_id: 230 # 200 oob, 201-203 k3s, 205 itential-dev, 210-220 ha2, 9000/9001 templates (owner decision)
+  ip: 10.100.0.224
+  cores: 8
+  memory_mb: 16384
+  disk_gb: 60
+
+containerlab: 0.79.0 # docs/image-manifest.md section 4.5, released 2026-08-21
+
+# Pre-created by clab-host.yml; the topology references it by name so containerlab reuses it. Routed (not
+# NATed) from the lab: oob-gw and itential-dev carry a static route to the prefix via vm.ip (ADR 0030 symmetry).
+mgmt:
+  network: clab-dev-mgmt
+  prefix: 10.100.2.0/24
+  gateway: 10.100.2.1
+  bridge: br-clab-dev
+
+# links, loopbacks and VLANs; never routed off the clab VM
+inband_prefix: 10.100.3.0/24
+
+images:
+  ceos:
+    # Exact parity with the lab's vEOS 4.33.1.1F (owner decision 2026-09-16, S10.4). Fallback rule if arista.com
+    # offers no cEOS64-lab build of 4.33.1.1F: the newest 4.33.x cEOS64-lab (ADR 0033 train parity), changed
+    # here and in docs/image-manifest.md section 2.5 together.
+    version: 4.33.1.1F
+    tag: ceos:4.33.1.1F
+  c8000v:
+    version: 17.13.01a # docs/image-manifest.md section 2.3 "Running: 17.13.01a", the image the EVE-NG lab runs
+    source: eve:/opt/unetlab/addons/qemu/c8000v-17.13.01a/virtioa.qcow2
+    # vrnetlab's cisco/c8000v Makefile reads the version out of the filename
+    # (sed 's/.*[^0-9]\([0-9]\+\.[0-9]\+\.[0-9]\+[a-z]\?\).*/\1/'), so the staged name must carry it.
+    staged: /srv/images/c8000v/c8000v-universalk9_8G_serial.17.13.01a.qcow2
+    vrnetlab_repo: https://github.com/srl-labs/vrnetlab
+    vrnetlab_commit: 3a34fa63d73843c871f248e2df2ffa5c038183ce # master on 2026-09-13 (#525)
+    # vrnetlab tags $(REGISTRY)$(VENDOR)_$(NAME):$(VERSION) with REGISTRY=vrnetlab/ (makefile-sanity.include)
+    tag: vrnetlab/cisco_c8000v:17.13.01a
+    ram_mb: 4096 # vrnetlab's default for c8000v; passed as QEMU_MEMORY so the oracle stays the one number
+
+# Device-local account on every clab node. The password is generated once by clab-dev.yml and persisted to
+# .env before first use; it is never the production AUTOMATION_PASSWORD.
+credentials:
+  user: automation
+  password_env: CLAB_AUTOMATION_PASSWORD
+
+# name starts with clab- and never equals a topology/enterprise.yaml device (tests/test_clab.py)
+nodes:
+  - {name: clab-rtr1, kind: cisco_c8000v, mgmt_ipv4: 10.100.2.11, netmiko: cisco_ios, role: router, asn: 65010, loopback: 10.100.3.201}
+  - {name: clab-rtr2, kind: cisco_c8000v, mgmt_ipv4: 10.100.2.12, netmiko: cisco_ios, role: router, asn: 65010, loopback: 10.100.3.202}
+  - {name: clab-sw1, kind: ceos, mgmt_ipv4: 10.100.2.21, netmiko: arista_eos, role: switch, asn: 65020, loopback: 10.100.3.211}
+  - {name: clab-sw2, kind: ceos, mgmt_ipv4: 10.100.2.22, netmiko: arista_eos, role: switch, asn: 65020, loopback: 10.100.3.212}
+
+# endpoint = the containerlab (Linux) interface; ifname = the device's name for it.
+# cisco_c8000v: eth0 is GigabitEthernet1 (management), ethN is GigabitEthernet(N+1). ceos: ethN is EthernetN.
+# Routed links are /31s (a side even); every routed link and the switch pair's Vlan99 run OSPF area 0.
+links:
+  - a: {node: clab-rtr1, endpoint: eth1, ifname: GigabitEthernet2, ip: 10.100.3.0/31}
+    b: {node: clab-rtr2, endpoint: eth1, ifname: GigabitEthernet2, ip: 10.100.3.1/31}
+  - a: {node: clab-rtr1, endpoint: eth2, ifname: GigabitEthernet3, ip: 10.100.3.2/31}
+    b: {node: clab-sw1, endpoint: eth1, ifname: Ethernet1, ip: 10.100.3.3/31}
+  - a: {node: clab-rtr2, endpoint: eth2, ifname: GigabitEthernet3, ip: 10.100.3.4/31}
+    b: {node: clab-sw2, endpoint: eth1, ifname: Ethernet1, ip: 10.100.3.5/31}
+  - a: {node: clab-sw1, endpoint: eth2, ifname: Ethernet2}
+    b: {node: clab-sw2, endpoint: eth2, ifname: Ethernet2}
+    trunk: [10, 20, 99]
+    svi: {vlan: 99, a_ip: 10.100.3.6/31, b_ip: 10.100.3.7/31}
+
+# on both switches; the SVIs are the switches' addresses in each /27 and are announced in BGP, not OSPF
+vlans:
+  - {id: 10, name: USERS, prefix: 10.100.3.64/27, svi: {clab-sw1: 10.100.3.65/27, clab-sw2: 10.100.3.66/27}}
+  - {id: 20, name: SERVERS, prefix: 10.100.3.96/27, svi: {clab-sw1: 10.100.3.97/27, clab-sw2: 10.100.3.98/27}}
+
+routing:
+  ospf: {process: 1, area: 0}
+  # a_ip/b_ip are the addresses each side peers with: loopbacks for iBGP (update-source Loopback0), the /31
+  # for eBGP. rtr1 sets next-hop-self towards rtr2 so rtr2 carries the switches' /27s (S10.10).
+  bgp:
+    - {type: ibgp, a: clab-rtr1, b: clab-rtr2, a_ip: 10.100.3.201, b_ip: 10.100.3.202}
+    - {type: ibgp, a: clab-sw1, b: clab-sw2, a_ip: 10.100.3.211, b_ip: 10.100.3.212}
+    - {type: ebgp, a: clab-rtr1, b: clab-sw1, a_ip: 10.100.3.2, b_ip: 10.100.3.3}
+  announce:
+    clab-sw1: [10.100.3.64/27, 10.100.3.96/27]
+    clab-sw2: [10.100.3.64/27, 10.100.3.96/27]
+
+# Sources allowed to open connections into clab-dev-mgmt (DOCKER-USER on the clab VM, persisted by
+# clab-host.yml): itential-dev, the clab host itself and the home LAN (the Mac). Everything else on the OOB
+# segment - production iag-01 included - is dropped (owner decision 2026-09-16).
+access_allow: [10.100.0.65/32, 10.100.0.224/32, 192.168.68.0/22]

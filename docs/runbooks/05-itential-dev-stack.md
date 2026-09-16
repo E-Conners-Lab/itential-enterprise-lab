@@ -11,6 +11,12 @@ infrastructure and starts being automation.
 > replays every asset onto it, moves `itential.${LAB_DOMAIN}` to a load balancer and retires this VM. Build
 > it anyway: it is where every asset is developed, and the replay in chapter 08 has nothing to replay
 > without it.
+>
+> **It can come back.** Once production exists, a sandbox that is not production is still worth having: the
+> reference lab rebuilt this VM later as a prototyping tier for an AI assistant (ADR 0063), with the same
+> plays and a dev overlay. If you do the same, give it **new names** - never the service and MCP names
+> chapter 08 moved to production - its own encryption key and a read-only source-of-truth token, so a run
+> against the sandbox cannot change production.
 
 ---
 

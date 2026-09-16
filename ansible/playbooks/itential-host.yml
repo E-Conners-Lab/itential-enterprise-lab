@@ -2,8 +2,12 @@
 # Phase 5, slice A: the itential VM as a Docker host (ADR 0035). Runs after tofu created VM 205.
 # OS baseline like the k3s nodes, Docker CE pinned from download.docker.com, the lab root CA
 # trusted system-wide, the dev-stack directory tree with the ownerships the containers expect,
-# and a lab-CA server certificate for itential.lab.internal issued by cert-manager on k3s
-# (ClusterIssuer lab-ca, S4.1). Inventory: NetBox tag itential-host (netbox-vms.yml).
+# and a lab-CA server certificate issued by cert-manager on k3s (ClusterIssuer lab-ca, S4.1).
+# Inventory: NetBox tag itential-host (netbox-vms.yml).
+#
+# Since ADR 0063 VM 205 is the dev stack `itential-dev` (alias mcp-dev). The service names without the
+# suffix belong to production (the load balancer and tools-01), so the certificate, its namespace and its
+# secret all carry the dev VM's own name and never overlap production's cert-manager objects.
 - name: Prepare the itential Docker host
   hosts: itential-host
   become: true
@@ -13,6 +17,9 @@
   vars:
     stack_dir: /opt/itential
     docker_apt_version: "5:{{ docker_ce }}"
+    # Read as a lookup, not vars_files: clab/versions.yaml has its own `vm` block, which would replace the
+    # dev VM's `vm` from itential/versions.yaml for the whole play.
+    clab: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/../../clab/versions.yaml') | from_yaml }}"
   tasks:
     - name: Wait for cloud-init
       ansible.builtin.command: cloud-init status --wait
@@ -49,6 +56,34 @@
         dest: /usr/local/share/ca-certificates/lab-root-ca.crt
         mode: "0644"
       notify: Update CA trust
+
+    # --- the Containerlab management prefix (ADR 0063) -------------------------------------
+    # The dev inventory's devices live on clab's Docker network, routed through the clab VM. The route is
+    # persisted for the next boot and made live with `ip route replace`; no `netplan apply`, which would
+    # bounce the VM's only interface under the running stack.
+    - name: Route to the Containerlab management prefix via clab, persisted for boot
+      ansible.builtin.copy:
+        dest: /etc/netplan/61-clab-route.yaml
+        mode: "0600"
+        content: |
+          network:
+            version: 2
+            ethernets:
+              {{ ansible_facts.default_ipv4.interface }}:
+                routes:
+                  - to: {{ clab.mgmt.prefix }}
+                    via: {{ clab.vm.ip }}
+
+    - name: Current route to the Containerlab management prefix
+      ansible.builtin.command: ip route show {{ clab.mgmt.prefix }}
+      register: clab_route_now
+      changed_when: false
+
+    - name: Route to the Containerlab management prefix live now
+      ansible.builtin.command: >-
+        ip route replace {{ clab.mgmt.prefix }} via {{ clab.vm.ip }} dev {{ ansible_facts.default_ipv4.interface }}
+      when: ("via " ~ clab.vm.ip) not in clab_route_now.stdout
+      changed_when: true
 
     # --- Docker CE, pinned (versions.yaml docker_ce) ---------------------------------------
     - name: Docker apt key
@@ -153,24 +188,26 @@
       {{ lookup('ansible.builtin.env', 'KUBECONFIG_PATH')
          | default(lookup('ansible.builtin.env', 'HOME') ~ '/.kube/lab-k3s.yaml', true) }}
   tasks:
-    - name: Namespace itential (holds only this certificate)
+    # ADR 0063: every name derives from the dev VM (vm.name, dev.mcp_alias). Production's certificate lives in
+    # namespace itential-ha2, and the leftover itential/itential-platform object is not touched from here.
+    - name: Namespace that holds only this certificate, {{ vm.name }}
       kubernetes.core.k8s:
         kubeconfig: "{{ kubeconfig }}"
-        definition: {apiVersion: v1, kind: Namespace, metadata: {name: itential}}
+        definition: {apiVersion: v1, kind: Namespace, metadata: {name: "{{ vm.name }}"}}
 
-    - name: Certificate itential.lab.internal (+ mcp alias, + the OOB address) from ClusterIssuer lab-ca
+    - name: Certificate from ClusterIssuer lab-ca (service name, MCP alias, OOB address) for {{ vm.name }}
       kubernetes.core.k8s:
         kubeconfig: "{{ kubeconfig }}"
         definition:
           apiVersion: cert-manager.io/v1
           kind: Certificate
-          metadata: {name: itential-platform, namespace: itential}
+          metadata: {name: "{{ vm.name }}-platform", namespace: "{{ vm.name }}"}
           spec:
-            secretName: itential-platform-tls
+            secretName: "{{ vm.name }}-platform-tls"
             duration: 8760h # one year; re-run this play to refresh the VM copy after renewal
             renewBefore: 720h
-            commonName: itential.lab.internal
-            dnsNames: [itential.lab.internal, mcp.lab.internal]
+            commonName: "{{ vm.name }}.lab.internal"
+            dnsNames: ["{{ vm.name }}.lab.internal", "{{ dev.mcp_alias }}.lab.internal"]
             ipAddresses: ["{{ vm.ip }}"]
             usages: [server auth, digital signature, key encipherment]
             issuerRef: {name: lab-ca, kind: ClusterIssuer}
@@ -182,8 +219,8 @@
       kubernetes.core.k8s_info:
         kubeconfig: "{{ kubeconfig }}"
         kind: Secret
-        namespace: itential
-        name: itential-platform-tls
+        namespace: "{{ vm.name }}"
+        name: "{{ vm.name }}-platform-tls"
       register: tls_secret
       failed_when: tls_secret.resources | length != 1
 
@@ -198,6 +235,8 @@
   hosts: itential-host
   become: true
   gather_facts: false
+  vars_files:
+    - ../../itential/versions.yaml
   vars:
     ssl_dir: /opt/itential/volumes/platform/ssl
   tasks:
@@ -218,8 +257,8 @@
         mode: "0600"
       no_log: true
 
-    - name: Certificate names itential.lab.internal
+    - name: Certificate names the service name of {{ vm.name }}
       ansible.builtin.command: openssl x509 -in {{ ssl_dir }}/cert.pem -noout -ext subjectAltName
       register: san
       changed_when: false
-      failed_when: "'itential.lab.internal' not in san.stdout"
+      failed_when: ("DNS:" ~ vm.name ~ ".lab.internal") not in san.stdout

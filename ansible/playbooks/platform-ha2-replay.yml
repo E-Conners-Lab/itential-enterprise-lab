@@ -26,6 +26,15 @@
     # NetBox platform slug -> netmiko device_type for Gateway 5's device services (as itential.yml)
     platform_map: {ios-xe: cisco_ios, eos: arista_eos}
   tasks:
+    # ADR 0063: this play defaults to production (ha2-platform[0]) and the dev overlay does not set
+    # platform_target, so a dev run through here would write dev settings (clab devices, no ServiceNow, the
+    # dev key names) onto production. It stops before the first API call.
+    - name: The production replay never takes the dev overlay
+      ansible.builtin.assert:
+        that: not (dev_overlay | default(false) | bool) # `| bool`: -e dev_overlay=true arrives as a string
+        fail_msg: "platform-ha2-replay.yml writes production; run it with vars/itential-prod.yml, never vars/itential-dev.yml"
+        quiet: true
+
     - name: Log in as {{ admin_user }}
       ansible.builtin.uri:
         url: "{{ platform_local }}/login"

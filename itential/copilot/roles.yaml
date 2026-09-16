@@ -1,0 +1,128 @@
+# The role oracle for svc-copilot (ADR 0063, PID S12). One file decides what the Copilot service account can do
+# on each environment; nothing else lists a role. Read by:
+#  - ansible/playbooks/tasks/ldap-service-account.yml (the group's assignedRoles, both environments)
+#  - ansible/playbooks/copilot-access.yml (the three custom roles, production)
+#  - verify/test-05b-dev-copilot.sh (S12.7: whoami roles are a subset of prod; S12.8: the allowed snapshot delta)
+#  - tests/test_copilot_access.py (the deny list and the method prefixes, written into the test independently)
+#
+# A role is (provenance, name), exactly as GET /authorization/roles returns it on 6.5.2. Measured on production
+# with GET only, 2026-09-16.
+
+prod:
+  group: copilot-readonly
+  # Built-in roles whose allowedMethods were read one by one and hold no create/update/delete/run method.
+  # Deliberately absent (see deny for the reasons): anything InventoryManager, MOP/apiread, and every built-in
+  # "read" role that finding 5 of the plan measured as able to write.
+  builtin:
+    - {provenance: AutomationStudio, name: apiread}
+    - {provenance: AutomationStudio, name: readonly} # views only
+    - {provenance: WorkflowBuilder, name: apiread}
+    - {provenance: OperationsManager, name: viewer}
+    - {provenance: OperationsManager, name: apiread}
+    - {provenance: WorkFlowEngine, name: apiread}
+    - {provenance: WorkFlowEngine, name: "taskmocks:read"}
+    - {provenance: JsonForms, name: operator} # getForms, getFormById, validate, decode; apiread/readonly can write
+    - {provenance: IntegrationModels, name: apiread}
+    - {provenance: Integrations, name: apiread} # measured: no stored credential in clear
+    - {provenance: "lab-netbox:1.0.0", name: get} # GET operations of the NetBox model only
+    - {provenance: "lab-servicenow:1.0.0", name: get}
+    - {provenance: Adapters, name: apiread} # measured: the NetBox adapter document carries no token in clear
+    - {provenance: AdapterModels, name: apiread}
+    - {provenance: Applications, name: apiread}
+    - {provenance: Health, name: apiread}
+    - {provenance: Schema, name: apiread}
+    - {provenance: Prebuilts, name: apiread}
+    - {provenance: AgentProjectService, name: "agent-project-service:read"}
+    - {provenance: AgentProjects, name: "agent-projects:read"}
+    - {provenance: AgentSessions, name: apiread}
+    - {provenance: AgentSessionManager, name: "session:read"}
+    - {provenance: ToolRegistry, name: "tool-registry:read"}
+    - {provenance: ToolRegistry, name: "decorator:read"}
+    - {provenance: ToolRPC, name: "tools:rpc:read"}
+    - {provenance: ModelRegistryService, name: "provider-profiles:read"} # profile credentials are write-only
+    # gateway:read is kept: nothing measured or recorded shows exportConfiguration returning a secret, and
+    # S12.7 scans every production response svc-copilot receives for the .env credentials.
+    - {provenance: GatewayManager, name: "gateway:read"}
+    - {provenance: GatewayManager, name: "service:read"}
+    - {provenance: GatewayManager, name: "service-group:read"}
+    - {provenance: GatewayManager, name: "certificate:read"}
+    - {provenance: TemplateBuilder, name: readonly}
+    - {provenance: WorkCenter, name: apiread}
+    - {provenance: Search, name: readonly}
+    - {provenance: ExternalLinks, name: apiread}
+
+  # There is no built-in read-only role for Configuration Manager, Lifecycle Manager or JST, so these are built
+  # by copilot-access.yml. `provenance` is the application whose methods the role allows; `methods` are method
+  # names or trailing-* globs resolved against the methods the Platform's own roles for that application list;
+  # `exclude` removes names a glob would otherwise catch. copilot-access.yml creates a role only when absent and
+  # fails, rather than editing it, if an existing one differs.
+  custom:
+    - name: copilot-cm-read
+      provenance: ConfigurationManager
+      methods: ["get*", "search*", lookupDiff, isAlive, isMaintenance, buildSpecLines, translateConfigSpec, renderJinja2]
+      # run* runs compliance and adapter tasks, cache* refreshes the device cache, handlePin changes state,
+      # convertChangesToConfig renders a change for a push
+      exclude: ["run*", "cache*", handlePin, convertChangesToConfig, runAdapterTask, runTaskInstance]
+    - name: copilot-lcm-read
+      provenance: LifecycleManager
+      methods: ["get*", "export*", validateActionsHttp]
+      exclude: [cancelActionExecution, updateInstanceMetadataHttp]
+    - name: copilot-jst-read
+      provenance: Jst
+      methods: [getTransformation, searchTransformations]
+      exclude: []
+
+  # Never in the production set. Globs over "<provenance>/<name>"; the play asserts the resolved set against
+  # this list before it assigns anything, and tests/test_copilot_access.py holds builtin to it.
+  deny:
+    # finding 5: carry "read" in the name, measured able to write
+    - {provenance: ConfigurationManager, name: apiread} # runCompliance*, runAdapterTask, runTaskInstance, cacheDevices, handlePin
+    - {provenance: LifecycleManager, name: apiread} # cancelActionExecution, updateInstanceMetadataHttp
+    - {provenance: LifecycleManager, name: operator} # cancelActionExecution
+    - {provenance: JsonForms, name: apiread} # createForm, deleteForms, updateForm
+    - {provenance: JsonForms, name: readonly}
+    - {provenance: Jst, name: apiread} # create, delete
+    - {provenance: Jst, name: readonly}
+    - {provenance: Tags, name: readonly} # create, delete, update
+    - {provenance: PrebuiltsRepository, name: "*"} # apiread creates and deletes repository configs
+    - {provenance: FormBuilder, name: "*"} # apiread: preserveFormData
+    # finding 4: an inventory read returns every node's AUTOMATION_PASSWORD in clear
+    - {provenance: InventoryManager, name: "*"}
+    # GetBootFlash is a live device read (owner decision: excluded)
+    - {provenance: MOP, name: apiread}
+    # identity, sessions and server administration
+    - {provenance: Authorization, name: "*"}
+    - {provenance: Profiles, name: "*"}
+    - {provenance: OAuth, name: "*"}
+    - {provenance: "SSO*", name: "*"}
+    - {provenance: Server, name: apiread}
+    - {provenance: Indexes, name: "*"}
+    # every write-shaped built-in
+    - {provenance: "*", name: admin}
+    - {provenance: "*", name: apiwrite}
+    - {provenance: "*", name: designer}
+    - {provenance: "*", name: engineering}
+    - {provenance: "*", name: operations}
+    - {provenance: "*", name: support}
+    - {provenance: "*", name: "*:create"}
+    - {provenance: "*", name: "*:update"}
+    - {provenance: "*", name: "*:delete"}
+    - {provenance: "*", name: "*:run"}
+    - {provenance: "*", name: "*:code"}
+
+dev:
+  group: copilot-builders
+  # Every role on the dev Platform except administration of identity, sessions and the server itself: Copilot
+  # builds workflows, templates and agents there, and must not be able to lock the owner out of the sandbox.
+  exclude:
+    - {provenance: Authorization, name: admin}
+    - {provenance: UserManagement, name: admin}
+    - {provenance: AdminEssentials, name: admin}
+    - {provenance: OAuth, name: admin}
+    - {provenance: SSO, name: admin}
+    - {provenance: SSOGroupMappings, name: admin}
+    - {provenance: Customization, name: admin}
+    - {provenance: Profiles, name: admin}
+    - {provenance: Server, name: admin}
+    - {provenance: Indexes, name: admin}
+    - {provenance: LDAP, name: admin}

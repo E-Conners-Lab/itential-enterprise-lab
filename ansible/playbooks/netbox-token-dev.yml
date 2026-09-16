@@ -1,0 +1,256 @@
+---
+# ADR 0063 (PID S12.4): the dev stack reads production NetBox, and must never write it. The dev Platform's
+# NetBox adapter, its lab-netbox integration and the Gateway 5 runner all receive NETBOX_TOKEN, and the Makefile
+# gives every dev Platform play NETBOX_DEV_RO_TOKEN in its place. Read-only is enforced twice, by NetBox itself:
+#  - the token belongs to `itential-dev`, not a superuser or staff user, whose only permission is `view`
+#  - the token has write_enabled: false, so even a later permission grant cannot turn it into a writer
+# Runs on the workstation with the full NETBOX_TOKEN (`make netbox-token-dev`).
+#
+# The description matters: netbox-token.yml deletes every token without one.
+- name: Read-only NetBox token for the dev stack
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    nb_url: "{{ lookup('ansible.builtin.env', 'NETBOX_URL') }}"
+    nb_token: "{{ lookup('ansible.builtin.env', 'NETBOX_TOKEN') }}"
+    nb_headers: {Authorization: "Token {{ nb_token }}", Accept: application/json}
+    dev_user: itential-dev
+    dev_permission: itential-dev-view
+    token_description: "itential-dev read-only (ADR 0063)"
+    env_key: NETBOX_DEV_RO_TOKEN
+    env_file: "{{ playbook_dir }}/../../.env"
+  tasks:
+    - name: NETBOX_URL and NETBOX_TOKEN are set
+      ansible.builtin.assert:
+        that: [nb_url | length > 0, nb_token | length > 0]
+        fail_msg: NETBOX_URL/NETBOX_TOKEN missing (run through make netbox-token-dev, which loads .env)
+        quiet: true
+      no_log: true
+
+    # --- The user: no superuser, no staff, no usable password -----------------------------------------------
+    - name: Existing {{ dev_user }}
+      ansible.builtin.uri:
+        url: "{{ nb_url }}/api/users/users/?username={{ dev_user }}"
+        headers: "{{ nb_headers }}"
+      register: nb_user
+      no_log: true
+
+    # NetBox wants a password on create; this one is random, never stored and never used - the token is the
+    # only credential the account has.
+    - name: User {{ dev_user }}
+      ansible.builtin.uri:
+        url: "{{ nb_url }}/api/users/users/"
+        method: POST
+        headers: "{{ nb_headers }}"
+        body_format: json
+        body:
+          username: "{{ dev_user }}"
+          password: "{{ lookup('ansible.builtin.password', '/dev/null', length=48, chars=['ascii_letters', 'digits']) }}"
+          is_active: true
+          is_superuser: false
+        status_code: 201
+      when: nb_user.json.count == 0
+      changed_when: true
+      no_log: true
+
+    - name: The user, re-read
+      ansible.builtin.uri:
+        url: "{{ nb_url }}/api/users/users/?username={{ dev_user }}"
+        headers: "{{ nb_headers }}"
+      register: nb_user2
+      no_log: true
+
+    - name: The user exists once and holds no elevated flag, {{ dev_user }}
+      ansible.builtin.assert:
+        that:
+          - nb_user2.json.count == 1
+          - not (nb_user2.json.results[0].is_superuser | default(false))
+          - not (nb_user2.json.results[0].is_staff | default(false))
+        fail_msg: "{{ dev_user }}: count {{ nb_user2.json.count }}, superuser or staff set - fix by hand, never widen it here"
+        quiet: true
+
+    - name: The user id
+      ansible.builtin.set_fact:
+        dev_user_id: "{{ nb_user2.json.results[0].id }}"
+
+    # --- The permission: view, on every object type NetBox knows except users.* ----------------------------
+    - name: Every object type (NetBox 4 core endpoint)
+      ansible.builtin.uri:
+        url: "{{ nb_url }}/api/core/object-types/?limit=0"
+        headers: "{{ nb_headers }}"
+      register: nb_types
+      no_log: true
+
+    # users.* (tokens, users, groups, permissions) is left out: view on users.token would let the dev token read
+    # other tokens, and a readable legacy (v1) token key is a usable credential, which defeats read-only. It would
+    # also show the dev stack every account and permission NetBox holds, which no dev workflow needs.
+    - name: Object type labels (users.* excluded)
+      ansible.builtin.set_fact:
+        all_object_types: >-
+          {{ nb_types.json.results | map(attribute='app_label') | zip(nb_types.json.results | map(attribute='model'))
+             | map('join', '.') | reject('match', '^users[.]') | sort }}
+
+    - name: Existing {{ dev_permission }}
+      ansible.builtin.uri:
+        url: "{{ nb_url }}/api/users/permissions/?name={{ dev_permission }}"
+        headers: "{{ nb_headers }}"
+      register: nb_perm
+      no_log: true
+
+    - name: View-only permission {{ dev_permission }}
+      ansible.builtin.uri:
+        url: "{{ nb_url }}/api/users/permissions/{{ (existing[0].id ~ '/') if existing else '' }}"
+        method: "{{ 'PATCH' if existing else 'POST' }}"
+        headers: "{{ nb_headers }}"
+        body_format: json
+        body:
+          name: "{{ dev_permission }}"
+          description: "itential-dev reads NetBox and writes nothing (ADR 0063)"
+          enabled: true
+          actions: [view]
+          object_types: "{{ all_object_types }}"
+          users: ["{{ dev_user_id | int }}"]
+          constraints: null
+        status_code: [200, 201]
+      vars:
+        # only this permission is ever written, and only when it differs from the intent (a NetBox upgrade adds
+        # object types, which the PATCH picks up)
+        existing: "{{ nb_perm.json.results }}"
+      when: >-
+        not existing
+        or existing[0].actions | sort != ['view']
+        or not existing[0].enabled
+        or (existing[0].users | map(attribute='id') | list) != [dev_user_id | int]
+        or (existing[0].object_types | length) != (all_object_types | length)
+      changed_when: true
+      no_log: true
+
+    - name: The permission, re-read
+      ansible.builtin.uri:
+        url: "{{ nb_url }}/api/users/permissions/?name={{ dev_permission }}"
+        headers: "{{ nb_headers }}"
+      register: nb_perm2
+      no_log: true
+
+    - name: The permission allows view and nothing else, for one user only, {{ dev_user }}
+      ansible.builtin.assert:
+        that:
+          - nb_perm2.json.count == 1
+          - nb_perm2.json.results[0].actions == ['view']
+          - nb_perm2.json.results[0].users | map(attribute='id') | list == [dev_user_id | int]
+          - nb_perm2.json.results[0].groups | default([]) | length == 0
+          - nb_perm2.json.results[0].object_types | select('match', '^users[.]') | list | length == 0
+        fail_msg: "{{ dev_permission }}: actions {{ nb_perm2.json.results[0].actions | default('?') }}, or a users.* object type"
+        quiet: true
+
+    # --- The token: write_enabled false, described, one year ---------------------------------------------
+    - name: Current token, environment first and then .env itself, {{ env_key }}
+      ansible.builtin.set_fact:
+        cur_token: >-
+          {{ lookup('ansible.builtin.env', env_key)
+             | default((lookup('ansible.builtin.file', env_file, errors='ignore') | default('', true)
+                        | regex_findall('^' ~ env_key ~ '=(nbt_[A-Za-z0-9._]+)', multiline=True) or [''])[0], true) }}
+      no_log: true
+
+    - name: Does the current token still work
+      ansible.builtin.uri:
+        url: "{{ nb_url }}/api/status/"
+        headers: {Authorization: "Token {{ cur_token }}"}
+        status_code: [200, 401, 403]
+      register: cur_probe
+      when: cur_token | length > 0
+      no_log: true
+
+    - name: Tokens of {{ dev_user }}
+      ansible.builtin.uri:
+        url: "{{ nb_url }}/api/users/tokens/?user_id={{ dev_user_id }}&limit=50"
+        headers: "{{ nb_headers }}"
+      register: dev_tokens
+      no_log: true
+
+    - name: Create the described, read-only token (only when none works)
+      ansible.builtin.uri:
+        url: "{{ nb_url }}/api/users/tokens/"
+        method: POST
+        headers: "{{ nb_headers }}"
+        body_format: json
+        body:
+          user: "{{ dev_user_id | int }}"
+          description: "{{ token_description }}"
+          expires: "{{ '%Y-%m-%dT00:00:00Z' | strftime(now(utc=true).timestamp() + 365 * 86400) }}"
+          write_enabled: false
+        status_code: 201
+      register: created
+      when: cur_probe is skipped or cur_probe.status != 200
+      changed_when: true
+      no_log: true
+
+    # A v2 credential is nbt_<key>.<secret>; the API returns key and secret as separate fields (netbox-token.yml).
+    - name: Compose the v2 credential once
+      ansible.builtin.set_fact:
+        new_token: >-
+          {{ created.json.token if created.json.token.startswith('nbt_')
+             else 'nbt_' ~ created.json.key ~ '.' ~ created.json.token }}
+      when: created is not skipped
+      no_log: true
+
+    - name: Persist to .env before use, {{ env_key }}
+      ansible.builtin.lineinfile:
+        path: "{{ env_file }}"
+        regexp: "^{{ env_key }}="
+        line: "{{ env_key }}={{ new_token }}"
+      when: created is not skipped
+      no_log: true
+
+    - name: The credential used from here on
+      ansible.builtin.set_fact:
+        ro_token: "{{ new_token | default(cur_token) }}"
+      no_log: true
+
+    # Older tokens of this user only (never another user's, never the one just created): a replaced dev token
+    # should stop working. dev_tokens was read before the POST, and the id filter makes that explicit.
+    - name: Superseded tokens of {{ dev_user }}
+      ansible.builtin.uri:
+        url: "{{ nb_url }}/api/users/tokens/{{ item.id }}/"
+        method: DELETE
+        headers: "{{ nb_headers }}"
+        status_code: 204
+      no_log: true
+      loop: >-
+        {{ dev_tokens.json.results | selectattr('user.id', 'equalto', dev_user_id | int)
+           | rejectattr('id', 'equalto', created.json.id | default(-1)) | list }}
+      loop_control:
+        label: "token id {{ item.id }}"
+      when: created is not skipped
+
+    # --- Proof, from NetBox's side -------------------------------------------------------------------------
+    - name: The token record says write_enabled false, with the description
+      ansible.builtin.uri:
+        url: "{{ nb_url }}/api/users/tokens/?user_id={{ dev_user_id }}&limit=50"
+        headers: "{{ nb_headers }}"
+      register: dev_tokens2
+      failed_when: >-
+        dev_tokens2.json.results | length == 0
+        or dev_tokens2.json.results | selectattr('write_enabled') | list | length > 0
+        or dev_tokens2.json.results | rejectattr('description', 'equalto', token_description) | list | length > 0
+      no_log: true
+
+    - name: The token reads (GET /api/status/ and a device list)
+      ansible.builtin.uri:
+        url: "{{ nb_url }}{{ item }}"
+        headers: {Authorization: "Token {{ ro_token }}", Accept: application/json}
+        status_code: 200
+      loop: ["/api/status/", "/api/dcim/devices/?limit=1"]
+      no_log: true
+
+    # An empty body: if the token could write, NetBox would answer 400 (validation) and still create nothing.
+    - name: The token cannot write (POST /api/ipam/vlan-groups/ answers 403)
+      ansible.builtin.uri:
+        url: "{{ nb_url }}/api/ipam/vlan-groups/"
+        method: POST
+        headers: {Authorization: "Token {{ ro_token }}", Accept: application/json}
+        body_format: json
+        body: {}
+        status_code: 403
+      no_log: true
