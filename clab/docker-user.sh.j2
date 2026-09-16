@@ -17,9 +17,9 @@ iptables -w -F "$CHAIN"
 iptables -w -A "$CHAIN" -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
 # node to node on the same bridge (br_netfilter sends bridged frames through FORWARD)
 iptables -w -A "$CHAIN" -i "$BRIDGE" -j RETURN
-{%- for src in access_allow %}
+{% for src in access_allow %}
 iptables -w -A "$CHAIN" -s {{ src }} -j ACCEPT
-{%- endfor %}
+{% endfor %}
 iptables -w -A "$CHAIN" -j DROP
 
 iptables -w -N DOCKER-USER 2>/dev/null || true

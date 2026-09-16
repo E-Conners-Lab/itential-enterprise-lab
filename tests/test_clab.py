@@ -45,9 +45,18 @@ def oracle() -> dict:
     return yaml.safe_load(ORACLE.read_text())
 
 
+# What ansible.builtin.template renders with (its defaults: trim_blocks true, lstrip_blocks false). The first live
+# clab-host.yml run (2026-09-16) rendered the allowlist script with four iptables commands on one line, and the
+# topology and both startup configs had lines run together too: `{%- ...` strips the newline BEFORE a tag and
+# trim_blocks the one AFTER it. These tests used plain Jinja, which keeps that second newline, so they passed.
+ANSIBLE_TEMPLATE_OPTIONS = {"trim_blocks": True, "lstrip_blocks": False}
+
+
 @pytest.fixture(scope="module")
 def env() -> jinja2.Environment:
-    return jinja2.Environment(loader=jinja2.FileSystemLoader(ROOT / "clab"), undefined=jinja2.StrictUndefined)
+    return jinja2.Environment(
+        loader=jinja2.FileSystemLoader(ROOT / "clab"), undefined=jinja2.StrictUndefined, **ANSIBLE_TEMPLATE_OPTIONS
+    )
 
 
 def render_config(env: jinja2.Environment, oracle: dict, node: dict) -> str:
@@ -382,6 +391,27 @@ def test_docker_user_allowlist_equals_access_allow(env: jinja2.Environment, orac
     assert 'iptables -w -I DOCKER-USER 1 -o "$BRIDGE" -j "$CHAIN"' in script
     host = (PLAYBOOKS / "clab-host.yml").read_text()
     assert "src: ../../clab/docker-user.sh.j2" in host and "WantedBy=docker.service" in host
+
+
+def test_the_test_renderer_matches_ansible(env: jinja2.Environment) -> None:
+    """Every template assertion in this file is only as good as the renderer; it must be Ansible's."""
+    assert env.trim_blocks is True and env.lstrip_blocks is False
+
+
+def test_rendered_files_have_one_command_per_line(env: jinja2.Environment, oracle: dict) -> None:
+    """The failure shape of a whitespace-stripping tag: two commands on one line. Checked on the rendered output."""
+    script = env.get_template(ACCESS_TEMPLATE).render(**oracle)
+    assert subprocess.run(["bash", "-n"], input=script, text=True, capture_output=True).returncode == 0
+    assert not [l for l in script.splitlines() if l.count("iptables ") > 1], "two iptables commands on one line"
+    # N + F + ESTABLISHED + RETURN + DROP, one ACCEPT per source, then N DOCKER-USER and the jump (the -D loop is a
+    # `while` line)
+    assert len(re.findall(r"^iptables ", script, re.M)) == 5 + len(oracle["access_allow"]) + 2
+    topo = env.get_template(TOPOLOGY_TEMPLATE).render(**oracle)
+    assert not re.search(r":[ \t]+\S+:[ \t]*$", topo, re.M), "a YAML key followed by another key on the same line"
+    starts = re.compile(r"(?:^|\s)(neighbor|username|interface|network|router|vlan|ip address|hostname) ")
+    for n in oracle["nodes"]:
+        for line in render_config(env, oracle, n).splitlines():
+            assert len(starts.findall(line)) <= 1, f"{n['name']}: two commands on one line: {line!r}"
 
 
 def test_plays_read_the_oracle(oracle: dict) -> None:
