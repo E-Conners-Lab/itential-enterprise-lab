@@ -473,3 +473,41 @@ def test_every_twin_suppresses_thinking_in_its_prompt(docs: dict) -> None:
             f"{name}: first prompt line is {first!r}, not /no_think - the twin will emit reasoning "
             "traces the operator pays for in wall-clock"
         )
+
+
+def test_the_inference_host_holds_one_model_at_a_time() -> None:
+    """ADR 0060 moved inference to the Mac but left the lab container's guards behind. Measured
+    2026-09-12: a benchmark loaded qwen3.6:35b-32k (27.0 GB) beside gemma4:26b (25.8 GB), OLLAMA_KEEP_ALIVE
+    pinned both, and 52.8 GB of 64 GB left Ollama thrashing between runners - an agent request failed
+    with "ollama model invocation failed: fetch failed". Two models is what broke it, so the cap is one.
+    The context length is checked here too: both are properties of the inference host that no play can
+    set, so the script is the only place they are declared."""
+    script = (ROOT / "scripts" / "mac-ollama.sh").read_text()
+    assert "OLLAMA_MAX_LOADED_MODELS</key><string>1<" in script, (
+        "the Mac must hold one model at a time: a second large model beside the fleet's model has "
+        "already caused a failed agent run"
+    )
+    assert "OLLAMA_CONTEXT_LENGTH</key><string>16384<" in script
+    assert "OLLAMA_HOST</key><string>0.0.0.0:11434<" in script, (
+        "bound to loopback only, the lab cannot reach it at all"
+    )
+
+
+def test_the_mac_script_does_not_hardcode_the_model() -> None:
+    """The script's default said qwen3:30b-a3b for a day after ADR 0061 chose gemma4:26b, so re-running
+    it pulled 18 GB of the wrong model (measured 2026-09-12). The model is read from versions.yaml so
+    the setup script and the Platform profile cannot disagree."""
+    import yaml as y
+
+    script = (ROOT / "scripts" / "mac-ollama.sh").read_text()
+    versions = y.safe_load((ROOT / "itential" / "versions.yaml").read_text())
+    model = next(p["model"] for p in versions["llm"]["profiles"] if p["provider"] == "ollama")
+    # the assignment itself, not prose: the comments deliberately name both models to record the history
+    lines = script.splitlines()
+    i = next((n for n, ln in enumerate(lines) if re.match(r"\s*MODEL=", ln)), None)
+    assert i is not None, "mac-ollama.sh no longer assigns MODEL"
+    block = "\n".join(lines[i : i + 5])  # the assignment spans a few lines
+    assert model not in block, (
+        f"{model} is hardcoded in the MODEL= assignment; read it from versions.yaml instead"
+    )
+    assert "versions.yaml" in block, "the MODEL default must come from versions.yaml"
