@@ -149,12 +149,12 @@ phase-flowai: ## Phase 6 on the dev stack: workflows re-imported -> applications
 netbox-token-dev: ## A view-only NetBox user and a write_enabled=false token for the dev stack, persisted to .env (ADR 0063)
 	$(load_env) cd ansible && ansible-playbook playbooks/netbox-token-dev.yml
 
-clab-dev: ## Containerlab VM -> route on oob-gw -> images (C8000v from EVE-NG, cEOS) -> Docker + containerlab + vrnetlab -> dev topology -> verify (ADR 0063)
+clab-dev: ## Containerlab VM -> route on oob-gw -> images (C8000v and vEOS from EVE-NG) -> Docker + containerlab + vrnetlab -> dev topology -> verify (ADR 0063)
 	$(load_env) cd ansible && ansible-playbook playbooks/netbox-vms.yml
 	$(load_env) cd tofu/clab && tofu init -input=false >/dev/null && tofu apply -input=false -auto-approve
 	$(load_env) cd ansible && ansible-playbook playbooks/oob-gw.yml --tags routes
 	images/fetch.sh c8000v
-	images/fetch.sh arista
+	images/fetch.sh veos
 	$(load_env) cd ansible && ansible-playbook -i inventory/netbox.yml playbooks/clab-host.yml
 	images/fetch.sh clab-load
 	$(load_env) cd ansible && ansible-playbook -i inventory/netbox.yml playbooks/clab-host.yml

@@ -7,7 +7,7 @@ resource "proxmox_virtual_environment_vm" "clab" {
   node_name   = var.node_name
   vm_id       = var.vm.vm_id
   name        = var.vm.name
-  description = "Containerlab dev topology: 2 C8000v (vrnetlab) + 2 cEOS for the itential-dev stack (PID S10, ADR 0063)"
+  description = "Containerlab dev topology: 2 C8000v + 2 vEOS (vrnetlab) for the itential-dev stack (PID S10, ADR 0063)"
   tags        = ["phase-12", "clab"]
   on_boot     = true
   started     = true
@@ -20,8 +20,12 @@ resource "proxmox_virtual_environment_vm" "clab" {
   machine       = "q35"
   scsi_hardware = "virtio-scsi-single"
 
+  # The Ubuntu template carries no qemu-guest-agent (clab-host.yml installs it), so the provider would wait its
+  # full default of 15 minutes on a first apply and on every refresh until then - measured 15m21s on
+  # 2026-09-16. Two minutes, as tofu/platform-ha2 (lab-build-lessons, 2026-09-06).
   agent {
     enabled = true
+    timeout = "2m"
   }
 
   cpu {

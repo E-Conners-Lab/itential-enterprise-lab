@@ -147,7 +147,7 @@ this plan.
 
 ### 3.3 The routed Containerlab management prefix: 10.100.2.0/24 (ADR 0063)
 
-The dev topology's nodes (two C8000v, two cEOS) sit on a Docker network on `clab` whose gateway is the
+The dev topology's nodes (two C8000v, two vEOS-lab, all vrnetlab) sit on a Docker network on `clab` whose gateway is the
 host itself (10.100.2.1). The prefix is routed, not NATed, so the Mac and `itential-dev` reach every node
 on its own address:
 

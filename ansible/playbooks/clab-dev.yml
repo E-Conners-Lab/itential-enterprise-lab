@@ -46,6 +46,8 @@
     clab_password: "{{ hostvars['localhost'].clab_password }}"
     devcmd: /opt/clab/devcmd.py
     routers: "{{ nodes | selectattr('kind', 'equalto', 'cisco_c8000v') | list }}"
+    # one startup-config template per kind; a kind without one fails the render instead of borrowing another's
+    config_template: {cisco_c8000v: c8000v, arista_veos: veos}
     # OSPF: every link runs area 0 (the routed /31s and the switch pair's Vlan99), so a node's FULL
     # adjacencies equal its links. BGP: the sessions naming the node.
     ospf_expected: >-
@@ -65,7 +67,7 @@
   tasks:
     - name: Both images are in Docker (clab-host.yml after images/fetch.sh clab-load)
       ansible.builtin.command: docker image inspect {{ item }}
-      loop: ["{{ images.ceos.tag }}", "{{ images.c8000v.tag }}"]
+      loop: ["{{ images.veos.tag }}", "{{ images.c8000v.tag }}"]
       changed_when: false
 
     - name: Lab directories, 0700 because the configs carry the device password
@@ -84,7 +86,7 @@
 
     - name: Startup configs (clab/configs/<kind>.cfg.j2)
       ansible.builtin.template:
-        src: "../../clab/configs/{{ 'c8000v' if node.kind == 'cisco_c8000v' else 'ceos' }}.cfg.j2"
+        src: "../../clab/configs/{{ config_template[node.kind] }}.cfg.j2"
         dest: "{{ lab_dir }}/configs/{{ node.name }}.cfg"
         mode: "0600"
       loop: "{{ nodes }}"
@@ -116,8 +118,9 @@
           {%- set rows = (j.values() | list | flatten) if j is mapping else j -%}
           {{ rows | selectattr('state', 'equalto', 'running') | list | length }}
 
-    # --reconfigure rebuilds the lab directory so a changed startup config is really applied; the C8000v
-    # nodes then boot again (10-20 min nested), which is why an unchanged, healthy lab is left alone.
+    # --reconfigure rebuilds the lab directory so a changed startup config is really applied; every node is a
+    # vrnetlab VM and boots again (C8000v 10-20 min, vEOS about 4 min, nested), which is why an unchanged,
+    # healthy lab is left alone.
     - name: Deploy (only when a rendered file changed or a node is not running)
       ansible.builtin.command:
         cmd: containerlab deploy -t {{ topo }} --reconfigure
@@ -146,8 +149,9 @@
           {{ rows | selectattr('state', 'equalto', 'running') | map(attribute='ipv4_address')
              | map('regex_replace', '/\\d+$', '') | sort }}
 
-    # vrnetlab opens the container's port 22 before IOS XE is up, so readiness is a real login, not a port
-    - name: Every node answers SSH as the automation user (C8000v nested boot up to 30 min)
+    # vrnetlab opens the container's port 22 before IOS XE or EOS is up, and the automation user exists only once
+    # vrnetlab has typed the startup config in, so readiness is a real login, not a port
+    - name: Every node answers SSH as the automation user (nested boot up to 30 min)
       ansible.builtin.command: python3 {{ devcmd }} {{ node.mgmt_ipv4 }} "show version"
       environment:
         AUTOMATION_PASSWORD: "{{ clab_password }}"
@@ -255,7 +259,7 @@
     - name: BGP sessions Established on both ends
       ansible.builtin.command: >-
         python3 {{ devcmd }} {{ node.mgmt_ipv4 }}
-        "{{ 'show ip bgp summary | json' if node.kind == 'ceos' else 'show ip bgp summary' }}"
+        "{{ 'show ip bgp summary | json' if node.kind == 'arista_veos' else 'show ip bgp summary' }}"
       environment:
         AUTOMATION_PASSWORD: "{{ clab_password }}"
       loop: "{{ nodes }}"
@@ -263,17 +267,20 @@
         loop_var: node
         label: "{{ node.name }}"
       register: bgp
-      # EOS: peerState in JSON. IOS XE: an established neighbour's last column is its prefix count (a number);
-      # any other state prints the state name there.
+      # EOS: peerState in JSON. vrnetlab types the vEOS startup config in after the automation user can already
+      # log in, so until `router bgp` lands the JSON has no default VRF (or the output is not JSON yet): that
+      # counts as not converged and is retried, never an error. IOS XE: an established neighbour's last column is
+      # its prefix count (a number); any other state prints the state name there.
       until: >-
         bgp.rc == 0 and (
-          (node.kind == 'ceos'
+          (node.kind == 'arista_veos'
+           and bgp.stdout | trim | first | default('') == '{'
            and bgp_peers[node.name]
-               | difference((bgp.stdout | from_json).vrfs.default.peers | dict2items
+               | difference(((bgp.stdout | from_json).vrfs | default({})).get('default', {}).get('peers', {}) | dict2items
                             | selectattr('value.peerState', 'equalto', 'Established') | map(attribute='key') | list)
                | length == 0)
           or
-          (node.kind != 'ceos'
+          (node.kind == 'cisco_c8000v'
            and bgp.stdout_lines
                | select('match', '^(' ~ (bgp_peers[node.name] | map('regex_escape') | join('|'))
                                  ~ ')\\s+4(\\s+\\d+){6}\\s+\\S+\\s+\\d+\\s*$')

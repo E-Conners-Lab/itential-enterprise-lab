@@ -76,7 +76,7 @@ committed. Service specs and acceptance criteria are in `docs/PID.md`.
 | 11 | `phase-11/ddi` | BIND9 + Kea from NetBox (NIOS joins in the firewall track) | planned |
 | 12 | `phase-12/containerlab` | Containerlab CI/test tier (cEOS mirror of the DC fabric) | planned |
 | 13 | `phase-13/firewall-track` | NIOS grid master, the PA-VM firewalls (`lab.firewalls`), Panorama: once the images exist (ADR 0050) | planned |
-| dev | `feat/dev-stack-clab` | The Copilot prototyping tier (PID S12, ADR 0063): the dev stack back on VM 205 as `itential-dev` (alias `mcp-dev`) with its own encryption key, a view-only NetBox token, no ServiceNow and `ollama-mac` only; a Containerlab host `clab` running topology `dev` (2 C8000v + 2 cEOS 4.33.1.1F) on the routed 10.100.2.0/24, ahead of phase 12 (S10.6-S10.12); `svc-copilot` read-only on production. Verified by `make verify-dev`, never by `make verify` | in progress |
+| dev | `feat/dev-stack-clab` | The Copilot prototyping tier (PID S12, ADR 0063): the dev stack back on VM 205 as `itential-dev` (alias `mcp-dev`) with its own encryption key, a view-only NetBox token, no ServiceNow and `ollama-mac` only; a Containerlab host `clab` running topology `dev` (2 C8000v + 2 vEOS-lab 4.33.1.1F, both vrnetlab) on the routed 10.100.2.0/24, ahead of phase 12 (S10.6-S10.12); `svc-copilot` read-only on production. Verified by `make verify-dev`, never by `make verify` | in progress |
 
 ## What is running
 

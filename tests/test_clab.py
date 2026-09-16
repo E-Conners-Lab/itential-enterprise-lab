@@ -21,7 +21,9 @@ ROOT = Path(__file__).resolve().parent.parent
 ORACLE = ROOT / "clab" / "versions.yaml"
 TOPOLOGY_TEMPLATE = "dev.clab.yml.j2"
 C8000V_TEMPLATE = "configs/c8000v.cfg.j2"
-CEOS_TEMPLATE = "configs/ceos.cfg.j2"
+VEOS_TEMPLATE = "configs/veos.cfg.j2"
+# one startup-config template per containerlab kind (clab-dev.yml config_template holds the same map)
+CONFIG_TEMPLATES = {"cisco_c8000v": C8000V_TEMPLATE, "arista_veos": VEOS_TEMPLATE}
 ACCESS_TEMPLATE = "docker-user.sh.j2"
 TOFU = ROOT / "tofu" / "clab"
 IPAM = ROOT / "topology" / "ipam.yaml"
@@ -32,6 +34,7 @@ PLAYBOOKS = ROOT / "ansible" / "playbooks"
 FETCH = ROOT / "images" / "fetch.sh"
 VERIFY = ROOT / "verify" / "test-12a-clab-dev.sh"
 ITENTIAL_VERSIONS = ROOT / "itential" / "versions.yaml"
+MAKEFILE = ROOT / "Makefile"
 
 SENTINEL = "Sentinel-not-a-real-password-42"
 
@@ -48,7 +51,7 @@ def env() -> jinja2.Environment:
 
 
 def render_config(env: jinja2.Environment, oracle: dict, node: dict) -> str:
-    template = C8000V_TEMPLATE if node["kind"] == "cisco_c8000v" else CEOS_TEMPLATE
+    template = CONFIG_TEMPLATES[node["kind"]]
     return env.get_template(template).render(node=node, clab_password=SENTINEL, **oracle)
 
 
@@ -64,7 +67,8 @@ def test_oracle_has_the_agreed_keys(oracle: dict) -> None:
         assert key in oracle, f"clab/versions.yaml has no {key}"
     assert set(oracle["vm"]) == {"name", "vm_id", "ip", "cores", "memory_mb", "disk_gb"}
     assert set(oracle["mgmt"]) == {"network", "prefix", "gateway", "bridge"}
-    assert set(oracle["images"]["ceos"]) == {"version", "tag"}
+    assert set(oracle["images"]) == {"veos", "c8000v"}, "the dev topology runs vEOS and C8000v, nothing else"
+    assert set(oracle["images"]["veos"]) == {"version", "source", "staged", "vmdk", "tag", "ram_mb"}
     assert set(oracle["images"]["c8000v"]) == {"version", "source", "staged", "vrnetlab_repo", "vrnetlab_commit", "tag", "ram_mb"}
     assert oracle["credentials"] == {"user": "automation", "password_env": "CLAB_AUTOMATION_PASSWORD"}
     for node in oracle["nodes"]:
@@ -78,10 +82,18 @@ def test_the_owner_decisions_hold(oracle: dict) -> None:
     assert {n["name"]: (n["kind"], n["mgmt_ipv4"]) for n in oracle["nodes"]} == {
         "clab-rtr1": ("cisco_c8000v", "10.100.2.11"),
         "clab-rtr2": ("cisco_c8000v", "10.100.2.12"),
-        "clab-sw1": ("ceos", "10.100.2.21"),
-        "clab-sw2": ("ceos", "10.100.2.22"),
+        "clab-sw1": ("arista_veos", "10.100.2.21"),
+        "clab-sw2": ("arista_veos", "10.100.2.22"),
     }
-    assert oracle["images"]["ceos"] == {"version": "4.33.1.1F", "tag": "ceos:4.33.1.1F"}
+    # owner decision 2026-09-16 (ADR 0063 amendment): the EVE-NG lab's own vEOS-lab image, built with vrnetlab
+    assert oracle["images"]["veos"] == {
+        "version": "4.33.1.1F",
+        "source": "eve:/opt/unetlab/addons/qemu/veos-4.33.1.1F/hda.qcow2",
+        "staged": "/srv/images/veos/vEOS-lab-4.33.1.1F.qcow2",
+        "vmdk": "vEOS-lab-4.33.1.1F.vmdk",
+        "tag": "vrnetlab/arista_veos:4.33.1.1F",
+        "ram_mb": 2048,
+    }
     assert oracle["images"]["c8000v"]["tag"] == f"vrnetlab/cisco_c8000v:{oracle['images']['c8000v']['version']}"
 
 
@@ -102,6 +114,28 @@ def test_the_staged_c8000v_filename_carries_the_version_vrnetlab_parses(oracle: 
     assert parsed and parsed.group(1) == c8k["version"], f"vrnetlab would read {parsed and parsed.group(1)!r} from {name}"
     assert name.endswith(".qcow2") and c8k["staged"].startswith("/srv/images/c8000v/")
     assert c8k["source"] == f"eve:/opt/unetlab/addons/qemu/c8000v-{c8k['version']}/virtioa.qcow2"
+
+
+def veos_makefile_version(image: str) -> str:
+    """arista/veos/Makefile at the pinned commit, as Python:
+    sed -e 's/.*-\\([0-9]\\.\\([0-9]\\+\\.\\)\\{1,2\\}[0-9]\\{1,2\\}\\([A-Z]\\|\\-EFT[0-9]\\)\\)\\.vmdk$$/\\1/'
+    (no match leaves the name unchanged, which vrnetlab's docker-build-common rejects)."""
+    m = re.fullmatch(r".*-([0-9]\.([0-9]+\.){1,2}[0-9]{1,2}([A-Z]|-EFT[0-9]))\.vmdk", image)
+    return m.group(1) if m else image
+
+
+def test_the_veos_vmdk_name_carries_the_version_vrnetlab_parses(oracle: dict) -> None:
+    veos = oracle["images"]["veos"]
+    # the Makefile's own examples, then ours
+    assert veos_makefile_version("vEOS-lab-4.17.1.1F.vmdk") == "4.17.1.1F"
+    assert veos_makefile_version("vEOS-lab-4.16.14M.vmdk") == "4.16.14M"
+    assert veos_makefile_version(veos["vmdk"]) == veos["version"], f"vrnetlab would read {veos_makefile_version(veos['vmdk'])!r}"
+    staged = Path(veos["staged"])
+    assert staged.suffix == ".qcow2" and veos["staged"].startswith("/srv/images/veos/")
+    assert veos["vmdk"] == staged.stem + ".vmdk", "clab-host.yml converts the staged qcow2 to the vmdk of the same name"
+    # the vrnetlab tag: $(REGISTRY)$(vendor)_$(name):$(VERSION), REGISTRY=vrnetlab/, VENDOR=Arista NAME=vEOS lower-cased
+    assert veos["tag"] == f"vrnetlab/arista_veos:{veos['version']}"
+    assert veos["source"] == f"eve:/opt/unetlab/addons/qemu/veos-{veos['version']}/hda.qcow2"
 
 
 # --- the oracle against the other records ------------------------------------------------------------------
@@ -149,14 +183,24 @@ def test_c8000v_version_equals_the_manifest(oracle: dict) -> None:
     assert f"Running: {oracle['images']['c8000v']['version']}" in MANIFEST.read_text()
 
 
-def test_ceos_version_equals_the_manifest(oracle: dict) -> None:
+def test_veos_version_equals_the_eve_ng_lab_and_the_manifest(oracle: dict) -> None:
+    """Exact parity (ADR 0063 amendment): the dev switches run the image the EVE-NG lab's vEOS nodes run."""
+    version = oracle["images"]["veos"]["version"]
+    lab = yaml.safe_load(ENTERPRISE.read_text())["nodes"]
+    lab_images = {n["image"] for n in lab.values() if n.get("platform") == "veos"}
+    assert lab_images == {f"veos-{version}"}, f"topology/enterprise.yaml vEOS images {sorted(lab_images)} != veos-{version}"
+    assert f"/veos-{version}/" in oracle["images"]["veos"]["source"], "the copy is the lab's own image folder"
     text = MANIFEST.read_text()
-    summary = re.search(r"^\| `ceos` \|[^|]*\|([^|]*)\|", text, re.M)
-    section = re.search(r"^### 2\.5 `ceos`.*?^\| Version \|([^|]*)\|", text, re.M | re.S)
-    version = oracle["images"]["ceos"]["version"]
-    if not (summary and version in summary.group(1)):
-        pytest.skip(f"docs/image-manifest.md does not name cEOS {version} yet (edited by the records change)")
-    assert section and version in section.group(1), f"manifest section 2.5 says {section and section.group(1).strip()!r}"
+    section = re.search(r"^### 2\.4 `veos`.*?^\| Version \|([^|]*)\|", text, re.M | re.S)
+    assert section and f"Running: {version}" in section.group(1), f"manifest 2.4 says {section and section.group(1).strip()!r}"
+    summary = re.search(r"^\| `veos-vrnetlab` \|[^|]*\|([^|]*)\|", text, re.M)
+    assert summary and version in summary.group(1), "manifest summary has no veos-vrnetlab row naming the version"
+    built = re.search(r"^\| `vrnetlab/arista_veos` \| ([^|]+) \|([^\n]*)$", text, re.M)
+    assert built and built.group(1) == version, "manifest 4.5 has no vrnetlab/arista_veos row at the version"
+    # the checksum is recorded when fetch.sh copies the image (sha256 compared on EVE-NG and on the host)
+    assert oracle["images"]["veos"]["tag"] in built.group(2) and "`MANIFEST.sha256` at fetch" in built.group(2)
+    ceos = re.search(r"^\| `ceos` \|[^|]*\|([^|]*)\|", text, re.M)
+    assert ceos and "not used by the dev topology" in ceos.group(1)
 
 
 # --- addressing ------------------------------------------------------------------------------------------
@@ -213,8 +257,9 @@ def test_links_name_real_interfaces(oracle: dict) -> None:
             node = nodes[side["node"]]
             index = int(re.fullmatch(r"eth(\d+)", side["endpoint"]).group(1))
             assert index >= 1, "eth0 is management"
-            # cisco_c8000v: eth0 is GigabitEthernet1, so ethN is GigabitEthernet(N+1); ceos: ethN is EthernetN
-            want = f"GigabitEthernet{index + 1}" if node["kind"] == "cisco_c8000v" else f"Ethernet{index}"
+            # cisco_c8000v: eth0 is GigabitEthernet1, so ethN is GigabitEthernet(N+1); arista_veos: eth0 is
+            # Management1, so ethN is EthernetN
+            want = {"cisco_c8000v": f"GigabitEthernet{index + 1}", "arista_veos": f"Ethernet{index}"}[node["kind"]]
             assert side["ifname"] == want, f"{side}: expected {want}"
             assert (side["node"], side["endpoint"]) not in seen, f"{side} used twice"
             seen.add((side["node"], side["endpoint"]))
@@ -258,7 +303,11 @@ def test_topology_renders_from_the_oracle(env: jinja2.Environment, oracle: dict)
         assert rendered[n["name"]]["kind"] == n["kind"]
         assert rendered[n["name"]]["startup-config"] == f"configs/{n['name']}.cfg"
     assert topo["topology"]["kinds"]["cisco_c8000v"]["image"] == oracle["images"]["c8000v"]["tag"]
-    assert topo["topology"]["kinds"]["ceos"]["image"] == oracle["images"]["ceos"]["tag"]
+    assert set(topo["topology"]["kinds"]) == {"cisco_c8000v", "arista_veos"}
+    assert topo["topology"]["kinds"]["arista_veos"]["image"] == oracle["images"]["veos"]["tag"]
+    # vrnetlab reads QEMU_MEMORY (common/vrnetlab.py VM.ram), so the oracle's number is the one QEMU gets
+    assert topo["topology"]["kinds"]["arista_veos"]["env"] == {"QEMU_MEMORY": str(oracle["images"]["veos"]["ram_mb"])}
+    assert topo["topology"]["kinds"]["cisco_c8000v"]["env"] == {"QEMU_MEMORY": str(oracle["images"]["c8000v"]["ram_mb"])}
     assert [l["endpoints"] for l in topo["topology"]["links"]] == [
         [f"{l['a']['node']}:{l['a']['endpoint']}", f"{l['b']['node']}:{l['b']['endpoint']}"] for l in oracle["links"]
     ]
@@ -273,10 +322,16 @@ def test_c8000v_config_sets_the_licence_level_and_leaves_management_alone(env: j
         assert f"router bgp {n['asn']}" in cfg and "router ospf" in cfg
 
 
-def test_ceos_config_leaves_management_alone(env: jinja2.Environment, oracle: dict) -> None:
-    for n in [n for n in oracle["nodes"] if n["kind"] == "ceos"]:
+def test_veos_config_leaves_management_alone(env: jinja2.Environment, oracle: dict) -> None:
+    switches = [n for n in oracle["nodes"] if n["kind"] == "arista_veos"]
+    assert len(switches) == 2
+    for n in switches:
         cfg = render_config(env, oracle, n)
-        assert "Management0" not in cfg and "Management1" not in cfg, "containerlab configures the mgmt interface"
+        assert "Management0" not in cfg and "Management1" not in cfg, "vrnetlab's bootstrap owns Management1"
+        assert not re.search(r"^ip route 0\.0\.0\.0/0", cfg, re.M), "vrnetlab's bootstrap owns the default route"
+        # launch.py types each line in `configure terminal`, then sends `end` itself
+        assert not re.search(r"^end$", cfg, re.M), "vrnetlab ends the config session; an `end` here would run twice"
+        assert f"hostname {n['name']}" in cfg and f"router bgp {n['asn']}" in cfg and "router ospf" in cfg
         for v in oracle["vlans"]:
             assert f"vlan {v['id']}\n   name {v['name']}" in cfg
             assert f"ip address {v['svi'][n['name']]}" in cfg
@@ -288,15 +343,15 @@ def test_every_config_carries_the_automation_login_from_the_variable_only(env: j
         assert re.search(rf"^username {oracle['credentials']['user']} privilege 15 .*secret 0 {SENTINEL}$", cfg, re.M), n["name"]
         assert "ip ssh version 2" in cfg or "management ssh" in cfg
     # the raw templates: every secret/password/key word is followed by a Jinja variable, never a literal
-    for path in [ROOT / "clab" / C8000V_TEMPLATE, ROOT / "clab" / CEOS_TEMPLATE, ROOT / "clab" / TOPOLOGY_TEMPLATE]:
+    for path in [ROOT / "clab" / C8000V_TEMPLATE, ROOT / "clab" / VEOS_TEMPLATE, ROOT / "clab" / TOPOLOGY_TEMPLATE]:
         for m in re.finditer(r"\b(secret|password|pre-shared-key|key)\s+(?:0\s+|7\s+)?(\S+)", path.read_text()):
             assert m.group(2).startswith("{{"), f"{path.name}: literal after {m.group(1)!r}: {m.group(2)!r}"
     assert "clab_password" not in (ROOT / "clab" / TOPOLOGY_TEMPLATE).read_text(), "the topology file holds no secret"
 
 
 def test_no_node_keeps_the_vendor_default_admin_password(env: jinja2.Environment, oracle: dict) -> None:
-    """PID success criterion 5: vrnetlab's bootstrap and containerlab's cEOS kind create admin/admin, and the startup
-    config is applied after it, so the config must give `admin` the generated password too."""
+    """PID success criterion 5: containerlab starts vrnetlab's C8000v and vEOS bootstraps with admin/admin, and the
+    startup config is applied after them, so the config must give `admin` the generated password too."""
     for n in oracle["nodes"]:
         cfg = render_config(env, oracle, n)
         admin = [ln for ln in cfg.splitlines() if re.match(r"username admin\b", ln)]
@@ -375,8 +430,10 @@ def test_no_netbox_play_registers_clab_devices(oracle: dict) -> None:
 def test_fetch_reads_versions_from_the_oracle() -> None:
     text = FETCH.read_text()
     assert "4.33.10M" not in text, "ARISTA_CEOS_VERSION defaults to clab/versions.yaml, not a literal"
-    assert "ARISTA_CEOS_VERSION:-$(clab_value images.ceos.version)" in text
+    assert "ARISTA_CEOS_VERSION:-$(clab_value images.veos.version)" in text
+    assert "images.ceos" not in text, "clab/versions.yaml has no cEOS image any more"
     assert re.search(r"^\s+c8000v\) c8000v ;;$", text, re.M)
+    assert re.search(r"^\s+veos\) veos ;;$", text, re.M)
     assert re.search(r"^\s+clab-load\) clab_load ;;$", text, re.M)
     for kept in ("microsoft) microsoft ;;", "arista) arista ;;", "itential) itential ;;", "itential-load) itential_load ;;", "itential-load-ha2) itential_load_ha2 ;;"):
         assert kept in text, f"existing target {kept} changed"
@@ -388,7 +445,7 @@ def test_fetch_never_hides_a_failed_lookup_behind_local() -> None:
     assert not re.search(r"^\s*local\s+\w+=[^\n]*\$\(", text, re.M), "a `local x=$(...)` masks the substitution's failure"
     body = re.search(r"^arista\(\) \{.*?^\}", text, re.M | re.S).group(0)
     assert re.search(r"^\s+local ver$", body, re.M)
-    assert re.search(r"^\s+ver=\$\{ARISTA_CEOS_VERSION:-\$\(clab_value images\.ceos\.version\)\}$", body, re.M)
+    assert re.search(r"^\s+ver=\$\{ARISTA_CEOS_VERSION:-\$\(clab_value images\.veos\.version\)\}$", body, re.M)
     assert re.search(r'^\s+\[ -n "\$ver" \] \|\| \{ echo "[^"]+"; exit 1; \}$', body, re.M)
     assert body.index("ver=") < body.index('[ -n "$ver" ]') < body.index("$SSH")
     assert subprocess.run(["bash", "-n", str(FETCH)], capture_output=True).returncode == 0
@@ -397,6 +454,123 @@ def test_fetch_never_hides_a_failed_lookup_behind_local() -> None:
     old = 'set -e; f() { local v=${X:-$(false)}; echo reached; }; f'
     assert "reached" not in subprocess.run(["bash", "-c", fixed], capture_output=True, text=True, env={"PATH": os.environ["PATH"]}).stdout
     assert "reached" in subprocess.run(["bash", "-c", old], capture_output=True, text=True, env={"PATH": os.environ["PATH"]}).stdout
+
+
+def _function_body(text: str, name: str) -> str:
+    m = re.search(rf"^{name}\(\) \{{.*?^\}}", text, re.M | re.S)
+    assert m, f"images/fetch.sh has no {name}()"
+    return m.group(0)
+
+
+def test_fetch_veos_copies_the_eve_ng_image_like_c8000v_with_the_checksum_compared_on_both_ends() -> None:
+    text = FETCH.read_text()
+    veos, c8k = _function_body(text, "veos"), _function_body(text, "c8000v")
+    # a mirror of the reviewed c8000v copy, not a second implementation
+    assert veos.replace("veos", "X") == c8k.replace("c8000v", "X")
+    assert "src=$(clab_value images.veos.source); src=${src#eve:}" in veos
+    assert "staged=$(clab_value images.veos.staged)" in veos
+    eve_sum = veos.index('want=$($EVE "sha256sum')
+    host_sum = veos.index('got=$($SSH "sha256sum')
+    compare = veos.index('[ "$got" = "$want" ]')
+    manifest = veos.index("sha256sum ${key}/${name} >> MANIFEST.sha256")
+    assert eve_sum < host_sum < compare < manifest, "the MANIFEST line is written only after both sums agree"
+    assert "${name}.part" in veos and 'mv ${STAGING}/${key}/${name}.part' in veos
+
+
+def test_clab_load_relays_the_veos_qcow2_not_a_ceos_tarball() -> None:
+    body = _function_body(FETCH.read_text(), "clab_load")
+    assert 'for rel in "veos/${veos_name}" "c8000v/${c8000v_name}"; do' in body
+    assert 'veos_name=$(basename "$(clab_value images.veos.staged)")' in body
+    assert "ceos" not in body.lower() and "tar.xz" not in body
+
+
+def test_make_clab_dev_stages_veos_not_the_arista_download() -> None:
+    recipe = re.search(r"^clab-dev:.*?\n((?:\t[^\n]*\n)+)", MAKEFILE.read_text(), re.M)
+    assert recipe, "Makefile has no clab-dev target"
+    lines = [ln.strip() for ln in recipe.group(1).splitlines()]
+    assert "images/fetch.sh veos" in lines and "images/fetch.sh arista" not in lines
+    assert lines.index("images/fetch.sh veos") < lines.index("images/fetch.sh clab-load")
+
+
+def test_clab_host_builds_veos_with_vrnetlab_and_asserts_the_tags(oracle: dict) -> None:
+    text = (PLAYBOOKS / "clab-host.yml").read_text()
+    tasks = {t["name"]: t for t in yaml.safe_load(text)[0]["tasks"]}
+    assert "docker import" not in text
+    apt = next(t for t in tasks.values() if "ansible.builtin.apt" in t and isinstance(t["ansible.builtin.apt"].get("name"), list))
+    assert {"qemu-utils", "bsdutils"} <= set(apt["ansible.builtin.apt"]["name"])
+    # both loops list vEOS first, the when conditions index [0] for vEOS and [1] for the C8000v
+    for name in ("Images already in Docker", "Images present now"):
+        assert tasks[name]["loop"] == ["{{ images.veos.tag }}", "{{ images.c8000v.tag }}"], name
+    assert tasks["Staged files from images/fetch.sh clab-load"]["loop"] == ["{{ veos_file }}", "{{ c8000v_file }}"]
+    convert = tasks["Staged vEOS qcow2 converted to the vmdk in the vrnetlab build directory"]
+    cmd = convert["ansible.builtin.shell"]["cmd"]
+    assert cmd.startswith("qemu-img convert -O vmdk {{ stage_dir }}/{{ veos_file }} {{ images.veos.vmdk }}.part")
+    assert "mv {{ images.veos.vmdk }}.part {{ images.veos.vmdk }}" in cmd
+    assert convert["ansible.builtin.shell"]["chdir"] == "{{ vrnetlab_dir }}/arista/veos"
+    build = tasks["Build the vEOS image with vrnetlab {{ images.veos.tag }}"]
+    assert build["ansible.builtin.command"]["cmd"] == 'script -qec "make IMAGE={{ images.veos.vmdk }} docker-build" /dev/null'
+    assert build["ansible.builtin.command"]["chdir"] == "{{ vrnetlab_dir }}/arista/veos"
+    idempotent = "have_images.results[0].rc != 0 and staged.results[0].stat.exists"
+    assert convert["when"] == idempotent and build["when"] == idempotent
+    assert build["async"] >= 1800 and build["poll"] > 0
+    # the staged-but-missing assertion runs after every build
+    names = list(tasks)
+    check = tasks["Every staged image is in Docker under the oracle tag"]
+    assert check["ansible.builtin.assert"]["that"] == "item.1.rc == 0" and check["when"] == "item.0.stat.exists"
+    assert check["loop"] == "{{ staged.results | zip(have_images_after.results) | list }}"
+    assert names.index("Images present now") < names.index("Every staged image is in Docker under the oracle tag")
+
+
+def test_every_oracle_kind_has_a_template_and_a_mgmt_interface(oracle: dict) -> None:
+    kinds = {n["kind"] for n in oracle["nodes"]}
+    assert kinds == set(CONFIG_TEMPLATES)
+    deploy = yaml.safe_load((PLAYBOOKS / "clab-dev.yml").read_text())[1]
+    assert {k: f"configs/{v}.cfg.j2" for k, v in deploy["vars"]["config_template"].items()} == CONFIG_TEMPLATES
+    for template in CONFIG_TEMPLATES.values():
+        assert (ROOT / "clab" / template).exists(), template
+
+    def find(node: object) -> dict | None:
+        if isinstance(node, dict):
+            if "clab_mgmt_if" in node:
+                return node["clab_mgmt_if"]
+            node = list(node.values())
+        if isinstance(node, list):
+            for item in node:
+                found = find(item)
+                if found is not None:
+                    return found
+        return None
+
+    mgmt_if = find(yaml.safe_load((PLAYBOOKS / "platform.yml").read_text()))
+    assert mgmt_if == {"cisco_c8000v": "GigabitEthernet1", "arista_veos": "Management1"}
+
+
+def test_bgp_convergence_check_reads_eos_json_for_veos() -> None:
+    deploy = yaml.safe_load((PLAYBOOKS / "clab-dev.yml").read_text())[1]
+    bgp = next(t for t in deploy["tasks"] if t["name"] == "BGP sessions Established on both ends")
+    assert "'show ip bgp summary | json' if node.kind == 'arista_veos'" in bgp["ansible.builtin.command"]
+    until = bgp["until"]
+    assert "node.kind == 'arista_veos'" in until and "node.kind == 'cisco_c8000v'" in until
+    # vrnetlab types the vEOS config in after the login works: a missing default VRF is "not yet", never an error
+    assert "(bgp.stdout | from_json).vrfs | default({})).get('default', {}).get('peers', {})" in until
+    assert "bgp.stdout | trim | first | default('') == '{'" in until
+
+
+def test_no_ceos_is_left_in_the_dev_topology() -> None:
+    paths = [p for p in (ROOT / "clab").rglob("*") if p.is_file()]
+    paths += [PLAYBOOKS / "clab-host.yml", PLAYBOOKS / "clab-dev.yml", VERIFY, ROOT / "verify" / "test-05b-dev-copilot.sh"]
+    for path in paths:
+        assert "ceos" not in path.read_text().lower(), f"{path.relative_to(ROOT)} still names cEOS"
+
+
+def test_verify_checks_the_veos_model_and_version() -> None:
+    text = VERIFY.read_text()
+    assert 'veos, c8k = o["images"]["veos"]["version"], o["images"]["c8000v"]["version"]' in text
+    assert 'if model != "vEOS-lab":' in text
+    assert 'if not (v == veos or v.startswith(veos + "-")):' in text
+    assert 'arista_veos) dev "$ip" "show version | json"' in text
+    # the lab side of the parity, read at run time as well
+    assert 'if n.get("platform") == "veos"' in text and 'f"veos-{veos}"' in text
 
 
 def _running_before() -> str:

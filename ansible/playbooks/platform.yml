@@ -149,8 +149,8 @@
           {{ out }}
       vars:
         clab: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/../../clab/versions.yaml') | from_yaml }}"
-        # vrnetlab's C8000v keeps GigabitEthernet1 for management; cEOS in containerlab uses Management0
-        clab_mgmt_if: {cisco_c8000v: GigabitEthernet1, ceos: Management0}
+        # vrnetlab keeps the first VM NIC for management: GigabitEthernet1 on the C8000v, Management1 on vEOS
+        clab_mgmt_if: {cisco_c8000v: GigabitEthernet1, arista_veos: Management1}
       when: device_source | default('netbox') == 'clab'
 
     - name: Intent summary

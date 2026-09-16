@@ -99,7 +99,7 @@ PY
   while read -r name kind ip; do
     out=$(dev "$ip" "show version" 2>&1) || { echo "${name} ${ip}: SSH as automation from this Mac failed: ${out:0:200}"; return 1; }
     case "$kind" in
-      ceos) echo "$out" | grep -q "Arista" || { echo "${name}: show version is not EOS: ${out:0:200}"; return 1; } ;;
+      arista_veos) echo "$out" | grep -q "Arista" || { echo "${name}: show version is not EOS: ${out:0:200}"; return 1; } ;;
       *) echo "$out" | grep -q "^${name} uptime is" || { echo "${name}: show version does not name the router: ${out:0:200}"; return 1; } ;;
     esac
     # itential-dev holds no clab password of its own for the verify, so from there the proof is the SSH server's
@@ -111,12 +111,12 @@ PY
 }
 check "S10.7 four nodes running with the oracle mgmt IPs, reachable over SSH as automation from this Mac and from itential-dev" c7
 
-# --- S10.8 versions: cEOS equals oracle and manifest; C8000v 17.13.01a at licence level network-advantage ---------
+# --- S10.8 versions: vEOS-lab equals oracle, manifest and the EVE-NG lab; C8000v 17.13.01a at network-advantage ----
 c8() {
   local name kind ip
   while read -r name kind ip; do
     case "$kind" in
-      ceos) dev "$ip" "show version | json" > "$WORK/ver-${name}.json" || { echo "${name}: SSH failed"; return 1; } ;;
+      arista_veos) dev "$ip" "show version | json" > "$WORK/ver-${name}.json" || { echo "${name}: SSH failed"; return 1; } ;;
       *) dev "$ip" "show version" > "$WORK/ver-${name}.txt" || { echo "${name}: SSH failed"; return 1; } ;;
     esac
   done < "$WORK/nodes.txt"
@@ -126,17 +126,25 @@ W = os.environ["WORK"]
 o = yaml.safe_load(open("clab/versions.yaml"))
 manifest = open("docs/image-manifest.md").read()
 errs = []
-ceos, c8k = o["images"]["ceos"]["version"], o["images"]["c8000v"]["version"]
-row = re.search(r"^\| `ceos` \|[^|]*\|([^|]*)\|", manifest, re.M)
-if not row or ceos not in row.group(1):
-    errs.append(f"manifest ceos row {row and row.group(1).strip()!r} does not name {ceos}")
+veos, c8k = o["images"]["veos"]["version"], o["images"]["c8000v"]["version"]
+row = re.search(r"^\| `veos-vrnetlab` \|[^|]*\|([^|]*)\|", manifest, re.M)
+if not row or veos not in row.group(1):
+    errs.append(f"manifest veos-vrnetlab row {row and row.group(1).strip()!r} does not name {veos}")
+if f"Running: {veos}" not in manifest:
+    errs.append(f"manifest veos section does not say 'Running: {veos}'")
+lab = {n.get("image") for n in yaml.safe_load(open("topology/enterprise.yaml"))["nodes"].values() if n.get("platform") == "veos"}
+if lab != {f"veos-{veos}"}:
+    errs.append(f"EVE-NG lab vEOS images {sorted(lab)} != veos-{veos}: the dev switches are no longer the lab's EOS")
 if f"Running: {c8k}" not in manifest:
     errs.append(f"manifest c8000v section does not say 'Running: {c8k}'")
 for n in o["nodes"]:
-    if n["kind"] == "ceos":
-        v = json.load(open(f"{W}/ver-{n['name']}.json")).get("version", "")
-        if not (v == ceos or v.startswith(ceos + "-")):
-            errs.append(f"{n['name']}: EOS {v!r} != oracle {ceos}")
+    if n["kind"] == "arista_veos":
+        d = json.load(open(f"{W}/ver-{n['name']}.json"))
+        v, model = d.get("version", ""), d.get("modelName", "")
+        if model != "vEOS-lab":
+            errs.append(f"{n['name']}: model {model!r}, want vEOS-lab")
+        if not (v == veos or v.startswith(veos + "-")):
+            errs.append(f"{n['name']}: EOS {v!r} != oracle {veos}")
     else:
         t = open(f"{W}/ver-{n['name']}.txt").read()
         if not re.search(rf"Version {re.escape(c8k)}\b", t):
@@ -146,17 +154,17 @@ for n in o["nodes"]:
             errs.append(f"{n['name']}: licence level {level and level.group(1)!r}, want network-advantage")
 if errs:
     print("\n".join(errs)); sys.exit(1)
-print(f"cEOS {ceos} on both switches (= manifest); C8000v {c8k} at network-advantage on both routers")
+print(f"vEOS-lab {veos} on both switches (= manifest = EVE-NG lab); C8000v {c8k} at network-advantage on both routers")
 PY
 }
-check "S10.8 cEOS version equals the oracle and the manifest; C8000v runs 17.13.01a with licence level network-advantage" c8
+check "S10.8 vEOS-lab version equals the oracle, the manifest and the EVE-NG lab's vEOS; C8000v runs 17.13.01a with licence level network-advantage" c8
 
 # --- S10.9 OSPF: every adjacency the oracle implies is FULL, on both ends ---------------------------------------
 c9() {
   local name kind ip
   while read -r name kind ip; do
     case "$kind" in
-      ceos) dev "$ip" "show ip ospf neighbor | json" > "$WORK/ospf-${name}.json" || { echo "${name}: SSH failed"; return 1; } ;;
+      arista_veos) dev "$ip" "show ip ospf neighbor | json" > "$WORK/ospf-${name}.json" || { echo "${name}: SSH failed"; return 1; } ;;
       *) dev "$ip" "show ip ospf neighbor" > "$WORK/ospf-${name}.txt" || { echo "${name}: SSH failed"; return 1; } ;;
     esac
   done < "$WORK/nodes.txt"
@@ -170,7 +178,7 @@ for n in o["nodes"]:
     # every link runs OSPF area 0 (routed /31s and the switch pair's Vlan99): the peers are the far ends' router-ids
     want = sorted(lo[l["b"]["node"]] for l in o["links"] if l["a"]["node"] == n["name"]) + \
            sorted(lo[l["a"]["node"]] for l in o["links"] if l["b"]["node"] == n["name"])
-    if n["kind"] == "ceos":
+    if n["kind"] == "arista_veos":
         d = json.load(open(f"{W}/ospf-{n['name']}.json"))
         have = [e["routerId"] for v in d.get("vrfs", {}).values() for inst in v.get("instList", {}).values()
                 for e in inst.get("ospfNeighborEntries", []) if e.get("adjacencyState", "").lower() == "full"]
@@ -191,7 +199,7 @@ c10() {
   local name kind ip p
   while read -r name kind ip; do
     case "$kind" in
-      ceos) dev "$ip" "show ip bgp summary | json" > "$WORK/bgp-${name}.json" || { echo "${name}: SSH failed"; return 1; } ;;
+      arista_veos) dev "$ip" "show ip bgp summary | json" > "$WORK/bgp-${name}.json" || { echo "${name}: SSH failed"; return 1; } ;;
       *) dev "$ip" "show ip bgp summary" > "$WORK/bgp-${name}.txt" || { echo "${name}: SSH failed"; return 1; } ;;
     esac
   done < "$WORK/nodes.txt"
@@ -205,7 +213,7 @@ W = os.environ["WORK"]
 o = yaml.safe_load(open("clab/versions.yaml"))
 errs = []
 def established(n):
-    if n["kind"] == "ceos":
+    if n["kind"] == "arista_veos":
         peers = json.load(open(f"{W}/bgp-{n['name']}.json")).get("vrfs", {}).get("default", {}).get("peers", {})
         return {ip for ip, p in peers.items() if p.get("peerState") == "Established"}
     # IOS XE summary: an established neighbour's last column is its prefix count; other states print the state name
@@ -234,7 +242,7 @@ check "S10.10 BGP: iBGP rtr1-rtr2 and sw1-sw2 over loopbacks and eBGP rtr1-sw1 E
 c11() {
   local name kind ip
   while read -r name kind ip; do
-    [ "$kind" = ceos ] || continue
+    [ "$kind" = arista_veos ] || continue
     dev "$ip" "show vlan | json" > "$WORK/vlan-${name}.json" || { echo "${name}: SSH failed"; return 1; }
     dev "$ip" "show interfaces switchport | json" > "$WORK/sp-${name}.json" || { echo "${name}: SSH failed"; return 1; }
   done < "$WORK/nodes.txt"
@@ -252,7 +260,7 @@ def expand(allowed):
     return out
 errs = []
 trunk = [l for l in o["links"] if "trunk" in l]
-for n in [n for n in o["nodes"] if n["kind"] == "ceos"]:
+for n in [n for n in o["nodes"] if n["kind"] == "arista_veos"]:
     vlans = json.load(open(f"{W}/vlan-{n['name']}.json")).get("vlans", {})
     for v in o["vlans"]:
         got = vlans.get(str(v["id"]), {})

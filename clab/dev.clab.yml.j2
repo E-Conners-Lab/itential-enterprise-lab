@@ -18,8 +18,10 @@ topology:
       image: {{ images.c8000v.tag }}
       env:
         QEMU_MEMORY: "{{ images.c8000v.ram_mb }}"
-    ceos:
-      image: {{ images.ceos.tag }}
+    arista_veos:
+      image: {{ images.veos.tag }}
+      env:
+        QEMU_MEMORY: "{{ images.veos.ram_mb }}"
   nodes:
 {%- for node in nodes %}
     {{ node.name }}:

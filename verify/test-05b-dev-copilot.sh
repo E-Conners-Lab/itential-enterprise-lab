@@ -210,8 +210,8 @@ print(json.dumps({"automations": [wf]}))' "$probe" | api "$SJAR" -X POST "${DEV}
   st=$(code "$SJAR" -X DELETE "${DEV}/workflow_builder/workflows/delete/${probe}")
   [ "$st" = 200 ] || { echo "delete ${probe} as ${SVC_USER} answered ${st}"; return 1; }
   api "$SJAR" "${DEV}/automation-studio/workflows?limit=200" | grep -q "\"${probe}\"" && { echo "${probe} still listed after delete"; return 1; }
-  node=$(val "$CLAB" "next(n['name'] for n in d['nodes'] if n['kind']=='ceos')")
-  want=$(val "$CLAB" "d['images']['ceos']['version']")
+  node=$(val "$CLAB" "next(n['name'] for n in d['nodes'] if n['kind']=='arista_veos')")
+  want=$(val "$CLAB" "d['images']['veos']['version']")
   api "$SJAR" -X POST "${DEV}/gateway_manager/v1/services/run" \
     -d "{\"serviceName\":\"send-command\",\"clusterId\":\"$(val "$V" "d['stack']['gateway5_cluster_id']")\",\"params\":{\"commands\":[\"show version\"]},\"inventory\":[{\"inventory\":\"$(val "$V" "d['stack']['inventory']")\",\"nodeNames\":[\"${node}\"]}]}" \
     | ${PY} -c '
