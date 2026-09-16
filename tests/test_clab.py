@@ -11,6 +11,7 @@ import json
 import os
 import re
 import subprocess
+import sys
 from pathlib import Path
 
 import jinja2
@@ -698,3 +699,50 @@ def test_the_deploy_check_compares_bare_addresses() -> None:
     running = yaml.safe_load(env.from_string(task["vars"]["running_ips"]).render(rows=rows))
     # plain Jinja can't tell '\\d' from '\\\\d' the way Ansible does; the escape test above covers that half
     assert running == ["10.100.2.11"], "prefix stripped, exited nodes left out"
+
+
+def test_devcmd_waits_long_enough_for_nested_veos() -> None:
+    """vEOS under nested KVM answered `show version | json` in 23 s and other JSON commands in 9-11 s (2026-09-16);
+    devcmd.py gave up at 20 s and S10.8, S10.10 and S10.11 failed on healthy devices."""
+    env = {k: v for k, v in os.environ.items() if k != "DEVCMD_TIMEOUT"}
+    probe = "import importlib.util as u,sys;s=u.spec_from_file_location('d',sys.argv[1]);m=u.module_from_spec(s);s.loader.exec_module(m);print(m.DEFAULT_TIMEOUT, m.run.__defaults__)"
+    default = subprocess.run([sys.executable, "-c", probe, str(ROOT / "verify" / "devcmd.py")],
+                             env=env, capture_output=True, text=True, check=True).stdout
+    assert default.startswith("90 ") and "90" in default.split(" ", 1)[1], default
+    override = subprocess.run([sys.executable, "-c", probe, str(ROOT / "verify" / "devcmd.py")],
+                              env={**env, "DEVCMD_TIMEOUT": "120"}, capture_output=True, text=True, check=True).stdout
+    assert override.startswith("120 "), override
+
+
+def test_only_the_standalone_clab_build_may_defer_the_itential_dev_checks() -> None:
+    """`make clab-dev` runs before `make dev-stack` builds itential-dev, so its verify may defer the itential-dev half of
+    S10.7/S10.12; `make verify-dev` runs after the dev stack and must require it. Deferral is opt-in, never default."""
+    make = MAKEFILE.read_text()
+    clab = re.search(r"^clab-dev:.*?\n((?:\t[^\n]*\n)+)", make, re.M).group(1)
+    verify_dev = re.search(r"^verify-dev:.*?\n((?:\t[^\n]*\n)+)", make, re.M).group(1)
+    assert "\tCLAB_DEV_ONLY=1 verify/test-12a-clab-dev.sh\n" in clab
+    assert "CLAB_DEV_ONLY" not in verify_dev and "\tverify/test-12a-clab-dev.sh\n" in verify_dev
+    script = VERIFY.read_text()
+    assert "CLAB_DEV_ONLY=${CLAB_DEV_ONLY:-0}" in script, "strict unless the caller opts in"
+    assert 'dev_deferred() { [ "$CLAB_DEV_ONLY" = 1 ] && ! dev_ready; }' in script, "defers only when opted in AND unreachable"
+    # both itential-dev halves go through the gate, and nothing else does
+    assert script.count("if dev_deferred; then") == 2
+    c7 = script.split("c7() {", 1)[1].split("\n}\n", 1)[0]
+    c12 = script.split("c12() {", 1)[1].split("\n}\n", 1)[0]
+    assert "dev_deferred" in c7 and "dev_deferred" in c12
+    # with the flag unset, the gate is closed: run it the way bash will
+    gate = 'SSH=false; DEV_IP=x; CLAB_DEV_ONLY=${CLAB_DEV_ONLY:-0}\n' + "\n".join(
+        l for l in script.splitlines() if l.startswith(("dev_ready()", "dev_deferred()"))) + "\ndev_deferred && echo defer || echo require"
+    assert subprocess.run(["bash", "-c", gate], capture_output=True, text=True, env={"PATH": os.environ["PATH"]}).stdout.strip() == "require"
+    assert subprocess.run(["bash", "-c", gate], capture_output=True, text=True, env={"PATH": os.environ["PATH"], "CLAB_DEV_ONLY": "1"}).stdout.strip() == "defer"
+
+
+def test_the_verify_reads_root_only_netplan_files_with_sudo() -> None:
+    """oob-gw.yml and itential-host.yml write their route files 0600; S10.12 read oob-gw's without sudo, grep was
+    refused, and a correctly persisted route was reported missing (2026-09-16)."""
+    for line in VERIFY.read_text().splitlines():
+        if "/etc/netplan/" in line and not line.lstrip().startswith("#"):
+            for m in re.finditer(r"(\S+\s+)?(test -s|grep -q|cat)\s+(?:'[^']*'\s+)?/etc/netplan/", line):
+                assert (m.group(1) or "").strip() == "-n" and "sudo -n" in line[: m.start(2)], f"netplan read without sudo: {line.strip()}"
+    for play in ("oob-gw.yml", "itential-host.yml"):
+        assert 'mode: "0600"' in (PLAYBOOKS / play).read_text(), f"{play}: route files are root-only, which is why the verify needs sudo"

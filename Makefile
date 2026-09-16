@@ -159,7 +159,7 @@ clab-dev: ## Containerlab VM -> route on oob-gw -> images (C8000v and vEOS from 
 	images/fetch.sh clab-load
 	$(load_env) cd ansible && ansible-playbook -i inventory/netbox.yml playbooks/clab-host.yml
 	$(load_env) cd ansible && ansible-playbook -i inventory/netbox.yml playbooks/clab-dev.yml
-	verify/test-12a-clab-dev.sh
+	CLAB_DEV_ONLY=1 verify/test-12a-clab-dev.sh
 
 dev-stack: phase-itential phase-flowai verify-dev ## The whole dev stack; phase-itential brings netbox-token-dev and clab-dev first (ADR 0063)
 

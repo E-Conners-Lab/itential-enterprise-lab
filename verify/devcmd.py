@@ -11,8 +11,13 @@ import time
 
 import paramiko
 
+# Seconds to connect and to wait for output. vEOS under nested KVM (the clab dev topology) took 23 s to answer its
+# first `show version | json` and 9-11 s for other JSON commands (measured 2026-09-16), past the old 20 s, so the
+# default is 90; DEVCMD_TIMEOUT overrides it. A read-only show command waiting longer costs nothing.
+DEFAULT_TIMEOUT = int(os.environ.get("DEVCMD_TIMEOUT", "90"))
 
-def run(ip: str, command: str, user: str = "automation", timeout: int = 20) -> str:
+
+def run(ip: str, command: str, user: str = "automation", timeout: int = DEFAULT_TIMEOUT) -> str:
     pw = os.environ.get("AUTOMATION_PASSWORD")
     if not pw:
         raise SystemExit("AUTOMATION_PASSWORD missing in .env")
