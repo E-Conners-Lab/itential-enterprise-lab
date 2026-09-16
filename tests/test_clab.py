@@ -772,3 +772,31 @@ def test_the_verify_reads_root_only_netplan_files_with_sudo() -> None:
                 assert (m.group(1) or "").strip() == "-n" and "sudo -n" in line[: m.start(2)], f"netplan read without sudo: {line.strip()}"
     for play in ("oob-gw.yml", "itential-host.yml"):
         assert 'mode: "0600"' in (PLAYBOOKS / play).read_text(), f"{play}: route files are root-only, which is why the verify needs sudo"
+
+
+def test_the_deploy_waits_for_the_switch_prefixes_on_rtr2() -> None:
+    """After the licence reload the BGP sessions were up at 23:46:34 and clab-rtr2 learned the switch /27s at 23:47:19
+    (2026-09-16); S10.10 ran in between and failed on a topology that was still converging."""
+    deploy = yaml.safe_load((PLAYBOOKS / "clab-dev.yml").read_text())[1]
+    names = [t["name"] for t in deploy["tasks"]]
+    wait = names.index("The switch VLAN prefixes reach clab-rtr2 through BGP")
+    assert wait == names.index("BGP sessions Established on both ends") + 1
+    task = deploy["tasks"][wait]
+    assert task["ansible.builtin.command"].endswith('"show ip route bgp"') and task["retries"] * task["delay"] >= 180
+
+    env = jinja2.Environment()
+    env.filters["difference"] = lambda a, b: [x for x in a if x not in b]
+    env.filters["split"] = lambda s, sep=None: s.split(sep)
+    env.tests["match"] = lambda value, pattern: re.match(pattern, value) is not None
+    until = env.compile_expression(task["until"])
+    vlans = yaml.safe_load((ROOT / "clab" / "versions.yaml").read_text())["vlans"]
+    converged = [
+        "Gateway of last resort is not set",
+        "      10.0.0.0/8 is variably subnetted, 12 subnets, 3 masks",
+        "B        10.100.3.64/27 [200/0] via 10.100.3.201, 00:00:08",
+        "B        10.100.3.96/27 [200/0] via 10.100.3.201, 00:00:08",
+    ]
+    assert until(rtr2_bgp={"rc": 0, "stdout_lines": converged}, vlans=vlans)
+    assert not until(rtr2_bgp={"rc": 0, "stdout_lines": converged[:3]}, vlans=vlans), "one /27 missing"
+    assert not until(rtr2_bgp={"rc": 0, "stdout_lines": converged[:2]}, vlans=vlans), "none yet"
+    assert not until(rtr2_bgp={"rc": 1, "stdout_lines": converged}, vlans=vlans), "SSH failed"
