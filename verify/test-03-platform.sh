@@ -85,45 +85,47 @@ YAML
 }
 check "S2.4 ClusterIssuer lab-ca issues test.lab.internal chained to docs/lab-root-ca.crt" c4
 
-# --- S2.5 CloudNativePG cluster ready; scheduled backup lands in the object store -------------
+# --- S2.5 CloudNativePG cluster ready; no database archives WAL or schedules a backup (ADR 0064) ---------
+# The lab's CNPG databases are rebuildable and are not backed up. Archiving to Garage filled Garage, then the
+# unarchived WAL filled zabbix-db's volume (2026-09-16). Control plane: no ScheduledBackup, no ObjectStore and
+# no Cluster naming a plugin, in any namespace. Data plane: no instance pod runs the Barman sidecar, and no
+# primary holds WAL segments waiting to be archived - the pile-up that filled the disk.
 c5() {
   local cl; cl=$(kubectl -n cnpg-system get clusters.postgresql.cnpg.io -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
   [ -n "$cl" ] || { echo "no CNPG Cluster in cnpg-system"; return 1; }
   kubectl -n cnpg-system get clusters.postgresql.cnpg.io "$cl" -o jsonpath='{.status.phase}' | grep -q "healthy" || { kubectl -n cnpg-system get clusters.postgresql.cnpg.io "$cl"; return 1; }
-  kubectl -n cnpg-system get clusters.postgresql.cnpg.io "$cl" -o jsonpath='{.status.conditions[?(@.type=="ContinuousArchiving")].status}' | grep -qx True || { echo "WAL archiving not working"; return 1; }
   kubectl -n cnpg-system exec "${cl}-1" -c postgres -- pg_isready -q || { echo "pg_isready failed"; return 1; }
-  # full resource name: 'backup' alone is ambiguous once Longhorn's backups CRD exists.
-  # This used to pipe kubectl straight into `grep -q " completed"`, which threw away kubectl's exit
-  # status: a transient API error then reported "no completed Backup object" while six completed
-  # backups existed, and the diagnostic `kubectl get` printed right underneath it said so (measured
-  # 2026-09-11). Capture the output and the status separately so an API failure cannot masquerade as
-  # a missing backup.
-  local backups rc
-  backups=$(kubectl -n cnpg-system get backups.postgresql.cnpg.io \
-    -o jsonpath='{range .items[*]}{.metadata.name} {.status.phase} {.metadata.creationTimestamp}{"\n"}{end}' 2>&1); rc=$?
-  [ "$rc" -eq 0 ] || { echo "kubectl could not read the Backup objects (rc=${rc}): ${backups}"; return 1; }
-  echo "$backups" | grep -q " completed " || { echo "no completed Backup object"; echo "$backups"; return 1; }
-  # "at least one completed" is satisfied for ever by platform-db-initial, so a dead nightly schedule
-  # would never be noticed: require a completed backup newer than BACKUP_MAX_AGE_H (default 48h, which
-  # tolerates one missed 02:30 run).
-  echo "$backups" | python3 -c '
-import sys, datetime
-max_h = float("'"${BACKUP_MAX_AGE_H:-48}"'")
-now = datetime.datetime.now(datetime.timezone.utc)
-done = []
-for line in sys.stdin:
-    parts = line.split()
-    if len(parts) == 3 and parts[1] == "completed":
-        done.append((parts[0], datetime.datetime.fromisoformat(parts[2].replace("Z", "+00:00"))))
-assert done, "no completed Backup object"
-name, ts = max(done, key=lambda x: x[1])
-age_h = (now - ts).total_seconds() / 3600
-assert age_h <= max_h, (
-    f"newest completed backup {name} is {age_h:.0f}h old (limit {max_h:.0f}h): the nightly schedule has stopped"
-)
-print(f"  {len(done)} completed backups; newest {name} is {age_h:.0f}h old")' || return 1
+  # Capture output and status separately: a piped grep would turn an API error into a false "absent".
+  local out rc kind
+  for kind in scheduledbackups.postgresql.cnpg.io objectstores.barmancloud.cnpg.io; do
+    out=$(kubectl get "$kind" -A -o jsonpath='{range .items[*]}{.metadata.namespace}/{.metadata.name}{"\n"}{end}' 2>&1); rc=$?
+    [ "$rc" -eq 0 ] || { echo "kubectl could not list ${kind} (rc=${rc}): ${out}"; return 1; }
+    [ -z "$out" ] || { echo "${kind} still present (ADR 0064):"; echo "$out"; return 1; }
+  done
+  out=$(kubectl get clusters.postgresql.cnpg.io -A -o json 2>&1); rc=$?
+  [ "$rc" -eq 0 ] || { echo "kubectl could not list the CNPG Clusters (rc=${rc}): ${out}"; return 1; }
+  local clusters; clusters=$(echo "$out" | python3 -c '
+import sys, json
+items = json.load(sys.stdin)["items"]
+bad = [c["metadata"]["namespace"] + "/" + c["metadata"]["name"] for c in items if c["spec"].get("plugins")]
+if bad:
+    print("Clusters still naming a plugin (ADR 0064): " + ", ".join(bad), file=sys.stderr)
+    sys.exit(1)
+for c in items:
+    print(c["metadata"]["namespace"], c["metadata"]["name"])') || return 1
+  local ns_ name pods primary ready
+  while read -r ns_ name; do
+    pods=$(kubectl -n "$ns_" get pods -l "cnpg.io/cluster=${name}" -o jsonpath='{range .items[*]}{.metadata.name}:{range .spec.containers[*]}{.name},{end}{range .spec.initContainers[*]}{.name},{end}{"\n"}{end}' 2>&1) || { echo "$pods"; return 1; }
+    echo "$pods" | grep -qi barman && { echo "${ns_}/${name}: an instance pod still runs a Barman container: ${pods}"; return 1; }
+    primary=$(kubectl -n "$ns_" get pods -l "cnpg.io/cluster=${name},cnpg.io/instanceRole=primary" -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
+    [ -n "$primary" ] || { echo "${ns_}/${name}: no primary pod"; return 1; }
+    ready=$(kubectl -n "$ns_" exec "$primary" -c postgres -- psql -XAtc "select count(*) from pg_ls_archive_statusdir() where name like '%.ready'" 2>&1) || { echo "${ns_}/${name}: ${ready}"; return 1; }
+    # a segment is marked .ready when it closes and cleared at once when nothing archives; a few is a busy moment
+    [ "$ready" -le "${WAL_READY_MAX:-4}" ] || { echo "${ns_}/${name}: ${ready} WAL segments waiting to be archived"; return 1; }
+    echo "  ${ns_}/${name}: no plugin, no Barman sidecar, ${ready} WAL segments waiting"
+  done <<< "$clusters"
 }
-check "S2.5 CNPG cluster healthy, pg_isready, a completed Backup in the object store newer than ${BACKUP_MAX_AGE_H:-48}h" c5
+check "S2.5 CNPG cluster healthy, pg_isready; no ScheduledBackup, ObjectStore, plugin, Barman sidecar or WAL backlog in any namespace (ADR 0064)" c5
 
 # --- S2.6 allocation matches docs/resource-budget.md ---------------------------------------------
 c6() {

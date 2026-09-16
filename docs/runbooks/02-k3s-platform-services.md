@@ -1,7 +1,7 @@
 # 02 — k3s and platform services
 
 Three nodes, an API VIP that does not depend on the CNI, LoadBalancer addresses on the OOB network, storage
-that survives losing a node, a certificate authority for the lab, and Postgres with backups.
+that survives losing a node, a certificate authority for the lab, and Postgres — rebuildable, and deliberately not backed up (ADR 0064).
 
 This is the chapter that makes every later chapter's "it just has an address and a certificate" true.
 Chapter 07's whole observability stack runs here, and chapter 06 borrows the CA.
@@ -31,7 +31,7 @@ Chapter 07's whole observability stack runs here, and chapter 06 borrows the CA.
 | Storage | Longhorn 1.12.1, two replicas by default | Two replicas out of three nodes is what makes the node-loss drill pass |
 | Certificates | cert-manager 1.21.1 with a self-signed root, `ClusterIssuer` `lab-ca` | `${LAB_DOMAIN}` can never get a public certificate ([ADR 0005](../adr/0005-lab-dns-domain.md)) |
 | Object store | Garage 2.4.0, single-node StatefulSet on Longhorn | MinIO was archived in 2026; Garage is small and S3-compatible |
-| Database | CloudNativePG 1.30.0 with PostgreSQL 18, backing up through the **Barman Cloud plugin** | The in-tree `barmanObjectStore` is deprecated since CNPG 1.26 |
+| Database | CloudNativePG 1.30.0 with PostgreSQL 18, **not backed up** — no WAL archiving, no scheduled backups | The lab's databases are rebuilt from the repo; archiving to Garage once filled Garage and then the database volume ([ADR 0064](../adr/0064-lab-databases-are-rebuildable-not-backed-up.md)). The Barman Cloud plugin stays installed, unused |
 
 Decisions and the discarded alternatives: [ADR 0021](../adr/0021-k3s-platform-stack.md) and
 [ADR 0031](../adr/0031-garage-object-store-kube-vip-barman-plugin.md).
@@ -65,7 +65,7 @@ Four steps:
 | 1 | `ansible/playbooks/netbox-vms.yml` | Registers the three nodes as virtual machines in NetBox and attaches their reserved addresses. NetBox first, always — it is the inventory source the next step reads |
 | 2 | `tofu apply` in `tofu/platform` | Clones the template three times, `vmbr1` only, sizes from the budget |
 | 3 | `ansible/playbooks/k3s-cluster.yml` | Runs against `-i inventory/netbox.yml`. Node prep (no swap, kernel modules, iscsid for Longhorn, time from the gateway), the kube-vip static pod, `cluster-init` on the first node and joins on the other two, then writes a workstation kubeconfig pointed at the VIP |
-| 4 | `ansible/playbooks/k8s-platform.yml` | Runs on the workstation with `helm` and `kubectl`: Cilium first, then MetalLB, Longhorn, cert-manager and the lab CA, the Traefik configuration, Garage, the Barman plugin, and the CNPG cluster with its first backup |
+| 4 | `ansible/playbooks/k8s-platform.yml` | Runs on the workstation with `helm` and `kubectl`: Cilium first, then MetalLB, Longhorn, cert-manager and the lab CA, the Traefik configuration, Garage, the Barman plugin, removal of any leftover backup objects, and the CNPG cluster |
 
 The inventory group comes from NetBox, so if step 1 did not run — or a node is not tagged — step 3 has
 nothing to configure and succeeds with zero hosts. Read the play recap.
@@ -86,7 +86,7 @@ committed on purpose so a reader can see what they are trusting.
 
 Around 20–30 minutes on the tested hardware, most of it Helm charts pulling images over the NAT and
 Longhorn's DaemonSet settling on three nodes. The steps that take real time are Cilium (nodes are
-`NotReady` until it is up, which is expected and not a fault), Longhorn, and CNPG's first base backup.
+`NotReady` until it is up, which is expected and not a fault), and Longhorn.
 
 ```
 kubectl --kubeconfig ~/.kube/lab-k3s.yaml get nodes
@@ -95,8 +95,8 @@ kubectl --kubeconfig ~/.kube/lab-k3s.yaml get nodes
 Three nodes `Ready` at `v1.36.4+k3s1`, reached through `10.100.0.19` — not through any node's own address.
 `cilium status` is `ok` and `hubble observe` returns flows. Traefik holds `10.100.0.32`. A `LoadBalancer`
 Service gets an address from the pool and answers **from your workstation and from EVE-NG** — both sides of
-the OOB network. `kubectl -n cnpg get cluster` shows the platform database healthy with WAL archiving
-working, and at least one `Backup` in the `Completed` phase.
+the OOB network. `kubectl -n cnpg-system get cluster` shows the platform database healthy, and
+`kubectl get scheduledbackups.postgresql.cnpg.io,objectstores.barmancloud.cnpg.io -A` returns nothing.
 
 The kubeconfig lands at `~/.kube/lab-k3s.yaml` with the context named `lab-k3s`. It is never committed.
 
@@ -115,7 +115,7 @@ verify/test-03-platform.sh
 | S2.1 | Three `Ready` nodes at the pinned k3s version, reached via the VIP; `cilium status` ok; Hubble observes flows |
 | S2.3 | A `LoadBalancer` Service gets its expected pool address from MetalLB and answers **from the workstation and from EVE-NG** |
 | S2.4 | `ClusterIssuer` `lab-ca` issues a certificate for a `${LAB_DOMAIN}` name that chains to `docs/lab-root-ca.crt` |
-| S2.5 | The CNPG cluster is healthy, `pg_isready` answers, and at least one completed `Backup` exists in the object store |
+| S2.5 | The CNPG cluster is healthy and `pg_isready` answers, and nothing backs a lab database up: no `ScheduledBackup`, `ObjectStore`, plugin reference, Barman sidecar or WAL backlog in any namespace |
 | S2.6 | The nodes' vCPU, RAM and disk **on the hypervisor** equal `docs/resource-budget.md` |
 | S2.2 | The node-loss drill. Skipped by default because it is disruptive |
 
@@ -166,17 +166,20 @@ are easy to lose: Longhorn's node-down pod deletion policy, and k3s's 30-second 
 default Kubernetes waits five minutes before evicting, and the volume stays attached to a node that is
 gone. If your drill times out at exactly five minutes, that is what you are looking at.
 
-**CNPG backups never complete, and the `Backup` sits in `running`.** Two causes, both silent. The
-`ObjectStore` credentials need a **region** set on the S3 secret — Garage will accept a connection without
-one and then refuse the requests. And the plugin is applied from its release manifest without waiting per
-object, so if you check immediately after `helm`, the controller may not exist yet. The play waits for the
-plugin to be ready and then takes an on-demand backup if none has ever completed, which is what turns S2.5
-from "scheduled, trust me" into "one has landed".
+**A CNPG database volume fills up and postgres crash-loops with "Not enough disk space".** Look for WAL that
+cannot be archived before looking at the data. PostgreSQL keeps every WAL segment until its archiver succeeds,
+so when this lab archived to Garage, a full Garage (fourteen days of base backups from two clusters in
+20 GiB) made every archive attempt fail with "No space left on device", the WAL piled up on the database's own
+volume, and Zabbix was down for fifteen hours with nothing alerting. That is why the lab's CNPG databases are
+not backed up ([ADR 0064](../adr/0064-lab-databases-are-rebuildable-not-backed-up.md)). If you add archiving
+back for a database that needs it, size the object store against the retention first and alert on its free
+space. And removing a document from a manifest does not remove the live object: the plays delete the
+`ScheduledBackup` and `ObjectStore` and JSON-patch `/spec/plugins` out of the `Cluster`, because the merge
+patch that `state: present` sends leaves any key it omits in place.
 
 **Garage's secrets change on every run.** They should not — the play generates them once and keeps them
-only in the cluster. If you delete the `garage` namespace you have deleted the credentials that CNPG's
-`ObjectStore` uses, and every backup afterwards fails authentication while the cluster stays healthy. Delete
-the `ObjectStore` and the copied `garage-s3` secret in `cnpg-system` too, and let the play recreate both.
+only in the cluster. Nothing reads them since the CNPG backups went (ADR 0064), but anything that uses Garage
+later will need the same secret to survive, so do not delete the `garage` namespace to "reset" it.
 
 **Every lab HTTPS page says "Not Secure".** The lab CA is imported but not *trusted*. macOS treats those as
 two separate things and a root with no trust setting signs nothing a browser accepts. This is manual step
@@ -230,8 +233,8 @@ before approving anything in this directory — these three VMs hold the cluster
 | cert-manager | `v1.21.1` |
 | Traefik | `v3.7.8`, as bundled by k3s |
 | CloudNativePG | operator 1.30.0, PostgreSQL 18.6 operand |
-| Barman Cloud plugin | `v0.15.0` |
-| Garage | `v2.4.0`, 20 GiB data on Longhorn |
+| Barman Cloud plugin | `v0.15.0` (installed, unused since ADR 0064) |
+| Garage | `v2.4.0`, 20 GiB data on Longhorn (empty since ADR 0064) |
 | Helm | 3 (**not** 4) |
 | Node size | 4 vCPU / 12 GB / 100 GB × 3 |
 

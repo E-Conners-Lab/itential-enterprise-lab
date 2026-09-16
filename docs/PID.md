@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Name** | itential-enterprise-lab |
-| **Version** | 1.30 |
+| **Version** | 1.31 |
 | **Date** | 2026-09-16 |
 | **Author** | Elliot Conner. Claude Code is the build agent; every action it takes is bounded by this document |
 | **Standard** | Project Initiation Standard PIS-01 - PIS-30 (`~/.claude/skills/project-initiation-standard`) |
@@ -117,6 +117,7 @@ Conventions: **Placement** is Proxmox VM (OpenTofu + Ansible), k3s (Helm/Kustomi
 - **Verification:** `verify/test-02-oob.sh`.
 
 ### S2 — k3s platform (Phase 3)
+> **Amendment 1.31 (ADR 0064):** the lab's CloudNativePG databases (`platform-db`, `zabbix-db`) are rebuildable and are not backed up: no WAL archiving, no scheduled backups, no ObjectStores. Garage and the Barman Cloud plugin stay, unused. Criterion 5 asserts the absence.
 
 - **Purpose:** the runtime for every containerised service (S6 tac_plus/Keycloak, S7, S8) with persistent storage and stable service IPs.
 - **Placement:** three Proxmox VMs `k3s-01..03`, each a server node (embedded etcd), on `vmbr1`.
@@ -126,7 +127,7 @@ Conventions: **Placement** is Proxmox VM (OpenTofu + Ansible), k3s (Helm/Kustomi
   2. A test Deployment with a Longhorn PVC survives `tofu` stopping one node (data intact, pod rescheduled within 5 min).
   3. A test Service of type LoadBalancer gets 10.100.0.43 and is reachable from the workstation and from an EVE-NG endpoint.
   4. cert-manager issues a certificate for `test.lab.internal` chained to the lab root CA, and the root CA cert is exported to `docs/` for client trust (public material only).
-  5. A CloudNativePG cluster of one instance passes `pg_isready`, and its scheduled backup object lands in a Longhorn-backed bucket.
+  5. *(1.31, ADR 0064)* A CloudNativePG cluster of one instance is healthy and passes `pg_isready`, and **no** lab CNPG database is backed up: in any namespace there is no `ScheduledBackup`, no Barman Cloud `ObjectStore`, no `Cluster` naming a plugin, no Barman sidecar in an instance pod, and no primary holding WAL segments waiting to be archived. (Was: "its scheduled backup object lands in a Longhorn-backed bucket".)
   6. Cluster allocation in `docs/resource-budget.md` matches `qm config`.
 - **Verification:** `verify/test-03-platform.sh`.
 
@@ -774,6 +775,7 @@ the verify log path and any ADRs added.
 | 1.13 | 2026-09-08 | Phase 6 element 7 (owner request): S4e NetBox enrichment derived from `topology/enterprise.yaml` (addressing on interfaces with peer descriptions, VRFs and ASNs with BGP neighbours in config contexts, racks, provider circuits, config contexts, journal entries; the templates read the YAML, rendered configs unchanged; `netbox-enrich.yml`; `verify/test-06c-netbox.sh`; ADR 0048) |
 | 1.14 | 2026-09-09 | Domain 7: the Anthropic key is the owner's company key with a $15-a-week budget; the platform's session documents are the ledger (`verify/tokens.sh`, `make tokens`, `llm.budget` in versions.yaml), the agent verifies guard it, iteration runs on the local twins or `ONLY=` subsets (ADR 0049) |
 | 1.15 | 2026-09-09 | Reorder (ADR 0050): image-free phases first (7 observability, 8 config/secrets/code, 9 identity without Windows on OpenLDAP + Keycloak + tac_plus, 10 DDI on BIND9 + Kea, 11 Containerlab) and one phase 12 firewall track for NIOS, the PA-VM firewalls and Panorama; Windows Server and the Windows endpoint item dropped, `dc01` released |
+| 1.31 | 2026-09-16 | The lab's CloudNativePG databases are rebuildable and are not backed up. Fourteen days of nightly base backups plus continuous WAL from two clusters filled Garage's 20 GiB (28.1 GiB in `cnpg-backups` + 922 MiB of unfinished multipart uploads); from 2026-09-15 16:21 UTC WAL archiving failed, WAL piled up on `zabbix-db`'s 10 GiB volume, which filled at 2026-09-16 04:20 UTC, and Zabbix was down ~15 h with nothing alerting. `zabbix-db` holds only metric history (its configuration is rebuilt from the repo) and `platform-db` an empty database. Both lose their ObjectStore, plugin reference and ScheduledBackup; the plays delete the live objects; `zabbix-db` grows 10 -> 12 Gi; S2.5 now asserts the absence. Garage stays with an empty bucket; the production MongoDB backup (ADR 0058) is unaffected (ADR 0064, owner decision) |
 | 1.30 | 2026-09-16 | The dev stack returns as `itential-dev` (VM 205, .65, alias `mcp-dev`, never the production names `itential` or `mcp`) so GitHub Copilot can build against a Platform that is not production, with a Containerlab host `clab` (VM 230, .224, nested KVM) running topology `dev`: two C8000v 17.13.01a and two vEOS-lab 4.33.1.1F (both vrnetlab, from the EVE-NG images; the switches were cEOS until the same-day ADR 0063 amendment) on the routed 10.100.2.0/24, not registered in NetBox. Isolation is a contract: a dev overlay, guard asserts, defaults that reproduce production, a separate dev encryption key and a view-only NetBox token; ServiceNow off and `ollama-mac` only on dev. `svc-copilot` is `copilot-readonly` on production (no InventoryManager role: an inventory read returns device passwords) and `copilot-builders` on dev. S10 gains criteria 6-12 (dev topology), new S12 with criteria 1-9, both run by `make verify-dev` and never `make verify`. RAM ceiling 280 -> 296 GB and thin disk ceiling 1.4 -> 1.5 TB, headroom 0 GB, so the firewall track now depends on the levers (ADR 0063, owner instruction) |
 | 1.29 | 2026-09-12 | A local twin gets the tools its job needs, and the cap moves from three to six, set by measurement: `netbox-sot-local` went two tools to four and answered a six-clause question 6/6 with no wasted call, where at two it burned one and returned a **false** "not in NetBox" about interfaces it simply could not see. The three-tool rule was a measured property of qwen2.5:7b, not a law. The wide NetBox reads stay off the twins for the ADR 0059 payload reason (ADR 0062, owner instruction) |
 | 1.28 | 2026-09-11 | The local model is `gemma4:26b` with `/no_think` as the first line of every twin prompt, chosen by measurement (`scripts/model-bakeoff.py`): every candidate scored 9/9 on the tool-call shapes that caused PR #32/#33, so thinking traces decide it - they cost 6-8x, the Platform does not send Ollama's `think: false`, `PARAMETER think false` is not a Modelfile parameter, and only gemma obeys `/no_think`. ADR 0060's `qwen3:30b-a3b` was the worst of the set, leaking reasoning into the answer (ADR 0061, owner instruction) |

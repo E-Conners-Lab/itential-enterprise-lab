@@ -1,22 +1,10 @@
-# Proof cluster for PID S2.5: one instance, WAL archiving and a nightly base backup to Garage
-# through the Barman Cloud plugin. Later phases create their own Cluster per application.
-apiVersion: barmancloud.cnpg.io/v1
-kind: ObjectStore
-metadata:
-  name: garage
-  namespace: cnpg-system
-spec:
-  configuration:
-    destinationPath: s3://cnpg-backups/
-    endpointURL: http://garage.garage.svc:3900
-    s3Credentials:
-      accessKeyId: {name: garage-s3, key: GARAGE_DEFAULT_ACCESS_KEY}
-      secretAccessKey: {name: garage-s3, key: GARAGE_DEFAULT_SECRET_KEY}
-      region: {name: garage-s3, key: GARAGE_REGION}
-    wal:
-      compression: gzip
-  retentionPolicy: "14d"
----
+# Proof cluster for PID S2.5: one instance on Longhorn, an empty `app` database. Later phases create their
+# own Cluster per application.
+#
+# No WAL archiving, no ScheduledBackup, no ObjectStore (ADR 0064): the lab's CloudNativePG databases are
+# rebuildable and are not backed up. Archiving both clusters to Garage filled Garage on 2026-09-15 and took
+# Zabbix down. ansible/playbooks/k8s-platform.yml deletes the live ScheduledBackup and ObjectStore and removes
+# the plugin from this Cluster, because dropping them from this file does not.
 apiVersion: postgresql.cnpg.io/v1
 kind: Cluster
 metadata:
@@ -31,23 +19,3 @@ spec:
   resources:
     requests: {cpu: 100m, memory: 512Mi}
     limits: {memory: 1Gi}
-  plugins:
-    - name: barman-cloud.cloudnative-pg.io
-      isWALArchiver: true
-      parameters:
-        barmanObjectName: garage
----
-apiVersion: postgresql.cnpg.io/v1
-kind: ScheduledBackup
-metadata:
-  name: platform-db-nightly
-  namespace: cnpg-system
-spec:
-  schedule: "0 30 2 * * *"
-  immediate: true
-  backupOwnerReference: self
-  cluster:
-    name: platform-db
-  method: plugin
-  pluginConfiguration:
-    name: barman-cloud.cloudnative-pg.io

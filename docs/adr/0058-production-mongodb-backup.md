@@ -2,7 +2,7 @@
 
 - **Status:** accepted (PR #30, 2026-09-11) — the nightly dump runs and S11.9 restores it
 - **Date:** 2026-09-11
-- **Related:** ADR 0053 (the production environment), ADR 0031 (CNPG backs up to Garage; phase 9 copies backups off-host), ADR 0002, PID S11 amendment 1.24
+- **Related:** ADR 0053 (the production environment), ADR 0031 (CNPG backs up to Garage; phase 9 copies backups off-host), ADR 0064 (the CNPG backups are gone since 2026-09-16; this backup is unaffected), ADR 0002, PID S11 amendment 1.24
 
 ## Context
 
@@ -23,7 +23,7 @@ The inconsistency is stark, because the lab already backs up the things it consi
 | Database | Backup | Proven by |
 |---|---|---|
 | NetBox (PostgreSQL) | nightly `pg_dump` + media, 7-day rotation | S0.2 fails if it is older than 24 h |
-| Zabbix and platform-db (CloudNativePG) | scheduled base backups and WAL to Garage | S2.5 requires a completed `Backup` |
+| Zabbix and platform-db (CloudNativePG) | scheduled base backups and WAL to Garage (removed 2026-09-16, ADR 0064: rebuildable, not backed up) | S2.5 required a completed `Backup` |
 | **Production MongoDB** | **none** | — |
 
 MongoDB is where the entire Platform estate lives: every workflow document, job and job history, Lifecycle
