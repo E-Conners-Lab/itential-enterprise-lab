@@ -86,7 +86,7 @@ def test_oracle_has_the_agreed_keys(oracle: dict) -> None:
 
 
 def test_the_owner_decisions_hold(oracle: dict) -> None:
-    assert oracle["vm"] == {"name": "clab", "vm_id": 230, "ip": "10.100.0.224", "cores": 8, "memory_mb": 16384, "disk_gb": 60}
+    assert oracle["vm"] == {"name": "clab", "vm_id": 230, "ip": "10.100.0.224", "cores": 8, "memory_mb": 20480, "disk_gb": 60}
     assert oracle["mgmt"] == {"network": "clab-dev-mgmt", "prefix": "10.100.2.0/24", "gateway": "10.100.2.1", "bridge": "br-clab-dev"}
     assert oracle["inband_prefix"] == "10.100.3.0/24"
     assert {n["name"]: (n["kind"], n["mgmt_ipv4"]) for n in oracle["nodes"]} == {
@@ -102,7 +102,7 @@ def test_the_owner_decisions_hold(oracle: dict) -> None:
         "staged": "/srv/images/veos/vEOS-lab-4.33.1.1F.qcow2",
         "vmdk": "vEOS-lab-4.33.1.1F.vmdk",
         "tag": "vrnetlab/arista_veos:4.33.1.1F",
-        "ram_mb": 2048,
+        "ram_mb": 4096,
         # nested KVM: the default -cpu host,level=9 aborts on MSR 0x345; the virtual PMU must be off (2026-09-16)
         "cpu": "host,level=9,pmu=off",
     }
