@@ -289,3 +289,24 @@
       delay: 20
       changed_when: false
       no_log: true
+
+    # Sessions Established is not the end of convergence: after the licence reload the sessions were up at
+    # 23:46:34 and clab-rtr2 learned the switch /27s at 23:47:19 (2026-09-16), and S10.10 ran in between.
+    # The play waits for what S10.10 checks, so a fresh build hands the verify a converged topology.
+    - name: The switch VLAN prefixes reach clab-rtr2 through BGP
+      ansible.builtin.command: python3 {{ devcmd }} {{ rtr2.mgmt_ipv4 }} "show ip route bgp"
+      environment:
+        AUTOMATION_PASSWORD: "{{ clab_password }}"
+      vars:
+        rtr2: "{{ nodes | selectattr('name', 'equalto', 'clab-rtr2') | first }}"
+      register: rtr2_bgp
+      until: >-
+        rtr2_bgp.rc == 0 and
+        (vlans | map(attribute='prefix') | list
+         | difference(rtr2_bgp.stdout_lines | select('match', '^B ') | map('replace', 'B', '', 1) | map('trim')
+                      | map('split', ' ') | map('first') | list))
+        | length == 0
+      retries: 30
+      delay: 10
+      changed_when: false
+      no_log: true
