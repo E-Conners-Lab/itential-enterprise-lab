@@ -221,29 +221,63 @@
         label: "{{ item.name }}"
       no_log: true
 
-    # --- zabbix-db on CloudNativePG, backups to Garage like platform-db ---------------------------------
-    - name: Garage credentials as the phase-3 platform cluster holds them
-      kubernetes.core.k8s_info:
-        kubeconfig: "{{ kubeconfig }}"
-        kind: Secret
-        namespace: cnpg-system
-        name: garage-s3
-      register: garage_secret
-      failed_when: garage_secret.resources | length != 1
-
-    - name: Garage credentials in this namespace
+    # --- zabbix-db on CloudNativePG, not backed up (ADR 0064) -------------------------------------------------
+    # Dropping a document from the manifest does not delete the live object, so each is removed explicitly;
+    # every task is a no-op once done. Order: no further scheduled backup, then the Cluster stops naming the
+    # plugin, then the ObjectStore it named goes, then the credentials copy that only the ObjectStore read.
+    - name: No nightly backup of zabbix-db (ADR 0064)
       kubernetes.core.k8s:
         kubeconfig: "{{ kubeconfig }}"
-        state: present
-        definition:
-          apiVersion: v1
-          kind: Secret
-          metadata: {name: garage-s3, namespace: "{{ obs_namespace }}"}
-          type: Opaque
-          data: "{{ garage_secret.resources[0].data }}"
-      no_log: true
+        state: absent
+        api_version: postgresql.cnpg.io/v1
+        kind: ScheduledBackup
+        namespace: "{{ obs_namespace }}"
+        name: zabbix-db-nightly
 
-    - name: Zabbix database cluster, object store and nightly backup
+    - name: The live zabbix-db Cluster
+      kubernetes.core.k8s_info:
+        kubeconfig: "{{ kubeconfig }}"
+        api_version: postgresql.cnpg.io/v1
+        kind: Cluster
+        namespace: "{{ obs_namespace }}"
+        name: "{{ zabbix_db.name }}"
+      register: zdb_live
+
+    # Applying the manifest cannot do this. `state: present` sends a JSON merge patch for a custom resource,
+    # and a merge patch leaves every key it omits untouched; `apply: true` would only drop keys recorded in a
+    # last-applied annotation, which a Cluster created by `state: present` does not carry. So remove the key.
+    - name: Zabbix-db stops archiving WAL through the Barman Cloud plugin (ADR 0064)
+      kubernetes.core.k8s_json_patch:
+        kubeconfig: "{{ kubeconfig }}"
+        api_version: postgresql.cnpg.io/v1
+        kind: Cluster
+        namespace: "{{ obs_namespace }}"
+        name: "{{ zabbix_db.name }}"
+        patch:
+          - {op: remove, path: /spec/plugins}
+      when: zdb_live.resources | length == 1 and 'plugins' in zdb_live.resources[0].spec
+
+    - name: No object store for zabbix-db (ADR 0064)
+      kubernetes.core.k8s:
+        kubeconfig: "{{ kubeconfig }}"
+        state: absent
+        api_version: barmancloud.cnpg.io/v1
+        kind: ObjectStore
+        namespace: "{{ obs_namespace }}"
+        name: garage
+
+    # Least privilege: only the ObjectStore read this copy. Garage's own secret in namespace garage stays.
+    - name: No copy of the Garage credentials in this namespace (ADR 0064)
+      kubernetes.core.k8s:
+        kubeconfig: "{{ kubeconfig }}"
+        state: absent
+        api_version: v1
+        kind: Secret
+        namespace: "{{ obs_namespace }}"
+        name: garage-s3
+
+    # The merge patch carries storage.size, so a smaller live volume grows to the manifest's (CNPG resizes the PVC).
+    - name: Zabbix database cluster (not backed up, ADR 0064)
       kubernetes.core.k8s:
         kubeconfig: "{{ kubeconfig }}"
         state: present

@@ -1,6 +1,6 @@
 # 0031 — Garage 2.4.0 is the in-cluster object store; CNPG backs up through the Barman Cloud plugin 0.15.0; kube-vip 1.2.3 holds the API VIP
 
-- **Status:** accepted
+- **Status:** accepted; amended 2026-09-16 by ADR 0064 (no CNPG `Cluster` archives WAL or takes scheduled backups any more; Garage and the plugin stay)
 - **Date:** 2026-09-06
 
 ## Context
@@ -25,7 +25,8 @@ does not work until Cilium runs). Sources: `docs/image-manifest.md` 4.1.
 - **Barman Cloud plugin v0.15.0** installed from its release manifest into
   `cnpg-system`; every CNPG `Cluster` archives WAL and takes scheduled base
   backups to Garage through an `ObjectStore` resource. The in-tree
-  `barmanObjectStore` is not used.
+  `barmanObjectStore` is not used. *Withdrawn by ADR 0064: the lab's CNPG
+  databases are rebuildable and are not backed up; the plugin stays installed.*
 - **kube-vip v1.2.3** as a static pod on each server (ARP mode, control-plane
   only, `svc_enable=false`), authenticating with the node's local k3s
   kubeconfig so it needs no ClusterIP. MetalLB owns every LoadBalancer.
@@ -36,4 +37,6 @@ does not work until Cilium runs). Sources: `docs/image-manifest.md` 4.1.
   etcd snapshots) points at Garage.
 - Garage is single-replica by design (one physical disk, ADR 0007/0021);
   losing its volume loses backups, which is why Phase 9 copies them off-host.
+  (Since ADR 0064 Garage holds no CNPG backups: 14 days of them filled its
+  20 GiB and, through the WAL they held back, took Zabbix down.)
 - The plugin adds a CRD and a controller to keep upgraded alongside CNPG.

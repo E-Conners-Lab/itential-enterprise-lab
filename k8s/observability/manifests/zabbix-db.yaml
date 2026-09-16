@@ -1,24 +1,12 @@
-# Zabbix database on CloudNativePG (ADR 0051 decision 3), the same shape as the phase-3 platform-db: one
-# instance on Longhorn, WAL archiving and a nightly base backup to Garage through the Barman Cloud plugin.
-# The Secret garage-s3 is copied into this namespace by ansible/playbooks/observability.yml. The chart reads
-# the application secret zabbix-db-app (host, port, username, password, dbname).
-apiVersion: barmancloud.cnpg.io/v1
-kind: ObjectStore
-metadata:
-  name: garage
-  namespace: observability
-spec:
-  configuration:
-    destinationPath: s3://cnpg-backups/
-    endpointURL: http://garage.garage.svc:3900
-    s3Credentials:
-      accessKeyId: {name: garage-s3, key: GARAGE_DEFAULT_ACCESS_KEY}
-      secretAccessKey: {name: garage-s3, key: GARAGE_DEFAULT_SECRET_KEY}
-      region: {name: garage-s3, key: GARAGE_REGION}
-    wal:
-      compression: gzip
-  retentionPolicy: "14d"
----
+# Zabbix database on CloudNativePG (ADR 0051 decision 3): one instance on Longhorn. The chart reads the
+# application secret zabbix-db-app (host, port, username, password, dbname).
+#
+# No WAL archiving, no ScheduledBackup, no ObjectStore (ADR 0064): the database holds only metric history,
+# and the Zabbix configuration is rebuilt from the repo by ansible/playbooks/observability.yml. Archiving to
+# Garage filled Garage on 2026-09-15, the unarchived WAL then filled this volume and Zabbix was down ~15 h.
+# Without an archiver PostgreSQL recycles its WAL. 12Gi, not 10Gi: the live volume had to grow once so a full
+# disk lets postgres start. ansible/playbooks/observability.yml deletes the live ScheduledBackup and
+# ObjectStore and removes the plugin from this Cluster, because dropping them from this file does not.
 apiVersion: postgresql.cnpg.io/v1
 kind: Cluster
 metadata:
@@ -32,7 +20,7 @@ spec:
       database: zabbix
       owner: zabbix
   storage:
-    size: 10Gi
+    size: 12Gi
     storageClass: longhorn
   resources:
     requests: {cpu: 100m, memory: 512Mi}
@@ -41,23 +29,3 @@ spec:
     parameters:
       max_connections: "100"
       shared_buffers: 128MB
-  plugins:
-    - name: barman-cloud.cloudnative-pg.io
-      isWALArchiver: true
-      parameters:
-        barmanObjectName: garage
----
-apiVersion: postgresql.cnpg.io/v1
-kind: ScheduledBackup
-metadata:
-  name: zabbix-db-nightly
-  namespace: observability
-spec:
-  schedule: "0 45 2 * * *"
-  immediate: true
-  backupOwnerReference: self
-  cluster:
-    name: zabbix-db
-  method: plugin
-  pluginConfiguration:
-    name: barman-cloud.cloudnative-pg.io

@@ -170,26 +170,8 @@
         wait: true
         wait_timeout: 300
 
-    - name: Copy the S3 credentials into cnpg-system for the ObjectStore
-      kubernetes.core.k8s_info:
-        kubeconfig: "{{ kubeconfig }}"
-        kind: Secret
-        namespace: garage
-        name: garage-s3
-      register: garage_s3
-      no_log: true
-
-    - name: Secret garage-s3 in cnpg-system
-      kubernetes.core.k8s:
-        kubeconfig: "{{ kubeconfig }}"
-        state: present
-        definition:
-          apiVersion: v1
-          kind: Secret
-          metadata: {name: garage-s3, namespace: cnpg-system}
-          data: "{{ garage_s3.resources[0].data }}"
-      no_log: true
-
+    # The plugin stays installed although nothing uses it since ADR 0064: its CRD is what lets the ObjectStore
+    # cleanup below resolve its kind, and Garage stays available for a future backup design.
     # Applied without waiting: the manifest's cert-manager Certificates come after the Deployment,
     # and waiting per object would stall on the Deployment before its TLS secrets can exist.
     - name: Barman Cloud plugin (release manifest into cnpg-system)
@@ -209,13 +191,68 @@
       delay: 10
       until: barman.resources | length == 1 and (barman.resources[0].status.readyReplicas | default(0)) >= 1
 
-    - name: Platform database cluster with WAL archiving and nightly backups to Garage
+    # --- ADR 0064: the lab's CloudNativePG databases are rebuildable and are not backed up ------------------
+    # Dropping a document from the manifest does not delete the live object, so each is removed explicitly;
+    # every task is a no-op once done. Order: no further scheduled backup, then the Cluster stops naming the
+    # plugin, then the ObjectStore it named goes, then the credentials copy that only the ObjectStore read.
+    - name: No nightly backup of platform-db (ADR 0064)
+      kubernetes.core.k8s:
+        kubeconfig: "{{ kubeconfig }}"
+        state: absent
+        api_version: postgresql.cnpg.io/v1
+        kind: ScheduledBackup
+        namespace: cnpg-system
+        name: platform-db-nightly
+
+    - name: The live platform-db Cluster
+      kubernetes.core.k8s_info:
+        kubeconfig: "{{ kubeconfig }}"
+        api_version: postgresql.cnpg.io/v1
+        kind: Cluster
+        namespace: cnpg-system
+        name: platform-db
+      register: pgc_live
+
+    # Applying the manifest cannot do this. `state: present` sends a JSON merge patch for a custom resource,
+    # and a merge patch leaves every key it omits untouched; `apply: true` would only drop keys recorded in a
+    # last-applied annotation, which a Cluster created by `state: present` does not carry. So remove the key.
+    - name: Platform-db stops archiving WAL through the Barman Cloud plugin (ADR 0064)
+      kubernetes.core.k8s_json_patch:
+        kubeconfig: "{{ kubeconfig }}"
+        api_version: postgresql.cnpg.io/v1
+        kind: Cluster
+        namespace: cnpg-system
+        name: platform-db
+        patch:
+          - {op: remove, path: /spec/plugins}
+      when: pgc_live.resources | length == 1 and 'plugins' in pgc_live.resources[0].spec
+
+    - name: No object store for platform-db (ADR 0064)
+      kubernetes.core.k8s:
+        kubeconfig: "{{ kubeconfig }}"
+        state: absent
+        api_version: barmancloud.cnpg.io/v1
+        kind: ObjectStore
+        namespace: cnpg-system
+        name: garage
+
+    # Least privilege: only the ObjectStore read this copy. Garage's own secret in namespace garage stays.
+    - name: No copy of the Garage credentials in cnpg-system (ADR 0064)
+      kubernetes.core.k8s:
+        kubeconfig: "{{ kubeconfig }}"
+        state: absent
+        api_version: v1
+        kind: Secret
+        namespace: cnpg-system
+        name: garage-s3
+
+    - name: Platform database cluster (not backed up, ADR 0064)
       kubernetes.core.k8s:
         kubeconfig: "{{ kubeconfig }}"
         state: present
         src: "{{ k8s_dir }}/manifests/cnpg-platform-db.yaml"
 
-    - name: Cluster healthy with WAL archiving working
+    - name: Cluster healthy
       kubernetes.core.k8s_info:
         kubeconfig: "{{ kubeconfig }}"
         api_version: postgresql.cnpg.io/v1
@@ -225,47 +262,7 @@
       register: pgc
       retries: 60
       delay: 10
-      until: >-
-        pgc.resources | length == 1 and pgc.resources[0].status.phase | default('') == 'Cluster in healthy state'
-        and (pgc.resources[0].status.conditions | default([]) | selectattr('type', 'equalto', 'ContinuousArchiving')
-             | map(attribute='status') | first | default('')) == 'True'
-
-    - name: Completed backups so far
-      kubernetes.core.k8s_info:
-        kubeconfig: "{{ kubeconfig }}"
-        api_version: postgresql.cnpg.io/v1
-        kind: Backup
-        namespace: cnpg-system
-      register: backups
-
-    - name: Initial on-demand backup (only when none has completed yet)
-      kubernetes.core.k8s:
-        kubeconfig: "{{ kubeconfig }}"
-        state: present
-        definition:
-          apiVersion: postgresql.cnpg.io/v1
-          kind: Backup
-          metadata: {name: platform-db-initial, namespace: cnpg-system}
-          spec:
-            cluster: {name: platform-db}
-            method: plugin
-            pluginConfiguration: {name: barman-cloud.cloudnative-pg.io}
-      when: >-
-        backups.resources | selectattr('status.phase', 'defined')
-        | selectattr('status.phase', 'equalto', 'completed') | list | length == 0
-
-    - name: A backup completed in the object store
-      kubernetes.core.k8s_info:
-        kubeconfig: "{{ kubeconfig }}"
-        api_version: postgresql.cnpg.io/v1
-        kind: Backup
-        namespace: cnpg-system
-      register: backups
-      retries: 30
-      delay: 10
-      until: >-
-        backups.resources | selectattr('status.phase', 'defined')
-        | selectattr('status.phase', 'equalto', 'completed') | list | length > 0
+      until: pgc.resources | length == 1 and pgc.resources[0].status.phase | default('') == 'Cluster in healthy state'
 
     - name: Traefik gets the ingress VIP
       kubernetes.core.k8s_info:

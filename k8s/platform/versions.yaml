@@ -61,8 +61,8 @@ components:
   garage:
     image: docker.io/dxflrs/garage
     image_tag: v2.4.0
-    bucket: cnpg-backups
+    bucket: cnpg-backups # empty and unused since ADR 0064: the lab's CNPG databases are not backed up
     data_gb: 20
-  barman_cloud_plugin:
+  barman_cloud_plugin: # installed, unused since ADR 0064; its CRD lets the plays delete leftover ObjectStores
     app_version: v0.15.0
     manifest_url: https://github.com/cloudnative-pg/plugin-barman-cloud/releases/download/v0.15.0/manifest.yaml
