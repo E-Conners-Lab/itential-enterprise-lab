@@ -165,7 +165,11 @@
 
     - name: Containerlab version equals clab/versions.yaml
       ansible.builtin.assert:
-        that: clab_version.stdout is search('version:\s+' ~ (containerlab | regex_escape) ~ '\b')
+        # No backslash escapes in the Jinja string literals: '\b' there is a backspace character, so the old pattern
+        # could never match and the first real run failed on the correct pinned version (2026-09-16); Jinja also
+        # warns that '\s' will stop working. (?![0-9.]) is the boundary: the pinned version, not a longer one.
+        that: >-
+          clab_version.stdout is search('version: +' ~ (containerlab | regex_escape) ~ '(?![0-9.])')
         fail_msg: "containerlab reports {{ clab_version.stdout_lines | select('search', 'version') | list }}, oracle {{ containerlab }}"
         quiet: true
 

@@ -606,3 +606,36 @@ def test_verify_script_covers_s10_6_to_s10_12() -> None:
         assert re.search(rf'^check "S10\.{n} ', text, re.M), f"S10.{n} not checked"
     assert "CLAB_AUTOMATION_PASSWORD" in text and "verify/devcmd.py" in text
     assert "verify/results/" in text
+
+
+def _jinja_search_env() -> jinja2.Environment:
+    env = jinja2.Environment()
+    env.tests["search"] = lambda value, pattern: re.search(pattern, value) is not None
+    env.filters["regex_escape"] = re.escape
+    return env
+
+
+def test_the_containerlab_version_check_matches_real_output() -> None:
+    """The first live run installed the pinned 0.79.0 and still failed: the assert ended its regex in '\\b', which a
+    Jinja string literal turns into a backspace. Runs the play's own expression against containerlab's real output."""
+    play = yaml.safe_load((ROOT / "ansible" / "playbooks" / "clab-host.yml").read_text())
+    task = next(t for p in play for t in p.get("tasks", []) if t.get("name") == "Containerlab version equals clab/versions.yaml")
+    check = _jinja_search_env().compile_expression(task["ansible.builtin.assert"]["that"])
+    pinned = yaml.safe_load((ROOT / "clab" / "versions.yaml").read_text())["containerlab"]
+    real = f"  ____ ___  _   _ _____  _    ___ _   _ _____ ____  _       _\n    version: {pinned}\n     commit: 1a2b3c4\n       date: 2026-08-21"
+    assert check(clab_version={"stdout": real}, containerlab=pinned) is True
+    assert check(clab_version={"stdout": real.replace(pinned, pinned + "1")}, containerlab=pinned) is False, "0.79.01 is not 0.79.0"
+    assert check(clab_version={"stdout": "    version: 0.78.0"}, containerlab=pinned) is False
+
+
+def test_no_play_puts_a_backslash_b_in_a_jinja_string() -> None:
+    """'\\b' inside a Jinja string literal is a backspace, never a word boundary - a regex using it silently never
+    matches. Every play and task file is held to it."""
+    offenders = []
+    for path in sorted((ROOT / "ansible" / "playbooks").rglob("*.yml")):
+        for n, line in enumerate(path.read_text().splitlines(), 1):
+            if re.search(r"'[^']*(?<!\\)\\b[^']*'", line) and "{{" not in line.split("#")[0] + "x" and ("search(" in line or "match(" in line or "regex" in line):
+                offenders.append(f"{path.name}:{n}")
+            elif re.search(r"(search|match|regex_\w+)\([^)]*'[^']*(?<!\\)\\b", line):
+                offenders.append(f"{path.name}:{n}")
+    assert not offenders, offenders
