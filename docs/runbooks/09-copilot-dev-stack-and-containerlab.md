@@ -157,21 +157,72 @@ make verify-dev
 
 ## Handing over to VS Code
 
-The server side is complete when `make verify-dev` is green. Two things measured against the dev stack with
-the Itential Copilot plugin (`skills/solution-arch-agent/pull-platform-data.py`, 2026-09-17) need handling on
-the workstation:
+The server side is complete when `make verify-dev` is green. The workstation side uses the Itential Copilot
+plugin with **password login as `svc-copilot`**. Measured against the dev stack on 2026-09-17:
 
-1. **Python does not trust the lab CA by default** (`CERTIFICATE_VERIFY_FAILED`). Export
-   `SSL_CERT_FILE` pointing at `docs/lab-root-ca.crt` in the shell VS Code starts from.
-2. **Password login and the plugin's scripts disagree.** `AUTH_METHOD=local` logs in with `POST /login`, and
-   the Platform accepts that token **as a `?token=` query parameter** (200) but **rejects it as a Bearer header**
-   (401). `pull-platform-data.py` always sends Bearer, so every pull fails with 401. Either use OAuth client
-   credentials or change the script to send the token the way the plugin's own AGENTS.md describes for local
-   auth.
+| Login | Token | Accepted as | Rejected as |
+|---|---|---|---|
+| `AUTH_METHOD=local`, `POST /login` | session token | `?token=` query parameter, cookie | `Authorization: Bearer` (401) |
+| OAuth client credentials, `POST /oauth/token` | JWT | `Authorization: Bearer` | `?token=` (401) |
 
-Point the use-case `.env` at `https://itential-dev.${LAB_DOMAIN}` as `svc-copilot`
-(`SVC_COPILOT_DEV_PASSWORD` in the lab `.env`), and register **only** `mcp-dev` as an MCP server. Production
-is reached only for read-only documentation, and only after `make copilot-prod`.
+### 1. The plugin, with the local-login fix
+
+Upstream `pull-platform-data.py` and two `builder-agent` examples always send Bearer, so with a password
+login every platform pull fails with 401. The fix sends the token the way the plugin's own AGENTS.md
+describes (Bearer for OAuth, `?token=` for local) and leaves OAuth unchanged:
+
+```
+git clone https://github.com/automateyournetwork/Itential_Copilot_Plugin ~/PycharmProjects/Itential_Copilot_Plugin
+cd ~/PycharmProjects/Itential_Copilot_Plugin
+git checkout -b lab-local-auth e9e9bab
+```
+
+Then apply the fix:
+
+- `pull-platform-data.py` reads `auth_method` from `.auth.json` and, for `local`, appends the URL-encoded
+  `token=` instead of the header.
+- The `builder-agent` membership lookups choose `--url-query "token=$TOKEN"` or the Bearer header the same
+  way.
+- `.auth.json` is git-ignored.
+
+In the reference lab this is commit `ec5d731` on the local branch `lab-local-auth`. Upstream changes come in
+only by a deliberate merge.
+
+**Why not OAuth.** The Platform supports it (`/oauth/serviceAccounts`, `/oauth/token`), but:
+
+- a service account starts with no roles;
+- it cannot join an LDAP group such as `copilot-builders` ("Only groups with a provenance of Pronghorn may
+  be added");
+- even with that group's roles assigned directly, its device search returned 500 where `svc-copilot`'s
+  identical request returned the four clab devices.
+
+### 2. Trust the lab CA for Python
+
+`curl` on macOS already trusts the lab CA through the System keychain. Python does not
+(`CERTIFICATE_VERIFY_FAILED`). Set `SSL_CERT_FILE` to the absolute path of `docs/lab-root-ca.crt` for the
+terminal Copilot runs commands in. In the use-case workspace's VS Code settings:
+
+```
+"terminal.integrated.env.osx": { "SSL_CERT_FILE": "<absolute path to docs/lab-root-ca.crt>" }
+```
+
+A shell `export` does not reach VS Code started from the Dock.
+
+### 3. The use-case `.env`
+
+```
+PLATFORM_URL=https://itential-dev.${LAB_DOMAIN}
+AUTH_METHOD=local
+USERNAME=svc-copilot
+PASSWORD=<SVC_COPILOT_DEV_PASSWORD from the lab .env>
+```
+
+Register **only** `mcp-dev` as an MCP server. Production is reached only for read-only documentation, and
+only after `make copilot-prod`, with a separate use-case `.env` naming the production URL.
+
+**Trade-off.** A `?token=` token is part of the URL, so it can appear in Platform or proxy access logs and in
+the process list while `curl` runs. It is the Platform's documented query-token scheme and a session that
+expires; on the dev stack the exposure is small.
 
 ---
 
@@ -245,4 +296,4 @@ minutes.
 | Arista vEOS-lab | 4.33.1.1F, 4 GB, `QEMU_CPU=host,level=9,pmu=off` |
 | `clab` VM | 8 vCPU / 20 GB / 60 GB, Ubuntu 24.04, CPU type `host` |
 | `itential-dev` VM | 8 vCPU / 24 GB / 160 GB, Ubuntu 24.04 |
-| Itential Copilot plugin | `automateyournetwork/Itential_Copilot_Plugin` at `e9e9bab` (2026-09-15), for the handover notes |
+| Itential Copilot plugin | `automateyournetwork/Itential_Copilot_Plugin` at `e9e9bab` (2026-09-15) plus the local-login fix (`ec5d731`, branch `lab-local-auth`) |
