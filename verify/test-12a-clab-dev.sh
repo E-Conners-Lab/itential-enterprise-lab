@@ -86,7 +86,7 @@ if errs:
 print(f"{cores} vCPU, {mem_kb // 1024} MB, {disk_b // 1024**3} GiB, /dev/kvm, containerlab {running} (= manifest); NetBox VM record matches; no clab device in NetBox")
 PY
 }
-check "S10.6 clab VM equals the oracle and NetBox (8/16/60), /dev/kvm present, containerlab version equals oracle and manifest, clab devices absent from NetBox" c6
+check "S10.6 clab VM equals the oracle and NetBox (cores, memory, disk), /dev/kvm present, containerlab version equals oracle and manifest, clab devices absent from NetBox" c6
 
 # --- S10.7 four nodes running with the oracle mgmt IPs; SSH as automation from this Mac and from itential-dev ----
 c7() {
