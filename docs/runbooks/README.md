@@ -19,11 +19,12 @@ you read.
 | 06 | [Platform applications](06-platform-applications.md) | Golden Config, compliance, MOP, Lifecycle Manager, Integration Models, FlowAI agents |
 | 07 | [Observability](07-observability.md) | Zabbix, Prometheus, Grafana, Loki, gNMIc, and the official Itential dashboard |
 | 08 | [Production HA and migration](08-production-ha2-and-migration.md) | The eleven-VM HA environment, the replay, the cut-over, retiring the dev stack |
+| 09 | [The Copilot dev stack and Containerlab](09-copilot-dev-stack-and-containerlab.md) | A sandbox Platform for an AI assistant, a four-node C8000v/vEOS topology, and the proof that production is untouched |
 
 ## Chapters 00-04 and 07 need no commercial licence
 
 They build a complete network-automation lab: an out-of-band network, a Kubernetes cluster, NetBox, a
-twelve-device nested topology and a full observability stack. Chapters 05, 06 and 08 need access to
+twelve-device nested topology and a full observability stack. Chapters 05, 06, 08 and 09 need access to
 Itential's container registry.
 
 ## What these are not
