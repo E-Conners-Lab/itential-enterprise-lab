@@ -64,6 +64,9 @@ tokens: ## Anthropic spend of the last 7 days from the platform's session ledger
 netbox-enrich: ## NetBox enrichment derived from topology/enterprise.yaml (addresses, VRFs, racks, circuits, contexts; ADR 0048)
 	$(load_env) cd ansible && ansible-playbook playbooks/netbox-enrich.yml
 
+netbox-nxos: ## Mock Cisco NX-OS devices in NetBox only, for the Cisco NX-OS project's inventory workflow (STATE=absent to remove)
+	$(load_env) cd ansible && ansible-playbook playbooks/netbox-nxos.yml $(if $(STATE),-e nxos_state=$(STATE))
+
 # Monitoring is built in phase 7 and sizes itself from NetBox, so anything registered after that is
 # invisible to it until this runs (ADR 0057). Idempotent. Deliberately NOT observability-devices.yml:
 # those are governed pushes that raise a Work Center card per device and need a person.

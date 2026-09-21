@@ -1,6 +1,6 @@
 """The runbook series (ADR 0056, PID amendment 1.21).
 
-Ten chapters, one per track, each with the same five sections. These tests hold the chapters to the repo
+Eleven chapters, one per track, each with the same five sections. These tests hold the chapters to the repo
 they describe - every `make` target and play a chapter names must exist, every verify it cites must exist -
 and to the parameterisation rule: no value specific to one environment may be transcribed into a chapter,
 so the series stays safe to publish by construction rather than by anyone remembering.
@@ -27,6 +27,7 @@ CHAPTERS = {
     "07": "observability",
     "08": "production-ha2-and-migration",
     "09": "copilot-dev-stack-and-containerlab",
+    "10": "cisco-nxos-assets",
 }
 CRITERION = r"\bS\d+[a-z]?\.\d+[a-z]?\b"  # S4.1, S4b.2, S4d.5a, S11.6c - the PID criteria the verifies check
 SECTIONS = ("Before you start", "The commands, in order", 'What "done" looks like', "Verification", "Troubleshooting")
