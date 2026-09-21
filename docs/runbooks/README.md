@@ -20,6 +20,7 @@ you read.
 | 07 | [Observability](07-observability.md) | Zabbix, Prometheus, Grafana, Loki, gNMIc, and the official Itential dashboard |
 | 08 | [Production HA and migration](08-production-ha2-and-migration.md) | The eleven-VM HA environment, the replay, the cut-over, retiring the dev stack |
 | 09 | [The Copilot dev stack and Containerlab](09-copilot-dev-stack-and-containerlab.md) | A sandbox Platform for an AI assistant, a four-node C8000v/vEOS topology, and the proof that production is untouched |
+| 10 | [The Cisco NX-OS asset pack](10-cisco-nxos-assets.md) | The upstream NX-OS assets converted to the Cisco IOS shape, three golden configs, and NetBox driving an Itential inventory |
 
 ## Chapters 00-04 and 07 need no commercial licence
 

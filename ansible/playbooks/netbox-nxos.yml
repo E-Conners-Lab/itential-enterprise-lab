@@ -1,0 +1,141 @@
+---
+# Cisco NX-OS mock devices in NetBox.
+#
+# These devices exist ONLY as NetBox records. There is no Nexus hardware in this lab and no
+# n9kv image in EVE-NG or Containerlab. Their purpose is to give the Cisco NX-OS Studio
+# project's "Create & Update Inventory from NetBox" workflow something to select, so the
+# source-of-truth -> Inventory Manager path can be proven end to end.
+#
+# Deliberately NOT added to topology/enterprise.yaml: that file drives topology/derive.py and
+# the EVE-NG builder, and these nodes have no EVE-NG counterpart. Keeping them here bounds the
+# blast radius to NetBox.
+#
+# Idempotent; create/update only. Tear down with:
+#   ansible-playbook ansible/playbooks/netbox-nxos.yml -e nxos_state=absent
+- name: Seed mock Cisco NX-OS devices into NetBox
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    ansible_python_interpreter: "{{ playbook_dir }}/../../.venv/bin/python"
+    nb_url: "{{ lookup('ansible.builtin.env', 'NETBOX_URL') }}"
+    nb_token: "{{ lookup('ansible.builtin.env', 'NETBOX_TOKEN') }}"
+    nxos_state: present
+    nxos_tag: nxos-mock
+    nxos_platform: cisco-nxos        # must match the platform_map in the project's inventory workflow
+    nxos_model: Nexus 9000v
+    nxos_manufacturer: Cisco
+    nxos_mgmt_iface: mgmt0           # NX-OS management interface name
+    # .150/.151 were free in 10.100.0.0/24 when this was written; the play does not allocate.
+    nxos_nodes:
+      dc1-nxos01: {site: dc1, role: spine, mgmt_ip: 10.100.0.150}
+      dc1-nxos02: {site: dc1, role: leaf, mgmt_ip: 10.100.0.151}
+  tasks:
+    - name: .env must be loaded
+      ansible.builtin.assert:
+        that: [nb_url | length > 0, nb_token | length > 0]
+        fail_msg: "NETBOX_URL / NETBOX_TOKEN missing; run via make so .env is exported"
+
+    - name: Devices are removed first when tearing down
+      netbox.netbox.netbox_device:
+        netbox_url: "{{ nb_url }}"
+        netbox_token: "{{ nb_token }}"
+        validate_certs: false
+        state: absent
+        data: {name: "{{ item.key }}"}
+      loop: "{{ nxos_nodes | dict2items }}"
+      loop_control:
+        label: "{{ item.key }}"
+      when: nxos_state == 'absent'
+
+    - name: Everything below only builds
+      ansible.builtin.meta: end_play
+      when: nxos_state == 'absent'
+
+    - name: Tag marking these as mock records
+      netbox.netbox.netbox_tag:
+        netbox_url: "{{ nb_url }}"
+        netbox_token: "{{ nb_token }}"
+        validate_certs: false
+        data:
+          name: "{{ nxos_tag }}"
+          slug: "{{ nxos_tag }}"
+          description: "NetBox-only mock device; no EVE-NG or Containerlab counterpart"
+
+    - name: Platform
+      netbox.netbox.netbox_platform:
+        netbox_url: "{{ nb_url }}"
+        netbox_token: "{{ nb_token }}"
+        validate_certs: false
+        data: {name: "{{ nxos_platform }}", slug: "{{ nxos_platform }}"}
+
+    - name: Device type
+      netbox.netbox.netbox_device_type:
+        netbox_url: "{{ nb_url }}"
+        netbox_token: "{{ nb_token }}"
+        validate_certs: false
+        data:
+          model: "{{ nxos_model }}"
+          slug: "{{ nxos_model | lower | regex_replace('[^a-z0-9]+', '-') }}"
+          manufacturer: "{{ nxos_manufacturer }}"
+          u_height: 1
+          is_full_depth: false
+
+    - name: Devices
+      netbox.netbox.netbox_device:
+        netbox_url: "{{ nb_url }}"
+        netbox_token: "{{ nb_token }}"
+        validate_certs: false
+        data:
+          name: "{{ item.key }}"
+          device_type: "{{ nxos_model }}"
+          device_role: "{{ item.value.role }}"
+          platform: "{{ nxos_platform }}"
+          site: "{{ item.value.site }}"
+          status: active          # the inventory workflow selects status=active only
+          tags: ["{{ nxos_tag }}"]
+      loop: "{{ nxos_nodes | dict2items }}"
+      loop_control:
+        label: "{{ item.key }}"
+
+    - name: Management interface
+      netbox.netbox.netbox_device_interface:
+        netbox_url: "{{ nb_url }}"
+        netbox_token: "{{ nb_token }}"
+        validate_certs: false
+        data:
+          device: "{{ item.key }}"
+          name: "{{ nxos_mgmt_iface }}"
+          type: virtual
+          mgmt_only: true
+          description: "OOB management"
+      loop: "{{ nxos_nodes | dict2items }}"
+      loop_control:
+        label: "{{ item.key }}"
+
+    - name: Management address on that interface
+      netbox.netbox.netbox_ip_address:
+        netbox_url: "{{ nb_url }}"
+        netbox_token: "{{ nb_token }}"
+        validate_certs: false
+        data:
+          address: "{{ item.value.mgmt_ip }}/24"
+          status: active
+          assigned_object:
+            device: "{{ item.key }}"
+            name: "{{ nxos_mgmt_iface }}"
+          tags: ["{{ nxos_tag }}"]
+        state: present
+      loop: "{{ nxos_nodes | dict2items }}"
+      loop_control:
+        label: "{{ item.key }}"
+
+    - name: Primary IPv4
+      netbox.netbox.netbox_device:
+        netbox_url: "{{ nb_url }}"
+        netbox_token: "{{ nb_token }}"
+        validate_certs: false
+        data: {name: "{{ item.key }}", primary_ip4: "{{ item.value.mgmt_ip }}/24"}
+      loop: "{{ nxos_nodes | dict2items }}"
+      loop_control:
+        label: "{{ item.key }}"
