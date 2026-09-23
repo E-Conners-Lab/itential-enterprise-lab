@@ -11,7 +11,10 @@ services:
       - ./nginx.conf:/etc/nginx/nginx.conf:ro
       - /opt/itential/tls:/etc/nginx/tls:ro
     healthcheck:
-      test: ["CMD-SHELL", "curl -skf https://127.0.0.1:{{ loadbalancer.listen_port }}/login >/dev/null || exit 1"]
+      # nginx.conf binds `listen {{ ip }}:{{ loadbalancer.listen_port }}`, not the wildcard, so a check
+      # against 127.0.0.1 is refused (curl exit 7) and the container is marked unhealthy for ever while
+      # serving every real request. Check the address it actually listens on.
+      test: ["CMD-SHELL", "curl -skf https://{{ ip }}:{{ loadbalancer.listen_port }}/login >/dev/null || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 5
