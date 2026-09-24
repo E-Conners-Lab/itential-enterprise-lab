@@ -1,0 +1,126 @@
+---
+# Phase 9a step 3 (ADR 0026 placement, ADR 0065): production's Vault on k3s - `make vault`. Installs or upgrades it
+# and reports its state; it never initialises or unseals it. Unsealing is manual (ADR 0065 decision 7): the owner
+# runs `make vault-init` once, in their own terminal, and `make vault-unseal` after every restart of the pod.
+# Runs on the workstation with helm + kubectl against ~/.kube/lab-k3s.yaml, like k8s-platform.yml. Idempotent.
+- name: Production Vault on k3s
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars_files:
+    - ../../itential/versions.yaml
+  vars:
+    ansible_python_interpreter: "{{ playbook_dir }}/../../.venv/bin/python"
+    kubeconfig: >-
+      {{ lookup('ansible.builtin.env', 'KUBECONFIG_PATH')
+         | default(lookup('ansible.builtin.env', 'HOME') ~ '/.kube/lab-k3s.yaml', true) }}
+    helm_bin: "{{ lookup('ansible.builtin.env', 'HELM3_BIN') | default('/opt/homebrew/opt/helm@3/bin/helm', true) }}"
+    ns: "{{ vault.prod.namespace }}"
+    ca_file: "{{ playbook_dir }}/../../docs/lab-root-ca.crt"
+  tasks:
+    - name: Kubeconfig must exist
+      ansible.builtin.stat:
+        path: "{{ kubeconfig }}"
+      register: kc
+      failed_when: not kc.stat.exists
+
+    - name: Helm repository
+      kubernetes.core.helm_repository:
+        binary_path: "{{ helm_bin }}"
+        name: hashicorp
+        repo_url: "{{ vault.chart.repo }}"
+
+    - name: Namespace
+      kubernetes.core.k8s:
+        kubeconfig: "{{ kubeconfig }}"
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Namespace
+          metadata: {name: "{{ ns }}"}
+
+    # A year, renewed a month early. Vault reads the files at start; after a renewal `make vault` restarts nothing, so
+    # the running server keeps the old certificate until its pod restarts (which also needs `make vault-unseal`).
+    - name: Lab-CA certificate for the service name and the VIP
+      kubernetes.core.k8s:
+        kubeconfig: "{{ kubeconfig }}"
+        state: present
+        definition:
+          apiVersion: cert-manager.io/v1
+          kind: Certificate
+          metadata: {name: vault-tls, namespace: "{{ ns }}"}
+          spec:
+            secretName: vault-tls
+            duration: 8760h
+            renewBefore: 720h
+            issuerRef: {name: lab-ca, kind: ClusterIssuer}
+            commonName: "{{ vault.prod.url | urlsplit('hostname') }}"
+            dnsNames:
+              - "{{ vault.prod.url | urlsplit('hostname') }}"
+              - vault
+              - "vault.{{ ns }}.svc"
+              - "vault.{{ ns }}.svc.cluster.local"
+              - vault-0.vault-internal
+              - localhost
+            ipAddresses: ["{{ vault.prod.vip }}", 127.0.0.1]
+
+    - name: Certificate issued
+      kubernetes.core.k8s_info:
+        kubeconfig: "{{ kubeconfig }}"
+        kind: Secret
+        namespace: "{{ ns }}"
+        name: vault-tls
+      register: tls_secret
+      retries: 18
+      delay: 5
+      until: tls_secret.resources | length == 1 and 'tls.crt' in tls_secret.resources[0].data
+
+    - name: Vault release on the VIP {{ vault.prod.vip }}
+      kubernetes.core.helm:
+        binary_path: "{{ helm_bin }}"
+        kubeconfig: "{{ kubeconfig }}"
+        name: vault
+        chart_ref: hashicorp/{{ vault.chart.name }}
+        chart_version: "{{ vault.chart.version }}"
+        release_namespace: "{{ ns }}"
+        values_files: ["{{ playbook_dir }}/../../k8s/vault/values.yaml"]
+        values:
+          server:
+            image:
+              repository: "{{ vault.image.repository }}"
+              tag: "{{ vault.image.tag }}"
+            service:
+              annotations:
+                metallb.io/loadBalancerIPs: "{{ vault.prod.vip }}"
+        wait: true
+        timeout: 10m
+
+    - name: The Service holds the VIP
+      kubernetes.core.k8s_info:
+        kubeconfig: "{{ kubeconfig }}"
+        kind: Service
+        namespace: "{{ ns }}"
+        name: vault
+      register: vault_svc
+      retries: 12
+      delay: 5
+      until: >-
+        vault_svc.resources | length == 1 and
+        (vault_svc.resources[0].status.loadBalancer.ingress | default([]) | map(attribute='ip') | list) == [vault.prod.vip]
+
+    - name: The API answers through the VIP over the lab CA (any state)
+      ansible.builtin.uri:
+        url: "{{ vault.prod.url }}/v1/sys/health?uninitcode=200&sealedcode=200"
+        ca_path: "{{ ca_file }}"
+      register: vault_health
+      retries: 24
+      delay: 5
+      until: vault_health.status == 200
+
+    - name: State
+      ansible.builtin.debug:
+        msg: >-
+          Vault {{ vault_health.json.version }}: initialized={{ vault_health.json.initialized }},
+          sealed={{ vault_health.json.sealed }}.
+          {{ 'Next: `make vault-init` in your own terminal (once), then `make vault-unseal`.' if not vault_health.json.initialized
+             else ('Next: `make vault-unseal`.' if vault_health.json.sealed else 'Unsealed and serving.') }}

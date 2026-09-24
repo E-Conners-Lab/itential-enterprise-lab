@@ -8,7 +8,7 @@ SHELL := /bin/bash
 
 PHASES := oob-network platform network-topology itential flowai observability platform-ha2 config-secrets-code identity ddi containerlab firewall-track
 
-.PHONY: help bootstrap lint test up verify vault-dev discover netbox-enrich tokens agents-push observability-refresh plan-oob plan-platform plan-itential plan-platform-ha2 plan-clab \
+.PHONY: help bootstrap lint test up verify vault-dev vault vault-status vault-init vault-unseal discover netbox-enrich tokens agents-push observability-refresh plan-oob plan-platform plan-itential plan-platform-ha2 plan-clab \
 	netbox-token-dev clab-dev dev-stack verify-dev prod-snapshot copilot-prod $(addprefix phase-,$(PHASES))
 
 help: ## Show targets
@@ -148,6 +148,21 @@ phase-flowai: ## Phase 6 on the dev stack: workflows re-imported -> applications
 
 vault-dev: ## Phase 9a: the dev tier's own Vault on itential-dev (dev secrets only, auto-unseal from the VM) -> KV, AppRoles, seeds (ADR 0065)
 	$(load_env_dev) cd ansible && ansible-playbook -i inventory/netbox.yml $(DEV) playbooks/vault-dev.yml
+
+# Phase 9a step 3 (ADR 0065): production's Vault on k3s. `make vault` installs it and never unseals it; the owner
+# initialises it once in their own terminal (`make vault-init`: nothing printed, the key and root token land in a
+# mode-600 file outside the repo) and unseals it after every pod restart (`make vault-unseal` asks for the key).
+vault: ## Phase 9a: production's Vault on k3s (VIP from itential/versions.yaml, lab-CA TLS, Raft on Longhorn); never unseals
+	$(load_env) cd ansible && ansible-playbook playbooks/vault.yml
+
+vault-status: ## Production Vault: initialised / sealed / version (nothing secret)
+	scripts/vault-prod.sh status
+
+vault-init: ## Production Vault, once, in YOUR terminal: one unseal key + root token to a mode-600 file outside the repo
+	scripts/vault-prod.sh init
+
+vault-unseal: ## Production Vault: asks for the unseal key without echoing it (FROM_FILE=1 reads the init file)
+	FROM_FILE=$(FROM_FILE) scripts/vault-prod.sh unseal
 
 # ADR 0063: the Copilot sandbox. Order matters: the read-only NetBox token before any dev Platform play, the
 # Containerlab devices before the dev inventory that names them. prod-snapshot MODE=save before and

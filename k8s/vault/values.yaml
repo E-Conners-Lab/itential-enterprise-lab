@@ -1,0 +1,61 @@
+# Production Vault (PID S8, ADR 0026 placement, ADR 0065 decisions 3 and 7) - hashicorp/vault chart, read by
+# ansible/playbooks/vault.yml, which sets the image tag and the VIP from itential/versions.yaml (the oracle).
+# One server with integrated Raft storage on Longhorn: three Raft copies on one physical disk add no durability and
+# each would have to be unsealed by hand. TLS is the lab CA's, issued by cert-manager into the Secret vault-tls.
+global:
+  tlsDisable: false
+
+injector:
+  enabled: false # nothing in the lab reads Vault through the sidecar; the readers are Itential's own clients
+
+server:
+  # Ready even while sealed or uninitialised, so the Service keeps the pod behind the VIP and `make vault-init` /
+  # `make vault-unseal` can reach it; the chart's default probe (`vault status`) would take it out of rotation.
+  readinessProbe:
+    enabled: true
+    path: /v1/sys/health?standbyok=true&sealedcode=204&uninitcode=204
+  livenessProbe:
+    enabled: false
+  dataStorage:
+    enabled: true
+    size: 2Gi
+    storageClass: longhorn
+  auditStorage:
+    enabled: false
+  volumes:
+    - name: vault-tls
+      secret:
+        secretName: vault-tls
+  volumeMounts:
+    - name: vault-tls
+      mountPath: /vault/userconfig/vault-tls
+      readOnly: true
+  extraEnvironmentVars:
+    VAULT_CACERT: /vault/userconfig/vault-tls/ca.crt
+  standalone:
+    enabled: true
+    config: |
+      ui = true
+      disable_mlock = true
+      listener "tcp" {
+        address         = "[::]:8200"
+        cluster_address = "[::]:8201"
+        tls_cert_file   = "/vault/userconfig/vault-tls/tls.crt"
+        tls_key_file    = "/vault/userconfig/vault-tls/tls.key"
+      }
+      storage "raft" {
+        path    = "/vault/data"
+        node_id = "vault-0"
+      }
+      api_addr     = "https://vault.lab.internal:8200"
+      cluster_addr = "https://vault-0.vault-internal:8201"
+  service:
+    enabled: true
+    type: LoadBalancer
+    # Local: a request keeps its source address, so the AppRoles' bound CIDRs can name iap-01/02 and iag-01. With the
+    # default (Cluster) a request forwarded between nodes arrives from a node address (ADR 0065, measured on dev).
+    externalTrafficPolicy: Local
+    # annotations (the VIP) are set by the play from versions.yaml
+
+ui:
+  enabled: false # the UI is served on the same listener and VIP; no second Service
