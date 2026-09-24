@@ -113,9 +113,9 @@ idempotent.
 
 | Workflow | What it proves |
 |---|---|
-| `wf-netbox-device-count-v1` | The NetBox adapter works: its count equals NetBox's own API |
-| `wf-show-version-v1` | Gateway 5's native `send-command` reaches a real router and a real switch |
-| `wf-branch-vlan-v1` | The whole governed path: pick the next free VID in NetBox, reserve it, get it approved, push it to the switch, mark it active — and on a device failure, delete the reservation and end the job in error |
+| `Count Devices in NetBox` | The NetBox adapter works: its count equals NetBox's own API |
+| `Get Device Software Version` | Gateway 5's native `send-command` reaches a real router and a real switch |
+| `Add Branch VLAN` | The whole governed path: pick the next free VID in NetBox, reserve it, get it approved, push it to the switch, mark it active — and on a device failure, delete the reservation and end the job in error |
 
 - The MCP server answers streamable HTTP at `mcp.${LAB_DOMAIN}:8000/mcp` and `get_health` returns the
   Platform version.

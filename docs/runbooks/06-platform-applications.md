@@ -51,7 +51,7 @@ and they fail at session time, not at build time. `make phase-flowai` runs all t
 
 ### One write path
 
-`wf-config-push-v1` is the **only** workflow that writes to a device. It takes a device, the lines and a
+`Push Configuration with Approval` is the **only** workflow that writes to a device. It takes a device, the lines and a
 reason, raises a Work Center approval card, pushes through the gateway and writes memory. Golden Config
 never remediates on its own; the remediation agent's only write tool is this workflow; the lifecycle
 delete runs it as a child job. That single choke point is what makes "an agent changed a device" a
@@ -77,11 +77,11 @@ at 03:00 UTC daily.
 
 **Element 2 — MOP.** Command templates `lab-<os>-checks` (show version, interfaces up, BGP neighbours;
 every rule an error) and analytic templates `lab-<os>-prepost` that compare version and management/loopback
-address before and after a change. Plus `wf-backup-all-v1` — a filtered device list into a `forEach` that
+address before and after a change. Plus `Back Up All Device Configs` — a filtered device list into a `forEach` that
 backs each one up through the broker — on a nightly schedule at 02:30 UTC.
 
 **Element 3 — Lifecycle Manager.** A `branch-vlan` resource model whose Create and Delete actions name
-`wf-branch-vlan-v1` and `wf-branch-vlan-delete-v1`, a generated JSON form
+`Add Branch VLAN` and `Remove Branch VLAN`, a generated JSON form
 `lab-branch-vlan-approval.json`, and one instance imported per NetBox branch VLAN. The form *is* the
 approval task: `ShowJsonForm` shows the branch, VID, name, switch and NetBox reservation read-only, plus a
 decision field defaulting to reject.
@@ -100,15 +100,15 @@ discovery and asserts every operation is an authorized tool.
 |---|---|---|
 | `netbox-sot` | NetBox reads through the Integration Model | Read only |
 | `device-ops` | The show-command workflows | Read only |
-| `compliance` | `wf-compliance-report-v1` | Read only |
+| `compliance` | `Summarize Compliance Results` | Read only |
 | `diagnostics` | Reads, plus **one** write: a "Proposed fix" work note on an incident | Suggest |
-| `remediation` | Reads, plus `wf-config-push-v1` behind the Work Center card | Act, gated |
+| `remediation` | Reads, plus `Push Configuration with Approval` behind the Work Center card | Act, gated |
 
 Each has an `ollama-lab` twin with one to three tools, and the twins are given **reducing workflows
 rather than raw tools**, for two separately measured reasons: a small model handed the raw gateway tool
 invented node names, and one handed the raw `dcim_devices_list` overran the Platform's inference timeout
 on 52-field device objects (see Troubleshooting). So the twins read inventory through
-`wf-netbox-devices-v1`, which returns six fields per device.
+`List Devices from NetBox`, which returns six fields per device.
 
 ---
 
@@ -119,7 +119,7 @@ credential write always reports changed). A full run is tens of minutes, most of
 evaluating twelve devices.
 
 - Golden Config: `lab-baseline` runs clean on all twelve devices. Introduce a hostname drift on two of them
-  and the plan flags exactly those two, with no false positive; push the fix through `wf-config-push-v1`
+  and the plan flags exactly those two, with no false positive; push the fix through `Push Configuration with Approval`
   and it is clean again.
 - MOP: both command templates evaluate all six rules on a router and a switch; the analytic pre/post
   comparison is equal on both; a backup run produces twelve backups equal to the devices' running
@@ -130,7 +130,7 @@ evaluating twelve devices.
   and retires the instance.
 - Integrations: eleven authorized tools across the two models, and a Claude agent answers a device
   question through `dcim_devices_list` and an incident question through `listIncidents` — **never**
-  through an adapter method. The `ollama-lab` twins reach the same data through `wf-netbox-devices-v1`,
+  through an adapter method. The `ollama-lab` twins reach the same data through `List Devices from NetBox`,
   which calls that operation once on the runner and reduces the result.
 - Agents: each agent in the fleet answers its own question, and the answer matches the second source. The
   compliance agent's run costs about 3.5k input tokens through the summary workflow.
@@ -227,7 +227,7 @@ invented the device `R1`, Gateway 5 answered `404 Missing nodes - Inventory 'lab
 errored in 69 s and the session was still running eighteen minutes later. Because Ollama runs
 `OLLAMA_NUM_PARALLEL=1`, that one session held the only local inference slot the whole time — every
 other twin queues behind it. Distinguish it from the stale-UUID failure above: that one **ends** in ~2 s
-having spent zero tokens; this one never ends at all. `wf-show-command-v1` and `wf-config-push-v1` now
+having spent zero tokens; this one never ends at all. `Run Show Command on a Device` and `Push Configuration with Approval` now
 publish `device_error` and reach their end (ADR 0059). **The transition state matters:** a Gateway task
 that 404s lands in state `error`, and a `failure` edge does *not* fire for it — a correct-looking
 `failure` edge still produced "5a could have led to the workflow end task, but did not". Use
@@ -237,9 +237,9 @@ that has no `error` edge reaching `workflow_end`.
 
 **A twin ignores an instruction in its prompt.** Check it *can* obey. `device-ops-local` was told "you
 never invent a device name" while holding only the two show-command workflows — nothing that returns a
-real name — so the instruction was unfollowable and the model invented one. `wf-show-command-v1` takes
+real name — so the instruction was unfollowable and the model invented one. `Run Show Command on a Device` takes
 `device` as free text, so the workflow does not constrain the name either. Pair any such prohibition
-with a tool that supplies the values: that twin now holds `wf-netbox-devices-v1`. Note that a static
+with a tool that supplies the values: that twin now holds `List Devices from NetBox`. Note that a static
 audit of all thirteen documents passed clean while this was broken — tools resolved, no prompt named a
 tool its agent lacked, every name cited existed in NetBox. This class of defect is behavioural, and only
 running the agent finds it, which is why every `ollama-lab` twin now runs in the verify (S4d.5h-k).
@@ -274,7 +274,7 @@ the four CPU cores of tools-01 ingests at **~22 tokens/sec** - about 350 s. The 
 the session FAILED and **deleted the session record** (so `GET /sessions/<id>` 404s for a session the
 list endpoint just showed you), while llama-server finished the same request successfully at 16:55:13,
 `truncated = 0`. The fix is the same one as the entry below: reduce the data before it reaches the
-model. `wf-netbox-devices-v1` reads the list once and hands back six fields per device - br1 goes from
+model. `List Devices from NetBox` reads the list once and hands back six fields per device - br1 goes from
 17.9 kB to 730 bytes - and the twins hold that workflow instead of the raw operation. The Claude agents
 keep the raw operations: they need the full objects and ingest them in a second.
 
@@ -313,7 +313,7 @@ them; before that it could not change a model at all - the failure was
 `model_ids ... No first item, sequence was empty`, which names nothing useful.
 
 **An agent burns an enormous number of tokens.** Measured: the raw compliance-report tools cost the
-compliance agent **638k input tokens** in one session. `wf-compliance-report-v1` reduces the reports on the
+compliance agent **638k input tokens** in one session. `Summarize Compliance Results` reduces the reports on the
 runner to one compact summary per device, and the same question then costs **3.5k**. When an agent is
 expensive, the fix is almost always a workflow that reduces the data before it reaches the model, not a
 better prompt.
@@ -322,7 +322,7 @@ better prompt.
 unsorted. Sort by `started` descending with a limit of 100.
 
 **A schedule trigger loses its inputs.** 6.5.2 schedule triggers do not persist `formData`, so a scheduled
-workflow cannot be given parameters. `wf-compliance-run-v1` finds its plan **by name** instead.
+workflow cannot be given parameters. `Run Nightly Compliance Check` finds its plan **by name** instead.
 
 **A command template rule never matches.** Three measured facts about 6.5.2: RegEx rules are **bare
 patterns** — a `/.../ ` wrapper never matches anything; `ignoreWarnings` is not stored; and analytic rules
@@ -345,7 +345,7 @@ card fields, so that is the place to check what an approver is actually seeing.
 **Five routers are running as `hostname Router`.** This happened here, from Phase 4, and nothing noticed
 for two phases: the `config.iso` bootstrap never applied the hostname or the `ntp server vrf MGMT` line,
 and the chapter 04 verification never checked either. Golden Config found it the first time it ran. It was
-restored through `wf-config-push-v1` with approvals — no wipe, no reboot. The lesson is the general one:
+restored through `Push Configuration with Approval` with approvals — no wipe, no reboot. The lesson is the general one:
 a verification only proves what it checks.
 
 **An MCP client can read device passwords.** `describe_inventory` and Configuration Manager's

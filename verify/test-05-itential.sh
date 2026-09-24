@@ -91,14 +91,14 @@ check "S4.1 ${PLATFORM} serves a lab-CA cert for ${IT_HOST}, runs Platform ${PLA
 # --- S4.2 NetBox adapter: workflow device count == GET /api/dcim/devices/ --------------------------
 c2() {
   local want got id; want=$(nb "${NETBOX_URL}/api/dcim/devices/?limit=1" | ${PY} -c 'import sys,json;print(json.load(sys.stdin)["count"])')
-  id=$(run_job wf-netbox-device-count-v1 '{}') || { echo "$id"; return 1; }
+  id=$(run_job "Count Devices in NetBox" '{}') || { echo "$id"; return 1; }
   # S4f (ADR 0054): through the Integration Model the task output is the HTTP response object, so the
   # parsed payload is `body` where the adapter wrapped it in `response` (measured on 6.5.2).
   got=$(job_vars "${id##*$'\n'}" | ${PY} -c 'import sys,json;print(((json.load(sys.stdin).get("devices") or {}).get("body") or {}).get("count"))')
   [ "$got" = "$want" ] || { echo "workflow ${got} vs NetBox API ${want}"; return 1; }
   echo "device_count=${got}"
 }
-check "S4.2 wf-netbox-device-count-v1 through the lab-netbox integration returns NetBox's count == GET /api/dcim/devices/" c2
+check "S4.2 Count Devices in NetBox through the lab-netbox integration returns NetBox's count == GET /api/dcim/devices/" c2
 
 # --- S4.3 show version through IAG on one node per vendor equals the manifest and the device itself ---
 c3() {
@@ -106,7 +106,7 @@ c3() {
   # (device, expected version string from ADR 0032/0033, direct command)
   for row in "br1-wan01:10.100.0.146:17.13.01a:show version" "br1-sw01:10.100.0.165:4.33.1.1F:show version"; do
     IFS=: read -r dev_name dev_ip want cmd <<<"$row"
-    id=$(run_job wf-show-version-v1 "{\"device\":\"${dev_name}\"}") || { errs+="${dev_name}: ${id}\n"; continue; }
+    id=$(run_job "Get Device Software Version" "{\"device\":\"${dev_name}\"}") || { errs+="${dev_name}: ${id}\n"; continue; }
     out=$(job_vars "${id##*$'\n'}" | ${PY} -c 'import sys,json;r=(json.load(sys.stdin).get("show_version") or {}).get("result",{}).get("results",[{}]);print(r[0].get("output","") if r and r[0].get("success") else "")')
     echo "$out" | grep -q "$want" || { errs+="${dev_name}: IAG output lacks ${want}\n"; continue; }
     direct=$(${PY} verify/devcmd.py "$dev_ip" "$cmd" 2>/dev/null) || { errs+="${dev_name}: direct ssh failed\n"; continue; }
@@ -115,9 +115,9 @@ c3() {
   done
   [ -z "$errs" ] || { printf "%b" "$errs"; return 1; }
 }
-check "S4.3 wf-show-version-v1 via IAG: br1-wan01 = 17.13.01a, br1-sw01 = 4.33.1.1F, cross-checked over direct SSH" c3
+check "S4.3 Get Device Software Version via IAG: br1-wan01 = 17.13.01a, br1-sw01 = 4.33.1.1F, cross-checked over direct SSH" c3
 
-# --- S4.4 wf-branch-vlan-v1: reserve in NetBox + configure br1-sw01, approval task, idempotent, rollback ---
+# --- S4.4 Add Branch VLAN: reserve in NetBox + configure br1-sw01, approval task, idempotent, rollback ---
 VLAN_NAME="verify-$(echo "$ts" | tr "A-Z" "a-z")"
 approve_pending_task() {
   # the workflow parks on the JSON form task (4a, ADR 0044); finishing it with success and export.decision=approve is the
@@ -135,26 +135,26 @@ wait_job() { local id=$1 s; for _ in $(seq 1 60); do s=$(job_status "$id"); case
 nb_vlan() { nb "${NETBOX_URL}/api/ipam/vlans/?site=br1&name=${VLAN_NAME}"; }
 c4() {
   local id vid
-  id=$(run_job wf-branch-vlan-v1 "{\"branch\":\"br1\",\"vlan_name\":\"${VLAN_NAME}\",\"switch_override\":\"\",\"change_request\":false}" nowait) || { echo "$id"; return 1; }
+  id=$(run_job "Add Branch VLAN" "{\"branch\":\"br1\",\"vlan_name\":\"${VLAN_NAME}\",\"switch_override\":\"\",\"change_request\":false}" nowait) || { echo "$id"; return 1; }
   approve_pending_task "$id" || return 1
   wait_job "$id" || return 1
   vid=$(nb_vlan | ${PY} -c 'import sys,json;d=json.load(sys.stdin);assert d["count"]==1,d["count"];v=d["results"][0];assert v["status"]["value"]=="active",v["status"];print(v["vid"])') || { echo "NetBox VLAN ${VLAN_NAME} not active in br1"; return 1; }
   ${PY} verify/devcmd.py 10.100.0.165 "show vlan ${vid}" | grep -q "$VLAN_NAME" || { echo "br1-sw01 has no VLAN ${vid} ${VLAN_NAME}"; return 1; }
   echo "run 1: VLAN ${vid} ${VLAN_NAME} in NetBox and on br1-sw01"
   # run 2 must be a no-op: same VID, still exactly one NetBox object, job reports no change
-  id=$(run_job wf-branch-vlan-v1 "{\"branch\":\"br1\",\"vlan_name\":\"${VLAN_NAME}\",\"switch_override\":\"\",\"change_request\":false}" nowait) || { echo "$id"; return 1; }
+  id=$(run_job "Add Branch VLAN" "{\"branch\":\"br1\",\"vlan_name\":\"${VLAN_NAME}\",\"switch_override\":\"\",\"change_request\":false}" nowait) || { echo "$id"; return 1; }
   wait_job "$id" || return 1
   job_vars "$id" | ${PY} -c 'import sys,json;v=json.load(sys.stdin);assert v.get("changed") is False, v' || { echo "run 2 was not a no-op"; return 1; }
   nb_vlan | ${PY} -c 'import sys,json;d=json.load(sys.stdin);assert d["count"]==1 and d["results"][0]["vid"]=='"$vid"',d' || { echo "run 2 changed NetBox"; return 1; }
   echo "run 2: no-op"
   # rollback: a switch that is not in the inventory makes the device step fail; the reservation must go
-  id=$(run_job wf-branch-vlan-v1 "{\"branch\":\"br1\",\"vlan_name\":\"${VLAN_NAME}-rb\",\"switch_override\":\"no-such-switch\",\"change_request\":false}" nowait) || { echo "$id"; return 1; }
+  id=$(run_job "Add Branch VLAN" "{\"branch\":\"br1\",\"vlan_name\":\"${VLAN_NAME}-rb\",\"switch_override\":\"no-such-switch\",\"change_request\":false}" nowait) || { echo "$id"; return 1; }
   approve_pending_task "$id" || return 1
   wait_job "$id" >/dev/null 2>&1 && { echo "rollback run unexpectedly succeeded"; return 1; }
   nb "${NETBOX_URL}/api/ipam/vlans/?site=br1&name=${VLAN_NAME}-rb" | ${PY} -c 'import sys,json;assert json.load(sys.stdin)["count"]==0,"reservation survived the failure"' || return 1
   echo "run 3: device failure rolled the NetBox reservation back"
 }
-check "S4.4 wf-branch-vlan-v1: reserve + configure with approval; second run no-op; NetBox rollback on device failure" c4
+check "S4.4 Add Branch VLAN: reserve + configure with approval; second run no-op; NetBox rollback on device failure" c4
 # cleanup of the verify VLAN (NetBox object and the switch); never leaves lab state behind
 vid=$(nb_vlan | ${PY} -c 'import sys,json;d=json.load(sys.stdin);print(d["results"][0]["vid"] if d["count"] else "")' 2>/dev/null)
 if [ -n "$vid" ]; then
@@ -250,7 +250,7 @@ print("  adapter-servicenow absent, as S4f requires")'
     # --- S4b.2 change request opened, work-noted with the NetBox reservation, closed ---
     c9() {
       local id chg sid
-      id=$(run_job wf-branch-vlan-v1 "{\"branch\":\"br2\",\"vlan_name\":\"${VLAN_NAME}-snow\",\"switch_override\":\"\",\"change_request\":true}" nowait) || { echo "$id"; return 1; }
+      id=$(run_job "Add Branch VLAN" "{\"branch\":\"br2\",\"vlan_name\":\"${VLAN_NAME}-snow\",\"switch_override\":\"\",\"change_request\":true}" nowait) || { echo "$id"; return 1; }
       approve_pending_task "$id" || return 1
       wait_job "$id" || return 1
       local vars; vars=$(job_vars "$id")
@@ -266,7 +266,7 @@ print("  adapter-servicenow absent, as S4f requires")'
 no vlan ${vinfo##* }
 end" >/dev/null 2>&1 || true; fi
     }
-    check "S4b.2 wf-branch-vlan-v1 with change_request=true opens a standard change, work-notes the NetBox reservation, walks New->Scheduled->Implement->Review->Closed" c9
+    check "S4b.2 Add Branch VLAN with change_request=true opens a standard change, work-notes the NetBox reservation, walks New->Scheduled->Implement->Review->Closed" c9
     # --- S4b.3 update set exported ---
     # No PDI customisation exists (stock template, stock group, one user): servicenow/README.md is the
     # rebuild record (PID 1.5) and the two stock records it names must be present on the instance.

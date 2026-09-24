@@ -67,12 +67,12 @@ def form(name: str, description: str, fields: list[dict]) -> dict:
     }
 
 
-# --- lab-branch-vlan-approval: the approval task of wf-branch-vlan-v1 (ShowJsonForm on task 4a) --------------
+# --- lab-branch-vlan-approval: the approval task of Add Branch VLAN (ShowJsonForm on task 4a) --------------
 # The workflow fills the read-only context from its job variables (the same object Lifecycle Manager stores
 # as the instance, ADR 0043); the approver only sets the decision. Default reject: an untouched form pushes nothing.
 def branch_vlan_approval() -> dict:
     return form(VERSIONS["forms"]["approval"],
-                "Approve or reject a branch VLAN change reserved in NetBox by wf-branch-vlan-v1 (PID S4d.3, ADR 0044)",
+                "Approve or reject a branch VLAN change reserved in NetBox by Add Branch VLAN (PID S4d.3, ADR 0044)",
                 [field("branch", "Branch", description="Branch site (br1, br2)"),
                  field("vid", "VLAN id", typ="number", description="802.1Q id chosen from the branch VLAN group in NetBox"),
                  field("vlan_name", "VLAN name"),

@@ -479,8 +479,8 @@
       },
       "post": {
         "operationId": "ipam_vlans_create",
-        "summary": "Reserve a VLAN (wf-branch-vlan-v1: created status=reserved, set active once the switch takes it)",
-        "description": "Reserve a VLAN (wf-branch-vlan-v1: created status=reserved, set active once the switch takes it)",
+        "summary": "Reserve a VLAN (Add Branch VLAN: created status=reserved, set active once the switch takes it)",
+        "description": "Reserve a VLAN (Add Branch VLAN: created status=reserved, set active once the switch takes it)",
         "parameters": [],
         "responses": {
           "200": {
@@ -1043,8 +1043,8 @@
     "/api/ipam/vlans/{id}/": {
       "patch": {
         "operationId": "ipam_vlans_partial_update",
-        "summary": "Change a VLAN in place (wf-branch-vlan-v1: reserved -> active once the push succeeded)",
-        "description": "Change a VLAN in place (wf-branch-vlan-v1: reserved -> active once the push succeeded)",
+        "summary": "Change a VLAN in place (Add Branch VLAN: reserved -> active once the push succeeded)",
+        "description": "Change a VLAN in place (Add Branch VLAN: reserved -> active once the push succeeded)",
         "parameters": [
           {
             "name": "id",
@@ -1097,8 +1097,8 @@
       },
       "delete": {
         "operationId": "ipam_vlans_destroy",
-        "summary": "Delete a VLAN (wf-branch-vlan-v1 rollback and wf-branch-vlan-delete-v1)",
-        "description": "Delete a VLAN (wf-branch-vlan-v1 rollback and wf-branch-vlan-delete-v1)",
+        "summary": "Delete a VLAN (Add Branch VLAN rollback and Remove Branch VLAN)",
+        "description": "Delete a VLAN (Add Branch VLAN rollback and Remove Branch VLAN)",
         "parameters": [
           {
             "name": "id",

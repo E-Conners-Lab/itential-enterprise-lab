@@ -56,7 +56,7 @@ def test_oracle_names_the_model_its_workflows_and_the_form(versions: dict, lcm: 
     wf = versions["workflows"]
     assert lcm["model"] == "branch-vlan"
     assert lcm["actions"] == {"create": wf["branch_vlan"], "delete": wf["branch_vlan_delete"]}
-    assert wf["branch_vlan_delete"] == "wf-branch-vlan-delete-v1"
+    assert wf["branch_vlan_delete"] == "Remove Branch VLAN"
     assert lcm["instance_name"] == "<branch>-<vlan_name>", "instance names are known before the run (the VID is chosen inside it)"
     assert set(lcm["netbox_vlan_groups"]) == {"br1-user", "br2-user"}, "the branch VLAN groups itential.yml creates"
     assert versions["forms"]["approval"].startswith("lab-") and versions["forms"]["documents"] == "itential/forms"
@@ -102,7 +102,7 @@ def test_form_generated_from_build_py_and_shaped_for_the_approval(versions: dict
 
 
 def test_create_workflow_approves_on_the_form_and_publishes_the_instance(versions: dict) -> None:
-    wf = json.loads((WORKFLOWS / "wf-branch-vlan-v1.json").read_text())
+    wf = json.loads((WORKFLOWS / "add-branch-vlan.json").read_text())
     tasks, tr = wf["tasks"], wf["transitions"]
     manual = [k for k, t in tasks.items() if t.get("type") == "manual"]
     assert len(manual) == 1, "exactly one approval"
@@ -132,7 +132,7 @@ def test_create_workflow_approves_on_the_form_and_publishes_the_instance(version
 
 
 def test_delete_workflow_writes_to_the_device_only_through_the_governed_push(versions: dict) -> None:
-    wf = json.loads((WORKFLOWS / "wf-branch-vlan-delete-v1.json").read_text())
+    wf = json.loads((WORKFLOWS / "remove-branch-vlan.json").read_text())
     tasks = wf["tasks"]
     assert wf["inputSchema"]["properties"]["instance"]["type"] == "object", "LCM passes the instance data as the job variable `instance`"
     assert "instance" not in wf["inputSchema"]["required"], "LCM injects it; a direct start may pass it"
@@ -168,14 +168,14 @@ def test_verify_scripts_pid_and_adrs_cover_s4d3(versions: dict) -> None:
         assert '"export"' in path.read_text() or "export" in path.read_text(), f"{path.name}: the form approval carries export.decision"
     assert re.search(r'decision[^\n]*approve', VERIFY_05.read_text()) and re.search(r'decision[^\n]*approve', VERIFY_06.read_text())
     pid = PID.read_text()
-    assert "| 1.9 |" in pid and "wf-branch-vlan-delete-v1" in pid
+    assert "| 1.9 |" in pid and "Remove Branch VLAN" in pid
     assert list(ADRS.glob("0043-*.md")) and list(ADRS.glob("0044-*.md"))
 
 
 def test_every_generated_workflow_uses_hex_task_ids_and_reaches_its_end() -> None:
     """The import rejects a task id outside ^[0-9a-f]{1,4}$ (measured: '1g' failed the whole import) and a task
     without a path from workflow_start fails the job at start; both are cheap to hold here."""
-    for path in sorted(WORKFLOWS.glob("wf-*.json")):
+    for path in sorted(WORKFLOWS.glob("*.json")):
         wf = json.loads(path.read_text())
         tasks, tr = wf["tasks"], wf["transitions"]
         bad = [k for k in tasks if k not in ("workflow_start", "workflow_end") and not re.fullmatch(r"[0-9a-f]{1,4}", k)]

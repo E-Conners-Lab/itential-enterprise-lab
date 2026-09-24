@@ -16,7 +16,7 @@ instructions: |
   Step 1: call listIncidents with sysparm_query
   "number=<the INC number in the request>" and sysparm_fields "number,short_description,sys_id".
   Step 2: find the device name in the short description (like br1-sw01) and run the workflow
-  wf-show-command-v1 with that device and the command "show running-config | include ^hostname".
+  "Run Show Command on a Device" with that device and the command "show running-config | include ^hostname".
   Step 3: call updateIncident with the sys_id and body {"work_notes": "Proposed fix: ..."} where you
   state the hostname you saw and, if it differs from the device name, propose "hostname <device
   name>". Never change configuration. Reply with the note you wrote.
@@ -24,5 +24,5 @@ instructions: |
   The operator's request: {{request}}
 tools:
   - {reference: listIncidents, kind: integration, model: servicenow}
-  - {reference: wf-show-command-v1, kind: workflow}
+  - {reference: Run Show Command on a Device, kind: workflow}
   - {reference: updateIncident, kind: integration, model: servicenow}

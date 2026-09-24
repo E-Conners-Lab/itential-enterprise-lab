@@ -54,7 +54,7 @@ import glob, json, yaml
 m = yaml.safe_load(open("itential/versions.yaml"))["integrations"]["models"]
 ops = {f"{v['title']}:{v['version']}": {o["operationId"] for item in json.load(open(f"itential/integrations/{v['title']}.json"))["paths"].values() for o in item.values()} for v in m.values()}
 named = 0
-for f in glob.glob("itential/workflows/wf-*.json"):
+for f in glob.glob("itential/workflows/*.json"):
     for tid, t in json.load(open(f))["tasks"].items():
         app = t.get("app", "")
         if app in ops:
@@ -86,7 +86,7 @@ check "S4f.2 every operation a workflow names is declared, and every declared op
 c3() { ${PY} - <<'EOF'
 import glob, json
 bad = []
-for f in sorted(glob.glob("itential/workflows/wf-*.json")):
+for f in sorted(glob.glob("itential/workflows/*.json")):
     for tid, t in json.load(open(f))["tasks"].items():
         if t.get("locationType") in ("Netbox", "Servicenow"):
             bad.append(f"{f}:{tid} adapter task {t.get('locationType')}")

@@ -1,6 +1,7 @@
 ---
 # Phase 6b: Platform coverage of the EVE-NG lab (PID S4d, ADR 0040). Runs after itential.yml (which
-# imports every wf-*, including wf-config-push-v1 and wf-compliance-run-v1) and before flowai.yml.
+# imports every workflow in itential/workflows/, including Push Configuration with Approval and
+# Run Nightly Compliance Check) and before flowai.yml.
 # Element 1: device groups by site and role, one Golden Config tree per OS from
 # itential/golden-config/<deviceType>/, one compliance plan on a nightly schedule trigger.
 # Element 2: MOP command + analytic templates from itential/command-templates/, nightly backups.

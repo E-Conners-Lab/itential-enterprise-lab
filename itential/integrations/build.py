@@ -293,7 +293,7 @@ def netbox() -> dict:
     # available-vlans was unreachable and the journal entries went out from the runner (ADR 0048).
     paths["/api/ipam/vlans/"]["post"] = op(
         "ipam_vlans_create",
-        "Reserve a VLAN (wf-branch-vlan-v1: created status=reserved, set active once the switch takes it)",
+        "Reserve a VLAN (Add Branch VLAN: created status=reserved, set active once the switch takes it)",
         [],
         OBJ,
         a,
@@ -312,7 +312,7 @@ def netbox() -> dict:
     paths["/api/ipam/vlans/{id}/"] = {
         "patch": op(
             "ipam_vlans_partial_update",
-            "Change a VLAN in place (wf-branch-vlan-v1: reserved -> active once the push succeeded)",
+            "Change a VLAN in place (Add Branch VLAN: reserved -> active once the push succeeded)",
             [path_param("id", "NetBox VLAN id", "integer")],
             OBJ,
             a,
@@ -320,7 +320,7 @@ def netbox() -> dict:
         ),
         "delete": op(
             "ipam_vlans_destroy",
-            "Delete a VLAN (wf-branch-vlan-v1 rollback and wf-branch-vlan-delete-v1)",
+            "Delete a VLAN (Add Branch VLAN rollback and Remove Branch VLAN)",
             [path_param("id", "NetBox VLAN id", "integer")],
             OBJ,
             a,
@@ -445,7 +445,7 @@ def servicenow() -> dict:
             )
         },
     }
-    # S4f (ADR 0054): the change-request writes wf-branch-vlan-v1 and wf-config-push-v1 reached through
+    # S4f (ADR 0054): the change-request writes Add Branch VLAN and Push Configuration with Approval reached through
     # the adapter's genericAdapterRequest. The Change API (/sn_chg_rest) is a different surface from the
     # Table API above: it is what applies a standard-change template and enforces the change model's
     # state order, which is why the state walk cannot simply PATCH the table record.

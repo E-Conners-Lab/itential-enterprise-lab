@@ -31,6 +31,11 @@ ENV_EXAMPLE = ROOT / ".env.example"
 
 ECR = "497639811223.dkr.ecr.us-east-2.amazonaws.com"
 
+def _file(name: str) -> str:
+    """A workflow's file in itential/workflows/: its name in lowercase with dashes (ADR 0067)."""
+    return name.lower().replace(" ", "-") + ".json"
+
+
 
 @pytest.fixture(scope="module")
 def versions() -> dict:
@@ -291,14 +296,14 @@ def test_ip_plan_markdown_agrees() -> None:
 
 def test_workflows_exported_and_shaped(versions: dict) -> None:
     names = versions["workflows"]
-    assert "wf-branch-vlan-v1" in names.values()
+    assert "Add Branch VLAN" in names.values()
     for key, name in names.items():
-        path = WORKFLOWS / f"{name}.json"
+        path = WORKFLOWS / _file(name)
         assert path.exists(), f"{path} missing (export from the platform after building)"
         wf = json.loads(path.read_text())
         assert wf["name"] == name, f"{path}: name {wf.get('name')!r}"
         assert wf.get("tasks"), f"{path}: no tasks"
-    vlan = json.loads((WORKFLOWS / "wf-branch-vlan-v1.json").read_text())
+    vlan = json.loads((WORKFLOWS / "add-branch-vlan.json").read_text())
     tasks = list(vlan["tasks"].values())
     assert any(t.get("type") == "manual" for t in tasks), "S4.4 needs a manual approval task"
     blob = json.dumps(vlan).lower()

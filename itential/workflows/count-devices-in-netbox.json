@@ -1,5 +1,5 @@
 {
-  "name": "wf-netbox-device-count-v1",
+  "name": "Count Devices in NetBox",
   "type": "automation",
   "description": "Reads the NetBox device list through the lab-netbox Integration Model and returns its count (PID S4.2, S4f)",
   "tasks": {
@@ -16,7 +16,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 0,
-        "y": 0
+        "y": 150
       },
       "variables": {
         "incoming": {
@@ -37,7 +37,7 @@
       "summary": "workflow_start",
       "groups": [],
       "nodeLocation": {
-        "x": -600,
+        "x": 0,
         "y": 0
       }
     },
@@ -46,8 +46,8 @@
       "summary": "workflow_end",
       "groups": [],
       "nodeLocation": {
-        "x": 1800,
-        "y": 0
+        "x": 0,
+        "y": 300
       }
     }
   },

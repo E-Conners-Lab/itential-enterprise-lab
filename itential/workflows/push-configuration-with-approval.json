@@ -1,5 +1,5 @@
 {
-  "name": "wf-config-push-v1",
+  "name": "Push Configuration with Approval",
   "type": "automation",
   "description": "Pushes operator-supplied configuration lines to one inventory node through Gateway 5 after a Work Center approval and saves the running configuration; the only write path for compliance remediation (PID S4d, ADR 0040)",
   "tasks": {
@@ -16,7 +16,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 0,
-        "y": -200
+        "y": 450
       },
       "variables": {
         "incoming": {
@@ -45,8 +45,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 300,
-        "y": -200
+        "x": 0,
+        "y": 600
       },
       "variables": {
         "incoming": {
@@ -75,8 +75,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 600,
-        "y": 0
+        "x": 0,
+        "y": 750
       },
       "variables": {
         "incoming": {
@@ -105,8 +105,8 @@
       "displayName": "GatewayManager",
       "groups": [],
       "nodeLocation": {
-        "x": 900,
-        "y": 0
+        "x": -280,
+        "y": 900
       },
       "variables": {
         "incoming": {
@@ -135,8 +135,8 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 1200,
-        "y": 0
+        "x": -250,
+        "y": 1050
       },
       "variables": {
         "incoming": {
@@ -181,8 +181,8 @@
       "displayName": "GatewayManager",
       "groups": [],
       "nodeLocation": {
-        "x": 1500,
-        "y": 0
+        "x": 530,
+        "y": 1800
       },
       "variables": {
         "incoming": {
@@ -213,8 +213,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 1800,
-        "y": 0
+        "x": 870,
+        "y": 2250
       },
       "variables": {
         "incoming": {
@@ -243,8 +243,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 900,
-        "y": 400
+        "x": 20,
+        "y": 900
       },
       "variables": {
         "incoming": {
@@ -273,8 +273,8 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 1250,
-        "y": -200
+        "x": 90,
+        "y": 1200
       },
       "variables": {
         "incoming": {
@@ -301,8 +301,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 1300,
-        "y": -200
+        "x": -110,
+        "y": 1350
       },
       "variables": {
         "incoming": {
@@ -333,8 +333,8 @@
       "displayName": "GatewayManager",
       "groups": [],
       "nodeLocation": {
-        "x": 1350,
-        "y": -200
+        "x": 120,
+        "y": 1500
       },
       "variables": {
         "incoming": {
@@ -368,8 +368,8 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 1400,
-        "y": -200
+        "x": 230,
+        "y": 1650
       },
       "variables": {
         "incoming": {
@@ -414,8 +414,8 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 1400,
-        "y": -500
+        "x": 230,
+        "y": 1800
       },
       "variables": {
         "incoming": {
@@ -442,8 +442,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 1700,
-        "y": -500
+        "x": 180,
+        "y": 1950
       },
       "variables": {
         "incoming": {
@@ -472,8 +472,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 1400,
-        "y": -700
+        "x": -160,
+        "y": 1650
       },
       "variables": {
         "incoming": {
@@ -502,8 +502,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": -600,
-        "y": 0
+        "x": 0,
+        "y": 150
       },
       "variables": {
         "incoming": {
@@ -532,8 +532,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": -300,
-        "y": 0
+        "x": 0,
+        "y": 300
       },
       "variables": {
         "incoming": {
@@ -560,8 +560,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 900,
-        "y": -400
+        "x": -550,
+        "y": 1050
       },
       "variables": {
         "incoming": {
@@ -590,8 +590,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 1200,
-        "y": -400
+        "x": -810,
+        "y": 1200
       },
       "variables": {
         "incoming": {
@@ -620,8 +620,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 1500,
-        "y": -400
+        "x": 710,
+        "y": 2100
       },
       "variables": {
         "incoming": {
@@ -650,8 +650,8 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 1650,
-        "y": -200
+        "x": 830,
+        "y": 1950
       },
       "variables": {
         "incoming": {
@@ -696,8 +696,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 1200,
-        "y": -600
+        "x": -510,
+        "y": 1200
       },
       "variables": {
         "incoming": {
@@ -726,8 +726,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 1500,
-        "y": -600
+        "x": -150,
+        "y": 1800
       },
       "variables": {
         "incoming": {
@@ -749,7 +749,7 @@
       "summary": "workflow_start",
       "groups": [],
       "nodeLocation": {
-        "x": -600,
+        "x": 0,
         "y": 0
       }
     },
@@ -758,8 +758,8 @@
       "summary": "workflow_end",
       "groups": [],
       "nodeLocation": {
-        "x": 1800,
-        "y": 0
+        "x": 100,
+        "y": 2400
       }
     }
   },

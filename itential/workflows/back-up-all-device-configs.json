@@ -1,5 +1,5 @@
 {
-  "name": "wf-backup-all-v1",
+  "name": "Back Up All Device Configs",
   "type": "automation",
   "description": "Backs up every Configuration Manager device through the InventoryBroker (Gateway 5); scheduled nightly by Operations Manager (PID S4d.2, ADR 0042)",
   "tasks": {
@@ -16,7 +16,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 0,
-        "y": 0
+        "y": 150
       },
       "variables": {
         "incoming": {
@@ -46,8 +46,8 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 300,
-        "y": 0
+        "x": 0,
+        "y": 300
       },
       "variables": {
         "incoming": {
@@ -74,8 +74,8 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 600,
-        "y": 0
+        "x": 0,
+        "y": 450
       },
       "variables": {
         "incoming": {
@@ -100,14 +100,14 @@
       "displayName": "ConfigurationManager",
       "groups": [],
       "nodeLocation": {
-        "x": 900,
-        "y": 300
+        "x": 300,
+        "y": 600
       },
       "variables": {
         "incoming": {
           "name": "$var.2a.current_item",
           "options": {
-            "description": "nightly backup (wf-backup-all-v1)",
+            "description": "nightly backup (Back Up All Device Configs)",
             "notes": ""
           }
         },
@@ -125,7 +125,7 @@
       "summary": "workflow_start",
       "groups": [],
       "nodeLocation": {
-        "x": -600,
+        "x": 0,
         "y": 0
       }
     },
@@ -134,8 +134,8 @@
       "summary": "workflow_end",
       "groups": [],
       "nodeLocation": {
-        "x": 1800,
-        "y": 0
+        "x": 0,
+        "y": 750
       }
     }
   },

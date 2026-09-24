@@ -64,7 +64,7 @@ make phase-observability
 | 2 | `ansible/playbooks/oob-gw.yml --tags dns` | Re-renders the resolver so the five new names answer |
 | 3 | `ansible/playbooks/observability.yml` | Secrets persisted first, then the Traefik VIP Services, then the charts, then the scrape objects generated from NetBox, then Zabbix's own configuration through its API |
 | 4 | `ansible/playbooks/observability-hosts.yml` | Zabbix agent 2 and `rsyslog` on every Ubuntu machine — the NetBox inventory for the VMs and EVE-NG endpoints, plus a static inventory for the two pre-existing machines |
-| 5 | `ansible/playbooks/observability-devices.yml` | One `wf-config-push-v1` job per router and switch for the device-side lines. **The owner approves each card in Work Center** |
+| 5 | `ansible/playbooks/observability-devices.yml` | One `Push Configuration with Approval` job per router and switch for the device-side lines. **The owner approves each card in Work Center** |
 
 Step 5 is the one that needs a person. Each device gets its own approval card, and the play skips a device
 whose card is still waiting, so a re-run inside the approval window does not start a second job.

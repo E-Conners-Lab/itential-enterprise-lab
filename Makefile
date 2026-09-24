@@ -192,7 +192,7 @@ agents-push: ## Push itential/agents/*.yaml prompts to the Platform (CHECK=1 to 
 
 # Phase 7 (PID S7, ADR 0051). The stack and its Zabbix configuration on k3s, the agents on every Ubuntu machine
 # (NetBox inventory for the VMs and EVE-NG endpoints, phase2.yml for the two pre-existing machines), then the
-# governed device pushes (one wf-config-push-v1 job per router/switch; the owner approves the Work Center cards).
+# governed device pushes (one Push Configuration with Approval job per router/switch; the owner approves the Work Center cards).
 phase-observability: ## Phase 7: NetBox seed (phase labels, released addresses) -> resolver aliases -> stack + Zabbix config -> agents on every Ubuntu machine -> device pushes (approvals) -> verify
 	$(load_env) cd ansible && ansible-playbook playbooks/netbox-seed.yml
 	$(load_env) cd ansible && ansible-playbook playbooks/oob-gw.yml --tags dns

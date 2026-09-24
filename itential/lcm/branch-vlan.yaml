@@ -1,12 +1,12 @@
 # Lifecycle Manager resource model for the branch VLAN service (PID S4d.3, ADR 0043). Created and kept current
 # by ansible/playbooks/tasks/lcm.yml (POST/PUT /lifecycle-manager/resources, then actions/validate).
 # Actions name their workflows: the platform resolves the name to the current import when the action runs,
-# so the delete + import of every wf-* by itential.yml never breaks the model (measured on 6.5.2).
+# so the delete + import of every workflow by itential.yml never breaks the model (measured on 6.5.2).
 # The workflows publish the job variable `instance` (this schema) themselves: no pre/post transformations.
 name: branch-vlan
 description: >-
   A user VLAN in a branch (br1, br2): reserved in NetBox and configured on the branch switch by
-  wf-branch-vlan-v1 behind the Work Center approval form; retired by wf-branch-vlan-delete-v1 through the
+  Add Branch VLAN behind the Work Center approval form; retired by Remove Branch VLAN through the
   governed config push. Instances are named <branch>-<vlan_name> (itential/lcm/branch-vlan.yaml).
 schema:
   $id: branch-vlan
@@ -23,15 +23,15 @@ schema:
 actions:
   - _id: "0c01"
     name: Create
-    description: Reserve the VLAN in NetBox, approve on the form, configure the branch switch (wf-branch-vlan-v1)
+    description: Reserve the VLAN in NetBox, approve on the form, configure the branch switch (Add Branch VLAN)
     type: create
-    workflow: wf-branch-vlan-v1
+    workflow: Add Branch VLAN
     preWorkflowJst: null
     postWorkflowJst: null
   - _id: "0d01"
     name: Delete
-    description: Delete the NetBox VLAN and remove it from the switch through wf-config-push-v1 (wf-branch-vlan-delete-v1)
+    description: Delete the NetBox VLAN and remove it from the switch through Push Configuration with Approval (Remove Branch VLAN)
     type: delete
-    workflow: wf-branch-vlan-delete-v1
+    workflow: Remove Branch VLAN
     preWorkflowJst: null
     postWorkflowJst: null

@@ -1,6 +1,6 @@
 """PID S4d element 1 (ADR 0040/0041): Golden Config trees, compliance plan and device groups are built by
 ansible/playbooks/platform.yml from documents in itential/golden-config/ and the golden_config section of
-itential/versions.yaml; remediation only ever goes through wf-config-push-v1 with an approval. These tests
+itential/versions.yaml; remediation only ever goes through Push Configuration with Approval with an approval. These tests
 hold the documents, the oracle, the generator, the play, the verify script and the PID to each other.
 They run in CI with no lab access."""
 
@@ -72,8 +72,8 @@ def test_documents_per_tree(gc: dict) -> None:
 
 def test_workflows_generated_for_push_and_plan_run(versions: dict) -> None:
     names = versions["workflows"]
-    assert names["config_push"] == "wf-config-push-v1" and names["compliance_run"] == "wf-compliance-run-v1"
-    push = json.loads((WORKFLOWS / "wf-config-push-v1.json").read_text())
+    assert names["config_push"] == "Push Configuration with Approval" and names["compliance_run"] == "Run Nightly Compliance Check"
+    push = json.loads((WORKFLOWS / "push-configuration-with-approval.json").read_text())
     tasks = push["tasks"]
     assert set(push["inputSchema"]["required"]) == {"device", "config", "reason"}
     manual = [k for k, t in tasks.items() if t.get("type") == "manual"]
@@ -85,13 +85,13 @@ def test_workflows_generated_for_push_and_plan_run(versions: dict) -> None:
     assert cfg[0] in push["transitions"][manual[0]] and push["transitions"][manual[0]][cfg[0]]["state"] == "success"
     rejected = [n for n, e in push["transitions"][manual[0]].items() if e["state"] == "failure"]
     assert rejected and push["transitions"][rejected[0]] == {}
-    run = json.loads((WORKFLOWS / "wf-compliance-run-v1.json").read_text())
+    run = json.loads((WORKFLOWS / "run-nightly-compliance-check.json").read_text())
     rc = [t for t in run["tasks"].values() if t.get("name") == "runCompliancePlan"]
     assert len(rc) == 1 and rc[0]["app"] == "ConfigurationManager" and rc[0]["variables"]["incoming"]["planId"].startswith("$var.")
     search = [t for t in run["tasks"].values() if t.get("name") == "searchCompliancePlans"]
     assert search and search[0]["variables"]["incoming"]["name"] == "^" + versions["golden_config"]["plan"] + "$", "anchored regex: the search misses an unescaped hyphen"
     assert run["inputSchema"]["properties"] == {}, "schedule triggers do not persist formData on 6.5.2: the workflow takes no input"
-    for path in WORKFLOWS.glob("wf-*.json"):
+    for path in WORKFLOWS.glob("*.json"):
         blob = path.read_text()
         for bad in REMEDIATION_TASKS:
             assert f'"name": "{bad}"' not in blob, f"{path.name} wires {bad} (ADR 0040 forbids remediation tasks)"
@@ -112,7 +112,7 @@ def test_play_builds_everything_through_the_api_and_never_remediates(gc: dict) -
 def test_verify_and_pid_cover_s4d1() -> None:
     assert VERIFY.exists() and VERIFY.stat().st_mode & 0o111
     text = VERIFY.read_text()
-    assert re.search(r'check "S4d\.1 ', text) and "devcmd.py" in text and "wf-config-push-v1" in text
+    assert re.search(r'check "S4d\.1 ', text) and "devcmd.py" in text and "Push Configuration with Approval" in text
     pid = PID.read_text()
     assert "### S4d" in pid and "| E13 |" in pid and "| 1.8 |" in pid
     assert (ADRS / "0040-golden-config-compliance-device-groups.md").exists()

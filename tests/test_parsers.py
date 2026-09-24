@@ -17,7 +17,7 @@ VERSIONS = ROOT / "itential" / "versions.yaml"
 MANIFEST = ROOT / "docs" / "image-manifest.md"
 OVERRIDE = ROOT / "itential" / "compose.override.yml"
 DOCKERFILE = ROOT / "itential" / "gateway5-runner" / "Dockerfile"
-WORKFLOW = ROOT / "itential" / "workflows" / "wf-show-command-v1.json"
+WORKFLOW = ROOT / "itential" / "workflows" / "run-show-command-on-a-device.json"
 PLAY = ROOT / "ansible" / "playbooks" / "itential.yml"
 VERIFY = ROOT / "verify" / "test-06-flowai.sh"
 PID = ROOT / "docs" / "PID.md"
@@ -80,7 +80,7 @@ def test_override_wires_etcd_store_and_runner(versions: dict) -> None:
 
 def test_show_command_workflow_parses_per_vendor(versions: dict) -> None:
     wf = json.loads(WORKFLOW.read_text())
-    assert wf["name"] == "wf-show-command-v1"
+    assert wf["name"] == "Run Show Command on a Device"
     assert set(wf["inputSchema"]["properties"]) == {"device", "command"}
     tasks = wf["tasks"]
     run = [t for t in tasks.values() if t.get("name") == "runCode"]
@@ -121,9 +121,9 @@ def test_agents_use_the_structured_tool() -> None:
     """Every agent that reads devices holds the structured show-command workflow (the fleet's NetBox, compliance and
     remediation tiers hold no device read tool at all, ADR 0046)."""
     docs = [yaml.safe_load(p.read_text()) for p in sorted(AGENTS.glob("*.yaml"))]
-    readers = [a for a in docs if {t["reference"] for t in a["tools"]} & {"send-command", "wf-show-command-v1", "wf-show-version-v1"}]
+    readers = [a for a in docs if {t["reference"] for t in a["tools"]} & {"send-command", "Run Show Command on a Device", "Get Device Software Version"}]
     assert readers, "no agent reads devices"
     for a in readers:
         refs = {t["reference"] for t in a["tools"]}
-        assert "wf-show-command-v1" in refs, f"{a['name']} lacks the structured show-command tool"
-        assert "wf-show-command-v1" in a["instructions"]
+        assert "Run Show Command on a Device" in refs, f"{a['name']} lacks the structured show-command tool"
+        assert "Run Show Command on a Device" in a["instructions"]

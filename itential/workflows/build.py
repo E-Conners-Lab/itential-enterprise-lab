@@ -15,7 +15,9 @@ the itentialopensource pre-built automations:
 
 from __future__ import annotations
 
+import itertools
 import json
+import statistics
 from pathlib import Path
 
 import yaml
@@ -24,6 +26,12 @@ HERE = Path(__file__).resolve().parent
 CLUSTER = "lab"
 INVENTORY = "lab"
 VERSIONS = yaml.safe_load((HERE.parent / "versions.yaml").read_text())
+WF = VERSIONS["workflows"]  # every workflow name comes from here (ADR 0067)
+
+
+def file_name(name: str) -> str:
+    """The document's file: its name in lowercase with dashes ("Add Branch VLAN" -> add-branch-vlan.json)."""
+    return name.lower().replace(" ", "-") + ".json"
 
 
 def task(
@@ -68,6 +76,219 @@ def task(
     return t
 
 
+# --- the canvas ------------------------------------------------------------------------------------------------
+# Every workflow reads top to bottom and is laid out from its transitions, not by hand (owner preference,
+# 2026-09-24). The x/y a task is given in this file is only a hint: x its order along the flow, y its lane (0 the
+# main path, negative a failure branch to the left, positive a side branch to the right).
+#   row    = the longest path from workflow_start, so every forward arrow points down (a loop back, a retry or a
+#            poll, is the only arrow that may go up); workflow_start is alone on top, workflow_end at the bottom
+#   column = two candidates, scored on what Studio draws (straight arrows): the lanes as given, and the rows
+#            reordered by the barycenter of their neighbours (long arrows kept as a chain of placeholder slots)
+#            then pulled toward the median of their neighbours. The lower score wins, then a local search swaps
+#            neighbours and nudges tasks sideways while the score keeps dropping.
+#   score  = arrows crossing + 3 x arrows through a task box (an arrow hidden behind a task reads worse)
+# Deterministic: the same document always gets the same canvas. tests/test_workflow_layout.py holds the shape.
+ROW = 150  # down the page from one row to the next (a task is about 50 units tall)
+COL = 300  # across the page between tasks in a row (a task is about 220 units wide)
+NUDGE = 150  # the local search's sideways step
+HALF_W, HALF_H = 100, 20  # a task box for the score, a little inside its drawn 220 x 50
+
+
+def _rows(tasks: dict, transitions: dict) -> tuple[dict, dict, list]:
+    hint = {tid: t.get("nodeLocation") or {"x": 0, "y": 0} for tid, t in tasks.items()}
+    hint["workflow_start"] = {"x": float("-inf"), "y": 0}
+    hint["workflow_end"] = {"x": float("inf"), "y": 0}
+    succ = {n: sorted((d for d in transitions.get(n, {}) if d in hint), key=lambda d: hint[d]["x"]) for n in hint}
+
+    # depth-first from the start: finishing order gives a topological order once the back edges are set aside
+    back, done, active, finish = set(), set(), set(), []
+
+    def visit(n: str) -> None:
+        active.add(n)
+        for d in succ[n]:
+            if d in active:
+                back.add((n, d))
+            elif d not in done:
+                visit(d)
+        active.discard(n)
+        done.add(n)
+        finish.append(n)
+
+    visit("workflow_start")
+    unreachable = sorted(set(hint) - done - {"workflow_end"})
+    assert not unreachable, f"tasks no transition reaches: {unreachable}"
+
+    row = dict.fromkeys(hint, 0)
+    for n in reversed(finish):
+        for d in succ[n]:
+            if (n, d) not in back:
+                row[d] = max(row[d], row[n] + 1)
+    row["workflow_end"] = max(r for n, r in row.items() if n != "workflow_end") + 1
+    edges = [(s, d) for s in succ for d in succ[s]]
+    return hint, row, edges
+
+
+def _pack(order: list, want: dict) -> dict:
+    """x for one row: keep the order, keep COL apart, stay as close to `want` as possible."""
+    left, right = [], [0.0] * len(order)
+    for i, n in enumerate(order):
+        left.append(want[n] if i == 0 else max(want[n], left[-1] + COL))
+    for i in range(len(order) - 1, -1, -1):
+        right[i] = want[order[i]] if i == len(order) - 1 else min(want[order[i]], right[i + 1] - COL)
+    x = {}
+    for i, n in enumerate(order):
+        x[n] = (left[i] + right[i]) / 2 if i == 0 else max((left[i] + right[i]) / 2, x[order[i - 1]] + COL)
+    return x
+
+
+def _lane_columns(hint: dict, row: dict) -> dict:
+    x = {}
+    for r in sorted(set(row.values())):
+        order = sorted((n for n in row if row[n] == r), key=lambda n: (hint[n]["y"], hint[n]["x"]))
+        x.update(_pack(order, {n: hint[n]["y"] for n in order}))
+    return x
+
+
+def _ordered_columns(hint: dict, row: dict, edges: list) -> dict:
+    rank, key = dict(row), {n: (hint[n]["y"], hint[n]["x"]) for n in hint}
+    up, down = {n: [] for n in rank}, {n: [] for n in rank}
+    for s, d in edges:
+        if row[d] <= row[s]:
+            continue  # a loop back takes no part in the ordering
+        prev = s
+        for r in range(row[s] + 1, row[d]):  # placeholder slots for an arrow spanning several rows
+            v = f"~{s}>{d}@{r}"
+            rank[v], up[v], down[v] = r, [], []
+            key[v] = (hint[s]["y"] if row[d] - r > r - row[s] else hint[d]["y"], hint[s]["x"])
+            down[prev].append(v)
+            up[v].append(prev)
+            prev = v
+        down[prev].append(d)
+        up[d].append(prev)
+    layers = [sorted((n for n in rank if rank[n] == r), key=lambda n: key[n]) for r in range(max(rank.values()) + 1)]
+
+    def crossings(ls: list) -> int:
+        total = 0
+        for a, b in itertools.pairwise(ls):
+            pos = {n: i for i, n in enumerate(b)}
+            segs = sorted((i, pos[d]) for i, n in enumerate(a) for d in down[n])
+            total += sum(1 for (i1, j1), (i2, j2) in itertools.combinations(segs, 2) if i1 < i2 and j1 > j2)
+        return total
+
+    best, best_c = [list(layer) for layer in layers], crossings(layers)
+    for sweep in range(24):
+        downward = sweep % 2 == 0
+        for r in range(1, len(layers)) if downward else range(len(layers) - 2, -1, -1):
+            pos = {n: i for i, n in enumerate(layers[r - 1] if downward else layers[r + 1])}
+            nbrs = up if downward else down
+            cur = {n: i for i, n in enumerate(layers[r])}
+            layers[r].sort(key=lambda n: statistics.mean(pos[m] for m in nbrs[n]) if nbrs[n] else cur[n])
+        c = crossings(layers)
+        if c < best_c:
+            best, best_c = [list(layer) for layer in layers], c
+
+    x = {}
+    for layer in best:
+        pivot = min(range(len(layer)), key=lambda i: (abs(key[layer[i]][0]), i))
+        x.update({n: (i - pivot) * COL for i, n in enumerate(layer)})
+    for sweep in range(8):
+        for layer in best if sweep % 2 == 0 else best[::-1]:
+            want = {}
+            for n in layer:
+                around = [x[m] for m in up[n] + down[n] if m != "workflow_end"]
+                want[n] = statistics.median(around) if around else x[n]
+            x.update(_pack(layer, want))
+    return {n: x[n] - x["workflow_start"] for n in hint}
+
+
+def _crosses(p1: tuple, p2: tuple, p3: tuple, p4: tuple) -> bool:
+    def ccw(a: tuple, b: tuple, c: tuple) -> float:
+        return (c[1] - a[1]) * (b[0] - a[0]) - (b[1] - a[1]) * (c[0] - a[0])
+
+    d1, d2, d3, d4 = ccw(p3, p4, p1), ccw(p3, p4, p2), ccw(p1, p2, p3), ccw(p1, p2, p4)
+    return (d1 > 0) != (d2 > 0) and (d3 > 0) != (d4 > 0) and 0 not in (d1, d2, d3, d4)
+
+
+def _through_box(p: tuple, q: tuple, c: tuple) -> bool:
+    """Liang-Barsky: does the straight arrow p -> q enter the task box centred on c?"""
+    t0, t1 = 0.0, 1.0
+    dx, dy = q[0] - p[0], q[1] - p[1]
+    for pk, qk in ((-dx, p[0] - c[0] + HALF_W), (dx, c[0] + HALF_W - p[0]), (-dy, p[1] - c[1] + HALF_H), (dy, c[1] + HALF_H - p[1])):
+        if pk == 0:
+            if qk < 0:
+                return False
+        elif pk < 0:
+            t0 = max(t0, qk / pk)
+        else:
+            t1 = min(t1, qk / pk)
+        if t0 > t1:
+            return False
+    return True
+
+
+def drawn_cost(where: dict, edges: list) -> tuple[int, int]:
+    """(arrows crossing, arrows through a task box) for the canvas as Studio draws it."""
+    at = {n: (v["x"], v["y"]) for n, v in where.items()}
+    crossing = sum(
+        1
+        for i, (a, b) in enumerate(edges)
+        for c, d in edges[i + 1 :]
+        if len({a, b, c, d}) == 4 and _crosses(at[a], at[b], at[c], at[d])
+    )
+    through = sum(1 for a, b in edges for n, c in at.items() if n not in (a, b) and _through_box(at[a], at[b], c))
+    return crossing, through
+
+
+def _polish(where: dict, edges: list) -> dict:
+    def cost() -> int:
+        crossing, through = drawn_cost(where, edges)
+        return crossing + 3 * through
+
+    best = cost()
+    for _ in range(12):
+        improved = False
+        rows: dict[int, list] = {}
+        for n, v in where.items():
+            if n not in ("workflow_start", "workflow_end"):
+                rows.setdefault(v["y"], []).append(n)
+        for y in sorted(rows):
+            members = sorted(rows[y], key=lambda n: where[n]["x"])
+            for a, b in itertools.pairwise(members):  # swap neighbours
+                where[a]["x"], where[b]["x"] = where[b]["x"], where[a]["x"]
+                c = cost()
+                if c < best:
+                    best, improved = c, True
+                else:
+                    where[a]["x"], where[b]["x"] = where[b]["x"], where[a]["x"]
+            members = sorted(rows[y], key=lambda n: where[n]["x"])
+            for i, n in enumerate(members):  # nudge sideways, keeping COL to both neighbours
+                for step in (-NUDGE, NUDGE, -2 * NUDGE, 2 * NUDGE):
+                    nx = where[n]["x"] + step
+                    if i > 0 and nx - where[members[i - 1]]["x"] < COL:
+                        continue
+                    if i < len(members) - 1 and where[members[i + 1]]["x"] - nx < COL:
+                        continue
+                    old, where[n]["x"] = where[n]["x"], nx
+                    c = cost()
+                    if c < best:
+                        best, improved = c, True
+                        break
+                    where[n]["x"] = old
+        if not improved:
+            break
+    return where
+
+
+def layout(tasks: dict, transitions: dict) -> dict[str, dict]:
+    hint, row, edges = _rows(tasks, transitions)
+    candidates = [
+        {n: {"x": int(round(x / 10) * 10), "y": row[n] * ROW} for n, x in columns.items()}
+        for columns in (_lane_columns(hint, row), _ordered_columns(hint, row, edges))
+    ]
+    best = min(candidates, key=lambda w: (lambda c: c[0] + 3 * c[1])(drawn_cost(w, edges)))
+    return _polish(best, edges)
+
+
 def workflow(
     name: str,
     description: str,
@@ -76,18 +297,19 @@ def workflow(
     transitions: dict,
     outputs: dict | None = None,
 ) -> dict:
-    tasks = dict(tasks)
+    where = layout(tasks, transitions)
+    tasks = {tid: {**t, "nodeLocation": where[tid]} for tid, t in tasks.items()}
     tasks["workflow_start"] = {
         "name": "workflow_start",
         "summary": "workflow_start",
         "groups": [],
-        "nodeLocation": {"x": -600, "y": 0},
+        "nodeLocation": where["workflow_start"],
     }
     tasks["workflow_end"] = {
         "name": "workflow_end",
         "summary": "workflow_end",
         "groups": [],
-        "nodeLocation": {"x": 1800, "y": 0},
+        "nodeLocation": where["workflow_end"],
     }
     transitions = dict(transitions)
     transitions.setdefault("workflow_end", {})
@@ -291,7 +513,7 @@ def show_command_transitions() -> dict:
     return tr
 
 
-# --- wf-netbox-device-count-v1 (S4.2): NetBox adapter page -> job variable device_count -----------
+# --- Count Devices in NetBox (S4.2): NetBox adapter page -> job variable device_count -----------
 def device_count() -> dict:
     tasks = {
         "1a": nbi(
@@ -303,7 +525,7 @@ def device_count() -> dict:
         ),
     }
     return workflow(
-        "wf-netbox-device-count-v1",
+        WF["device_count"],
         "Reads the NetBox device list through the lab-netbox Integration Model and returns its count (PID S4.2, S4f)",
         {},
         tasks,
@@ -312,7 +534,7 @@ def device_count() -> dict:
     )
 
 
-# --- wf-show-version-v1 (S4.3): Gateway 5 send-command on one inventory node -> job variable output --
+# --- Get Device Software Version (S4.3): Gateway 5 send-command on one inventory node -> job variable output --
 def show_version() -> dict:
     tasks = {
         "1a": task(
@@ -345,7 +567,7 @@ def show_version() -> dict:
     tr["2a"]["2b"] = {"state": "failure", "type": "standard"}
     tr["2b"] = t("", "workflow_end")
     return workflow(
-        "wf-show-version-v1",
+        WF["show_version"],
         "Runs 'show version' on one inventory node through Gateway 5 and returns the raw output (PID S4.3)",
         {
             "device": {
@@ -530,7 +752,7 @@ def t(a: str, b: str, state: str = "success") -> dict:
 # --- Lifecycle Manager + JSON Forms (S4d.3, ADR 0043/0044) ---------------------------------------------
 FORM_NAME = VERSIONS["forms"]["approval"]
 FORM_VIEW = "/json-forms/task/ShowJsonForm"  # measured on 6.5.2: app JsonForms, form_id by name, instance_data defaults, export out
-CONFIG_PUSH = VERSIONS["workflows"]["config_push"]
+CONFIG_PUSH = WF["config_push"]
 # the object Lifecycle Manager stores as the instance (itential/lcm/branch-vlan.yaml schema); every marker is
 # filled by one Tools.replace (a $var inside a nested object never resolves) and the string parsed at the end
 INSTANCE_TPL = '{"branch": "__B__", "vid": __V__, "vlan_name": "__N__", "switch": "__S__", "netbox_vlan_id": __I__, "status": "__ST__"}'
@@ -609,7 +831,7 @@ def child_job(
     return c
 
 
-# --- wf-branch-vlan-v1 (S4.4): reserve a VLAN in NetBox, approve, configure the branch switch ---------
+# --- Add Branch VLAN (S4.4): reserve a VLAN in NetBox, approve, configure the branch switch ---------
 # Inputs: branch (br1|br2), vlan_name. The next free VID in the branch's NetBox VLAN group is chosen
 # by a few lines of Python on Gateway 5 (runCode; the NetBox adapter strips the trailing slash the
 # available-vlans endpoint needs), the VLAN is created 'reserved' through the adapter, the operator
@@ -739,7 +961,7 @@ def branch_vlan() -> dict:
                 "template_sys_id": SNOW_TEMPLATE,
                 **nbi_body(
                     {
-                        "short_description": "wf-branch-vlan-v1: branch VLAN change (itential-enterprise-lab)",
+                        "short_description": "Add Branch VLAN: branch VLAN change (itential-enterprise-lab)",
                         "assignment_group": SNOW_GROUP,
                     }
                 ),
@@ -914,7 +1136,7 @@ def branch_vlan() -> dict:
         ),
         "e1": replace(
             "work note text",
-            "NetBox reservation: VLAN __V__ (VLAN object id __I__) reserved by wf-branch-vlan-v1",
+            "NetBox reservation: VLAN __V__ (VLAN object id __I__) reserved by Add Branch VLAN",
             "__V__",
             "$var.b2.numToString",
             x=4700,
@@ -1041,7 +1263,7 @@ def branch_vlan() -> dict:
             y=-200,
         ),
         # ADR 0066 (owner decision 2026-09-24): send-config reports success: true for lines the switch REFUSES (measured),
-        # so the switch's reply is read on the runner before NetBox is told the VLAN is active - as in wf-config-push-v1
+        # so the switch's reply is read on the runner before NetBox is told the VLAN is active - as in Push Configuration with Approval
         "5e": jq("the switch's reply", "$var.5c.result", "result.results[0].output", x=6350, y=-400),
         "5f": task(
             "setObjectKey",
@@ -1115,7 +1337,7 @@ def branch_vlan() -> dict:
             y=-800,
             extra={
                 "close_code": "successful",
-                "close_notes": "VLAN configured by wf-branch-vlan-v1; NetBox VLAN active",
+                "close_notes": "VLAN configured by Add Branch VLAN; NetBox VLAN active",
             },
         ),
         "f4": jq(
@@ -1177,7 +1399,7 @@ def branch_vlan() -> dict:
     journal_ids, journal_tasks = journal_chain(
         "ea",
         "$var.job.switch",
-        "Lifecycle Manager branch-vlan create: VLAN __V__ (__N__) configured through Gateway 5 by wf-branch-vlan-v1; NetBox VLAN active",
+        "Lifecycle Manager branch-vlan create: VLAN __V__ (__N__) configured through Gateway 5 by Add Branch VLAN; NetBox VLAN active",
         "$var.b2.numToString",
         "$var.job.vlan_name",
         x=6600,
@@ -1268,7 +1490,7 @@ def branch_vlan() -> dict:
     tr["8a"] = t("", "8b")
     tr["8b"] = {}
     return workflow(
-        "wf-branch-vlan-v1",
+        WF["branch_vlan"],
         "Reserves a VLAN in NetBox for a branch, asks for approval on the JSON form %s, configures the branch "
         "switch through Gateway 5, activates the NetBox VLAN and publishes the Lifecycle Manager instance; rolls the reservation "
         "back on rejection or device failure (PID S4.4, S4d.3, ADR 0043/0044)"
@@ -1314,7 +1536,7 @@ def branch_vlan() -> dict:
     )
 
 
-# --- wf-show-command-v1 (S4c.7): one show command -> raw text + structured data per vendor --------
+# --- Run Show Command on a Device (S4c.7): one show command -> raw text + structured data per vendor --------
 # Gateway 5 send-command returns text; a runCode task on the glibc runner (ADR 0038) parses it
 # with Genie (Cisco) or TextFSM/ntc-templates (Arista). The engine is chosen from the node's NetBox
 # platform slug, which the workflow substitutes into the code (a top-level string input resolves
@@ -1460,7 +1682,7 @@ def show_command() -> dict:
     )
 
     return workflow(
-        "wf-show-command-v1",
+        WF["show_command"],
         "Runs one show command on an inventory node through Gateway 5 and returns the raw output plus structured data: "
         "Genie for Cisco platforms, TextFSM (ntc-templates) for Arista, chosen from the node's NetBox platform (PID S4c.7, ADR 0038)",
         {
@@ -1487,7 +1709,7 @@ def show_command() -> dict:
     )  # "" when the parse succeeded
 
 
-# --- wf-show-all-v1 (S4d.5, ADR 0046): one show command on every lab device in one call ------------------
+# --- Run Show Command on All Devices (S4d.5, ADR 0046): one show command on every lab device in one call ------------------
 # A local model asked about "all devices" invents node names and loops (measured); this workflow is the
 # deterministic fan-out: the Configuration Manager device list (the lab inventory), one multi-node
 # send-command, and one parse on the runner keyed by device (Genie for cisco_ios, TextFSM for arista_eos).
@@ -1644,7 +1866,7 @@ def show_all() -> dict:
     tr["3c"]["5a"] = {"state": "failure", "type": "standard"}
     tr["5a"] = t("", "workflow_end")
     return workflow(
-        "wf-show-all-v1",
+        WF["show_all"],
         "Runs one show command on every lab device in one Gateway 5 call and returns the parsed result per device "
         "(Genie for cisco_ios, TextFSM for arista_eos, each capped at 1500 characters); the agents' fleet-wide read (PID S4d.5, ADR 0046)",
         {
@@ -1666,7 +1888,7 @@ def show_all() -> dict:
     )
 
 
-# --- wf-config-push-v1 (S4d, ADR 0040/0041): the one governed write path ---------------------
+# --- Push Configuration with Approval (S4d, ADR 0040/0041): the one governed write path ---------------------
 # Inputs: device, config (CLI lines), reason. The operator sees device, reason and the exact lines in
 # a Work Center approval; on approval Gateway 5 pushes them with send-config and saves the running
 # configuration with "write memory" (IOS-XE and EOS both accept it). A rejection ends the job in
@@ -1821,7 +2043,7 @@ def config_push() -> dict:
     ] = {}  # rejected: no transition to the end, the job ends in error with nothing pushed
     # A device the inventory does not have is NOT the rejection case: sendConfig answers 404 and,
     # with no failure edge, the job dead-ends and the calling agent session hangs for ever (measured
-    # 2026-09-11 on wf-show-command-v1). This ends the job cleanly with changed = false and a message.
+    # 2026-09-11 on Run Show Command on a Device). This ends the job cleanly with changed = false and a message.
     # The reject path above keeps its deliberate error-end: that semantic is a separate decision.
     tasks["6a"] = note(
         "the device is not in the inventory",
@@ -1861,7 +2083,7 @@ def config_push() -> dict:
     tr["8a"] = t("", "8b")
     tr["8b"] = t("", "workflow_end")
     return workflow(
-        "wf-config-push-v1",
+        WF["config_push"],
         "Pushes operator-supplied configuration lines to one inventory node through Gateway 5 after a Work Center "
         "approval and saves the running configuration; the only write path for compliance remediation (PID S4d, ADR 0040)",
         {
@@ -1893,7 +2115,7 @@ def config_push() -> dict:
     )
 
 
-# --- wf-compliance-run-v1 (S4d.1, ADR 0040): the nightly schedule trigger's target ------------------
+# --- Run Nightly Compliance Check (S4d.1, ADR 0040): the nightly schedule trigger's target ------------------
 # No inputs: Operations Manager schedule triggers on 6.5.2 do not persist formData (measured 2026-09-07,
 # PATCH echoes it, GET returns null), so the plan is found by its name from versions.yaml. The search
 # matches a regex (an unescaped "-" misses, anchors work). The run is asynchronous; the plan instance
@@ -1924,7 +2146,7 @@ def compliance_run() -> dict:
         ),
     }
     return workflow(
-        "wf-compliance-run-v1",
+        WF["compliance_run"],
         "Runs the Configuration Manager compliance plan %s; scheduled nightly by Operations Manager (PID S4d.1, ADR 0040)"
         % PLAN_NAME,
         {},
@@ -1934,7 +2156,7 @@ def compliance_run() -> dict:
     )
 
 
-# --- wf-backup-all-v1 (S4d.2, ADR 0042): every Configuration Manager device backed up, nightly ---------
+# --- Back Up All Device Configs (S4d.2, ADR 0042): every Configuration Manager device backed up, nightly ---------
 # No inputs (schedule triggers do not persist formData). The device list comes from Configuration Manager
 # itself (the InventoryBroker devices, ADR 0039), so a node added to NetBox is backed up on the next run
 # with no change here. Loop = WorkFlowEngine forEach: the "loop" transition starts an iteration, a body
@@ -1969,7 +2191,7 @@ def backup_all() -> dict:
             {
                 "name": "$var.2a.current_item",
                 "options": {
-                    "description": "nightly backup (wf-backup-all-v1)",
+                    "description": "nightly backup (Back Up All Device Configs)",
                     "notes": "",
                 },
             },
@@ -1989,7 +2211,7 @@ def backup_all() -> dict:
         "3a": {},
     }
     return workflow(
-        "wf-backup-all-v1",
+        WF["backup_all"],
         "Backs up every Configuration Manager device through the InventoryBroker (Gateway 5); "
         "scheduled nightly by Operations Manager (PID S4d.2, ADR 0042)",
         {},
@@ -1999,10 +2221,10 @@ def backup_all() -> dict:
     )
 
 
-# --- wf-branch-vlan-delete-v1 (S4d.3, ADR 0043): the Lifecycle Manager delete action -------------------
+# --- Remove Branch VLAN (S4d.3, ADR 0043): the Lifecycle Manager delete action -------------------
 # Input: the instance object LCM passes as the job variable `instance` (branch, vid, vlan_name, switch,
 # netbox_vlan_id, status). The switch is read with `show vlan <vid>` and, only when the VLAN is present,
-# wf-config-push-v1 runs as a child job with `no vlan <vid>` (its Work Center approval is the gate); the
+# Push Configuration with Approval runs as a child job with `no vlan <vid>` (its Work Center approval is the gate); the
 # NetBox VLAN is deleted after the device, so a rejected push changes nothing. A rejected push leaves the
 # push job in error and this job waiting on it (a job in error is retryable on 6.5.2): cancelling the
 # execution ends both and keeps the instance. Run on a retired VLAN it is a no-op (changed false, no push).
@@ -2184,7 +2406,7 @@ def branch_vlan_delete() -> dict:
     journal_ids, journal_tasks = journal_chain(
         "eb",
         "$var.1d.return_data",
-        "Lifecycle Manager branch-vlan delete: VLAN __V__ (__N__) removed through %s by wf-branch-vlan-delete-v1"
+        "Lifecycle Manager branch-vlan delete: VLAN __V__ (__N__) removed through %s by Remove Branch VLAN"
         % CONFIG_PUSH,
         "$var.1f.numToString",
         "$var.1c.return_data",
@@ -2212,7 +2434,7 @@ def branch_vlan_delete() -> dict:
     tr[final_ids[-1]] = t("", "workflow_end")
     tr["9a"] = t("", "workflow_end")
     return workflow(
-        "wf-branch-vlan-delete-v1",
+        WF["branch_vlan_delete"],
         "Lifecycle Manager delete action for branch-vlan: deletes the NetBox VLAN and removes it from the branch switch only "
         "through %s (Work Center approval); no-op when both are already gone (PID S4d.3, ADR 0043)"
         % CONFIG_PUSH,
@@ -2238,7 +2460,7 @@ def branch_vlan_delete() -> dict:
     )
 
 
-# --- wf-compliance-report-v1 (S4d.5, ADR 0046): one cheap compliance tool for the agents ----------------
+# --- Summarize Compliance Results (S4d.5, ADR 0046): one cheap compliance tool for the agents ----------------
 # Input run=true starts the plan and waits for it (four unrolled delay + search attempts, no cycle in the graph);
 # run=false takes the newest complete instance. Either way the batch reports are reduced on the Gateway 5 runner
 # to one compact object per device (errors, warnings, passes, the issue lines) published as `summary`, with
@@ -2514,7 +2736,7 @@ def compliance_report() -> dict:
     tr["e1"] = t("", "workflow_end")
     tr["e2"] = t("", "workflow_end")
     return workflow(
-        "wf-compliance-report-v1",
+        WF["compliance_report"],
         "Runs (run=true) or reads (run=false) the %s compliance plan and returns one compact summary per device: "
         "errors, warnings, passes and the issue lines; the agents' compliance tool (PID S4d.5, ADR 0046)"
         % PLAN_NAME,
@@ -2539,13 +2761,13 @@ def compliance_report() -> dict:
     )
 
 
-# --- wf-netbox-devices-v1 (S4d.5, ADR 0046): one cheap NetBox inventory tool for the local twins -------
+# --- List Devices from NetBox (S4d.5, ADR 0046): one cheap NetBox inventory tool for the local twins -------
 # Measured 2026-09-11: `dcim_devices_list` handed straight to a 7B model returns NetBox device objects of
 # 52 fields each - five devices at br1 are 17.9 kB, and with the tool schemas the prompt reached 7,823
 # tokens. qwen2.5:7b on the four CPU cores of tools-01 ingests at ~22 tokens/sec, so the Platform's
 # inference timeout fired at around 350 s and reported "ollama model invocation failed" while Ollama was
-# still working (it finished the same request at 16:55:13, truncated = 0). This is the wf-compliance-
-# report-v1 shape applied to inventory: read the list once, reduce it on the Gateway 5 runner, and hand
+# still working (it finished the same request at 16:55:13, truncated = 0). This is the Summarize Compliance
+# Results shape applied to inventory: read the list once, reduce it on the Gateway 5 runner, and hand
 # the model six fields per device. All 21 lab devices reduce to 2.8 kB; br1 alone to about 700 bytes.
 #
 # The filters are workflow inputs rather than integration parameters on purpose. The operation is called
@@ -2654,7 +2876,7 @@ def netbox_devices() -> dict:
     transitions["1a"]["3a"] = {"state": "error", "type": "standard"}
     transitions["3a"] = t("", "workflow_end")
     return workflow(
-        "wf-netbox-devices-v1",
+        WF["netbox_devices"],
         "Lists NetBox devices reduced to name, site, role, platform, status and primary_ip4, "
         "optionally filtered by one value matched against name, site or role; the local twins' inventory "
         "tool, because the raw "
@@ -2693,6 +2915,6 @@ if __name__ == "__main__":
         netbox_devices(),
         backup_all(),
     ):
-        out = HERE / f"{wf['name']}.json"
+        out = HERE / file_name(wf["name"])
         out.write_text(json.dumps(wf, indent=2) + "\n")
         print(out.relative_to(HERE.parent.parent), len(wf["tasks"]) - 2, "tasks")
