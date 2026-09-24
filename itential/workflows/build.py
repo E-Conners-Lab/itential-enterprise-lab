@@ -15,7 +15,9 @@ the itentialopensource pre-built automations:
 
 from __future__ import annotations
 
+import itertools
 import json
+import statistics
 from pathlib import Path
 
 import yaml
@@ -74,18 +76,25 @@ def task(
     return t
 
 
-# The canvas reads top to bottom and is laid out from the transitions, not by hand (owner preference,
-# 2026-09-24). The x/y a task is given below is only a hint: x its order along the flow, y its lane (0 the main
-# path, negative a failure branch to the left, positive a side branch to the right).
-#   row    = the longest path from workflow_start, so every forward arrow points down; a loop back (a retry
-#            or a poll) is the only arrow that goes up
-#   column = the task's lane, then tasks sharing a row are pushed apart so none overlap
-# workflow_start is alone on the top row and workflow_end alone on the bottom one.
+# --- the canvas ------------------------------------------------------------------------------------------------
+# Every workflow reads top to bottom and is laid out from its transitions, not by hand (owner preference,
+# 2026-09-24). The x/y a task is given in this file is only a hint: x its order along the flow, y its lane (0 the
+# main path, negative a failure branch to the left, positive a side branch to the right).
+#   row    = the longest path from workflow_start, so every forward arrow points down (a loop back, a retry or a
+#            poll, is the only arrow that may go up); workflow_start is alone on top, workflow_end at the bottom
+#   column = two candidates, scored on what Studio draws (straight arrows): the lanes as given, and the rows
+#            reordered by the barycenter of their neighbours (long arrows kept as a chain of placeholder slots)
+#            then pulled toward the median of their neighbours. The lower score wins, then a local search swaps
+#            neighbours and nudges tasks sideways while the score keeps dropping.
+#   score  = arrows crossing + 3 x arrows through a task box (an arrow hidden behind a task reads worse)
+# Deterministic: the same document always gets the same canvas. tests/test_workflow_layout.py holds the shape.
 ROW = 150  # down the page from one row to the next (a task is about 50 units tall)
 COL = 300  # across the page between tasks in a row (a task is about 220 units wide)
+NUDGE = 150  # the local search's sideways step
+HALF_W, HALF_H = 100, 20  # a task box for the score, a little inside its drawn 220 x 50
 
 
-def layout(tasks: dict, transitions: dict) -> dict[str, dict]:
+def _rows(tasks: dict, transitions: dict) -> tuple[dict, dict, list]:
     hint = {tid: t.get("nodeLocation") or {"x": 0, "y": 0} for tid, t in tasks.items()}
     hint["workflow_start"] = {"x": float("-inf"), "y": 0}
     hint["workflow_end"] = {"x": float("inf"), "y": 0}
@@ -115,17 +124,169 @@ def layout(tasks: dict, transitions: dict) -> dict[str, dict]:
             if (n, d) not in back:
                 row[d] = max(row[d], row[n] + 1)
     row["workflow_end"] = max(r for n, r in row.items() if n != "workflow_end") + 1
+    edges = [(s, d) for s in succ for d in succ[s]]
+    return hint, row, edges
 
-    x: dict[str, float] = {}
+
+def _pack(order: list, want: dict) -> dict:
+    """x for one row: keep the order, keep COL apart, stay as close to `want` as possible."""
+    left, right = [], [0.0] * len(order)
+    for i, n in enumerate(order):
+        left.append(want[n] if i == 0 else max(want[n], left[-1] + COL))
+    for i in range(len(order) - 1, -1, -1):
+        right[i] = want[order[i]] if i == len(order) - 1 else min(want[order[i]], right[i + 1] - COL)
+    x = {}
+    for i, n in enumerate(order):
+        x[n] = (left[i] + right[i]) / 2 if i == 0 else max((left[i] + right[i]) / 2, x[order[i - 1]] + COL)
+    return x
+
+
+def _lane_columns(hint: dict, row: dict) -> dict:
+    x = {}
     for r in sorted(set(row.values())):
-        members = sorted((n for n in row if row[n] == r), key=lambda n: (hint[n]["y"], hint[n]["x"]))
-        pivot = min(range(len(members)), key=lambda i: abs(hint[members[i]]["y"]))
-        x[members[pivot]] = hint[members[pivot]]["y"]
-        for i in range(pivot + 1, len(members)):
-            x[members[i]] = max(hint[members[i]]["y"], x[members[i - 1]] + COL)
-        for i in range(pivot - 1, -1, -1):
-            x[members[i]] = min(hint[members[i]]["y"], x[members[i + 1]] - COL)
-    return {n: {"x": int(x[n]), "y": row[n] * ROW} for n in hint}
+        order = sorted((n for n in row if row[n] == r), key=lambda n: (hint[n]["y"], hint[n]["x"]))
+        x.update(_pack(order, {n: hint[n]["y"] for n in order}))
+    return x
+
+
+def _ordered_columns(hint: dict, row: dict, edges: list) -> dict:
+    rank, key = dict(row), {n: (hint[n]["y"], hint[n]["x"]) for n in hint}
+    up, down = {n: [] for n in rank}, {n: [] for n in rank}
+    for s, d in edges:
+        if row[d] <= row[s]:
+            continue  # a loop back takes no part in the ordering
+        prev = s
+        for r in range(row[s] + 1, row[d]):  # placeholder slots for an arrow spanning several rows
+            v = f"~{s}>{d}@{r}"
+            rank[v], up[v], down[v] = r, [], []
+            key[v] = (hint[s]["y"] if row[d] - r > r - row[s] else hint[d]["y"], hint[s]["x"])
+            down[prev].append(v)
+            up[v].append(prev)
+            prev = v
+        down[prev].append(d)
+        up[d].append(prev)
+    layers = [sorted((n for n in rank if rank[n] == r), key=lambda n: key[n]) for r in range(max(rank.values()) + 1)]
+
+    def crossings(ls: list) -> int:
+        total = 0
+        for a, b in itertools.pairwise(ls):
+            pos = {n: i for i, n in enumerate(b)}
+            segs = sorted((i, pos[d]) for i, n in enumerate(a) for d in down[n])
+            total += sum(1 for (i1, j1), (i2, j2) in itertools.combinations(segs, 2) if i1 < i2 and j1 > j2)
+        return total
+
+    best, best_c = [list(layer) for layer in layers], crossings(layers)
+    for sweep in range(24):
+        downward = sweep % 2 == 0
+        for r in range(1, len(layers)) if downward else range(len(layers) - 2, -1, -1):
+            pos = {n: i for i, n in enumerate(layers[r - 1] if downward else layers[r + 1])}
+            nbrs = up if downward else down
+            cur = {n: i for i, n in enumerate(layers[r])}
+            layers[r].sort(key=lambda n: statistics.mean(pos[m] for m in nbrs[n]) if nbrs[n] else cur[n])
+        c = crossings(layers)
+        if c < best_c:
+            best, best_c = [list(layer) for layer in layers], c
+
+    x = {}
+    for layer in best:
+        pivot = min(range(len(layer)), key=lambda i: (abs(key[layer[i]][0]), i))
+        x.update({n: (i - pivot) * COL for i, n in enumerate(layer)})
+    for sweep in range(8):
+        for layer in best if sweep % 2 == 0 else best[::-1]:
+            want = {}
+            for n in layer:
+                around = [x[m] for m in up[n] + down[n] if m != "workflow_end"]
+                want[n] = statistics.median(around) if around else x[n]
+            x.update(_pack(layer, want))
+    return {n: x[n] - x["workflow_start"] for n in hint}
+
+
+def _crosses(p1: tuple, p2: tuple, p3: tuple, p4: tuple) -> bool:
+    def ccw(a: tuple, b: tuple, c: tuple) -> float:
+        return (c[1] - a[1]) * (b[0] - a[0]) - (b[1] - a[1]) * (c[0] - a[0])
+
+    d1, d2, d3, d4 = ccw(p3, p4, p1), ccw(p3, p4, p2), ccw(p1, p2, p3), ccw(p1, p2, p4)
+    return (d1 > 0) != (d2 > 0) and (d3 > 0) != (d4 > 0) and 0 not in (d1, d2, d3, d4)
+
+
+def _through_box(p: tuple, q: tuple, c: tuple) -> bool:
+    """Liang-Barsky: does the straight arrow p -> q enter the task box centred on c?"""
+    t0, t1 = 0.0, 1.0
+    dx, dy = q[0] - p[0], q[1] - p[1]
+    for pk, qk in ((-dx, p[0] - c[0] + HALF_W), (dx, c[0] + HALF_W - p[0]), (-dy, p[1] - c[1] + HALF_H), (dy, c[1] + HALF_H - p[1])):
+        if pk == 0:
+            if qk < 0:
+                return False
+        elif pk < 0:
+            t0 = max(t0, qk / pk)
+        else:
+            t1 = min(t1, qk / pk)
+        if t0 > t1:
+            return False
+    return True
+
+
+def drawn_cost(where: dict, edges: list) -> tuple[int, int]:
+    """(arrows crossing, arrows through a task box) for the canvas as Studio draws it."""
+    at = {n: (v["x"], v["y"]) for n, v in where.items()}
+    crossing = sum(
+        1
+        for i, (a, b) in enumerate(edges)
+        for c, d in edges[i + 1 :]
+        if len({a, b, c, d}) == 4 and _crosses(at[a], at[b], at[c], at[d])
+    )
+    through = sum(1 for a, b in edges for n, c in at.items() if n not in (a, b) and _through_box(at[a], at[b], c))
+    return crossing, through
+
+
+def _polish(where: dict, edges: list) -> dict:
+    def cost() -> int:
+        crossing, through = drawn_cost(where, edges)
+        return crossing + 3 * through
+
+    best = cost()
+    for _ in range(12):
+        improved = False
+        rows: dict[int, list] = {}
+        for n, v in where.items():
+            if n not in ("workflow_start", "workflow_end"):
+                rows.setdefault(v["y"], []).append(n)
+        for y in sorted(rows):
+            members = sorted(rows[y], key=lambda n: where[n]["x"])
+            for a, b in itertools.pairwise(members):  # swap neighbours
+                where[a]["x"], where[b]["x"] = where[b]["x"], where[a]["x"]
+                c = cost()
+                if c < best:
+                    best, improved = c, True
+                else:
+                    where[a]["x"], where[b]["x"] = where[b]["x"], where[a]["x"]
+            members = sorted(rows[y], key=lambda n: where[n]["x"])
+            for i, n in enumerate(members):  # nudge sideways, keeping COL to both neighbours
+                for step in (-NUDGE, NUDGE, -2 * NUDGE, 2 * NUDGE):
+                    nx = where[n]["x"] + step
+                    if i > 0 and nx - where[members[i - 1]]["x"] < COL:
+                        continue
+                    if i < len(members) - 1 and where[members[i + 1]]["x"] - nx < COL:
+                        continue
+                    old, where[n]["x"] = where[n]["x"], nx
+                    c = cost()
+                    if c < best:
+                        best, improved = c, True
+                        break
+                    where[n]["x"] = old
+        if not improved:
+            break
+    return where
+
+
+def layout(tasks: dict, transitions: dict) -> dict[str, dict]:
+    hint, row, edges = _rows(tasks, transitions)
+    candidates = [
+        {n: {"x": int(round(x / 10) * 10), "y": row[n] * ROW} for n, x in columns.items()}
+        for columns in (_lane_columns(hint, row), _ordered_columns(hint, row, edges))
+    ]
+    best = min(candidates, key=lambda w: (lambda c: c[0] + 3 * c[1])(drawn_cost(w, edges)))
+    return _polish(best, edges)
 
 
 def workflow(

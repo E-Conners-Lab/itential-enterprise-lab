@@ -15,7 +15,7 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": -800,
+        "x": -650,
         "y": 150
       },
       "variables": {
@@ -1155,7 +1155,7 @@
       "displayName": "JsonForms",
       "groups": [],
       "nodeLocation": {
-        "x": -200,
+        "x": 100,
         "y": 6300
       },
       "variables": {
@@ -1183,7 +1183,7 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": -200,
+        "x": -50,
         "y": 6450
       },
       "variables": {
@@ -1429,7 +1429,7 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": -200,
+        "x": -350,
         "y": 6600
       },
       "variables": {
@@ -1489,7 +1489,7 @@
       "displayName": "GatewayManager",
       "groups": [],
       "nodeLocation": {
-        "x": -200,
+        "x": -500,
         "y": 6900
       },
       "variables": {
@@ -1519,7 +1519,7 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": -200,
+        "x": -500,
         "y": 7050
       },
       "variables": {
@@ -1565,7 +1565,7 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": -400,
+        "x": -550,
         "y": 7200
       },
       "variables": {
@@ -1706,7 +1706,7 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": -600,
+        "x": -200,
         "y": 7800
       },
       "variables": {
@@ -1764,7 +1764,7 @@
       "displayName": "lab-netbox:1.0.0",
       "groups": [],
       "nodeLocation": {
-        "x": -200,
+        "x": -600,
         "y": 7800
       },
       "variables": {

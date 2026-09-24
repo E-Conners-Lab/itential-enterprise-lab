@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import itertools
 import json
 from collections import defaultdict
 from pathlib import Path
@@ -39,4 +40,26 @@ def test_no_task_sits_on_another(file: str) -> None:
         rows[t["nodeLocation"]["y"]].append(t["nodeLocation"]["x"])
     for y, xs in rows.items():
         xs.sort()
-        assert all(b - a >= COL for a, b in zip(xs, xs[1:], strict=False)), f"{file}: tasks crowd row y={y}: {xs}"
+        assert all(b - a >= COL for a, b in itertools.pairwise(xs)), f"{file}: tasks crowd row y={y}: {xs}"
+
+
+def _build():
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("build", WORKFLOWS / "build.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+@pytest.mark.parametrize("file", sorted(_docs()))
+def test_arrows_stay_clear_of_the_tasks(file: str) -> None:
+    """Scored as Studio draws it (straight arrows): a small workflow is clean, a large one close to it."""
+    doc = _docs()[file]
+    where = {k: t["nodeLocation"] for k, t in doc["tasks"].items()}
+    edges = [(s, d) for s, ds in doc["transitions"].items() for d in ds]
+    crossing, through = _build().drawn_cost(where, edges)
+    if len(doc["tasks"]) < 20:
+        assert (crossing, through) <= (1, 1), f"{file}: {crossing} crossings, {through} arrows through a task"
+    else:
+        assert through <= 2, f"{file}: {through} arrows pass through a task"

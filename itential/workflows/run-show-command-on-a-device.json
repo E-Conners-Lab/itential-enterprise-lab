@@ -15,7 +15,7 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": -300,
+        "x": 0,
         "y": 450
       },
       "variables": {
@@ -45,7 +45,7 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": -300,
+        "x": 0,
         "y": 600
       },
       "variables": {
@@ -103,7 +103,7 @@
       "displayName": "lab-netbox:1.0.0",
       "groups": [],
       "nodeLocation": {
-        "x": 300,
+        "x": 290,
         "y": 1050
       },
       "variables": {
@@ -133,7 +133,7 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 300,
+        "x": 550,
         "y": 1200
       },
       "variables": {
@@ -161,7 +161,7 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 300,
+        "x": 820,
         "y": 1350
       },
       "variables": {
@@ -191,7 +191,7 @@
       "displayName": "GatewayManager",
       "groups": [],
       "nodeLocation": {
-        "x": 0,
+        "x": 1100,
         "y": 1500
       },
       "variables": {
@@ -231,7 +231,7 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 0,
+        "x": 1100,
         "y": 1650
       },
       "variables": {
@@ -259,7 +259,7 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 200,
+        "x": 1090,
         "y": 1800
       },
       "variables": {
@@ -287,7 +287,7 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 400,
+        "x": 1090,
         "y": 1950
       },
       "variables": {
@@ -373,7 +373,7 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 0,
+        "x": 70,
         "y": 900
       },
       "variables": {
@@ -419,7 +419,7 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": -300,
+        "x": 610,
         "y": 1650
       },
       "variables": {
@@ -449,7 +449,7 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": -300,
+        "x": -10,
         "y": 1050
       },
       "variables": {
@@ -479,7 +479,7 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": -300,
+        "x": -230,
         "y": 900
       },
       "variables": {
@@ -511,7 +511,7 @@
       "summary": "workflow_end",
       "groups": [],
       "nodeLocation": {
-        "x": 0,
+        "x": 300,
         "y": 2100
       }
     }

@@ -47,7 +47,7 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 0,
+        "x": 190,
         "y": 300
       },
       "variables": {
@@ -75,7 +75,7 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 0,
+        "x": 300,
         "y": 450
       },
       "variables": {
@@ -121,7 +121,7 @@
       "displayName": "ConfigurationManager",
       "groups": [],
       "nodeLocation": {
-        "x": -300,
+        "x": 450,
         "y": 600
       },
       "variables": {
@@ -150,7 +150,7 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": -300,
+        "x": 1050,
         "y": 750
       },
       "variables": {
@@ -178,7 +178,7 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": -300,
+        "x": 1020,
         "y": 900
       },
       "variables": {
@@ -208,7 +208,7 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": -300,
+        "x": 580,
         "y": 1050
       },
       "variables": {
@@ -236,7 +236,7 @@
       "displayName": "ConfigurationManager",
       "groups": [],
       "nodeLocation": {
-        "x": 300,
+        "x": 0,
         "y": 600
       },
       "variables": {
@@ -270,7 +270,7 @@
       "displayName": "GatewayManager",
       "groups": [],
       "nodeLocation": {
-        "x": 300,
+        "x": 110,
         "y": 750
       },
       "variables": {
@@ -305,7 +305,7 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 300,
+        "x": 540,
         "y": 900
       },
       "variables": {
@@ -333,7 +333,7 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 300,
+        "x": 1120,
         "y": 1050
       },
       "variables": {
@@ -361,7 +361,7 @@
       "displayName": "ConfigurationManager",
       "groups": [],
       "nodeLocation": {
-        "x": 0,
+        "x": 370,
         "y": 3750
       },
       "variables": {
@@ -389,7 +389,7 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 0,
+        "x": 370,
         "y": 3900
       },
       "variables": {
@@ -421,7 +421,7 @@
       "displayName": "GatewayManager",
       "groups": [],
       "nodeLocation": {
-        "x": 0,
+        "x": 370,
         "y": 4050
       },
       "variables": {
@@ -456,7 +456,7 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 0,
+        "x": 390,
         "y": 4200
       },
       "variables": {
@@ -484,7 +484,7 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 0,
+        "x": 460,
         "y": 4350
       },
       "variables": {
@@ -512,7 +512,7 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": -300,
+        "x": 610,
         "y": 1200
       },
       "variables": {
@@ -538,7 +538,7 @@
       "displayName": "ConfigurationManager",
       "groups": [],
       "nodeLocation": {
-        "x": -300,
+        "x": 330,
         "y": 1350
       },
       "variables": {
@@ -566,7 +566,7 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": -300,
+        "x": 570,
         "y": 1500
       },
       "variables": {
@@ -594,7 +594,7 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": -300,
+        "x": 590,
         "y": 1650
       },
       "variables": {
@@ -640,7 +640,7 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": -600,
+        "x": 300,
         "y": 1800
       },
       "variables": {
@@ -668,7 +668,7 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": -300,
+        "x": 600,
         "y": 1800
       },
       "variables": {
@@ -694,7 +694,7 @@
       "displayName": "ConfigurationManager",
       "groups": [],
       "nodeLocation": {
-        "x": -300,
+        "x": 80,
         "y": 1950
       },
       "variables": {
@@ -722,7 +722,7 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": -300,
+        "x": 530,
         "y": 2100
       },
       "variables": {
@@ -750,7 +750,7 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": -300,
+        "x": 490,
         "y": 2250
       },
       "variables": {
@@ -796,7 +796,7 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": -600,
+        "x": 500,
         "y": 2400
       },
       "variables": {
@@ -824,7 +824,7 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": -300,
+        "x": 200,
         "y": 2400
       },
       "variables": {
@@ -850,7 +850,7 @@
       "displayName": "ConfigurationManager",
       "groups": [],
       "nodeLocation": {
-        "x": -300,
+        "x": 140,
         "y": 2550
       },
       "variables": {
@@ -878,7 +878,7 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": -300,
+        "x": 300,
         "y": 2700
       },
       "variables": {
@@ -906,7 +906,7 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": -300,
+        "x": 180,
         "y": 2850
       },
       "variables": {
@@ -952,7 +952,7 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": -600,
+        "x": 140,
         "y": 3000
       },
       "variables": {
@@ -980,7 +980,7 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": -300,
+        "x": 740,
         "y": 3000
       },
       "variables": {
@@ -1006,7 +1006,7 @@
       "displayName": "ConfigurationManager",
       "groups": [],
       "nodeLocation": {
-        "x": -300,
+        "x": 660,
         "y": 3150
       },
       "variables": {
@@ -1034,7 +1034,7 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": -300,
+        "x": 800,
         "y": 3300
       },
       "variables": {
@@ -1062,7 +1062,7 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": -300,
+        "x": 850,
         "y": 3450
       },
       "variables": {
@@ -1108,7 +1108,7 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": -500,
+        "x": 610,
         "y": 3600
       },
       "variables": {
@@ -1136,7 +1136,7 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 400,
+        "x": -1040,
         "y": 4500
       },
       "variables": {
@@ -1166,7 +1166,7 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": -800,
+        "x": 910,
         "y": 3600
       },
       "variables": {
@@ -1198,7 +1198,7 @@
       "summary": "workflow_end",
       "groups": [],
       "nodeLocation": {
-        "x": 0,
+        "x": 460,
         "y": 4650
       }
     }
