@@ -77,6 +77,14 @@ else
 fi
 ANTHROPIC_MODEL=$(${PY} -c "import yaml;p={x['name']:x for x in yaml.safe_load(open('$V'))['llm']['profiles']};print(p['anthropic']['model'])")
 OLLAMA_MODEL=$(${PY} -c "import yaml;p={x['name']:x for x in yaml.safe_load(open('$V'))['llm']['profiles']};print(p['ollama-mac']['model'])")
+# Tool checks match the workflow names itential/versions.yaml gives (ADR 0067), never a fragment of one: a
+# fragment of an old name kept matching nothing after the rename, and a check for a forbidden tool then passed
+# whatever the agent did.
+wf_name() { ${PY} -c "import yaml;print(yaml.safe_load(open('$V'))['workflows']['$1'])"; }
+WF_PUSH=$(wf_name config_push)
+WF_REPORT=$(wf_name compliance_report)
+WF_SHOW_ALL=$(wf_name show_all)
+WF_DEVICE_READS="$(wf_name show_version)|$(wf_name show_command)|${WF_SHOW_ALL}"
 
 # --- S4c.1 two provider profiles answer; pinned models present --------------------------------
 c1() {
@@ -102,7 +110,7 @@ c2() {
     sid=$(run_agent lab-netops "{\"request\":\"What software version is running on ${dev_name}? Reply with the version string only.\"}") || { errs+="${dev_name}: ${sid}\n"; continue; }
     sid=${sid##*$'\n'}; txt=$(session_text "$sid"); tools=$(session_tools "$sid"); count_tokens "$sid"
     echo "$txt" | grep -q "$want" || { errs+="${dev_name}: answer lacks ${want}: $(echo "$txt" | head -c 200)\n"; continue; }
-    echo "$tools" | grep -qiE "send.?command|show" || { errs+="${dev_name}: no gateway tool call in the session (${tools})\n"; continue; }
+    echo "$tools" | grep -qiE "send.?command|${WF_DEVICE_READS}" || { errs+="${dev_name}: no gateway tool call in the session (${tools})\n"; continue; }
     direct=$(${PY} verify/devcmd.py "$dev_ip" "show version" 2>/dev/null) || { errs+="${dev_name}: direct ssh failed\n"; continue; }
     echo "$direct" | grep -q "$want" || errs+="${dev_name}: device itself lacks ${want}\n"
     echo "${dev_name}: agent said ${want}; tools ${tools}"
@@ -280,7 +288,7 @@ c9() {
   sid=$(run_agent device-ops '{"request":"What software version is running on br2-sw01? Reply with the version string only."}') || { echo "$sid"; return 1; }
   sid=${sid##*$'\n'}; txt=$(session_text "$sid"); tools=$(session_tools "$sid"); count_tokens "$sid"
   echo "$tools" | grep -qiE "Run Show Command on a Device|send.?command" || { echo "no device read tool in the session: ${tools}"; return 1; }
-  echo "$tools" | grep -qiE "send.?config|config-push" && { echo "device-ops used a write tool: ${tools}"; return 1; }
+  echo "$tools" | grep -qiE "send.?config|${WF_PUSH}" && { echo "device-ops used a write tool: ${tools}"; return 1; }
   direct=$(${PY} verify/devcmd.py "$BR2_SW" "show version" 2>/dev/null | ${PY} -c 'import sys,re;m=re.search(r"Software image version:\s*(\S+)",sys.stdin.read());print(m.group(1) if m else "")')
   [ -n "$direct" ] || { echo "direct SSH gave no version"; return 1; }
   echo "$txt" | grep -q "$direct" || { echo "answer '${txt}' lacks ${direct} (direct SSH)"; return 1; }
@@ -292,7 +300,7 @@ c10() {
   local sid txt tools batch bad
   sid=$(run_agent compliance '{"request":"Run the lab-baseline compliance plan now and tell me which devices have errors or warnings. If none, reply exactly: all compliant."}') || { echo "$sid"; return 1; }
   sid=${sid##*$'\n'}; txt=$(session_text "$sid"); tools=$(session_tools "$sid"); count_tokens "$sid"
-  echo "$tools" | grep -qi "compliance-report" || { echo "the summarising workflow was not used: ${tools}"; return 1; }
+  echo "$tools" | grep -qF "${WF_REPORT}" || { echo "the summarising workflow was not used: ${tools}"; return 1; }
   echo "$tools" | grep -q "getJSONComplianceReportsByBatch\|searchCompliancePlanInstances" && { echo "the raw report tools were used (token cost): ${tools}"; return 1; }
   batch=$(latest_batch); [ -n "$batch" ] || { echo "no complete lab-baseline instance"; return 1; }
   bad=$(batch_issues "$batch" | awk '$2+$3>0{print $1}' | tr '\n' ' ')
@@ -312,7 +320,7 @@ c11() {
   echo "$tools" | grep -q "listIncidents\|getIncident" || { echo "the ticket was not read: ${tools}"; return 1; }
   echo "$tools" | grep -qiE "Run Show Command on a Device|send.?command" || { echo "the device was not read: ${tools}"; return 1; }
   echo "$tools" | grep -q "updateIncident" || { echo "no work note written: ${tools}"; return 1; }
-  echo "$tools" | grep -qiE "config-push|send.?config" && { echo "diagnostics touched a write tool: ${tools}"; return 1; }
+  echo "$tools" | grep -qiE "${WF_PUSH}|send.?config" && { echo "diagnostics touched a write tool: ${tools}"; return 1; }
   note=$(sn "$SN/incident/${INC_SYS}?sysparm_fields=comments_and_work_notes&sysparm_display_value=true" | ${PY} -c 'import sys,json;print(json.load(sys.stdin)["result"]["comments_and_work_notes"])')
   echo "$note" | grep -q "Proposed fix" || { echo "no 'Proposed fix' note on ${INC_NUM}: $(echo "$note" | head -c 200)"; return 1; }
   echo "$note" | grep -qi "hostname br2-sw01" || { echo "the note does not propose 'hostname br2-sw01': $(echo "$note" | head -c 300)"; return 1; }
@@ -342,7 +350,7 @@ c12() {
   done
   [ "$state" = complete ] || [ "$state" = completed ] || { echo "session ${sid} did not finish (${state})"; return 1; }
   txt=$(session_text "$sid"); tools=$(session_tools "$sid"); count_tokens "$sid"
-  echo "$tools" | grep -qi "compliance-report" || { echo "the report was not read: ${tools}"; return 1; }
+  echo "$tools" | grep -qF "${WF_REPORT}" || { echo "the report was not read: ${tools}"; return 1; }
   echo "$tools" | grep -q "Push Configuration with Approval" || { echo "remediation did not start Push Configuration with Approval: ${tools}; said: $(echo "$txt" | head -c 200)"; return 1; }
   echo "$tools" | grep -qiE "send.?config" && { echo "remediation used send-config: ${tools}"; return 1; }
   [ -n "$job" ] || { echo "no Push Configuration with Approval job appeared"; return 1; }
@@ -380,9 +388,9 @@ assert '17.13.01a' in json.dumps(r['br1-wan01']['parsed']) and '4.33.1.1F' in js
 print('Run Show Command on All Devices: %d devices, parsers %s' % (len(r), sorted(set(p.values()))))" || return 1
   ${PY} verify/devcmd.py 10.100.0.146 "show version" 2>/dev/null | grep -q "17.13.01a" && ${PY} verify/devcmd.py 10.100.0.165 "show version" 2>/dev/null | grep -q "4.33.1.1F" || { echo "direct SSH disagrees"; return 1; }
   t0=$(date +%s)
-  sid=$(run_agent lab-netops-local '{"request":"Run show version on all devices with the show-all tool and reply with the number of devices that answered, as a number only."}') || { echo "$sid"; return 1; }
+  sid=$(run_agent lab-netops-local "{\"request\":\"Run show version on all devices with the ${WF_SHOW_ALL} tool and reply with the number of devices that answered, as a number only.\"}") || { echo "$sid"; return 1; }
   t1=$(date +%s); sid=${sid##*$'\n'}; txt=$(session_text "$sid"); tools=$(session_tools "$sid"); count_tokens "$sid"
-  echo "$tools" | grep -q "Run Show Command on All Devices" || { echo "the local generalist did not use Run Show Command on All Devices: ${tools}"; return 1; }
+  echo "$tools" | grep -qF "${WF_SHOW_ALL}" || { echo "the local generalist did not use ${WF_SHOW_ALL}: ${tools}"; return 1; }
   echo "$txt" | grep -qw "$n_nb" || { echo "answer '$(echo "$txt" | head -c 200)' lacks ${n_nb}"; return 1; }
   echo "lab-netops-local counted ${n_nb} devices from one Run Show Command on All Devices call in $((t1-t0)) s; tools ${tools}"
 }

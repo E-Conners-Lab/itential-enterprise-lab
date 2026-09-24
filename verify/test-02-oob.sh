@@ -99,8 +99,10 @@ eve_login() { curl -sk -m 15 -H "Content-Type: application/json" -d "{\"username
 c6() { ! eve_login "eve" && eve_login "$EVE_PASSWORD"; }
 check "S1.6 EVE-NG API rejects factory password 'eve' and accepts EVE_PASSWORD" c6
 
-# --- S1.7 vmbr0 / nic1 stanzas are byte-identical to the discovery snapshot --------------------
-c7() { $SSH "root@${PVE_HOST}" 'awk "/^iface nic1 inet manual/{f=1} f{print} /^\tbridge-fd 0/{if(f){exit}}" /etc/network/interfaces' | diff - verify/fixtures/pve-interfaces-vmbr0.expected; }
+# --- S1.7 vmbr0 / nic1 stanzas are byte-identical to the recorded copy -------------------------
+# The two stanzas by name (the Proxmox UI reorders the file when it saves): nic1, then all of vmbr0 up to its blank
+# line. vmbr0 is VLAN-aware since 2026-09-24 so the Deco's VLAN 1 tags are stripped before the VMs see them.
+c7() { $SSH "root@${PVE_HOST}" 'awk "/^iface nic1 inet manual/{print; print \"\"} /^auto vmbr0/{f=1} f&&/^\$/{exit} f{print}" /etc/network/interfaces' | diff - verify/fixtures/pve-interfaces-vmbr0.expected; }
 check "S1.7 vmbr0/nic1 stanzas unchanged vs verify/fixtures/pve-interfaces-vmbr0.expected" c7
 
 # --- S1.8 client access: names resolve via the LAN leg, NetBox reachable by name over the route --

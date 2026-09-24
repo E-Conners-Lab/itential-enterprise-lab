@@ -7,3 +7,5 @@ iface vmbr0 inet static
 	bridge-ports nic1
 	bridge-stp off
 	bridge-fd 0
+	bridge-vlan-aware yes
+	bridge-vids 2-4094
