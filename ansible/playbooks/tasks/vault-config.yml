@@ -1,6 +1,6 @@
 ---
 # Phase 9a (ADR 0065): configure a Vault the lab's readers can use - the KV v2 mount, AppRole, one read-only
-# policy and role per reader, and the secrets seeded one-way from .env (Phase 9b makes Vault the source).
+# policy and role per reader, and the secrets seeded one-way from .env (.env stays the source; Phase 9b deferred).
 # Shared by the dev Vault (vault-dev.yml) and production's; the caller supplies:
 #   vault_addr       https URL the workstation reaches (verified against the lab CA)
 #   vault_token      a token allowed to configure it (dev: the root token from the VM's init output)

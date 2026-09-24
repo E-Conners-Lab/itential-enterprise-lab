@@ -61,7 +61,7 @@ check "S8.2g the service name resolves to the VIP versions.yaml gives it" c_vip
 check "S8.2b a read of lab/devices/automation with no token is refused" vc no-token
 admin_check "S8.2c each reader's policy reads only its own paths (Gateway: devices yes; Platform: devices no, NetBox yes)" vc policies
 admin_check "S8.2e each AppRole is bound to its own hosts (iap-01/02, iag-01): a valid secret ID from this machine is refused" vc bound
-admin_check "S8.2d the device password in Vault equals the .env seed (one-way until Phase 9b)" vc seeded
+admin_check "S8.2d the device password in Vault equals the .env seed (seeded one way)" vc seeded
 c_snapshot() {
   local newest; newest=$(ls -t "$SNAP_DIR"/vault-raft-*.snap 2>/dev/null | head -1)
   [ -n "$newest" ] || { echo "no snapshot in ${SNAP_DIR} (make vault-snapshot)"; return 1; }

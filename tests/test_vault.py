@@ -16,12 +16,28 @@ ADR = ROOT / "docs" / "adr" / "0065-vault-first-through-itentials-built-in-clien
 
 def test_pid_records_the_phase_9a_split_and_its_evals() -> None:
     pid = PID.read_text()
-    assert "| **Version** | 1.34 |" in pid
     assert "| 1.34 | 2026-09-23 |" in pid and "Amendment 1.34 (ADR 0065)" in pid
     assert "| 9a *(1.34)* | `phase-9a/vault` | `verify/test-09a-vault.sh`" in pid
     # the sealed-Vault and rotation evals, and the pre-mortem row, are the reason 9a is safe to run
     assert "| E14 *(1.34)* | Vault sealed" in pid and "| E15 *(1.34)* |" in pid
     assert "| Vault sealed or lost *(1.34, ADR 0065)* |" in pid
+
+
+def test_phase_9b_is_deferred_in_the_pid_adr_and_readme() -> None:
+    # owner decision 2026-09-24: .env stays the source, Vault a read-only copy; nothing may still promise 9b
+    pid = PID.read_text()
+    assert "| **Version** | 1.35 |" in pid
+    assert "| 1.35 | 2026-09-24 | Phase 9b deferred" in pid and "Amendment 1.35 (ADR 0065 amendment)" in pid
+    assert "| 9b *(1.34, deferred 1.35)* | - | none: deferred" in pid
+    assert "## Amendment 2026-09-24: Phase 9b deferred" in ADR.read_text()
+    assert "| deferred (ADR 0065 amendment) |" in (ROOT / "README.md").read_text()
+    promises = [
+        str(f.relative_to(ROOT))
+        for pattern in ("*.sh", "*.yml", "*.yaml", "Makefile")
+        for f in ROOT.rglob(pattern)
+        if not {".venv", "results", ".claude", ".git"} & set(f.parts) and "until Phase 9b" in f.read_text(errors="ignore")
+    ]
+    assert promises == []
 
 
 def test_adr_keeps_the_decisions_the_build_depends_on() -> None:

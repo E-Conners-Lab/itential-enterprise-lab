@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Name** | itential-enterprise-lab |
-| **Version** | 1.34 |
+| **Version** | 1.35 |
 | **Date** | 2026-09-24 |
 | **Author** | Elliot Conner. Claude Code is the build agent; every action it takes is bounded by this document |
 | **Standard** | Project Initiation Standard PIS-01 - PIS-30 (`~/.claude/skills/project-initiation-standard`) |
@@ -35,7 +35,7 @@ section 2. In summary, at the end of Phase 11 the lab must:
 5. Serve DNS/DHCP from Infoblox NIOS with a BIND9/Kea secondary that keeps serving through an eval expiry (ADR 0009).
 6. Authenticate humans with Keycloak (OIDC/SAML) backed by Active Directory, and network devices with tac_plus backed by the same directory.
 7. Monitor every service and device with Zabbix (availability, SNMP) and Prometheus/Grafana (metrics), stream gNMI telemetry through gNMIc, and centralise logs/syslog in Loki.
-8. Back up every device configuration to Oxidized -> Gitea on change, and hold every secret in Vault (no secret in `.env` after Phase 9).
+8. Back up every device configuration to Oxidized -> Gitea on change, and hold every secret in Vault (no secret in `.env` after Phase 9; that clause is deferred with Phase 9b, amendment 1.35).
 9. Manage all firewalls from Panorama (templates, device groups, commit/push driven by Itential).
 10. Validate fabric changes in a Containerlab cEOS twin of the DC before Itential pushes them to EVE-NG.
 11. Stay inside the ceilings in `docs/resource-budget.md`: 1.5:1 vCPU oversubscription (108 vCPU) and 300 GB RAM allocated (280 until amendment 1.30, ADR 0063; 296 until 1.32).
@@ -310,6 +310,8 @@ Conventions: **Placement** is Proxmox VM (OpenTofu + Ansible), k3s (Helm/Kustomi
 > **Amendment 1.15 (ADR 0050):** Phase 8: the Anthropic company key (ADR 0049) moves into Vault with the device credentials; the NIOS Oxidized model waits for the firewall track; Gitea SSO is asserted in the identity phase.
 >
 > **Amendment 1.34 (ADR 0065):** Vault goes first as Phase **9a** (`verify/test-09a-vault.sh`): criteria 2 and 3 through Itential's built-in clients (the Platform's `ITENTIAL_VAULT_*` AppRole client, read-only; the Gateway's `vault` secret provider with its own AppRole; device passwords as `$GATEWAYSECRET_` references), one Raft replica, manual unseal, an off-host snapshot, and a rotation drill on the dev tier. Criteria 4 and 5 move to Phase 9b; Oxidized and Gitea (criterion 1) stay in Phase 9.
+>
+> **Amendment 1.35 (ADR 0065 amendment):** Phase 9b is deferred (owner decision). Criteria 4 and 5 are not pursued: `.env` stays the source of every secret and Vault a read-only copy seeded one way from it, so a lost Vault is rebuilt from `.env`; the lab CA keeps issuing through cert-manager.
 
 
 - **Purpose:** configuration history for every device, a secrets store that replaces `.env`, and an in-lab git server for Oxidized output and Itential pre-built artefacts.
@@ -546,7 +548,7 @@ The named risks first, then the six PIS failure types.
 | Thin-pool exhaustion | All VMs pause | Budget tracks disk too; Longhorn 2 replicas; Zabbix monitors `local-lvm` usage at 80 % | |
 | Home-LAN address clash for `oob-gw` | Two hosts on one IP | Owner picks the static (A-19); NetBox records it; `arping` check in Phase 2 before assignment | |
 | k3s certificate rotation / etcd on one disk | API outage after a year; etcd loss | k3s auto-rotates on restart; etcd snapshots to Longhorn and to the workstation nightly | |
-| Vault sealed or lost *(1.34, ADR 0065)* | Sealed (any restart of its pod): Gateway cannot resolve device passwords and every device job fails. Lost (disk): the Platform and the Gateway have no credentials, and Vault's data is the first thing not rebuildable from the repo | `make vault-unseal` / `make vault-status`; `VaultSealed` rule visible in Grafana and the verify (Alertmanager notifies nobody, ADR 0064); `make vault-snapshot` copies an encrypted Raft snapshot to the workstation after every Vault change; `.env` stays the seed until Phase 9b | Until S7 gets a notification channel, a sealed Vault is found by looking |
+| Vault sealed or lost *(1.34, ADR 0065)* | Sealed (any restart of its pod): Gateway cannot resolve device passwords and every device job fails. Lost (disk): the Platform and the Gateway have no credentials, and Vault's data is the first thing not rebuildable from the repo | `make vault-unseal` / `make vault-status`; `VaultSealed` rule visible in Grafana and the verify (Alertmanager notifies nobody, ADR 0064); `make vault-snapshot` copies an encrypted Raft snapshot to the workstation after every Vault change; `.env` stays the seed (Phase 9b deferred, 1.35), so a lost Vault is rebuilt and re-seeded from it | Until S7 gets a notification channel, a sealed Vault is found by looking |
 
 **PIS-16 — Context degradation.** One phase per session; handoff documents when
 a session passes ~60 % context; the read-list in PIS-14 is the summary that
@@ -721,7 +723,7 @@ at the end of Phase 2 and this table amended.
 | 7 | `phase-7/observability` | `verify/test-07-observability.sh` | none |
 | 8 | `phase-8/platform-ha2` | `verify/test-08-platform-ha2.sh` | `aws sso login` for the image pulls; approve the retirement of VM 205 |
 | 9a *(1.34)* | `phase-9a/vault` | `verify/test-09a-vault.sh` (production: S8.2, S8.3) and `verify/test-09a-vault-dev.sh` (dev tier, `make verify-dev`: S8.2, S8.3, E14, E15) | Hold the Vault unseal material; run `make vault-unseal` after any restart of the Vault pod |
-| 9b *(1.34)* | `phase-9b/secrets-migration` | `verify/test-09b-secrets.sh` (S8.4, S8.5) | none |
+| 9b *(1.34, deferred 1.35)* | - | none: deferred (S8.4, S8.5 not pursued, ADR 0065 amendment) | none |
 | 9 | `phase-9/config-secrets-code` | `verify/test-09-config-secrets-code.sh` (S8.1: Oxidized and Gitea) | none |
 | 10 | `phase-10/identity` | `verify/test-10-identity.sh` | none (Windows dropped, ADR 0050) |
 | 11 | `phase-11/ddi` | `verify/test-11-ddi.sh` | none (BIND9 + Kea from NetBox; NIOS joins in the firewall track) |
@@ -782,6 +784,7 @@ the verify log path and any ADRs added.
 | 1.13 | 2026-09-08 | Phase 6 element 7 (owner request): S4e NetBox enrichment derived from `topology/enterprise.yaml` (addressing on interfaces with peer descriptions, VRFs and ASNs with BGP neighbours in config contexts, racks, provider circuits, config contexts, journal entries; the templates read the YAML, rendered configs unchanged; `netbox-enrich.yml`; `verify/test-06c-netbox.sh`; ADR 0048) |
 | 1.14 | 2026-09-09 | Domain 7: the Anthropic key is the owner's company key with a $15-a-week budget; the platform's session documents are the ledger (`verify/tokens.sh`, `make tokens`, `llm.budget` in versions.yaml), the agent verifies guard it, iteration runs on the local twins or `ONLY=` subsets (ADR 0049) |
 | 1.15 | 2026-09-09 | Reorder (ADR 0050): image-free phases first (7 observability, 8 config/secrets/code, 9 identity without Windows on OpenLDAP + Keycloak + tac_plus, 10 DDI on BIND9 + Kea, 11 Containerlab) and one phase 12 firewall track for NIOS, the PA-VM firewalls and Panorama; Windows Server and the Windows endpoint item dropped, `dc01` released |
+| 1.35 | 2026-09-24 | Phase 9b deferred (ADR 0065 amendment, owner decision): S8 criteria 4 (`.env` reduced) and 5 (cert-manager from the Vault PKI) are not pursued, and requirement 8's `.env` clause is deferred with them. Phase 9a already keeps every credential off the Platform and the Gateway; for a one-operator lab, making a single-replica Vault on one SSD the only copy of every secret adds risk and a login before every `make` target, and a Vault PKI issuer looks the same as the lab CA. `.env` stays the source, Vault a read-only copy seeded from it |
 | 1.34 | 2026-09-23 | Vault first (ADR 0065): Phase 9 splits into 9a (S8.2, S8.3: device, NetBox and ServiceNow credentials in Vault, read by the Platform's own AppRole client, read-only and address-bound, and by the Gateway's built-in `vault` secret provider through `$GATEWAYSECRET_` references; one Raft replica; manual unseal with `make vault-unseal`; an off-host Raft snapshot; the unknowns measured on the dev tier first, including a rotation drill), 9b (S8.4, S8.5) and 9 (S8.1). The upstream HashiCorp Vault plugin idea is withdrawn: Gateway 5.5 has Vault built in. New eval cases E14 (sealed Vault fails closed) and E15 (rotation is not cached), and a pre-mortem row for a sealed or lost Vault (owner decisions) |
 | 1.33 | 2026-09-24 | Workflows are named for what they do (ADR 0067, owner decision): a verb and an object in Title Case, no `wf-` prefix and no version, the name written once in `itential/versions.yaml` and each file its name in lowercase with dashes; `tests/test_workflow_names.py` enforces it. The eleven workflows are renamed (e.g. `wf-branch-vlan-v1` -> `Add Branch VLAN`, `wf-config-push-v1` -> `Push Configuration with Approval`); the old names are kept in `retired_workflows`, which the play deletes after importing their successors. Earlier rows of this table keep the names that were current when they were written. |
 | 1.32 | 2026-09-17 | The `clab` vEOS switches get 4 GB (as in EVE-NG) instead of vrnetlab's 2 GB default, at which both ran out of memory in a loop and SSH logins slowed or failed; the `clab` VM grows 16 -> 20 GB and the RAM ceiling 296 -> 300 GB (owner decision). ADR 0063 amendment 2026-09-17. |
