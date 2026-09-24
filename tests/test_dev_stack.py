@@ -585,7 +585,8 @@ def test_make_dev_targets_never_run_the_production_verify_suite() -> None:
         for ln in _make_recipe(target):
             assert "verify/run.sh" not in ln, f"{target} runs the production verify suite"
     assert _make_recipe("verify") == ["\tverify/run.sh"], "make verify is run.sh's selection, nothing else"
-    assert _make_recipe("verify-dev") == ["\tverify/test-12a-clab-dev.sh", "\tverify/test-05b-dev-copilot.sh"]
+    assert _make_recipe("verify-dev") == ["\tverify/test-12a-clab-dev.sh", "\tverify/test-05b-dev-copilot.sh",
+                                          "\tverify/test-09a-vault-dev.sh"]  # ADR 0065
 
 
 def _run_sh_selection(tmp_path: Path, names: list[str]) -> list[str]:
@@ -645,7 +646,7 @@ def test_the_inventory_is_replaced_when_driver_options_differ_and_production_sti
     task = next(t for t in yaml.safe_load((TASKS / "platform-assets.yml").read_text())
                 if t["name"] == "Inventory nodes populated from NetBox (replaces the set when it differs)")
     env = jinja2.Environment(undefined=jinja2.StrictUndefined)
-    env.filters["zip"] = lambda a, b: list(zip(a, b))
+    env.filters["zip"] = lambda a, *rest: list(zip(a, *rest))
     v = task["vars"]
 
     def replaces(existing: list[dict], wanted: list[dict]) -> bool:
@@ -661,4 +662,9 @@ def test_the_inventory_is_replaced_when_driver_options_differ_and_production_sti
     new_dev = [{"name": "clab-sw1", "attributes": {"itential_host": "10.100.2.21", "itential_driver_options": opts}}]
     assert replaces(old_dev, new_dev), "an existing dev inventory picks up the driver options"
     assert not replaces(new_dev, new_dev), "and is left alone once it has them"
+    # ADR 0065: the password is compared too, or a switch to a Vault alias would never reach the Platform
+    plain = [{"name": "clab-rtr1", "attributes": {"itential_password": "x"}}]
+    alias = [{"name": "clab-rtr1", "attributes": {"itential_password": "$GATEWAYSECRET_(lab-automation-password)"}}]
+    assert replaces(plain, alias), "a password -> alias change replaces the set"
+    assert not replaces(alias, alias), "and an unchanged alias leaves it alone"
     assert task["when"] == "have != want"
