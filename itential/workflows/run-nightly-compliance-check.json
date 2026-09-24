@@ -47,8 +47,8 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 300,
-        "y": 0
+        "x": 0,
+        "y": 180
       },
       "variables": {
         "incoming": {
@@ -75,8 +75,8 @@
       "displayName": "ConfigurationManager",
       "groups": [],
       "nodeLocation": {
-        "x": 600,
-        "y": 0
+        "x": 0,
+        "y": 360
       },
       "variables": {
         "incoming": {
@@ -97,8 +97,8 @@
       "summary": "workflow_start",
       "groups": [],
       "nodeLocation": {
-        "x": -600,
-        "y": 0
+        "x": 0,
+        "y": -180
       }
     },
     "workflow_end": {
@@ -106,8 +106,8 @@
       "summary": "workflow_end",
       "groups": [],
       "nodeLocation": {
-        "x": 1800,
-        "y": 0
+        "x": 0,
+        "y": 540
       }
     }
   },

@@ -15,8 +15,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 0,
-        "y": -300
+        "x": -300,
+        "y": 0
       },
       "variables": {
         "incoming": {
@@ -45,8 +45,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 300,
-        "y": -300
+        "x": -300,
+        "y": 180
       },
       "variables": {
         "incoming": {
@@ -73,8 +73,8 @@
       "displayName": "GatewayManager",
       "groups": [],
       "nodeLocation": {
-        "x": 600,
-        "y": 0
+        "x": 0,
+        "y": 360
       },
       "variables": {
         "incoming": {
@@ -103,8 +103,8 @@
       "displayName": "lab-netbox:1.0.0",
       "groups": [],
       "nodeLocation": {
-        "x": 0,
-        "y": 300
+        "x": 300,
+        "y": 0
       },
       "variables": {
         "incoming": {
@@ -134,7 +134,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 300,
-        "y": 300
+        "y": 180
       },
       "variables": {
         "incoming": {
@@ -161,8 +161,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 600,
-        "y": 300
+        "x": 300,
+        "y": 360
       },
       "variables": {
         "incoming": {
@@ -191,8 +191,8 @@
       "displayName": "GatewayManager",
       "groups": [],
       "nodeLocation": {
-        "x": 900,
-        "y": 0
+        "x": 0,
+        "y": 540
       },
       "variables": {
         "incoming": {
@@ -231,8 +231,8 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 1200,
-        "y": 0
+        "x": 0,
+        "y": 720
       },
       "variables": {
         "incoming": {
@@ -259,8 +259,8 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 1200,
-        "y": 200
+        "x": 200,
+        "y": 720
       },
       "variables": {
         "incoming": {
@@ -287,8 +287,8 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 1200,
-        "y": 400
+        "x": 400,
+        "y": 720
       },
       "variables": {
         "incoming": {
@@ -315,8 +315,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": -600,
-        "y": 0
+        "x": 0,
+        "y": -360
       },
       "variables": {
         "incoming": {
@@ -345,8 +345,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": -300,
-        "y": 0
+        "x": 0,
+        "y": -180
       },
       "variables": {
         "incoming": {
@@ -373,8 +373,8 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 450,
-        "y": 0
+        "x": 0,
+        "y": 270
       },
       "variables": {
         "incoming": {
@@ -419,8 +419,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 1500,
-        "y": -300
+        "x": -300,
+        "y": 900
       },
       "variables": {
         "incoming": {
@@ -449,8 +449,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 900,
-        "y": -300
+        "x": -300,
+        "y": 540
       },
       "variables": {
         "incoming": {
@@ -479,8 +479,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 600,
-        "y": -300
+        "x": -300,
+        "y": 360
       },
       "variables": {
         "incoming": {
@@ -502,8 +502,8 @@
       "summary": "workflow_start",
       "groups": [],
       "nodeLocation": {
-        "x": -600,
-        "y": 0
+        "x": 0,
+        "y": -540
       }
     },
     "workflow_end": {
@@ -511,8 +511,8 @@
       "summary": "workflow_end",
       "groups": [],
       "nodeLocation": {
-        "x": 1800,
-        "y": 0
+        "x": 0,
+        "y": 1080
       }
     }
   },

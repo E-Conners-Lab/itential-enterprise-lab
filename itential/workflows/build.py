@@ -74,6 +74,21 @@ def task(
     return t
 
 
+# The canvas reads top to bottom (owner preference, 2026-09-24). Tasks are placed below as x = step along the
+# main path, y = side branch (0 is the main path, negative a failure branch); top_to_bottom turns that into
+# y = step, x = branch, so the happy path runs down the middle and failure branches sit to its left.
+# A step is 300 units across the main path; down the page it is closer, because a task is wider than tall.
+STEP_DOWN = 180
+
+
+def top_to_bottom(tasks: dict) -> dict:
+    out = {}
+    for tid, t in tasks.items():
+        loc = t.get("nodeLocation") or {"x": 0, "y": 0}
+        out[tid] = {**t, "nodeLocation": {"x": loc["y"], "y": loc["x"] * STEP_DOWN // 300}}
+    return out
+
+
 def workflow(
     name: str,
     description: str,
@@ -82,18 +97,19 @@ def workflow(
     transitions: dict,
     outputs: dict | None = None,
 ) -> dict:
-    tasks = dict(tasks)
+    tasks = top_to_bottom(dict(tasks))
+    ys = [t["nodeLocation"]["y"] for t in tasks.values()]
     tasks["workflow_start"] = {
         "name": "workflow_start",
         "summary": "workflow_start",
         "groups": [],
-        "nodeLocation": {"x": -600, "y": 0},
+        "nodeLocation": {"x": 0, "y": min(ys, default=0) - STEP_DOWN},
     }
     tasks["workflow_end"] = {
         "name": "workflow_end",
         "summary": "workflow_end",
         "groups": [],
-        "nodeLocation": {"x": 1800, "y": 0},
+        "nodeLocation": {"x": 0, "y": max(ys, default=0) + STEP_DOWN},
     }
     transitions = dict(transitions)
     transitions.setdefault("workflow_end", {})
