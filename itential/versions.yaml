@@ -270,7 +270,7 @@ vault:
   port: 8200
   kv_mount: lab # KV v2; the Platform's and the Gateway's secrets endpoint is "<kv_mount>/data"
   approle_mount: approle
-  # path under the mount -> keys, and the .env variable each key is seeded from (one-way until Phase 9b)
+  # path under the mount -> keys, and the .env variable each key is seeded from (one way; .env stays the source)
   secrets:
     devices/automation:
       username: {value: automation}
