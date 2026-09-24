@@ -1,0 +1,149 @@
+---
+# Phase 9a step 3 (ADR 0065): configure production's Vault - `make vault-config`. The KV v2 mount, the two read-only
+# AppRoles bound to their readers' own addresses (topology/ipam.yaml), and the seeds from .env, all through the task
+# file the dev tier proved (tasks/vault-config.yml). Then the binding is proven on the real path instead of assumed:
+# a one-use, five-minute secret ID per reader host must log in from that host, and one from this workstation must be
+# refused. The token is the root token from the owner's init file (VAULT_INIT_FILE), read without printing it;
+# VAULT_TOKEN overrides it (for example a token from `vault operator generate-root` once the root token is revoked).
+- name: Configure production's Vault
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars_files:
+    - ../../itential/versions.yaml
+    - ../../topology/ipam.yaml
+  vars:
+    ansible_python_interpreter: "{{ playbook_dir }}/../../.venv/bin/python"
+    vault_addr: "{{ vault.prod.url }}"
+    vault_env: prod
+    init_file: >-
+      {{ lookup('ansible.builtin.env', 'VAULT_INIT_FILE')
+         | default(lookup('ansible.builtin.env', 'HOME') ~ '/.config/itential-enterprise-lab/vault-init.json', true) }}
+    host_ip: "{{ dict(addresses | map(attribute='hostname') | zip(addresses | map(attribute='address'))) }}"
+    # each reader role may be used only from its hosts (ADR 0065 decisions 5 and 6)
+    vault_role_cidrs: >-
+      {%- set out = {} -%}
+      {%- for role, r in vault.approles.items() -%}
+        {%- set _ = out.update({role: r.bound_hosts | map('extract', host_ip) | map('regex_replace', '$', '/32') | list}) -%}
+      {%- endfor -%}
+      {{ out }}
+    # one test per (role, host) plus one per role from this workstation, which must be refused
+    binding_plan: >-
+      {%- set out = [] -%}
+      {%- for role, r in vault.approles.items() -%}
+        {%- for h in r.bound_hosts -%}{%- set _ = out.append({'role': role, 'host': h}) -%}{%- endfor -%}
+        {%- set _ = out.append({'role': role, 'host': 'workstation'}) -%}
+      {%- endfor -%}
+      {{ out }}
+  tasks:
+    - name: Production only
+      ansible.builtin.assert:
+        that: not (dev_overlay | default(false) | bool)
+        fail_msg: "vault-prod-config.yml configures production's Vault; the dev tier has make vault-dev"
+        quiet: true
+
+    - name: Token to configure with (VAULT_TOKEN, else the root token in the owner's init file)
+      ansible.builtin.set_fact:
+        vault_token: >-
+          {{ lookup('ansible.builtin.env', 'VAULT_TOKEN')
+             | default((lookup('ansible.builtin.file', init_file) | from_json).root_token, true) }}
+      no_log: true
+
+    - name: Where each role may be used from
+      ansible.builtin.debug:
+        msg: "{{ vault_role_cidrs }}"
+
+    - name: Configure it
+      ansible.builtin.include_tasks: tasks/vault-config.yml
+
+    # --- prove the binding on the real path -------------------------------------------------------------------------
+    - name: One-use, five-minute secret IDs to test each reader host, and one per role for this workstation
+      ansible.builtin.uri:
+        url: "{{ vault_addr }}/v1/auth/{{ vault.approle_mount }}/role/{{ item.role }}/secret-id"
+        ca_path: "{{ playbook_dir }}/../../docs/lab-root-ca.crt"
+        method: POST
+        headers: {X-Vault-Token: "{{ vault_token }}"}
+        body_format: json
+        body: {ttl: 300, num_uses: 1, metadata: '{"issued_by": "vault-prod-config.yml binding test"}'}
+      loop: "{{ binding_plan }}"
+      loop_control:
+        label: "{{ item.role }} for {{ item.host }}"
+      register: test_ids
+      no_log: true
+
+    - name: Test credentials per host
+      ansible.builtin.set_fact:
+        binding_tests: >-
+          {{ test_ids.results | map(attribute='item') | zip(test_ids.results | map(attribute='json.data'))
+             | map('combine') | list }}
+      no_log: true
+
+    - name: A login from this workstation is refused for every role
+      ansible.builtin.uri:
+        url: "{{ vault_addr }}/v1/auth/{{ vault.approle_mount }}/login"
+        ca_path: "{{ playbook_dir }}/../../docs/lab-root-ca.crt"
+        method: POST
+        body_format: json
+        body: {role_id: "{{ vault_role_ids[item.role] }}", secret_id: "{{ item.secret_id }}"}
+        status_code: [400, 403]
+      loop: "{{ binding_tests | selectattr('host', 'equalto', 'workstation') | list }}"
+      loop_control:
+        label: "{{ item.role }} from this workstation"
+      no_log: true
+
+    - name: The reader hosts versions.yaml names, for the next play
+      ansible.builtin.add_host:
+        name: "{{ item }}"
+        groups: vault_readers
+      loop: "{{ vault.approles.values() | map(attribute='bound_hosts') | flatten | unique }}"
+
+    - name: The workstation's test secret IDs destroyed
+      ansible.builtin.uri:
+        url: "{{ vault_addr }}/v1/auth/{{ vault.approle_mount }}/role/{{ item.role }}/secret-id-accessor/destroy"
+        ca_path: "{{ playbook_dir }}/../../docs/lab-root-ca.crt"
+        method: POST
+        headers: {X-Vault-Token: "{{ vault_token }}"}
+        body_format: json
+        body: {secret_id_accessor: "{{ item.secret_id_accessor }}"}
+        status_code: [204, 500]
+      loop: "{{ binding_tests | selectattr('host', 'equalto', 'workstation') | list }}"
+      loop_control:
+        label: "{{ item.role }}"
+      register: ws_destroy
+      # A refused login still spends a one-use secret ID (measured 2026-09-24), and Vault answers a destroy of a spent
+      # one with 500 "failed to find accessor entry". That is the outcome wanted; any other 500 is a failure.
+      failed_when: >-
+        ws_destroy.status == 500 and 'failed to find accessor entry' not in (ws_destroy.json.errors | default([]) | join(' '))
+      no_log: true
+
+- name: Each reader host can log in to its role
+  hosts: vault_readers
+  gather_facts: false
+  vars_files:
+    - ../../itential/versions.yaml
+  vars:
+    tests: "{{ hostvars['localhost'].binding_tests | selectattr('host', 'equalto', inventory_hostname) | list }}"
+    vault_addr: "{{ vault.prod.url }}"
+    role_ids: "{{ hostvars['localhost'].vault_role_ids }}"
+  tasks:
+    - name: Login from {{ inventory_hostname }}
+      ansible.builtin.uri:
+        url: "{{ vault_addr }}/v1/auth/{{ vault.approle_mount }}/login"
+        validate_certs: true
+        ca_path: /usr/local/share/ca-certificates/lab-root-ca.crt
+        method: POST
+        body_format: json
+        body: {role_id: "{{ role_ids[item.role] }}", secret_id: "{{ item.secret_id }}"}
+        status_code: [200]
+      loop: "{{ tests }}"
+      loop_control:
+        label: "{{ item.role }} from {{ inventory_hostname }}"
+      register: host_login
+      no_log: true
+
+    - name: Accepted, with the token bound to this host's address
+      ansible.builtin.debug:
+        msg: "{{ item.item.role }} login from {{ inventory_hostname }}: accepted (the one-use secret ID is now spent)"
+      loop: "{{ host_login.results }}"
+      loop_control:
+        label: "{{ item.item.role }}"
