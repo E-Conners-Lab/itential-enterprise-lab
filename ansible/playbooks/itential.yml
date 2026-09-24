@@ -158,6 +158,62 @@
         group: ubuntu
         mode: "0644"
 
+    # --- Phase 9a (ADR 0065): the Platform reads its service credentials from Vault with its own AppRole -------
+    # Off unless the overlay sets vault_enabled. The AppRole secret ID lives only in this host's stack .env (mode
+    # 0600, rendered below), so it is read back from there and kept while Vault still knows it.
+    - name: Vault settings for this stack
+      ansible.builtin.set_fact:
+        vault_url: "{{ vault.dev.url if dev_overlay | default(false) | bool else vault.prod.url }}"
+        vault_ca_path: /usr/local/share/ca-certificates/lab-root-ca.crt # installed by itential-host.yml
+      when: vault_enabled | default(false) | bool
+
+    # dev only: the dev Vault's root token sits beside it on this VM (vault-dev.yml, owner decision 2026-09-23);
+    # production's administrator token is the owner's, handed in as VAULT_TOKEN for the cut-over only
+    - name: Dev Vault init output (dev)
+      ansible.builtin.slurp:
+        src: "{{ vault.dev.dir }}/init.json"
+      register: vault_dev_init
+      when: vault_enabled | default(false) | bool and dev_overlay | default(false) | bool
+      no_log: true
+
+    - name: Vault administrator token for issuing the Platform's secret ID
+      ansible.builtin.set_fact:
+        vault_admin_token: >-
+          {{ (vault_dev_init.content | b64decode | from_json).root_token
+             if dev_overlay | default(false) | bool else lookup('ansible.builtin.env', 'VAULT_TOKEN') }}
+      when: vault_enabled | default(false) | bool
+      no_log: true
+
+    - name: Current stack .env (for the secret ID the Platform already holds)
+      ansible.builtin.slurp:
+        src: "{{ stack_dir }}/.env"
+      register: stack_env_now
+      failed_when: false
+      when: vault_enabled | default(false) | bool
+      no_log: true
+
+    - name: The Platform's AppRole credentials
+      ansible.builtin.include_tasks: tasks/vault-secret-id.yml
+      vars:
+        vault_reader: itential-platform
+        vault_current_secret_id: >-
+          {{ ((stack_env_now.content | default('') | b64decode)
+              | regex_search('(?m)^ITENTIAL_VAULT_SECRET_ID=(.*)$', '\1') | default([''], true)) | first }}
+      when: vault_enabled | default(false) | bool
+
+    # Node.js needs the lab CA for Vault's certificate; the vendored Compose file already mounts this directory
+    # at /opt/vault (read-only) for the Platform, so no change to it is needed (NODE_EXTRA_CA_CERTS below)
+    - name: Lab CA where the Platform can read it
+      ansible.builtin.copy:
+        src: /usr/local/share/ca-certificates/lab-root-ca.crt
+        dest: "{{ stack_dir }}/volumes/platform/vault/lab-root-ca.crt"
+        remote_src: true
+        owner: ubuntu
+        group: ubuntu
+        mode: "0644"
+      when: vault_enabled | default(false) | bool
+      notify: Compose up
+
     # Compose interpolates from .env in the project dir; the platform service also loads it
     # as container environment (upstream design for the Vault variables), so keep it minimal.
     - name: Stack .env from versions.yaml and the repo secrets
@@ -191,6 +247,16 @@
           MCP_PLATFORM_PASSWORD={{ mcp_platform_password | default(admin_pw) }}
           LDAP_ADMIN_PASSWORD=admin
           ITENTIAL_ENCRYPTION_KEY={{ enc_key }}
+          {% if vault_enabled | default(false) | bool %}
+          # Phase 9a (ADR 0065): the Platform's own Vault client, AppRole, read-only
+          ITENTIAL_VAULT_URL={{ vault_url }}
+          ITENTIAL_VAULT_AUTH_METHOD=approle
+          ITENTIAL_VAULT_ROLE_ID={{ vault_reader_role_id }}
+          ITENTIAL_VAULT_SECRET_ID={{ vault_reader_secret_id }}
+          ITENTIAL_VAULT_SECRETS_ENDPOINT={{ vault.kv_mount }}/data
+          ITENTIAL_VAULT_READ_ONLY=true
+          NODE_EXTRA_CA_CERTS=/opt/vault/lab-root-ca.crt
+          {% endif %}
       no_log: true
       notify: Compose up
 
@@ -456,6 +522,10 @@
       retries: 12
       delay: 5
       changed_when: false
+
+    - name: Gateway resolves device credentials from Vault (Phase 9a, ADR 0065)
+      ansible.builtin.include_tasks: tasks/gateway-vault.yml
+      when: vault_enabled | default(false) | bool
 
     # --- open-source adapters: package into the custom mount, then instances via the API ------
     # The custom directory is bind-mounted read-only into the platform; npm runs in a throw-away

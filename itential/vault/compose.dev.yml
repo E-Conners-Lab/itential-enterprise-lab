@@ -1,0 +1,33 @@
+# The dev tier's Vault (ADR 0065 decision 9), a Compose project of its own (`vault-dev`) beside the dev stack in
+# /opt/itential, so a dev-stack rebuild never touches it. Published on the VM's OOB address only; the Platform and
+# the Gateway reach it by the VM's name, as production's reach the k3s VIP.
+services:
+  vault:
+    image: ${VAULT_IMAGE:?VAULT_IMAGE is required}
+    container_name: vault-dev
+    command: server
+    environment:
+      SKIP_SETCAP: "true" # mlock is disabled in the config, so the entrypoint needs no IPC_LOCK capability
+      VAULT_ADDR: https://127.0.0.1:8200
+      VAULT_CACERT: /vault/tls/ca.pem
+      VAULT_TLS_SERVER_NAME: itential-dev.lab.internal # the certificate names the VM and its address, not 127.0.0.1
+    ports:
+      - "${BIND_ADDRESS:?BIND_ADDRESS is required}:8200:8200"
+    volumes:
+      - ./config:/vault/config:ro
+      - ./tls:/vault/tls:ro
+      - vault-data:/vault/file
+    restart: unless-stopped
+
+volumes:
+  vault-data:
+
+# Pinned (itential/versions.yaml vault.dev.docker_subnet): the AppRoles are bound to this network's gateway, the
+# address every request from the dev VM's containers arrives from. Changing it needs `docker compose -p vault-dev down`
+# once, because Compose will not change an existing network's subnet in place.
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: ${VAULT_SUBNET:?VAULT_SUBNET is required}
+          gateway: ${VAULT_GATEWAY:?VAULT_GATEWAY is required}

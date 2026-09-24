@@ -1,0 +1,38 @@
+# test-09a-vault-dev 20260923T221250Z (SKIP_ROTATION=0)
+PASS  S8.2a Vault answers over the lab CA and is unsealed
+      sys/health 200: initialized=True sealed=False version=2.0.4
+PASS  S8.2b a read of lab/devices/automation with no token is refused
+      read of lab/data/devices/automation with no token -> 403
+PASS  S8.2c each AppRole reads only its own paths (Gateway: devices yes; Platform: devices no, NetBox yes)
+      itential-gateway   reads devices/automation   -> 200 (want 200)  keys ['password', 'username']
+      itential-platform  reads devices/automation   -> 403 (want 403)
+      itential-platform  reads services/netbox      -> 200 (want 200)  keys ['header', 'token']
+PASS  S8.2d the device password in Vault equals the .env seed (one-way until Phase 9b)
+      devices/automation equals the .env seed: True (version 7)
+PASS  S8.3a no credential on the Platform: nodes, NetBox adapter and integration carry Vault references
+      inventory lab: 4/4 nodes carry $GATEWAYSECRET_(lab-automation-password)
+      adapter NetBox token = $SECRET_services/netbox $KEY_token
+      integration netbox-api value = $SECRET_services/netbox $KEY_header
+PASS  S8.3b the Gateway's Vault provider and aliases match the oracle (export compared, role ID from Vault)
+      provider lab-vault: as the oracle says, role ID matches Vault
+      aliases: ['lab-automation-password', 'lab-netbox-token']
+PASS  S8.3c the NetBox adapter reads NetBox with the token the Platform resolves from Vault
+      NetBox adapter (token from Vault through the Platform): 23 devices
+PASS  S8.3d every clab device logs in with its password resolved from Vault (job result and Gateway log)
+      show clock with the Vault-held password: {'clab-rtr1': True, 'clab-rtr2': True, 'clab-sw1': True, 'clab-sw2': True}
+      Gateway log since 2026-09-23T22:12:56Z: 4 successful resolutions for 4 devices
+PASS  E15 rotation: device only -> next job fails; Vault only -> next job succeeds; both restored
+      node clab-rtr1
+        baseline show clock                                          PASS (job succeeded: True)
+        password changed on the device only (running config)         PASS (job succeeded: True)
+        next job must FAIL: Vault still holds the old value          PASS (job succeeded: False)
+        same password written to Vault only                          PASS (job succeeded: True)
+        next job must SUCCEED: nothing changed on Platform/Gateway   PASS (job succeeded: True)
+        restore: device back to the original password                PASS (job succeeded: True)
+        restore: Vault back to the .env value                        PASS (job succeeded: True)
+        final show clock with the original password                  PASS (job succeeded: True)
+PASS  E15 restored: Vault equals the .env seed again
+      devices/automation equals the .env seed: True (version 9)
+SKIP  E14 sealed Vault ends the job cleanly - not written yet (ADR 0065); never counted as a pass
+
+passed=10 failed=0

@@ -1,0 +1,55 @@
+# test-09a-vault-dev 20260923T232151Z (SKIP_ROTATION=0)
+PASS  S8.2a Vault answers over the lab CA and is unsealed
+      sys/health 200: initialized=True sealed=False version=2.0.4
+PASS  S8.2b a read of lab/devices/automation with no token is refused
+      read of lab/data/devices/automation with no token -> 403
+PASS  S8.2c each reader's policy reads only its own paths (Gateway: devices yes; Platform: devices no, NetBox yes)
+      itential-gateway   policy reads devices/automation   -> 200 (want 200)  keys ['password', 'username']
+      itential-platform  policy reads devices/automation   -> 403 (want 403)
+      itential-platform  policy reads services/netbox      -> 200 (want 200)  keys ['header', 'token']
+PASS  S8.2e the AppRoles are bound to the dev VM: a login with a valid secret ID from this machine is refused
+      itential-platform  bound to {'secret_id_bound_cidrs': ['172.31.65.1'], 'token_bound_cidrs': ['172.31.65.1']}
+      itential-platform  login with a valid secret ID from this machine -> 400 (want refused)
+      itential-gateway   bound to {'secret_id_bound_cidrs': ['172.31.65.1'], 'token_bound_cidrs': ['172.31.65.1']}
+      itential-gateway   login with a valid secret ID from this machine -> 400 (want refused)
+PASS  S8.2d the device password in Vault equals the .env seed (one-way until Phase 9b)
+      devices/automation equals the .env seed: True (version 15)
+PASS  S8.3a no credential on the Platform: nodes, NetBox adapter and integration carry Vault references
+      inventory lab: 4/4 nodes carry $GATEWAYSECRET_(lab-automation-password)
+      adapter NetBox token = $SECRET_services/netbox $KEY_token
+      integration netbox-api value = $SECRET_services/netbox $KEY_header
+      integration netbox-latest: not on this Platform (external, skipped)
+PASS  S8.3b the Gateway's Vault provider and aliases match the oracle (export compared, role ID from Vault)
+      provider lab-vault: as the oracle says, role ID matches Vault
+      aliases: ['lab-automation-password', 'lab-netbox-token']
+PASS  S8.3c the NetBox adapter reads NetBox with the token the Platform resolves from Vault
+      NetBox adapter (token from Vault through the Platform): 23 devices
+PASS  S8.3d every clab device logs in with its password resolved from Vault (job result and Gateway log)
+      show clock with the Vault-held password: {'clab-rtr1': True, 'clab-rtr2': True, 'clab-sw1': True, 'clab-sw2': True}
+      Gateway log since 2026-09-23T23:21:57Z: 4 successful resolutions for 4 devices
+PASS  E15 rotation: device only -> next job fails; Vault only -> next job succeeds; both restored
+      node clab-rtr1
+        baseline show clock                                          PASS (job succeeded: True)
+        password changed on the device only (running config)         PASS (job succeeded: True)
+        next job must FAIL: Vault still holds the old value          PASS (job succeeded: False)
+        same password written to Vault only                          PASS (job succeeded: True)
+        next job must SUCCEED: nothing changed on Platform/Gateway   PASS (job succeeded: True)
+        restore: device back to the original password                PASS (job succeeded: True)
+        restore: Vault back to the .env value                        PASS (job succeeded: True)
+        final show clock with the original password                  PASS (job succeeded: True)
+PASS  E15 restored: Vault equals the .env seed again
+      devices/automation equals the .env seed: True (version 17)
+PASS  E14 sealed Vault: device and NetBox jobs reach their end via the error path; unsealed, both succeed
+      baseline   wf-show-version-v1     complete    6s
+      baseline   wf-netbox-devices-v1   complete    3s
+      Vault sealed: PUT sys/seal -> 204; health sealed=True
+      sealed     wf-show-version-v1     complete    3s  reached end via error path: True  (device_error)  errors=[]
+      sealed     wf-netbox-devices-v1   complete    3s  reached end via error path: True  (netbox_error)  errors=[('1a', "{'message': 'log is not defined', 'stack': 'ReferenceError: log is not defined\\n    at Encryption.decryptProperties (/opt/itential/platform/")]
+      Vault unsealed: 200 sealed=False
+      unsealed   wf-show-version-v1     complete    6s
+      unsealed   wf-netbox-devices-v1   complete    3s
+      clab-rtr1 running config unchanged: True
+PASS  E14 unsealed afterwards
+      sys/health 200: initialized=True sealed=False version=2.0.4
+
+passed=13 failed=0

@@ -1,0 +1,143 @@
+---
+# Phase 9a (ADR 0065): the Gateway resolves $GATEWAYSECRET_ aliases from Vault. Every step here was measured on the
+# dev tier on 2026-09-23 before it was written down:
+#   - the SERVER resolves aliases (the runner never contacts Vault), so the AppRole secret-ID file lives in the
+#     server's working-directory volume, and the server trusts the lab CA through SSL_CERT_DIR (compose file);
+#   - the provider and aliases are imported through the Platform (`configuration/import`, the API form of
+#     `iagctl db import`), because `iagctl create secret-provider` refuses server mode and client mode needs the
+#     Gateway's own admin login;
+#   - the import accepts unknown fields silently, even in check mode, so the export is compared after it;
+#   - the server caches providers until it restarts, and every server start re-registers the netsdk services with
+#     its own musl pex path, so a change restarts the server and THEN the runner.
+# Runs on the Gateway host inside a play that has `login` (a Platform session) and `platform_local`. Caller supplies
+# vault_url, vault_ca_path and vault_admin_token (see vault-secret-id.yml); gateway_server and gateway_runner name the
+# containers (defaults: the dev stack's).
+- name: Secret ID the Gateway server holds now
+  ansible.builtin.command: >-
+    docker exec {{ gateway_server | default('gateway5') }} sh -c 'cat {{ vault.gateway_secret_id_file }} 2>/dev/null || true'
+  register: gw_secret_now
+  changed_when: false
+  no_log: true
+
+- name: The Gateway's AppRole credentials
+  ansible.builtin.include_tasks: vault-secret-id.yml
+  vars:
+    vault_reader: itential-gateway
+    vault_current_secret_id: "{{ gw_secret_now.stdout | trim }}"
+
+- name: Secret-ID file in the server's volume, readable by the Gateway user only
+  ansible.builtin.command:
+    cmd: >-
+      docker exec -i {{ gateway_server | default('gateway5') }} sh -c 'umask 377; cat > {{ vault.gateway_secret_id_file }}'
+    stdin: "{{ vault_reader_secret_id }}"
+    stdin_add_newline: false
+  when: vault_reader_secret_id_changed | bool
+  changed_when: true
+  no_log: true
+
+- name: Provider and aliases wanted (the iagctl db import form)
+  ansible.builtin.set_fact:
+    gw_vault_wanted:
+      secret-providers:
+        - name: "{{ vault.gateway_provider }}"
+          type: vault
+          description: "HashiCorp Vault KV v2, AppRole itential-gateway (ADR 0065)"
+          url: "{{ vault_url }}"
+          auth-method: approle
+          role-id: "{{ vault_reader_role_id }}"
+          secret-id-file: "{{ vault.gateway_secret_id_file }}"
+          secrets-endpoint: "{{ vault.kv_mount }}/data"
+      secrets: "{{ gw_aliases }}"
+  vars:
+    # sorted by name, as the comparison below sorts the export
+    gw_aliases: >-
+      {%- set out = [] -%}
+      {%- for name, ref in vault.gateway_aliases.items() | sort -%}
+        {%- set _ = out.append({'name': name, 'provider': vault.gateway_provider, 'secret': ref.path, 'key': ref.key}) -%}
+      {%- endfor -%}
+      {{ out }}
+
+# the export also carries `users` with a password field: registered no_log, and never sent back
+- name: Gateway configuration now
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/gateway_manager/v1/gateways/{{ stack.gateway5_cluster_id }}/configuration/export"
+    headers: {Cookie: "{{ login.cookies_string }}"}
+  register: gw_export
+  no_log: true
+
+- name: What the Gateway holds for this provider
+  ansible.builtin.set_fact:
+    gw_vault_have:
+      secret-providers: >-
+        {{ gw_export.json['secret-providers'] | default([], true)
+           | selectattr('name', 'equalto', vault.gateway_provider) | list }}
+      secrets: >-
+        {{ gw_export.json.secrets | default([], true)
+           | selectattr('provider', 'equalto', vault.gateway_provider) | sort(attribute='name') | list }}
+
+- name: Import the provider and aliases (replaces them by name)
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/gateway_manager/v1/gateways/{{ stack.gateway5_cluster_id }}/configuration/import"
+    method: POST
+    headers: {Cookie: "{{ login.cookies_string }}"}
+    body_format: json
+    body: {options: {source: content, content: "{{ gw_vault_wanted }}", force: true}}
+  register: gw_import
+  when: gw_vault_have != gw_vault_wanted
+  changed_when: true
+
+- name: Gateway configuration after the import
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/gateway_manager/v1/gateways/{{ stack.gateway5_cluster_id }}/configuration/export"
+    headers: {Cookie: "{{ login.cookies_string }}"}
+  register: gw_export_after
+  when: gw_import is changed
+  no_log: true
+
+- name: The export matches what was sent (the import drops unknown fields without a word)
+  ansible.builtin.assert:
+    that:
+      - >-
+        (gw_export_after.json['secret-providers'] | default([], true)
+         | selectattr('name', 'equalto', vault.gateway_provider) | list) == gw_vault_wanted['secret-providers']
+      - >-
+        (gw_export_after.json.secrets | default([], true)
+         | selectattr('provider', 'equalto', vault.gateway_provider) | sort(attribute='name') | list)
+        == gw_vault_wanted.secrets
+    fail_msg: "the Gateway stored something other than the provider and aliases sent: compare the export by hand"
+    quiet: true
+  when: gw_import is changed
+
+- name: Restart time
+  ansible.builtin.set_fact:
+    gw_restart_since: "{{ now(utc=true).strftime('%Y-%m-%dT%H:%M:%SZ') }}"
+  when: gw_import is changed or vault_reader_secret_id_changed | bool
+
+- name: Gateway server restarted to load the provider (it caches providers)
+  ansible.builtin.command: docker restart {{ gateway_server | default('gateway5') }}
+  when: gw_import is changed or vault_reader_secret_id_changed | bool
+  changed_when: true
+
+- name: Gateway server back on Gateway Manager
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/gateway_manager/v1/connections"
+    headers: {Cookie: "{{ login.cookies_string }}"}
+  register: gw_conns
+  until: stack.gateway5_cluster_id in (gw_conns.json | to_json)
+  retries: 24
+  delay: 5
+  when: gw_import is changed or vault_reader_secret_id_changed | bool
+
+- name: Runner restarted after the server (the server's start rewrote the netsdk pex paths)
+  ansible.builtin.command: docker restart {{ gateway_runner | default('gateway5-runner') }}
+  when: gw_import is changed or vault_reader_secret_id_changed | bool
+  changed_when: true
+
+- name: Runner registered again (log lines since the restart only)
+  ansible.builtin.command: docker logs --since {{ gw_restart_since }} {{ gateway_runner | default('gateway5-runner') }}
+  register: gw_runner_log
+  until: "'registered runner with database' in (gw_runner_log.stdout ~ gw_runner_log.stderr)"
+  retries: 24
+  delay: 5
+  changed_when: false
+  when: gw_import is changed or vault_reader_secret_id_changed | bool

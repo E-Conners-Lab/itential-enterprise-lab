@@ -1,0 +1,49 @@
+---
+# Phase 9a (ADR 0065, owner decision 2026-09-23): integration instances that no play creates - netbox-latest was made by
+# hand on production for the NX-OS pack - still keep their credential in Vault. Only the authentication value is
+# replaced with the whole-field $SECRET_ reference (vault.platform_refs); the instance's other properties (server, tls,
+# proxyOverride, ...) are read back and written unchanged. Nothing is created or deleted: an instance that does not
+# exist on this Platform is skipped (dev has no netbox-latest).
+# Caller: a play with `login` (a Platform session) and `platform_local`; runs only when vault_enabled is on.
+- name: Integration instances on this Platform (for the ones no play creates)
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/integrations?limit=100"
+    headers: {Cookie: "{{ login.cookies_string }}"}
+  register: ext_int_now
+  no_log: true
+
+- name: External integrations present here, and their credential as wanted
+  ansible.builtin.set_fact:
+    ext_int_wanted: >-
+      {%- set out = [] -%}
+      {%- for r in ext_int_now.json.results -%}
+        {%- set name = r.data.name -%}
+        {%- if name in vault.external_integrations -%}
+          {%- set cfg = vault.external_integrations[name] -%}
+          {%- set inner = r.data.properties.properties -%}
+          {%- set want = vault.platform_refs[cfg.ref] -%}
+          {%- set have = ((inner.authentication | default({}))[cfg.auth] | default({})).value | default('') -%}
+          {%- set _ = out.append({'name': name, 'differs': have != want,
+                                  'properties': inner | combine({'authentication': {cfg.auth: {'value': want}}})}) -%}
+        {%- endif -%}
+      {%- endfor -%}
+      {{ out }}
+  no_log: true
+
+- name: External integrations named in the oracle but absent here (skipped, nothing created)
+  ansible.builtin.debug:
+    msg: "{{ vault.external_integrations.keys() | difference(ext_int_wanted | map(attribute='name')) }}"
+
+- name: Credential of an external integration replaced by its Vault reference (other properties unchanged)
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/integrations/{{ item.name }}/properties"
+    method: PUT
+    headers: {Cookie: "{{ login.cookies_string }}"}
+    body_format: json
+    body: {properties: "{{ item.properties }}"}
+    status_code: 200
+  loop: "{{ ext_int_wanted | selectattr('differs') | list }}"
+  loop_control:
+    label: "{{ item.name }}"
+  changed_when: true
+  no_log: true

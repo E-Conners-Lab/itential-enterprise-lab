@@ -1,0 +1,225 @@
+---
+# Phase 9a (ADR 0065): configure a Vault the lab's readers can use - the KV v2 mount, AppRole, one read-only
+# policy and role per reader, and the secrets seeded one-way from .env (Phase 9b makes Vault the source).
+# Shared by the dev Vault (vault-dev.yml) and production's; the caller supplies:
+#   vault_addr       https URL the workstation reaches (verified against the lab CA)
+#   vault_token      a token allowed to configure it (dev: the root token from the VM's init output)
+#   vault_env        dev | prod - picks dev_env seeds and skips prod_only paths on dev
+#   vault_role_cidrs {role: [cidr, ...]} - where each role's secret ID and tokens may be used from
+# Runs on localhost against the HTTP API. Every task that carries a secret or a token is no_log.
+- name: Vault is unsealed and answering
+  ansible.builtin.uri:
+    url: "{{ vault_addr }}/v1/sys/health"
+    ca_path: "{{ playbook_dir }}/../../docs/lab-root-ca.crt"
+    status_code: [200]
+  register: vault_health
+  changed_when: false
+
+- name: Mounts and auth methods
+  ansible.builtin.uri:
+    url: "{{ vault_addr }}/v1/sys/{{ item }}"
+    ca_path: "{{ playbook_dir }}/../../docs/lab-root-ca.crt"
+    headers: {X-Vault-Token: "{{ vault_token }}"}
+  loop: [mounts, auth]
+  register: vault_sys
+  changed_when: false
+  no_log: true
+
+- name: KV v2 at {{ vault.kv_mount }}
+  ansible.builtin.uri:
+    url: "{{ vault_addr }}/v1/sys/mounts/{{ vault.kv_mount }}"
+    ca_path: "{{ playbook_dir }}/../../docs/lab-root-ca.crt"
+    method: POST
+    headers: {X-Vault-Token: "{{ vault_token }}"}
+    body_format: json
+    body: {type: kv, options: {version: "2"}, description: "lab credentials (ADR 0065)"}
+    status_code: [204]
+  when: (vault.kv_mount ~ '/') not in vault_sys.results[0].json.data
+  changed_when: true
+  no_log: true
+
+- name: The existing KV mount is version 2, {{ vault.kv_mount }}
+  ansible.builtin.assert:
+    that:
+      - (vault.kv_mount ~ '/') not in vault_sys.results[0].json.data
+        or (vault_sys.results[0].json.data[vault.kv_mount ~ '/'].type == 'kv'
+            and vault_sys.results[0].json.data[vault.kv_mount ~ '/'].options.version == '2')
+    fail_msg: "{{ vault.kv_mount }}/ exists but is not KV v2: the Platform and the Gateway read only KV v2"
+    quiet: true
+
+- name: AppRole auth at {{ vault.approle_mount }}
+  ansible.builtin.uri:
+    url: "{{ vault_addr }}/v1/sys/auth/{{ vault.approle_mount }}"
+    ca_path: "{{ playbook_dir }}/../../docs/lab-root-ca.crt"
+    method: POST
+    headers: {X-Vault-Token: "{{ vault_token }}"}
+    body_format: json
+    body: {type: approle, description: "the Platform and the Gateway (ADR 0065)"}
+    status_code: [204]
+  when: (vault.approle_mount ~ '/') not in vault_sys.results[1].json.data
+  changed_when: true
+  no_log: true
+
+# --- one read-only policy per reader, named after its role ---------------------------------------------------
+- name: Current policies
+  ansible.builtin.uri:
+    url: "{{ vault_addr }}/v1/sys/policies/acl/{{ item.key }}"
+    ca_path: "{{ playbook_dir }}/../../docs/lab-root-ca.crt"
+    headers: {X-Vault-Token: "{{ vault_token }}"}
+    status_code: [200, 404]
+  loop: "{{ vault.approles | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"
+  register: vault_policies
+  changed_when: false
+  no_log: true
+
+- name: Read-only policy per reader
+  ansible.builtin.uri:
+    url: "{{ vault_addr }}/v1/sys/policies/acl/{{ item.item.key }}"
+    ca_path: "{{ playbook_dir }}/../../docs/lab-root-ca.crt"
+    method: PUT
+    headers: {X-Vault-Token: "{{ vault_token }}"}
+    body_format: json
+    body: {policy: "{{ policy }}"}
+    status_code: [204]
+  vars:
+    # Vault stores the text as sent, so the comparison above is exact. The separator is a real newline from a
+    # double-quoted scalar: '\n' inside a folded block reaches Vault as a backslash and an n, which HCL rejects (400).
+    newline: "\n"
+    policy: >-
+      {{ item.item.value.policy_paths
+         | map('regex_replace', '^(.+)$', 'path "' ~ vault.kv_mount ~ '/data/\1" { capabilities = ["read"] }')
+         | join(newline) }}
+  loop: "{{ vault_policies.results }}"
+  loop_control:
+    label: "{{ item.item.key }}"
+  when: item.status == 404 or (item.json.data.policy | default('')) != policy
+  changed_when: true
+  no_log: true
+
+# --- one AppRole per reader (ADR 0065 decisions 5 and 6) ------------------------------------------------------
+# A secret ID with no TTL and no use limit, because the Platform logs in again with the same one on every restart;
+# bound to the reader's addresses so a copied ID is useless elsewhere. Tokens are short-lived and renewed by login.
+# Vault stores a single-host token_bound_cidrs without its /32 (and keeps it on secret_id_bound_cidrs, measured
+# 2026-09-23), so both sides are compared without it - or the role would be rewritten on every run.
+- name: Every reader has its bound addresses
+  ansible.builtin.assert:
+    that: vault.approles.keys() | difference(vault_role_cidrs.keys()) | length == 0
+    fail_msg: "vault_role_cidrs must name every role in vault.approles"
+    quiet: true
+
+- name: Current roles
+  ansible.builtin.uri:
+    url: "{{ vault_addr }}/v1/auth/{{ vault.approle_mount }}/role/{{ item.key }}"
+    ca_path: "{{ playbook_dir }}/../../docs/lab-root-ca.crt"
+    headers: {X-Vault-Token: "{{ vault_token }}"}
+    status_code: [200, 404]
+  loop: "{{ vault.approles | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"
+  register: vault_roles
+  changed_when: false
+  no_log: true
+
+- name: AppRole per reader
+  ansible.builtin.uri:
+    url: "{{ vault_addr }}/v1/auth/{{ vault.approle_mount }}/role/{{ item.item.key }}"
+    ca_path: "{{ playbook_dir }}/../../docs/lab-root-ca.crt"
+    method: POST
+    headers: {X-Vault-Token: "{{ vault_token }}"}
+    body_format: json
+    body: "{{ wanted }}"
+    status_code: [204]
+  vars:
+    wanted:
+      token_policies: ["{{ item.item.key }}"]
+      token_ttl: 3600
+      token_max_ttl: 14400
+      secret_id_ttl: 0
+      secret_id_num_uses: 0
+      secret_id_bound_cidrs: "{{ vault_role_cidrs[item.item.key] }}"
+      token_bound_cidrs: "{{ vault_role_cidrs[item.item.key] }}"
+  loop: "{{ vault_roles.results }}"
+  loop_control:
+    label: "{{ item.item.key }}"
+  when: >-
+    item.status == 404
+    or (item.json.data.token_policies | sort) != [item.item.key]
+    or item.json.data.token_ttl != wanted.token_ttl
+    or item.json.data.token_max_ttl != wanted.token_max_ttl
+    or item.json.data.secret_id_ttl != 0
+    or item.json.data.secret_id_num_uses != 0
+    or (item.json.data.secret_id_bound_cidrs | default([], true) | map('regex_replace', '/32$', '') | sort)
+       != (wanted.secret_id_bound_cidrs | map('regex_replace', '/32$', '') | sort)
+    or (item.json.data.token_bound_cidrs | default([], true) | map('regex_replace', '/32$', '') | sort)
+       != (wanted.token_bound_cidrs | map('regex_replace', '/32$', '') | sort)
+  changed_when: true
+  no_log: true
+
+- name: Role IDs (not secret; the secret IDs are made by the reader's own play)
+  ansible.builtin.uri:
+    url: "{{ vault_addr }}/v1/auth/{{ vault.approle_mount }}/role/{{ item }}/role-id"
+    ca_path: "{{ playbook_dir }}/../../docs/lab-root-ca.crt"
+    headers: {X-Vault-Token: "{{ vault_token }}"}
+  loop: "{{ vault.approles.keys() | list }}"
+  register: vault_role_id_reads
+  changed_when: false
+  no_log: true
+
+- name: Role ID per reader
+  ansible.builtin.set_fact:
+    vault_role_ids: >-
+      {{ dict(vault_role_id_reads.results | map(attribute='item')
+              | zip(vault_role_id_reads.results | map(attribute='json.data.role_id'))) }}
+
+# --- seed from .env, one way (ADR 0065 decision 10) -------------------------------------------------------------
+- name: Secrets wanted in this environment
+  ansible.builtin.set_fact:
+    vault_seed: >-
+      {%- set out = {} -%}
+      {%- for path, keys in vault.secrets.items() if not (vault_env == 'dev' and keys.prod_only | default(false)) -%}
+        {%- set data = {} -%}
+        {%- for k, src in keys.items() if k != 'prod_only' -%}
+          {%- set env = src.dev_env if (vault_env == 'dev' and src.dev_env is defined) else src.env | default('') -%}
+          {%- set seeded = src.prefix | default('') ~ lookup('ansible.builtin.env', env) if src.value is not defined -%}
+          {%- set _ = data.update({k: src.value if src.value is defined else seeded}) -%}
+        {%- endfor -%}
+        {%- set _ = out.update({path: data}) -%}
+      {%- endfor -%}
+      {{ out }}
+  no_log: true
+
+- name: Every seeded value is present in the environment (.env via make)
+  ansible.builtin.assert:
+    that: >-
+      vault_seed.values() | map('dict2items') | flatten | selectattr('value', 'equalto', '') | list | length == 0
+      and vault_seed.values() | map('dict2items') | flatten | selectattr('value', 'in', ['Token ']) | list | length == 0
+    fail_msg: "a Vault secret would be empty: run through make so .env is exported (names in itential/versions.yaml vault.secrets)"
+    quiet: true
+  no_log: true
+
+- name: Current secret values
+  ansible.builtin.uri:
+    url: "{{ vault_addr }}/v1/{{ vault.kv_mount }}/data/{{ item }}"
+    ca_path: "{{ playbook_dir }}/../../docs/lab-root-ca.crt"
+    headers: {X-Vault-Token: "{{ vault_token }}"}
+    status_code: [200, 404]
+  loop: "{{ vault_seed.keys() | list }}"
+  register: vault_current
+  changed_when: false
+  no_log: true
+
+- name: Write the secrets that differ from .env
+  ansible.builtin.uri:
+    url: "{{ vault_addr }}/v1/{{ vault.kv_mount }}/data/{{ item.item }}"
+    ca_path: "{{ playbook_dir }}/../../docs/lab-root-ca.crt"
+    method: POST
+    headers: {X-Vault-Token: "{{ vault_token }}"}
+    body_format: json
+    body: {data: "{{ vault_seed[item.item] }}"}
+    status_code: [200]
+  loop: "{{ vault_current.results }}"
+  when: item.status == 404 or (item.json.data.data | default({})) != vault_seed[item.item]
+  changed_when: true
+  no_log: true

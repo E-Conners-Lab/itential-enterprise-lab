@@ -1,0 +1,23 @@
+# test-12a-clab-dev 20260924T043920Z
+PASS  
+      8 vCPU, 19999 MB, 60 GiB, /dev/kvm, containerlab 0.79.0 (= manifest); NetBox VM record matches; no clab device in NetBox
+PASS  S10.7 four nodes running with the oracle mgmt IPs, reachable over SSH as automation from this Mac and from itential-dev; admin/admin refused on every node
+      04:39:24 INFO Parsing & checking topology file=dev.clab.yml
+      containerlab: 4 running at ['10.100.2.11', '10.100.2.12', '10.100.2.21', '10.100.2.22']
+      clab-rtr1 10.100.2.11: login from the Mac, SSH banner from itential-dev, admin/admin refused
+      clab-rtr2 10.100.2.12: login from the Mac, SSH banner from itential-dev, admin/admin refused
+      clab-sw1 10.100.2.21: login from the Mac, SSH banner from itential-dev, admin/admin refused
+      clab-sw2 10.100.2.22: login from the Mac, SSH banner from itential-dev, admin/admin refused
+PASS  S10.8 vEOS-lab version equals the oracle, the manifest and the EVE-NG lab's vEOS; C8000v runs 17.13.01a with licence level network-advantage
+      vEOS-lab 4.33.1.1F on both switches (= manifest = EVE-NG lab); C8000v 17.13.01a at network-advantage on both routers
+PASS  S10.9 OSPF area 0: every adjacency on the oracle's links is FULL on both ends
+      4 adjacencies FULL on both ends (4 links in the oracle)
+PASS  S10.10 BGP: iBGP rtr1-rtr2 and sw1-sw2 over loopbacks and eBGP rtr1-sw1 Established on both ends; the switch VLAN /27s are on rtr2
+      3 sessions Established on both ends; clab-rtr2 carries ['10.100.3.64/27', '10.100.3.96/27'] from BGP
+PASS  S10.11 VLANs 10 and 20 active on both switches and allowed on the switch-to-switch trunk
+      VLANs [10, 20] active on both switches; trunk carries [10, 20, 99]
+PASS  S10.12 oob-gw and itential-dev route the clab mgmt prefix via clab; the DOCKER-USER allowlist equals the oracle and drops other sources; clab RAM under its budget line
+      allowlist ['10.100.0.65/32', '10.100.0.224/32', '192.168.68.0/22'] + DROP, jump first in DOCKER-USER, unit enabled; RAM 16672/19999 MB
+      oob-gw and itential-dev route 10.100.2.0/24 via 10.100.0.224 (oob-gw persisted); oob-gw itself is refused at the allowlist
+
+passed=7 failed=0

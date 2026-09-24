@@ -102,9 +102,23 @@ if have != want:
     print(f"containerlab {have} != oracle {want}"); sys.exit(1)
 print(f"containerlab: {len(have)} running at {sorted(v[1] for v in have.values())}")
 PY
-  local name kind ip out banner
+  local name kind ip out banner adm
   while read -r name kind ip; do
     out=$(dev "$ip" "show version" 2>&1) || { echo "${name} ${ip}: SSH as automation from this Mac failed: ${out:0:200}"; return 1; }
+    # PID 1.34 (ADR 0065): the vendor's default admin/admin must be refused - on both C8000v it survived the template
+    # that was meant to replace it, in plain text, until 2026-09-23. A refusal is the only pass; anything else fails.
+    adm=$(IP="$ip" ${PY} -c '
+import os, paramiko
+c = paramiko.SSHClient(); c.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+try:
+    c.connect(os.environ["IP"], username="admin", password="admin", look_for_keys=False, allow_agent=False,
+              timeout=60, banner_timeout=150, auth_timeout=150)
+    print("ACCEPTED")
+except paramiko.AuthenticationException:
+    print("refused")
+finally:
+    c.close()' 2>&1)
+    [ "$adm" = refused ] || { echo "${name} ${ip}: the vendor default admin/admin was not refused: ${adm:0:200}"; return 1; }
     case "$kind" in
       arista_veos) echo "$out" | grep -q "Arista" || { echo "${name}: show version is not EOS: ${out:0:200}"; return 1; } ;;
       *) echo "$out" | grep -q "^${name} uptime is" || { echo "${name}: show version does not name the router: ${out:0:200}"; return 1; } ;;
@@ -112,15 +126,15 @@ PY
     # itential-dev holds no clab password of its own for the verify, so from there the proof is the SSH server's
     # banner over the routed path (TCP through clab's DOCKER-USER allowlist); the login itself is proved above
     if dev_deferred; then
-      echo "${name} ${ip}: login from the Mac; from itential-dev DEFERRED to make verify-dev (CLAB_DEV_ONLY=1)"
+      echo "${name} ${ip}: login from the Mac, admin/admin refused; from itential-dev DEFERRED to make verify-dev (CLAB_DEV_ONLY=1)"
       continue
     fi
     banner=$($SSH "ubuntu@${DEV_IP}" "timeout 8 bash -c 'exec 3<>/dev/tcp/${ip}/22; head -c 7 <&3'" </dev/null 2>/dev/null)
     [ "$banner" = "SSH-2.0" ] || { echo "${name} ${ip}: no SSH banner from itential-dev (${DEV_IP}): '${banner}'"; return 1; }
-    echo "${name} ${ip}: login from the Mac, SSH banner from itential-dev"
+    echo "${name} ${ip}: login from the Mac, SSH banner from itential-dev, admin/admin refused"
   done < "$WORK/nodes.txt"
 }
-check "S10.7 four nodes running with the oracle mgmt IPs, reachable over SSH as automation from this Mac and from itential-dev" c7
+check "S10.7 four nodes running with the oracle mgmt IPs, reachable over SSH as automation from this Mac and from itential-dev; admin/admin refused on every node" c7
 
 # --- S10.8 versions: vEOS-lab equals oracle, manifest and the EVE-NG lab; C8000v 17.13.01a at network-advantage ----
 c8() {

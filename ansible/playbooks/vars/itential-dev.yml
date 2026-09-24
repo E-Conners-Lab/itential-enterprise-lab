@@ -55,3 +55,15 @@ mcp_platform_user: svc-copilot
 mcp_platform_password: >-
   {{ hostvars['localhost'].svc_copilot_pw
      | default(lookup('ansible.builtin.env', 'SVC_COPILOT_DEV_PASSWORD'), true) }}
+
+# Phase 9a (ADR 0065): the dev stack reads its credentials from its own Vault (make vault-dev first). Every play
+# reads `vault_enabled | default(false)`, so production keeps .env credentials until its own cut-over step.
+vault_enabled: true
+
+# Where each AppRole's secret ID and tokens may be used from on the dev Vault: the pinned gateway of the vault-dev
+# Docker network, the source address of every request from this VM's containers (measured 2026-09-23 with a
+# temporary audit device). Both readers share the VM, so on dev the binding means "only from itential-dev"; a copied
+# secret ID is refused from anywhere else. Production binds each role to its own hosts (iap-01/02, iag-01).
+vault_role_cidrs:
+  itential-platform: ["{{ vault.dev.docker_gateway }}/32"]
+  itential-gateway: ["{{ vault.dev.docker_gateway }}/32"]
