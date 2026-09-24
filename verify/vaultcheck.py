@@ -111,7 +111,7 @@ def _policy_token(policy: str) -> str:
     """A short-lived token carrying one reader's policy, issued by the administrator token. It proves the POLICY
     boundary from anywhere; the AppRole login itself is address-bound (S8.2e) and so cannot be used from here."""
     _, d = vault("POST", "auth/token/create", admin(),
-                 {"policies": [policy], "ttl": "60s", "num_uses": 5, "meta": {"issued_by": "verify/test-09a-vault-dev.sh"}})
+                 {"policies": [policy], "ttl": "60s", "num_uses": 5, "meta": {"issued_by": "verify/test-09a-vault"}})
     return d["auth"]["client_token"]
 
 
@@ -137,16 +137,19 @@ def c_bound() -> bool:
     def norm(cidrs: list[str]) -> list[str]:  # Vault drops the /32 of a single-host token_bound_cidrs entry
         return sorted(c.removesuffix("/32") for c in cidrs)
 
-    want = norm(os.environ["VAULT_BOUND_CIDRS"].split(","))
+    # production binds each role to its own hosts (VAULT_ROLE_CIDRS, JSON {role: [cidr]}); the dev tier binds both
+    # roles to the one vault-dev Docker gateway (VAULT_BOUND_CIDRS, comma-separated)
+    per_role = json.loads(os.environ["VAULT_ROLE_CIDRS"]) if os.environ.get("VAULT_ROLE_CIDRS") else None
     ok = True
     for role in ("itential-platform", "itential-gateway"):
+        want = norm(per_role[role] if per_role else os.environ["VAULT_BOUND_CIDRS"].split(","))
         _, d = vault("GET", f"auth/{VAULT['approle_mount']}/role/{role}", admin())
         got = {k: norm(d["data"].get(k) or []) for k in ("secret_id_bound_cidrs", "token_bound_cidrs")}
-        print(f"{role:18} bound to {got}")
+        print(f"{role:18} bound to {got} (want {want})")
         ok &= all(v == want for v in got.values())
         _, rid = vault("GET", f"auth/{VAULT['approle_mount']}/role/{role}/role-id", admin())
         _, sid = vault("POST", f"auth/{VAULT['approle_mount']}/role/{role}/secret-id", admin(),
-                       {"metadata": json.dumps({"issued_by": "verify/test-09a-vault-dev.sh"})})  # a string (400 otherwise)
+                       {"metadata": json.dumps({"issued_by": "verify/test-09a-vault"})})  # a string (400 otherwise)
         try:
             st, _ = vault("POST", f"auth/{VAULT['approle_mount']}/login", None,
                           {"role_id": rid["data"]["role_id"], "secret_id": sid["data"]["secret_id"]})

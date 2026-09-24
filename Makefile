@@ -8,7 +8,7 @@ SHELL := /bin/bash
 
 PHASES := oob-network platform network-topology itential flowai observability platform-ha2 config-secrets-code identity ddi containerlab firewall-track
 
-.PHONY: help bootstrap lint test up verify vault-dev vault vault-status vault-init vault-unseal vault-config discover netbox-enrich tokens agents-push observability-refresh plan-oob plan-platform plan-itential plan-platform-ha2 plan-clab \
+.PHONY: help bootstrap lint test up verify vault-dev vault vault-status vault-init vault-unseal vault-config vault-snapshot discover netbox-enrich tokens agents-push observability-refresh plan-oob plan-platform plan-itential plan-platform-ha2 plan-clab \
 	netbox-token-dev clab-dev dev-stack verify-dev prod-snapshot copilot-prod $(addprefix phase-,$(PHASES))
 
 help: ## Show targets
@@ -166,6 +166,10 @@ vault-unseal: ## Production Vault: asks for the unseal key without echoing it (F
 
 vault-config: ## Production Vault: KV, read-only AppRoles bound to their hosts, seeds from .env; proves each host can log in and this Mac cannot
 	$(load_env) cd ansible && ansible-playbook -i inventory/netbox.yml playbooks/vault-prod-config.yml
+	scripts/vault-prod.sh snapshot
+
+vault-snapshot: ## Production Vault: a Raft snapshot to ~/Backups/itential-enterprise-lab/vault (mode 600, outside the repo)
+	scripts/vault-prod.sh snapshot
 
 # ADR 0063: the Copilot sandbox. Order matters: the read-only NetBox token before any dev Platform play, the
 # Containerlab devices before the dev inventory that names them. prod-snapshot MODE=save before and
