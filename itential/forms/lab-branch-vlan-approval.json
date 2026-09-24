@@ -1,6 +1,6 @@
 {
   "name": "lab-branch-vlan-approval",
-  "description": "Approve or reject a branch VLAN change reserved in NetBox by wf-branch-vlan-v1 (PID S4d.3, ADR 0044)",
+  "description": "Approve or reject a branch VLAN change reserved in NetBox by Add Branch VLAN (PID S4d.3, ADR 0044)",
   "struct": {
     "type": "array",
     "items": [
@@ -124,7 +124,7 @@
   },
   "schema": {
     "title": "lab-branch-vlan-approval",
-    "description": "Approve or reject a branch VLAN change reserved in NetBox by wf-branch-vlan-v1 (PID S4d.3, ADR 0044)",
+    "description": "Approve or reject a branch VLAN change reserved in NetBox by Add Branch VLAN (PID S4d.3, ADR 0044)",
     "type": "object",
     "required": [
       "decision"

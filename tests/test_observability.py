@@ -310,9 +310,9 @@ def _exporter():
 def test_exporter_renders_the_measured_shapes() -> None:
     ex = _exporter()
     jobs = json.loads(
-        '{"results":[{"workflow":{"name":"wf-backup-all-v1"},"metrics":[{"jobsComplete":8,"totalRunTime":536701,'
+        '{"results":[{"workflow":{"name":"Back Up All Device Configs"},"metrics":[{"jobsComplete":8,"totalRunTime":536701,'
         '"startDate":"2026-09-08T00:21:07.603Z"}],"jobsComplete":8,"totalRunTime":536701,"totalTimeSaved":1863299},'
-        '{"workflow":{"name":"wf-branch-vlan-v1"},"metrics":[{"jobsComplete":37,"totalRunTime":1347488,'
+        '{"workflow":{"name":"Add Branch VLAN"},"metrics":[{"jobsComplete":37,"totalRunTime":1347488,'
         '"startDate":"2026-09-07T17:09:59.152Z","slaTargetsMissed":1}],"jobsComplete":37,"totalRunTime":1347488}],'
         '"skip":0,"limit":3,"total":2}'
     )
@@ -326,9 +326,9 @@ def test_exporter_renders_the_measured_shapes() -> None:
     adapters = json.loads('{"results":[{"id":"NetBox","state":"RUNNING","connection":{"state":"ONLINE"}}]}')
     text = ex.render(jobs["results"], tasks["results"], apps["results"], adapters["results"], up=1,
                      job_status={"complete": 300, "error": 4, "canceled": 7, "running": 2})
-    assert 'itential_workflow_jobs_complete_total{workflow="wf-backup-all-v1"} 8' in text
-    assert 'itential_workflow_sla_missed_total{workflow="wf-branch-vlan-v1"} 1' in text
-    assert 'itential_workflow_sla_missed_total{workflow="wf-backup-all-v1"} 0' in text
+    assert 'itential_workflow_jobs_complete_total{workflow="Back Up All Device Configs"} 8' in text
+    assert 'itential_workflow_sla_missed_total{workflow="Add Branch VLAN"} 1' in text
+    assert 'itential_workflow_sla_missed_total{workflow="Back Up All Device Configs"} 0' in text
     assert 'itential_task_errors_total{app="GatewayManager",task="sendCommand"} 3' in text
     assert 'itential_task_successes_total{app="GatewayManager",task="sendCommand"} 181' in text
     assert text.count('itential_task_successes_total{app="GatewayManager",task="sendCommand"}') == 1, "per-workflow rows must not duplicate the series"

@@ -446,7 +446,7 @@
   failed_when: not (sv.json.result.results | map(attribute='success') | list | min)
   changed_when: false
 
-# --- NetBox prerequisites for wf-branch-vlan-v1: one VLAN group per branch (VID 11-99) ------
+# --- NetBox prerequisites for Add Branch VLAN: one VLAN group per branch (VID 11-99) ------
 # NetBox allocates the next free VID (POST vlan-groups/{id}/available-vlans/), so the workflow
 # never guesses; groups are scoped to the branch site.
 - name: Branch sites
@@ -475,7 +475,7 @@
       scope_type: dcim.site
       scope_id: "{{ item.id }}"
       vid_ranges: [[11, 99]]
-      description: "User VLANs reserved by wf-branch-vlan-v1 (Phase 5)"
+      description: "User VLANs reserved by Add Branch VLAN (Phase 5)"
     status_code: 201
   loop: "{{ nb_sites.json.results }}"
   loop_control:
@@ -491,7 +491,7 @@
 # copies never drift from the generator because tests/test_itential.py checks the files.
 - name: Workflow documents
   ansible.builtin.set_fact:
-    wf_docs: "{{ lookup('ansible.builtin.fileglob', playbook_dir ~ '/../../itential/workflows/wf-*.json', wantlist=True) | sort }}"
+    wf_docs: "{{ lookup('ansible.builtin.fileglob', playbook_dir ~ '/../../itential/workflows/*.json', wantlist=True) | sort }}"
 
 - name: Workflow documents parsed
   ansible.builtin.set_fact:
@@ -506,16 +506,17 @@
     headers: {Cookie: "{{ login.cookies_string }}"}
   register: wf_existing
 
+# The name is the document's own (ADR 0067: names carry spaces, so it is URL-encoded), not the file name.
 - name: Remove the previous copies
   ansible.builtin.uri:
-    url: "{{ platform_local }}/workflow_builder/workflows/delete/{{ item | basename | regex_replace('\\.json$', '') }}"
+    url: "{{ platform_local }}/workflow_builder/workflows/delete/{{ item.name | urlencode }}"
     method: DELETE
     headers: {Cookie: "{{ login.cookies_string }}"}
     status_code: [200, 404]
-  loop: "{{ wf_docs }}"
+  loop: "{{ wf_bodies }}"
   loop_control:
-    label: "{{ item | basename }}"
-  when: (item | basename | regex_replace('\\.json$', '')) in (wf_existing.json['items'] | map(attribute='name') | list)
+    label: "{{ item.name }}"
+  when: item.name in (wf_existing.json['items'] | map(attribute='name') | list)
   changed_when: true
 
 - name: Import the workflows
@@ -529,4 +530,16 @@
     status_code: 200
   register: wf_import
   failed_when: wf_import.json.imported | rejectattr('success') | list | length > 0
+  changed_when: true
+
+# ADR 0067: the pre-rename copies go once their successors are in. The agents drop their links to them in
+# flowai.yml (removeTools), and the schedules and LCM actions follow the new names in their own tasks.
+- name: Remove the retired workflow names
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/workflow_builder/workflows/delete/{{ item | urlencode }}"
+    method: DELETE
+    headers: {Cookie: "{{ login.cookies_string }}"}
+    status_code: [200, 404]
+  loop: "{{ retired_workflows }}"
+  when: item in (wf_existing.json['items'] | map(attribute='name') | list)
   changed_when: true

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Phase 6 verification: NetBox enrichment derived from the topology (PID S4e, ADR 0048).
 # Intent: topology/enterprise.yaml through topology/derive.py. State: NetBox (REST), the devices through
-# wf-show-all-v1 (Gateway 5 + Genie/TextFSM, one call for every device) and direct SSH (verify/devcmd.py,
+# Run Show Command on All Devices (Gateway 5 + Genie/TextFSM, one call for every device) and direct SSH (verify/devcmd.py,
 # second source). Read-only on the devices; spends no provider tokens unless an S4e agent criterion runs.
 set -uo pipefail
 cd "$(dirname "$0")/.."
@@ -75,14 +75,14 @@ for r in json.load(sys.stdin):
     t=r.get("totals",{}); iss=[" ".join(w["value"] for w in i["spec"]["words"]) for i in r.get("issues",[])]
     print(r["deviceName"], t.get("errors",0), t.get("warnings",0), t.get("passes",0), "|", "; ".join(iss))'; }
 # show_all <command> -> writes the parsed results of every device to $WORK/<slug>.json
-# wf-show-all-v1 caps each device's parsed result at 1500 characters (sized for the local model, ADR 0046); a device
-# whose result hit the cap (a JSON string, not a list) is re-read alone through wf-show-command-v1.
+# Run Show Command on All Devices caps each device's parsed result at 1500 characters (sized for the local model, ADR 0046); a device
+# whose result hit the cap (a JSON string, not a list) is re-read alone through Run Show Command on a Device.
 show_all() {
   local id slug dev; slug=$(echo "$1" | tr ' ' '_')
-  id=$(start_job wf-show-all-v1 "{\"command\":\"$1\"}"); [ -n "$id" ] || { echo "wf-show-all-v1 did not start"; return 1; }
+  id=$(start_job "Run Show Command on All Devices" "{\"command\":\"$1\"}"); [ -n "$id" ] || { echo "Run Show Command on All Devices did not start"; return 1; }
   wait_job "$id" || return 1; job_vars "$id" > "$WORK/${slug}.json"
   for dev in $(${PY} -c "import json;r=json.load(open('$WORK/${slug}.json'))['results'];print(' '.join(d for d,e in r.items() if isinstance(e.get('parsed'),str)))"); do
-    id=$(start_job wf-show-command-v1 "{\"device\":\"${dev}\",\"command\":\"$1\"}"); [ -n "$id" ] || { echo "wf-show-command-v1 did not start for ${dev}"; return 1; }
+    id=$(start_job "Run Show Command on a Device" "{\"device\":\"${dev}\",\"command\":\"$1\"}"); [ -n "$id" ] || { echo "Run Show Command on a Device did not start for ${dev}"; return 1; }
     wait_job "$id" || return 1; job_vars "$id" > "$WORK/${slug}-${dev}.json"
   done
   echo "$id"
@@ -117,7 +117,7 @@ nb_if = json.load(open(f"{W}/nb-interfaces.json"))["results"]
 nb_ip = json.load(open(f"{W}/nb-addresses.json"))["results"]
 nb_dev = {d["name"] for d in json.load(open(f"{W}/nb-devices.json"))["results"]}
 def results(slug):
-    """wf-show-all-v1 results; a device whose parsed result hit the 1500-character cap was re-read alone."""
+    """Run Show Command on All Devices results; a device whose parsed result hit the 1500-character cap was re-read alone."""
     out = json.load(open(f"{W}/{slug}.json"))["results"]
     for device, entry in out.items():
         if isinstance(entry.get("parsed"), str):
@@ -170,7 +170,7 @@ checked = 0
 for device, rows in intent.items():
     table, descriptions = dev_table(device), dev_desc(device)
     if not brief.get(device):
-        errs.append(f"{device}: no wf-show-all-v1 result"); continue
+        errs.append(f"{device}: no Run Show Command on All Devices result"); continue
     virtual = {r["virtual"].split("/")[0] for r in rows if r.get("virtual")}
     for r in rows:
         key = (device, r["name"])
@@ -212,7 +212,7 @@ if errs:
 print(f"{len(intent)} devices, {checked} intent interfaces equal in NetBox and on the devices (addresses + descriptions); direct SSH agrees on br1-wan01 and dc1-leaf01")
 PY
 }
-check "S4e.1 every addressed interface of the 12 network devices is in NetBox with its address, VRF and 'to <peer>' description; the devices agree (wf-show-all-v1 + direct SSH)" c1
+check "S4e.1 every addressed interface of the 12 network devices is in NetBox with its address, VRF and 'to <peer>' description; the devices agree (Run Show Command on All Devices + direct SSH)" c1
 
 # --- S4e.2 VRFs and route targets, ASNs on sites, BGP neighbours in the device context == the device, FHRP group ------
 c2() {

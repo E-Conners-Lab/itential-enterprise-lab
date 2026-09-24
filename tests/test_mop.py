@@ -1,5 +1,5 @@
 """PID S4d element 2 (ADR 0042): MOP command and analytic templates from itential/command-templates/ and the
-nightly backups (wf-backup-all-v1 + schedule trigger), built by ansible/playbooks/platform.yml. These tests
+nightly backups (Back Up All Device Configs + schedule trigger), built by ansible/playbooks/platform.yml. These tests
 hold the documents, the oracle, the generator, the play, the verify script and the PID to each other. They
 run in CI with no lab access."""
 
@@ -74,8 +74,8 @@ def test_rules_are_read_only_show_commands_with_valid_evals(mop: dict) -> None:
 
 
 def test_backup_workflow_loops_over_every_configuration_manager_device(versions: dict) -> None:
-    assert versions["workflows"]["backup_all"] == "wf-backup-all-v1"
-    wf = json.loads((WORKFLOWS / "wf-backup-all-v1.json").read_text())
+    assert versions["workflows"]["backup_all"] == "Back Up All Device Configs"
+    wf = json.loads((WORKFLOWS / "back-up-all-device-configs.json").read_text())
     tasks = wf["tasks"]
     assert wf["inputSchema"]["properties"] == {}, "no inputs: schedule triggers do not persist formData"
     src = [k for k, t in tasks.items() if t.get("name") == "getDevicesFiltered"]
@@ -102,6 +102,6 @@ def test_play_creates_templates_through_mop_and_schedules_backups(mop: dict) -> 
 def test_verify_pid_and_adr_cover_s4d2() -> None:
     text = VERIFY.read_text()
     assert re.search(r'check "S4d\.2 ', text) and "RunCommandTemplate" in text and "runAnalyticsTemplate" in text
-    assert "wf-backup-all-v1" in text and "show running-config" in text, "backups compared with direct SSH"
+    assert "Back Up All Device Configs" in text and "show running-config" in text, "backups compared with direct SSH"
     assert "runs no OSPF" in PID.read_text()
     assert ADR.exists()

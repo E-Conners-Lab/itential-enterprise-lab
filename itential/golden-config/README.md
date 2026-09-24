@@ -13,5 +13,5 @@ configuration parser (`cisco-ios`, `arista-eos`; the inventory's netmiko names `
   the NetBox intent the compliance plan checks: hostname and the management interface.
 
 Tree layout: `base/<site>/<device>`; the site node carries the `site-<slug>` device group, the
-device leaf carries the device. Detection only: a violation is fixed through `wf-config-push-v1`
+device leaf carries the device. Detection only: a violation is fixed through `Push Configuration with Approval`
 with a Work Center approval, never by Golden Config itself.

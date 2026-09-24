@@ -1,6 +1,6 @@
 # servicenow/ — what the PDI needs for Phase 5 (S4b)
 
-The ServiceNow side of `wf-branch-vlan-v1` uses **stock** objects of a Personal Developer
+The ServiceNow side of `Add Branch VLAN` uses **stock** objects of a Personal Developer
 Instance only; nothing was customised, so there is no update set to export (PID S4b.3,
 amended in PID 1.5). Rebuilding a reclaimed PDI is manual step 7 plus the two records below,
 which exist in the demo data of every PDI on the Zurich/Australia families:

@@ -3,7 +3,7 @@
 # Intent: k8s/observability/versions.yaml, observability/observability.yaml, observability/expiries.yaml, NetBox.
 # State: the Zabbix API, the Prometheus/Alertmanager/Loki APIs and gNMIc's metrics through the VIPs (lab CA),
 # kubectl, and independent second sources: snmpget from the workstation, systemctl over SSH, verify/devcmd.py,
-# the NetBox token and the lab CA file, the Platform's own metrics API. Writes: two no-op wf-config-push-v1 jobs
+# the NetBox token and the lab CA file, the Platform's own metrics API. Writes: two no-op Push Configuration with Approval jobs
 # (S7.4, approved here as test-06b does) and, only with VERIFY_DRILLS=1, the br1-wan01 stop/start drill (S7.6).
 # No agent sessions: nothing here spends Anthropic tokens (ADR 0049).
 set -uo pipefail
@@ -238,7 +238,7 @@ start_job() { iap -X POST "${PLATFORM}/operations-manager/jobs/start" -d "{\"wor
 job_status() { iap "${PLATFORM}/operations-manager/jobs/$1" | ${PY} -c 'import sys,json;print(json.load(sys.stdin)["data"]["status"])'; }
 wait_job() { local st; for _ in $(seq 1 48); do st=$(job_status "$1"); case "$st" in complete) return 0;; error|canceled|cancelled) echo "job $1 ${st}"; return 1;; esac; sleep 5; done; echo "job $1 timeout (${st})"; return 1; }
 approve_task() { local i; for i in $(seq 1 24); do if iap -X POST "${PLATFORM}/operations-manager/jobs/$1/tasks/$2/finish" -d '{"taskData":{"finish_state":"success","variables":{}}}' -o /dev/null -w '%{http_code}' | grep -qx 200; then return 0; fi; sleep 5; done; echo "approval of $1/$2 never accepted"; return 1; }
-push() { local id; id=$(start_job wf-config-push-v1 "{\"device\":\"$1\",\"config\":\"$2\",\"reason\":\"$3\"}"); [ -n "$id" ] || { echo "wf-config-push-v1 did not start"; return 1; }; sleep 8; approve_task "$id" 2a || return 1; wait_job "$id" || return 1; echo "pushed to $1 (job ${id})"; }
+push() { local id; id=$(start_job "Push Configuration with Approval" "{\"device\":\"$1\",\"config\":\"$2\",\"reason\":\"$3\"}"); [ -n "$id" ] || { echo "Push Configuration with Approval did not start"; return 1; }; sleep 8; approve_task "$id" 2a || return 1; wait_job "$id" || return 1; echo "pushed to $1 (job ${id})"; }
 loki_since() { # loki_since <host name> <start ns> <pattern> -> prints matching lines (label host parsed from the line by Alloy)
   web -G "${LOKI}/loki/api/v1/query_range" --data-urlencode "query={job=\"syslog-device\",host=\"$1\"} |~ \"$3\"" --data-urlencode "start=$2" --data-urlencode "limit=20" | ${PY} -c 'import sys,json;d=json.load(sys.stdin)["data"]["result"];[print(v[1][:160]) for s in d for v in s["values"]]'
 }

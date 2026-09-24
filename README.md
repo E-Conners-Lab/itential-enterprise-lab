@@ -67,7 +67,7 @@ committed. Service specs and acceptance criteria are in `docs/PID.md`.
 | 2 | `phase-2/oob-network` | OOB network (`vmbr1`, `pnet1`, `oob-gw`), Proxmox API token, image staging, NetBox seeded | merged (PR #14) |
 | 3 | `phase-3/platform` | 3-node k3s: Cilium, MetalLB, Longhorn, cert-manager + lab CA, CloudNativePG + Garage (lab databases not backed up since ADR 0064) | merged (PR #15) |
 | 4 | `phase-4/network-topology` | EVE-NG DC + 2 branches (C8000v, vEOS, endpoints; PA-VM deferred behind `lab.firewalls`) from `topology/` | merged (PR #16) |
-| 5 | `phase-5/itential` | Itential Platform 6.5.2 + Gateway 5.5.2 as the dev-stack containers on VM 205 (ADR 0035), NetBox adapter, Inventory Manager from NetBox, generated workflows incl. `wf-branch-vlan-v1`, MCP for Claude Code; ServiceNow PDI adapter | merged (PR #17) |
+| 5 | `phase-5/itential` | Itential Platform 6.5.2 + Gateway 5.5.2 as the dev-stack containers on VM 205 (ADR 0035), NetBox adapter, Inventory Manager from NetBox, generated workflows incl. `Add Branch VLAN`, MCP for Claude Code; ServiceNow PDI adapter | merged (PR #17) |
 | 6 | `phase-6/flowai` | FlowAI agents over the topology (S4c, ADR 0037/0038: Anthropic + in-lab Ollama profiles, `lab-netops`, Genie/TextFSM on a Gateway 5 runner) and Platform coverage of the lab (S4d, ADR 0039-0047: Configuration Manager through the InventoryBroker, Golden Config + nightly compliance, MOP templates + nightly backups, Lifecycle Manager `branch-vlan` + JSON form approval, NetBox/ServiceNow Integration Models, the five-agent fleet with local twins, Ubuntu hosts in Gateway 5) | merged (PR #19; S4e NetBox enrichment PR #20) |
 | 7 | `phase-7/observability` | Zabbix (CNPG), kube-prometheus-stack + SNMP/blackbox exporters, gNMIc (vEOS), Loki + Alloy syslog, Platform metrics; VIPs .35-.39 behind Traefik (ADR 0051); the official Itential dashboard (ADR 0052) | merged (PR #22, #23) |
 | 8 | `phase-8/platform-ha2` | Production Itential environment in Itential's HA2 shape at lab sizes (ADR 0053): 11 VMs — 2 Platform nodes behind nginx, a MongoDB replica set, Redis + Sentinel, Gateway 5 and a tools VM — with TLS and auth between every component and OpenLDAP as the directory. Everything phases 5-7 built replayed onto it from shared task files and verified there (ADR 0055), `itential.lab.internal` cut over to the load balancer, VM 205 deleted and 10.100.0.65 released | merged (PR #24) |
@@ -107,7 +107,7 @@ tofu/        Proxmox bridges, templates, VMs (bpg/proxmox); platform-ha2/ drives
 k8s/         Helm values, Kustomize overlays
 ansible/     guest OS and application configuration (itential.yml, platform.yml, flowai.yml build the platform from itential/)
 eve/         EVE-NG REST API client and topology builder
-itential/    the platform as documents: versions.yaml (oracle), workflows/ (build.py -> wf-*.json), golden-config/,
+itential/    the platform as documents: versions.yaml (oracle), workflows/ (build.py -> one <name>.json per workflow), golden-config/,
              command-templates/, lcm/, forms/, integrations/, agents/, the vendored dev-stack Compose files,
              ha2/ (the production environment's own oracle and its Compose templates)
 observability/  Zabbix templates and expiries, Grafana dashboards, gNMIc and the Platform exporter (phase 7)

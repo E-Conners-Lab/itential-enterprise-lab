@@ -19,6 +19,11 @@ PLAY = ROOT / "ansible" / "playbooks" / "netbox-enrich.yml"
 SEED = ROOT / "ansible" / "playbooks" / "netbox-topology.yml"
 MAKEFILE = ROOT / "Makefile"
 
+def _file(name: str) -> str:
+    """A workflow's file in itential/workflows/: its name in lowercase with dashes (ADR 0067)."""
+    return name.lower().replace(" ", "-") + ".json"
+
+
 
 @pytest.fixture(scope="module")
 def topo() -> dict:
@@ -399,10 +404,10 @@ def test_branch_vlan_workflows_write_a_journal_entry_on_the_switch() -> None:
     import json
 
     for name, marker in (
-        ("wf-branch-vlan-v1", "branch-vlan create"),
-        ("wf-branch-vlan-delete-v1", "branch-vlan delete"),
+        ("Add Branch VLAN", "branch-vlan create"),
+        ("Remove Branch VLAN", "branch-vlan delete"),
     ):
-        wf = json.loads((ROOT / "itential" / "workflows" / f"{name}.json").read_text())
+        wf = json.loads((ROOT / "itential" / "workflows" / _file(name)).read_text())
         # S4f (ADR 0054): the entry is the integration's own operation now. ADR 0048 needed python on
         # the runner only because adapter-netbox drops the trailing slash extras/journal-entries/ wants;
         # the model keeps it, so the runner no longer needs NETBOX_TOKEN in its environment for this.

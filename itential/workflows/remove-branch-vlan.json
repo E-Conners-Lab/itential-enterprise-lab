@@ -1,7 +1,7 @@
 {
-  "name": "wf-branch-vlan-delete-v1",
+  "name": "Remove Branch VLAN",
   "type": "automation",
-  "description": "Lifecycle Manager delete action for branch-vlan: deletes the NetBox VLAN and removes it from the branch switch only through wf-config-push-v1 (Work Center approval); no-op when both are already gone (PID S4d.3, ADR 0043)",
+  "description": "Lifecycle Manager delete action for branch-vlan: deletes the NetBox VLAN and removes it from the branch switch only through Push Configuration with Approval (Work Center approval); no-op when both are already gone (PID S4d.3, ADR 0043)",
   "tasks": {
     "1a": {
       "name": "query",
@@ -726,7 +726,7 @@
       "variables": {
         "incoming": {
           "task": "",
-          "workflow": "wf-config-push-v1",
+          "workflow": "Push Configuration with Approval",
           "variables": {
             "device": {
               "task": "1d",
@@ -1275,7 +1275,7 @@
         "incoming": {
           "str": "$var.eb4.replacedString",
           "substr": "__C__",
-          "newSubstr": "Lifecycle Manager branch-vlan delete: VLAN __V__ (__N__) removed through wf-config-push-v1 by wf-branch-vlan-delete-v1"
+          "newSubstr": "Lifecycle Manager branch-vlan delete: VLAN __V__ (__N__) removed through Push Configuration with Approval by Remove Branch VLAN"
         },
         "outgoing": {
           "replacedString": null

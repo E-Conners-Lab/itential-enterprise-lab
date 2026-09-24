@@ -1,5 +1,5 @@
 {
-  "name": "wf-config-push-v1",
+  "name": "Push Configuration with Approval",
   "type": "automation",
   "description": "Pushes operator-supplied configuration lines to one inventory node through Gateway 5 after a Work Center approval and saves the running configuration; the only write path for compliance remediation (PID S4d, ADR 0040)",
   "tasks": {

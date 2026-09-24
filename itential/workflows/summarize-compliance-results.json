@@ -1,5 +1,5 @@
 {
-  "name": "wf-compliance-report-v1",
+  "name": "Summarize Compliance Results",
   "type": "automation",
   "description": "Runs (run=true) or reads (run=false) the lab-baseline compliance plan and returns one compact summary per device: errors, warnings, passes and the issue lines; the agents' compliance tool (PID S4d.5, ADR 0046)",
   "tasks": {

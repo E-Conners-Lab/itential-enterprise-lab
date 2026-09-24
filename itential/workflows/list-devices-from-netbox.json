@@ -1,5 +1,5 @@
 {
-  "name": "wf-netbox-devices-v1",
+  "name": "List Devices from NetBox",
   "type": "automation",
   "description": "Lists NetBox devices reduced to name, site, role, platform, status and primary_ip4, optionally filtered by one value matched against name, site or role; the local twins' inventory tool, because the raw device objects are 52 fields each and overrun a CPU model's inference timeout (PID S4d.5, ADR 0046)",
   "tasks": {

@@ -21,10 +21,15 @@ ADR = ROOT / "docs" / "adr" / "0046-agent-fleet-tiered-autonomy.md"
 FLEET = ("netbox-sot", "device-ops", "compliance", "diagnostics", "remediation")
 DEVICE_WRITE_TOOLS = {
     "send-config",
-    "wf-config-push-v1",
-    "wf-branch-vlan-v1",
-    "wf-branch-vlan-delete-v1",
+    "Push Configuration with Approval",
+    "Add Branch VLAN",
+    "Remove Branch VLAN",
 }
+
+def _file(name: str) -> str:
+    """A workflow's file in itential/workflows/: its name in lowercase with dashes (ADR 0067)."""
+    return name.lower().replace(" ", "-") + ".json"
+
 
 
 @pytest.fixture(scope="module")
@@ -95,20 +100,20 @@ def test_tiered_autonomy_by_tool_kind(docs: dict) -> None:
         for t in docs["netbox-sot"]["tools"]
     )
     assert {
-        "wf-show-command-v1",
-        "wf-show-all-v1",
+        "Run Show Command on a Device",
+        "Run Show Command on All Devices",
         "send-command",
         "dcim_devices_list",
     } == tool_names(docs["device-ops"])
     for name in ("device-ops-local", "lab-netops-local"):
-        assert "wf-show-all-v1" in tool_names(
+        assert "Run Show Command on All Devices" in tool_names(
             docs[name]
         ) and "send-command" not in tool_names(docs[name]), (
             f"{name}: the fleet-wide read is a workflow; a raw gateway tool makes a small model invent node names (measured)"
         )
-    assert "wf-compliance-report-v1" in tool_names(
+    assert "Summarize Compliance Results" in tool_names(
         docs["compliance"]
-    ) and "wf-compliance-report-v1" in tool_names(docs["remediation"])
+    ) and "Summarize Compliance Results" in tool_names(docs["remediation"])
     assert not (
         {"searchCompliancePlanInstances", "getJSONComplianceReportsByBatch"}
         & tool_names(docs["compliance"])
@@ -123,12 +128,12 @@ def test_tiered_autonomy_by_tool_kind(docs: dict) -> None:
     assert "updateIncident" in tool_names(
         docs["diagnostics"]
     ) and "listIncidents" in tool_names(docs["diagnostics"])
-    assert "wf-show-command-v1" in tool_names(docs["diagnostics"]), (
+    assert "Run Show Command on a Device" in tool_names(docs["diagnostics"]), (
         "diagnostics reads the device before it proposes"
     )
     for variant in ("remediation", "remediation-local"):
         writes = tool_names(docs[variant]) & DEVICE_WRITE_TOOLS
-        assert writes == {"wf-config-push-v1"}, (
+        assert writes == {"Push Configuration with Approval"}, (
             f"{variant}: the governed push is the only write tool"
         )
         assert "updateIncident" not in tool_names(docs[variant])
@@ -156,7 +161,7 @@ def test_instructions_state_the_guardrails(docs: dict) -> None:
     r = docs["remediation"]["instructions"]
     assert (
         "Work Center" in r
-        and "wf-config-push-v1" in r
+        and "Push Configuration with Approval" in r
         and "single configuration line" in r
     )
     assert "never bypass" in r.lower()
@@ -169,9 +174,9 @@ def test_instructions_state_the_guardrails(docs: dict) -> None:
 def test_show_all_workflow_fans_out_deterministically(versions: dict) -> None:
     import json
 
-    assert versions["workflows"]["show_all"] == "wf-show-all-v1"
+    assert versions["workflows"]["show_all"] == "Run Show Command on All Devices"
     wf = json.loads(
-        (ROOT / "itential" / "workflows" / "wf-show-all-v1.json").read_text()
+        (ROOT / "itential" / "workflows" / "run-show-command-on-all-devices.json").read_text()
     )
     tasks = wf["tasks"]
     names = [t.get("name") for t in tasks.values()]
@@ -223,11 +228,11 @@ def test_verify_pid_and_adr_cover_s4d5() -> None:
             f"verify 06 lacks the {name} check"
         )
     assert "netbox-sot-local" in text, "one local twin runs in the verify"
-    assert re.search(r'check "S4d\.5g ', text) and "wf-show-all-v1" in text, (
+    assert re.search(r'check "S4d\.5g ', text) and "Run Show Command on All Devices" in text, (
         "the fleet-wide read on the local generalist"
     )
     for s in (
-        "wf-config-push-v1",
+        "Push Configuration with Approval",
         "devcmd.py",
         "service-now.com",
         "comments_and_work_notes",
@@ -292,14 +297,14 @@ def test_every_agent_with_integration_tools_forbids_a_null_filter(docs: dict) ->
 
 
 WORKFLOWS = ROOT / "itential" / "workflows"
-REDUCING_DEVICE_TOOL = "wf-netbox-devices-v1"
+REDUCING_DEVICE_TOOL = "List Devices from NetBox"
 
 
 def test_the_local_twins_read_inventory_through_the_reducing_workflow() -> None:
     """A 7B model on CPU cannot be handed raw NetBox device objects: 52 fields each, five devices at br1
     are 17.9 kB, and the prompt reached 7,823 tokens - ~350 s of ingestion at ~22 tokens/sec on tools-01,
     past the Platform's inference timeout, reported as "ollama model invocation failed" while Ollama was
-    still working (measured 2026-09-11). wf-netbox-devices-v1 reduces the list on the runner first. The
+    still working (measured 2026-09-11). List Devices from NetBox reduces the list on the runner first. The
     Claude agents keep the raw operations: they need the full objects and ingest them in a second."""
     docs = {p.stem: yaml.safe_load(p.read_text()) for p in AGENTS.glob("*.yaml")}
     for name, doc in sorted(docs.items()):
@@ -321,7 +326,7 @@ def test_the_reducing_workflow_passes_no_filter_to_the_integration() -> None:
     (ADR 0054)."""
     import json
 
-    wf = json.loads((WORKFLOWS / f"{REDUCING_DEVICE_TOOL}.json").read_text())
+    wf = json.loads((WORKFLOWS / _file(REDUCING_DEVICE_TOOL)).read_text())
     calls = [
         t for t in wf["tasks"].values() if t.get("name") == "dcim_devices_list"
     ]
@@ -378,7 +383,7 @@ def test_the_reducing_workflow_survives_a_filter_that_is_not_a_string() -> None:
     assert run({"summary": "nothing usable"}).get("filter_was_not_a_string") is True
 
 
-DEVICE_WORKFLOWS = ("wf-show-command-v1", "wf-config-push-v1")
+DEVICE_WORKFLOWS = ("Run Show Command on a Device", "Push Configuration with Approval")
 
 
 def test_a_device_the_inventory_lacks_ends_the_job_instead_of_hanging_the_agent() -> None:
@@ -390,7 +395,7 @@ def test_a_device_the_inventory_lacks_ends_the_job_instead_of_hanging_the_agent(
     import json
 
     for name in DEVICE_WORKFLOWS:
-        wf = json.loads((WORKFLOWS / f"{name}.json").read_text())
+        wf = json.loads((WORKFLOWS / _file(name)).read_text())
         tasks, tr = wf["tasks"], wf["transitions"]
         senders = [
             tid for tid, t in tasks.items()
@@ -431,7 +436,7 @@ def test_no_twin_is_told_never_to_invent_a_name_without_a_way_to_look_one_up() -
     invented "R1" (measured 2026-09-11). A prompt that forbids inventing a name has to be paired with
     a tool that supplies them."""
     docs = {p.stem: yaml.safe_load(p.read_text()) for p in AGENTS.glob("*.yaml")}
-    lookups = {"wf-netbox-devices-v1", "dcim_devices_list", "wf-show-all-v1"}
+    lookups = {"List Devices from NetBox", "dcim_devices_list", "Run Show Command on All Devices"}
     for name, doc in sorted(docs.items()):
         text = doc["instructions"].lower()
         # "never invent device output" (lab-netops-mac) is a different instruction: it forbids

@@ -110,14 +110,14 @@ def test_verify_pid_and_adr_cover_s4d4() -> None:
 
 WORKFLOWS = ROOT / "itential" / "workflows"
 # The documents the conversion touches: the NetBox adapter tasks and every ServiceNow generic request.
-CONVERTED = ("wf-branch-vlan-v1", "wf-branch-vlan-delete-v1", "wf-config-push-v1", "wf-netbox-device-count-v1", "wf-show-command-v1")
+CONVERTED = ("Add Branch VLAN", "Remove Branch VLAN", "Push Configuration with Approval", "Count Devices in NetBox", "Run Show Command on a Device")
 VERIFY_S4F = ROOT / "verify" / "test-06d-integrations.sh"
 
 
 @pytest.fixture(scope="module")
 def generated() -> dict:
     """The committed workflow documents - what tasks/platform-assets.yml actually imports."""
-    return {p.stem: json.loads(p.read_text()) for p in WORKFLOWS.glob("wf-*.json")}
+    return {d["name"]: d for d in (json.loads(p.read_text()) for p in WORKFLOWS.glob("*.json"))}
 
 
 def test_every_model_records_the_specification_it_came_from(integrations: dict, docs: dict) -> None:

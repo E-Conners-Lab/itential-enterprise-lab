@@ -1,5 +1,5 @@
 {
-  "name": "wf-show-all-v1",
+  "name": "Run Show Command on All Devices",
   "type": "automation",
   "description": "Runs one show command on every lab device in one Gateway 5 call and returns the parsed result per device (Genie for cisco_ios, TextFSM for arista_eos, each capped at 1500 characters); the agents' fleet-wide read (PID S4d.5, ADR 0046)",
   "tasks": {

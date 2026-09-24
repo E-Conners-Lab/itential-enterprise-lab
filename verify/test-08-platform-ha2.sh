@@ -186,9 +186,10 @@ c5() {
   local errs=0 have
   # every workflow itential/versions.yaml names (Automation Studio lists them all in one page)
   have=$(api "${P}/automation-studio/workflows?limit=200")
-  local wf; for wf in $(${PY} -c "import yaml;print(' '.join(yaml.safe_load(open('$IV'))['workflows'].values()))"); do
-    echo "$have" | grep -q "\"${wf}\"" || { echo "workflow ${wf} missing"; errs=1; }
-  done
+  # one name per line: the names carry spaces (ADR 0067)
+  local wf; while IFS= read -r wf; do
+    echo "$have" | grep -qF "\"${wf}\"" || { echo "workflow ${wf} missing"; errs=1; }
+  done < <(${PY} -c "import yaml;print('\n'.join(yaml.safe_load(open('$IV'))['workflows'].values()))")
   # Golden Config trees and the compliance plan (Configuration Manager)
   have=$(api "${P}/configuration_manager/configs")
   local tree; for tree in $(${PY} -c "import yaml;print(' '.join(t['name'] for t in yaml.safe_load(open('$IV'))['golden_config']['trees'].values()))"); do

@@ -1,5 +1,5 @@
 {
-  "name": "wf-compliance-run-v1",
+  "name": "Run Nightly Compliance Check",
   "type": "automation",
   "description": "Runs the Configuration Manager compliance plan lab-baseline; scheduled nightly by Operations Manager (PID S4d.1, ADR 0040)",
   "tasks": {

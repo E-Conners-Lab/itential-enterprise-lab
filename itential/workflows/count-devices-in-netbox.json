@@ -1,5 +1,5 @@
 {
-  "name": "wf-netbox-device-count-v1",
+  "name": "Count Devices in NetBox",
   "type": "automation",
   "description": "Reads the NetBox device list through the lab-netbox Integration Model and returns its count (PID S4.2, S4f)",
   "tasks": {

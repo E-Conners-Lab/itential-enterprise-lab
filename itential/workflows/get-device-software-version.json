@@ -1,5 +1,5 @@
 {
-  "name": "wf-show-version-v1",
+  "name": "Get Device Software Version",
   "type": "automation",
   "description": "Runs 'show version' on one inventory node through Gateway 5 and returns the raw output (PID S4.3)",
   "tasks": {

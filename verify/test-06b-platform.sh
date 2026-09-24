@@ -4,7 +4,7 @@
 # itential/command-templates/, itential/lcm/, itential/forms/, NetBox.
 # State: the Platform API over TLS (Configuration Manager, Operations Manager) and the devices over
 # direct SSH (verify/devcmd.py, second source). Writes: a hostname change on one device per vendor
-# through wf-config-push-v1 (approved here through the API, restored at the end) and one branch VLAN on br2
+# through Push Configuration with Approval (approved here through the API, restored at the end) and one branch VLAN on br2
 # created and removed through the Lifecycle Manager actions (S4d.3). S4d.4 runs two lab-netops sessions (Anthropic tokens,
 # printed). Each element is added as it is built; a criterion that is not built yet prints DEFER, never PASS.
 set -uo pipefail
@@ -46,8 +46,8 @@ job_status() { iap "${PLATFORM}/operations-manager/jobs/$1" | ${PY} -c 'import s
 wait_job() { local st; for _ in $(seq 1 48); do st=$(job_status "$1"); case "$st" in complete) return 0;; error|canceled|cancelled) echo "job $1 ${st}"; return 1;; esac; sleep 5; done; echo "job $1 timeout (${st})"; return 1; }
 # approve_task <job id> <task id>: the Work Center approval (ViewData) finished through the API, as test-06 does
 approve_task() { local i; for i in $(seq 1 24); do if iap -X POST "${PLATFORM}/operations-manager/jobs/$1/tasks/$2/finish" -d '{"taskData":{"finish_state":"success","variables":{}}}' -o /dev/null -w '%{http_code}' | grep -qx 200; then return 0; fi; sleep 5; done; echo "approval of $1/$2 never accepted"; return 1; }
-# push <device> <config lines> <reason>: wf-config-push-v1 with the approval; returns when the job completes
-push() { local id; id=$(start_job wf-config-push-v1 "{\"device\":\"$1\",\"config\":\"$2\",\"reason\":\"$3\"}"); [ -n "$id" ] || { echo "wf-config-push-v1 did not start"; return 1; }; sleep 8; approve_task "$id" 2a || return 1; wait_job "$id" || return 1; echo "pushed to $1 (job ${id})"; }
+# push <device> <config lines> <reason>: Push Configuration with Approval with the approval; returns when the job completes
+push() { local id; id=$(start_job "Push Configuration with Approval" "{\"device\":\"$1\",\"config\":\"$2\",\"reason\":\"$3\"}"); [ -n "$id" ] || { echo "Push Configuration with Approval did not start"; return 1; }; sleep 8; approve_task "$id" 2a || return 1; wait_job "$id" || return 1; echo "pushed to $1 (job ${id})"; }
 plan_id() { iap -X POST "${PLATFORM}/configuration_manager/search/compliance_plans" -d '{"name":"","options":{"start":0,"limit":100}}' | ${PY} -c "import sys,json;d=json.load(sys.stdin);print(next((x['id'] for x in d.get('plans',[]) if x.get('name')=='$1'),''))"; }
 # run_plan <plan id> -> prints the batch id after the instance completes
 run_plan() {
@@ -116,18 +116,18 @@ c1() {
   batch_issues "$batch" > /tmp/verify06b.issues.$$
   awk '$2+$3>0' /tmp/verify06b.issues.$$ | grep -q . && { echo "run 3 not clean:"; awk '$2+$3>0' /tmp/verify06b.issues.$$; return 1; }
   echo "run 3: clean again on 12 devices; hostnames restored and confirmed over direct SSH"
-  # the nightly path: wf-compliance-run-v1 (what the schedule trigger starts) finds the plan and starts a run
+  # the nightly path: Run Nightly Compliance Check (what the schedule trigger starts) finds the plan and starts a run
   local job inst
-  job=$(start_job wf-compliance-run-v1 "{}"); [ -n "$job" ] || { echo "wf-compliance-run-v1 did not start"; return 1; }
+  job=$(start_job "Run Nightly Compliance Check" "{}"); [ -n "$job" ] || { echo "Run Nightly Compliance Check did not start"; return 1; }
   wait_job "$job" || return 1
-  inst=$(iap "${PLATFORM}/operations-manager/jobs/${job}" | ${PY} -c 'import sys,json;v=json.load(sys.stdin)["data"].get("variables",{});assert v.get("plan_id")=="'"$plan"'",v.get("plan_id");print((v.get("run") or {}).get("instanceId",""))') || { echo "wf-compliance-run-v1 did not resolve the plan id ${plan}"; return 1; }
-  [ -n "$inst" ] || { echo "wf-compliance-run-v1 started no plan instance"; return 1; }
-  echo "run 4: wf-compliance-run-v1 (the schedule trigger's target) found plan ${plan} and started instance ${inst}"
+  inst=$(iap "${PLATFORM}/operations-manager/jobs/${job}" | ${PY} -c 'import sys,json;v=json.load(sys.stdin)["data"].get("variables",{});assert v.get("plan_id")=="'"$plan"'",v.get("plan_id");print((v.get("run") or {}).get("instanceId",""))') || { echo "Run Nightly Compliance Check did not resolve the plan id ${plan}"; return 1; }
+  [ -n "$inst" ] || { echo "Run Nightly Compliance Check started no plan instance"; return 1; }
+  echo "run 4: Run Nightly Compliance Check (the schedule trigger's target) found plan ${plan} and started instance ${inst}"
   rm -f /tmp/verify06b.issues.$$
 }
-check "S4d.1 Golden Config: plan clean on 12 devices; hostname drift on br1-wan01 and br1-sw01 flagged with no false positive; restored through wf-config-push-v1" c1
+check "S4d.1 Golden Config: plan clean on 12 devices; hostname drift on br1-wan01 and br1-sw01 flagged with no false positive; restored through Push Configuration with Approval" c1
 # restore hostnames if the drift step left them behind (a failed run must not leave the lab drifted)
-for row in "br1-wan01 10.100.0.146" "br1-sw01 10.100.0.165"; do read -r name ip <<<"$row"; [ "$(running_hostname "$ip")" = "$name" ] || { echo "restoring ${name} after a failed run"; push "$name" "hostname ${name}" "verify ${ts} cleanup" >/dev/null 2>&1 || echo "WARN ${name} still drifted; fix with wf-config-push-v1"; }; done
+for row in "br1-wan01 10.100.0.146" "br1-sw01 10.100.0.165"; do read -r name ip <<<"$row"; [ "$(running_hostname "$ip")" = "$name" ] || { echo "restoring ${name} after a failed run"; push "$name" "hostname ${name}" "verify ${ts} cleanup" >/dev/null 2>&1 || echo "WARN ${name} still drifted; fix with Push Configuration with Approval"; }; done
 
 # --- S4d.2 command templates (MOP) on one device per vendor; analytic pre/post; nightly backups = running config ---
 MOP_NAMES=$(${PY} -c "import yaml;m=yaml.safe_load(open('$V'))['mop'];print(' '.join(v['command']+':'+v['analytic'] for v in m['templates'].values()))")
@@ -170,7 +170,7 @@ print(len(rules),"pre/post rules equal")' || { echo "${dev} ${at}: $(echo "$an" 
   # one run of the backup workflow, then every device's newest backup equals its running config over direct SSH
   local t0 job n_ok=0 errs="" name ip
   t0=$(date -u +%Y-%m-%dT%H:%M:%S)
-  job=$(start_job wf-backup-all-v1 "{}"); [ -n "$job" ] || { echo "wf-backup-all-v1 did not start"; return 1; }
+  job=$(start_job "Back Up All Device Configs" "{}"); [ -n "$job" ] || { echo "Back Up All Device Configs did not start"; return 1; }
   wait_job "$job" || return 1
   local nbrows=() row
   while IFS= read -r row; do nbrows+=("$row"); done < <(nb "${NETBOX_URL}/api/dcim/devices/?limit=0&status=active&has_primary_ip=true&platform=ios-xe&platform=eos" | ${PY} -c 'import sys,json;[print(d["name"],d["primary_ip4"]["address"].split("/")[0]) for d in json.load(sys.stdin)["results"]]')
@@ -183,7 +183,7 @@ print(len(rules),"pre/post rules equal")' || { echo "${dev} ${at}: $(echo "$an" 
   done
   rm -f /tmp/verify06b.bid.$$ /tmp/verify06b.bk.$$ /tmp/verify06b.run.$$
   [ -z "$errs" ] || { printf "%b" "$errs"; return 1; }
-  echo "backups: wf-backup-all-v1 job ${job}; ${n_ok}/${#nbrows[@]} devices' newest backup equals the running config over direct SSH"
+  echo "backups: Back Up All Device Configs job ${job}; ${n_ok}/${#nbrows[@]} devices' newest backup equals the running config over direct SSH"
 }
 check "S4d.2 command templates on br1-wan01 and br1-sw01 with every rule evaluated; analytic pre/post green; nightly backup schedule and a run whose backups equal the running configs" c2
 
@@ -210,9 +210,9 @@ lcm_model_id() { iap "${PLATFORM}/lifecycle-manager/resources?limit=100" | ${PY}
 run_action() { iap -X POST "${PLATFORM}/lifecycle-manager/resources/$1/run-action" -d "$2" | ${PY} -c 'import sys,json;d=json.load(sys.stdin);x=d.get("data") or {};print(x.get("_id",""),x.get("jobId",""),x.get("instanceId",""))'; }
 wait_exec() { local st; for _ in $(seq 1 48); do st=$(iap "${PLATFORM}/lifecycle-manager/action-executions/$1" | ${PY} -c 'import sys,json;print((json.load(sys.stdin).get("data") or {}).get("status",""))'); case "$st" in complete) return 0;; error|canceled) echo "execution $1 ${st}"; return 1;; esac; sleep 5; done; echo "execution $1 timeout (${st})"; return 1; }
 wait_task() { for _ in $(seq 1 24); do iap "${PLATFORM}/operations-manager/jobs/$1" | ${PY} -c "import sys,json;t=json.load(sys.stdin)['data']['tasks'].get('$2',{});sys.exit(0 if t.get('status')=='running' else 1)" && return 0; sleep 5; done; echo "task $2 of job $1 never reached running"; return 1; }
-# the id of the newest wf-config-push-v1 job (the list is newest first); a count inside a fixed window slides
+# the id of the newest Push Configuration with Approval job (the list is newest first); a count inside a fixed window slides
 # once the history is deep enough (the no-op job itself evicts an older push job, measured 20260908T130615Z)
-push_jobs() { iap "${PLATFORM}/operations-manager/jobs?limit=60" | ${PY} -c 'import sys,json;p=[j["_id"] for j in json.load(sys.stdin).get("data") or [] if j.get("name")=="wf-config-push-v1"];print(p[0] if p else "")'; }
+push_jobs() { iap "${PLATFORM}/operations-manager/jobs?limit=60" | ${PY} -c 'import sys,json;p=[j["_id"] for j in json.load(sys.stdin).get("data") or [] if j.get("name")=="Push Configuration with Approval"];print(p[0] if p else "")'; }
 LCM_NAME="lcm-${ts_lc}"; LCM_INST="br2-${LCM_NAME}"; BR2_SW=10.100.0.166
 c3() {
   local model create_id delete_id pair
@@ -235,7 +235,7 @@ c3() {
   local ex wrapper iid child wi vid nbid
   read -r ex wrapper iid <<<"$(run_action "$model" "{\"actionId\":\"${create_id}\",\"instanceName\":\"${LCM_INST}\",\"instanceDescription\":\"verify ${ts} S4d.3\",\"inputs\":{\"branch\":\"br2\",\"vlan_name\":\"${LCM_NAME}\",\"switch_override\":\"\",\"change_request\":false}}")"
   [ -n "$ex" ] && [ -n "$wrapper" ] || { echo "create action did not start"; return 1; }
-  child=$(child_job wf-branch-vlan-v1 "$wrapper") || { echo "$child"; return 1; }
+  child=$(child_job "Add Branch VLAN" "$wrapper") || { echo "$child"; return 1; }
   wait_task "$child" 4a || return 1
   read -r vid nbid <<<"$(nb "${NETBOX_URL}/api/ipam/vlans/?site=br2&name=${LCM_NAME}" | ${PY} -c 'import sys,json;d=json.load(sys.stdin);assert d["count"]==1,d["count"];v=d["results"][0];assert v["status"]["value"]=="reserved",v["status"];print(v["vid"],v["id"])')" || { echo "NetBox has no reserved VLAN ${LCM_NAME} in br2 while the approval waits"; return 1; }
   # Work Center: the pending item of the child job and the fields the approver sees (NetBox above is the second source)
@@ -250,12 +250,12 @@ c3() {
   ${PY} verify/devcmd.py "$BR2_SW" "show vlan ${vid}" | grep -q "$LCM_NAME" || { echo "br2-sw01 has no VLAN ${vid} ${LCM_NAME} (direct SSH)"; return 1; }
   echo "create: VLAN ${vid} ${LCM_NAME} active in NetBox (id ${nbid}) and on br2-sw01; instance ${LCM_INST} recorded (execution ${ex})"
   # 2a) a rejected push changes nothing: the delete workflow (started directly with the instance data) pushes only through
-  #     wf-config-push-v1; rejecting that card leaves the push job in error, the delete job waiting on it, NetBox and the
+  #     Push Configuration with Approval; rejecting that card leaves the push job in error, the delete job waiting on it, NetBox and the
   #     switch untouched; cancelling both jobs is the terminal step (a job in error is retryable on 6.5.2)
   local djob push0 inst_json
   inst_json="{\"branch\":\"br2\",\"vid\":${vid},\"vlan_name\":\"${LCM_NAME}\",\"switch\":\"br2-sw01\",\"netbox_vlan_id\":${nbid},\"status\":\"active\"}"
-  djob=$(start_job wf-branch-vlan-delete-v1 "{\"instance\":${inst_json}}"); [ -n "$djob" ] || { echo "wf-branch-vlan-delete-v1 did not start"; return 1; }
-  push0=$(child_job wf-config-push-v1 "$djob") || { echo "$push0"; return 1; }
+  djob=$(start_job "Remove Branch VLAN" "{\"instance\":${inst_json}}"); [ -n "$djob" ] || { echo "Remove Branch VLAN did not start"; return 1; }
+  push0=$(child_job "Push Configuration with Approval" "$djob") || { echo "$push0"; return 1; }
   sleep 5; iap -X POST "${PLATFORM}/operations-manager/jobs/${push0}/tasks/2a/finish" -d '{"taskData":{"finish_state":"failure","variables":{}}}' -o /dev/null -w '%{http_code}' | grep -qx 200 || { echo "could not reject the push card"; return 1; }
   wait_status "$push0" error || return 1
   [ "$(job_status "$djob")" = running ] || { echo "the delete job did not wait on the rejected push: $(job_status "$djob")"; return 1; }
@@ -264,12 +264,12 @@ c3() {
   cancel_jobs "$djob" "$push0" || { echo "cancel of ${djob} ${push0} refused"; return 1; }
   wait_status "$djob" canceled || return 1
   echo "rejected push: job ${push0} in error, delete job ${djob} waited, NetBox and br2-sw01 untouched, both cancelled"
-  # 2) delete through the LCM action: the delete workflow reaches the switch only through wf-config-push-v1 and its approval card
+  # 2) delete through the LCM action: the delete workflow reaches the switch only through Push Configuration with Approval and its approval card
   local ex2 wrapper2 child2 push
   read -r ex2 wrapper2 _ <<<"$(run_action "$model" "{\"actionId\":\"${delete_id}\",\"instance\":\"${iid}\",\"inputs\":{}}")"
   [ -n "$ex2" ] || { echo "delete action did not start"; return 1; }
-  child2=$(child_job wf-branch-vlan-delete-v1 "$wrapper2") || { echo "$child2"; return 1; }
-  push=$(child_job wf-config-push-v1 "$child2") || { echo "$push"; return 1; }
+  child2=$(child_job "Remove Branch VLAN" "$wrapper2") || { echo "$child2"; return 1; }
+  push=$(child_job "Push Configuration with Approval" "$child2") || { echo "$push"; return 1; }
   approve_task "$push" 2a || return 1
   wait_job "$child2" || return 1; wait_exec "$ex2" || return 1
   iap "${PLATFORM}/operations-manager/jobs/${push}" | ${PY} -c 'import sys,json;d=json.load(sys.stdin)["data"];v=d["variables"];assert d["status"]=="complete" and v.get("changed") is True and "no vlan '"$vid"'" in v.get("config",""),(d["status"],v.get("config"))' || { echo "push job ${push} did not apply 'no vlan ${vid}'"; return 1; }
@@ -293,18 +293,18 @@ print('journal: br2-sw01 carries the create and the delete entry for VLAN ${vid}
   # 4) no-op: the delete workflow on the retired VLAN touches nothing (changed=false, no push job started)
   local job before after
   before=$(push_jobs)
-  job=$(start_job wf-branch-vlan-delete-v1 "{\"instance\":{\"branch\":\"br2\",\"vid\":${vid},\"vlan_name\":\"${LCM_NAME}\",\"switch\":\"br2-sw01\",\"netbox_vlan_id\":${nbid},\"status\":\"deleted\"}}"); [ -n "$job" ] || { echo "wf-branch-vlan-delete-v1 did not start"; return 1; }
+  job=$(start_job "Remove Branch VLAN" "{\"instance\":{\"branch\":\"br2\",\"vid\":${vid},\"vlan_name\":\"${LCM_NAME}\",\"switch\":\"br2-sw01\",\"netbox_vlan_id\":${nbid},\"status\":\"deleted\"}}"); [ -n "$job" ] || { echo "Remove Branch VLAN did not start"; return 1; }
   wait_job "$job" || return 1
   after=$(push_jobs)
   iap "${PLATFORM}/operations-manager/jobs/${job}" | ${PY} -c 'import sys,json;v=json.load(sys.stdin)["data"]["variables"];assert v.get("changed") is False,v' || { echo "second delete was not a no-op"; return 1; }
   [ "$before" = "$after" ] || { echo "the no-op delete started a push job (${after})"; return 1; }
-  echo "no-op: wf-branch-vlan-delete-v1 on the retired VLAN changed nothing and started no push (job ${job})"
+  echo "no-op: Remove Branch VLAN on the retired VLAN changed nothing and started no push (job ${job})"
   # 5) a rejected create leaves nothing behind: the reservation is rolled back, the child job ends in error by design,
   #    the execution waits until it is cancelled (the terminal step), and the cancel retires the instance
   local ex3 wrapper3 iid3 child3 nbid3
   read -r ex3 wrapper3 iid3 <<<"$(run_action "$model" "{\"actionId\":\"${create_id}\",\"instanceName\":\"${LCM_INST}-rej\",\"instanceDescription\":\"verify ${ts} S4d.3 reject\",\"inputs\":{\"branch\":\"br2\",\"vlan_name\":\"${LCM_NAME}-rej\",\"switch_override\":\"\",\"change_request\":false}}")"
   [ -n "$ex3" ] || { echo "second create action did not start"; return 1; }
-  child3=$(child_job wf-branch-vlan-v1 "$wrapper3") || { echo "$child3"; return 1; }
+  child3=$(child_job "Add Branch VLAN" "$wrapper3") || { echo "$child3"; return 1; }
   wait_task "$child3" 4a || return 1
   nbid3=$(nb "${NETBOX_URL}/api/ipam/vlans/?site=br2&name=${LCM_NAME}-rej" | ${PY} -c 'import sys,json;d=json.load(sys.stdin);assert d["count"]==1 and d["results"][0]["status"]["value"]=="reserved",d;print(d["results"][0]["id"])') || { echo "no reservation for ${LCM_NAME}-rej"; return 1; }
   reject_form "$child3" 4a || { echo "reject of ${child3}/4a refused"; return 1; }
@@ -325,7 +325,7 @@ lcm_cleanup() {
   while read -r ex st name; do
     [ -n "$ex" ] || continue
     echo "cleanup: execution ${ex} (${name}) is ${st}: rejecting any pending form and cancelling"
-    for j in $(iap "${PLATFORM}/operations-manager/jobs?limit=40" | ${PY} -c 'import sys,json;[print(j["_id"]) for j in json.load(sys.stdin).get("data") or [] if j.get("name")=="wf-branch-vlan-v1" and j.get("status")=="running"]'); do reject_form "$j" 4a || true; done
+    for j in $(iap "${PLATFORM}/operations-manager/jobs?limit=40" | ${PY} -c 'import sys,json;[print(j["_id"]) for j in json.load(sys.stdin).get("data") or [] if j.get("name")=="Add Branch VLAN" and j.get("status")=="running"]'); do reject_form "$j" 4a || true; done
     sleep 5; cancel_exec "$ex" >/dev/null 2>&1 || true
   done < <(iap "${PLATFORM}/lifecycle-manager/action-executions?sort=startTime&order=-1&limit=50" | ${PY} -c "import sys,json;[print(e['_id'],e['status'],e['instanceName']) for e in json.load(sys.stdin)['data'] if e.get('status')=='running' and (e.get('instanceName') or '').startswith('${LCM_INST}')]")
   # an instance left active: retire it through its delete action (push card approved here, as the checks do)
@@ -333,7 +333,7 @@ lcm_cleanup() {
   [ -n "$iid" ] || return 0
   echo "cleanup: retiring instance ${LCM_INST} through its delete action"
   read -r ex wrapper _ <<<"$(run_action "$model" "{\"actionId\":\"$(echo "$LCM_ACTIONS" | tr ' ' '\n' | awk -F: '/^delete/{print $2}')\",\"instance\":\"${iid}\",\"inputs\":{}}")"
-  child2=$(child_job wf-branch-vlan-delete-v1 "$wrapper" 2>/dev/null) && { push=$(child_job wf-config-push-v1 "$child2" 2>/dev/null) && approve_task "$push" 2a >/dev/null 2>&1; wait_job "$child2" >/dev/null 2>&1 || cancel_exec "$ex" >/dev/null 2>&1; }
+  child2=$(child_job "Remove Branch VLAN" "$wrapper" 2>/dev/null) && { push=$(child_job "Push Configuration with Approval" "$child2" 2>/dev/null) && approve_task "$push" 2a >/dev/null 2>&1; wait_job "$child2" >/dev/null 2>&1 || cancel_exec "$ex" >/dev/null 2>&1; }
 }
 lcm_cleanup
 vid=$(nb "${NETBOX_URL}/api/ipam/vlans/?site=br2&name=${LCM_NAME}" | ${PY} -c 'import sys,json;d=json.load(sys.stdin);print(d["results"][0]["vid"] if d["count"] else "")' 2>/dev/null)

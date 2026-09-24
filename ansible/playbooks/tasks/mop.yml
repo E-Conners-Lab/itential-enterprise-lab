@@ -1,7 +1,7 @@
 ---
 # Element 2 of PID S4d (ADR 0042): command templates and analytic templates from
 # itential/command-templates/<deviceType>.yaml through the MOP API (read-only checks; MOP never pushes
-# configuration), and the nightly backup schedule on wf-backup-all-v1. Needs: login.
+# configuration), and the nightly backup schedule on Back Up All Device Configs. Needs: login.
 - name: Command template documents
   ansible.builtin.set_fact:
     mop_docs: >-
@@ -94,7 +94,7 @@
   when: have | length > 0 and (have.prepostCommands != want.prepostCommands or have.passRule != want.passRule)
   changed_when: true
 
-# --- nightly backups: automation on wf-backup-all-v1 + schedule trigger (same shape as the compliance run) ---
+# --- nightly backups: automation on Back Up All Device Configs + schedule trigger (same shape as the compliance run) ---
 - name: Workflow id (changes on every itential.yml import) of {{ workflows.backup_all }}
   ansible.builtin.uri:
     url: "{{ platform_local }}/automation-studio/workflows?limit=100"

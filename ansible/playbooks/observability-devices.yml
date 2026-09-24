@@ -1,6 +1,6 @@
 ---
 # Phase 7 (ADR 0051 decision 7): the observability lines reach the running routers and switches only through
-# wf-config-push-v1 with a Work Center approval (ADR 0040/0041). For every active C8000v/vEOS in NetBox the
+# Push Configuration with Approval with a Work Center approval (ADR 0040/0041). For every active C8000v/vEOS in NetBox the
 # play renders the same snippet the startup config carries (eve/build.py snippet, plus the SNMPv3 user with
 # its passphrases from .env), reads the running config from Configuration Manager, skips devices that already
 # carry every non-secret line, and starts one push job for each of the others. It then waits for the jobs:
@@ -122,7 +122,7 @@
       ansible.builtin.debug:
         msg: "{{ pending | map(attribute='name') | zip(pending | map(attribute='missing')) | list }}"
 
-    - name: Start one wf-config-push-v1 job per device that needs the lines
+    - name: Start one Push Configuration with Approval job per device that needs the lines
       ansible.builtin.uri:
         url: "https://{{ platform_host }}/operations-manager/jobs/start"
         method: POST

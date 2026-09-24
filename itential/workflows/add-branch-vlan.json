@@ -1,5 +1,5 @@
 {
-  "name": "wf-branch-vlan-v1",
+  "name": "Add Branch VLAN",
   "type": "automation",
   "description": "Reserves a VLAN in NetBox for a branch, asks for approval on the JSON form lab-branch-vlan-approval, configures the branch switch through Gateway 5, activates the NetBox VLAN and publishes the Lifecycle Manager instance; rolls the reservation back on rejection or device failure (PID S4.4, S4d.3, ADR 0043/0044)",
   "tasks": {
@@ -70,7 +70,7 @@
           "template_sys_id": "b1c8d15147810200e90d87e8dee490f7",
           "bodyContentType": "application/json",
           "requestBodyPayload": {
-            "short_description": "wf-branch-vlan-v1: branch VLAN change (itential-enterprise-lab)",
+            "short_description": "Add Branch VLAN: branch VLAN change (itential-enterprise-lab)",
             "assignment_group": "287ebd7da9fe198100f92cc8d1d2154e"
           }
         },
@@ -952,7 +952,7 @@
       },
       "variables": {
         "incoming": {
-          "str": "NetBox reservation: VLAN __V__ (VLAN object id __I__) reserved by wf-branch-vlan-v1",
+          "str": "NetBox reservation: VLAN __V__ (VLAN object id __I__) reserved by Add Branch VLAN",
           "substr": "__V__",
           "newSubstr": "$var.b2.numToString"
         },
@@ -1915,7 +1915,7 @@
           "requestBodyPayload": {
             "state": "3",
             "close_code": "successful",
-            "close_notes": "VLAN configured by wf-branch-vlan-v1; NetBox VLAN active"
+            "close_notes": "VLAN configured by Add Branch VLAN; NetBox VLAN active"
           }
         },
         "outgoing": {
@@ -2596,7 +2596,7 @@
         "incoming": {
           "str": "$var.ea4.replacedString",
           "substr": "__C__",
-          "newSubstr": "Lifecycle Manager branch-vlan create: VLAN __V__ (__N__) configured through Gateway 5 by wf-branch-vlan-v1; NetBox VLAN active"
+          "newSubstr": "Lifecycle Manager branch-vlan create: VLAN __V__ (__N__) configured through Gateway 5 by Add Branch VLAN; NetBox VLAN active"
         },
         "outgoing": {
           "replacedString": null

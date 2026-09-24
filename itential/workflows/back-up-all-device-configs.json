@@ -1,5 +1,5 @@
 {
-  "name": "wf-backup-all-v1",
+  "name": "Back Up All Device Configs",
   "type": "automation",
   "description": "Backs up every Configuration Manager device through the InventoryBroker (Gateway 5); scheduled nightly by Operations Manager (PID S4d.2, ADR 0042)",
   "tasks": {
@@ -107,7 +107,7 @@
         "incoming": {
           "name": "$var.2a.current_item",
           "options": {
-            "description": "nightly backup (wf-backup-all-v1)",
+            "description": "nightly backup (Back Up All Device Configs)",
             "notes": ""
           }
         },

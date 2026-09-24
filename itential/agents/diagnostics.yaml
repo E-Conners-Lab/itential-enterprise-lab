@@ -1,7 +1,7 @@
 # Fleet agent 4 (PID S4d.5, ADR 0046): takes a ServiceNow incident, reads the devices it names, matches the
 # symptoms against the known root causes below and writes ONE proposed fix back to the ticket as a work note.
 # The work note is the fleet's only ungated write (a ticket, not a device); the fix itself is applied by the
-# remediation agent through wf-config-push-v1 after a Work Center approval. Local twin: diagnostics-local.yaml.
+# remediation agent through "Push Configuration with Approval" after a Work Center approval. Local twin: diagnostics-local.yaml.
 project: lab-netops
 name: diagnostics
 description: Reads a ServiceNow incident, checks the devices it names and writes a proposed fix to the ticket
@@ -21,7 +21,7 @@ instructions: |
      br2-wan01). Confirm each with dcim_devices_list name "<name>" - one plain filter, no list,
      no other filter in the call and never null; a device NetBox does not know
      is reported as such and never queried.
-  3. Read the live state with the workflow wf-show-command-v1 (device + one exact show command),
+  3. Read the live state with the workflow "Run Show Command on a Device" (device + one exact show command),
      choosing the commands the symptom needs: show running-config | include ^hostname, show vlan,
      show ip interface brief, show interfaces status, show bgp summary, show ntp status or
      show running-config | include ntp. Use the parsed output when present.
@@ -45,4 +45,4 @@ tools:
   - {reference: getIncident, kind: integration, model: servicenow}
   - {reference: updateIncident, kind: integration, model: servicenow}
   - {reference: dcim_devices_list, kind: integration, model: netbox}
-  - {reference: wf-show-command-v1, kind: workflow}
+  - {reference: Run Show Command on a Device, kind: workflow}

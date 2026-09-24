@@ -1,5 +1,5 @@
 {
-  "name": "wf-show-command-v1",
+  "name": "Run Show Command on a Device",
   "type": "automation",
   "description": "Runs one show command on an inventory node through Gateway 5 and returns the raw output plus structured data: Genie for Cisco platforms, TextFSM (ntc-templates) for Arista, chosen from the node's NetBox platform (PID S4c.7, ADR 0038)",
   "tasks": {

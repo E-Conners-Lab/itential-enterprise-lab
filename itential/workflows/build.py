@@ -24,6 +24,12 @@ HERE = Path(__file__).resolve().parent
 CLUSTER = "lab"
 INVENTORY = "lab"
 VERSIONS = yaml.safe_load((HERE.parent / "versions.yaml").read_text())
+WF = VERSIONS["workflows"]  # every workflow name comes from here (ADR 0067)
+
+
+def file_name(name: str) -> str:
+    """The document's file: its name in lowercase with dashes ("Add Branch VLAN" -> add-branch-vlan.json)."""
+    return name.lower().replace(" ", "-") + ".json"
 
 
 def task(
@@ -291,7 +297,7 @@ def show_command_transitions() -> dict:
     return tr
 
 
-# --- wf-netbox-device-count-v1 (S4.2): NetBox adapter page -> job variable device_count -----------
+# --- Count Devices in NetBox (S4.2): NetBox adapter page -> job variable device_count -----------
 def device_count() -> dict:
     tasks = {
         "1a": nbi(
@@ -303,7 +309,7 @@ def device_count() -> dict:
         ),
     }
     return workflow(
-        "wf-netbox-device-count-v1",
+        WF["device_count"],
         "Reads the NetBox device list through the lab-netbox Integration Model and returns its count (PID S4.2, S4f)",
         {},
         tasks,
@@ -312,7 +318,7 @@ def device_count() -> dict:
     )
 
 
-# --- wf-show-version-v1 (S4.3): Gateway 5 send-command on one inventory node -> job variable output --
+# --- Get Device Software Version (S4.3): Gateway 5 send-command on one inventory node -> job variable output --
 def show_version() -> dict:
     tasks = {
         "1a": task(
@@ -345,7 +351,7 @@ def show_version() -> dict:
     tr["2a"]["2b"] = {"state": "failure", "type": "standard"}
     tr["2b"] = t("", "workflow_end")
     return workflow(
-        "wf-show-version-v1",
+        WF["show_version"],
         "Runs 'show version' on one inventory node through Gateway 5 and returns the raw output (PID S4.3)",
         {
             "device": {
@@ -530,7 +536,7 @@ def t(a: str, b: str, state: str = "success") -> dict:
 # --- Lifecycle Manager + JSON Forms (S4d.3, ADR 0043/0044) ---------------------------------------------
 FORM_NAME = VERSIONS["forms"]["approval"]
 FORM_VIEW = "/json-forms/task/ShowJsonForm"  # measured on 6.5.2: app JsonForms, form_id by name, instance_data defaults, export out
-CONFIG_PUSH = VERSIONS["workflows"]["config_push"]
+CONFIG_PUSH = WF["config_push"]
 # the object Lifecycle Manager stores as the instance (itential/lcm/branch-vlan.yaml schema); every marker is
 # filled by one Tools.replace (a $var inside a nested object never resolves) and the string parsed at the end
 INSTANCE_TPL = '{"branch": "__B__", "vid": __V__, "vlan_name": "__N__", "switch": "__S__", "netbox_vlan_id": __I__, "status": "__ST__"}'
@@ -609,7 +615,7 @@ def child_job(
     return c
 
 
-# --- wf-branch-vlan-v1 (S4.4): reserve a VLAN in NetBox, approve, configure the branch switch ---------
+# --- Add Branch VLAN (S4.4): reserve a VLAN in NetBox, approve, configure the branch switch ---------
 # Inputs: branch (br1|br2), vlan_name. The next free VID in the branch's NetBox VLAN group is chosen
 # by a few lines of Python on Gateway 5 (runCode; the NetBox adapter strips the trailing slash the
 # available-vlans endpoint needs), the VLAN is created 'reserved' through the adapter, the operator
@@ -739,7 +745,7 @@ def branch_vlan() -> dict:
                 "template_sys_id": SNOW_TEMPLATE,
                 **nbi_body(
                     {
-                        "short_description": "wf-branch-vlan-v1: branch VLAN change (itential-enterprise-lab)",
+                        "short_description": "Add Branch VLAN: branch VLAN change (itential-enterprise-lab)",
                         "assignment_group": SNOW_GROUP,
                     }
                 ),
@@ -914,7 +920,7 @@ def branch_vlan() -> dict:
         ),
         "e1": replace(
             "work note text",
-            "NetBox reservation: VLAN __V__ (VLAN object id __I__) reserved by wf-branch-vlan-v1",
+            "NetBox reservation: VLAN __V__ (VLAN object id __I__) reserved by Add Branch VLAN",
             "__V__",
             "$var.b2.numToString",
             x=4700,
@@ -1041,7 +1047,7 @@ def branch_vlan() -> dict:
             y=-200,
         ),
         # ADR 0066 (owner decision 2026-09-24): send-config reports success: true for lines the switch REFUSES (measured),
-        # so the switch's reply is read on the runner before NetBox is told the VLAN is active - as in wf-config-push-v1
+        # so the switch's reply is read on the runner before NetBox is told the VLAN is active - as in Push Configuration with Approval
         "5e": jq("the switch's reply", "$var.5c.result", "result.results[0].output", x=6350, y=-400),
         "5f": task(
             "setObjectKey",
@@ -1115,7 +1121,7 @@ def branch_vlan() -> dict:
             y=-800,
             extra={
                 "close_code": "successful",
-                "close_notes": "VLAN configured by wf-branch-vlan-v1; NetBox VLAN active",
+                "close_notes": "VLAN configured by Add Branch VLAN; NetBox VLAN active",
             },
         ),
         "f4": jq(
@@ -1177,7 +1183,7 @@ def branch_vlan() -> dict:
     journal_ids, journal_tasks = journal_chain(
         "ea",
         "$var.job.switch",
-        "Lifecycle Manager branch-vlan create: VLAN __V__ (__N__) configured through Gateway 5 by wf-branch-vlan-v1; NetBox VLAN active",
+        "Lifecycle Manager branch-vlan create: VLAN __V__ (__N__) configured through Gateway 5 by Add Branch VLAN; NetBox VLAN active",
         "$var.b2.numToString",
         "$var.job.vlan_name",
         x=6600,
@@ -1268,7 +1274,7 @@ def branch_vlan() -> dict:
     tr["8a"] = t("", "8b")
     tr["8b"] = {}
     return workflow(
-        "wf-branch-vlan-v1",
+        WF["branch_vlan"],
         "Reserves a VLAN in NetBox for a branch, asks for approval on the JSON form %s, configures the branch "
         "switch through Gateway 5, activates the NetBox VLAN and publishes the Lifecycle Manager instance; rolls the reservation "
         "back on rejection or device failure (PID S4.4, S4d.3, ADR 0043/0044)"
@@ -1314,7 +1320,7 @@ def branch_vlan() -> dict:
     )
 
 
-# --- wf-show-command-v1 (S4c.7): one show command -> raw text + structured data per vendor --------
+# --- Run Show Command on a Device (S4c.7): one show command -> raw text + structured data per vendor --------
 # Gateway 5 send-command returns text; a runCode task on the glibc runner (ADR 0038) parses it
 # with Genie (Cisco) or TextFSM/ntc-templates (Arista). The engine is chosen from the node's NetBox
 # platform slug, which the workflow substitutes into the code (a top-level string input resolves
@@ -1460,7 +1466,7 @@ def show_command() -> dict:
     )
 
     return workflow(
-        "wf-show-command-v1",
+        WF["show_command"],
         "Runs one show command on an inventory node through Gateway 5 and returns the raw output plus structured data: "
         "Genie for Cisco platforms, TextFSM (ntc-templates) for Arista, chosen from the node's NetBox platform (PID S4c.7, ADR 0038)",
         {
@@ -1487,7 +1493,7 @@ def show_command() -> dict:
     )  # "" when the parse succeeded
 
 
-# --- wf-show-all-v1 (S4d.5, ADR 0046): one show command on every lab device in one call ------------------
+# --- Run Show Command on All Devices (S4d.5, ADR 0046): one show command on every lab device in one call ------------------
 # A local model asked about "all devices" invents node names and loops (measured); this workflow is the
 # deterministic fan-out: the Configuration Manager device list (the lab inventory), one multi-node
 # send-command, and one parse on the runner keyed by device (Genie for cisco_ios, TextFSM for arista_eos).
@@ -1644,7 +1650,7 @@ def show_all() -> dict:
     tr["3c"]["5a"] = {"state": "failure", "type": "standard"}
     tr["5a"] = t("", "workflow_end")
     return workflow(
-        "wf-show-all-v1",
+        WF["show_all"],
         "Runs one show command on every lab device in one Gateway 5 call and returns the parsed result per device "
         "(Genie for cisco_ios, TextFSM for arista_eos, each capped at 1500 characters); the agents' fleet-wide read (PID S4d.5, ADR 0046)",
         {
@@ -1666,7 +1672,7 @@ def show_all() -> dict:
     )
 
 
-# --- wf-config-push-v1 (S4d, ADR 0040/0041): the one governed write path ---------------------
+# --- Push Configuration with Approval (S4d, ADR 0040/0041): the one governed write path ---------------------
 # Inputs: device, config (CLI lines), reason. The operator sees device, reason and the exact lines in
 # a Work Center approval; on approval Gateway 5 pushes them with send-config and saves the running
 # configuration with "write memory" (IOS-XE and EOS both accept it). A rejection ends the job in
@@ -1821,7 +1827,7 @@ def config_push() -> dict:
     ] = {}  # rejected: no transition to the end, the job ends in error with nothing pushed
     # A device the inventory does not have is NOT the rejection case: sendConfig answers 404 and,
     # with no failure edge, the job dead-ends and the calling agent session hangs for ever (measured
-    # 2026-09-11 on wf-show-command-v1). This ends the job cleanly with changed = false and a message.
+    # 2026-09-11 on Run Show Command on a Device). This ends the job cleanly with changed = false and a message.
     # The reject path above keeps its deliberate error-end: that semantic is a separate decision.
     tasks["6a"] = note(
         "the device is not in the inventory",
@@ -1861,7 +1867,7 @@ def config_push() -> dict:
     tr["8a"] = t("", "8b")
     tr["8b"] = t("", "workflow_end")
     return workflow(
-        "wf-config-push-v1",
+        WF["config_push"],
         "Pushes operator-supplied configuration lines to one inventory node through Gateway 5 after a Work Center "
         "approval and saves the running configuration; the only write path for compliance remediation (PID S4d, ADR 0040)",
         {
@@ -1893,7 +1899,7 @@ def config_push() -> dict:
     )
 
 
-# --- wf-compliance-run-v1 (S4d.1, ADR 0040): the nightly schedule trigger's target ------------------
+# --- Run Nightly Compliance Check (S4d.1, ADR 0040): the nightly schedule trigger's target ------------------
 # No inputs: Operations Manager schedule triggers on 6.5.2 do not persist formData (measured 2026-09-07,
 # PATCH echoes it, GET returns null), so the plan is found by its name from versions.yaml. The search
 # matches a regex (an unescaped "-" misses, anchors work). The run is asynchronous; the plan instance
@@ -1924,7 +1930,7 @@ def compliance_run() -> dict:
         ),
     }
     return workflow(
-        "wf-compliance-run-v1",
+        WF["compliance_run"],
         "Runs the Configuration Manager compliance plan %s; scheduled nightly by Operations Manager (PID S4d.1, ADR 0040)"
         % PLAN_NAME,
         {},
@@ -1934,7 +1940,7 @@ def compliance_run() -> dict:
     )
 
 
-# --- wf-backup-all-v1 (S4d.2, ADR 0042): every Configuration Manager device backed up, nightly ---------
+# --- Back Up All Device Configs (S4d.2, ADR 0042): every Configuration Manager device backed up, nightly ---------
 # No inputs (schedule triggers do not persist formData). The device list comes from Configuration Manager
 # itself (the InventoryBroker devices, ADR 0039), so a node added to NetBox is backed up on the next run
 # with no change here. Loop = WorkFlowEngine forEach: the "loop" transition starts an iteration, a body
@@ -1969,7 +1975,7 @@ def backup_all() -> dict:
             {
                 "name": "$var.2a.current_item",
                 "options": {
-                    "description": "nightly backup (wf-backup-all-v1)",
+                    "description": "nightly backup (Back Up All Device Configs)",
                     "notes": "",
                 },
             },
@@ -1989,7 +1995,7 @@ def backup_all() -> dict:
         "3a": {},
     }
     return workflow(
-        "wf-backup-all-v1",
+        WF["backup_all"],
         "Backs up every Configuration Manager device through the InventoryBroker (Gateway 5); "
         "scheduled nightly by Operations Manager (PID S4d.2, ADR 0042)",
         {},
@@ -1999,10 +2005,10 @@ def backup_all() -> dict:
     )
 
 
-# --- wf-branch-vlan-delete-v1 (S4d.3, ADR 0043): the Lifecycle Manager delete action -------------------
+# --- Remove Branch VLAN (S4d.3, ADR 0043): the Lifecycle Manager delete action -------------------
 # Input: the instance object LCM passes as the job variable `instance` (branch, vid, vlan_name, switch,
 # netbox_vlan_id, status). The switch is read with `show vlan <vid>` and, only when the VLAN is present,
-# wf-config-push-v1 runs as a child job with `no vlan <vid>` (its Work Center approval is the gate); the
+# Push Configuration with Approval runs as a child job with `no vlan <vid>` (its Work Center approval is the gate); the
 # NetBox VLAN is deleted after the device, so a rejected push changes nothing. A rejected push leaves the
 # push job in error and this job waiting on it (a job in error is retryable on 6.5.2): cancelling the
 # execution ends both and keeps the instance. Run on a retired VLAN it is a no-op (changed false, no push).
@@ -2184,7 +2190,7 @@ def branch_vlan_delete() -> dict:
     journal_ids, journal_tasks = journal_chain(
         "eb",
         "$var.1d.return_data",
-        "Lifecycle Manager branch-vlan delete: VLAN __V__ (__N__) removed through %s by wf-branch-vlan-delete-v1"
+        "Lifecycle Manager branch-vlan delete: VLAN __V__ (__N__) removed through %s by Remove Branch VLAN"
         % CONFIG_PUSH,
         "$var.1f.numToString",
         "$var.1c.return_data",
@@ -2212,7 +2218,7 @@ def branch_vlan_delete() -> dict:
     tr[final_ids[-1]] = t("", "workflow_end")
     tr["9a"] = t("", "workflow_end")
     return workflow(
-        "wf-branch-vlan-delete-v1",
+        WF["branch_vlan_delete"],
         "Lifecycle Manager delete action for branch-vlan: deletes the NetBox VLAN and removes it from the branch switch only "
         "through %s (Work Center approval); no-op when both are already gone (PID S4d.3, ADR 0043)"
         % CONFIG_PUSH,
@@ -2238,7 +2244,7 @@ def branch_vlan_delete() -> dict:
     )
 
 
-# --- wf-compliance-report-v1 (S4d.5, ADR 0046): one cheap compliance tool for the agents ----------------
+# --- Summarize Compliance Results (S4d.5, ADR 0046): one cheap compliance tool for the agents ----------------
 # Input run=true starts the plan and waits for it (four unrolled delay + search attempts, no cycle in the graph);
 # run=false takes the newest complete instance. Either way the batch reports are reduced on the Gateway 5 runner
 # to one compact object per device (errors, warnings, passes, the issue lines) published as `summary`, with
@@ -2514,7 +2520,7 @@ def compliance_report() -> dict:
     tr["e1"] = t("", "workflow_end")
     tr["e2"] = t("", "workflow_end")
     return workflow(
-        "wf-compliance-report-v1",
+        WF["compliance_report"],
         "Runs (run=true) or reads (run=false) the %s compliance plan and returns one compact summary per device: "
         "errors, warnings, passes and the issue lines; the agents' compliance tool (PID S4d.5, ADR 0046)"
         % PLAN_NAME,
@@ -2539,13 +2545,13 @@ def compliance_report() -> dict:
     )
 
 
-# --- wf-netbox-devices-v1 (S4d.5, ADR 0046): one cheap NetBox inventory tool for the local twins -------
+# --- List Devices from NetBox (S4d.5, ADR 0046): one cheap NetBox inventory tool for the local twins -------
 # Measured 2026-09-11: `dcim_devices_list` handed straight to a 7B model returns NetBox device objects of
 # 52 fields each - five devices at br1 are 17.9 kB, and with the tool schemas the prompt reached 7,823
 # tokens. qwen2.5:7b on the four CPU cores of tools-01 ingests at ~22 tokens/sec, so the Platform's
 # inference timeout fired at around 350 s and reported "ollama model invocation failed" while Ollama was
-# still working (it finished the same request at 16:55:13, truncated = 0). This is the wf-compliance-
-# report-v1 shape applied to inventory: read the list once, reduce it on the Gateway 5 runner, and hand
+# still working (it finished the same request at 16:55:13, truncated = 0). This is the Summarize Compliance
+# Results shape applied to inventory: read the list once, reduce it on the Gateway 5 runner, and hand
 # the model six fields per device. All 21 lab devices reduce to 2.8 kB; br1 alone to about 700 bytes.
 #
 # The filters are workflow inputs rather than integration parameters on purpose. The operation is called
@@ -2654,7 +2660,7 @@ def netbox_devices() -> dict:
     transitions["1a"]["3a"] = {"state": "error", "type": "standard"}
     transitions["3a"] = t("", "workflow_end")
     return workflow(
-        "wf-netbox-devices-v1",
+        WF["netbox_devices"],
         "Lists NetBox devices reduced to name, site, role, platform, status and primary_ip4, "
         "optionally filtered by one value matched against name, site or role; the local twins' inventory "
         "tool, because the raw "
@@ -2693,6 +2699,6 @@ if __name__ == "__main__":
         netbox_devices(),
         backup_all(),
     ):
-        out = HERE / f"{wf['name']}.json"
+        out = HERE / file_name(wf["name"])
         out.write_text(json.dumps(wf, indent=2) + "\n")
         print(out.relative_to(HERE.parent.parent), len(wf["tasks"]) - 2, "tasks")

@@ -37,7 +37,7 @@ HOST = "http://127.0.0.1:11434"
 DEVICES_TOOL = {
     "type": "function",
     "function": {
-        "name": "wf-netbox-devices-v1",
+        "name": "List Devices from NetBox",
         "description": "List NetBox devices, optionally filtered.",
         "parameters": {
             "type": "object",
@@ -79,7 +79,7 @@ LIST_TOOL = {
 SHOW_TOOL = {
     "type": "function",
     "function": {
-        "name": "wf-show-command-v1",
+        "name": "Run Show Command on a Device",
         "description": "Run one show command on a lab device and return its parsed output.",
         "parameters": {
             "type": "object",
@@ -100,7 +100,7 @@ SYSTEM = (
 
 
 def check_plain_string(call: dict) -> tuple[bool, str]:
-    if call.get("name") != "wf-netbox-devices-v1":
+    if call.get("name") != "List Devices from NetBox":
         return False, f"called {call.get('name')}"
     v = (call.get("arguments") or {}).get("filter")
     if isinstance(v, str):
@@ -122,7 +122,7 @@ def check_no_nulls(call: dict) -> tuple[bool, str]:
 
 
 def check_right_tool(call: dict) -> tuple[bool, str]:
-    if call.get("name") != "wf-show-command-v1":
+    if call.get("name") != "Run Show Command on a Device":
         return False, f"called {call.get('name')}"
     args = call.get("arguments") or {}
     dev_ok = str(args.get("device", "")).lower() == "br2-sw01"

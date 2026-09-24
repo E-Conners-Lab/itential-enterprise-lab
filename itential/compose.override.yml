@@ -73,7 +73,7 @@ services:
       GATEWAY_RUNNER_PORT: "50051"
       GATEWAY_RUNNER_ANNOUNCEMENT_ADDRESS: gateway5-runner # the server dials this name on the Docker network
       GATEWAY_RUNNER_USE_TLS: "false"
-      # NetBox for runCode tasks (the journal entries of wf-branch-vlan-v1/-delete-v1, ADR 0048): the adapter's
+      # NetBox for runCode tasks (the journal entries of Add Branch VLAN / Remove Branch VLAN, ADR 0048): the adapter's
       # generic request cannot emit the trailing slash NetBox's API needs, so python on the runner posts them
       NETBOX_URL: ${NETBOX_URL}
       NETBOX_TOKEN: ${NETBOX_TOKEN}

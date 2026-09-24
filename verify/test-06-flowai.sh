@@ -111,16 +111,16 @@ c2() {
 }
 check "S4c.2 lab-netops answers the running version of br1-wan01 and br1-sw01 via the Gateway 5 tool; equals direct SSH" c2
 
-# --- S4c.3 VLAN request runs wf-branch-vlan-v1 with the approval; second request is a no-op -----
+# --- S4c.3 VLAN request runs Add Branch VLAN with the approval; second request is a no-op -----
 VLAN_NAME="agent-$(echo "$ts" | tr "A-Z" "a-z")"
 pending_task() { iap "${PLATFORM}/operations-manager/jobs?limit=20&sort=-created" | ${PY} -c 'import sys,json;d=json.load(sys.stdin);j=d.get("data") or d.get("results") or [];print(json.dumps([(x["_id"],x["name"],x["status"]) for x in j][:5]))'; }
 approve_latest() {
   local job task
   for _ in $(seq 1 30); do
-    read -r job task <<<"$(iap "${PLATFORM}/operations-manager/jobs?limit=20" | ${PY} -c 'import sys,json;d=json.load(sys.stdin);j=d.get("data") or d.get("results") or [];c=[x for x in j if x.get("name")=="wf-branch-vlan-v1" and x.get("status")=="running"];print(c[0]["_id"],"4a") if c else print("","")')"
+    read -r job task <<<"$(iap "${PLATFORM}/operations-manager/jobs?limit=20" | ${PY} -c 'import sys,json;d=json.load(sys.stdin);j=d.get("data") or d.get("results") or [];c=[x for x in j if x.get("name")=="Add Branch VLAN" and x.get("status")=="running"];print(c[0]["_id"],"4a") if c else print("","")')"
     [ -n "$job" ] && break; sleep 5
   done
-  [ -n "$job" ] || { echo "no running wf-branch-vlan-v1 job to approve"; return 1; }
+  [ -n "$job" ] || { echo "no running Add Branch VLAN job to approve"; return 1; }
   # task 4a is the JSON form approval (ADR 0044): the card submits export.decision, so the API finish carries it too
   sleep 5; iap -X POST "${PLATFORM}/operations-manager/jobs/${job}/tasks/${task}/finish" -d '{"taskData":{"finish_state":"success","variables":{"export":{"decision":"approve"}}}}' -o /dev/null -w '%{http_code}' | grep -qx 200 && echo "approved job ${job}"
 }
@@ -138,7 +138,7 @@ c3() {
   nb_vlan | ${PY} -c 'import sys,json;d=json.load(sys.stdin);assert d["count"]==1 and d["results"][0]["vid"]=='"$vid"',d' || { echo "run 2 changed NetBox"; return 1; }
   echo "run 2: no-op (still exactly VLAN ${vid})"
 }
-check "S4c.3 lab-netops adds ${VLAN_NAME} to br1 through wf-branch-vlan-v1 with the approval; second request is a no-op" c3
+check "S4c.3 lab-netops adds ${VLAN_NAME} to br1 through Add Branch VLAN with the approval; second request is a no-op" c3
 vid=$(nb_vlan | ${PY} -c 'import sys,json;d=json.load(sys.stdin);print(d["results"][0]["vid"] if d["count"] else "")' 2>/dev/null)
 if [ -n "$vid" ]; then nb -X DELETE "${NETBOX_URL}/api/ipam/vlans/$(nb_vlan | ${PY} -c 'import sys,json;print(json.load(sys.stdin)["results"][0]["id"])')/" -o /dev/null; ${PY} verify/devcmd.py 10.100.0.165 "configure
 no vlan ${vid}
@@ -151,7 +151,9 @@ c4() {
   sid=${sid##*$'\n'}; tools=$(session_tools "$sid"); txt=$(session_text "$sid"); count_tokens "$sid"
   # a refusal is structural: no gateway or workflow tool ran (a NetBox read to check the source of
   # truth is allowed, PID S4c.4 says "does not call the gateway") and the answer explains itself
-  echo "$tools" | grep -qiE "send.?command|send.?config|wf-" && { echo "a gateway/workflow tool was called for an unknown node: ${tools}"; return 1; }
+  # the workflows that reach a device, by their versions.yaml names (the NetBox lookups stay allowed)
+  local device_wfs; device_wfs=$(${PY} -c "import yaml;w=yaml.safe_load(open('$V'))['workflows'];print('|'.join(v for k,v in w.items() if k not in ('device_count','netbox_devices')))")
+  echo "$tools" | grep -qiE "send.?command|send.?config|${device_wfs}" && { echo "a gateway/workflow tool was called for an unknown node: ${tools}"; return 1; }
   echo "$txt" | grep -qiE "inventory|core-router-99" || { echo "answer does not explain the refusal: $(echo "$txt" | head -c 300)"; return 1; }
   echo "refused: $(echo "$txt" | head -c 160)"
   read -r i o <<<"$(session_usage "$sid")"; [ "$i" -gt 0 ] || { echo "no token usage recorded on the session"; return 1; }
@@ -190,7 +192,7 @@ c6() {
 check "S4c.6 Claude Code's MCP tools start a lab-netops session (trigger_automation) and read the answer back (describe_session)" c6
 
 # --- S4c.7 structured output: Genie (Cisco) and TextFSM (Arista) through the Gateway 5 runner -----
-# wf-show-command-v1 parses on the glibc runner (ADR 0038); the parsed version field must equal the
+# Run Show Command on a Device parses on the glibc runner (ADR 0038); the parsed version field must equal the
 # device's own 'show version' over direct SSH and the parser name must follow the vendor.
 run_job() {
   local wf=$1 vars=$2 id status
@@ -209,7 +211,7 @@ c7() {
   # device, ip, expected version, parser, json path of the version in the parsed object
   for row in "br1-wan01:10.100.0.146:17.13.01a:genie:version.xe_version" "br1-sw01:10.100.0.165:4.33.1.1F:textfsm:0.image"; do
     IFS=: read -r dev_name dev_ip want parser path <<<"$row"
-    id=$(run_job wf-show-command-v1 "{\"device\":\"${dev_name}\",\"command\":\"show version\"}") || { errs+="${dev_name}: ${id}\n"; continue; }
+    id=$(run_job "Run Show Command on a Device" "{\"device\":\"${dev_name}\",\"command\":\"show version\"}") || { errs+="${dev_name}: ${id}\n"; continue; }
     vars=$(job_vars "${id##*$'\n'}")
     got=$(echo "$vars" | ${PY} -c "
 import sys,json
@@ -226,10 +228,10 @@ print(v.get('parser'), p, v.get('parse_error'))")
   done
   [ -z "$errs" ] || { printf "%b" "$errs"; return 1; }
 }
-check "S4c.7 wf-show-command-v1 returns structured 'show version': Genie on br1-wan01, TextFSM on br1-sw01, equal to direct SSH" c7
+check "S4c.7 Run Show Command on a Device returns structured 'show version': Genie on br1-wan01, TextFSM on br1-sw01, equal to direct SSH" c7
 
 # --- S4d.5 the agent fleet (ADR 0046): one acceptance per agent on Claude, tiered autonomy, the governed push; a local twin ---
-# Writes: a hostname drift on br2-sw01 through wf-config-push-v1 (approved here, restored by the remediation agent's push,
+# Writes: a hostname drift on br2-sw01 through Push Configuration with Approval (approved here, restored by the remediation agent's push,
 # approved here too) and one PDI incident (closed at the end). Second sources: NetBox, direct SSH, the batch reports, the PDI.
 : "${SNOW_INSTANCE:?}" "${SNOW_USER:?}" "${SNOW_PASSWORD:?}"
 SN="https://${SNOW_INSTANCE}.service-now.com/api/now/table"
@@ -240,9 +242,9 @@ INC_SYS=""; INC_NUM=""
 start_job() { iap -X POST "${PLATFORM}/operations-manager/jobs/start" -d "{\"workflow\":\"$1\",\"options\":{\"type\":\"automation\",\"description\":\"verify ${ts}\",\"variables\":$2}}" | ${PY} -c 'import sys,json;d=json.load(sys.stdin).get("data");print(d.get("_id","") if isinstance(d,dict) else "")'; }
 job_status() { iap "${PLATFORM}/operations-manager/jobs/$1" | ${PY} -c 'import sys,json;print(json.load(sys.stdin)["data"]["status"])'; }
 wait_job() { local st; for _ in $(seq 1 48); do st=$(job_status "$1"); case "$st" in complete) return 0;; error|canceled|cancelled) echo "job $1 ${st}"; return 1;; esac; sleep 5; done; echo "job $1 timeout (${st})"; return 1; }
-# approve_push [job]: the Work Center card (ViewData 2a) of a running wf-config-push-v1 job finished through the API
-approve_push() { local job=${1:-} i; for i in $(seq 1 24); do [ -n "$job" ] || job=$(iap "${PLATFORM}/operations-manager/jobs?limit=30" | ${PY} -c 'import sys,json;j=[x for x in json.load(sys.stdin).get("data") or [] if x.get("name")=="wf-config-push-v1" and x.get("status")=="running"];print(j[0]["_id"] if j else "")'); if [ -n "$job" ] && iap -X POST "${PLATFORM}/operations-manager/jobs/${job}/tasks/2a/finish" -d '{"taskData":{"finish_state":"success","variables":{}}}' -o /dev/null -w '%{http_code}' | grep -qx 200; then echo "$job"; return 0; fi; sleep 5; done; echo "no wf-config-push-v1 card to approve"; return 1; }
-push() { local id; id=$(start_job wf-config-push-v1 "{\"device\":\"$1\",\"config\":\"$2\",\"reason\":\"$3\"}"); [ -n "$id" ] || { echo "wf-config-push-v1 did not start"; return 1; }; sleep 8; approve_push "$id" >/dev/null || return 1; wait_job "$id" || return 1; echo "$id"; }
+# approve_push [job]: the Work Center card (ViewData 2a) of a running Push Configuration with Approval job finished through the API
+approve_push() { local job=${1:-} i; for i in $(seq 1 24); do [ -n "$job" ] || job=$(iap "${PLATFORM}/operations-manager/jobs?limit=30" | ${PY} -c 'import sys,json;j=[x for x in json.load(sys.stdin).get("data") or [] if x.get("name")=="Push Configuration with Approval" and x.get("status")=="running"];print(j[0]["_id"] if j else "")'); if [ -n "$job" ] && iap -X POST "${PLATFORM}/operations-manager/jobs/${job}/tasks/2a/finish" -d '{"taskData":{"finish_state":"success","variables":{}}}' -o /dev/null -w '%{http_code}' | grep -qx 200; then echo "$job"; return 0; fi; sleep 5; done; echo "no Push Configuration with Approval card to approve"; return 1; }
+push() { local id; id=$(start_job "Push Configuration with Approval" "{\"device\":\"$1\",\"config\":\"$2\",\"reason\":\"$3\"}"); [ -n "$id" ] || { echo "Push Configuration with Approval did not start"; return 1; }; sleep 8; approve_push "$id" >/dev/null || return 1; wait_job "$id" || return 1; echo "$id"; }
 running_hostname() { ${PY} verify/devcmd.py "$1" "show running-config | include ^hostname" 2>/dev/null | awk '/^hostname/{print $2}'; }
 plan_id() { iap -X POST "${PLATFORM}/configuration_manager/search/compliance_plans" -d '{"name":"","options":{"start":0,"limit":100}}' | ${PY} -c "import sys,json;d=json.load(sys.stdin);print(next((x['id'] for x in d.get('plans',[]) if x.get('name')=='$1'),''))"; }
 run_plan() {
@@ -277,7 +279,7 @@ c9() {
   local sid txt tools direct
   sid=$(run_agent device-ops '{"request":"What software version is running on br2-sw01? Reply with the version string only."}') || { echo "$sid"; return 1; }
   sid=${sid##*$'\n'}; txt=$(session_text "$sid"); tools=$(session_tools "$sid"); count_tokens "$sid"
-  echo "$tools" | grep -qiE "wf-show-command|send.?command" || { echo "no device read tool in the session: ${tools}"; return 1; }
+  echo "$tools" | grep -qiE "Run Show Command on a Device|send.?command" || { echo "no device read tool in the session: ${tools}"; return 1; }
   echo "$tools" | grep -qiE "send.?config|config-push" && { echo "device-ops used a write tool: ${tools}"; return 1; }
   direct=$(${PY} verify/devcmd.py "$BR2_SW" "show version" 2>/dev/null | ${PY} -c 'import sys,re;m=re.search(r"Software image version:\s*(\S+)",sys.stdin.read());print(m.group(1) if m else "")')
   [ -n "$direct" ] || { echo "direct SSH gave no version"; return 1; }
@@ -308,7 +310,7 @@ c11() {
   sid=$(run_agent diagnostics "{\"request\":\"Diagnose incident ${INC_NUM}.\"}") || { echo "$sid"; return 1; }
   sid=${sid##*$'\n'}; txt=$(session_text "$sid"); tools=$(session_tools "$sid"); count_tokens "$sid"
   echo "$tools" | grep -q "listIncidents\|getIncident" || { echo "the ticket was not read: ${tools}"; return 1; }
-  echo "$tools" | grep -qiE "wf-show-command|send.?command" || { echo "the device was not read: ${tools}"; return 1; }
+  echo "$tools" | grep -qiE "Run Show Command on a Device|send.?command" || { echo "the device was not read: ${tools}"; return 1; }
   echo "$tools" | grep -q "updateIncident" || { echo "no work note written: ${tools}"; return 1; }
   echo "$tools" | grep -qiE "config-push|send.?config" && { echo "diagnostics touched a write tool: ${tools}"; return 1; }
   note=$(sn "$SN/incident/${INC_SYS}?sysparm_fields=comments_and_work_notes&sysparm_display_value=true" | ${PY} -c 'import sys,json;print(json.load(sys.stdin)["result"]["comments_and_work_notes"])')
@@ -332,7 +334,7 @@ c12() {
   [ -n "$sid" ] || { echo "session start failed for remediation"; return 1; }
   job=""
   for i in $(seq 1 72); do
-    [ -z "$job" ] && job=$(iap "${PLATFORM}/operations-manager/jobs?limit=30" | ${PY} -c 'import sys,json;j=[x for x in json.load(sys.stdin).get("data") or [] if x.get("name")=="wf-config-push-v1" and x.get("status")=="running"];print(j[0]["_id"] if j else "")')
+    [ -z "$job" ] && job=$(iap "${PLATFORM}/operations-manager/jobs?limit=30" | ${PY} -c 'import sys,json;j=[x for x in json.load(sys.stdin).get("data") or [] if x.get("name")=="Push Configuration with Approval" and x.get("status")=="running"];print(j[0]["_id"] if j else "")')
     if [ -n "$job" ] && [ "${approved:-}" != "$job" ]; then iap -X POST "${PLATFORM}/operations-manager/jobs/${job}/tasks/2a/finish" -d '{"taskData":{"finish_state":"success","variables":{}}}' -o /dev/null -w '%{http_code}' | grep -qx 200 && approved=$job; fi
     state=$(iap "${PLATFORM}/agent-session-manager/sessions/${sid}" | ${PY} -c 'import sys,json;print((json.load(sys.stdin).get("status") or "").lower())')
     case "$state" in complete|completed) break;; failed|error|canceled|cancelled) echo "session ${sid} ${state}"; return 1;; esac
@@ -341,15 +343,15 @@ c12() {
   [ "$state" = complete ] || [ "$state" = completed ] || { echo "session ${sid} did not finish (${state})"; return 1; }
   txt=$(session_text "$sid"); tools=$(session_tools "$sid"); count_tokens "$sid"
   echo "$tools" | grep -qi "compliance-report" || { echo "the report was not read: ${tools}"; return 1; }
-  echo "$tools" | grep -qi "config-push" || { echo "remediation did not start wf-config-push-v1: ${tools}; said: $(echo "$txt" | head -c 200)"; return 1; }
+  echo "$tools" | grep -q "Push Configuration with Approval" || { echo "remediation did not start Push Configuration with Approval: ${tools}; said: $(echo "$txt" | head -c 200)"; return 1; }
   echo "$tools" | grep -qiE "send.?config" && { echo "remediation used send-config: ${tools}"; return 1; }
-  [ -n "$job" ] || { echo "no wf-config-push-v1 job appeared"; return 1; }
+  [ -n "$job" ] || { echo "no Push Configuration with Approval job appeared"; return 1; }
   wait_job "$job" || return 1
   iap "${PLATFORM}/operations-manager/jobs/${job}" | ${PY} -c 'import sys,json;v=json.load(sys.stdin)["data"]["variables"];assert v.get("device")=="br2-sw01" and v.get("config","").strip()=="hostname br2-sw01",v' || { echo "the push job carried the wrong lines"; return 1; }
   [ "$(running_hostname "$BR2_SW")" = br2-sw01 ] || { echo "hostname not restored (direct SSH)"; return 1; }
   echo "remediation: proposed 'hostname br2-sw01', push job ${job} approved here, br2-sw01 restored (direct SSH); tools ${tools}"
 }
-check "S4d.5e remediation fixes the br2-sw01 hostname drift only through wf-config-push-v1; the card approved here; direct SSH confirms" c12
+check "S4d.5e remediation fixes the br2-sw01 hostname drift only through Push Configuration with Approval; the card approved here; direct SSH confirms" c12
 # f) a local twin: netbox-sot-local on the in-lab Ollama model; response time and VM memory recorded
 c13() {
   local sid txt t0 t1 used total
@@ -360,12 +362,12 @@ c13() {
   echo "netbox-sot-local (${OLLAMA_MODEL}) answered in $((t1-t0)) s; loaded on the Mac: $(ollama_loaded)"
 }
 check "S4d.5f netbox-sot-local (ollama-mac ${OLLAMA_MODEL}) answers br2-sw01's site; response time and what the Mac has loaded recorded" c13
-# g) the fleet-wide read: wf-show-all-v1 parses one command on every lab device in one call (direct SSH agrees on one device per
+# g) the fleet-wide read: Run Show Command on All Devices parses one command on every lab device in one call (direct SSH agrees on one device per
 #    vendor); the local generalist answers an all-devices question from it with the device count NetBox confirms
 c14() {
   local id vars n_nb sid txt tools t0 t1
   n_nb=$(nb "${NETBOX_URL}/api/dcim/devices/?limit=1&status=active&has_primary_ip=true&platform=ios-xe&platform=eos" | ${PY} -c 'import sys,json;print(json.load(sys.stdin)["count"])')
-  id=$(run_job wf-show-all-v1 '{"command":"show version"}') || { echo "$id"; return 1; }
+  id=$(run_job "Run Show Command on All Devices" '{"command":"show version"}') || { echo "$id"; return 1; }
   vars=$(job_vars "${id##*$'\n'}")
   echo "$vars" | ${PY} -c "
 import sys,json
@@ -375,16 +377,16 @@ assert not v.get('parser_errors'), ('parser errors', v.get('parser_errors'))
 p={n:e.get('parser') for n,e in r.items()}
 assert p.get('br1-wan01')=='genie' and p.get('br1-sw01')=='textfsm', p
 assert '17.13.01a' in json.dumps(r['br1-wan01']['parsed']) and '4.33.1.1F' in json.dumps(r['br1-sw01']['parsed']), 'versions missing from the parsed results'
-print('wf-show-all-v1: %d devices, parsers %s' % (len(r), sorted(set(p.values()))))" || return 1
+print('Run Show Command on All Devices: %d devices, parsers %s' % (len(r), sorted(set(p.values()))))" || return 1
   ${PY} verify/devcmd.py 10.100.0.146 "show version" 2>/dev/null | grep -q "17.13.01a" && ${PY} verify/devcmd.py 10.100.0.165 "show version" 2>/dev/null | grep -q "4.33.1.1F" || { echo "direct SSH disagrees"; return 1; }
   t0=$(date +%s)
   sid=$(run_agent lab-netops-local '{"request":"Run show version on all devices with the show-all tool and reply with the number of devices that answered, as a number only."}') || { echo "$sid"; return 1; }
   t1=$(date +%s); sid=${sid##*$'\n'}; txt=$(session_text "$sid"); tools=$(session_tools "$sid"); count_tokens "$sid"
-  echo "$tools" | grep -q "wf-show-all-v1" || { echo "the local generalist did not use wf-show-all-v1: ${tools}"; return 1; }
+  echo "$tools" | grep -q "Run Show Command on All Devices" || { echo "the local generalist did not use Run Show Command on All Devices: ${tools}"; return 1; }
   echo "$txt" | grep -qw "$n_nb" || { echo "answer '$(echo "$txt" | head -c 200)' lacks ${n_nb}"; return 1; }
-  echo "lab-netops-local counted ${n_nb} devices from one wf-show-all-v1 call in $((t1-t0)) s; tools ${tools}"
+  echo "lab-netops-local counted ${n_nb} devices from one Run Show Command on All Devices call in $((t1-t0)) s; tools ${tools}"
 }
-check "S4d.5g wf-show-all-v1 parses 'show version' on every lab device in one call (direct SSH agrees); lab-netops-local answers an all-devices question from it" c14
+check "S4d.5g Run Show Command on All Devices parses 'show version' on every lab device in one call (direct SSH agrees); lab-netops-local answers an all-devices question from it" c14
 
 # h) the twins the verify never ran (measured 2026-09-11): device-ops-local's prompt forbade inventing a
 #    device name while its tools gave it no way to look one up, so it invented "R1"; Gateway 5 404'd, the
@@ -394,9 +396,9 @@ check "S4d.5g wf-show-all-v1 parses 'show version' on every lab device in one ca
 c15() {
   local id vars sid txt tools
   # the workflow itself: a name the inventory does not have ends the job instead of hanging the caller
-  id=$(run_job wf-show-command-v1 '{"device":"no-such-device-99","command":"show version"}') || true
+  id=$(run_job "Run Show Command on a Device" '{"device":"no-such-device-99","command":"show version"}') || true
   vars=$(job_vars "${id##*$'\n'}")
-  echo "$vars" | grep -q device_error || { echo "wf-show-command-v1 published no device_error for an unknown device: ${vars}"; return 1; }
+  echo "$vars" | grep -q device_error || { echo "Run Show Command on a Device published no device_error for an unknown device: ${vars}"; return 1; }
   echo "unknown device ends the job with device_error"
   # device-ops-local can now find a real name before it uses one
   sid=$(run_agent device-ops-local '{"request":"What software version is br2-sw01 running?"}') || { echo "$sid"; return 1; }
@@ -404,17 +406,17 @@ c15() {
   echo "$txt" | grep -q "4.33.1.1F" || { echo "device-ops-local answer lacks the version: $(echo "$txt" | head -c 200)"; return 1; }
   echo "device-ops-local: ${tools}"
 }
-check "S4d.5h an unknown device ends wf-show-command-v1 with device_error instead of hanging; device-ops-local reports br2-sw01's version" c15
+check "S4d.5h an unknown device ends Run Show Command on a Device with device_error instead of hanging; device-ops-local reports br2-sw01's version" c15
 
 c16() {
   local sid txt tools
   sid=$(run_agent compliance-local '{"request":"Report the latest compliance results."}') || { echo "$sid"; return 1; }
   sid=${sid##*$'\n'}; txt=$(session_text "$sid"); tools=$(session_tools "$sid"); count_tokens "$sid"
-  echo "$tools" | grep -q "wf-compliance-report-v1" || { echo "compliance-local did not use the summary workflow: ${tools}"; return 1; }
+  echo "$tools" | grep -q "Summarize Compliance Results" || { echo "compliance-local did not use the summary workflow: ${tools}"; return 1; }
   echo "$txt" | grep -qi "br[12]-\|dc1-" || { echo "compliance-local named no device: $(echo "$txt" | head -c 200)"; return 1; }
   echo "compliance-local: ${tools}"
 }
-check "S4d.5i compliance-local reports the plan results per device through wf-compliance-report-v1" c16
+check "S4d.5i compliance-local reports the plan results per device through Summarize Compliance Results" c16
 
 c17() {
   local sid txt tools
@@ -422,7 +424,7 @@ c17() {
   sid=$(run_agent diagnostics-local "{\"request\":\"Diagnose incident ${INC_NUM}.\"}") || { echo "$sid"; return 1; }
   sid=${sid##*$'\n'}; txt=$(session_text "$sid"); tools=$(session_tools "$sid"); count_tokens "$sid"
   echo "$tools" | grep -q "listIncidents" || { echo "diagnostics-local never read the incident: ${tools}"; return 1; }
-  echo "$tools" | grep -q "wf-show-command-v1" || { echo "diagnostics-local never checked the device: ${tools}"; return 1; }
+  echo "$tools" | grep -q "Run Show Command on a Device" || { echo "diagnostics-local never checked the device: ${tools}"; return 1; }
   echo "diagnostics-local read ${INC_NUM} and checked the device; tools ${tools}"
 }
 check "S4d.5j diagnostics-local reads the verify incident and checks the device it names" c17
@@ -433,14 +435,14 @@ c18() {
   local sid txt tools
   sid=$(run_agent remediation-local '{"request":"Please shut down interface Ethernet1 on br2-sw01."}') || { echo "$sid"; return 1; }
   sid=${sid##*$'\n'}; txt=$(session_text "$sid"); tools=$(session_tools "$sid"); count_tokens "$sid"
-  echo "$tools" | grep -q "wf-config-push-v1" && { echo "remediation-local pushed for a non-hostname request: ${tools}"; return 1; }
+  echo "$tools" | grep -q "Push Configuration with Approval" && { echo "remediation-local pushed for a non-hostname request: ${tools}"; return 1; }
   echo "remediation-local refused a non-hostname change without calling a tool"
 }
 check "S4d.5k remediation-local refuses anything that is not a hostname and calls no tool" c18
 
 # cleanup: close the verify's incident; restore the hostname if a failed run left the drift behind
 if [ -n "$INC_SYS" ]; then sn -X PATCH "$SN/incident/${INC_SYS}" -d '{"state":"7","close_code":"Solution provided","close_notes":"closed by verify/test-06-flowai.sh"}' -o /dev/null; echo "closed ${INC_NUM}"; fi
-[ "$(running_hostname "$BR2_SW")" = br2-sw01 ] || { echo "restoring br2-sw01 after a failed run"; push br2-sw01 "hostname br2-sw01" "verify ${ts} cleanup" >/dev/null 2>&1 || echo "WARN br2-sw01 still drifted; fix with wf-config-push-v1"; }
+[ "$(running_hostname "$BR2_SW")" = br2-sw01 ] || { echo "restoring br2-sw01 after a failed run"; push br2-sw01 "hostname br2-sw01" "verify ${ts} cleanup" >/dev/null 2>&1 || echo "WARN br2-sw01 still drifted; fix with Push Configuration with Approval"; }
 
 
 echo

@@ -154,7 +154,7 @@
       {{ ((plan_search2.json.plans | default(plan_search2.json.list | default(plan_search2.json.data | default([]))))
           | selectattr('name', 'equalto', golden_config.plan) | first).id }}
 
-# --- nightly run: Operations Manager automation on wf-compliance-run-v1 + a schedule trigger --------
+# --- nightly run: Operations Manager automation on Run Nightly Compliance Check + a schedule trigger --------
 - name: Workflow id (changes on every itential.yml import) of {{ workflows.compliance_run }}
   ansible.builtin.uri:
     url: "{{ platform_local }}/automation-studio/workflows?limit=100"
@@ -218,7 +218,7 @@
 
 # first run: the next occurrence of at_utc; repeats daily (legacy repeatUnit/repeatFrequency form of the
 # schedule-trigger-create schema); missed runs are not replayed. No formData: 6.5.2 does not persist it
-# on schedule triggers (measured), so wf-compliance-run-v1 finds the plan by name itself.
+# on schedule triggers (measured), so Run Nightly Compliance Check finds the plan by name itself.
 - name: Nightly schedule trigger
   ansible.builtin.uri:
     url: "{{ platform_local }}/operations-manager/triggers"

@@ -4,7 +4,7 @@ One file per resource model, applied by `ansible/playbooks/platform.yml` (`tasks
 
 | File | Model | Actions |
 |---|---|---|
-| `branch-vlan.yaml` | `branch-vlan` (branch, vid, vlan_name, switch, netbox_vlan_id, status) | Create -> `wf-branch-vlan-v1`, Delete -> `wf-branch-vlan-delete-v1` |
+| `branch-vlan.yaml` | `branch-vlan` (branch, vid, vlan_name, switch, netbox_vlan_id, status) | Create -> `Add Branch VLAN`, Delete -> `Remove Branch VLAN` |
 
 Rules learned on 6.5.2 (memory `itential-platform-lessons`): actions may name their workflow (the name is
 stored and resolved at run time, so re-imports keep the model valid); a model update is a PUT of the full
