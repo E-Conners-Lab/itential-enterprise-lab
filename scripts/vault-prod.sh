@@ -17,7 +17,7 @@ state() { curl -s -m 15 --cacert "$CA" "${ADDR}/v1/sys/seal-status"; }
 
 case "${1:-}" in
   status)
-    state | ${PY} -c 'import sys,json;d=json.load(sys.stdin);print(f"{sys.argv[1]}: initialized={d[\"initialized\"]} sealed={d[\"sealed\"]} version={d.get(\"version\")}")' "$ADDR"
+    state | ${PY} -c 'import sys,json;d=json.load(sys.stdin);print("%s: initialized=%s sealed=%s version=%s" % (sys.argv[1], d["initialized"], d["sealed"], d.get("version")))' "$ADDR"
     ;;
   init)
     [ "$(state | ${PY} -c 'import sys,json;print(json.load(sys.stdin)["initialized"])')" = False ] || { echo "already initialised - nothing done"; exit 1; }
