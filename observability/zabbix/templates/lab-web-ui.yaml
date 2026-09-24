@@ -290,3 +290,34 @@ zabbix_export:
               tags:
                 - tag: scope
                   value: availability
+        - uuid: ea60690374074138808bc47994a99af0
+          name: 'HTTP status: vault (https://vault.lab.internal:8200/v1/sys/health)'
+          type: HTTP_AGENT
+          key: web.status[vault]
+          delay: 1m
+          value_type: UNSIGNED
+          url: https://vault.lab.internal:8200/v1/sys/health
+          timeout: 15s
+          retrieve_mode: HEADERS
+          follow_redirects: 'NO'
+          verify_peer: 'YES'
+          verify_host: 'YES'
+          preprocessing:
+            - type: REGEX
+              parameters:
+                - ^HTTP/\S+ (\d{3})
+                - \1
+          description: Status code from the response headers. Verified with the lab CA.
+          tags:
+            - tag: component
+              value: ui
+            - tag: ui
+              value: vault
+          triggers:
+            - uuid: f2d5be341381485d8dbecee15b8de40f
+              expression: last(/lab-web-ui/web.status[vault])<>200
+              name: 'LAB: UI vault answers {ITEM.LASTVALUE1} instead of 200'
+              priority: HIGH
+              tags:
+                - tag: scope
+                  value: availability

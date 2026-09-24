@@ -60,7 +60,7 @@ addresses:
   - {address: 10.100.0.38, hostname: loki, placement: k3s-vip, phase: 7, status: reserved}
   - {address: 10.100.0.39, hostname: gnmic, placement: k3s-vip, phase: 7, status: reserved}
   - {address: 10.100.0.40, hostname: oxidized, placement: k3s-vip, phase: 9, status: reserved}
-  - {address: 10.100.0.41, hostname: vault, placement: k3s-vip, phase: 9, status: reserved}
+  - {address: 10.100.0.41, hostname: vault, placement: k3s-vip, phase: 9, status: active, description: "production Vault on k3s (ADR 0065)"}
   - {address: 10.100.0.42, hostname: gitea, placement: k3s-vip, phase: 9, status: reserved}
   - {address: 10.100.0.64, hostname: netbox, placement: proxmox-vm, phase: 2, status: active, description: "VM 110 second NIC"}
   # aliases are extra A records for the same address (unbound on oob-gw renders them).
