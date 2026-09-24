@@ -375,9 +375,16 @@ def test_no_node_keeps_the_vendor_default_admin_password(env: jinja2.Environment
         assert len(admin) == 1, f"{n['name']}: exactly one line sets the admin user ({admin})"
         assert re.fullmatch(rf"username admin privilege 15 (role network-admin )?secret 0 {SENTINEL}", admin[0]), admin[0]
         assert not re.search(r"\b(password|secret)( [0-9])? admin\b", cfg), f"{n['name']}: a literal admin password"
-    # nothing the lab runs logs in to a node as admin: the plays and the verify use the automation account
+    # nothing the lab runs logs in to a node as admin: the plays and the verify use the automation account. The one
+    # exception is S10.7's live probe, which tries the vendor default and passes ONLY when it is refused (PID 1.34): this
+    # test renders the template, and the template was right while both routers kept admin/admin (ADR 0065).
     for path in (PLAYBOOKS / "clab-dev.yml", PLAYBOOKS / "clab-host.yml", VERIFY, ROOT / "verify" / "devcmd.py"):
         text = path.read_text()
+        if path == VERIFY:
+            probes = re.findall(r"username=\"admin\", password=\"admin\"", text)
+            assert len(probes) == 1 and '[ "$adm" = refused ]' in text, "the verify's only admin login is the refusal probe"
+            text = text.replace(probes[0], "")
+            text = re.sub(r"(vendor default |vendor's default |)admin/admin( was not refused| refused| is refused| must be refused)", "", text)
         assert not re.search(r"username[=:]\s*['\"]?admin\b|-u admin\b|admin@clab|\badmin/admin\b", text), path.name
     assert 'user: str = "automation"' in (ROOT / "verify" / "devcmd.py").read_text()
     assert "admin`/`admin` login on every node beside" not in (ROOT / "clab" / "README.md").read_text()
