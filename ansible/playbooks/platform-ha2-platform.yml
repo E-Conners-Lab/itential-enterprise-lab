@@ -78,6 +78,32 @@
         group: ubuntu
         mode: "0644"
 
+    # --- Phase 9a (ADR 0065): the Platform reads its service credentials from Vault with its own AppRole ---------
+    # On once versions.yaml sets vault_enabled (the cut-over, make vault-cutover). The node's role ID and secret ID live
+    # only in its .env (mode 0600) and are kept across runs; only a run with VAULT_TOKEN may issue a new secret ID.
+    - name: Current .env (the Vault credentials this node already holds)
+      ansible.builtin.slurp:
+        src: "{{ dir }}/.env"
+      register: env_now
+      failed_when: false
+      when: vault_enabled | default(false) | bool
+      no_log: true
+
+    - name: The Platform's AppRole credentials
+      ansible.builtin.include_tasks: tasks/vault-secret-id.yml
+      vars:
+        vault_url: "{{ vault.prod.url }}"
+        vault_ca_path: /usr/local/share/ca-certificates/lab-root-ca.crt
+        vault_admin_token: "{{ lookup('ansible.builtin.env', 'VAULT_TOKEN') }}"
+        vault_reader: itential-platform
+        vault_current_secret_id: >-
+          {{ ((env_now.content | default('') | b64decode)
+              | regex_search('(?m)^ITENTIAL_VAULT_SECRET_ID=(.*)$', '\1') | default([''], true)) | first }}
+        vault_current_role_id: >-
+          {{ ((env_now.content | default('') | b64decode)
+              | regex_search('(?m)^ITENTIAL_VAULT_ROLE_ID=(.*)$', '\1') | default([''], true)) | first }}
+      when: vault_enabled | default(false) | bool
+
     - name: Environment for compose (secrets only; every other setting is in the compose file)
       ansible.builtin.copy:
         dest: "{{ dir }}/.env"
@@ -91,6 +117,10 @@
           REDIS_ITENTIAL_PASSWORD={{ lookup('ansible.builtin.env', redis.users.itential.env) }}
           REDIS_SENTINEL_PASSWORD={{ lookup('ansible.builtin.env', redis.users.sentineluser.env) }}
           ITENTIAL_ADMIN_PASSWORD={{ lookup('ansible.builtin.env', 'ITENTIAL_ADMIN_PASSWORD') }}
+          {% if vault_enabled | default(false) | bool %}
+          ITENTIAL_VAULT_ROLE_ID={{ vault_reader_role_id }}
+          ITENTIAL_VAULT_SECRET_ID={{ vault_reader_secret_id }}
+          {% endif %}
       no_log: true
 
     # --- the open-source adapters, installed on every node exactly as Phase 5 installs them -------------

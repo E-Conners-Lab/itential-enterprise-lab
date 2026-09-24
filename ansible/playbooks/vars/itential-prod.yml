@@ -29,3 +29,6 @@ mongo_shell_argv:
   - --eval
 # Ollama runs on tools-01, not as a Compose service on the Platform node
 ollama_base_url: http://ollama.lab.internal:11434 # the Mac Mini (ADR 0060)
+# Phase 9a step 5 (ADR 0065): the replay writes Vault references, never credentials (the same switch as
+# itential/ha2/versions.yaml vault_enabled; tests/test_vault.py holds them equal)
+vault_enabled: true

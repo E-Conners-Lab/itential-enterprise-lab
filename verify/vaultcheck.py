@@ -82,16 +82,21 @@ class Platform:
             raw = r.read()
             return json.loads(raw) if raw else {}
 
-    def run(self, service: str, params: dict, nodes: list[str]) -> dict[str, bool]:
+    def run(self, service: str, params: dict, nodes: list[str], inventory: str = INVENTORY) -> dict[str, bool]:
         d = self.call("POST", "/gateway_manager/v1/services/run",
                       {"serviceName": service, "clusterId": CLUSTER, "params": params,
-                       "inventory": [{"inventory": INVENTORY, "nodeNames": nodes}]})
+                       "inventory": [{"inventory": inventory, "nodeNames": nodes}]})
         results = (d.get("result") or {}).get("results") or []
         return {r.get("name"): bool(r.get("success")) for r in results}
 
 
-def nodes() -> list[str]:
-    return [n["name"] for n in CLAB["nodes"]]
+def nodes(inventory: str = INVENTORY) -> list[str]:
+    """The dev tier's devices are the clab oracle; production's (VAULT_TIER=prod) are whatever the Platform's
+    inventory holds, which the play builds from NetBox."""
+    if os.environ.get("VAULT_TIER") != "prod":
+        return [n["name"] for n in CLAB["nodes"]]
+    data = Platform().call("GET", f"/inventory_manager/v1/inventories/{inventory}/nodes?limit=200")["result"]["data"]
+    return sorted(n["name"] for n in data)
 
 
 # --- checks --------------------------------------------------------------------------------------------------------
@@ -110,7 +115,10 @@ def c_no_token() -> bool:
 def _policy_token(policy: str) -> str:
     """A short-lived token carrying one reader's policy, issued by the administrator token. It proves the POLICY
     boundary from anywhere; the AppRole login itself is address-bound (S8.2e) and so cannot be used from here."""
-    _, d = vault("POST", "auth/token/create", admin(),
+    # production's administrator login may issue reader tokens only through the verify-readers token role (its
+    # policy grants nothing else); the dev tier's root token uses the plain endpoint
+    path = "auth/token/create/verify-readers" if os.environ.get("VAULT_TIER") == "prod" else "auth/token/create"
+    _, d = vault("POST", path, admin(),
                  {"policies": [policy], "ttl": "60s", "num_uses": 5, "meta": {"issued_by": "verify/test-09a-vault"}})
     return d["auth"]["client_token"]
 
@@ -171,10 +179,12 @@ def c_seeded() -> bool:
 def c_references() -> bool:
     p = Platform()
     ok = True
-    inv = p.call("GET", f"/inventory_manager/v1/inventories/{INVENTORY}/nodes")["result"]["data"]
-    kinds = {n["name"]: n["attributes"].get("itential_password") == ALIAS_REF for n in inv}
-    print(f"inventory {INVENTORY}: {sum(kinds.values())}/{len(kinds)} nodes carry {ALIAS_REF}")
-    ok &= bool(kinds) and all(kinds.values())
+    # production's lab-hosts carry the alias too; dev's stays empty (ADR 0063)
+    for inventory in [INVENTORY] + (["lab-hosts"] if os.environ.get("VAULT_TIER") == "prod" else []):
+        inv = p.call("GET", f"/inventory_manager/v1/inventories/{inventory}/nodes?limit=200")["result"]["data"]
+        kinds = {n["name"]: n["attributes"].get("itential_password") == ALIAS_REF for n in inv}
+        print(f"inventory {inventory}: {sum(kinds.values())}/{len(kinds)} nodes carry {ALIAS_REF}")
+        ok &= bool(kinds) and all(kinds.values())
     adapters = {r["data"]["name"]: r["data"] for r in p.call("GET", "/adapters?limit=100")["results"]}
     token = adapters["NetBox"]["properties"]["properties"]["authentication"]["token"]
     print(f"adapter NetBox token = {token if token.startswith('$SECRET_') else '<not a reference>'}")
@@ -199,12 +209,16 @@ def c_gateway() -> bool:
     p = Platform()
     exp = p.call("GET", f"/gateway_manager/v1/gateways/{CLUSTER}/configuration/export")
     prov = [x for x in exp.get("secret-providers") or [] if x.get("name") == VAULT["gateway_provider"]]
-    _, rid = vault("GET", f"auth/{VAULT['approle_mount']}/role/itential-gateway/role-id", admin())
     ok = len(prov) == 1 and prov[0].get("type") == "vault" and prov[0].get("auth-method") == "approle" \
+        and prov[0].get("url") == os.environ["VAULT_ADDR"] \
         and prov[0].get("secrets-endpoint") == f"{VAULT['kv_mount']}/data" \
-        and prov[0].get("secret-id-file") == VAULT["gateway_secret_id_file"] \
-        and prov[0].get("role-id") == rid["data"]["role_id"]
-    print(f"provider {VAULT['gateway_provider']}: {'as the oracle says, role ID matches Vault' if ok else prov}")
+        and prov[0].get("secret-id-file") == VAULT["gateway_secret_id_file"]
+    # the role ID can be compared only with an administrator token (production has none once the root is revoked)
+    if ok and os.environ.get("VAULT_ADMIN_TOKEN"):
+        _, rid = vault("GET", f"auth/{VAULT['approle_mount']}/role/itential-gateway/role-id", admin())
+        ok = prov[0].get("role-id") == rid["data"]["role_id"]
+    print(f"provider {VAULT['gateway_provider']}: {'as the oracle says' if ok else [{k: v for k, v in x.items() if k != 'role-id'} for x in prov]}"
+          f"{', role ID matches Vault' if ok and os.environ.get('VAULT_ADMIN_TOKEN') else ''}")
     aliases = {s["name"]: (s["secret"], s.get("key")) for s in exp.get("secrets") or []
                if s.get("provider") == VAULT["gateway_provider"]}
     want = {k: (v["path"], v["key"]) for k, v in VAULT["gateway_aliases"].items()}
@@ -214,9 +228,10 @@ def c_gateway() -> bool:
 
 def c_devices() -> bool:
     p = Platform()
-    res = p.run("send-command", {"commands": ["show clock"]}, nodes())
+    names = nodes()
+    res = p.run("send-command", {"commands": ["show clock"]}, names)
     print(f"show clock with the Vault-held password: {res}")
-    failed = [n for n in nodes() if not res.get(n)]
+    failed = [n for n in names if not res.get(n)]
     if failed:
         # The nested-KVM C8000v routers sometimes drop SSH session setup under a burst of logins ("No existing session",
         # a transport timeout, measured 2026-09-23) - one retry after a pause, shown here. A wrong password fails twice.
@@ -224,7 +239,16 @@ def c_devices() -> bool:
         again = p.run("send-command", {"commands": ["show clock"]}, failed)
         print(f"retried once after 10 s: {again}")
         res.update(again)
-    return bool(res) and all(res.values()) and set(res) == set(nodes())
+    return bool(res) and all(res.values()) and set(res) == set(names)
+
+
+def c_hosts() -> bool:
+    """Production's lab-hosts (Ubuntu, the automation account) carry the same alias as the devices."""
+    p = Platform()
+    names = nodes("lab-hosts")
+    res = p.run("send-command", {"commands": ["hostname"]}, names, inventory="lab-hosts")
+    print(f"hostname on lab-hosts with the Vault-held password: {res}")
+    return bool(res) and all(res.values()) and set(res) == set(names)
 
 
 def c_platform_read() -> bool:
@@ -344,7 +368,7 @@ def c_sealed() -> bool:
 
 CHECKS = {"sealed": c_sealed, "health": c_health, "no-token": c_no_token, "policies": c_policies, "bound": c_bound, "seeded": c_seeded,
           "references": c_references, "gateway": c_gateway, "devices": c_devices, "platform-read": c_platform_read,
-          "rotation": c_rotation}
+          "rotation": c_rotation, "hosts": c_hosts}
 
 if __name__ == "__main__":
     if len(sys.argv) != 2 or sys.argv[1] not in CHECKS:

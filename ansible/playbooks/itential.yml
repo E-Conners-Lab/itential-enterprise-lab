@@ -199,6 +199,9 @@
         vault_current_secret_id: >-
           {{ ((stack_env_now.content | default('') | b64decode)
               | regex_search('(?m)^ITENTIAL_VAULT_SECRET_ID=(.*)$', '\1') | default([''], true)) | first }}
+        vault_current_role_id: >-
+          {{ ((stack_env_now.content | default('') | b64decode)
+              | regex_search('(?m)^ITENTIAL_VAULT_ROLE_ID=(.*)$', '\1') | default([''], true)) | first }}
       when: vault_enabled | default(false) | bool
 
     # Node.js needs the lab CA for Vault's certificate; the vendored Compose file already mounts this directory

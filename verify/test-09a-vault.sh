@@ -1,18 +1,18 @@
 #!/usr/bin/env bash
-# PID S8 criterion 2 (amendment 1.34, ADR 0065) on PRODUCTION: Vault on k3s is up, unsealed, reachable only over the
-# lab CA, refuses anyone without a token, and its two AppRoles read only their own paths from only their own hosts.
-# Criterion 3 (the Platform and the Gateway reading through Vault) joins this test at the cut-over (step 5); until
-# then production still holds its credentials and S8.3 is reported as not yet due. The dev tier's full run, E14 and
-# E15 included, is verify/test-09a-vault-dev.sh. Intent: itential/versions.yaml (vault), topology/ipam.yaml.
+# PID S8 criteria 2 and 3 (amendment 1.34, ADR 0065) on PRODUCTION: Vault on k3s is up, unsealed, reachable only over
+# the lab CA, refuses anyone without a token, and its two AppRoles read only their own paths from only their own hosts
+# (S8.2); since the cut-over (step 5) the Platform and the Gateway hold references, not credentials, and every device
+# and host still logs in with the password Vault holds (S8.3). The dev tier's full run, E14 and E15 included, is
+# verify/test-09a-vault-dev.sh. Intent: itential/versions.yaml (vault), topology/ipam.yaml.
 #
-# Administrator checks need a Vault token: VAULT_ADMIN_TOKEN, else the root token in the owner's init file
-# (VAULT_INIT_FILE, until the root token is revoked). Without one they are SKIPPED, never passed; the checks any
-# client can make still run. Writes: short-lived tokens and secret IDs, destroyed again. Never prints a secret.
+# Administrator checks need a Vault token: VAULT_ADMIN_TOKEN, else the owner's administrator login (make vault-login,
+# VAULT_ADMIN_FILE), else the root token in the init file (VAULT_INIT_FILE, until it is revoked). Without one they are
+# SKIPPED, never passed; the checks any client can make still run. Writes: short-lived tokens and secret IDs, destroyed again. Never prints a secret.
 set -uo pipefail
 cd "$(dirname "$0")/.."
 [ -f .env ] || { echo "missing .env"; exit 1; }
 set -a; . ./.env; set +a
-: "${AUTOMATION_PASSWORD:?}"
+: "${AUTOMATION_PASSWORD:?}" "${ITENTIAL_ADMIN_PASSWORD:?}"
 PY=.venv/bin/python
 V=itential/versions.yaml
 CA=docs/lab-root-ca.crt
@@ -31,11 +31,17 @@ echo "# test-09a-vault ${ts}"
 
 export VAULT_ADDR; VAULT_ADDR=$(${PY} -c "import yaml;print(yaml.safe_load(open('$V'))['vault']['prod']['url'])")
 export DEVICE_PASSWORD="$AUTOMATION_PASSWORD"
+export VAULT_TIER=prod
+export PLATFORM_URL="https://$(${PY} -c "import yaml;d=yaml.safe_load(open('itential/ha2/versions.yaml'));print(d['service_name'] + '.' + d['domain'])")"
 # each role's bound addresses from the oracle: versions.yaml names the hosts, topology/ipam.yaml their addresses
 export VAULT_ROLE_CIDRS; VAULT_ROLE_CIDRS=$(${PY} -c "
 import json, yaml
 v = yaml.safe_load(open('$V'))['vault']; ip = {a['hostname']: a['address'] for a in yaml.safe_load(open('topology/ipam.yaml'))['addresses']}
 print(json.dumps({r: [ip[h] + '/32' for h in c['bound_hosts']] for r, c in v['approles'].items()}))")
+ADMIN_FILE=${VAULT_ADMIN_FILE:-$HOME/.config/itential-enterprise-lab/vault-admin-token}
+if [ -z "${VAULT_ADMIN_TOKEN:-}" ] && [ -s "$ADMIN_FILE" ]; then
+  VAULT_ADMIN_TOKEN=$(tr -d '\n' < "$ADMIN_FILE")
+fi
 if [ -z "${VAULT_ADMIN_TOKEN:-}" ] && [ -s "$INIT_FILE" ]; then
   VAULT_ADMIN_TOKEN=$(${PY} -c 'import json,sys;print(json.load(open(sys.argv[1])).get("root_token") or "")' "$INIT_FILE" 2>/dev/null)
 fi
@@ -62,7 +68,12 @@ c_snapshot() {
   echo "newest off-host snapshot: $(basename "$newest"), $(( ($(date +%s) - $(stat -f %m "$newest" 2>/dev/null || stat -c %Y "$newest")) / 3600 )) h old, $(du -h "$newest" | cut -f1)"
 }
 check "S8.2f an off-host Raft snapshot exists on this workstation (ADR 0065 decision 8)" c_snapshot
-echo "NOTE  S8.3 (the Platform and the Gateway reading through Vault) is due at the cut-over, not before"
+# --- S8.3: the Platform and the Gateway read through Vault (since the cut-over) ----------------------------------
+check "S8.3a no credential on the Platform: lab and lab-hosts nodes, the NetBox adapter and integrations carry Vault references" vc references
+check "S8.3b the Gateway's Vault provider and aliases match the oracle (export compared)" vc gateway
+check "S8.3c the NetBox adapter reads NetBox with the token the Platform resolves from Vault" vc platform-read
+check "S8.3d every lab device logs in with its password resolved from Vault (show clock)" vc devices
+check "S8.3e every lab host logs in with its password resolved from Vault (hostname)" vc hosts
 
 echo
 echo "passed=${pass} failed=${fail} skipped=${skipped}"

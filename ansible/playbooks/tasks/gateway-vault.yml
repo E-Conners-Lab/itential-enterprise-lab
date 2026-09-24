@@ -19,11 +19,30 @@
   changed_when: false
   no_log: true
 
+# the export also carries `users` with a password field: registered no_log, and never sent back
+- name: Gateway configuration now
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/gateway_manager/v1/gateways/{{ stack.gateway5_cluster_id }}/configuration/export"
+    headers: {Cookie: "{{ login.cookies_string }}"}
+  register: gw_export
+  no_log: true
+
+- name: What the Gateway holds for this provider
+  ansible.builtin.set_fact:
+    gw_vault_have:
+      secret-providers: >-
+        {{ gw_export.json['secret-providers'] | default([], true)
+           | selectattr('name', 'equalto', vault.gateway_provider) | list }}
+      secrets: >-
+        {{ gw_export.json.secrets | default([], true)
+           | selectattr('provider', 'equalto', vault.gateway_provider) | sort(attribute='name') | list }}
+
 - name: The Gateway's AppRole credentials
   ansible.builtin.include_tasks: vault-secret-id.yml
   vars:
     vault_reader: itential-gateway
     vault_current_secret_id: "{{ gw_secret_now.stdout | trim }}"
+    vault_current_role_id: "{{ (gw_vault_have['secret-providers'] | first | default({}))['role-id'] | default('') }}"
 
 - name: Secret-ID file in the server's volume, readable by the Gateway user only
   ansible.builtin.command:
@@ -56,24 +75,6 @@
         {%- set _ = out.append({'name': name, 'provider': vault.gateway_provider, 'secret': ref.path, 'key': ref.key}) -%}
       {%- endfor -%}
       {{ out }}
-
-# the export also carries `users` with a password field: registered no_log, and never sent back
-- name: Gateway configuration now
-  ansible.builtin.uri:
-    url: "{{ platform_local }}/gateway_manager/v1/gateways/{{ stack.gateway5_cluster_id }}/configuration/export"
-    headers: {Cookie: "{{ login.cookies_string }}"}
-  register: gw_export
-  no_log: true
-
-- name: What the Gateway holds for this provider
-  ansible.builtin.set_fact:
-    gw_vault_have:
-      secret-providers: >-
-        {{ gw_export.json['secret-providers'] | default([], true)
-           | selectattr('name', 'equalto', vault.gateway_provider) | list }}
-      secrets: >-
-        {{ gw_export.json.secrets | default([], true)
-           | selectattr('provider', 'equalto', vault.gateway_provider) | sort(attribute='name') | list }}
 
 - name: Import the provider and aliases (replaces them by name)
   ansible.builtin.uri:
