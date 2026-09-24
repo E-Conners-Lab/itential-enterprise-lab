@@ -58,7 +58,7 @@ def test_a_name_is_a_verb_and_an_object_in_title_case(name: str) -> None:
 def test_a_name_carries_no_prefix_and_no_version(name: str) -> None:
     assert not name.lower().startswith("wf"), f"{name!r}: no wf prefix"
     # a version number, not the word: "Get Device Software Version" is about the device's software
-    assert not re.search(r"\bv\d+\b| \d+$", name, re.I), f"{name!r}: the version lives in git, not the name"
+    assert not re.search(r"\bv\d+\b| \d+$", name, re.IGNORECASE), f"{name!r}: the version lives in git, not the name"
 
 
 @pytest.mark.parametrize("file", sorted(_docs()))
@@ -77,7 +77,7 @@ def test_a_retired_name_is_never_reused() -> None:
 def test_a_retired_name_appears_only_in_the_record() -> None:
     """The old names stay in history (ADRs, handoffs, verify logs) and in the retired list the play deletes."""
     pattern = "|".join(re.escape(n) for n in RETIRED)
-    out = subprocess.run(["git", "grep", "-l", "-E", pattern], cwd=ROOT, capture_output=True, text=True).stdout.split()
+    out = subprocess.run(["git", "grep", "-l", "-E", pattern], cwd=ROOT, capture_output=True, text=True, check=False).stdout.split()
     kept = ("itential/versions.yaml", "docs/PID.md", "tests/test_workflow_names.py")
     stray = [f for f in out if not f.startswith(HISTORY) and f not in kept]
     assert not stray, f"retired workflow names still referenced in {stray}"
