@@ -393,6 +393,82 @@
         "decorators": []
       }
     },
+    "3c": {
+      "name": "evaluation",
+      "canvasName": "evaluation",
+      "summary": "did the Gateway run the command?",
+      "description": "did the Gateway run the command?",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 1650,
+        "y": -200
+      },
+      "variables": {
+        "incoming": {
+          "all_true_flag": true,
+          "evaluation_groups": [
+            {
+              "all_true_flag": true,
+              "evaluations": [
+                {
+                  "query": "status",
+                  "operand_1": {
+                    "variable": "result",
+                    "task": "3a"
+                  },
+                  "operator": "==",
+                  "operand_2": {
+                    "variable": "completed",
+                    "task": "static"
+                  }
+                }
+              ]
+            }
+          ],
+          "options": {}
+        },
+        "outgoing": {
+          "return_value": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "5a": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "the Gateway could not run the command",
+      "description": "the Gateway could not run the command",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 1650,
+        "y": -400
+      },
+      "variables": {
+        "incoming": {
+          "input": "the command did not run on any device (credential or Gateway error); report this and do not retry",
+          "outputType": "string",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.device_error"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
     "workflow_start": {
       "name": "workflow_start",
       "summary": "workflow_start",
@@ -462,8 +538,22 @@
       }
     },
     "3a": {
+      "3c": {
+        "state": "success",
+        "type": "standard"
+      },
+      "5a": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "3c": {
       "3b": {
         "state": "success",
+        "type": "standard"
+      },
+      "5a": {
+        "state": "failure",
         "type": "standard"
       }
     },
@@ -492,6 +582,12 @@
       }
     },
     "4d": {
+      "workflow_end": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "5a": {
       "workflow_end": {
         "state": "success",
         "type": "standard"
@@ -528,6 +624,9 @@
       },
       "parser_errors": {
         "type": "object"
+      },
+      "device_error": {
+        "type": "string"
       }
     }
   },

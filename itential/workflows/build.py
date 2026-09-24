@@ -269,7 +269,19 @@ def chain(*ids: str) -> dict:
 
 def show_command_transitions() -> dict:
     """chain() plus the one failure edge: sendCommand -> the message task -> workflow_end."""
-    tr = chain("0a", "0b", "1a", "1b", "2a", "3a", "3b", "3c", "4a", "4b", "4c", "4d")
+    tr = chain("0a", "0b", "1a", "1b", "2a", "2b", "3a", "3b", "3c", "4a", "4b", "4c", "4d")
+    # ADR 0066: a Gateway JSON-RPC error (a sealed Vault) finishes sendCommand `success`; 2b checks the result
+    # and a failure ends the job through 5b (the error edge below only ever caught a THROWN task)
+    tr["2b"]["5b"] = {"state": "failure", "type": "standard"}
+    tr["5b"] = t("", "workflow_end")
+    # The device HAS answered by 3a (raw is already a job variable). The parser is chosen from the node's NetBox
+    # platform: a node NetBox does not have (every dev clab node, ADR 0063), a NetBox read that throws (NetBox down, or
+    # its token unreadable with Vault sealed, ADR 0066) or a parser that fails on the runner used to dead-end the job at
+    # 3c/4a and lose the answer. Each now ends with the raw output and the reason in parse_error (measured on dev
+    # 2026-09-23: "Both str and newSubstr parameters must be of type string" at 3c).
+    for tid in ("3a", "3b", "3c", "4a"):
+        tr[tid]["5c"] = {"state": "error", "type": "standard"}
+    tr["5c"] = t("", "workflow_end")
     # "error", not "failure": a Gateway task that 404s lands in state `error`, and a `failure` edge does
     # not fire for it - the job reported "5a could have led to the workflow end task, but did not" while
     # the failure edge sat right there (measured 2026-09-11). branch_vlan already guards its sendConfig
@@ -317,6 +329,21 @@ def show_version() -> dict:
         ),
     }
     tasks["0a"], tasks["0b"] = selector("$var.job.device", x=-300)
+    # ADR 0066: with Vault sealed the Gateway answers a JSON-RPC error ("Vault is sealed") and sendCommand still
+    # finishes `success`, so the job used to end `complete` with the error object as its "show version" - a silent
+    # failure (measured on dev 2026-09-23). The result is checked, and a failure ends the job with a message.
+    tasks["2a"] = evaluate("did the device answer?", "1a", "result", "result.results[0].success", "==", True, x=900)
+    tasks["2b"] = note(
+        "the device did not answer",
+        "the command did not run on the device (credential or connection error); report this and do not retry",
+        "device_error",
+        x=900,
+        y=-300,
+    )
+    tr = chain("0a", "0b", "1a", "2a")
+    tr["1a"]["2b"] = {"state": "error", "type": "standard"}  # a thrown Gateway error (404 unknown node)
+    tr["2a"]["2b"] = {"state": "failure", "type": "standard"}
+    tr["2b"] = t("", "workflow_end")
     return workflow(
         "wf-show-version-v1",
         "Runs 'show version' on one inventory node through Gateway 5 and returns the raw output (PID S4.3)",
@@ -328,8 +355,8 @@ def show_version() -> dict:
             }
         },
         tasks,
-        chain("0a", "0b", "1a"),
-        {"show_version": {"type": "object"}},
+        tr,
+        {"show_version": {"type": "object"}, "device_error": {"type": "string"}},
     )
 
 
@@ -1013,6 +1040,48 @@ def branch_vlan() -> dict:
             x=6300,
             y=-200,
         ),
+        # ADR 0066 (owner decision 2026-09-24): send-config reports success: true for lines the switch REFUSES (measured),
+        # so the switch's reply is read on the runner before NetBox is told the VLAN is active - as in wf-config-push-v1
+        "5e": jq("the switch's reply", "$var.5c.result", "result.results[0].output", x=6350, y=-400),
+        "5f": task(
+            "setObjectKey",
+            "WorkFlowEngine",
+            "reply for the runner",
+            {"obj": {}, "path": ["output"], "value": "$var.5e.return_data"},
+            {"object": None},
+            display="Tools",
+            x=6400,
+            y=-400,
+        ),
+        "50": task(
+            "runCode",
+            "GatewayManager",
+            "did the switch refuse a line? (Python on the runner)",
+            {
+                "clusterId": CLUSTER,
+                "language": "python",
+                "code": REPLY_CODE,
+                "data": "$var.5f.object",
+                "safety": {"timeout": 30},
+                "packages": [],
+            },
+            {"result": None},
+            x=6450,
+            y=-400,
+        ),
+        "51": evaluate("every line accepted?", "50", "result", "stdout_json.rejected", "==", False, x=6500, y=-400),
+        # a refusal: the lines are named, and the NetBox reservation is rolled back (8a). `vlan <vid>` may have been
+        # accepted before `name` was refused, so the switch can hold the VLAN - the message says to check it.
+        "52": jq("the refused lines", "$var.50.result", "stdout_json.message", x=6500, y=-600, to_job="device_error"),
+        # the reply could not be read: the push most likely worked (the Gateway said so), so NetBox is NOT rolled back;
+        # the job ends in error by the workflow's design, with the reason
+        "8c": note(
+            "the switch's reply could not be checked",
+            "the VLAN was sent but the switch's reply could not be checked; NetBox still shows it reserved - check the switch",
+            "device_error",
+            x=6450,
+            y=-700,
+        ),
         "6a": nbi(
             "ipam_vlans_partial_update",
             "NetBox VLAN active",
@@ -1154,6 +1223,11 @@ def branch_vlan() -> dict:
         ["e1", "e2", "e3", "e4", "e5", "e6"], ["e2", "e3", "e4", "e5", "e6", "a3"]
     ):
         tr[a] = t("", b)
+    # ADR 0066 (owner decision 2026-09-23): e6 is the one external call between the NetBox reservation (3d) and the
+    # push (5c). If it throws - ServiceNow down, or its credential unreadable with Vault sealed - the reservation is
+    # rolled back like a reject instead of left behind by a dead-end. Calls before 3d have reserved nothing; calls
+    # after 5c must NOT roll back (the VLAN is live on the switch). Both keep the designed error-end.
+    tr["e6"]["8a"] = {"state": "error", "type": "standard"}
     form_chain = ["a3", *form_ids, "4a"]
     for a, b in zip(form_chain, form_chain[1:]):
         tr[a] = t("", b)
@@ -1173,9 +1247,15 @@ def branch_vlan() -> dict:
         "8a": {"state": "error", "type": "standard"},
     }
     tr["5d"] = {
-        "6a": {"state": "success", "type": "standard"},
+        "5e": {"state": "success", "type": "standard"},
         "8a": {"state": "failure", "type": "standard"},
     }
+    tr["5e"] = {"5f": {"state": "success", "type": "standard"}, "8c": {"state": "error", "type": "standard"}}
+    tr["5f"] = {"50": {"state": "success", "type": "standard"}, "8c": {"state": "error", "type": "standard"}}
+    tr["50"] = {"51": {"state": "success", "type": "standard"}, "8c": {"state": "error", "type": "standard"}}
+    tr["51"] = {"6a": {"state": "success", "type": "standard"}, "52": {"state": "failure", "type": "standard"}}
+    tr["52"] = t("", "8a")
+    tr["8c"] = {}  # the workflow's designed error-end, without a rollback: the VLAN is probably live
     tr["f0"] = {
         "f1": {"state": "success", "type": "standard"},
         "7b": {"state": "failure", "type": "standard"},
@@ -1356,6 +1436,21 @@ def show_command() -> dict:
     # calling agent session never gets a result back - it hangs for ever, holding Ollama's one slot
     # (measured 2026-09-11: device-ops-local invented "R1"; the job errored in 69 s and the session
     # was still RUNNING 18 minutes later). This ends the job with a message the agent can report.
+    tasks["2b"] = evaluate("did the device answer?", "2a", "result", "result.results[0].success", "==", True, x=450)
+    tasks["5c"] = note(
+        "raw output only: no parser applied",
+        "no parser applied: the device's platform could not be read from NetBox (or the parse failed); the raw output is complete",
+        "parse_error",
+        x=1500,
+        y=-300,
+    )
+    tasks["5b"] = note(
+        "the device did not answer",
+        "the command did not run on the device (credential or connection error); report this and do not retry",
+        "device_error",
+        x=900,
+        y=-300,
+    )
     tasks["5a"] = note(
         "the device is not in the inventory",
         "the device is not in the Inventory Manager inventory 'lab'; check the name and do not retry",
@@ -1533,6 +1628,21 @@ def show_all() -> dict:
             to_job="parser_errors",
         ),
     }
+    # ADR 0066: the whole call failing (a sealed Vault: the Gateway answers a JSON-RPC error and sendCommand
+    # still finishes `success`) used to reach the parser as if devices had answered. The envelope's status is checked;
+    # a single device failing is still per-device data for the parser, as before.
+    tasks["3c"] = evaluate("did the Gateway run the command?", "3a", "result", "status", "==", "completed", x=1650, y=-200)
+    tasks["5a"] = note(
+        "the Gateway could not run the command",
+        "the command did not run on any device (credential or Gateway error); report this and do not retry",
+        "device_error",
+        x=1650,
+        y=-400,
+    )
+    tr = chain("1a", "1b", "1c", "1d", "1e", "2a", "2b", "3a", "3c", "3b", "4a", "4b", "4c", "4d")
+    tr["3a"]["5a"] = {"state": "error", "type": "standard"}
+    tr["3c"]["5a"] = {"state": "failure", "type": "standard"}
+    tr["5a"] = t("", "workflow_end")
     return workflow(
         "wf-show-all-v1",
         "Runs one show command on every lab device in one Gateway 5 call and returns the parsed result per device "
@@ -1545,14 +1655,13 @@ def show_all() -> dict:
             }
         },
         tasks,
-        chain(
-            "1a", "1b", "1c", "1d", "1e", "2a", "2b", "3a", "3b", "4a", "4b", "4c", "4d"
-        ),
+        tr,
         {
             "devices": {"type": "array"},
             "devices_checked": {"type": "number"},
             "results": {"type": "object"},
             "parser_errors": {"type": "object"},
+            "device_error": {"type": "string"},
         },
     )
 
@@ -1563,6 +1672,27 @@ def show_all() -> dict:
 # configuration with "write memory" (IOS-XE and EOS both accept it). A rejection ends the job in
 # error with nothing touched. The compliance/remediation agents get this workflow as their only
 # write tool; Golden Config never remediates on its own (ADR 0040).
+# Measured 2026-09-24: Gateway 5 send-config reports success: true for lines the device REJECTS (IOS-XE answered
+# "% Invalid input detected" inside `output`). IOS-XE and EOS mark a refused line with a line starting "% " naming the
+# error; warnings ("% Warning") are not refusals. This reads the device's reply on the runner (ADR 0066).
+REPLY_CODE = """import json, re, sys
+d = json.loads(sys.stdin.read() or "{}")
+lines = str(d.get("output") or "").splitlines()
+refusal = re.compile(r"^% ?(Invalid|Incomplete|Ambiguous|Unknown|Unrecognized|Bad|Error)", re.I)
+rejections = []
+for i, ln in enumerate(lines):
+    if refusal.match(ln.strip()):
+        cmd = next((l.split("#", 1)[1].strip() for l in reversed(lines[:i]) if "(config" in l and "#" in l), "")
+        rejections.append({"command": cmd, "error": ln.strip()})
+msg = ""
+if rejections:
+    msg = ("the device rejected %d line(s): " % len(rejections)
+           + "; ".join("%s (%s)" % (r["command"], r["error"]) for r in rejections)
+           + ". Lines it accepted before are in the running configuration and were NOT saved")
+print(json.dumps({"rejected": bool(rejections), "rejections": rejections, "message": msg}))
+"""
+
+
 def config_push() -> dict:
     tasks = {
         "1a": replace(
@@ -1625,6 +1755,44 @@ def config_push() -> dict:
         ),
         "5a": flag("changed = true", "true", "changed", x=1800),
         "9a": flag("changed = false (rejected)", "false", "changed", x=900, y=400),
+        # the device's own reply, read for refused lines before anything is saved
+        "3c": jq("the device's reply", "$var.3a.result", "result.results[0].output", x=1250, y=-200),
+        "3d": task(
+            "setObjectKey",
+            "WorkFlowEngine",
+            "reply for the runner",
+            {"obj": {}, "path": ["output"], "value": "$var.3c.return_data"},
+            {"object": None},
+            display="Tools",
+            x=1300,
+            y=-200,
+        ),
+        "3e": task(
+            "runCode",
+            "GatewayManager",
+            "did the device refuse a line? (Python on the runner)",
+            {
+                "clusterId": CLUSTER,
+                "language": "python",
+                "code": REPLY_CODE,
+                "data": "$var.3d.object",
+                "safety": {"timeout": 30},
+                "packages": [],
+            },
+            {"result": None},
+            x=1350,
+            y=-200,
+        ),
+        "3f": evaluate("every line accepted?", "3e", "result", "stdout_json.rejected", "==", False, x=1400, y=-200),
+        "8c": jq("the refused lines", "$var.3e.result", "stdout_json.message", x=1400, y=-500, to_job="device_error"),
+        "8d": flag("changed = false (lines refused)", "false", "changed", x=1700, y=-500),
+        "8e": note(
+            "the device's reply could not be checked",
+            "the lines were sent but the device's reply could not be checked; nothing was saved - check the device",
+            "device_error",
+            x=1400,
+            y=-700,
+        ),
     }
     tasks["0a"], tasks["0b"] = selector("$var.job.device", x=-600)
     tr = chain("0a", "0b", "1a", "1b", "2a", "3a", "3b", "4a", "5a")
@@ -1632,9 +1800,22 @@ def config_push() -> dict:
         "3a": {"state": "success", "type": "standard"},
         "9a": {"state": "failure", "type": "standard"},
     }
+    # "config applied?" false - the Gateway answered an error instead of running the lines (ADR 0066: Vault
+    # sealed) - used to have no transition, so the job dead-ended and a calling agent hung (ADR 0059). Owner decision
+    # 2026-09-23: it now ends cleanly with changed = false and the reason. NOT detected (measured 2026-09-24): lines the
+    # DEVICE rejects - send-config still reports success: true while IOS-XE answers "% Invalid input detected".
     tr["3b"] = {
-        "4a": {"state": "success", "type": "standard"}
-    }  # failure: no transition, the job ends in error
+        "3c": {"state": "success", "type": "standard"},
+        "8a": {"state": "failure", "type": "standard"},
+    }
+    # ADR 0066 (owner decision 2026-09-24): a refused line skips the save and ends with the refusal in device_error
+    tr["3c"] = {"3d": {"state": "success", "type": "standard"}, "8e": {"state": "error", "type": "standard"}}
+    tr["3d"] = {"3e": {"state": "success", "type": "standard"}, "8e": {"state": "error", "type": "standard"}}
+    tr["3e"] = {"3f": {"state": "success", "type": "standard"}, "8e": {"state": "error", "type": "standard"}}
+    tr["3f"] = {"4a": {"state": "success", "type": "standard"}, "8c": {"state": "failure", "type": "standard"}}
+    tr["8c"] = t("", "8d")
+    tr["8d"] = t("", "workflow_end")
+    tr["8e"] = t("", "8b")
     tr[
         "9a"
     ] = {}  # rejected: no transition to the end, the job ends in error with nothing pushed
@@ -1665,6 +1846,20 @@ def config_push() -> dict:
     )
     tr["4a"]["7a"] = {"state": "error", "type": "standard"}
     tr["7a"] = t("", "5a")
+    # ADR 0066: the save's result is checked as well - a Gateway error answer finishes sendCommand `success`
+    tasks["4b"] = evaluate("saved?", "4a", "result", "result.results[0].success", "==", True, x=1650, y=-200)
+    tr["4a"] = {"4b": {"state": "success", "type": "standard"}, "7a": {"state": "error", "type": "standard"}}
+    tr["4b"] = {"5a": {"state": "success", "type": "standard"}, "7a": {"state": "failure", "type": "standard"}}
+    tasks["8a"] = note(
+        "the configuration was not applied",
+        "the configuration was not applied (the Gateway could not run it, e.g. its credential could not be read); nothing changed",
+        "device_error",
+        x=1200,
+        y=-600,
+    )
+    tasks["8b"] = flag("changed = false (not applied)", "false", "changed", x=1500, y=-600)
+    tr["8a"] = t("", "8b")
+    tr["8b"] = t("", "workflow_end")
     return workflow(
         "wf-config-push-v1",
         "Pushes operator-supplied configuration lines to one inventory node through Gateway 5 after a Work Center "
@@ -2070,7 +2265,14 @@ for r in reports:
                     "warnings": t.get("warnings", 0), "passes": t.get("passes", 0), "issues": issues})
 devices.sort(key=lambda x: str(x["device"]))
 bad = [x["device"] for x in devices if x["errors"] or x["warnings"]]
-print(json.dumps({"compliant": not bad, "devices_checked": len(devices), "devices_with_issues": bad, "devices": devices}))
+# A device with nothing evaluated (no pass, error or warning - its configuration could not be read, e.g. a sealed
+# Vault) was not checked, and no device at all is no answer: neither may ever read as compliant (ADR 0066).
+not_checked = [x["device"] for x in devices if not (x["passes"] or x["errors"] or x["warnings"])]
+out = {"compliant": bool(devices) and not bad and not not_checked, "devices_checked": len(devices) - len(not_checked),
+       "devices_with_issues": bad, "devices_not_checked": not_checked, "devices": devices}
+if not devices:
+    out["error"] = "no device report in this run: compliance could not be evaluated"
+print(json.dumps(out))
 """
 
 
@@ -2283,10 +2485,34 @@ def compliance_report() -> dict:
         tr[st] = t("", ev)
         tr[ev] = {
             bt: {"state": "success", "type": "standard"}
-        }  # failure: the next attempt; after the last the job ends in error
+        }  # failure: the next attempt; after the last, e2 ends the job with a reason
         tr[bt] = t("", "6a")
     for (_, _, _, ev, _, _), nxt in zip(attempts, attempts[1:]):
         tr[ev][nxt[0]] = {"state": "failure", "type": "standard"}
+    # ADR 0059/0066 (owner decision 2026-09-23): a read-only agent tool ends cleanly with a reason. A Configuration
+    # Manager or runner call that throws, and a run still not complete after the last attempt, used to dead-end the
+    # job ("the job ends in error"), which hangs the calling agent.
+    tasks["e1"] = note(
+        "the compliance report could not be produced",
+        "the compliance report could not be produced (a Configuration Manager or runner call failed); report this and do not retry",
+        "report_error",
+        x=2400,
+        y=400,
+    )
+    tasks["e2"] = note(
+        "the run did not finish in time",
+        "the compliance run did not finish within the wait; it may still complete - read it later with run=false",
+        "report_error",
+        x=4100,
+        y=-700,
+    )
+    # 6c/6d are queries that refuse a null (pass_on_null false) and 6e wraps the reports: a runner reply that is not the
+    # expected JSON would make them throw after the calls themselves succeeded, so they end through e1 as well
+    for tid in ("1a", "2a", "4a", "4b", "6a", "6b", "6c", "6d", "6e", *(a[1] for a in attempts)):
+        tr[tid]["e1"] = {"state": "error", "type": "standard"}
+    tr[attempts[-1][3]]["e2"] = {"state": "failure", "type": "standard"}
+    tr["e1"] = t("", "workflow_end")
+    tr["e2"] = t("", "workflow_end")
     return workflow(
         "wf-compliance-report-v1",
         "Runs (run=true) or reads (run=false) the %s compliance plan and returns one compact summary per device: "
@@ -2308,6 +2534,7 @@ def compliance_report() -> dict:
             "batch_id": {"type": "string"},
             "summary": {"type": "object"},
             "compliant": {"type": "boolean"},
+            "report_error": {"type": "string"},
         },
     )
 
@@ -2412,7 +2639,20 @@ def netbox_devices() -> dict:
         ),
         "2b": jq("summary", "$var.2a.result", "stdout_json", x=2100, to_job="summary"),
         "2c": jq("count", "$var.2a.result", "stdout_json.count", x=2400, to_job="count"),
+        # ADR 0059/0066: a NetBox read that throws (a 403, or the Platform unable to resolve the token because
+        # Vault is sealed) took state `error` with no edge out, and the job dead-ended "2c could have led to the
+        # workflow end task" (measured on dev 2026-09-23) - the hang that holds an agent twin for ever.
+        "3a": note(
+            "NetBox could not be read",
+            "NetBox could not be read (credential or connection); report this and do not retry",
+            "netbox_error",
+            x=300,
+            y=-300,
+        ),
     }
+    transitions = chain("1a", "1b", "1c", "1d", "2a", "2b", "2c")
+    transitions["1a"]["3a"] = {"state": "error", "type": "standard"}
+    transitions["3a"] = t("", "workflow_end")
     return workflow(
         "wf-netbox-devices-v1",
         "Lists NetBox devices reduced to name, site, role, platform, status and primary_ip4, "
@@ -2434,8 +2674,8 @@ def netbox_devices() -> dict:
             },
         },
         tasks,
-        chain("1a", "1b", "1c", "1d", "2a", "2b", "2c"),
-        {"summary": {"type": "object"}, "count": {"type": "number"}},
+        transitions,
+        {"summary": {"type": "object"}, "count": {"type": "number"}, "netbox_error": {"type": "string"}},
     )
 
 

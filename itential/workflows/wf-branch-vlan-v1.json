@@ -1553,6 +1553,205 @@
         "decorators": []
       }
     },
+    "5e": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "the switch's reply",
+      "description": "the switch's reply",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 6350,
+        "y": -400
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "result.results[0].output",
+          "obj": "$var.5c.result"
+        },
+        "outgoing": {
+          "return_data": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "5f": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "reply for the runner",
+      "description": "reply for the runner",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 6400,
+        "y": -400
+      },
+      "variables": {
+        "incoming": {
+          "obj": {},
+          "path": [
+            "output"
+          ],
+          "value": "$var.5e.return_data"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "50": {
+      "name": "runCode",
+      "canvasName": "runCode",
+      "summary": "did the switch refuse a line? (Python on the runner)",
+      "description": "did the switch refuse a line? (Python on the runner)",
+      "location": "Application",
+      "locationType": null,
+      "app": "GatewayManager",
+      "type": "automatic",
+      "displayName": "GatewayManager",
+      "groups": [],
+      "nodeLocation": {
+        "x": 6450,
+        "y": -400
+      },
+      "variables": {
+        "incoming": {
+          "clusterId": "lab",
+          "language": "python",
+          "code": "import json, re, sys\nd = json.loads(sys.stdin.read() or \"{}\")\nlines = str(d.get(\"output\") or \"\").splitlines()\nrefusal = re.compile(r\"^% ?(Invalid|Incomplete|Ambiguous|Unknown|Unrecognized|Bad|Error)\", re.I)\nrejections = []\nfor i, ln in enumerate(lines):\n    if refusal.match(ln.strip()):\n        cmd = next((l.split(\"#\", 1)[1].strip() for l in reversed(lines[:i]) if \"(config\" in l and \"#\" in l), \"\")\n        rejections.append({\"command\": cmd, \"error\": ln.strip()})\nmsg = \"\"\nif rejections:\n    msg = (\"the device rejected %d line(s): \" % len(rejections)\n           + \"; \".join(\"%s (%s)\" % (r[\"command\"], r[\"error\"]) for r in rejections)\n           + \". Lines it accepted before are in the running configuration and were NOT saved\")\nprint(json.dumps({\"rejected\": bool(rejections), \"rejections\": rejections, \"message\": msg}))\n",
+          "data": "$var.5f.object",
+          "safety": {
+            "timeout": 30
+          },
+          "packages": []
+        },
+        "outgoing": {
+          "result": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "51": {
+      "name": "evaluation",
+      "canvasName": "evaluation",
+      "summary": "every line accepted?",
+      "description": "every line accepted?",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 6500,
+        "y": -400
+      },
+      "variables": {
+        "incoming": {
+          "all_true_flag": true,
+          "evaluation_groups": [
+            {
+              "all_true_flag": true,
+              "evaluations": [
+                {
+                  "query": "stdout_json.rejected",
+                  "operand_1": {
+                    "variable": "result",
+                    "task": "50"
+                  },
+                  "operator": "==",
+                  "operand_2": {
+                    "variable": false,
+                    "task": "static"
+                  }
+                }
+              ]
+            }
+          ],
+          "options": {}
+        },
+        "outgoing": {
+          "return_value": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "52": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "the refused lines",
+      "description": "the refused lines",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 6500,
+        "y": -600
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "stdout_json.message",
+          "obj": "$var.50.result"
+        },
+        "outgoing": {
+          "return_data": "$var.job.device_error"
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "8c": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "the switch's reply could not be checked",
+      "description": "the switch's reply could not be checked",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 6450,
+        "y": -700
+      },
+      "variables": {
+        "incoming": {
+          "input": "the VLAN was sent but the switch's reply could not be checked; NetBox still shows it reserved - check the switch",
+          "outputType": "string",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.device_error"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
     "6a": {
       "name": "ipam_vlans_partial_update",
       "canvasName": "ipam_vlans_partial_update",
@@ -2848,6 +3047,10 @@
       "a3": {
         "state": "success",
         "type": "standard"
+      },
+      "8a": {
+        "state": "error",
+        "type": "standard"
       }
     },
     "a3": {
@@ -2941,7 +3144,7 @@
       }
     },
     "5d": {
-      "6a": {
+      "5e": {
         "state": "success",
         "type": "standard"
       },
@@ -3010,6 +3213,53 @@
         "type": "standard"
       }
     },
+    "5e": {
+      "5f": {
+        "state": "success",
+        "type": "standard"
+      },
+      "8c": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "5f": {
+      "50": {
+        "state": "success",
+        "type": "standard"
+      },
+      "8c": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "50": {
+      "51": {
+        "state": "success",
+        "type": "standard"
+      },
+      "8c": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "51": {
+      "6a": {
+        "state": "success",
+        "type": "standard"
+      },
+      "52": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "52": {
+      "8a": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "8c": {},
     "f0": {
       "f1": {
         "state": "success",
