@@ -6,6 +6,9 @@
 #           your own terminal, not through Claude, so neither value enters a transcript. Move the unseal key to your
 #           password manager; `make vault-config` uses the root token and then revokes it.
 #   unseal  asks for the unseal key without echoing it (or reads it from VAULT_INIT_FILE with FROM_FILE=1)
+#   revoke-root  revokes the root token in VAULT_INIT_FILE, removes it from the file and proves it is refused
+#           (ADR 0065: used once to configure Vault). Later admin work gets a fresh one with `vault operator
+#           generate-root` and the unseal key, and revokes it again.
 #   snapshot  a Raft snapshot to VAULT_SNAPSHOT_DIR (default ~/Backups/itential-enterprise-lab/vault), mode 600,
 #           outside the repo (ADR 0065 decision 8). Encrypted by Vault's barrier: useless without the unseal key,
 #           which is kept apart from it. Token: VAULT_TOKEN, else the root token in VAULT_INIT_FILE.
@@ -55,5 +58,17 @@ case "${1:-}" in
     [ "$code" = 200 ] && [ -s "$out" ] || { rm -f "$out"; echo "snapshot failed (HTTP ${code})"; exit 1; }
     echo "snapshot: $out ($(du -h "$out" | cut -f1), mode $(stat -f %Lp "$out" 2>/dev/null || stat -c %a "$out"))"
     ;;
-  *) echo "usage: $0 status|init|unseal|snapshot"; exit 2 ;;
+  revoke-root)
+    token=$(${PY} -c 'import sys,json;print(json.load(open(sys.argv[1])).get("root_token") or "")' "$INIT_FILE" 2>/dev/null)
+    [ -n "$token" ] || { echo "no root token in $INIT_FILE - nothing to revoke"; exit 1; }
+    hdr() { printf 'X-Vault-Token: %s\n' "$token"; }
+    code=$(curl -s -m 30 --cacert "$CA" -H @<(hdr) -X POST -o /dev/null -w '%{http_code}' "${ADDR}/v1/auth/token/revoke-self")
+    [ "$code" = 204 ] || { echo "revoke failed (HTTP ${code}) - the root token is unchanged"; exit 1; }
+    after=$(curl -s -m 30 --cacert "$CA" -H @<(hdr) -o /dev/null -w '%{http_code}' "${ADDR}/v1/auth/token/lookup-self")
+    unset token
+    ${PY} -c 'import sys,json,os;p=sys.argv[1];d=json.load(open(p));d.pop("root_token",None);f=os.open(p+".tmp",os.O_WRONLY|os.O_CREAT|os.O_TRUNC,0o600);os.write(f,json.dumps(d,indent=2).encode());os.close(f);os.replace(p+".tmp",p)' "$INIT_FILE"
+    echo "root token revoked (a lookup with it now answers HTTP ${after}) and removed from $INIT_FILE"
+    [ "$after" = 403 ]
+    ;;
+  *) echo "usage: $0 status|init|unseal|snapshot|revoke-root"; exit 2 ;;
 esac

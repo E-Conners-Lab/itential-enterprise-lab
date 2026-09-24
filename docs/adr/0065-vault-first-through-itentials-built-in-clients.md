@@ -249,3 +249,33 @@ published on the same host, so the containers' own addresses never reach Vault. 
 - Device configs, and Configuration Manager's copies of them, still carry the automation account's **hash** (Arista
   sha512-crypt, IOS-XE type 9). Vault moves the password out of the automation platform, not out of the device.
   Removing the local account needs central device login (TACACS+), which belongs to the identity phase.
+
+## Production Vault, step 3 (2026-09-24)
+
+`make vault` installed Vault 2.0.4 (chart 0.34.1) in namespace `vault`: one server with Raft on a 2 Gi Longhorn
+volume, a lab-CA certificate from cert-manager for `vault.lab.internal`, the in-cluster names and 10.100.0.41, and a
+MetalLB LoadBalancer on 10.100.0.41 with `externalTrafficPolicy: Local` (`k8s/vault/values.yaml`). The owner ran
+`make vault-init` (one key share, written with the root token to a mode-600 file outside the repo, nothing printed)
+and `make vault-unseal` in their own terminal. Measured and decided along the way:
+
+- **The readiness probe accepts sealed and uninitialised** (`/v1/sys/health?standbyok=true&sealedcode=204&uninitcode=204`).
+  The chart's default (`vault status`) takes a sealed pod out of the Service, and a sealed Vault behind a VIP with
+  no endpoints cannot be unsealed through the VIP.
+- **The binding is proven on the real path, not with an audit device** (`make vault-config`, `vault-prod-config.yml`):
+  a one-use, five-minute secret ID per reader host logs in from that host, and one per role from the workstation is
+  refused. Result: iap-01 and iap-02 accepted for `itential-platform`, iag-01 for `itential-gateway`, the
+  workstation refused for both. With `externalTrafficPolicy: Local` the hosts' own addresses reach Vault.
+- **A refused login still spends a one-use secret ID**; destroying it afterwards answers 500 "failed to find accessor
+  entry", which the clean-up treats as the outcome wanted.
+- **The root token was used once and revoked** (`make vault-revoke-root`): a lookup with it answers 403 and it is gone
+  from the init file, which now holds only the unseal key. Administrator work (the cut-over's secret IDs, the
+  verify's policy, binding and seed checks) takes a fresh token from `vault operator generate-root` and the unseal
+  key; without one those checks skip, never pass.
+- **Snapshots**: `make vault-snapshot` writes `~/Backups/itential-enterprise-lab/vault/vault-raft-<ts>.snap` (mode 600,
+  36 KB), and `make vault-config` takes one at the end.
+- **Sealed signal**: a web check on `/v1/sys/health` (200 only when unsealed) feeds the blackbox-http probe and the
+  Zabbix `lab-web-ui` scenario; `VaultSealed` fires after a minute (critical), notifying nobody until S7 has a
+  receiver. `probe_success{ui="vault"}` = 1 after the apply.
+- `verify/test-09a-vault.sh`: 7/7 with the root token, 4 pass + 3 skipped after the revoke.
+- The Platform and the Gateway still hold their credentials. S8.3 and the switch of `vault_enabled` for production
+  are the cut-over (step 5), approved separately.
