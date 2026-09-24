@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Name** | itential-enterprise-lab |
-| **Version** | 1.33 |
+| **Version** | 1.34 |
 | **Date** | 2026-09-24 |
 | **Author** | Elliot Conner. Claude Code is the build agent; every action it takes is bounded by this document |
 | **Standard** | Project Initiation Standard PIS-01 - PIS-30 (`~/.claude/skills/project-initiation-standard`) |
@@ -308,6 +308,8 @@ Conventions: **Placement** is Proxmox VM (OpenTofu + Ansible), k3s (Helm/Kustomi
 
 ### S8 — Config, secrets, code: Oxidized, Vault, Gitea (Phase 9)
 > **Amendment 1.15 (ADR 0050):** Phase 8: the Anthropic company key (ADR 0049) moves into Vault with the device credentials; the NIOS Oxidized model waits for the firewall track; Gitea SSO is asserted in the identity phase.
+>
+> **Amendment 1.34 (ADR 0065):** Vault goes first as Phase **9a** (`verify/test-09a-vault.sh`): criteria 2 and 3 through Itential's built-in clients (the Platform's `ITENTIAL_VAULT_*` AppRole client, read-only; the Gateway's `vault` secret provider with its own AppRole; device passwords as `$GATEWAYSECRET_` references), one Raft replica, manual unseal, an off-host snapshot, and a rotation drill on the dev tier. Criteria 4 and 5 move to Phase 9b; Oxidized and Gitea (criterion 1) stay in Phase 9.
 
 
 - **Purpose:** configuration history for every device, a secrets store that replaces `.env`, and an in-lab git server for Oxidized output and Itential pre-built artefacts.
@@ -352,7 +354,7 @@ Conventions: **Placement** is Proxmox VM (OpenTofu + Ansible), k3s (Helm/Kustomi
   4. cEOS version equals the vEOS version in the manifest.
   5. Twin RAM usage stays under the `clab` line in the budget.
   6. *(1.30)* The `clab` VM matches the budget (8 vCPU / 20 GB / 60 GB, 16 GB until 1.32) and has its NetBox record; `/dev/kvm` is present; the Containerlab version equals the manifest.
-  7. *(1.30)* The four nodes of topology `dev` are running with the management addresses of `clab/versions.yaml`, and each answers SSH as the `automation` user both from the Mac and from `itential-dev`.
+  7. *(1.30)* The four nodes of topology `dev` are running with the management addresses of `clab/versions.yaml`, and each answers SSH as the `automation` user both from the Mac and from `itential-dev`. *(1.34)* The vendor's default `admin`/`admin` login is refused on every node (it survived on both C8000v routers until 2026-09-23, ADR 0065).
   8. *(1.30)* The switches' `show version` is model vEOS-lab at the version of the oracle, the manifest and the EVE-NG lab's vEOS (4.33.1.1F); the C8000v nodes show 17.13.01a with licence level network-advantage.
   9. *(1.30)* OSPF: every point-to-point adjacency is FULL.
   10. *(1.30)* BGP: the eBGP session between the router and switch pair and both iBGP sessions are Established, and the switches' VLAN /27s are in the second router's table.
@@ -421,6 +423,8 @@ phase owns.
 | E11 | Wrong-image silent failure: a node boots an older qcow2 | Detected | `show version` string != manifest string -> `verify/test-04` fails | yes (PIS-21) |
 | E12 | Windows eval expiry approach | Alerted | Zabbix trigger fires 14 days before the date in the manifest | |
 | E13 | Hostname drift on one device per vendor (S4d.1) | Exactly those two flagged | The next compliance plan run reports an error on those two devices and zero issues on the other ten; `verify/test-06b` compares the report with direct SSH | yes (silent-failure eval, PIS-21) |
+| E14 *(1.34)* | Vault sealed while a device job runs (ADR 0065) | Fails closed and ends | The job ends in `error` or through its failure edge within the workflow's timeout, no device config changes, no agent session left `RUNNING`; after `make vault-unseal` the same job succeeds (dev tier) | yes |
+| E15 *(1.34)* | A device password changed only in Vault and on the device (dev tier) | Next job uses the new value | The next `sendCommand` succeeds with nothing changed on the Platform, and the Gateway log shows `secret_resolution ... outcome=success`; a value cached from before the change would fail to log in | yes (silent-failure eval, PIS-21) |
 
 **PIS-09 — Eval execution method.** `make verify` -> `verify/run.sh` runs every
 `verify/test-*.sh` (bash + `jq` + `curl` + `ssh`, Python only where a vendor
@@ -542,6 +546,7 @@ The named risks first, then the six PIS failure types.
 | Thin-pool exhaustion | All VMs pause | Budget tracks disk too; Longhorn 2 replicas; Zabbix monitors `local-lvm` usage at 80 % | |
 | Home-LAN address clash for `oob-gw` | Two hosts on one IP | Owner picks the static (A-19); NetBox records it; `arping` check in Phase 2 before assignment | |
 | k3s certificate rotation / etcd on one disk | API outage after a year; etcd loss | k3s auto-rotates on restart; etcd snapshots to Longhorn and to the workstation nightly | |
+| Vault sealed or lost *(1.34, ADR 0065)* | Sealed (any restart of its pod): Gateway cannot resolve device passwords and every device job fails. Lost (disk): the Platform and the Gateway have no credentials, and Vault's data is the first thing not rebuildable from the repo | `make vault-unseal` / `make vault-status`; `VaultSealed` rule visible in Grafana and the verify (Alertmanager notifies nobody, ADR 0064); `make vault-snapshot` copies an encrypted Raft snapshot to the workstation after every Vault change; `.env` stays the seed until Phase 9b | Until S7 gets a notification channel, a sealed Vault is found by looking |
 
 **PIS-16 — Context degradation.** One phase per session; handoff documents when
 a session passes ~60 % context; the read-list in PIS-14 is the summary that
@@ -715,7 +720,9 @@ at the end of Phase 2 and this table amended.
 | 6 | `phase-6/flowai` (+ `phase-6/netbox-enrichment`, ADR 0048) | `verify/test-06-flowai.sh`, `verify/test-06b-platform.sh`, `verify/test-06c-netbox.sh` | Provider key in `.env`; Ollama on the Mac Mini optional (ADR 0037) |
 | 7 | `phase-7/observability` | `verify/test-07-observability.sh` | none |
 | 8 | `phase-8/platform-ha2` | `verify/test-08-platform-ha2.sh` | `aws sso login` for the image pulls; approve the retirement of VM 205 |
-| 9 | `phase-9/config-secrets-code` | `verify/test-09-config-secrets-code.sh` | Hold Vault unseal keys |
+| 9a *(1.34)* | `phase-9a/vault` | `verify/test-09a-vault.sh` (production: S8.2, S8.3) and `verify/test-09a-vault-dev.sh` (dev tier, `make verify-dev`: S8.2, S8.3, E14, E15) | Hold the Vault unseal material; run `make vault-unseal` after any restart of the Vault pod |
+| 9b *(1.34)* | `phase-9b/secrets-migration` | `verify/test-09b-secrets.sh` (S8.4, S8.5) | none |
+| 9 | `phase-9/config-secrets-code` | `verify/test-09-config-secrets-code.sh` (S8.1: Oxidized and Gitea) | none |
 | 10 | `phase-10/identity` | `verify/test-10-identity.sh` | none (Windows dropped, ADR 0050) |
 | 11 | `phase-11/ddi` | `verify/test-11-ddi.sh` | none (BIND9 + Kea from NetBox; NIOS joins in the firewall track) |
 | 12 | `phase-12/containerlab` | `verify/test-12-containerlab.sh` | Download cEOS-lab (arista.com account) |
@@ -775,6 +782,7 @@ the verify log path and any ADRs added.
 | 1.13 | 2026-09-08 | Phase 6 element 7 (owner request): S4e NetBox enrichment derived from `topology/enterprise.yaml` (addressing on interfaces with peer descriptions, VRFs and ASNs with BGP neighbours in config contexts, racks, provider circuits, config contexts, journal entries; the templates read the YAML, rendered configs unchanged; `netbox-enrich.yml`; `verify/test-06c-netbox.sh`; ADR 0048) |
 | 1.14 | 2026-09-09 | Domain 7: the Anthropic key is the owner's company key with a $15-a-week budget; the platform's session documents are the ledger (`verify/tokens.sh`, `make tokens`, `llm.budget` in versions.yaml), the agent verifies guard it, iteration runs on the local twins or `ONLY=` subsets (ADR 0049) |
 | 1.15 | 2026-09-09 | Reorder (ADR 0050): image-free phases first (7 observability, 8 config/secrets/code, 9 identity without Windows on OpenLDAP + Keycloak + tac_plus, 10 DDI on BIND9 + Kea, 11 Containerlab) and one phase 12 firewall track for NIOS, the PA-VM firewalls and Panorama; Windows Server and the Windows endpoint item dropped, `dc01` released |
+| 1.34 | 2026-09-23 | Vault first (ADR 0065): Phase 9 splits into 9a (S8.2, S8.3: device, NetBox and ServiceNow credentials in Vault, read by the Platform's own AppRole client, read-only and address-bound, and by the Gateway's built-in `vault` secret provider through `$GATEWAYSECRET_` references; one Raft replica; manual unseal with `make vault-unseal`; an off-host Raft snapshot; the unknowns measured on the dev tier first, including a rotation drill), 9b (S8.4, S8.5) and 9 (S8.1). The upstream HashiCorp Vault plugin idea is withdrawn: Gateway 5.5 has Vault built in. New eval cases E14 (sealed Vault fails closed) and E15 (rotation is not cached), and a pre-mortem row for a sealed or lost Vault (owner decisions) |
 | 1.33 | 2026-09-24 | Workflows are named for what they do (ADR 0067, owner decision): a verb and an object in Title Case, no `wf-` prefix and no version, the name written once in `itential/versions.yaml` and each file its name in lowercase with dashes; `tests/test_workflow_names.py` enforces it. The eleven workflows are renamed (e.g. `wf-branch-vlan-v1` -> `Add Branch VLAN`, `wf-config-push-v1` -> `Push Configuration with Approval`); the old names are kept in `retired_workflows`, which the play deletes after importing their successors. Earlier rows of this table keep the names that were current when they were written. |
 | 1.32 | 2026-09-17 | The `clab` vEOS switches get 4 GB (as in EVE-NG) instead of vrnetlab's 2 GB default, at which both ran out of memory in a loop and SSH logins slowed or failed; the `clab` VM grows 16 -> 20 GB and the RAM ceiling 296 -> 300 GB (owner decision). ADR 0063 amendment 2026-09-17. |
 | 1.31 | 2026-09-16 | The lab's CloudNativePG databases are rebuildable and are not backed up. Fourteen days of nightly base backups plus continuous WAL from two clusters filled Garage's 20 GiB (28.1 GiB in `cnpg-backups` + 922 MiB of unfinished multipart uploads); from 2026-09-15 16:21 UTC WAL archiving failed, WAL piled up on `zabbix-db`'s 10 GiB volume, which filled at 2026-09-16 04:20 UTC, and Zabbix was down ~15 h with nothing alerting. `zabbix-db` holds only metric history (its configuration is rebuilt from the repo) and `platform-db` an empty database. Both lose their ObjectStore, plugin reference and ScheduledBackup; the plays delete the live objects; `zabbix-db` grows 10 -> 12 Gi; S2.5 now asserts the absence. Garage stays with an empty bucket; the production MongoDB backup (ADR 0058) is unaffected (ADR 0064, owner decision) |
