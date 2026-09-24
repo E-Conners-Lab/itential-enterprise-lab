@@ -28,7 +28,13 @@
           stub: false
           authentication:
             auth_method: static_token
-            token: "{{ lookup('ansible.builtin.env', 'NETBOX_TOKEN') }}"
+            # Unused with static_token, but stored empty on purpose: without it the Admin Essentials JSON view fills in the
+            # package's schema default and shows "password": "admin" beside the token (display only, measured 2026-09-23)
+            password: ""
+            # Phase 9a (ADR 0065): a Vault reference, resolved by the Platform, once vault_enabled is on
+            token: >-
+              {{ vault.platform_refs.netbox_adapter_token if vault_enabled | default(false) | bool
+                 else lookup('ansible.builtin.env', 'NETBOX_TOKEN') }}
             token_timeout: 1800000
             token_cache: local
             invalid_token_error: 401
@@ -166,6 +172,17 @@
 # in the inventory until Vault (Phase 9): accepted SEC exception recorded in the PR.
 # device_source defaults to netbox (production). The dev overlay sets clab: its devices are the Containerlab
 # nodes, which are never registered in NetBox, so production's inventory can never pick them up (ADR 0063).
+# Phase 9a (ADR 0065): with vault_enabled on, a node carries the Gateway alias instead of the password, and the
+# Gateway server resolves it from Vault just before it connects (measured on dev for send-command and for
+# Configuration Manager through the InventoryBroker). Off, the nodes keep the .env password as before.
+- name: Device password as the inventory nodes carry it
+  ansible.builtin.set_fact:
+    vault_on: "{{ vault_enabled | default(false) | bool }}"
+    device_password: >-
+      {{ ('$GATEWAYSECRET_(' ~ vault.device_password_alias ~ ')') if vault_enabled | default(false) | bool
+         else lookup('ansible.builtin.env', 'AUTOMATION_PASSWORD') }}
+  no_log: true
+
 - name: Network devices from NetBox (active, with a management address, by platform)
   ansible.builtin.uri:
     url: >-
@@ -184,7 +201,7 @@
          'attributes': {'itential_host': item.primary_ip4.address | ansible.utils.ipaddr('address'),
                         'itential_platform': platform_map[item.platform.slug],
                         'itential_user': 'automation',
-                        'itential_password': lookup('ansible.builtin.env', 'AUTOMATION_PASSWORD'),
+                        'itential_password': device_password,
                         'cluster_id': stack.gateway5_cluster_id}}] }}
   loop: >-
     {{ (nb_platforms.results | map(attribute='json.results') | flatten | list)
@@ -205,7 +222,8 @@
                                 'attributes': {'itential_host': n.mgmt_ipv4,
                                                'itential_platform': n.netmiko,
                                                'itential_user': clab.credentials.user,
-                                               'itential_password': lookup('ansible.builtin.env', clab.credentials.password_env),
+                                               'itential_password': device_password if vault_on
+                                                   else lookup('ansible.builtin.env', clab.credentials.password_env),
                                                'itential_driver_options': clab.gateway_driver_options,
                                                'cluster_id': stack.gateway5_cluster_id}}) -%}
       {%- endfor -%}
@@ -266,12 +284,18 @@
       nodes: "{{ inv_nodes }}"
     status_code: 200
   vars:
+    # name, driver options and password: without the password a switch to a Vault alias (ADR 0065), or a rotated
+    # value, would compare equal and never reach the Platform
     have_nodes: "{{ inv_existing.json.result.data }}"
     have: >-
-      {{ have_nodes | map(attribute='name') | zip(have_nodes | map(attribute='attributes.itential_driver_options', default={}))
+      {{ have_nodes | map(attribute='name')
+         | zip(have_nodes | map(attribute='attributes.itential_driver_options', default={}),
+               have_nodes | map(attribute='attributes.itential_password', default=''))
          | map('list') | sort }}
     want: >-
-      {{ inv_nodes | map(attribute='name') | zip(inv_nodes | map(attribute='attributes.itential_driver_options', default={}))
+      {{ inv_nodes | map(attribute='name')
+         | zip(inv_nodes | map(attribute='attributes.itential_driver_options', default={}),
+               inv_nodes | map(attribute='attributes.itential_password', default=''))
          | map('list') | sort }}
   when: have != want
   no_log: true
@@ -295,7 +319,7 @@
          'attributes': {'itential_host': item.primary_ip4.address | ansible.utils.ipaddr('address'),
                         'itential_platform': hosts.netbox_platforms[item.platform.slug],
                         'itential_user': 'automation',
-                        'itential_password': lookup('ansible.builtin.env', 'AUTOMATION_PASSWORD'),
+                        'itential_password': device_password,
                         'cluster_id': stack.gateway5_cluster_id}}] }}
   loop: >-
     {{ (nb_hosts.results | map(attribute='json.results') | flatten | selectattr('role.slug', 'in', hosts.roles) | list)
@@ -345,8 +369,15 @@
       nodes: "{{ host_nodes | default([]) }}"
     status_code: 200
   vars:
-    have: "{{ host_inv_existing.json.result.data | map(attribute='name') | sort }}"
-    want: "{{ host_nodes | default([]) | map(attribute='name') | sort }}"
+    # name and password, for the same reason as the device inventory above (ADR 0065)
+    have: >-
+      {{ host_inv_existing.json.result.data | map(attribute='name')
+         | zip(host_inv_existing.json.result.data | map(attribute='attributes.itential_password', default=''))
+         | map('list') | sort }}
+    want: >-
+      {{ host_nodes | default([]) | map(attribute='name')
+         | zip(host_nodes | default([]) | map(attribute='attributes.itential_password', default=''))
+         | map('list') | sort }}
   when: have != want
   no_log: true
 

@@ -186,3 +186,8 @@
     - name: Element 4 - Integration Models, integrations and their tools (ADR 0045)
       ansible.builtin.include_tasks: tasks/integrations.yml
       when: "'integrations' in platform_elements | default(['golden_config', 'mop', 'lcm', 'integrations'])"
+
+    # Phase 9a (ADR 0065): hand-made integration instances (production's netbox-latest) keep their credential in Vault
+    - name: External integrations' credentials as Vault references (only the authentication value changes)
+      ansible.builtin.include_tasks: tasks/vault-external-integrations.yml
+      when: vault_enabled | default(false) | bool
