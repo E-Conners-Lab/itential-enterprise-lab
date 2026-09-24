@@ -259,3 +259,71 @@ hosts:
   netbox_platforms: {ubuntu-24-04: linux}
   roles: [server, client]
   probe: ["uptime -p", "hostname"] # the reachability and uptime check (verify S4d.6, agents later)
+
+# --- Phase 9a (PID S8.2-S8.3, ADR 0065): Vault holds the device and API credentials, read through Itential's
+# built-in clients (the Platform's ITENTIAL_VAULT_* AppRole client, read-only; the Gateway's `vault` secret
+# provider). One oracle for both environments: dev runs its own Vault container on itential-dev with dev-only
+# secrets (ADR 0063), production runs the k3s chart (ADR 0026). tests/test_vault.py holds the plays to this block.
+vault:
+  image: {repository: docker.io/hashicorp/vault, tag: "2.0.4"} # ADR 0026; the chart's default app version
+  chart: {repo: https://helm.releases.hashicorp.com, name: vault, version: "0.34.1"}
+  port: 8200
+  kv_mount: lab # KV v2; the Platform's and the Gateway's secrets endpoint is "<kv_mount>/data"
+  approle_mount: approle
+  # path under the mount -> keys, and the .env variable each key is seeded from (one-way until Phase 9b)
+  secrets:
+    devices/automation:
+      username: {value: automation}
+      password: {env: AUTOMATION_PASSWORD, dev_env: CLAB_AUTOMATION_PASSWORD}
+    services/netbox:
+      token: {env: NETBOX_TOKEN} # dev: load_env_dev swaps the view-only NETBOX_DEV_RO_TOKEN in (ADR 0063)
+      # the whole Authorization value: an integration instance resolves a $SECRET_ reference only when it is the
+      # entire field (measured 2026-09-23), so the "Token " prefix has to live in Vault too
+      header: {env: NETBOX_TOKEN, prefix: "Token "}
+    services/servicenow:
+      username: {env: SNOW_USER}
+      password: {env: SNOW_PASSWORD}
+      prod_only: true # ServiceNow stays off on dev (ADR 0063)
+  # the two readers (ADR 0065 decisions 5 and 6); `bound_hosts` are the addresses a secret ID works from
+  approles:
+    itential-platform:
+      policy_paths: [services/*]
+      bound_hosts: [iap-01, iap-02] # production; dev binds to what the dev probe measures
+    itential-gateway:
+      policy_paths: [devices/*, services/netbox]
+      bound_hosts: [iag-01]
+  # What the Platform stores in place of a credential once vault_enabled is on (measured 2026-09-23): an adapter or
+  # integration field resolves a $SECRET_ reference only when the reference is the WHOLE value. Not secrets.
+  platform_refs:
+    netbox_adapter_token: "$SECRET_services/netbox $KEY_token"
+    netbox_integration_value: "$SECRET_services/netbox $KEY_header"
+    servicenow_password: "$SECRET_services/servicenow $KEY_password"
+  # Integration instances NO play creates (made by hand on production) whose credential Vault still holds: only the
+  # authentication value is rewritten, everything else is read back and kept. Owner decision 2026-09-23.
+  external_integrations:
+    netbox-latest: {auth: tokenAuth, ref: netbox_integration_value} # the NX-OS pack's NetBox:latest instance
+  device_password_alias: lab-automation-password # inventory nodes' itential_password -> $GATEWAYSECRET_(<this>)
+  # the Gateway server resolves aliases (the runner never does), reading its AppRole secret ID from this file in
+  # the server's working-directory volume; the server caches providers, so a change restarts server then runner
+  gateway_secret_id_file: /etc/gateway/vault_secret_id
+  # Gateway secret aliases, referenced as $GATEWAYSECRET_(<alias>)
+  gateway_provider: lab-vault
+  gateway_aliases:
+    lab-automation-password: {path: devices/automation, key: password}
+    lab-netbox-token: {path: services/netbox, key: token}
+  dev:
+    dir: /opt/vault-dev # on itential-dev: config, tls (the VM's lab-CA certificate), raft data, init output
+    # The address, not the name: on itential-dev the name resolves to 127.0.1.1 (Ubuntu's /etc/hosts entry), for the
+    # VM and for every container on it through Docker's DNS (measured 2026-09-23), while Vault listens on the OOB
+    # address. The VM's lab-CA certificate carries the address as a SAN (itential-host.yml).
+    url: https://10.100.0.65:8200
+    # Measured 2026-09-23 (a temporary audit device): every request from the dev VM's containers reaches Vault from the
+    # gateway of the vault-dev Docker network, because Docker relays traffic to a published port on the same host. So
+    # dev's AppRole binding means "from this VM", not "from the Platform" or "from the Gateway" (both share the VM), and
+    # the network's subnet is pinned here so the bound address is deliberate, not whatever Docker hands out.
+    docker_subnet: 172.31.65.0/24
+    docker_gateway: 172.31.65.1
+  prod:
+    namespace: vault
+    vip: 10.100.0.41 # docs/ip-plan.md
+    url: https://vault.lab.internal:8200

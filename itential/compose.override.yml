@@ -49,11 +49,17 @@ services:
       - "${OOB_ADDRESS}:50051:50051"
     depends_on:
       - etcd
+    volumes:
+      # Phase 9a (ADR 0065): the server resolves $GATEWAYSECRET_ references itself (the runner never does), so it
+      # must trust Vault's lab-CA certificate; the vault provider has no CA flag (only the cyberark type has --ca)
+      - /usr/local/share/ca-certificates/lab-root-ca.crt:/etc/ssl/lab/lab-root-ca.crt:ro
     environment:
       GATEWAY_STORE_BACKEND: etcd
       GATEWAY_STORE_ETCD_HOSTS: etcd:2379
       GATEWAY_STORE_ETCD_USE_TLS: "false" # Docker network only; TLS to etcd with the lab CA is a Phase 9 item
       GATEWAY_SERVER_DISTRIBUTED_EXECUTION: "true"
+      # Go adds every certificate in these directories to the image's public bundle (SSL_CERT_FILE would replace it)
+      SSL_CERT_DIR: /etc/ssl/certs:/etc/ssl/lab
 
   gateway5-runner:
     container_name: gateway5-runner

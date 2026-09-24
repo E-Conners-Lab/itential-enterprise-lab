@@ -8,7 +8,7 @@ SHELL := /bin/bash
 
 PHASES := oob-network platform network-topology itential flowai observability platform-ha2 config-secrets-code identity ddi containerlab firewall-track
 
-.PHONY: help bootstrap lint test up verify discover netbox-enrich tokens agents-push observability-refresh plan-oob plan-platform plan-itential plan-platform-ha2 plan-clab \
+.PHONY: help bootstrap lint test up verify vault-dev discover netbox-enrich tokens agents-push observability-refresh plan-oob plan-platform plan-itential plan-platform-ha2 plan-clab \
 	netbox-token-dev clab-dev dev-stack verify-dev prod-snapshot copilot-prod $(addprefix phase-,$(PHASES))
 
 help: ## Show targets
@@ -146,6 +146,9 @@ phase-flowai: ## Phase 6 on the dev stack: workflows re-imported -> applications
 	$(load_env_dev) cd ansible && ansible-playbook -i inventory/netbox.yml $(DEV) playbooks/platform.yml
 	$(load_env_dev) cd ansible && ansible-playbook -i inventory/netbox.yml $(DEV) playbooks/flowai.yml
 
+vault-dev: ## Phase 9a: the dev tier's own Vault on itential-dev (dev secrets only, auto-unseal from the VM) -> KV, AppRoles, seeds (ADR 0065)
+	$(load_env_dev) cd ansible && ansible-playbook -i inventory/netbox.yml $(DEV) playbooks/vault-dev.yml
+
 # ADR 0063: the Copilot sandbox. Order matters: the read-only NetBox token before any dev Platform play, the
 # Containerlab devices before the dev inventory that names them. prod-snapshot MODE=save before and
 # MODE=compare after is the proof that none of it reached production.
@@ -169,6 +172,7 @@ dev-stack: phase-itential phase-flowai verify-dev ## The whole dev stack; phase-
 verify-dev: ## Dev tier only: Containerlab topology and the dev stack; never part of make verify, so a torn-down dev stack cannot turn it red
 	verify/test-12a-clab-dev.sh
 	verify/test-05b-dev-copilot.sh
+	verify/test-09a-vault-dev.sh
 
 # ALLOW=path is the compare allowlist: without it a compare after `make copilot-prod` always fails (test-05b S12.8
 # derives the allowlist from itential/copilot/roles.yaml). prod-snapshot.py also passes with an empty section (a

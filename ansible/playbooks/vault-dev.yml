@@ -1,0 +1,179 @@
+---
+# Phase 9a (ADR 0065 decision 9): the dev tier's own Vault on itential-dev, with dev-only secrets, so every unknown
+# is measured before production's Vault exists. `make vault-dev` runs it with the dev overlay and load_env_dev.
+# Dev only by construction: it refuses to run without the dev overlay or with production's NetBox token.
+# Unlike production (manual unseal, ADR 0065 decision 7), the dev init output stays on the VM (root, 0600) and this
+# play unseals from it, as Itential's own dev-stack does - owner decision 2026-09-23, dev only.
+- name: The dev Vault container on itential-dev
+  hosts: itential-host
+  become: true
+  gather_facts: false
+  vars_files:
+    - ../../itential/versions.yaml
+  vars:
+    vault_dir: "{{ vault.dev.dir }}"
+    platform_ssl: /opt/itential/volumes/platform/ssl # the VM's lab-CA certificate (itential-host.yml)
+    vault_uid: "100" # the image's vault user
+  tasks:
+    - name: Dev overlay only, never production
+      ansible.builtin.assert:
+        that:
+          - dev_overlay | default(false) | bool
+          - platform_target is not defined
+        fail_msg: "vault-dev.yml is the dev tier's Vault: run it through `make vault-dev` (dev overlay)"
+        quiet: true
+
+    - name: Dev runs with the read-only NetBox token (ADR 0063)
+      ansible.builtin.assert:
+        that:
+          - lookup('ansible.builtin.env', 'NETBOX_DEV_RO_TOKEN') | length > 0
+          - lookup('ansible.builtin.env', 'NETBOX_TOKEN') == lookup('ansible.builtin.env', 'NETBOX_DEV_RO_TOKEN')
+        fail_msg: "run through `make vault-dev`, which swaps in the view-only NETBOX_DEV_RO_TOKEN"
+        quiet: true
+      no_log: true
+
+    - name: Directories
+      ansible.builtin.file:
+        path: "{{ vault_dir }}/{{ item.path }}"
+        state: directory
+        owner: "{{ item.owner }}"
+        mode: "{{ item.mode }}"
+      loop:
+        - {path: "", owner: root, mode: "0750"}
+        - {path: config, owner: root, mode: "0755"}
+        - {path: tls, owner: "{{ vault_uid }}", mode: "0750"}
+
+    - name: Server configuration and Compose file
+      ansible.builtin.copy:
+        src: "{{ item.src }}"
+        dest: "{{ vault_dir }}/{{ item.dest }}"
+        owner: root
+        mode: "0644"
+      loop:
+        - {src: ../../itential/vault/vault-dev.hcl, dest: config/vault.hcl}
+        - {src: ../../itential/vault/compose.dev.yml, dest: compose.yml}
+        - {src: ../../docs/lab-root-ca.crt, dest: tls/ca.pem}
+      register: vault_files
+
+    - name: The VM's lab-CA certificate and key, readable by the vault user only
+      ansible.builtin.copy:
+        src: "{{ platform_ssl }}/{{ item.src }}"
+        dest: "{{ vault_dir }}/tls/{{ item.dest }}"
+        remote_src: true
+        owner: "{{ vault_uid }}"
+        mode: "{{ item.mode }}"
+      loop:
+        - {src: cert.pem, dest: cert.pem, mode: "0444"}
+        - {src: key.pem, dest: key.pem, mode: "0400"}
+      register: vault_tls
+      no_log: true
+
+    - name: Vault running
+      ansible.builtin.command: docker compose -p vault-dev up -d
+      args:
+        chdir: "{{ vault_dir }}"
+      environment:
+        VAULT_IMAGE: "{{ vault.image.repository }}:{{ vault.image.tag }}"
+        BIND_ADDRESS: "{{ vm.ip }}"
+        VAULT_SUBNET: "{{ vault.dev.docker_subnet }}"
+        VAULT_GATEWAY: "{{ vault.dev.docker_gateway }}"
+      register: vault_up
+      changed_when: "'Started' in vault_up.stderr or 'Created' in vault_up.stderr or 'Recreated' in vault_up.stderr"
+
+    - name: Restart after a configuration or certificate change
+      ansible.builtin.command: docker compose -p vault-dev restart vault
+      args:
+        chdir: "{{ vault_dir }}"
+      environment:
+        VAULT_IMAGE: "{{ vault.image.repository }}:{{ vault.image.tag }}"
+        BIND_ADDRESS: "{{ vm.ip }}"
+        VAULT_SUBNET: "{{ vault.dev.docker_subnet }}"
+        VAULT_GATEWAY: "{{ vault.dev.docker_gateway }}"
+      when: (vault_files.changed or vault_tls.changed) and not vault_up.changed
+      changed_when: true
+
+    - name: API answers (any state)
+      ansible.builtin.uri:
+        url: "{{ vault.dev.url }}/v1/sys/health?uninitcode=200&sealedcode=200"
+        ca_path: /usr/local/share/ca-certificates/lab-root-ca.crt
+      register: vault_alive
+      until: vault_alive.status == 200
+      retries: 30
+      delay: 2
+
+    - name: Initialisation state
+      ansible.builtin.uri:
+        url: "{{ vault.dev.url }}/v1/sys/init"
+        ca_path: /usr/local/share/ca-certificates/lab-root-ca.crt
+      register: vault_init_state
+
+    # One key share: every share would sit in the same file on the same VM, so more shares add nothing (dev only)
+    - name: Initialise (dev, once)
+      ansible.builtin.uri:
+        url: "{{ vault.dev.url }}/v1/sys/init"
+        ca_path: /usr/local/share/ca-certificates/lab-root-ca.crt
+        method: PUT
+        body_format: json
+        body: {secret_shares: 1, secret_threshold: 1}
+      register: vault_init
+      when: not vault_init_state.json.initialized
+      no_log: true
+
+    - name: Init output kept on the VM, root only, before anything uses it
+      ansible.builtin.copy:
+        content: "{{ vault_init.json | to_nice_json }}"
+        dest: "{{ vault_dir }}/init.json"
+        owner: root
+        mode: "0600"
+      when: not vault_init_state.json.initialized
+      no_log: true
+
+    - name: Read the init output
+      ansible.builtin.slurp:
+        src: "{{ vault_dir }}/init.json"
+      register: vault_init_file
+      no_log: true
+
+    - name: Seal state
+      ansible.builtin.uri:
+        url: "{{ vault.dev.url }}/v1/sys/seal-status"
+        ca_path: /usr/local/share/ca-certificates/lab-root-ca.crt
+      register: vault_seal
+
+    - name: Unseal (dev)
+      ansible.builtin.uri:
+        url: "{{ vault.dev.url }}/v1/sys/unseal"
+        ca_path: /usr/local/share/ca-certificates/lab-root-ca.crt
+        method: PUT
+        body_format: json
+        body: {key: "{{ (vault_init_file.content | b64decode | from_json)['keys'][0] }}"}
+      register: vault_unsealed
+      when: vault_seal.json.sealed
+      failed_when: vault_unsealed.json.sealed
+      changed_when: true
+      no_log: true
+
+    - name: Root token for the configuration play (dev)
+      ansible.builtin.set_fact:
+        vault_dev_root_token: "{{ (vault_init_file.content | b64decode | from_json).root_token }}"
+      no_log: true
+
+- name: Configure the dev Vault
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars_files:
+    - ../../itential/versions.yaml
+  vars:
+    ansible_python_interpreter: "{{ playbook_dir }}/../../.venv/bin/python"
+    vault_addr: "{{ vault.dev.url }}"
+    vault_env: dev
+    vault_token: "{{ hostvars[groups['itential-host'][0]].vault_dev_root_token }}"
+    # vault_role_cidrs comes from the dev overlay (vars/itential-dev.yml)
+  tasks:
+    - name: Configure it
+      ansible.builtin.include_tasks: tasks/vault-config.yml
+
+    - name: Role IDs
+      ansible.builtin.debug:
+        msg: "{{ vault_role_ids }}"
