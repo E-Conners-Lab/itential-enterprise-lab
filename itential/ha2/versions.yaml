@@ -8,6 +8,10 @@
 
 environment: production # distinguishes it from the dev-stack on VM 205 (ADR 0035), which retires at cut-over
 domain: lab.internal
+# Phase 9a step 5 (ADR 0065): production reads its credentials from Vault. The HA2 plays read this; the replay reads
+# the same switch from ansible/playbooks/vars/itential-prod.yml (tests/test_vault.py holds the two equal), so no
+# production target can put the plaintext back by leaving it out. A first run needs VAULT_TOKEN: make vault-cutover.
+vault_enabled: true
 # The name every client uses. It resolves to VM 205 until the cut-over, then to iap-lb (ADR 0053 decision 4).
 service_name: itential
 

@@ -23,9 +23,17 @@ services:
     volumes:
       - ./volumes/gateway5/certificates:/etc/ssl/gateway5:ro
       - gateway5-data:/etc/gateway
+{% if vault_enabled | default(false) | bool %}
+      # Phase 9a (ADR 0065): the lab CA for Vault's certificate (the server resolves $GATEWAYSECRET_ aliases)
+      - /usr/local/share/ca-certificates:/etc/ssl/lab:ro
+{% endif %}
     environment:
       GATEWAY_APPLICATION_CLUSTER_ID: "{{ gateway.cluster_id }}"
       GATEWAY_APPLICATION_MODE: "server"
+{% if vault_enabled | default(false) | bool %}
+      # Go adds every certificate in these directories to the image's public bundle (SSL_CERT_FILE would replace it)
+      SSL_CERT_DIR: /etc/ssl/certs:/etc/ssl/lab
+{% endif %}
       GATEWAY_APPLICATION_WORKING_DIR: "/etc/gateway"
       # Gateway Manager lives in the Platform; this dials the load balancer's own name, which is correct
       # both before and after the cut-over moves the service name onto it

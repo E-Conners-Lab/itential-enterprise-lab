@@ -8,7 +8,7 @@ SHELL := /bin/bash
 
 PHASES := oob-network platform network-topology itential flowai observability platform-ha2 config-secrets-code identity ddi containerlab firewall-track
 
-.PHONY: help bootstrap lint test up verify vault-dev vault vault-status vault-init vault-unseal vault-config vault-snapshot vault-revoke-root discover netbox-enrich tokens agents-push observability-refresh plan-oob plan-platform plan-itential plan-platform-ha2 plan-clab \
+.PHONY: help bootstrap lint test up verify vault-dev vault vault-status vault-init vault-unseal vault-config vault-snapshot vault-revoke-root vault-admin-user vault-login vault-logout vault-cutover discover netbox-enrich tokens agents-push observability-refresh plan-oob plan-platform plan-itential plan-platform-ha2 plan-clab \
 	netbox-token-dev clab-dev dev-stack verify-dev prod-snapshot copilot-prod $(addprefix phase-,$(PHASES))
 
 help: ## Show targets
@@ -171,8 +171,33 @@ vault-config: ## Production Vault: KV, read-only AppRoles bound to their hosts, 
 vault-snapshot: ## Production Vault: a Raft snapshot to ~/Backups/itential-enterprise-lab/vault (mode 600, outside the repo)
 	scripts/vault-prod.sh snapshot
 
-vault-revoke-root: ## Production Vault: revoke the root token after configuring (fresh ones later come from generate-root + the unseal key)
+vault-admin-user: ## Production Vault, once, in YOUR terminal: set the administrator login's password (root token from the init file)
+	scripts/vault-prod.sh admin-user
+
+vault-login: ## Production Vault, in YOUR terminal: log in as the administrator; a short-lived token to a mode-600 file outside the repo
+	scripts/vault-prod.sh login
+
+vault-logout: ## Production Vault: revoke the administrator token and delete its file
+	scripts/vault-prod.sh logout
+
+vault-revoke-root: ## Production Vault: revoke the root token - refuses unless the administrator login has been proven (make vault-login)
 	scripts/vault-prod.sh revoke-root
+
+# Phase 9a step 5 (ADR 0065): production reads its credentials from Vault. Needs the owner's administrator login
+# (make vault-login, in their own terminal): the token issues the Platform's and the Gateway's secret IDs and is read
+# from its file, never printed. Order matters: the Platform's own Vault client, then the Gateway's provider, then the
+# replay that swaps every credential for a reference. The Platform on iap-01 and the Gateway restart on the way.
+# Roll back: the same three plays with -e vault_enabled=false (the credentials are still in .env until Phase 9b).
+VAULT_ADMIN_FILE ?= $(HOME)/.config/itential-enterprise-lab/vault-admin-token
+vault-cutover: ## Phase 9a step 5: the Platform and the Gateway read their credentials from Vault (needs make vault-login)
+	@test -s $(VAULT_ADMIN_FILE) || { echo "log in as the administrator first: make vault-login (in your own terminal)"; exit 1; }
+	$(MAKE) prod-snapshot MODE=save
+	$(load_env) export VAULT_TOKEN=$$(tr -d '\n' < $(VAULT_ADMIN_FILE)); cd ansible \
+	  && ansible-playbook -i inventory/netbox.yml playbooks/platform-ha2-platform.yml \
+	  && ansible-playbook -i inventory/netbox.yml playbooks/platform-ha2-gateway.yml \
+	  && ansible-playbook -i inventory/netbox.yml -e @playbooks/vars/itential-prod.yml playbooks/platform-ha2-replay.yml
+	verify/test-09a-vault.sh
+	scripts/vault-prod.sh snapshot
 
 # ADR 0063: the Copilot sandbox. Order matters: the read-only NetBox token before any dev Platform play, the
 # Containerlab devices before the dev inventory that names them. prod-snapshot MODE=save before and

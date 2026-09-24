@@ -49,12 +49,97 @@
              | default((lookup('ansible.builtin.file', init_file) | from_json).root_token, true) }}
       no_log: true
 
+    - name: Which token this run holds (root at first configuration, the owner's lab-admin login after)
+      ansible.builtin.uri:
+        url: "{{ vault_addr }}/v1/auth/token/lookup-self"
+        ca_path: "{{ playbook_dir }}/../../docs/lab-root-ca.crt"
+        headers: {X-Vault-Token: "{{ vault_token }}"}
+      register: vault_self
+      no_log: true
+
+    - name: Root or not
+      ansible.builtin.set_fact:
+        vault_token_is_root: "{{ 'root' in vault_self.json.data.policies }}"
+
     - name: Where each role may be used from
       ansible.builtin.debug:
         msg: "{{ vault_role_cidrs }}"
 
     - name: Configure it
       ansible.builtin.include_tasks: tasks/vault-config.yml
+
+    # --- the owner's administrator login (versions.yaml vault.prod.admin), least privilege ---------------------
+    # Vault 2.0 requires a token for generate-root, so this login is the admin path once the root token is revoked.
+    # It can do the lab's admin jobs and nothing else: issue and destroy the readers' secret IDs, manage the reader
+    # roles and their policies (not its own), the lab/ secrets, snapshots, and short-lived tokens carrying a reader
+    # policy through one token role (the verify's policy check). It cannot seal Vault, change auth methods or mounts,
+    # or widen itself. The play makes the mount, the policy and the token role; the owner sets the password.
+    - name: Auth methods now (for the owner's login)
+      ansible.builtin.uri:
+        url: "{{ vault_addr }}/v1/sys/auth"
+        ca_path: "{{ playbook_dir }}/../../docs/lab-root-ca.crt"
+        headers: {X-Vault-Token: "{{ vault_token }}"}
+      register: vault_auths
+      no_log: true
+
+    - name: Userpass auth for the owner at {{ vault.prod.admin.auth_mount }}
+      ansible.builtin.uri:
+        url: "{{ vault_addr }}/v1/sys/auth/{{ vault.prod.admin.auth_mount }}"
+        ca_path: "{{ playbook_dir }}/../../docs/lab-root-ca.crt"
+        method: POST
+        headers: {X-Vault-Token: "{{ vault_token }}"}
+        body_format: json
+        body: {type: userpass, description: "the owner's administrator login (ADR 0065)"}
+        status_code: [204]
+      when: vault_token_is_root and (vault.prod.admin.auth_mount ~ '/') not in vault_auths.json.data
+      changed_when: true
+      no_log: true
+
+    - name: Token role for the verify's short-lived reader tokens
+      ansible.builtin.uri:
+        url: "{{ vault_addr }}/v1/auth/token/roles/verify-readers"
+        ca_path: "{{ playbook_dir }}/../../docs/lab-root-ca.crt"
+        method: POST
+        headers: {X-Vault-Token: "{{ vault_token }}"}
+        body_format: json
+        body:
+          allowed_policies: "{{ vault.approles.keys() | list }}"
+          orphan: true
+          renewable: false
+          token_explicit_max_ttl: 120
+        status_code: [204]
+      changed_when: false
+      when: vault_token_is_root
+      no_log: true
+
+    - name: Least-privilege administrator policy {{ vault.prod.admin.policy }}
+      ansible.builtin.uri:
+        url: "{{ vault_addr }}/v1/sys/policies/acl/{{ vault.prod.admin.policy }}"
+        ca_path: "{{ playbook_dir }}/../../docs/lab-root-ca.crt"
+        method: PUT
+        headers: {X-Vault-Token: "{{ vault_token }}"}
+        body_format: json
+        body:
+          policy: |
+            # the owner's administrator login (ADR 0065): the lab's admin jobs only
+            path "auth/{{ vault.approle_mount }}/role/+/role-id" { capabilities = ["read"] }
+            path "auth/{{ vault.approle_mount }}/role/+/secret-id" { capabilities = ["create", "update", "list"] }
+            path "auth/{{ vault.approle_mount }}/role/+/secret-id/lookup" { capabilities = ["update"] }
+            path "auth/{{ vault.approle_mount }}/role/+/secret-id-accessor/lookup" { capabilities = ["update"] }
+            path "auth/{{ vault.approle_mount }}/role/+/secret-id-accessor/destroy" { capabilities = ["update"] }
+            path "auth/{{ vault.approle_mount }}/role/*" { capabilities = ["create", "read", "update", "list"] }
+            path "auth/{{ vault.approle_mount }}/role" { capabilities = ["list"] }
+            path "sys/policies/acl/itential-*" { capabilities = ["create", "read", "update", "delete", "list"] }
+            path "sys/policies/acl" { capabilities = ["list"] }
+            path "{{ vault.kv_mount }}/*" { capabilities = ["create", "read", "update", "patch", "delete", "list"] }
+            path "sys/storage/raft/snapshot" { capabilities = ["read"] }
+            path "sys/mounts" { capabilities = ["read"] }
+            path "sys/auth" { capabilities = ["read"] }
+            path "auth/token/create/verify-readers" { capabilities = ["update"] }
+        status_code: [204]
+      changed_when: false
+      when: vault_token_is_root
+      no_log: true
 
     # --- prove the binding on the real path -------------------------------------------------------------------------
     - name: One-use, five-minute secret IDs to test each reader host, and one per role for this workstation

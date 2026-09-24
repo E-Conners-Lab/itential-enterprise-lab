@@ -225,3 +225,36 @@
     - name: Connected
       ansible.builtin.debug:
         msg: "Gateway cluster {{ gateway.cluster_id }} is connected to the production Gateway Manager"
+
+# Phase 9a (ADR 0065): the Gateway resolves device passwords from Vault through its own AppRole, the same
+# tasks the dev tier proved (tasks/gateway-vault.yml): the secret-ID file in the server's volume, the provider and
+# aliases imported through Gateway Manager and proven by export, then server and runner restarted. On once
+# versions.yaml sets vault_enabled; a first run needs VAULT_TOKEN (make vault-cutover), later runs keep what it holds.
+- name: Gateway 5 reads device credentials from Vault
+  hosts: ha2-gateway
+  become: true
+  gather_facts: false
+  vars_files:
+    - ../../itential/ha2/versions.yaml
+    - ../../itential/versions.yaml
+  vars:
+    ansible_ssh_common_args: -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/dev/null
+    platform_local: "http://{{ (vms | selectattr('name', 'equalto', platform.nodes[0]) | first).ip }}:{{ platform.http_port }}"
+    vault_url: "{{ vault.prod.url }}"
+    vault_ca_path: /usr/local/share/ca-certificates/lab-root-ca.crt
+    vault_admin_token: "{{ lookup('ansible.builtin.env', 'VAULT_TOKEN') }}"
+  tasks:
+    - name: Log in to the Platform as {{ platform.admin_user }}
+      ansible.builtin.uri:
+        url: "{{ platform_local }}/login"
+        method: POST
+        body_format: json
+        body: {username: "{{ platform.admin_user }}", password: "{{ lookup('ansible.builtin.env', 'ITENTIAL_ADMIN_PASSWORD') }}"}
+        status_code: 200
+      register: login
+      when: vault_enabled | default(false) | bool
+      no_log: true
+
+    - name: The Gateway's Vault provider, aliases and secret ID
+      ansible.builtin.include_tasks: tasks/gateway-vault.yml
+      when: vault_enabled | default(false) | bool

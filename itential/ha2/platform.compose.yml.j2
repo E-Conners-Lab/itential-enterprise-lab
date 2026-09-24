@@ -25,6 +25,17 @@ services:
       ITENTIAL_ENCRYPTION_KEY: ${ITENTIAL_ENCRYPTION_KEY:?ITENTIAL_ENCRYPTION_KEY is required}
       # this node's identity in the cluster: two nodes share one database, so the id must differ
       ITENTIAL_SERVER_ID: "{{ inventory_hostname }}"
+{% if vault_enabled | default(false) | bool %}
+      # Phase 9a (ADR 0065): the Platform's own Vault client - AppRole itential-platform, read-only, bound to this
+      # node's address. The lab CA for Vault's certificate is the ca.crt this node already mounts for MongoDB TLS.
+      ITENTIAL_VAULT_URL: "{{ vault.prod.url }}"
+      ITENTIAL_VAULT_AUTH_METHOD: approle
+      ITENTIAL_VAULT_ROLE_ID: ${ITENTIAL_VAULT_ROLE_ID:?ITENTIAL_VAULT_ROLE_ID is required}
+      ITENTIAL_VAULT_SECRET_ID: ${ITENTIAL_VAULT_SECRET_ID:?ITENTIAL_VAULT_SECRET_ID is required}
+      ITENTIAL_VAULT_SECRETS_ENDPOINT: "{{ vault.kv_mount }}/data"
+      ITENTIAL_VAULT_READ_ONLY: "true"
+      NODE_EXTRA_CA_CERTS: /etc/ssl/lab/ca.crt
+{% endif %}
 
       # the local administrator, declared rather than left to the image's default; the identity phase adds
       # LDAP and Keycloak in front of it (ADR 0050)

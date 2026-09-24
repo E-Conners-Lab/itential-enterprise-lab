@@ -123,9 +123,10 @@ PLAYS = ROOT / "ansible" / "playbooks"
 PROD_OVERLAY = PLAYS / "vars" / "itential-prod.yml"
 
 
-def test_vault_is_on_for_dev_and_off_for_production_until_its_own_step() -> None:
+def test_vault_is_on_for_dev_and_for_production_since_the_cut_over() -> None:
+    """Production turned it on at the cut-over (step 5, ADR 0065); before that it was off by leaving it out."""
     assert yaml.safe_load(DEV_OVERLAY.read_text())["vault_enabled"] is True
-    assert "vault_enabled" not in yaml.safe_load(PROD_OVERLAY.read_text())
+    assert yaml.safe_load(PROD_OVERLAY.read_text())["vault_enabled"] is True
 
 
 def test_platform_references_are_whole_field_values() -> None:
@@ -262,3 +263,37 @@ def test_the_c8000v_vendor_admin_is_removed_before_it_is_replaced_and_the_verify
     assert 'username="admin", password="admin"' in verify and '[ "$adm" = refused ]' in verify
     assert "admin/admin refused on every node" in verify
     assert "admin`/`admin` login is refused on every node" in (ROOT / "docs" / "PID.md").read_text()
+
+
+# --- production cut-over (step 5) ----------------------------------------------------------------------------------
+def test_production_has_one_vault_switch_in_both_places_that_read_it() -> None:
+    """The HA2 plays read itential/ha2/versions.yaml, the replay reads vars/itential-prod.yml: they must agree, or a
+    plain `make phase-platform-ha2` would put plaintext credentials back after the cut-over."""
+    ha2 = yaml.safe_load((ROOT / "itential" / "ha2" / "versions.yaml").read_text())
+    prod = yaml.safe_load((ROOT / "ansible" / "playbooks" / "vars" / "itential-prod.yml").read_text())
+    assert ha2.get("vault_enabled") is True and prod.get("vault_enabled") is True
+
+
+def test_the_production_platform_gets_its_vault_client_only_behind_the_switch() -> None:
+    compose = (ROOT / "itential" / "ha2" / "platform.compose.yml.j2").read_text()
+    block = compose[compose.index("{% if vault_enabled"):compose.index("{% endif %}")]
+    for var in ("ITENTIAL_VAULT_URL", "ITENTIAL_VAULT_AUTH_METHOD: approle", "ITENTIAL_VAULT_READ_ONLY: \"true\"",
+                "ITENTIAL_VAULT_ROLE_ID: ${ITENTIAL_VAULT_ROLE_ID:?", "ITENTIAL_VAULT_SECRET_ID: ${ITENTIAL_VAULT_SECRET_ID:?",
+                "NODE_EXTRA_CA_CERTS: /etc/ssl/lab/ca.crt"):
+        assert var in block, var
+    play = (ROOT / "ansible" / "playbooks" / "platform-ha2-platform.yml").read_text()
+    assert "tasks/vault-secret-id.yml" in play and "ITENTIAL_VAULT_SECRET_ID={{ vault_reader_secret_id }}" in play
+
+
+def test_the_production_gateway_trusts_the_lab_ca_and_runs_the_proven_vault_tasks() -> None:
+    compose = (ROOT / "itential" / "ha2" / "gateway.compose.yml.j2").read_text()
+    assert "/usr/local/share/ca-certificates:/etc/ssl/lab:ro" in compose and "SSL_CERT_DIR: /etc/ssl/certs:/etc/ssl/lab" in compose
+    play = (ROOT / "ansible" / "playbooks" / "platform-ha2-gateway.yml").read_text()
+    assert "tasks/gateway-vault.yml" in play and "VAULT_TOKEN" in play
+
+
+def test_a_replay_without_an_admin_token_keeps_what_the_readers_hold() -> None:
+    """After the cut-over the root token is revoked: a routine replay must neither need a token nor churn a secret ID."""
+    task = (ROOT / "ansible" / "playbooks" / "tasks" / "vault-secret-id.yml").read_text()
+    assert "holds no Vault credentials yet: run with VAULT_TOKEN" in task
+    assert task.count("vault_admin_token | default('') | length > 0") >= 3

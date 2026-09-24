@@ -327,3 +327,13 @@ vault:
     namespace: vault
     vip: 10.100.0.41 # docs/ip-plan.md
     url: https://vault.lab.internal:8200
+    # The owner's administrator login (ADR 0065, production step 5). Vault 2.0 requires a token for generate-root
+    # (measured 2026-09-24: 403 without one), so once the root token is revoked this login is the only admin path:
+    # the play creates the policy and the auth mount, the owner sets the password (make vault-admin-user), and the
+    # root token may be revoked only after a login with it has been proven (make vault-revoke-root checks).
+    admin:
+      auth_mount: userpass
+      user: lab-admin
+      policy: lab-admin
+      token_ttl: 1h
+      token_max_ttl: 8h
