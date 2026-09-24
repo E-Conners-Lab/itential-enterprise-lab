@@ -273,7 +273,10 @@ def test_the_phase_target_builds_the_directory_before_the_administrator_and_the_
     """OpenLDAP lives on tools-01, the directory account needs it, and Gateway Manager filters what it
     returns by that account's group membership (ADR 0055 decision 7)."""
     mk = (ROOT / "Makefile").read_text()
-    order = [mk.index(f"playbooks/platform-ha2-{p}.yml") for p in ("platform", "tools", "identity", "gateway")]
+    # the phase-platform-ha2 recipe only: other targets (make vault-cutover) run some of the same plays
+    start = mk.index("\nphase-platform-ha2:")
+    recipe = mk[start:mk.index("\n\n", start)]
+    order = [recipe.index(f"playbooks/platform-ha2-{p}.yml") for p in ("platform", "tools", "identity", "gateway")]
     assert order == sorted(order), "platform, then tools (the directory), then identity, then gateway"
     tools = (PLAYS / "platform-ha2-tools.yml").read_text()
     assert "openldap.ldif" in tools and "ha2-tools" in tools, "the directory bootstrap ships with the tools VM"
