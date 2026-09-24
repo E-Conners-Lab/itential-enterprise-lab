@@ -49,13 +49,15 @@ restconf
 ip http secure-server
 ip http authentication local
 ip name-server vrf MGMT {{ lab.dns | join(' ') }}
-ntp server vrf MGMT {{ lab.ntp }}
 !
 {% include 'c8000v-observability.j2' %}
 !
 vrf definition MGMT
  address-family ipv4
 !
+{#- issue #18: IOS-XE drops `ntp server vrf MGMT` when the VRF is not defined yet (all five routers booted without it,
+    while `ip name-server vrf MGMT` above was accepted), so NTP follows the VRF definition. #}
+ntp server vrf MGMT {{ lab.ntp }}
 {%- if site != 'wan' %}
 vrf definition WAN
  description front-door VRF: provider transport only

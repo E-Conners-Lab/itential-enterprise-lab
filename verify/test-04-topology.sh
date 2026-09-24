@@ -67,6 +67,28 @@ PY
 }
 check "S3.2 every node answers on its management address (ssh, or rdp for Windows)" c2
 
+# --- S3.2b the running hostname and NTP server of every C8000v and vEOS equal its rendered startup config ---------
+# Issue #18: all five C8000v booted as `hostname Router` and without `ntp server vrf MGMT`, and nothing here noticed
+# (the other checks reach devices by address). The expected lines come from topology/generated/configs, the committed
+# rendering of the templates, so a rebuilt router that drops either line fails here instead of drifting silently.
+c2b() {
+  local errs="" dev=".venv/bin/python verify/devcmd.py" n_name n_ip n_plat want_ntp got
+  while read -r n_name n_ip n_plat; do
+    want_ntp=$(grep -m1 '^ntp server' "topology/generated/configs/${n_name}.cfg")
+    got=$($dev "$n_ip" "show running-config | include ^hostname|^ntp server" 2>&1) || { errs="$errs ${n_name}(ssh)"; continue; }
+    echo "$got" | grep -qx "hostname ${n_name}" || errs="$errs ${n_name}(hostname: $(echo "$got" | grep -m1 '^hostname' | tr -d '\r'))"
+    echo "$got" | tr -d '\r' | grep -qxF "$want_ntp" || errs="$errs ${n_name}(ntp: want '${want_ntp}')"
+  done < <(python3 -c '
+import yaml
+t = yaml.safe_load(open("topology/enterprise.yaml"))
+for n, v in t["nodes"].items():
+    if v["platform"] in ("c8000v", "veos"):
+        print(n, v["mgmt_ip"], v["platform"])')
+  [ -z "$errs" ] || { echo "drift:$errs"; return 1; }
+  echo "hostname and NTP server as rendered on every C8000v and vEOS"
+}
+check "S3.2b every C8000v and vEOS runs the hostname and NTP server of its rendered startup config (issue #18)" c2b
+
 # --- S3.3 NetBox devices/interfaces/cables/IPs equal the YAML; cable count equals EVE links ----
 c3() {
   local links; links=$(eve networks) || return 1
