@@ -8,7 +8,7 @@ SHELL := /bin/bash
 
 PHASES := oob-network platform network-topology itential flowai observability platform-ha2 config-secrets-code identity ddi containerlab firewall-track
 
-.PHONY: help bootstrap lint test up verify vault-dev vault vault-status vault-init vault-unseal vault-config vault-snapshot vault-revoke-root discover netbox-enrich tokens agents-push observability-refresh plan-oob plan-platform plan-itential plan-platform-ha2 plan-clab \
+.PHONY: help bootstrap lint test up verify vault-dev vault vault-status vault-init vault-unseal vault-config vault-snapshot vault-revoke-root vault-admin-user vault-login vault-logout discover netbox-enrich tokens agents-push observability-refresh plan-oob plan-platform plan-itential plan-platform-ha2 plan-clab \
 	netbox-token-dev clab-dev dev-stack verify-dev prod-snapshot copilot-prod $(addprefix phase-,$(PHASES))
 
 help: ## Show targets
@@ -171,7 +171,16 @@ vault-config: ## Production Vault: KV, read-only AppRoles bound to their hosts, 
 vault-snapshot: ## Production Vault: a Raft snapshot to ~/Backups/itential-enterprise-lab/vault (mode 600, outside the repo)
 	scripts/vault-prod.sh snapshot
 
-vault-revoke-root: ## Production Vault: revoke the root token after configuring (fresh ones later come from generate-root + the unseal key)
+vault-admin-user: ## Production Vault, once, in YOUR terminal: set the administrator login's password (root token from the init file)
+	scripts/vault-prod.sh admin-user
+
+vault-login: ## Production Vault, in YOUR terminal: log in as the administrator; a short-lived token to a mode-600 file outside the repo
+	scripts/vault-prod.sh login
+
+vault-logout: ## Production Vault: revoke the administrator token and delete its file
+	scripts/vault-prod.sh logout
+
+vault-revoke-root: ## Production Vault: revoke the root token - refuses unless the administrator login has been proven (make vault-login)
 	scripts/vault-prod.sh revoke-root
 
 # ADR 0063: the Copilot sandbox. Order matters: the read-only NetBox token before any dev Platform play, the
