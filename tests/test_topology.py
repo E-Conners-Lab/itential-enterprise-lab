@@ -339,3 +339,18 @@ def test_routing_tunnels_vrfs_and_prefixes_in_the_yaml(topo: dict) -> None:
         "10.101.254.0/24",
         "10.101.253.0/24",
     ]
+
+
+def test_c8000v_ntp_server_follows_its_vrf_definition_and_the_verify_checks_it(topo: dict) -> None:
+    """Issue #18: IOS-XE dropped `ntp server vrf MGMT` placed before `vrf definition MGMT` on all five routers' first
+    boot. The rendered config keeps NTP after the VRF, and test-04 S3.2b compares the live lines with the rendering."""
+    rendered = _render_all(topo)
+    routers = [n for n, node in topo["nodes"].items() if node["platform"] == "c8000v"]
+    assert routers
+    for name in routers:
+        lines = rendered[name].splitlines()
+        vrf = lines.index("vrf definition MGMT")
+        ntp = next(i for i, ln in enumerate(lines) if ln.startswith("ntp server vrf MGMT"))
+        assert ntp > vrf, f"{name}: ntp server before its VRF is defined"
+    verify = (ROOT / "verify" / "test-04-topology.sh").read_text()
+    assert 'check "S3.2b ' in verify and "topology/generated/configs/${n_name}.cfg" in verify
