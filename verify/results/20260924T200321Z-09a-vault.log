@@ -1,0 +1,38 @@
+# test-09a-vault 20260924T204314Z
+PASS  S8.2a Vault answers at vault.lab.internal over the lab CA and is unsealed
+      sys/health 200: initialized=True sealed=False version=2.0.4
+PASS  S8.2g the service name resolves to the VIP versions.yaml gives it
+      vault.lab.internal -> 10.100.0.41 (want 10.100.0.41)
+PASS  S8.2b a read of lab/devices/automation with no token is refused
+      read of lab/data/devices/automation with no token -> 403
+PASS  S8.2c each reader's policy reads only its own paths (Gateway: devices yes; Platform: devices no, NetBox yes)
+      itential-gateway   policy reads devices/automation   -> 200 (want 200)  keys ['password', 'username']
+      itential-platform  policy reads devices/automation   -> 403 (want 403)
+      itential-platform  policy reads services/netbox      -> 200 (want 200)  keys ['header', 'token']
+PASS  S8.2e each AppRole is bound to its own hosts (iap-01/02, iag-01): a valid secret ID from this machine is refused
+      itential-platform  bound to {'secret_id_bound_cidrs': ['10.100.0.72', '10.100.0.73'], 'token_bound_cidrs': ['10.100.0.72', '10.100.0.73']} (want ['10.100.0.72', '10.100.0.73'])
+      itential-platform  login with a valid secret ID from this machine -> 400 (want refused)
+      itential-gateway   bound to {'secret_id_bound_cidrs': ['10.100.0.80'], 'token_bound_cidrs': ['10.100.0.80']} (want ['10.100.0.80'])
+      itential-gateway   login with a valid secret ID from this machine -> 400 (want refused)
+PASS  S8.2d the device password in Vault equals the .env seed (one-way until Phase 9b)
+      devices/automation equals the .env seed: True (version 1)
+PASS  S8.2f an off-host Raft snapshot exists on this workstation (ADR 0065 decision 8)
+      newest off-host snapshot: vault-raft-20260924T200259Z.snap, 0 h old,  56K
+PASS  S8.3a no credential on the Platform: lab and lab-hosts nodes, the NetBox adapter and integrations carry Vault references
+      inventory lab: 12/12 nodes carry $GATEWAYSECRET_(lab-automation-password)
+      inventory lab-hosts: 3/3 nodes carry $GATEWAYSECRET_(lab-automation-password)
+      adapter NetBox token = $SECRET_services/netbox $KEY_token
+      integration netbox-api value = $SECRET_services/netbox $KEY_header
+      integration netbox-latest value = $SECRET_services/netbox $KEY_header
+PASS  S8.3b the Gateway's Vault provider and aliases match the oracle (export compared)
+      provider lab-vault: as the oracle says, role ID matches Vault
+      aliases: ['lab-automation-password', 'lab-netbox-token']
+PASS  S8.3c the NetBox adapter reads NetBox with the token the Platform resolves from Vault
+      NetBox adapter (token from Vault through the Platform): 23 devices
+PASS  S8.3d every lab device logs in with its password resolved from Vault (show clock)
+      show clock with the Vault-held password: {'br1-sw01': True, 'br1-wan01': True, 'br2-sw01': True, 'br2-wan01': True, 'dc1-acc01': True, 'dc1-leaf01': True, 'dc1-leaf02': True, 'dc1-spine01': True, 'dc1-spine02': True, 'dc1-wan01': True, 'dc1-wan02': True, 'isp-core01': True}
+PASS  S8.3e every lab host logs in with its password resolved from Vault (hostname)
+      hostname on lab-hosts with the Vault-held password: {'br1-host01': True, 'br2-host01': True, 'dc1-srv01': True}
+
+passed=12 failed=0 skipped=0
+RESULT: PASS

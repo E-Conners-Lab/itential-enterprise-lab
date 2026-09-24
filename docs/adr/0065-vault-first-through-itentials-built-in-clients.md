@@ -279,3 +279,46 @@ and `make vault-unseal` in their own terminal. Measured and decided along the wa
 - `verify/test-09a-vault.sh`: 7/7 with the root token, 4 pass + 3 skipped after the revoke.
 - The Platform and the Gateway still hold their credentials. S8.3 and the switch of `vault_enabled` for production
   are the cut-over (step 5), approved separately.
+
+## Rebuilt with an administrator login, then the cut-over, step 5 (2026-09-24)
+
+**Vault 2.0 authenticates generate-root.** After step 3 revoked the root token, `sys/generate-root/attempt` answered
+403 without a token (so did `sys/rekey`): Vault 2.0 authenticates those endpoint families unless the server config
+lists them in `enable_unauthenticated_access`. Production was left with no administrator path. Enabling
+unauthenticated generate-root was rejected (it weakens the server permanently); instead Vault was rebuilt (nothing
+depended on it yet; everything in it comes from the repo and `.env`) with **an administrator login for the owner**:
+
+- userpass login `lab-admin` (`versions.yaml` `vault.prod.admin`): the play makes the mount and the policy, the owner
+  sets the password (`make vault-admin-user`), `make vault-login` writes a one-hour token to a mode-600 file and
+  `make vault-logout` revokes it;
+- **least privilege**: the readers' role IDs and secret IDs, the reader roles and their policies (not its own), the
+  `lab/` secrets, snapshots, and reader-policy tokens only through the `verify-readers` token role. It cannot seal
+  Vault, change auth methods or mounts, or widen itself;
+- `make vault-revoke-root` **refuses unless the administrator login works**. Measured: with the init file hidden,
+  `lab-admin` alone passed S8.2a-g and took a snapshot; then the root token was revoked (403).
+
+**The cut-over** (`make vault-cutover`, the owner's login token read from its file, never printed):
+
+- `vault_enabled: true` in both production sources, `itential/ha2/versions.yaml` (the HA2 plays) and
+  `vars/itential-prod.yml` (the replay); `tests/test_vault.py` holds them equal, so no production target can put the
+  plaintext back by leaving the switch out.
+- Platform nodes: the AppRole credentials in each node's mode-600 `.env`, the `ITENTIAL_VAULT_*` client in the
+  compose file, `NODE_EXTRA_CA_CERTS` pointing at the lab CA each node already mounts for MongoDB. iap-02 started with
+  it, served its login page and was parked again, as designed.
+- Gateway on iag-01: the lab CA and `SSL_CERT_DIR`, then `tasks/gateway-vault.yml` unchanged in substance (the
+  Platform API is reached from iag-01).
+- Later replays need no token: a reader keeps the role and secret ID it holds; one holding nothing stops the play.
+- Found on the way: **a stray `/opt/itential/compose.override.yml` on iap-01** (dated 2026-09-11, a copy of the dev
+  stack's override) broke `docker compose up` there; the first run stopped before touching the running Platform. The
+  owner moved it aside (`compose.override.yml.stray-2026-09-11`) and the second run completed.
+- Result: `verify/test-09a-vault.sh` **12/12** - S8.2a-g and S8.3a-e: every lab and lab-hosts node carries
+  `$GATEWAYSECRET_(lab-automation-password)`, the NetBox adapter and both NetBox integrations carry `$SECRET_`
+  references, the Gateway provider matches the oracle, NetBox reads through Vault, all 12 devices (`show clock`)
+  and all 3 hosts (`hostname`) log in with the Vault-held password.
+- Not covered by the cut-over: the `nxos` inventory (made by the NX-OS pack's own workflow) keeps its credentials.
+- Roll back: the three plays with `-e vault_enabled=false`; the credentials stay in `.env` until Phase 9b.
+- The full production verify after the cut-over (`verify/run.sh`, 2026-09-24 20:03 UTC) is green apart from two
+  criteria unrelated to Vault that were already failing (S7.1: the NX-OS switches are not in Zabbix; S11.8: it still
+  expects dev VM 205 retired, which ADR 0063 brought back): every workflow's device login through the alias, the
+  ServiceNow change lifecycle through its `$SECRET_` reference, Lifecycle Manager, NetBox, the integrations and every
+  agent, Claude-backed and local, pass.
