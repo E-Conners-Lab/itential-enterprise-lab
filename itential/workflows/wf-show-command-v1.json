@@ -361,6 +361,112 @@
       "actor": "Pronghorn",
       "scheduled": false
     },
+    "2b": {
+      "name": "evaluation",
+      "canvasName": "evaluation",
+      "summary": "did the device answer?",
+      "description": "did the device answer?",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 450,
+        "y": 0
+      },
+      "variables": {
+        "incoming": {
+          "all_true_flag": true,
+          "evaluation_groups": [
+            {
+              "all_true_flag": true,
+              "evaluations": [
+                {
+                  "query": "result.results[0].success",
+                  "operand_1": {
+                    "variable": "result",
+                    "task": "2a"
+                  },
+                  "operator": "==",
+                  "operand_2": {
+                    "variable": true,
+                    "task": "static"
+                  }
+                }
+              ]
+            }
+          ],
+          "options": {}
+        },
+        "outgoing": {
+          "return_value": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "5c": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "raw output only: no parser applied",
+      "description": "raw output only: no parser applied",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 1500,
+        "y": -300
+      },
+      "variables": {
+        "incoming": {
+          "input": "no parser applied: the device's platform could not be read from NetBox (or the parse failed); the raw output is complete",
+          "outputType": "string",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.parse_error"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "5b": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "the device did not answer",
+      "description": "the device did not answer",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 900,
+        "y": -300
+      },
+      "variables": {
+        "incoming": {
+          "input": "the command did not run on the device (credential or connection error); report this and do not retry",
+          "outputType": "string",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.device_error"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
     "5a": {
       "name": "makeData",
       "canvasName": "makeData",
@@ -442,7 +548,7 @@
       }
     },
     "2a": {
-      "3a": {
+      "2b": {
         "state": "success",
         "type": "standard"
       },
@@ -451,9 +557,23 @@
         "type": "standard"
       }
     },
+    "2b": {
+      "3a": {
+        "state": "success",
+        "type": "standard"
+      },
+      "5b": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
     "3a": {
       "3b": {
         "state": "success",
+        "type": "standard"
+      },
+      "5c": {
+        "state": "error",
         "type": "standard"
       }
     },
@@ -461,17 +581,29 @@
       "3c": {
         "state": "success",
         "type": "standard"
+      },
+      "5c": {
+        "state": "error",
+        "type": "standard"
       }
     },
     "3c": {
       "4a": {
         "state": "success",
         "type": "standard"
+      },
+      "5c": {
+        "state": "error",
+        "type": "standard"
       }
     },
     "4a": {
       "4b": {
         "state": "success",
+        "type": "standard"
+      },
+      "5c": {
+        "state": "error",
         "type": "standard"
       }
     },
@@ -488,6 +620,18 @@
       }
     },
     "4d": {
+      "workflow_end": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "5b": {
+      "workflow_end": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "5c": {
       "workflow_end": {
         "state": "success",
         "type": "standard"

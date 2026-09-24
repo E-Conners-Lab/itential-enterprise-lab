@@ -93,6 +93,82 @@
       "actor": "Pronghorn",
       "scheduled": false
     },
+    "2a": {
+      "name": "evaluation",
+      "canvasName": "evaluation",
+      "summary": "did the device answer?",
+      "description": "did the device answer?",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 900,
+        "y": 0
+      },
+      "variables": {
+        "incoming": {
+          "all_true_flag": true,
+          "evaluation_groups": [
+            {
+              "all_true_flag": true,
+              "evaluations": [
+                {
+                  "query": "result.results[0].success",
+                  "operand_1": {
+                    "variable": "result",
+                    "task": "1a"
+                  },
+                  "operator": "==",
+                  "operand_2": {
+                    "variable": true,
+                    "task": "static"
+                  }
+                }
+              ]
+            }
+          ],
+          "options": {}
+        },
+        "outgoing": {
+          "return_value": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "2b": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "the device did not answer",
+      "description": "the device did not answer",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 900,
+        "y": -300
+      },
+      "variables": {
+        "incoming": {
+          "input": "the command did not run on the device (credential or connection error); report this and do not retry",
+          "outputType": "string",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.device_error"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
     "workflow_start": {
       "name": "workflow_start",
       "summary": "workflow_start",
@@ -132,6 +208,26 @@
       }
     },
     "1a": {
+      "2a": {
+        "state": "success",
+        "type": "standard"
+      },
+      "2b": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "2a": {
+      "workflow_end": {
+        "state": "success",
+        "type": "standard"
+      },
+      "2b": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "2b": {
       "workflow_end": {
         "state": "success",
         "type": "standard"
@@ -159,6 +255,9 @@
     "properties": {
       "show_version": {
         "type": "object"
+      },
+      "device_error": {
+        "type": "string"
       }
     }
   },

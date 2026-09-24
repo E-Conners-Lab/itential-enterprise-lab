@@ -428,7 +428,7 @@
         "incoming": {
           "clusterId": "lab",
           "language": "python",
-          "code": "import json, sys\nd = json.loads(sys.stdin.read() or \"{}\")\nreports = d.get(\"reports\") if isinstance(d, dict) else d\nif isinstance(reports, dict):\n    reports = reports.get(\"complianceHistory\") or reports.get(\"list\") or []\nreports = reports or []\ndevices = []\nfor r in reports:\n    t = r.get(\"totals\") or {}\n    issues = [\" \".join(w.get(\"value\", \"\") for w in (i.get(\"spec\") or {}).get(\"words\", [])).strip() for i in r.get(\"issues\") or []]\n    devices.append({\"device\": r.get(\"deviceName\"), \"report_id\": r.get(\"id\") or r.get(\"_id\"), \"errors\": t.get(\"errors\", 0),\n                    \"warnings\": t.get(\"warnings\", 0), \"passes\": t.get(\"passes\", 0), \"issues\": issues})\ndevices.sort(key=lambda x: str(x[\"device\"]))\nbad = [x[\"device\"] for x in devices if x[\"errors\"] or x[\"warnings\"]]\nprint(json.dumps({\"compliant\": not bad, \"devices_checked\": len(devices), \"devices_with_issues\": bad, \"devices\": devices}))\n",
+          "code": "import json, sys\nd = json.loads(sys.stdin.read() or \"{}\")\nreports = d.get(\"reports\") if isinstance(d, dict) else d\nif isinstance(reports, dict):\n    reports = reports.get(\"complianceHistory\") or reports.get(\"list\") or []\nreports = reports or []\ndevices = []\nfor r in reports:\n    t = r.get(\"totals\") or {}\n    issues = [\" \".join(w.get(\"value\", \"\") for w in (i.get(\"spec\") or {}).get(\"words\", [])).strip() for i in r.get(\"issues\") or []]\n    devices.append({\"device\": r.get(\"deviceName\"), \"report_id\": r.get(\"id\") or r.get(\"_id\"), \"errors\": t.get(\"errors\", 0),\n                    \"warnings\": t.get(\"warnings\", 0), \"passes\": t.get(\"passes\", 0), \"issues\": issues})\ndevices.sort(key=lambda x: str(x[\"device\"]))\nbad = [x[\"device\"] for x in devices if x[\"errors\"] or x[\"warnings\"]]\n# A device with nothing evaluated (no pass, error or warning - its configuration could not be read, e.g. a sealed\n# Vault) was not checked, and no device at all is no answer: neither may ever read as compliant (ADR 0066).\nnot_checked = [x[\"device\"] for x in devices if not (x[\"passes\"] or x[\"errors\"] or x[\"warnings\"])]\nout = {\"compliant\": bool(devices) and not bad and not not_checked, \"devices_checked\": len(devices) - len(not_checked),\n       \"devices_with_issues\": bad, \"devices_not_checked\": not_checked, \"devices\": devices}\nif not devices:\n    out[\"error\"] = \"no device report in this run: compliance could not be evaluated\"\nprint(json.dumps(out))\n",
           "data": "$var.6e.object",
           "safety": {
             "timeout": 30
@@ -1124,6 +1124,66 @@
         "decorators": []
       }
     },
+    "e1": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "the compliance report could not be produced",
+      "description": "the compliance report could not be produced",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 2400,
+        "y": 400
+      },
+      "variables": {
+        "incoming": {
+          "input": "the compliance report could not be produced (a Configuration Manager or runner call failed); report this and do not retry",
+          "outputType": "string",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.report_error"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "e2": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "the run did not finish in time",
+      "description": "the run did not finish in time",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 4100,
+        "y": -700
+      },
+      "variables": {
+        "incoming": {
+          "input": "the compliance run did not finish within the wait; it may still complete - read it later with run=false",
+          "outputType": "string",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.report_error"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
     "workflow_start": {
       "name": "workflow_start",
       "summary": "workflow_start",
@@ -1154,6 +1214,10 @@
       "1b": {
         "state": "success",
         "type": "standard"
+      },
+      "e1": {
+        "state": "error",
+        "type": "standard"
       }
     },
     "1b": {
@@ -1176,6 +1240,10 @@
       "2b": {
         "state": "success",
         "type": "standard"
+      },
+      "e1": {
+        "state": "error",
+        "type": "standard"
       }
     },
     "2b": {
@@ -1194,11 +1262,19 @@
       "4b": {
         "state": "success",
         "type": "standard"
+      },
+      "e1": {
+        "state": "error",
+        "type": "standard"
       }
     },
     "4b": {
       "4c": {
         "state": "success",
+        "type": "standard"
+      },
+      "e1": {
+        "state": "error",
         "type": "standard"
       }
     },
@@ -1218,11 +1294,19 @@
       "6e": {
         "state": "success",
         "type": "standard"
+      },
+      "e1": {
+        "state": "error",
+        "type": "standard"
       }
     },
     "6e": {
       "6b": {
         "state": "success",
+        "type": "standard"
+      },
+      "e1": {
+        "state": "error",
         "type": "standard"
       }
     },
@@ -1230,17 +1314,29 @@
       "6c": {
         "state": "success",
         "type": "standard"
+      },
+      "e1": {
+        "state": "error",
+        "type": "standard"
       }
     },
     "6c": {
       "6d": {
         "state": "success",
         "type": "standard"
+      },
+      "e1": {
+        "state": "error",
+        "type": "standard"
       }
     },
     "6d": {
       "workflow_end": {
         "state": "success",
+        "type": "standard"
+      },
+      "e1": {
+        "state": "error",
         "type": "standard"
       }
     },
@@ -1259,6 +1355,10 @@
     "a2": {
       "a3": {
         "state": "success",
+        "type": "standard"
+      },
+      "e1": {
+        "state": "error",
         "type": "standard"
       }
     },
@@ -1294,6 +1394,10 @@
       "b3": {
         "state": "success",
         "type": "standard"
+      },
+      "e1": {
+        "state": "error",
+        "type": "standard"
       }
     },
     "b3": {
@@ -1327,6 +1431,10 @@
     "c2": {
       "c3": {
         "state": "success",
+        "type": "standard"
+      },
+      "e1": {
+        "state": "error",
         "type": "standard"
       }
     },
@@ -1362,6 +1470,10 @@
       "d3": {
         "state": "success",
         "type": "standard"
+      },
+      "e1": {
+        "state": "error",
+        "type": "standard"
       }
     },
     "d3": {
@@ -1374,10 +1486,26 @@
       "d5": {
         "state": "success",
         "type": "standard"
+      },
+      "e2": {
+        "state": "failure",
+        "type": "standard"
       }
     },
     "d5": {
       "6a": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "e1": {
+      "workflow_end": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "e2": {
+      "workflow_end": {
         "state": "success",
         "type": "standard"
       }
@@ -1416,6 +1544,9 @@
       },
       "compliant": {
         "type": "boolean"
+      },
+      "report_error": {
+        "type": "string"
       }
     }
   },

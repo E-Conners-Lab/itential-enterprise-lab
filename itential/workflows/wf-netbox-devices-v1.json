@@ -215,6 +215,36 @@
         "decorators": []
       }
     },
+    "3a": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "NetBox could not be read",
+      "description": "NetBox could not be read",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 300,
+        "y": -300
+      },
+      "variables": {
+        "incoming": {
+          "input": "NetBox could not be read (credential or connection); report this and do not retry",
+          "outputType": "string",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.netbox_error"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
     "workflow_start": {
       "name": "workflow_start",
       "summary": "workflow_start",
@@ -244,6 +274,10 @@
     "1a": {
       "1b": {
         "state": "success",
+        "type": "standard"
+      },
+      "3a": {
+        "state": "error",
         "type": "standard"
       }
     },
@@ -283,6 +317,12 @@
         "type": "standard"
       }
     },
+    "3a": {
+      "workflow_end": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
     "workflow_end": {}
   },
   "groups": [],
@@ -308,6 +348,9 @@
       },
       "count": {
         "type": "number"
+      },
+      "netbox_error": {
+        "type": "string"
       }
     }
   },
