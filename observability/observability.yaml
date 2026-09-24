@@ -13,6 +13,9 @@ web_checks:
   - {name: alertmanager, url: "https://alertmanager.lab.internal/-/healthy", expect: 200}
   - {name: loki, url: "https://loki.lab.internal/ready", expect: 200}
   - {name: gnmic, url: "https://gnmic.lab.internal/metrics", expect: 200}
+  # Vault answers /v1/sys/health 200 only when unsealed (503 sealed, 501 not initialised): the probe is the sealed
+  # signal for VaultSealed (ADR 0065 decision 7), and Zabbix gets the same web scenario
+  - {name: vault, url: "https://vault.lab.internal:8200/v1/sys/health", expect: 200}
 
 # Zabbix: templates the lab hosts link, by NetBox platform slug (devices) or kind (VMs). The lab templates
 # live in observability/zabbix/templates/ and link the stock ones named here (asserted present after import).
@@ -81,6 +84,7 @@ prometheus:
     - {name: LabTargetDown, for: 5m}
     - {name: LabUiDown, for: 3m}
     - {name: LabBgpSessionDown, for: 2m}
+    - {name: VaultSealed, for: 1m}
 
 # gNMIc (vEOS only, ADR 0051 decision 8): port, subscriptions and the sample interval. Targets come from NetBox.
 gnmic:

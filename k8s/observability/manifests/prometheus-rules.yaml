@@ -45,3 +45,15 @@ spec:
           annotations:
             summary: "BGP neighbour {{ $labels.neighbor_address }} of {{ $labels.source }} is not Established"
             description: "gNMIc reports the session in a state other than ESTABLISHED for 2 minutes."
+    - name: lab-secrets
+      rules:
+        # ADR 0065 decision 7: it notifies nobody yet (Alertmanager's only receiver is lab-null, ADR 0051/0064); a sealed
+        # Vault shows in Grafana, the Alertmanager UI and verify/test-09a-vault.sh until S7 gets a notification channel
+        - alert: VaultSealed
+          expr: probe_success{job="blackbox-http", ui="vault"} == 0
+          for: 1m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Vault is sealed or down"
+            description: "vault.lab.internal:8200/v1/sys/health has not answered 200 for a minute. If Vault restarted, it is sealed: run make vault-unseal."
