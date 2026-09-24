@@ -16,7 +16,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 0,
-        "y": 0
+        "y": 150
       },
       "variables": {
         "incoming": {
@@ -48,7 +48,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 0,
-        "y": 180
+        "y": 300
       },
       "variables": {
         "incoming": {
@@ -76,7 +76,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 0,
-        "y": 360
+        "y": 450
       },
       "variables": {
         "incoming": {
@@ -98,7 +98,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 0,
-        "y": -180
+        "y": 0
       }
     },
     "workflow_end": {
@@ -107,7 +107,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 0,
-        "y": 540
+        "y": 600
       }
     }
   },

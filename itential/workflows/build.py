@@ -74,19 +74,58 @@ def task(
     return t
 
 
-# The canvas reads top to bottom (owner preference, 2026-09-24). Tasks are placed below as x = step along the
-# main path, y = side branch (0 is the main path, negative a failure branch); top_to_bottom turns that into
-# y = step, x = branch, so the happy path runs down the middle and failure branches sit to its left.
-# A step is 300 units across the main path; down the page it is closer, because a task is wider than tall.
-STEP_DOWN = 180
+# The canvas reads top to bottom and is laid out from the transitions, not by hand (owner preference,
+# 2026-09-24). The x/y a task is given below is only a hint: x its order along the flow, y its lane (0 the main
+# path, negative a failure branch to the left, positive a side branch to the right).
+#   row    = the longest path from workflow_start, so every forward arrow points down; a loop back (a retry
+#            or a poll) is the only arrow that goes up
+#   column = the task's lane, then tasks sharing a row are pushed apart so none overlap
+# workflow_start is alone on the top row and workflow_end alone on the bottom one.
+ROW = 150  # down the page from one row to the next (a task is about 50 units tall)
+COL = 300  # across the page between tasks in a row (a task is about 220 units wide)
 
 
-def top_to_bottom(tasks: dict) -> dict:
-    out = {}
-    for tid, t in tasks.items():
-        loc = t.get("nodeLocation") or {"x": 0, "y": 0}
-        out[tid] = {**t, "nodeLocation": {"x": loc["y"], "y": loc["x"] * STEP_DOWN // 300}}
-    return out
+def layout(tasks: dict, transitions: dict) -> dict[str, dict]:
+    hint = {tid: t.get("nodeLocation") or {"x": 0, "y": 0} for tid, t in tasks.items()}
+    hint["workflow_start"] = {"x": float("-inf"), "y": 0}
+    hint["workflow_end"] = {"x": float("inf"), "y": 0}
+    succ = {n: sorted((d for d in transitions.get(n, {}) if d in hint), key=lambda d: hint[d]["x"]) for n in hint}
+
+    # depth-first from the start: finishing order gives a topological order once the back edges are set aside
+    back, done, active, finish = set(), set(), set(), []
+
+    def visit(n: str) -> None:
+        active.add(n)
+        for d in succ[n]:
+            if d in active:
+                back.add((n, d))
+            elif d not in done:
+                visit(d)
+        active.discard(n)
+        done.add(n)
+        finish.append(n)
+
+    visit("workflow_start")
+    unreachable = sorted(set(hint) - done - {"workflow_end"})
+    assert not unreachable, f"tasks no transition reaches: {unreachable}"
+
+    row = dict.fromkeys(hint, 0)
+    for n in reversed(finish):
+        for d in succ[n]:
+            if (n, d) not in back:
+                row[d] = max(row[d], row[n] + 1)
+    row["workflow_end"] = max(r for n, r in row.items() if n != "workflow_end") + 1
+
+    x: dict[str, float] = {}
+    for r in sorted(set(row.values())):
+        members = sorted((n for n in row if row[n] == r), key=lambda n: (hint[n]["y"], hint[n]["x"]))
+        pivot = min(range(len(members)), key=lambda i: abs(hint[members[i]]["y"]))
+        x[members[pivot]] = hint[members[pivot]]["y"]
+        for i in range(pivot + 1, len(members)):
+            x[members[i]] = max(hint[members[i]]["y"], x[members[i - 1]] + COL)
+        for i in range(pivot - 1, -1, -1):
+            x[members[i]] = min(hint[members[i]]["y"], x[members[i + 1]] - COL)
+    return {n: {"x": int(x[n]), "y": row[n] * ROW} for n in hint}
 
 
 def workflow(
@@ -97,19 +136,19 @@ def workflow(
     transitions: dict,
     outputs: dict | None = None,
 ) -> dict:
-    tasks = top_to_bottom(dict(tasks))
-    ys = [t["nodeLocation"]["y"] for t in tasks.values()]
+    where = layout(tasks, transitions)
+    tasks = {tid: {**t, "nodeLocation": where[tid]} for tid, t in tasks.items()}
     tasks["workflow_start"] = {
         "name": "workflow_start",
         "summary": "workflow_start",
         "groups": [],
-        "nodeLocation": {"x": 0, "y": min(ys, default=0) - STEP_DOWN},
+        "nodeLocation": where["workflow_start"],
     }
     tasks["workflow_end"] = {
         "name": "workflow_end",
         "summary": "workflow_end",
         "groups": [],
-        "nodeLocation": {"x": 0, "y": max(ys, default=0) + STEP_DOWN},
+        "nodeLocation": where["workflow_end"],
     }
     transitions = dict(transitions)
     transitions.setdefault("workflow_end", {})
