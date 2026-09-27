@@ -34,8 +34,9 @@ network source of truth.
 >   transitions (ADR 0067).
 > - A Cisco NX-OS asset pack with a NetBox-driven inventory, and an eleven-chapter runbook series (ADR 0056).
 >
-> **Next.** Phase 9b (Vault as the source of the credentials, a smaller `.env`, certificates from Vault PKI), the
-> rest of Phase 9 (Oxidized, Gitea), and a Batfish configuration-analysis twin on the Containerlab host.
+> **Next.** The rest of Phase 9 (Oxidized, Gitea) and a Batfish configuration-analysis twin on the Containerlab host.
+> Phase 9b (Vault as the source, a smaller `.env`, Vault PKI) is deferred: `.env` stays the source and Vault a
+> read-only copy of it (ADR 0065 amendment).
 
 ## Architecture
 
@@ -99,7 +100,7 @@ Phases are delivered one PR each in the order fixed by ADR 0008. Service specs a
 | 7 | `phase-7/observability` | Zabbix, kube-prometheus-stack + SNMP/blackbox exporters, gNMIc (vEOS), Loki + Alloy syslog, the official Itential dashboard (ADR 0051, 0052) | merged (PR #22, #23, #29) |
 | 8 | `phase-8/platform-ha2` | Production Itential environment in Itential's HA2 shape (ADR 0053): 11 VMs with TLS and auth between every component and OpenLDAP as the directory; phases 5-7 replayed onto it (ADR 0055); nightly MongoDB backups (ADR 0058) | merged (PR #24, #30) |
 | 9a | `phase-9a/vault` | Vault on k3s; the Platform and Gateway 5 read the device, NetBox and ServiceNow credentials through their built-in clients (ADR 0065) | done (PR #64, #65 and the cut-over) |
-| 9b | - | Vault as the source of the credentials, `.env` reduced, certificates from Vault PKI | planned |
+| 9b | - | Vault as the source of the credentials, `.env` reduced, certificates from Vault PKI | deferred (ADR 0065 amendment) |
 | 9 | `phase-9/config-secrets-code` | Oxidized, Gitea | planned |
 | 10 | `phase-10/identity` | Keycloak SSO (Grafana, Gitea), tac_plus; no Windows (ADR 0050) | planned |
 | 11 | `phase-11/ddi` | BIND9 + Kea from NetBox (NIOS joins in the firewall track) | planned |

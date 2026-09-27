@@ -56,7 +56,7 @@ check "S8.2a Vault answers over the lab CA and is unsealed" vc health
 check "S8.2b a read of lab/devices/automation with no token is refused" vc no-token
 check "S8.2c each reader's policy reads only its own paths (Gateway: devices yes; Platform: devices no, NetBox yes)" vc policies
 check "S8.2e the AppRoles are bound to the dev VM: a login with a valid secret ID from this machine is refused" vc bound
-check "S8.2d the device password in Vault equals the .env seed (one-way until Phase 9b)" vc seeded
+check "S8.2d the device password in Vault equals the .env seed (seeded one way)" vc seeded
 
 # --- S8.3: the Platform holds references, the Gateway resolves them, and both still work --------------------------
 check "S8.3a no credential on the Platform: nodes, NetBox adapter and integration carry Vault references" vc references

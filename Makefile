@@ -187,7 +187,7 @@ vault-revoke-root: ## Production Vault: revoke the root token - refuses unless t
 # (make vault-login, in their own terminal): the token issues the Platform's and the Gateway's secret IDs and is read
 # from its file, never printed. Order matters: the Platform's own Vault client, then the Gateway's provider, then the
 # replay that swaps every credential for a reference. The Platform on iap-01 and the Gateway restart on the way.
-# Roll back: the same three plays with -e vault_enabled=false (the credentials are still in .env until Phase 9b).
+# Roll back: the same three plays with -e vault_enabled=false (.env stays the source of the credentials, ADR 0065).
 VAULT_ADMIN_FILE ?= $(HOME)/.config/itential-enterprise-lab/vault-admin-token
 vault-cutover: ## Phase 9a step 5: the Platform and the Gateway read their credentials from Vault (needs make vault-login)
 	@test -s $(VAULT_ADMIN_FILE) || { echo "log in as the administrator first: make vault-login (in your own terminal)"; exit 1; }

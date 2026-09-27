@@ -1,6 +1,6 @@
 # 0065 — Vault first: device and API credentials through Itential's built-in Vault clients
 
-- **Status:** accepted (owner decisions, 2026-09-23)
+- **Status:** accepted (owner decisions, 2026-09-23); amended 2026-09-24: Phase 9b deferred (PID 1.35)
 - **Date:** 2026-09-23
 - **Amends:** ADR 0026 (single Raft replica, the AppRole shapes, a read-only Platform, an off-host snapshot),
   ADR 0050 (Phase 9 is split: Vault goes first as 9a), PID S8 and section 3 (amendment 1.34)
@@ -322,3 +322,25 @@ depended on it yet; everything in it comes from the repo and `.env`) with **an a
   expects dev VM 205 retired, which ADR 0063 brought back): every workflow's device login through the alias, the
   ServiceNow change lifecycle through its `$SECRET_` reference, Lifecycle Manager, NetBox, the integrations and every
   agent, Claude-backed and local, pass.
+
+## Amendment 2026-09-24: Phase 9b deferred (PID 1.35, owner decision)
+
+Phase 9b (S8 criterion 4, `.env` reduced to the Proxmox token and the Vault address and unseal reference; criterion 5,
+cert-manager issuing from the Vault PKI) is deferred, not scheduled. Phase 9a already delivers what Vault is for in
+this lab: the Platform and the Gateway hold no credential, and they read them read-only through address-bound logins.
+What 9b adds does not pay for itself here:
+
+- `.env` lives on one workstation, is ignored by git and checked by gitleaks on every commit. Taking secrets off many
+  people's machines and CI runners, the enterprise reason for the move, does not apply to a lab with one operator.
+- Vault runs on k3s with one Raft replica on a single SSD. Made the only source, a lost disk would leave every service
+  secret depending on a snapshot restore. With `.env` as the source, a lost Vault is rebuilt and re-seeded from it (`make vault-init`, `vault-unseal`,
+  `vault-admin-user`, `vault-login`, `vault-config`, then `vault-cutover` for fresh secret IDs).
+- Every `make` target would need an administrator login first (one-hour tokens), and the plays that build k3s could
+  not read secrets from a Vault that runs on it.
+- The lab CA already issues every certificate through cert-manager; a Vault PKI issuer would look the same to a
+  client.
+
+So `.env` stays the source and Vault a read-only copy seeded one way from it (decision 10 stands without an end
+date); the LDAP bind password stays `$ENC`. `verify/test-09b-secrets.sh` is not written. Rotating the `automation`
+password does not depend on 9b: change it on the devices and in `.env`, then `make vault-login` and
+`make vault-config`, which rewrites only the values that differ.
