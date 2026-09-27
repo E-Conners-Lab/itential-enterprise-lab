@@ -106,6 +106,7 @@ Phases are delivered one PR each in the order fixed by ADR 0008. Service specs a
 | 11 | `phase-11/ddi` | BIND9 + Kea from NetBox (NIOS joins in the firewall track) | planned |
 | 12 | `phase-12/containerlab` | Containerlab CI/test tier (cEOS mirror of the DC fabric) | planned |
 | 13 | `phase-13/firewall-track` | NIOS grid master, the PA-VM firewalls (`lab.firewalls`), Panorama: once the images exist (ADR 0050) | planned |
+| aws-vpn | `phase-aws-vpn/*` | Itential runs the AWS site-to-site VPN end to end (PID S13, ADR 0068): Terraform on the Gateway with an approved plan file, every AWS secret only in Vault, the tunnel on `dc1-wan01`, four-signal verification and teardown | designing (ADR 0068 proposed) |
 | dev | - | The Copilot prototyping tier (PID S12, ADR 0063): `itential-dev` with its own dev Vault, a view-only NetBox token and the local model only; Containerlab topology `dev` (2 C8000v + 2 vEOS-lab); `svc-copilot` read-only on production. Verified by `make verify-dev` | running (PR #41-#57) |
 
 ## What is running
