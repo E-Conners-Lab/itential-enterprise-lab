@@ -494,3 +494,24 @@ def test_the_internet_port_reaches_netbox_without_a_cable(topo: dict, intent: di
     assert "internet_ports | default([]) | map(attribute='port')" in task[: task.index("- name:", 10)]
     cables = seed[seed.index("Cables (one per link)") :]
     assert "internet_ports" not in cables[: cables.index("- name:", 10)]
+
+
+def test_seed_writes_each_device_status_once_and_final() -> None:
+    """A re-run of netbox-topology.yml flipped all 17 running devices to planned and back (dry run 2026-09-28): the
+    Platform inventory and monitoring read status=active, and a run that stopped between the two writes left them
+    planned. One task writes the status, already final, from the builder export read before it."""
+    import yaml
+
+    tasks = yaml.safe_load(SEED.read_text())[0]["tasks"]
+    names = [t["name"] for t in tasks]
+    writers = [
+        t for t in tasks if "netbox.netbox.netbox_device" in t and "status" in t["netbox.netbox.netbox_device"]["data"]
+    ]
+    assert len(writers) == 1, [t["name"] for t in writers]
+    status = writers[0]["netbox.netbox.netbox_device"]["data"]["status"]
+    assert status == "{{ 'active' if item.key in (built_nodes.nodes | default({})) else 'planned' }}", status
+    assert names.index("Read the builder export (nodes that exist on EVE-NG)") < names.index(writers[0]["name"])
+    # the read-only steps run under --check, so a dry run shows the whole play (it answered changed=0 after the fix)
+    for t in tasks:
+        if "ansible.builtin.command" in t or ("ansible.builtin.uri" in t and "method" not in t["ansible.builtin.uri"]):
+            assert t.get("check_mode") is False, f"{t['name']}: a read-only step must run in --check"

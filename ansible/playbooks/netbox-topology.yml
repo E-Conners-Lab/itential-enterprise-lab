@@ -23,6 +23,7 @@
       ansible.builtin.command: "{{ ansible_python_interpreter }} {{ playbook_dir }}/../../topology/derive.py"
       register: derive_out
       changed_when: false
+      check_mode: false  # read-only: --check needs the port map to show what the play would change
 
     - name: The port map
       ansible.builtin.set_fact:
@@ -75,7 +76,17 @@
           is_full_depth: false
       loop: "{{ nodes.values() | map(attribute='platform') | unique | list }}"
 
-    - name: Devices
+    # Lifecycle: a device is "planned" until the EVE-NG builder has exported it
+    # (topology/generated/eve-nodes.yaml lists what actually exists on EVE-NG).
+    - name: Read the builder export (nodes that exist on EVE-NG)
+      ansible.builtin.set_fact:
+        built_nodes: >-
+          {{ (lookup('ansible.builtin.file', playbook_dir ~ '/../../topology/generated/eve-nodes.yaml', errors='ignore') or '{}')
+             | from_yaml }}
+
+    # The status is written once, final: a re-run never flips a running device to planned and back (the Platform
+    # inventory and monitoring read status=active, and a run that stopped between two writes left it planned).
+    - name: Devices (active if they exist on EVE-NG, else planned)
       netbox.netbox.netbox_device:
         netbox_url: "{{ nb_url }}"
         netbox_token: "{{ nb_token }}"
@@ -86,7 +97,7 @@
           device_role: "{{ item.value.role }}"
           platform: "{{ platform_of[item.value.platform] }}"
           site: "{{ item.value.site }}"
-          status: planned
+          status: "{{ 'active' if item.key in (built_nodes.nodes | default({})) else 'planned' }}"
           tags: [phase-4]
       loop: "{{ nodes | dict2items }}"
       loop_control:
@@ -197,6 +208,7 @@
         url: "{{ nb_url }}/api/dcim/interfaces/?device={{ item.key }}&name={{ mgmt_iface_of[item.value.platform] }}"
         headers: {Authorization: "Token {{ nb_token }}"}
       register: mgmt_ifaces
+      check_mode: false  # a GET
       loop: "{{ nodes | dict2items }}"
       loop_control:
         label: "{{ item.key }}"
@@ -207,6 +219,7 @@
         url: "{{ nb_url }}/api/ipam/ip-addresses/?address={{ item.value.mgmt_ip }}/24"
         headers: {Authorization: "Token {{ nb_token }}"}
       register: mgmt_ips
+      check_mode: false  # a GET
       loop: "{{ nodes | dict2items }}"
       loop_control:
         label: "{{ item.key }}"
@@ -231,26 +244,6 @@
         netbox_token: "{{ nb_token }}"
         validate_certs: false
         data: {name: "{{ item.key }}", primary_ip4: "{{ item.value.mgmt_ip }}/24"}
-      loop: "{{ nodes | dict2items }}"
-      loop_control:
-        label: "{{ item.key }}"
-
-    # Lifecycle: a device is "planned" until the EVE-NG builder has exported it
-    # (topology/generated/eve-nodes.yaml lists what actually exists on EVE-NG).
-    - name: Read the builder export (nodes that exist on EVE-NG)
-      ansible.builtin.set_fact:
-        built_nodes: >-
-          {{ (lookup('ansible.builtin.file', playbook_dir ~ '/../../topology/generated/eve-nodes.yaml', errors='ignore') or '{}')
-             | from_yaml }}
-
-    - name: Devices that exist on EVE-NG are active (others stay planned)
-      netbox.netbox.netbox_device:
-        netbox_url: "{{ nb_url }}"
-        netbox_token: "{{ nb_token }}"
-        validate_certs: false
-        data:
-          name: "{{ item.key }}"
-          status: "{{ 'active' if item.key in (built_nodes.nodes | default({})) else 'planned' }}"
       loop: "{{ nodes | dict2items }}"
       loop_control:
         label: "{{ item.key }}"
