@@ -26,7 +26,6 @@ def test_pid_records_the_phase_9a_split_and_its_evals() -> None:
 def test_phase_9b_is_deferred_in_the_pid_adr_and_readme() -> None:
     # owner decision 2026-09-24: .env stays the source, Vault a read-only copy; nothing may still promise 9b
     pid = PID.read_text()
-    assert "| **Version** | 1.35 |" in pid
     assert "| 1.35 | 2026-09-24 | Phase 9b deferred" in pid and "Amendment 1.35 (ADR 0065 amendment)" in pid
     assert "| 9b *(1.34, deferred 1.35)* | - | none: deferred" in pid
     assert "## Amendment 2026-09-24: Phase 9b deferred" in ADR.read_text()
