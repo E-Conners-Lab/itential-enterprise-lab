@@ -361,6 +361,14 @@ links:
   - {a: "br1-wan01:Gi4", b: "br1-sw01:Eth4", vlan: 10, bypass: true}
   - {a: "br2-wan01:Gi4", b: "br2-sw01:Eth4", vlan: 10, bypass: true}
 
+# Internet ports (ADR 0068 decision 4): a router port on an EVE-NG cloud network instead of a link to another node,
+# so no NetBox cable (the far end is not a device) and no BGP. The EVE-NG host is 172.29.129.254 on nat0 and
+# masquerades it out of pnet0 to the home LAN; its DHCP pool is .1-.253, handed out from the bottom, and nothing
+# else uses nat0, so the static address sits at the top. Each port is its own front-door VRF with a default route
+# to the cloud's gateway, and an inbound ACL that admits only IKE, ESP and the ICMP replies the router needs.
+internet_ports:
+  - {port: "dc1-wan01:Gi7", network: nat0, vrf: INET, address: 172.29.129.250/24, gateway: 172.29.129.254}
+
 # The four provider links are circuits (ADR 0048): the link's a-side is the provider port (termination Z at the
 # WAN site), the b-side the customer edge (termination A at its site). links[].circuit names the circuit.
 providers:
@@ -384,6 +392,7 @@ rack_order: [isp-core, wan-edge, firewall, spine, leaf, access, branch-switch, s
 vrfs:
   MGMT: {description: "OOB management (pnet1)", platforms: [c8000v, veos]}
   WAN: {description: "front-door VRF: provider transport only", platforms: [c8000v], rd: "<asn>:1"}
+  INET: {description: "front-door VRF: internet through the EVE-NG NAT cloud", platforms: [c8000v]}
   PROD: {description: "DC1 tenant VRF (L3VNI 50001)", platforms: [veos], rd: "<router-id>:50001", vni: 50001, route_targets: ["50001:50001"]}
 
 # in-band prefixes (docs/ip-plan.md section 6); netbox-topology.yml seeds them, netbox-enrich.yml fills them
@@ -403,3 +412,5 @@ inband_prefixes:
   - {prefix: 10.102.17.0/24, site: br1, role: branch-inband, description: "branch 1 users VLAN 10", vlan: 10}
   - {prefix: 10.102.32.0/20, site: br2, role: branch-inband, description: "branch 2"}
   - {prefix: 10.102.33.0/24, site: br2, role: branch-inband, description: "branch 2 users VLAN 10", vlan: 10}
+  # EVE-NG's own NAT cloud (docs/ip-plan.md section 1), recorded for the internet port's address
+  - {prefix: 172.29.129.0/24, site: dc1, role: internet, description: "EVE-NG NAT cloud nat0, the internet ports", vrf: INET}

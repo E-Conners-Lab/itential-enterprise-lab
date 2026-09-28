@@ -326,7 +326,7 @@ def test_routing_tunnels_vrfs_and_prefixes_in_the_yaml(topo: dict) -> None:
     assert len({(t["a"]) for t in tunnels} | {t["b"] for t in tunnels}) == 8, (
         "one tunnel interface per end"
     )
-    assert set(topo["vrfs"]) == {"MGMT", "WAN", "PROD"}
+    assert set(topo["vrfs"]) == {"MGMT", "WAN", "PROD", "INET"}
     assert {p["prefix"] for p in topo["inband_prefixes"]} >= {
         "10.103.100.0/24",
         "10.101.254.0/24",
@@ -354,3 +354,118 @@ def test_c8000v_ntp_server_follows_its_vrf_definition_and_the_verify_checks_it(t
         assert ntp > vrf, f"{name}: ntp server before its VRF is defined"
     verify = (ROOT / "verify" / "test-04-topology.sh").read_text()
     assert 'check "S3.2b ' in verify and "topology/generated/configs/${n_name}.cfg" in verify
+
+
+# --- ADR 0068 decision 4: the DC edge's own internet port on EVE-NG's NAT cloud ------------------------------------
+def test_internet_port_is_a_free_existing_port_on_the_nat_cloud(topo: dict) -> None:
+    """dc1-wan01 Gi7 on nat0: a port the running node already has (EVE-NG Pro cables it live; a new NIC would need
+    the node stopped), used by no link, never management, with its address and gateway in one EVE-NG subnet."""
+    import ipaddress
+
+    ports = topo["internet_ports"]
+    assert [p["port"] for p in ports] == ["dc1-wan01:Gi7"]
+    link_ends = {e for lk in topo["links"] for e in (lk["a"], lk["b"])}
+    for p in ports:
+        node, iface = p["port"].split(":")
+        platform = topo["nodes"][node]["platform"]
+        pat, _ = IFACE_PATTERNS[platform]
+        assert pat.match(iface) and iface != "Gi1", p
+        assert p["port"] not in link_ends, f"{p['port']} is also a link end"
+        assert int(iface.removeprefix("Gi")) - 1 < topo["nodes"][node]["ethernet"], f"{p['port']}: no such NIC"
+        assert p["network"] == "nat0" and p["vrf"] in topo["vrfs"], p
+        addr = ipaddress.ip_interface(p["address"])
+        assert ipaddress.ip_address(p["gateway"]) in addr.network and addr.ip != ipaddress.ip_address(p["gateway"])
+        # the address sits in a recorded prefix of the same VRF
+        homes = [x for x in topo["inband_prefixes"] if addr.ip in ipaddress.ip_network(x["prefix"])]
+        assert [x.get("vrf") for x in homes] == [p["vrf"]], homes
+
+
+def test_only_the_dc_edge_renders_the_internet_port(topo: dict) -> None:
+    rendered = _render_all(topo)
+    wan01 = rendered["dc1-wan01"]
+    for line in (
+        "vrf definition INET",
+        "interface GigabitEthernet7",
+        " vrf forwarding INET",
+        " ip address 172.29.129.250 255.255.255.0",
+        " ip access-group INET-IN in",
+        "ip route vrf INET 0.0.0.0 0.0.0.0 172.29.129.254",
+    ):
+        assert line in wan01.splitlines(), line
+    # the VRF is defined before the port uses it, and the ACL before it is applied
+    lines = wan01.splitlines()
+    assert lines.index("vrf definition INET") < lines.index(" vrf forwarding INET")
+    assert lines.index("ip access-list extended INET-IN") < lines.index(" ip access-group INET-IN in")
+    # the ACL admits IKE, NAT-T and ESP and ends in a deny
+    acl = lines[lines.index("ip access-list extended INET-IN") : lines.index("interface GigabitEthernet7")]
+    assert " permit udp any any eq isakmp" in acl and " permit udp any any eq non500-isakmp" in acl
+    assert " permit esp any any" in acl and acl[-2] == " deny ip any any"
+    for name, text in rendered.items():
+        if name != "dc1-wan01":
+            assert "INET" not in text, f"{name} renders the internet VRF"
+
+
+def test_eve_build_wires_the_internet_port_to_its_cloud(topo: dict, monkeypatch: pytest.MonkeyPatch) -> None:
+    """apply() against a fake EVE-NG that already runs the lab: it creates nat0 and puts dc1-wan01 index 6 on it,
+    and changes nothing else (every other node's wiring already matches)."""
+    import sys
+
+    sys.path.insert(0, str(ROOT / "eve"))
+    import build
+
+    fw = bool(topo["lab"].get("firewalls", True))
+    active = [lk for lk in topo["links"] if not (lk.get("bypass") and fw)]
+    names = [topo["lab"]["mgmt_network"]] + [build.link_network_name(lk) for lk in active]
+    built = {n: v for n, v in topo["nodes"].items() if fw or v["role"] != "firewall"}
+
+    class FakeEve:
+        def __init__(self) -> None:
+            self.nets = {name: {"name": name, "id": i + 1} for i, name in enumerate(names)}
+            self.node_ids = {name: i + 1 for i, name in enumerate(built)}
+            self.wired = {name: {0: self.nets[names[0]]["id"]} for name in built}
+            for lk in active:
+                for end in (lk["a"], lk["b"]):
+                    node, iface = end.split(":")
+                    if node not in self.wired:
+                        continue  # a deferred firewall's end: the node is not built, as in apply()
+                    idx = build.iface_index(topo["nodes"][node]["platform"], iface)
+                    self.wired[node][idx] = self.nets[build.link_network_name(lk)]["id"]
+            self.created: list[tuple[str, str]] = []
+            self.puts: dict[str, dict[int, int]] = {}
+
+        def template_images(self, template: str) -> list[str]:
+            return [n["image"] for n in topo["nodes"].values()]
+
+        def lab_exists(self) -> bool:
+            return True
+
+        def networks(self) -> dict:
+            return dict(self.nets)
+
+        def add_network(self, name: str, ntype: str, left: int, top: int, visible: int) -> None:
+            self.created.append((name, ntype))
+            self.nets[name] = {"name": name, "type": ntype, "id": len(self.nets) + 1}
+
+        def nodes(self) -> dict:
+            return {n: {"id": i, "status": 2, "config": "1"} for n, i in self.node_ids.items()}
+
+        def interfaces(self, node_id: int) -> dict:
+            name = next(n for n, i in self.node_ids.items() if i == node_id)
+            return {"ethernet": {str(k): {"network_id": v} for k, v in self.wired[name].items()}}
+
+        def set_interfaces(self, node_id: int, mapping: dict[int, int]) -> None:
+            name = next(n for n, i in self.node_ids.items() if i == node_id)
+            self.puts[name] = dict(mapping)
+
+        def config_set(self) -> int:
+            return 1
+
+    monkeypatch.setattr(build, "export_nodes", lambda eve, topo: None)  # it writes topology/generated
+    monkeypatch.setenv("AUTOMATION_PASSWORD", "__AUTOMATION_PASSWORD__")  # apply() renders every startup config
+    eve = FakeEve()
+    build.apply(eve, topo, allow_missing=False)
+    assert build.cloud_networks(topo) == ["nat0"]
+    assert eve.created == [("nat0", "nat0")]
+    assert list(eve.puts) == ["dc1-wan01"], f"re-wired more than the edge: {sorted(eve.puts)}"
+    assert eve.puts["dc1-wan01"][6] == eve.nets["nat0"]["id"]
+    assert {k: v for k, v in eve.puts["dc1-wan01"].items() if k != 6} == eve.wired["dc1-wan01"]

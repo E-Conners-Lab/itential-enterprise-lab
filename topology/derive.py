@@ -125,6 +125,31 @@ def _aggregate(topo: dict, site: str) -> dict | None:
     return {"prefix": prefix, "net": str(net.network_address), "mask": str(net.netmask)}
 
 
+def node_internet_ports(topo: dict, name: str) -> list[dict]:
+    """This node's ports on an EVE-NG cloud network (internet_ports, ADR 0068): device name, VRF, address, gateway."""
+    out = []
+    for p in topo.get("internet_ports", []):
+        node, iface = p["port"].split(":")
+        if node != name:
+            continue
+        addr = ipaddress.ip_interface(p["address"])
+        out.append(
+            {
+                "iface": iface,
+                "ifname": device_name(topo["nodes"][node]["platform"], iface),
+                "network": p["network"],
+                "vrf": p["vrf"],
+                "vrf_description": topo["vrfs"][p["vrf"]]["description"],
+                "address": p["address"],
+                "ip": str(addr.ip),
+                "mask": str(addr.netmask),
+                "gateway": p["gateway"],
+                "description": f"internet via the EVE-NG NAT cloud ({p['network']})",
+            }
+        )
+    return out
+
+
 def render_context(topo: dict, name: str) -> dict:
     """The per-node variables the startup-config templates render (every address in the lab)."""
     node = topo["nodes"][name]
@@ -150,9 +175,11 @@ def render_context(topo: dict, name: str) -> dict:
         "svi10": None,
         "svi100": None,
         "evpn_peers": [],
+        "internet": [],
     }
     if node["platform"] == "c8000v":
         ctx["asn"] = site_asn(routing, site)
+        ctx["internet"] = node_internet_ports(topo, name)
         wan = _wan_end(topo, name)
         if wan:
             ctx["isp_peer"], ctx["wan_ip"] = wan["peer_ip"], wan["ip"]
@@ -273,6 +300,18 @@ def interfaces(topo: dict) -> dict[str, list[dict]]:
             elif link.get("vlan") and ctx["lan"]:
                 row["address"] = addressing["lan"]["gateway"]
             rows.append(row)
+        for p in ctx["internet"]:
+            rows.append(
+                {
+                    "name": p["ifname"],
+                    "seed_name": p["iface"],
+                    "kind": "link",
+                    "description": p["description"],
+                    "address": p["address"],
+                    "vrf": p["vrf"],
+                    "peer": p["network"],
+                }
+            )
         for t in ctx["tunnels"]:
             mode = (
                 "FlexVPN sVTI"
@@ -294,12 +333,13 @@ def interfaces(topo: dict) -> dict[str, list[dict]]:
 
 
 def ports(topo: dict) -> dict[str, str]:
-    """Every link end in the YAML's short form -> the device's own interface name (for the seed play's cables)."""
+    """Every link end and internet port in the YAML's short form -> the device's own interface name (for the seed
+    play's interfaces and cables)."""
     out = {}
-    for link in topo["links"]:
-        for end in (link["a"], link["b"]):
-            node, iface = end.split(":")
-            out[end] = device_name(topo["nodes"][node]["platform"], iface)
+    ends = [e for link in topo["links"] for e in (link["a"], link["b"])]
+    for end in ends + [p["port"] for p in topo.get("internet_ports", [])]:
+        node, iface = end.split(":")
+        out[end] = device_name(topo["nodes"][node]["platform"], iface)
     return out
 
 

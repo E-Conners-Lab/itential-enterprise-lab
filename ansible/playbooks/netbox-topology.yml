@@ -107,7 +107,7 @@
       loop_control:
         label: "{{ item.key }}"
 
-    - name: Data interfaces used by links
+    - name: Data interfaces used by links (and the internet ports, which have no cable, ADR 0068)
       netbox.netbox.netbox_device_interface:
         netbox_url: "{{ nb_url }}"
         netbox_token: "{{ nb_token }}"
@@ -116,7 +116,9 @@
           device: "{{ item.split(':')[0] }}"
           name: "{{ ports[item] }}"
           type: 1000base-t
-      loop: "{{ (links | map(attribute='a') | list) + (links | map(attribute='b') | list) }}"
+      loop: >-
+        {{ (links | map(attribute='a') | list) + (links | map(attribute='b') | list)
+           + (internet_ports | default([]) | map(attribute='port') | list) }}
 
     - name: Cables (one per link)
       netbox.netbox.netbox_cable:

@@ -479,3 +479,18 @@ def test_golden_config_leaf_renders_interface_intent() -> None:
         "'virtual ' if a.role == 'anycast'"
         in (GC / "arista-eos" / "device.j2").read_text()
     ), "EOS anycast addresses render as ip address virtual"
+
+
+def test_the_internet_port_reaches_netbox_without_a_cable(topo: dict, intent: dict) -> None:
+    """ADR 0068: the seed creates Gi7 as a physical interface (no cable: nothing is on the far end) and the enrich
+    play puts its address in VRF INET with the description the device runs."""
+    rows = {r["name"]: r for r in intent["dc1-wan01"]}
+    gi7 = rows["GigabitEthernet7"]
+    assert gi7["kind"] == "link" and gi7["vrf"] == "INET" and gi7["address"] == "172.29.129.250/24"
+    assert gi7["peer"] == "nat0" and gi7["description"] == "internet via the EVE-NG NAT cloud (nat0)"
+    assert derive.ports(topo)["dc1-wan01:Gi7"] == "GigabitEthernet7"
+    seed = SEED.read_text()
+    task = seed[seed.index("Data interfaces used by links") :]
+    assert "internet_ports | default([]) | map(attribute='port')" in task[: task.index("- name:", 10)]
+    cables = seed[seed.index("Cables (one per link)") :]
+    assert "internet_ports" not in cables[: cables.index("- name:", 10)]
