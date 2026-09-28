@@ -11,8 +11,8 @@ runbook of `~/PycharmProjects/Eve-NG_Agent` (`docs/runbooks/deploy-cloud-aws.md`
 
 The branch `phase-aws-vpn/design` holds the design only: PID 1.36 (new S13, a phase-table row), ADR 0068
 (**proposed**), a README row, and `tests/test_aws_vpn.py`, which took over the PID version pin from
-`tests/test_vault.py`. It is based on `docs/defer-phase-9b` (PR #67, PID 1.35), so it rebases onto main once #67
-merges.
+`tests/test_vault.py`. It sits on main after PR #67 (PID 1.35), which merged on 2026-09-27. D1, D3 and D4 were
+answered the same day (ADR 0068): the edge gets its own internet port, Gi7 on EVE-NG `nat0` in VRF `INET`.
 
 Read, in this order:
 1. This file.

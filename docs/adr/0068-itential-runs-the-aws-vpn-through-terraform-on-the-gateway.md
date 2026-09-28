@@ -1,7 +1,7 @@
 # 0068 — Itential runs the AWS site-to-site VPN: Terraform on the Gateway, the approved plan is the applied plan
 
-- **Status:** proposed (2026-09-26). Decisions 1 and 3 and the rule in decision 5 are the owner's; decisions 4
-  and 6 wait on owner answers (D1, D3, D4 below) and on the dev probe (P1-P7)
+- **Status:** proposed (2026-09-26). Decisions 1, 3, 4, 8, 9 and 10 and the rule in decision 5 are the owner's (D1,
+  D3 and D4 answered 2026-09-27); decision 6 waits on the dev probes (P1-P7)
 - **Date:** 2026-09-26
 - **Amends:** PID S13 and section 3 (amendment 1.36)
 - **Related:** ADR 0029 (local tofu state for the lab's own modules, unchanged), ADR 0038 (Gateway 5 runner on
@@ -30,6 +30,9 @@ only):
 | The dev env has no ALB | The `alb` module exists but `environments/dev/main.tf` does not call it. The recurring cost is the NAT gateway, which `modules/vpc` always creates (about $32 a month while up) |
 | `dc-ce-1` is not in this lab | Its counterpart is `dc1-wan01`: the DC1 WAN edge, AS 65100, C8000v 17.13.01a, active in NetBox, reachable |
 | The Eve-NG tunnel used the management port | `tunnel_source: GigabitEthernet1`. Here Gi1 is in VRF `MGMT`, and `oob-gw` NATs 10.100.0.0/24 to the home LAN and the internet (ADR 0004) |
+| `dc1-wan01` has two spare ports | 8 NICs; Gi2-Gi6 are cabled (Gi3 to `dc1-fw01`), Gi7 and Gi8 have no network (EVE-NG API, 2026-09-28). EVE-NG Pro cables a port the running node already has; adding a NIC needs the node stopped (owner) |
+| EVE-NG's NAT cloud | `nat0` is 172.29.129.254/24 on the EVE-NG host, masqueraded out of `pnet0` (192.168.68.240) by nftables. Its udhcpd pool is .1-.253, handed out from the bottom (read on the host, 2026-09-28) |
+| The home address is public | The home router's WAN address equals what `curl ifconfig.me` returns (owner, 2026-09-27): no carrier-grade NAT |
 | The on-prem prefixes are the Eve-NG lab's | `modules/vpn` `onprem_cidrs` defaults to 10.1/16, 10.10/16 and others; the dev env does not expose the variable |
 | The PSK recovery window blocks a quick re-apply | `recovery_window_in_days = 7` (the comment says 1 day) |
 
@@ -107,14 +110,25 @@ Two more facts about Gateway 5 decide how Terraform runs:
      enable it. `lab-admin` has only `read` on `sys/mounts` (`vault-prod-config.yml`) and cannot widen itself,
      and the root token is revoked. It also needs a Gateway path other than the KV-only built-in provider, and
      egress from the Vault pod to AWS.
-4. **The edge is `dc1-wan01` (proposed, D1).** The design adds `Tunnel10`, a static VTI in the pattern of
-   Eve-NG's `ipsec_tunnel.j2`. Its outer side uses front-door VRF `MGMT` on `GigabitEthernet1`, with an IKEv2
-   profile that has `match fvrf MGMT` and matches only the EIP. Its inner side is in the global table, with
-   static routes to the VPC. The branch profile `LAB` matches in `fvrf WAN`, so the two do not overlap. The
-   on-prem prefixes passed to AWS are 10.101.0.0/16 (DC1) and 10.103.255.0/24 (the WAN loopbacks, for the
-   data-plane probe). The dev tier proves the workflow first against `clab-rtr1` (ADR 0063). One AWS deployment
-   exists at a time: the secret name and resource names are fixed, so dev and production never have a tunnel up
-   at once.
+4. **The edge is `dc1-wan01`, with its own internet port (owner, D1, 2026-09-27: option B).** A real edge does
+   not run a VPN over its management port, so the tunnel does not use Gi1 or `oob-gw`.
+   - **The port:** `GigabitEthernet7` on EVE-NG's NAT cloud `nat0`, in a new front-door VRF `INET`, at
+     172.29.129.250/24 with a default route in `INET` to the EVE-NG host (.254). The address is at the top of
+     the host's DHCP pool, which hands out from .1, and nothing else in the lab uses `nat0`. Gi3 is taken (it
+     faces `dc1-fw01`), and Gi7 already exists on the running node, so cabling it needs no restart.
+   - **The path:** Gi7 → `nat0` → the EVE-NG host masquerades to 192.168.68.240 → the home router NATs to the
+     public address → AWS. There are two NAT layers, the same count as through `oob-gw`, so the tunnel uses
+     NAT-T (UDP 4500).
+   - **An inbound ACL** on Gi7 admits only IKE (UDP 500 and 4500), ESP and the ICMP replies the router's own
+     checks need. It is tightened to the EIP when the tunnel is built.
+   - **The tunnel:** `Tunnel10`, a static VTI in the pattern of Eve-NG's `ipsec_tunnel.j2`, with an IKEv2
+     profile that has `match fvrf INET` and matches only the EIP. Its inner side is in the global table, with
+     static routes to the VPC. The branch profile `LAB` matches in `fvrf WAN`, so the two do not overlap.
+   - The on-prem prefixes passed to AWS are 10.101.0.0/16 (DC1) and 10.103.255.0/24 (the WAN loopbacks, for
+     the data-plane probe).
+   - The port is a topology change and goes straight to production (owner, 2026-09-28: "Dev is for Itential
+     work only"). The workflows still go to the dev tier first (ADR 0063). One AWS deployment exists at a time:
+     the secret name and resource names are fixed, so dev and production never have a tunnel up at once.
 5. **Vault is the source of the PSK; Terraform never sees it.** With Terraform 1.5.7, the module's
    `random_password` sits in the state in clear text. The state is encrypted at rest, but anyone who can pull
    the state can read the value, which is how `errored.tfstate` came to hold one. The new flow:
@@ -142,28 +156,38 @@ Two more facts about Gateway 5 decide how Terraform runs:
    two signals disagree, the job ends with a reason, not a warning.
 8. **Teardown runs in reverse.** It removes the on-prem block (and checks it is gone), then runs a
    plan-approve-apply `destroy`, then removes the NetBox objects. The recovery-window problem is fixed at the
-   source: `recovery_window_in_days = 0` (proposed). The value is regenerated on every apply, so there is
-   nothing to recover. A force-delete step in the workflow is not needed.
-9. **`cloud-devops-pipeline` goes to a private GitHub repository first (proposed, D4).** The Gateway clones
-   services from a repository, and the changes above need review like this repo's. gitleaks found nothing in the
-   7 commits. State, plan and tfvars files are ignored and were never committed.
+   source: `recovery_window_in_days = 0` (owner, 2026-09-27: "I like the idea of deleting it when it tears
+   down"). The value is regenerated on every apply, so there is nothing to recover and nothing for the owner
+   to type: each deploy writes a new PSK version to Vault (`vault kv get lab/aws/vpn-psk` shows the current one,
+   and KV v2 keeps the earlier ones). A force-delete step in the workflow is not needed.
+9. **`cloud-devops-pipeline` goes to a private GitHub repository first (owner, D4, 2026-09-27).** The Gateway
+   clones services from a repository, and the changes above need review like this repo's. gitleaks found
+   nothing in the 7 commits. State, plan and tfvars files are ignored and were never committed.
+   - The commit author is rewritten from the Mac's host address to `elliot@thetech-e.com` before the push.
+   - The two uncommitted files (`docs/phase2-runbook.md`, `app/api/uv.lock`) are reviewed, and the owner
+     decides whether to keep or drop them.
+   - The Gateway needs its own read-only credential for the private repository (a deploy key on that one
+     repository), and under decision 3 it lives in Vault. How a Gateway 5 repository takes its credential is
+     checked in the Itential documentation when `terraform-run` is built.
+10. **The NAT gateway is a switch (owner, D3, 2026-09-27).** `modules/vpc` gets `enable_nat_gateway`, default
+    `true`, so the pipeline's own behaviour does not change. The Deploy workflow takes it as an input, so a run
+    turns the NAT gateway on or off through the same plan, approval and apply ("I want to make sure that this
+    is something that I can turn up and turn off at any time I want"). Whether the ECS tasks sit in private
+    subnets, and so lose egress while it is off, is checked when the change is written.
 
 ## Owner decisions (D) and dev probes (P)
 
-- **D1** Front door: VRF `MGMT` on Gi1 (no topology change; ESP crosses the OOB network), or a new Gi3 on EVE-NG
-  `nat0` in its own `INET` VRF (keeps the OOB network free of tunnel traffic; needs `eve/build.py` to build a
-  NAT-cloud link).
+- **D1** Resolved by the owner, 2026-09-27: its own internet port on EVE-NG `nat0` in VRF `INET`, not VRF `MGMT`
+  on Gi1 (decision 4). The port is Gi7, because Gi3 is cabled to `dc1-fw01`.
 - **D2** Resolved by the owner, 2026-09-26: decision 3.
-- **D3** Add `enable_nat_gateway` to `modules/vpc` (default true) so a tunnel-only run does not pay for the NAT
-  gateway.
-- **D4** Push to a private repo `E-Conners-Lab/cloud-devops-pipeline`, after rewriting the commit author from the
-  Mac's host address to `elliot@thetech-e.com`, and after committing or dropping the uncommitted
-  `docs/phase2-runbook.md` and `app/api/uv.lock`.
+- **D3** Resolved by the owner, 2026-09-27: `enable_nat_gateway`, default true, switched per run (decision 10).
+- **D4** Resolved by the owner, 2026-09-27: a private repo `E-Conners-Lab/cloud-devops-pipeline`, the author
+  rewritten first, and the Gateway's access to it set up (decision 9).
 - **P1** Does a `$GATEWAYSECRET_` alias resolve into a python-script service's environment or decorated input?
 - **P2** Does the runner reach STS, S3 and Secrets Manager through `oob-gw`?
 - **P3** Does `sendConfig` resolve a `$GATEWAYSECRET_` reference inside the config text (decision 6)?
-- **P4** Does IKEv2 with NAT-T come up through two NAT layers (`oob-gw`, then the home router)? Is the home
-  address a stable public address and not carrier-grade NAT?
+- **P4** Does IKEv2 with NAT-T come up through two NAT layers (the EVE-NG host, then the home router)? The home
+  address is public (owner, 2026-09-27); whether it stays stable between deployments is still open.
 - **P5** Does a Work Center approval gate the apply, and does a rejection end the job cleanly (ADR 0066)?
 - **P7** How does an executable service build the command line (`<exec-command> <filename> <args>`)? Does its
   `--secret` take a value from the built-in `vault` provider, or only from the Gateway's own store? This decides
