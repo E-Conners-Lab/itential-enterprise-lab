@@ -9,7 +9,7 @@ NetBox. Nothing here is configured on any device yet.
 | Prefix | Owner | Why it is off limits |
 |---|---|---|
 | 192.168.68.0/22 | Home LAN (`vmbr0`) | Proxmox host .161, NetBox .110, EVE-NG .240 live here. Never touched by this repo |
-| 172.29.129.0/24 | EVE-NG `nat0` | EVE built-in NAT cloud |
+| 172.29.129.0/24 | EVE-NG `nat0` | EVE built-in NAT cloud (host .254, DHCP .1-.253). The one lab address in it is `dc1-wan01` Gi7 .250, VRF `INET`, the internet port (ADR 0068) |
 | 172.29.130.0/24 | EVE-NG `wg0` | EVE Pro WireGuard |
 | 172.17.0.0/16, 172.18.0.0/16 | Docker default bridges (EVE-NG, NetBox VM) | `docker0` and the first compose network |
 | 172.20.20.0/24 | Containerlab default management network | Not used by the lab's topologies: the dev topology's mgmt network is 10.100.2.0/24, routed (section 3.3, ADR 0063). Kept here so nothing else ever takes the default |
@@ -217,6 +217,7 @@ the topology's point-to-point links, loopbacks and VLANs and never leaves the ho
 | `10.102.17.0/24` | Branch 1 | branch-inband | branch 1 users VLAN 10 (VLAN 10) |
 | `10.102.32.0/20` | Branch 2 | branch-inband | branch 2 |
 | `10.102.33.0/24` | Branch 2 | branch-inband | branch 2 users VLAN 10 (VLAN 10) |
+| `172.29.129.0/24` | DC1 | internet | EVE-NG NAT cloud nat0, the internet ports (VRF `INET`) |
 
 **Autonomous systems:** isp 65000, dc1 edge 65100, dc1 spine 65101, dc1 leaf 65102, dc1 fw 65103, br1 65201, br2 65202.
 
@@ -224,4 +225,5 @@ the topology's point-to-point links, loopbacks and VLANs and never leaves the ho
 |---|---|---|
 | `MGMT` | OOB management (pnet1) | c8000v, veos |
 | `WAN` | front-door VRF: provider transport only, RD `<asn>:1` | c8000v |
+| `INET` | front-door VRF: internet through the EVE-NG NAT cloud | c8000v |
 | `PROD` | DC1 tenant VRF (L3VNI 50001), RD `<router-id>:50001`, L3VNI 50001, RT `50001:50001` | veos |

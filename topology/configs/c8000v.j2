@@ -65,6 +65,12 @@ vrf definition WAN
  address-family ipv4
 !
 {%- endif %}
+{%- for p in internet %}
+vrf definition {{ p.vrf }}
+ description {{ p.vrf_description }}
+ address-family ipv4
+!
+{%- endfor %}
 interface GigabitEthernet1
  description OOB management (pnet1)
  vrf forwarding MGMT
@@ -107,6 +113,32 @@ interface {{ ifname }}
  ip address {{ lan.gw }} 255.255.255.0
 {%- endif %}
  no shutdown
+!
+{%- endfor %}
+{#- internet ports (ADR 0068 decision 4): own front-door VRF, default route to the EVE-NG cloud's gateway, and an
+    inbound ACL that admits only IKE / NAT-T, ESP and the ICMP replies to the router's own checks #}
+{%- for p in internet %}
+ip access-list extended {{ p.vrf }}-IN
+ remark {{ p.description }}: IKE, NAT-T, ESP and replies to the router's own checks
+ permit udp any any eq isakmp
+ permit udp any any eq non500-isakmp
+ permit esp any any
+ permit icmp any any echo-reply
+ permit icmp any any unreachable
+ permit icmp any any time-exceeded
+ deny ip any any
+!
+interface {{ p.ifname }}
+ description {{ p.description }}
+ vrf forwarding {{ p.vrf }}
+ ip address {{ p.ip }} {{ p.mask }}
+ ip access-group {{ p.vrf }}-IN in
+ no ip unreachables
+ no ip redirects
+ no ip proxy-arp
+ no shutdown
+!
+ip route vrf {{ p.vrf }} 0.0.0.0 0.0.0.0 {{ p.gateway }}
 !
 {%- endfor %}
 {%- if tunnels %}

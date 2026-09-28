@@ -170,6 +170,42 @@ PY
 }
 check "S3.7 summed node RAM in EVE-NG within the 115 GB internal ceiling" c7
 
+# --- S3.8 each internet port (ADR 0068) is cabled, forwards, and is seen from the far side ------------------------
+# Three independent sources: EVE-NG's wiring (the cable), a ping from the port's VRF (the data plane), and the EVE-NG
+# host's neighbour table on the cloud (the router's MAC from the other end: 50:00:00:<node id>:00:<interface index>).
+c8() {
+  local nets nodes; nets=$(eve networks) || return 1; nodes=$(eve nodes) || return 1
+  python3 - "$nets" "$nodes" <<'PY' > /tmp/verify04-inet.$$ || { cat /tmp/verify04-inet.$$; rm -f /tmp/verify04-inet.$$; return 1; }
+import json, sys, yaml
+t = yaml.safe_load(open("topology/enterprise.yaml"))
+nets = {n["name"]: {**n, "id": int(k)} for k, n in json.loads(sys.argv[1])["data"].items()}
+nodes = {n["name"]: int(k) for k, n in json.loads(sys.argv[2])["data"].items()}
+for p in t.get("internet_ports", []):
+    node, iface = p["port"].split(":")
+    net = nets.get(p["network"])
+    if not net or net.get("type") != p["network"]:
+        print(f"EVE-NG has no {p['network']} network"); sys.exit(1)
+    idx = int(iface.removeprefix("Gi")) - 1
+    ip = t["nodes"][node]["mgmt_ip"]
+    print(node, ip, p["vrf"], p["address"].split("/")[0], p["gateway"], nodes[node], idx, net["id"])
+PY
+  local errs="" dev=".venv/bin/python verify/devcmd.py" n ip vrf addr gw nid idx netid wired out mac
+  while read -r n ip vrf addr gw nid idx netid; do
+    wired=$(eve "nodes/${nid}/interfaces" | python3 -c "import json,sys;d=json.load(sys.stdin)['data']['ethernet'];e=d[${idx}] if isinstance(d,list) else d['${idx}'];print(e.get('network_id'))")
+    [ "$wired" = "$netid" ] || { errs="$errs ${n}(not cabled to network ${netid}: ${wired})"; continue; }
+    out=$($dev "$ip" "ping vrf ${vrf} ${gw} repeat 5" 2>&1)
+    echo "$out" | grep -qE "Success rate is (100|[6-9][0-9]) percent" || errs="$errs ${n}(no ping to ${gw} in vrf ${vrf})"
+    mac=$(printf '50:00:00:%02x:00:%02x' "$nid" "$idx")
+    $SSH "root@${EVE_HOST}" "ip neigh show ${addr}" 2>/dev/null | grep -qi "lladdr ${mac}" || errs="$errs ${n}(EVE-NG host does not see ${mac} at ${addr})"
+    out=$($dev "$ip" "ping vrf ${vrf} 8.8.8.8 repeat 5" 2>&1)
+    echo "$out" | grep -qE "Success rate is (100|[6-9][0-9]) percent" || errs="$errs ${n}(no internet from vrf ${vrf})"
+  done < /tmp/verify04-inet.$$
+  rm -f /tmp/verify04-inet.$$
+  [ -z "$errs" ] || { echo "internet port:$errs"; return 1; }
+  echo "every internet port is cabled, reaches its gateway and the internet, and the EVE-NG host sees its MAC"
+}
+check "S3.8 each internet port (dc1-wan01 Gi7, ADR 0068) is cabled to its EVE-NG cloud, reaches the internet from its VRF, and the EVE-NG host sees it" c8
+
 [ "$FIREWALLS" = true ] || defer "S3.4-fw HA active/passive, S3.6-fw PAN-OS version, S3.5 path via firewalls (bypass path checked instead)"
 echo; echo "passed=${pass} failed=${fail} deferred=${deferred}"
 [ "$fail" -eq 0 ]

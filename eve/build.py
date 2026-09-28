@@ -71,6 +71,12 @@ def iface_index(platform: str, iface: str) -> int:
     return int(m.group(1))
 
 
+def cloud_networks(topo: dict) -> list[str]:
+    """The EVE-NG cloud networks the internet ports use (ADR 0068). Like the management cloud, each is named after
+    its type (nat0), so there is one per lab however many ports join it."""
+    return sorted({p["network"] for p in topo.get("internet_ports", [])})
+
+
 def link_network_name(link: dict) -> str:
     a, b = (
         link["a"].replace(":", "_").replace("/", "-"),
@@ -325,9 +331,11 @@ def plan(eve: Eve, topo: dict) -> dict:
                 )
     have_nodes = eve.nodes() if eve.lab_exists() else {}
     have_nets = eve.networks() if eve.lab_exists() else {}
-    want_nets = [topo["lab"]["mgmt_network"]] + [
-        link_network_name(lk) for lk in topo["links"]
-    ]
+    want_nets = (
+        [topo["lab"]["mgmt_network"]]
+        + [link_network_name(lk) for lk in topo["links"]]
+        + cloud_networks(topo)
+    )
     return {
         "lab_exists": eve.lab_exists(),
         "missing_images": missing_images,
@@ -356,6 +364,10 @@ def apply(eve: Eve, topo: dict, allow_missing: bool) -> None:
     if mgmt not in nets:
         eve.add_network(mgmt, mgmt, 560, 20, 1)
         print(f"created network {mgmt}")
+    for i, cloud in enumerate(cloud_networks(topo)):
+        if cloud not in nets:
+            eve.add_network(cloud, cloud, 260 + i * 110, 20, 1)
+            print(f"created network {cloud}")
     # Link networks are visible (visibility 1): EVE-NG Pro 6.5 acknowledges hidden bridges but
     # does not persist them to the lab file. They sit in a grid below the topology.
     firewalls = bool(topo["lab"].get("firewalls", True))
@@ -422,6 +434,11 @@ def apply(eve: Eve, topo: dict, allow_missing: bool) -> None:
             node, iface = end.split(":")
             if node in wiring:
                 wiring[node][iface_index(topo["nodes"][node]["platform"], iface)] = nid
+    # internet ports -> their cloud; EVE-NG Pro cables a port the running node already has (ADR 0068)
+    for port in topo.get("internet_ports", []):
+        node, iface = port["port"].split(":")
+        if node in wiring:
+            wiring[node][iface_index(topo["nodes"][node]["platform"], iface)] = nets[port["network"]]["id"]
     for name, mapping in wiring.items():
         current = eve.interfaces(have[name]["id"]).get("ethernet") or {}
         items = (
