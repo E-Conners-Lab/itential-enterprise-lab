@@ -316,3 +316,15 @@ def test_a_replay_without_an_admin_token_keeps_what_the_readers_hold() -> None:
     task = (ROOT / "ansible" / "playbooks" / "tasks" / "vault-secret-id.yml").read_text()
     assert "holds no Vault credentials yet: run with VAULT_TOKEN" in task
     assert task.count("vault_admin_token | default('') | length > 0") >= 3
+
+
+def test_no_production_task_prints_a_login_result() -> None:
+    """The binding test's registered results carry live tokens and secret IDs. A task that loops over them prints each
+    whole result unless it is no_log - except debug, which prints only its msg (2026-09-29: an assert over them
+    printed two tokens and two test secret IDs on production)."""
+    plays = yaml.safe_load((ROOT / "ansible" / "playbooks" / "vault-prod-config.yml").read_text())
+    holders = ("host_login", "psk_caps.results", "test_ids", "binding_tests", "vault_self")
+    for play in plays:
+        for t in play["tasks"]:
+            if any(h in str(t.get("loop", "")) for h in holders) and "ansible.builtin.debug" not in t:
+                assert t.get("no_log") is True, t["name"]
