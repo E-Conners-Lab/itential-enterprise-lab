@@ -507,7 +507,8 @@
     $("jobid").hidden = false; $("jobid").textContent = "Job 6f1c2a…e04 (preview)";
     const steps = [
       [300, () => set(["1d"], "running")],
-      [2400, () => { set(["1d", "1e", "1f"], "complete"); job.variables.plan = { add: nat ? 27 : 24, change: 0, destroy: 0, plan_sha256: "9b41d0c77e2a5f31c6d8e0b9a4f27c55e1d3b6a8f0c2e4d6b8a0c2e4f6a8b0c2", commit: "23a2914a347c" }; set(["2b"], "running"); }],
+      // a failed preview stops at the plan, so it never gets one
+      [2400, () => { if (demo === "failed") return; set(["1d", "1e", "1f"], "complete"); job.variables.plan = { add: nat ? 27 : 24, change: 0, destroy: 0, plan_sha256: "9b41d0c77e2a5f31c6d8e0b9a4f27c55e1d3b6a8f0c2e4d6b8a0c2e4f6a8b0c2", commit: "23a2914a347c" }; set(["2b"], "running"); }],
     ];
     steps.forEach(([ms, fn]) => setTimeout(() => { fn(); render(read(job)); }, ms));
   }
