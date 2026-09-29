@@ -1,0 +1,132 @@
+{
+  "name": "lab-deploy-aws-vpn",
+  "description": "Deploy the AWS side of the lab's site-to-site VPN: Terraform plans it, a Work Center approval shows the plan (PID S13, ADR 0068)",
+  "struct": {
+    "type": "array",
+    "items": [
+      {
+        "nodeId": "node-onprem_public_ip",
+        "type": "string",
+        "title": "Your public IP address",
+        "description": "The public IPv4 address the tunnel comes from (curl ifconfig.me)",
+        "placeholder": "",
+        "required": true,
+        "readOnly": false,
+        "binding": false,
+        "rel": "item",
+        "targetPointer": "/default",
+        "customKey": "onprem_public_ip"
+      },
+      {
+        "nodeId": "node-enable_nat_gateway",
+        "type": "string",
+        "title": "NAT gateway",
+        "description": "true also builds the NAT gateway (about $1 a day more); the VPN does not need it",
+        "placeholder": "Select",
+        "required": true,
+        "readOnly": false,
+        "binding": false,
+        "rel": "collection",
+        "targetPointer": "/enum",
+        "customKey": "enable_nat_gateway",
+        "enum": [
+          {
+            "id": "enum-enable_nat_gateway-false",
+            "label": "false",
+            "value": "false"
+          },
+          {
+            "id": "enum-enable_nat_gateway-true",
+            "label": "true",
+            "value": "true"
+          }
+        ],
+        "enumNames": [
+          {
+            "id": "name-enable_nat_gateway-false",
+            "label": "false",
+            "value": "false"
+          },
+          {
+            "id": "name-enable_nat_gateway-true",
+            "label": "true",
+            "value": "true"
+          }
+        ],
+        "default": "false"
+      },
+      {
+        "nodeId": "node-change_note",
+        "type": "string",
+        "title": "Change note",
+        "description": "Why, shown to the approver",
+        "placeholder": "",
+        "required": false,
+        "readOnly": false,
+        "binding": false,
+        "rel": "item",
+        "targetPointer": "/default",
+        "customKey": "change_note"
+      }
+    ]
+  },
+  "schema": {
+    "title": "lab-deploy-aws-vpn",
+    "description": "Deploy the AWS side of the lab's site-to-site VPN: Terraform plans it, a Work Center approval shows the plan (PID S13, ADR 0068)",
+    "type": "object",
+    "required": [
+      "onprem_public_ip",
+      "enable_nat_gateway"
+    ],
+    "properties": {
+      "onprem_public_ip": {
+        "type": "string",
+        "title": "Your public IP address",
+        "_id": "/properties/onprem_public_ip",
+        "description": "The public IPv4 address the tunnel comes from (curl ifconfig.me)"
+      },
+      "enable_nat_gateway": {
+        "type": "string",
+        "title": "NAT gateway",
+        "_id": "/properties/enable_nat_gateway",
+        "description": "true also builds the NAT gateway (about $1 a day more); the VPN does not need it",
+        "enum": [
+          "false",
+          "true"
+        ],
+        "enumNames": [
+          "false",
+          "true"
+        ],
+        "default": "false"
+      },
+      "change_note": {
+        "type": "string",
+        "title": "Change note",
+        "_id": "/properties/change_note",
+        "description": "Why, shown to the approver"
+      }
+    }
+  },
+  "uiSchema": {
+    "onprem_public_ip": {
+      "ui:placeholder": "Enter a value"
+    },
+    "enable_nat_gateway": {
+      "ui:placeholder": "Select"
+    },
+    "change_note": {
+      "ui:placeholder": "Enter a value"
+    },
+    "ui:order": [
+      "onprem_public_ip",
+      "enable_nat_gateway",
+      "change_note",
+      "*"
+    ]
+  },
+  "bindingSchema": {},
+  "validationSchema": {},
+  "tags": [],
+  "version": "2020.1"
+}

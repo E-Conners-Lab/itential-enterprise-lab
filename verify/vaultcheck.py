@@ -211,7 +211,7 @@ def c_terraform_run() -> bool:
     AWS as itential-terraform (STS, then init against the S3 state backend). Reads only: no plan, nothing created.
     Catches a Gateway whose deploy key, AWS key or Vault policy is missing before a real job does."""
     d = Platform().call("POST", "/gateway_manager/v1/services/run",
-                        {"serviceName": V["terraform_run"]["service"]["name"], "clusterId": CLUSTER,
+                        {"serviceName": "terraform-run", "clusterId": CLUSTER,
                          "params": {"action": "probe"}})
     if d.get("error"):
         print(f"runService error: {str(d['error'].get('data'))[:300]}")

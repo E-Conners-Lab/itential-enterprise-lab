@@ -1,6 +1,6 @@
 ---
-# ADR 0068 step 4: the terraform-run executable service on the Gateway - the private repository (cloned with the deploy
-# key alias), the Python executable object and the service with its two Vault-backed secrets. Imported through the
+# ADR 0068 steps 4-5: the executable services on the Gateway - the private repository (cloned with the deploy key
+# alias), the Python executable object and the services (terraform-run, aws-vpn-psk) with their Vault-backed secrets. Imported through the
 # Platform like the Vault provider (tasks/gateway-vault.yml): the import replaces items by name and drops unknown
 # fields without a word, so the export is compared after it. Measured on the dev tier 2026-09-29.
 # Runs on the Gateway host inside a play that has `login` (a Platform session) and `platform_local`.
@@ -22,17 +22,14 @@
           private-key-name: cloud-devops-pipeline-deploy-key
       executable-objects:
         - "{{ terraform_run.executable_object }}"
-      services:
-        - name: "{{ terraform_run.service.name }}"
-          type: executable
-          description: "{{ terraform_run.service.description }}"
-          repository: "{{ terraform_run.repository.name }}"
-          working-directory: "{{ terraform_run.service['working-directory'] }}"
-          filename: "{{ terraform_run.service.filename }}"
-          executable-object: "{{ terraform_run.executable_object.name }}"
-          arg-format: "{% raw %}--{{.Key}} {{.Value}}{% endraw %}" # a Go template the Gateway fills, not Jinja
-          secrets: "{{ terraform_run.service.secrets }}"
-          runtime: {}
+      services: "{{ terraform_run.services | map('combine', gw_tr_common) | sort(attribute='name') | list }}"
+  vars:
+    gw_tr_common:
+      type: executable
+      repository: "{{ terraform_run.repository.name }}"
+      executable-object: "{{ terraform_run.executable_object.name }}"
+      arg-format: "{% raw %}--{{.Key}} {{.Value}}{% endraw %}" # a Go template the Gateway fills, not Jinja
+      runtime: {}
 
 - name: What the Gateway holds for terraform-run
   ansible.builtin.set_fact:
@@ -45,7 +42,8 @@
            | selectattr('name', 'equalto', terraform_run.executable_object.name) | list }}
       services: >-
         {{ gw_tr_export.json.services | default([], true)
-           | selectattr('name', 'equalto', terraform_run.service.name) | list }}
+           | selectattr('name', 'in', terraform_run.services | map(attribute='name') | list)
+           | sort(attribute='name') | list }}
 
 - name: Import terraform-run (replaces the three items by name)
   ansible.builtin.uri:
@@ -76,8 +74,8 @@
         (gw_tr_after.json['executable-objects'] | selectattr('name', 'equalto', terraform_run.executable_object.name)
          | list) == gw_tr_wanted['executable-objects']
       - >-
-        (gw_tr_after.json.services | selectattr('name', 'equalto', terraform_run.service.name) | list)
-        == gw_tr_wanted.services
+        (gw_tr_after.json.services | selectattr('name', 'in', terraform_run.services | map(attribute='name') | list)
+         | sort(attribute='name') | list) == gw_tr_wanted.services
     fail_msg: "the Gateway stored something other than the terraform-run items sent: compare the export by hand"
     quiet: true
   when: gw_tr_import is changed

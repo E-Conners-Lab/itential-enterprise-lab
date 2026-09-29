@@ -1,0 +1,1724 @@
+{
+  "name": "Deploy AWS VPN",
+  "type": "automation",
+  "description": "Deploys the AWS side of the lab's site-to-site VPN: Terraform plans it on the Gateway, a Work Center approval shows the plan, exactly that plan is applied, and the pre-shared key goes to Vault and Secrets Manager (PID S13, ADR 0068)",
+  "tasks": {
+    "1a": {
+      "name": "replace",
+      "canvasName": "replace",
+      "summary": "plan params: NAT gateway",
+      "description": "plan params: NAT gateway",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 0,
+        "y": 150
+      },
+      "variables": {
+        "incoming": {
+          "str": "{\"action\": \"plan\", \"job\": \"new\", \"enable_vpn\": \"true\", \"enable_nat_gateway\": \"__N__\", \"onprem_public_ip\": \"__IP__\", \"timeout\": \"900\"}",
+          "substr": "__N__",
+          "newSubstr": "$var.job.enable_nat_gateway"
+        },
+        "outgoing": {
+          "replacedString": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "1b": {
+      "name": "replace",
+      "canvasName": "replace",
+      "summary": "plan params: public IP",
+      "description": "plan params: public IP",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 0,
+        "y": 300
+      },
+      "variables": {
+        "incoming": {
+          "str": "$var.1a.replacedString",
+          "substr": "__IP__",
+          "newSubstr": "$var.job.onprem_public_ip"
+        },
+        "outgoing": {
+          "replacedString": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "1c": {
+      "name": "parse",
+      "canvasName": "parse",
+      "summary": "plan params",
+      "description": "plan params",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 0,
+        "y": 450
+      },
+      "variables": {
+        "incoming": {
+          "text": "$var.1b.replacedString"
+        },
+        "outgoing": {
+          "textObject": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "1d": {
+      "name": "runService",
+      "canvasName": "runService",
+      "summary": "terraform plan",
+      "description": "terraform plan",
+      "location": "Application",
+      "locationType": null,
+      "app": "GatewayManager",
+      "type": "automatic",
+      "displayName": "GatewayManager",
+      "groups": [],
+      "nodeLocation": {
+        "x": 0,
+        "y": 600
+      },
+      "variables": {
+        "incoming": {
+          "serviceName": "terraform-run",
+          "clusterId": "lab",
+          "params": "$var.1c.textObject"
+        },
+        "outgoing": {
+          "result": "$var.job.plan_result"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "1e": {
+      "name": "evaluation",
+      "canvasName": "evaluation",
+      "summary": "plan made?",
+      "description": "plan made?",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 50,
+        "y": 750
+      },
+      "variables": {
+        "incoming": {
+          "all_true_flag": true,
+          "evaluation_groups": [
+            {
+              "all_true_flag": true,
+              "evaluations": [
+                {
+                  "query": "result.return_code",
+                  "operand_1": {
+                    "variable": "result",
+                    "task": "1d"
+                  },
+                  "operator": "==",
+                  "operand_2": {
+                    "variable": 0,
+                    "task": "static"
+                  }
+                }
+              ]
+            }
+          ],
+          "options": {}
+        },
+        "outgoing": {
+          "return_value": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "1f": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "the plan summary",
+      "description": "the plan summary",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 200,
+        "y": 900
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "result.stdout_json",
+          "obj": "$var.1d.result"
+        },
+        "outgoing": {
+          "return_data": "$var.job.plan"
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "10": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "the plan ID",
+      "description": "the plan ID",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 180,
+        "y": 1050
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "result.stdout_json.job",
+          "obj": "$var.1d.result"
+        },
+        "outgoing": {
+          "return_data": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "2a": {
+      "name": "replace",
+      "canvasName": "replace",
+      "summary": "the card's message",
+      "description": "the card's message",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 150,
+        "y": 1200
+      },
+      "variables": {
+        "incoming": {
+          "str": "Deploy the AWS side of the site-to-site VPN (costs about $1 a day while it is up). Change note: __NOTE__",
+          "substr": "__NOTE__",
+          "newSubstr": "$var.job.change_note"
+        },
+        "outgoing": {
+          "replacedString": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "2b": {
+      "name": "ViewData",
+      "canvasName": "ViewData",
+      "summary": "approval",
+      "description": "approval",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "manual",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 140,
+        "y": 1350
+      },
+      "variables": {
+        "incoming": {
+          "header": "Approve the AWS change",
+          "message": "$var.2a.replacedString",
+          "body": "$var.job.plan",
+          "variables": {},
+          "btn_success": "Approve",
+          "btn_failure": "Reject"
+        },
+        "outgoing": {},
+        "error": "",
+        "decorators": []
+      },
+      "view": "/workflow_engine/task/ViewData"
+    },
+    "3a": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "the approved plan's SHA-256",
+      "description": "the approved plan's SHA-256",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": -40,
+        "y": 1500
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "result.stdout_json.plan_sha256",
+          "obj": "$var.1d.result"
+        },
+        "outgoing": {
+          "return_data": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "3b": {
+      "name": "replace",
+      "canvasName": "replace",
+      "summary": "apply params: plan ID",
+      "description": "apply params: plan ID",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": -80,
+        "y": 1650
+      },
+      "variables": {
+        "incoming": {
+          "str": "{\"action\": \"apply\", \"job\": \"__ID__\", \"plan_sha256\": \"__SHA__\", \"timeout\": \"1800\"}",
+          "substr": "__ID__",
+          "newSubstr": "$var.10.return_data"
+        },
+        "outgoing": {
+          "replacedString": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "3c": {
+      "name": "replace",
+      "canvasName": "replace",
+      "summary": "apply params: SHA-256",
+      "description": "apply params: SHA-256",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": -120,
+        "y": 1800
+      },
+      "variables": {
+        "incoming": {
+          "str": "$var.3b.replacedString",
+          "substr": "__SHA__",
+          "newSubstr": "$var.3a.return_data"
+        },
+        "outgoing": {
+          "replacedString": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "3d": {
+      "name": "parse",
+      "canvasName": "parse",
+      "summary": "apply params",
+      "description": "apply params",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": -160,
+        "y": 1950
+      },
+      "variables": {
+        "incoming": {
+          "text": "$var.3c.replacedString"
+        },
+        "outgoing": {
+          "textObject": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "3e": {
+      "name": "runService",
+      "canvasName": "runService",
+      "summary": "terraform apply (the approved plan)",
+      "description": "terraform apply (the approved plan)",
+      "location": "Application",
+      "locationType": null,
+      "app": "GatewayManager",
+      "type": "automatic",
+      "displayName": "GatewayManager",
+      "groups": [],
+      "nodeLocation": {
+        "x": -10,
+        "y": 2100
+      },
+      "variables": {
+        "incoming": {
+          "serviceName": "terraform-run",
+          "clusterId": "lab",
+          "params": "$var.3d.textObject"
+        },
+        "outgoing": {
+          "result": "$var.job.apply_result"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "3f": {
+      "name": "evaluation",
+      "canvasName": "evaluation",
+      "summary": "applied?",
+      "description": "applied?",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": -10,
+        "y": 2250
+      },
+      "variables": {
+        "incoming": {
+          "all_true_flag": true,
+          "evaluation_groups": [
+            {
+              "all_true_flag": true,
+              "evaluations": [
+                {
+                  "query": "result.return_code",
+                  "operand_1": {
+                    "variable": "result",
+                    "task": "3e"
+                  },
+                  "operator": "==",
+                  "operand_2": {
+                    "variable": 0,
+                    "task": "static"
+                  }
+                }
+              ]
+            }
+          ],
+          "options": {}
+        },
+        "outgoing": {
+          "return_value": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "30": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "the outputs",
+      "description": "the outputs",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 240,
+        "y": 2400
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "result.stdout_json.outputs",
+          "obj": "$var.3e.result"
+        },
+        "outgoing": {
+          "return_data": "$var.job.outputs"
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "31": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "aws_changed = true",
+      "description": "aws_changed = true",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 350,
+        "y": 2550
+      },
+      "variables": {
+        "incoming": {
+          "input": "true",
+          "outputType": "boolean",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.aws_changed"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "4a": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "the PSK secret's ARN",
+      "description": "the PSK secret's ARN",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 450,
+        "y": 2700
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "result.stdout_json.outputs.psk_secret_arn",
+          "obj": "$var.3e.result"
+        },
+        "outgoing": {
+          "return_data": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "4b": {
+      "name": "replace",
+      "canvasName": "replace",
+      "summary": "PSK params",
+      "description": "PSK params",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 540,
+        "y": 2850
+      },
+      "variables": {
+        "incoming": {
+          "str": "{\"action\": \"write\", \"secret_arn\": \"__ARN__\", \"timeout\": \"120\"}",
+          "substr": "__ARN__",
+          "newSubstr": "$var.4a.return_data"
+        },
+        "outgoing": {
+          "replacedString": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "4c": {
+      "name": "parse",
+      "canvasName": "parse",
+      "summary": "PSK params",
+      "description": "PSK params",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 600,
+        "y": 3000
+      },
+      "variables": {
+        "incoming": {
+          "text": "$var.4b.replacedString"
+        },
+        "outgoing": {
+          "textObject": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "4d": {
+      "name": "runService",
+      "canvasName": "runService",
+      "summary": "the pre-shared key: Vault, then Secrets Manager",
+      "description": "the pre-shared key: Vault, then Secrets Manager",
+      "location": "Application",
+      "locationType": null,
+      "app": "GatewayManager",
+      "type": "automatic",
+      "displayName": "GatewayManager",
+      "groups": [],
+      "nodeLocation": {
+        "x": 630,
+        "y": 3150
+      },
+      "variables": {
+        "incoming": {
+          "serviceName": "aws-vpn-psk",
+          "clusterId": "lab",
+          "params": "$var.4c.textObject"
+        },
+        "outgoing": {
+          "result": "$var.job.psk_result"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "4e": {
+      "name": "evaluation",
+      "canvasName": "evaluation",
+      "summary": "PSK written?",
+      "description": "PSK written?",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 930,
+        "y": 3300
+      },
+      "variables": {
+        "incoming": {
+          "all_true_flag": true,
+          "evaluation_groups": [
+            {
+              "all_true_flag": true,
+              "evaluations": [
+                {
+                  "query": "result.return_code",
+                  "operand_1": {
+                    "variable": "result",
+                    "task": "4d"
+                  },
+                  "operator": "==",
+                  "operand_2": {
+                    "variable": 0,
+                    "task": "static"
+                  }
+                }
+              ]
+            }
+          ],
+          "options": {}
+        },
+        "outgoing": {
+          "return_value": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "4f": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "the PSK versions (never the PSK)",
+      "description": "the PSK versions (never the PSK)",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 1210,
+        "y": 3450
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "result.stdout_json",
+          "obj": "$var.4d.result"
+        },
+        "outgoing": {
+          "return_data": "$var.job.psk"
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "5a": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "the strongSwan EIP",
+      "description": "the strongSwan EIP",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 1290,
+        "y": 3600
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "strongswan_eip",
+          "obj": "$var.job.outputs"
+        },
+        "outgoing": {
+          "return_data": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "5b": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "the Vault version",
+      "description": "the Vault version",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 1360,
+        "y": 3750
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "vault_version",
+          "obj": "$var.job.psk"
+        },
+        "outgoing": {
+          "return_data": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "5c": {
+      "name": "numberToString",
+      "canvasName": "numberToString",
+      "summary": "the Vault version as text",
+      "description": "the Vault version as text",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 1400,
+        "y": 3900
+      },
+      "variables": {
+        "incoming": {
+          "num": "$var.5b.return_data",
+          "radix": 10
+        },
+        "outgoing": {
+          "numToString": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "5d": {
+      "name": "replace",
+      "canvasName": "replace",
+      "summary": "the outcome: EIP",
+      "description": "the outcome: EIP",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 1430,
+        "y": 4050
+      },
+      "variables": {
+        "incoming": {
+          "str": "Deployed: strongSwan at __EIP__; pre-shared key version __V__ in Vault and Secrets Manager.",
+          "substr": "__EIP__",
+          "newSubstr": "$var.5a.return_data"
+        },
+        "outgoing": {
+          "replacedString": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "5e": {
+      "name": "replace",
+      "canvasName": "replace",
+      "summary": "the outcome",
+      "description": "the outcome",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 1440,
+        "y": 4200
+      },
+      "variables": {
+        "incoming": {
+          "str": "$var.5d.replacedString",
+          "substr": "__V__",
+          "newSubstr": "$var.5c.numToString"
+        },
+        "outgoing": {
+          "replacedString": "$var.job.outcome"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "7a": {
+      "name": "replace",
+      "canvasName": "replace",
+      "summary": "discard params",
+      "description": "discard params",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 260,
+        "y": 1500
+      },
+      "variables": {
+        "incoming": {
+          "str": "{\"action\": \"discard\", \"job\": \"__ID__\", \"timeout\": \"120\"}",
+          "substr": "__ID__",
+          "newSubstr": "$var.10.return_data"
+        },
+        "outgoing": {
+          "replacedString": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "7b": {
+      "name": "parse",
+      "canvasName": "parse",
+      "summary": "discard params",
+      "description": "discard params",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 260,
+        "y": 1650
+      },
+      "variables": {
+        "incoming": {
+          "text": "$var.7a.replacedString"
+        },
+        "outgoing": {
+          "textObject": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "7c": {
+      "name": "runService",
+      "canvasName": "runService",
+      "summary": "discard the rejected plan",
+      "description": "discard the rejected plan",
+      "location": "Application",
+      "locationType": null,
+      "app": "GatewayManager",
+      "type": "automatic",
+      "displayName": "GatewayManager",
+      "groups": [],
+      "nodeLocation": {
+        "x": 260,
+        "y": 1800
+      },
+      "variables": {
+        "incoming": {
+          "serviceName": "terraform-run",
+          "clusterId": "lab",
+          "params": "$var.7b.textObject"
+        },
+        "outgoing": {
+          "result": "$var.job.discard_result"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "71": {
+      "name": "evaluation",
+      "canvasName": "evaluation",
+      "summary": "discarded?",
+      "description": "discarded?",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 210,
+        "y": 1950
+      },
+      "variables": {
+        "incoming": {
+          "all_true_flag": true,
+          "evaluation_groups": [
+            {
+              "all_true_flag": true,
+              "evaluations": [
+                {
+                  "query": "result.return_code",
+                  "operand_1": {
+                    "variable": "result",
+                    "task": "7c"
+                  },
+                  "operator": "==",
+                  "operand_2": {
+                    "variable": 0,
+                    "task": "static"
+                  }
+                }
+              ]
+            }
+          ],
+          "options": {}
+        },
+        "outgoing": {
+          "return_value": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "7d": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "rejected = true",
+      "description": "rejected = true",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 590,
+        "y": 2250
+      },
+      "variables": {
+        "incoming": {
+          "input": "true",
+          "outputType": "boolean",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.rejected"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "7e": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "aws_changed = false (rejected)",
+      "description": "aws_changed = false (rejected)",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 700,
+        "y": 2400
+      },
+      "variables": {
+        "incoming": {
+          "input": "false",
+          "outputType": "boolean",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.aws_changed"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "7f": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "the rejection",
+      "description": "the rejection",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 810,
+        "y": 2550
+      },
+      "variables": {
+        "incoming": {
+          "input": "rejected in Work Center: the plan was discarded, nothing changed in AWS",
+          "outputType": "string",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.outcome"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "70": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "the discard did not run",
+      "description": "the discard did not run",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 600,
+        "y": 2100
+      },
+      "variables": {
+        "incoming": {
+          "input": "the rejected plan could not be discarded; it stays in the state bucket until removed",
+          "outputType": "string",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.error"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "8a": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "the plan did not run",
+      "description": "the plan did not run",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": -250,
+        "y": 750
+      },
+      "variables": {
+        "incoming": {
+          "input": "the Gateway could not run terraform-run for the plan; nothing changed in AWS",
+          "outputType": "string",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.error"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "8b": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "why the plan was refused",
+      "description": "why the plan was refused",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": -100,
+        "y": 900
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": true,
+          "query": "result.stdout_json.error",
+          "obj": "$var.1d.result"
+        },
+        "outgoing": {
+          "return_data": "$var.job.error"
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "8c": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "aws_changed = false (no plan)",
+      "description": "aws_changed = false (no plan)",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": -690,
+        "y": 1050
+      },
+      "variables": {
+        "incoming": {
+          "input": "false",
+          "outputType": "boolean",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.aws_changed"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "8d": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "the apply did not run",
+      "description": "the apply did not run",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": -610,
+        "y": 2250
+      },
+      "variables": {
+        "incoming": {
+          "input": "the Gateway could not run terraform-run for the apply; check apply_result and AWS",
+          "outputType": "string",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.error"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "8e": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "why the apply stopped",
+      "description": "why the apply stopped",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": -360,
+        "y": 2400
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": true,
+          "query": "result.stdout_json.error",
+          "obj": "$var.3e.result"
+        },
+        "outgoing": {
+          "return_data": "$var.job.error"
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "9a": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "the PSK step did not run",
+      "description": "the PSK step did not run",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 630,
+        "y": 3300
+      },
+      "variables": {
+        "incoming": {
+          "input": "applied, but the Gateway could not run aws-vpn-psk; the PSK is not in place yet",
+          "outputType": "string",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.error"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "9b": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "why the PSK step stopped",
+      "description": "why the PSK step stopped",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 910,
+        "y": 3450
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": true,
+          "query": "result.stdout_json.error",
+          "obj": "$var.4d.result"
+        },
+        "outgoing": {
+          "return_data": "$var.job.error"
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "workflow_start": {
+      "name": "workflow_start",
+      "summary": "workflow_start",
+      "groups": [],
+      "nodeLocation": {
+        "x": 0,
+        "y": 0
+      }
+    },
+    "workflow_end": {
+      "name": "workflow_end",
+      "summary": "workflow_end",
+      "groups": [],
+      "nodeLocation": {
+        "x": 840,
+        "y": 4350
+      }
+    }
+  },
+  "transitions": {
+    "workflow_start": {
+      "1a": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "1a": {
+      "1b": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "1b": {
+      "1c": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "1c": {
+      "1d": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "1d": {
+      "1e": {
+        "state": "success",
+        "type": "standard"
+      },
+      "8a": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "1e": {
+      "1f": {
+        "state": "success",
+        "type": "standard"
+      },
+      "8b": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "1f": {
+      "10": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "10": {
+      "2a": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "2a": {
+      "2b": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "2b": {
+      "3a": {
+        "state": "success",
+        "type": "standard"
+      },
+      "7a": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "3a": {
+      "3b": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "3b": {
+      "3c": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "3c": {
+      "3d": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "3d": {
+      "3e": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "3e": {
+      "3f": {
+        "state": "success",
+        "type": "standard"
+      },
+      "8d": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "3f": {
+      "30": {
+        "state": "success",
+        "type": "standard"
+      },
+      "8e": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "30": {
+      "31": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "31": {
+      "4a": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "4a": {
+      "4b": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "4b": {
+      "4c": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "4c": {
+      "4d": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "4d": {
+      "4e": {
+        "state": "success",
+        "type": "standard"
+      },
+      "9a": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "4e": {
+      "4f": {
+        "state": "success",
+        "type": "standard"
+      },
+      "9b": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "4f": {
+      "5a": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "5a": {
+      "5b": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "5b": {
+      "5c": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "5c": {
+      "5d": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "5d": {
+      "5e": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "5e": {
+      "workflow_end": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "7a": {
+      "7b": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "7b": {
+      "7c": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "7c": {
+      "71": {
+        "state": "success",
+        "type": "standard"
+      },
+      "70": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "71": {
+      "7d": {
+        "state": "success",
+        "type": "standard"
+      },
+      "70": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "70": {
+      "7d": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "7d": {
+      "7e": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "7e": {
+      "7f": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "7f": {
+      "workflow_end": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "8a": {
+      "8c": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "8b": {
+      "8c": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "8c": {
+      "workflow_end": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "8d": {
+      "workflow_end": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "8e": {
+      "workflow_end": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "9a": {
+      "workflow_end": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "9b": {
+      "workflow_end": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "workflow_end": {}
+  },
+  "groups": [],
+  "canvasVersion": 3,
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "onprem_public_ip": {
+        "type": "string",
+        "required": true,
+        "description": "The public IPv4 address the tunnel comes from (curl ifconfig.me)"
+      },
+      "enable_nat_gateway": {
+        "type": "string",
+        "required": true,
+        "enum": [
+          "false",
+          "true"
+        ],
+        "description": "true also builds the NAT gateway (about $1 a day more); the VPN does not need it"
+      },
+      "change_note": {
+        "type": "string",
+        "required": false,
+        "description": "Why, shown to the approver"
+      }
+    },
+    "required": [
+      "onprem_public_ip",
+      "enable_nat_gateway"
+    ]
+  },
+  "outputSchema": {
+    "type": "object",
+    "properties": {
+      "plan": {
+        "type": "object"
+      },
+      "outputs": {
+        "type": "object"
+      },
+      "psk": {
+        "type": "object"
+      },
+      "aws_changed": {
+        "type": "boolean"
+      },
+      "rejected": {
+        "type": "boolean"
+      },
+      "outcome": {
+        "type": "string"
+      },
+      "error": {
+        "type": "string"
+      },
+      "plan_result": {
+        "type": "object"
+      },
+      "apply_result": {
+        "type": "object"
+      },
+      "psk_result": {
+        "type": "object"
+      },
+      "discard_result": {
+        "type": "object"
+      }
+    }
+  },
+  "tags": [],
+  "preAutomationTime": 300000,
+  "sla": 600000,
+  "font_size": 12,
+  "decorators": []
+}

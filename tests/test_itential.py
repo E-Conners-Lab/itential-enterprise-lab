@@ -125,10 +125,14 @@ def test_vendored_compose_matches_recorded_upstream(versions: dict) -> None:
 def test_override_pins_images_ports_and_mongo_cache(versions: dict) -> None:
     ov = yaml.safe_load(OVERRIDE.read_text())
     svc = ov["services"]
-    # Platform on 443 from the lab CA (S4.1); Gateway Manager stays on the Docker network
-    ports = [str(p) for p in svc["platform"]["ports"]]
-    assert any(p.endswith("443:3443") for p in ports), ports
-    assert not any(p.endswith(":8080") and not p.startswith("127.") for p in ports), "Gateway Manager 8080 must not be exposed on the OOB address"
+    # 443 is the portal nginx (ADR 0068 step 5): the Platform's lab-CA certificate (S4.1), the Platform proxied and the
+    # branded pages on the same origin; the Platform itself has no host port. Gateway Manager stays on the Docker network.
+    assert [str(p) for p in svc["portal"]["ports"]] == ["${OOB_ADDRESS}:443:443"]
+    assert "./volumes/platform/ssl:/etc/nginx/tls:ro" in svc["portal"]["volumes"]
+    assert "ports" not in svc["platform"]
+    for name, service in svc.items():
+        ports = [str(p) for p in service.get("ports", [])]
+        assert not any(p.endswith(":8080") and not p.startswith("127.") for p in ports), f"{name} exposes Gateway Manager 8080"
     # MongoDB cache capped so the 24 GB VM is not eaten by WiredTiger (S4.6)
     cmd = " ".join(svc["mongodb"]["command"]) if isinstance(svc["mongodb"]["command"], list) else svc["mongodb"]["command"]
     assert "--wiredTigerCacheSizeGB" in cmd

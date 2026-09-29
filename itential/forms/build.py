@@ -84,9 +84,21 @@ def branch_vlan_approval() -> dict:
                        description="approve pushes the VLAN to the switch and activates the reservation; reject rolls it back")])
 
 
+# --- lab-deploy-aws-vpn: the manual trigger of Deploy AWS VPN (ADR 0068 step 5) -------------------------------
+# The same three inputs the branded page sends to the API trigger; the NAT gateway defaults off (owner 2026-09-29).
+def deploy_aws_vpn() -> dict:
+    return form(VERSIONS["forms"]["deploy_aws_vpn"],
+                "Deploy the AWS side of the lab's site-to-site VPN: Terraform plans it, a Work Center approval shows the plan (PID S13, ADR 0068)",
+                [field("onprem_public_ip", "Your public IP address", read_only=False, required=True,
+                       description="The public IPv4 address the tunnel comes from (curl ifconfig.me)"),
+                 field("enable_nat_gateway", "NAT gateway", read_only=False, enum=["false", "true"], required=True,
+                       default="false", description="true also builds the NAT gateway (about $1 a day more); the VPN does not need it"),
+                 field("change_note", "Change note", read_only=False, description="Why, shown to the approver")])
+
+
 def main(check: bool) -> int:
     rc = 0
-    for doc in (branch_vlan_approval(),):
+    for doc in (branch_vlan_approval(), deploy_aws_vpn()):
         out = HERE / f"{doc['name']}.json"
         text = json.dumps(doc, indent=2) + "\n"
         if check:

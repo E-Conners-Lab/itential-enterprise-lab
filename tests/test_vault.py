@@ -76,7 +76,7 @@ def test_every_gateway_alias_points_at_a_seeded_key() -> None:
     # or at one of the paths that are never seeded from .env: the AWS key and the deploy key (ADR 0068)
     v = _vault()
     unseeded = {v["aws"]["key_path"]: {"access_key_id", "secret_access_key"},
-                v["git"]["deploy_key_path"]: {"private_key"}}
+                v["git"]["deploy_key_path"]: {"private_key"}, v["aws"]["writer_path"]: {"role_id", "secret_id"}}
     for alias, ref in v["gateway_aliases"].items():
         keys = v["secrets"][ref["path"]] if ref["path"] in v["secrets"] else unseeded.get(ref["path"], set())
         assert ref["key"] in keys, alias

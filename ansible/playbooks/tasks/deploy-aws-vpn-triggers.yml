@@ -1,0 +1,149 @@
+---
+# ADR 0068 step 5: how Deploy AWS VPN is started. An Operations Manager automation wraps the workflow, with two triggers:
+#   - an ENDPOINT trigger (route deploy-aws-vpn): the branded page (itential/portal) POSTs the plain variables to
+#     /operations-manager/triggers/endpoint/deploy-aws-vpn under the engineer's own session. It needs verb POST and a
+#     body schema at creation, or the route answers 404 (measured 2026-09-23);
+#   - a MANUAL trigger with the JSON form lab-deploy-aws-vpn, the fallback in the Platform UI. The form must be set when
+#     the trigger is created (a PATCHed formId does not take, measured 2026-09-23); legacyWrapper false maps the form's
+#     fields straight onto the workflow's inputs.
+# Operations Manager updates are PATCH (PUT is 404). Needs: login, platform_local, forms_dir.
+- name: Deploy AWS VPN form document
+  ansible.builtin.set_fact:
+    dav_form: "{{ lookup('ansible.builtin.file', forms_dir ~ '/' ~ forms.deploy_aws_vpn ~ '.json') | from_json }}"
+    dav: "{{ operations_manager.deploy_aws_vpn }}"
+
+- name: Existing forms (Deploy AWS VPN)
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/json-forms/forms"
+    headers: {Cookie: "{{ login.cookies_string }}"}
+  register: dav_forms_now
+
+- name: Deploy AWS VPN form created
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/json-forms/forms"
+    method: POST
+    headers: {Cookie: "{{ login.cookies_string }}"}
+    body_format: json
+    body: "{{ dav_form }}"
+    status_code: [200, 201]
+  when: forms.deploy_aws_vpn not in (dav_forms_now.json | map(attribute='name') | list)
+  changed_when: true
+
+- name: Deploy AWS VPN form replaced when it changed
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/json-forms/forms/{{ have.id }}"
+    method: PUT
+    headers: {Cookie: "{{ login.cookies_string }}"}
+    body_format: json
+    body:
+      options: >-
+        {{ dav_form | combine({'created': have.created, 'createdBy': have.createdBy,
+                               'lastUpdated': have.lastUpdated, 'lastUpdatedBy': have.lastUpdatedBy}) }}
+    status_code: 200
+  vars:
+    have: "{{ (dav_forms_now.json | selectattr('name', 'equalto', forms.deploy_aws_vpn) | first) | default({}) }}"
+  when: >-
+    have | length > 0 and (have.struct != dav_form.struct or have.schema != dav_form.schema
+    or have.uiSchema != dav_form.uiSchema or have.description != dav_form.description)
+  changed_when: true
+
+- name: Forms and workflows now (Deploy AWS VPN)
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/{{ item }}"
+    headers: {Cookie: "{{ login.cookies_string }}"}
+  loop:
+    - json-forms/forms
+    - automation-studio/workflows?limit=500
+    - operations-manager/automations?equalsField=componentType&equals=workflows&limit=100
+  register: dav_now
+
+- name: Deploy AWS VPN ids
+  ansible.builtin.set_fact:
+    dav_form_id: "{{ (dav_now.results[0].json | selectattr('name', 'equalto', forms.deploy_aws_vpn) | first).id }}"
+    dav_wf_id: "{{ (dav_now.results[1].json['items'] | selectattr('name', 'equalto', workflows.deploy_aws_vpn) | first)._id }}"
+    dav_auto: "{{ (dav_now.results[2].json.data | selectattr('name', 'equalto', dav.automation) | first) | default({}) }}"
+
+- name: Automation wrapping Deploy AWS VPN
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/operations-manager/automations"
+    method: POST
+    headers: {Cookie: "{{ login.cookies_string }}"}
+    body_format: json
+    body:
+      name: "{{ dav.automation }}"
+      description: "Deploys the AWS side of the site-to-site VPN; started by the branded page or the form (ADR 0068)"
+      componentType: workflows
+      componentId: "{{ dav_wf_id }}"
+      componentName: "{{ workflows.deploy_aws_vpn }}"
+    status_code: [200, 201]
+  register: dav_created
+  when: dav_auto | length == 0
+  changed_when: true
+
+- name: Automation follows the re-imported workflow
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/operations-manager/automations/{{ dav_auto._id }}"
+    method: PATCH
+    headers: {Cookie: "{{ login.cookies_string }}"}
+    body_format: json
+    body: {componentId: "{{ dav_wf_id }}", componentName: "{{ workflows.deploy_aws_vpn }}"}
+    status_code: 200
+  when: dav_auto | length > 0 and dav_auto.componentId != dav_wf_id
+  changed_when: true
+
+- name: Automation id (Deploy AWS VPN)
+  ansible.builtin.set_fact:
+    dav_auto_id: "{{ dav_auto._id if dav_auto | length > 0 else (dav_created.json.data._id | default(dav_created.json._id)) }}"
+
+- name: Triggers of the automation
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/operations-manager/triggers?equalsField=actionId&equals={{ dav_auto_id }}&limit=100"
+    headers: {Cookie: "{{ login.cookies_string }}"}
+  register: dav_triggers
+
+- name: The branded page's endpoint trigger
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/operations-manager/triggers"
+    method: POST
+    headers: {Cookie: "{{ login.cookies_string }}"}
+    body_format: json
+    body:
+      name: "{{ dav.endpoint.name }}"
+      description: "POST the three inputs as JSON (itential/portal/deploy-aws-vpn)"
+      type: endpoint
+      enabled: true
+      actionType: automations
+      actionId: "{{ dav_auto_id }}"
+      routeName: "{{ dav.endpoint.route }}"
+      verb: POST
+      schema: "{{ dav_schema }}"
+    status_code: [200, 201]
+  vars:
+    dav_schema:
+      type: object
+      required: [onprem_public_ip, enable_nat_gateway]
+      properties:
+        onprem_public_ip: {type: string}
+        enable_nat_gateway: {type: string, enum: ["false", "true"]}
+        change_note: {type: string}
+  when: dav.endpoint.name not in (dav_triggers.json.data | map(attribute='name') | list)
+  changed_when: true
+
+- name: The form's manual trigger
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/operations-manager/triggers"
+    method: POST
+    headers: {Cookie: "{{ login.cookies_string }}"}
+    body_format: json
+    body:
+      name: "{{ dav.manual.name }}"
+      description: "The Platform UI fallback: the same inputs as the branded page"
+      type: manual
+      enabled: true
+      actionType: automations
+      actionId: "{{ dav_auto_id }}"
+      formId: "{{ dav_form_id }}"
+      legacyWrapper: false
+    status_code: [200, 201]
+  when: dav.manual.name not in (dav_triggers.json.data | map(attribute='name') | list)
+  changed_when: true

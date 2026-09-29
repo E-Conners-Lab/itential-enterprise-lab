@@ -29,6 +29,27 @@ def test_every_gateway_device_task_has_its_result_checked_and_every_failure_reac
                 assert fail, f"{path.name}: evaluation {c} after {tid} has no failure edge (dead-end)"
 
 
+def test_every_gateway_service_run_has_its_result_checked_and_its_error_handled() -> None:
+    """ADR 0068 step 5 extends ADR 0066 to GatewayManager.runService: a service that exits non-zero still finishes the
+    task `success`, so its return code is evaluated, and a Gateway that cannot run it takes the task's error edge."""
+    import json
+    seen = 0
+    for path in sorted((ROOT / "itential" / "workflows").glob("*.json")):
+        wf = json.loads(path.read_text())
+        tasks, tr = wf["tasks"], wf["transitions"]
+        for tid, task in tasks.items():
+            if not isinstance(task, dict) or task.get("name") != "runService":
+                continue
+            seen += 1
+            states = {e["state"] for e in tr.get(tid, {}).values()}
+            assert "error" in states, f"{path.name}: runService {tid} has no error edge"
+            checks = [b for b, e in tr[tid].items() if e["state"] == "success" and tasks.get(b, {}).get("name") == "evaluation"]
+            assert checks, f"{path.name}: runService {tid} result is never checked"
+            for c in checks:
+                assert any(e["state"] == "failure" for e in tr.get(c, {}).values()), f"{path.name}: {c} dead-ends"
+    assert seen >= 4  # Deploy AWS VPN: plan, apply, discard, PSK
+
+
 def test_branch_vlan_rolls_back_a_failure_between_the_reservation_and_the_push_and_only_there() -> None:
     """Owner decision 2026-09-23: keep branch-vlan's designed error-end, but an external call that fails after the NetBox
     reservation and before the device push goes through the rollback instead of leaving the VLAN reserved."""
