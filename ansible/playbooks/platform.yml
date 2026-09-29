@@ -183,6 +183,11 @@
       ansible.builtin.include_tasks: tasks/lcm.yml
       when: "'lcm' in platform_elements | default(['golden_config', 'mop', 'lcm', 'integrations'])"
 
+    # Dev first (ADR 0063): production gets these once Deploy AWS VPN is proven on the dev tier
+    - name: Deploy AWS VPN - its form, automation, the branded page's API trigger and the form's trigger (ADR 0068)
+      ansible.builtin.include_tasks: tasks/deploy-aws-vpn-triggers.yml
+      when: dev_overlay | default(false) | bool
+
     - name: Element 4 - Integration Models, integrations and their tools (ADR 0045)
       ansible.builtin.include_tasks: tasks/integrations.yml
       when: "'integrations' in platform_elements | default(['golden_config', 'mop', 'lcm', 'integrations'])"

@@ -191,9 +191,155 @@ def test_terraform_run_uses_reviewed_code_and_vault_secrets_only() -> None:
     tr = VERSIONS["terraform_run"]
     assert tr["repository"]["reference"] == "main"
     aliases = VAULT["gateway_aliases"]
-    for secret in tr["service"]["secrets"]:
-        assert secret["name"] in aliases and aliases[secret["name"]]["path"] == VAULT["aws"]["key_path"]
-    assert {s["target"] for s in tr["service"]["secrets"]} == {"AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY"}
+    services = {s["name"]: s for s in tr["services"]}
+    assert set(services) == {"terraform-run", "aws-vpn-psk"}
+    for svc in services.values():
+        for secret in svc["secrets"]:
+            assert secret["name"] in aliases and secret["type"] == "env", secret
+    tf = {s["target"] for s in services["terraform-run"]["secrets"]}
+    assert tf == {"AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY"}  # terraform-run never gets the writer's credentials
+    psk = {s["target"] for s in services["aws-vpn-psk"]["secrets"]}
+    assert psk == {"PSK_WRITER_ROLE_ID", "PSK_WRITER_SECRET_ID", "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY"}
+    assert aliases["aws-psk-writer-role-id"]["path"] == VAULT["aws"]["writer_path"]
     assert aliases["cloud-devops-pipeline-deploy-key"]["path"] == VAULT["git"]["deploy_key_path"]
     for name, play in PLAYS.items():
         assert play.index("tasks/gateway-vault.yml") < play.index("tasks/gateway-terraform-run.yml"), name
+
+
+def test_the_runner_reaches_its_tiers_vault_over_the_lab_ca() -> None:
+    dev = (ROOT / "itential" / "compose.override.yml").read_text()
+    assert "VAULT_ADDR: ${RUNNER_VAULT_ADDR:-}" in dev and "VAULT_CACERT: /etc/ssl/lab/lab-root-ca.crt" in dev
+    assert "RUNNER_VAULT_ADDR={{ vault_url }}" in PLAYS["itential.yml"]
+    prod = (ROOT / "itential" / "ha2" / "gateway.compose.yml.j2").read_text()
+    assert 'VAULT_ADDR: "{{ vault.prod.url }}"' in prod
+
+
+# --- step 5: the Deploy AWS VPN workflow (solution design, deploy-aws-vpn delivery 2026-09-29) --------------------
+def _deploy() -> tuple[dict, dict]:
+    import json
+    wf = json.loads((ROOT / "itential" / "workflows" / "deploy-aws-vpn.json").read_text())
+    return wf, {tid: t for tid, t in wf["tasks"].items() if isinstance(t, dict)}
+
+
+def _svc(tasks: dict, action: str) -> str:
+    """The runService task whose params template carries this action."""
+    for tid, t in tasks.items():
+        if t.get("name") == "replace" and f'"action": "{action}"' in str(t["variables"]["incoming"]["str"]):
+            return tid
+    raise AssertionError(action)
+
+
+def test_deploy_plans_then_asks_then_applies_exactly_that_plan() -> None:
+    wf, tasks = _deploy()
+    assert wf["name"] == "Deploy AWS VPN"
+    order = [tid for tid in ("1d", "2b", "3e", "4d")]
+    names = [(tasks[t]["name"], tasks[t]["variables"]["incoming"].get("serviceName")) for t in order]
+    assert names == [("runService", "terraform-run"), ("ViewData", None), ("runService", "terraform-run"),
+                     ("runService", "aws-vpn-psk")]
+    assert tasks["2b"]["variables"]["incoming"]["body"] == "$var.job.plan"  # the approver sees the plan summary
+    plan_tpl = tasks[_svc(tasks, "plan")]["variables"]["incoming"]["str"]
+    assert '"job": "new"' in plan_tpl and '"enable_vpn": "true"' in plan_tpl
+    # the apply's plan ID and SHA-256 are the plan result's own, never typed in
+    assert tasks["10"]["variables"]["incoming"] == {"pass_on_null": False, "query": "result.stdout_json.job", "obj": "$var.1d.result"}
+    assert tasks["3a"]["variables"]["incoming"]["query"] == "result.stdout_json.plan_sha256"
+    assert tasks["3b"]["variables"]["incoming"]["newSubstr"] == "$var.10.return_data"
+    assert tasks["3c"]["variables"]["incoming"]["newSubstr"] == "$var.3a.return_data"
+    tr = wf["transitions"]
+    assert tr["2b"] == {"3a": {"state": "success", "type": "standard"}, "7a": {"state": "failure", "type": "standard"}}
+
+
+def test_reject_discards_the_plan_and_says_nothing_changed() -> None:
+    _, tasks = _deploy()
+    assert tasks["7c"]["variables"]["incoming"]["serviceName"] == "terraform-run"
+    assert '"action": "discard"' in tasks["7a"]["variables"]["incoming"]["str"]
+    assert tasks["7d"]["variables"]["outgoing"]["output"] == "$var.job.rejected"
+    assert tasks["7e"]["variables"]["incoming"]["input"] == "false"
+    assert tasks["7e"]["variables"]["outgoing"]["output"] == "$var.job.aws_changed"
+
+
+def test_the_psk_step_follows_the_apply_and_returns_versions_only() -> None:
+    wf, tasks = _deploy()
+    assert tasks["4a"]["variables"]["incoming"]["query"] == "result.stdout_json.outputs.psk_secret_arn"
+    assert tasks["4a"]["variables"]["incoming"]["obj"] == "$var.3e.result"
+    assert set(wf["outputSchema"]["properties"]) >= {"plan", "outputs", "psk", "aws_changed", "rejected", "outcome", "error"}
+    assert not any("psk" in k and k not in ("psk", "psk_result") for k in wf["outputSchema"]["properties"])
+
+
+def test_the_nat_gateway_is_off_unless_asked() -> None:
+    wf, _ = _deploy()
+    inputs = wf["inputSchema"]
+    assert inputs["properties"]["enable_nat_gateway"]["enum"] == ["false", "true"]
+    assert set(inputs["required"]) == {"onprem_public_ip", "enable_nat_gateway"}
+
+
+# --- the branded page (itential/portal/deploy-aws-vpn) reads the workflow it starts ---------------------------------
+PAGE = ROOT / "itential" / "portal" / "deploy-aws-vpn" / "index.html"
+
+
+def test_the_page_draws_its_route_from_task_ids_the_workflow_has() -> None:
+    wf, tasks = _deploy()
+    page = PAGE.read_text()
+    stages = re.findall(r'key: "(\w+)", label: "[^"]+", sub: "[^"]+", tasks: \[([^\]]*)\]', page)
+    assert [k for k, _ in stages] == ["plan", "approve", "apply", "psk", "done"]
+    for key, ids in stages:
+        for tid in re.findall(r'"([0-9a-f]{1,4})"', ids):
+            assert tid in tasks, f"page stage {key} watches {tid}, which Deploy AWS VPN does not have"
+    for var in ("plan", "outputs", "psk", "outcome", "error", "aws_changed", "rejected"):
+        assert var in wf["outputSchema"]["properties"] and f"v.{var}" in page, var
+
+
+def test_the_page_marks_a_stop_from_the_branches_the_workflow_takes() -> None:
+    """The workflow's failures are branches, so its tasks end "complete": the page finds a failed stage by the failure
+    branch that ran, and a rejection by the discard branch, and both must be the workflow's real edges."""
+    wf, _ = _deploy()
+    page = PAGE.read_text()
+    branches = dict(re.findall(r'(\w+): \["([0-9a-f]{1,4})", "[0-9a-f]{1,4}"\]', page.split("FAIL_BRANCH = ")[1].split(";")[0]))
+    starts = {"plan": ("1d", "1e"), "apply": ("3e", "3f"), "psk": ("4d", "4e")}
+    assert branches.keys() == starts.keys()
+    for stage, first in branches.items():
+        exits = {t for src in starts[stage] for t in wf["transitions"][src]}
+        assert first in exits, f"{stage}: {first} is not where {starts[stage]} go on failure"
+    assert wf["transitions"]["2b"]["7a"]["state"] == "failure"  # Reject in Work Center
+    assert 'ran("7a")' in page
+
+
+def test_the_page_starts_the_job_under_the_engineers_session_and_holds_no_credential() -> None:
+    page = PAGE.read_text()
+    route = VERSIONS["operations_manager"]["deploy_aws_vpn"]["endpoint"]["route"]
+    assert f'"/operations-manager/triggers/endpoint/{route}"' in page
+    assert 'credentials: "same-origin"' in page and "body: JSON.stringify(formData)" in page
+    assert 'enable_nat_gateway: $("nat").checked ? "true" : "false"' in page
+    # no credential handling at all: no auth header, no storage, no login call, no credential field, no token in a URL
+    for forbidden in ("Authorization", "localStorage", "sessionStorage", "/login", 'name="password"', "?token=", "X-Vault-Token"):
+        assert forbidden not in page, forbidden
+    assert "<script src=" not in page and "<link" not in page  # self-contained, no CDN
+
+
+def test_presenter_mode_hides_every_octet_of_a_public_address() -> None:
+    # the first dev run showed "136.•••.•••.•••": one octet of the home address in a screenshot meant for LinkedIn
+    page = PAGE.read_text()
+    assert '"•••.•••.•••.•••"' in page
+    assert "${a}.•••" not in page
+
+
+def test_the_page_says_approved_only_once_the_apply_has_started() -> None:
+    # Work Center completes the approval task on Reject as well: the first rejected run logged "Approved" (2026-09-29)
+    page = PAGE.read_text()
+    line = next(ln for ln in page.splitlines() if '"Approved. Applying exactly that plan."' in ln and "log(" in ln)
+    assert 'state.apply === "active"' in line
+
+
+def test_every_service_result_is_read_through_the_json_rpc_envelope() -> None:
+    """In a workflow, runService publishes {id, jsonrpc, result: {return_code, stdout_json, ...}} (measured 2026-09-29):
+    a path without the `result.` step reads nothing, and an evaluation on it fails every run."""
+    _, tasks = _deploy()
+    services = {tid for tid, t in tasks.items() if t.get("name") == "runService"}
+    for tid, t in tasks.items():
+        inc = (t.get("variables") or {}).get("incoming") or {}  # workflow_start / workflow_end have none
+        obj = str(inc.get("obj", ""))
+        if any(obj == f"$var.{s}.result" for s in services):
+            assert inc["query"].startswith("result."), (tid, inc["query"])
+        for g in inc.get("evaluation_groups") or []:
+            for e in g["evaluations"]:
+                if e["operand_1"]["task"] in services:
+                    assert e["query"].startswith("result."), (tid, e["query"])

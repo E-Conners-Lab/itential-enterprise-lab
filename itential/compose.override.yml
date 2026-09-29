@@ -6,7 +6,8 @@
 #
 # Exposure model: the upstream port mappings bind to 127.0.0.1 only (BIND_ADDRESS=127.0.0.1: in
 # the stack .env); the OOB address 10.100.0.65 gets exactly four listeners:
-#   443   Platform HTTPS with the lab-CA certificate (S4.1)
+#   443   the portal nginx (ADR 0068 step 5): the Platform's HTTPS with its lab-CA certificate (S4.1), proxied,
+#         and the branded pages at /portal/ on the same origin
 #   8083  Gateway 4 (Golden Config / netmiko show commands)
 #   50051 Gateway 5 gRPC (iagctl)
 #   8000  MCP server, streamable HTTP for Claude Code on the Mac (S4.7)
@@ -17,10 +18,24 @@ services:
     command: ["mongod", "--wiredTigerCacheSizeGB", "4", "--bind_ip_all"]
 
   platform:
-    ports:
-      - "${OOB_ADDRESS}:443:3443"
+    # no host port of its own: the portal nginx below is the VM's 443 (ADR 0068 step 5)
     environment:
       ITENTIAL_LOG_LEVEL: ${LOG_LEVEL:-info}
+
+  portal:
+    # the dev tier's front door: TLS with the Platform's certificate, /portal/ static, everything else to the Platform
+    container_name: portal
+    image: ${NGINX_IMAGE}
+    profiles: ["platform", "full"]
+    depends_on:
+      - platform
+    ports:
+      - "${OOB_ADDRESS}:443:443"
+    volumes:
+      - ./portal/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./volumes/platform/ssl:/etc/nginx/tls:ro
+      - ./portal/html:/usr/share/nginx/portal:ro
+    restart: unless-stopped
 
   gateway4:
     ports:
@@ -74,6 +89,9 @@ services:
     environment:
       GATEWAY_APPLICATION_MODE: runner
       GATEWAY_SECRETS_ENCRYPT_KEY_FILE: /etc/gateway-secrets/encrypt.key
+      # aws-vpn-psk (ADR 0068 d5) writes the PSK to the tier's Vault from the runner, over the lab CA
+      VAULT_ADDR: ${RUNNER_VAULT_ADDR:-}
+      VAULT_CACERT: /etc/ssl/lab/lab-root-ca.crt
       GATEWAY_APPLICATION_CLUSTER_ID: ${GATEWAY5_CLUSTER_ID:-lab}
       GATEWAY_LOG_LEVEL: ${LOG_LEVEL:-info}
       GATEWAY_STORE_BACKEND: etcd
@@ -91,6 +109,7 @@ services:
       - gateway5-runner-data:/var/lib/gateway # cached venvs (Genie ~790 MB), pex, task workspaces
       # ADR 0068 step 4: the same secrets key on server and runner (tasks/gateway-secrets-key.yml)
       - ./volumes/gateway5/secrets/runner.key:/etc/gateway-secrets/encrypt.key:ro
+      - /usr/local/share/ca-certificates/lab-root-ca.crt:/etc/ssl/lab/lab-root-ca.crt:ro
     deploy:
       resources:
         limits:

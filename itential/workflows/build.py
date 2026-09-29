@@ -2901,6 +2901,159 @@ def netbox_devices() -> dict:
     )
 
 
+# --- Deploy AWS VPN (PID S13 criterion 1, ADR 0068 step 5) ---------------------------------------------------------
+# The AWS side of the site-to-site VPN, planned, approved and applied through two Gateway 5 executable services on the
+# cloud-devops-pipeline repository (versions.yaml terraform_run): terraform-run plans with a plan ID it mints itself,
+# a Work Center card shows the plan summary, apply runs exactly that plan (SHA-256 and commit checked by the service),
+# and aws-vpn-psk writes a new PSK to Vault (write-only AppRole) and Secrets Manager. Started by the branded page
+# (itential/portal) through an Operations Manager API trigger, or by its manual trigger. Service params are JSON
+# strings filled by Tools.replace and parsed (a $var inside the params object never resolves). Every service call has
+# an error edge and its result is evaluated (ADR 0066); every path reaches workflow_end with the reason in `error` and
+# whether AWS changed in `aws_changed` (unset when the apply failed: the error then says "nothing applied" when the
+# service refused before applying; otherwise the apply may have run part-way).
+PLAN_TPL = ('{"action": "plan", "job": "new", "enable_vpn": "true", "enable_nat_gateway": "__N__", '
+            '"onprem_public_ip": "__IP__", "timeout": "900"}')
+APPLY_TPL = '{"action": "apply", "job": "__ID__", "plan_sha256": "__SHA__", "timeout": "1800"}'
+DISCARD_TPL = '{"action": "discard", "job": "__ID__", "timeout": "120"}'
+PSK_TPL = '{"action": "write", "secret_arn": "__ARN__", "timeout": "120"}'
+
+
+def run_service(summary: str, service: str, params_ref: str, out_job: str, x: int, y: int = 0) -> dict:
+    """GatewayManager.runService on this cluster; the published result is the JSON-RPC envelope {id, jsonrpc, result:
+    {return_code, stdout, stdout_json, stderr, elapsed_time}} - so paths start `result.` (measured in a workflow 2026-09-29).
+    No `inventory`: these services target no node, and an empty list is refused ("inventory must be a non-empty
+    array if provided", measured on dev 2026-09-29)."""
+    return task(
+        "runService",
+        "GatewayManager",
+        summary,
+        {"serviceName": service, "clusterId": CLUSTER, "params": params_ref},
+        {"result": f"$var.job.{out_job}"},
+        display="GatewayManager",
+        x=x,
+        y=y,
+    )
+
+
+def deploy_aws_vpn() -> dict:
+    ok, fail, err = "success", "failure", "error"
+    tasks = {
+        # plan
+        "1a": replace("plan params: NAT gateway", PLAN_TPL, "__N__", "$var.job.enable_nat_gateway", x=100),
+        "1b": replace("plan params: public IP", "$var.1a.replacedString", "__IP__", "$var.job.onprem_public_ip", x=200),
+        "1c": parse("plan params", "$var.1b.replacedString", x=300),
+        "1d": run_service("terraform plan", "terraform-run", "$var.1c.textObject", "plan_result", x=400),
+        "1e": evaluate("plan made?", "1d", "result", "result.return_code", "==", 0, x=500),
+        "1f": jq("the plan summary", "$var.1d.result", "result.stdout_json", x=600, to_job="plan"),
+        "10": jq("the plan ID", "$var.1d.result", "result.stdout_json.job", x=700),
+        # approve
+        "2a": replace(
+            "the card's message",
+            "Deploy the AWS side of the site-to-site VPN (costs about $1 a day while it is up). Change note: __NOTE__",
+            "__NOTE__", "$var.job.change_note", x=800,
+        ),
+        "2b": view("approval", "Approve the AWS change", "$var.2a.replacedString", "$var.job.plan", "Approve", "Reject", x=900),
+        # apply
+        "3a": jq("the approved plan's SHA-256", "$var.1d.result", "result.stdout_json.plan_sha256", x=1000),
+        "3b": replace("apply params: plan ID", APPLY_TPL, "__ID__", "$var.10.return_data", x=1100),
+        "3c": replace("apply params: SHA-256", "$var.3b.replacedString", "__SHA__", "$var.3a.return_data", x=1200),
+        "3d": parse("apply params", "$var.3c.replacedString", x=1300),
+        "3e": run_service("terraform apply (the approved plan)", "terraform-run", "$var.3d.textObject", "apply_result", x=1400),
+        "3f": evaluate("applied?", "3e", "result", "result.return_code", "==", 0, x=1500),
+        "30": jq("the outputs", "$var.3e.result", "result.stdout_json.outputs", x=1600, to_job="outputs"),
+        "31": flag("aws_changed = true", "true", "aws_changed", x=1700),
+        # PSK
+        "4a": jq("the PSK secret's ARN", "$var.3e.result", "result.stdout_json.outputs.psk_secret_arn", x=1800),
+        "4b": replace("PSK params", PSK_TPL, "__ARN__", "$var.4a.return_data", x=1900),
+        "4c": parse("PSK params", "$var.4b.replacedString", x=2000),
+        "4d": run_service("the pre-shared key: Vault, then Secrets Manager", "aws-vpn-psk", "$var.4c.textObject", "psk_result", x=2100),
+        "4e": evaluate("PSK written?", "4d", "result", "result.return_code", "==", 0, x=2200),
+        "4f": jq("the PSK versions (never the PSK)", "$var.4d.result", "result.stdout_json", x=2300, to_job="psk"),
+        # close out
+        "5a": jq("the strongSwan EIP", "$var.job.outputs", "strongswan_eip", x=2400),
+        "5b": jq("the Vault version", "$var.job.psk", "vault_version", x=2500),
+        "5c": num2str("the Vault version as text", "$var.5b.return_data", x=2600),
+        "5d": replace(
+            "the outcome: EIP",
+            "Deployed: strongSwan at __EIP__; pre-shared key version __V__ in Vault and Secrets Manager.",
+            "__EIP__", "$var.5a.return_data", x=2700,
+        ),
+        "5e": replace("the outcome", "$var.5d.replacedString", "__V__", "$var.5c.numToString", x=2800),
+        # reject: discard the stored plan, end cleanly
+        "7a": replace("discard params", DISCARD_TPL, "__ID__", "$var.10.return_data", x=1000, y=400),
+        "7b": parse("discard params", "$var.7a.replacedString", x=1100, y=400),
+        "7c": run_service("discard the rejected plan", "terraform-run", "$var.7b.textObject", "discard_result", x=1200, y=400),
+        "71": evaluate("discarded?", "7c", "result", "result.return_code", "==", 0, x=1250, y=400),
+        "7d": flag("rejected = true", "true", "rejected", x=1300, y=400),
+        "7e": flag("aws_changed = false (rejected)", "false", "aws_changed", x=1400, y=400),
+        "7f": note("the rejection", "rejected in Work Center: the plan was discarded, nothing changed in AWS", "outcome", x=1500, y=400),
+        "70": note("the discard did not run", "the rejected plan could not be discarded; it stays in the state bucket until removed", "error", x=1300, y=600),
+        # failures
+        "8a": note("the plan did not run", "the Gateway could not run terraform-run for the plan; nothing changed in AWS", "error", x=500, y=-300),
+        "8b": jq("why the plan was refused", "$var.1d.result", "result.stdout_json.error", x=600, y=-300, to_job="error", optional=True),
+        "8c": flag("aws_changed = false (no plan)", "false", "aws_changed", x=700, y=-300),
+        "8d": note("the apply did not run", "the Gateway could not run terraform-run for the apply; check apply_result and AWS", "error", x=1500, y=-700),
+        "8e": jq("why the apply stopped", "$var.3e.result", "result.stdout_json.error", x=1600, y=-700, to_job="error", optional=True),
+        "9a": note("the PSK step did not run", "applied, but the Gateway could not run aws-vpn-psk; the PSK is not in place yet", "error", x=2200, y=-1100),
+        "9b": jq("why the PSK step stopped", "$var.4d.result", "result.stdout_json.error", x=2300, y=-1100, to_job="error", optional=True),
+    }
+    tasks["5e"]["variables"]["outgoing"]["replacedString"] = "$var.job.outcome"
+    tr = chain("1a", "1b", "1c", "1d", "1e", "1f", "10", "2a", "2b", "3a", "3b", "3c", "3d", "3e", "3f", "30", "31",
+               "4a", "4b", "4c", "4d", "4e", "4f", "5a", "5b", "5c", "5d", "5e")
+    tr["1d"] = {"1e": {"state": ok, "type": "standard"}, "8a": {"state": err, "type": "standard"}}
+    tr["1e"] = {"1f": {"state": ok, "type": "standard"}, "8b": {"state": fail, "type": "standard"}}
+    tr["2b"] = {"3a": {"state": ok, "type": "standard"}, "7a": {"state": fail, "type": "standard"}}
+    tr["3e"] = {"3f": {"state": ok, "type": "standard"}, "8d": {"state": err, "type": "standard"}}
+    tr["3f"] = {"30": {"state": ok, "type": "standard"}, "8e": {"state": fail, "type": "standard"}}
+    tr["4d"] = {"4e": {"state": ok, "type": "standard"}, "9a": {"state": err, "type": "standard"}}
+    tr["4e"] = {"4f": {"state": ok, "type": "standard"}, "9b": {"state": fail, "type": "standard"}}
+    # reject: the discard's own failure still ends cleanly (the stored plan expires with the bucket's lifecycle)
+    tr["7a"] = t("", "7b")
+    tr["7b"] = t("", "7c")
+    tr["7c"] = {"71": {"state": ok, "type": "standard"}, "70": {"state": err, "type": "standard"}}
+    tr["71"] = {"7d": {"state": ok, "type": "standard"}, "70": {"state": fail, "type": "standard"}}
+    tr["70"] = t("", "7d")
+    tr["7d"] = t("", "7e")
+    tr["7e"] = t("", "7f")
+    tr["7f"] = t("", "workflow_end")
+    tr["8a"] = t("", "8c")
+    tr["8b"] = t("", "8c")
+    tr["8c"] = t("", "workflow_end")
+    tr["8d"] = t("", "workflow_end")  # aws_changed left unset: the apply may have run part-way
+    # the service's own error says "nothing applied" when it refused before applying (hash, commit, stale plan)
+    tr["8e"] = t("", "workflow_end")
+    tr["9a"] = t("", "workflow_end")  # applied (aws_changed is already true); the PSK step is repeatable
+    tr["9b"] = t("", "workflow_end")
+    return workflow(
+        WF["deploy_aws_vpn"],
+        "Deploys the AWS side of the lab's site-to-site VPN: Terraform plans it on the Gateway, a Work Center approval "
+        "shows the plan, exactly that plan is applied, and the pre-shared key goes to Vault and Secrets Manager "
+        "(PID S13, ADR 0068)",
+        {
+            "onprem_public_ip": {"type": "string", "required": True,
+                                 "description": "The public IPv4 address the tunnel comes from (curl ifconfig.me)"},
+            "enable_nat_gateway": {"type": "string", "required": True, "enum": ["false", "true"],
+                                   "description": "true also builds the NAT gateway (about $1 a day more); the VPN does not need it"},
+            "change_note": {"type": "string", "required": False, "description": "Why, shown to the approver"},
+        },
+        tasks,
+        tr,
+        {
+            "plan": {"type": "object"},
+            "outputs": {"type": "object"},
+            "psk": {"type": "object"},
+            "aws_changed": {"type": "boolean"},
+            "rejected": {"type": "boolean"},
+            "outcome": {"type": "string"},
+            "error": {"type": "string"},
+            "plan_result": {"type": "object"},
+            "apply_result": {"type": "object"},
+            "psk_result": {"type": "object"},
+            "discard_result": {"type": "object"},
+        },
+    )
+
+
 if __name__ == "__main__":
     for wf in (
         device_count(),
@@ -2914,6 +3067,7 @@ if __name__ == "__main__":
         compliance_report(),
         netbox_devices(),
         backup_all(),
+        deploy_aws_vpn(),
     ):
         out = HERE / file_name(wf["name"])
         out.write_text(json.dumps(wf, indent=2) + "\n")

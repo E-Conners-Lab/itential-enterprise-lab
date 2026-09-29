@@ -160,6 +160,34 @@
       loop: [docker-compose.yml, compose.override.yml, process-exporter.yml]
       notify: Compose up
 
+    # ADR 0068 step 5: the portal nginx (the VM's 443) and the branded pages it serves at /portal/
+    - name: Portal directories
+      ansible.builtin.file:
+        path: "{{ stack_dir }}/portal/{{ item }}"
+        state: directory
+        owner: ubuntu
+        group: ubuntu
+        mode: "0755"
+      loop: ["", html]
+
+    - name: Portal nginx configuration
+      ansible.builtin.copy:
+        src: ../../itential/portal/nginx.dev.conf
+        dest: "{{ stack_dir }}/portal/nginx.conf"
+        owner: ubuntu
+        group: ubuntu
+        mode: "0644"
+      notify: Compose up
+
+    - name: Branded pages
+      ansible.builtin.copy:
+        src: ../../itential/portal/deploy-aws-vpn
+        dest: "{{ stack_dir }}/portal/html/"
+        owner: ubuntu
+        group: ubuntu
+        mode: "0644"
+        directory_mode: "0755"
+
     - name: OpenLDAP bootstrap (admin@itential and the admins group, upstream LDIF)
       ansible.builtin.copy:
         src: ../../itential/ldap/openldap.ldif
@@ -245,6 +273,7 @@
           MCP_VERSION={{ images.mcp.tag }}
           ETCD_IMAGE={{ images.etcd.repository }}:{{ images.etcd.tag }}
           GATEWAY5_RUNNER_IMAGE={{ stack.runner_image }}
+          NGINX_IMAGE={{ images.nginx.repository }}:{{ images.nginx.tag }}
           NODE_EXPORTER_IMAGE={{ images.node_exporter.repository }}:{{ images.node_exporter.tag }}
           PROCESS_EXPORTER_IMAGE={{ images.process_exporter.repository }}:{{ images.process_exporter.tag }}
           REDIS_EXPORTER_IMAGE={{ images.redis_exporter.repository }}:{{ images.redis_exporter.tag }}
@@ -268,6 +297,8 @@
           ITENTIAL_VAULT_SECRET_ID={{ vault_reader_secret_id }}
           ITENTIAL_VAULT_SECRETS_ENDPOINT={{ vault.kv_mount }}/data
           ITENTIAL_VAULT_READ_ONLY=true
+          # the runner's Vault for aws-vpn-psk (ADR 0068 d5): the same tier's Vault, reached from the runner
+          RUNNER_VAULT_ADDR={{ vault_url }}
           NODE_EXTRA_CA_CERTS=/opt/vault/lab-root-ca.crt
           {% endif %}
       no_log: true

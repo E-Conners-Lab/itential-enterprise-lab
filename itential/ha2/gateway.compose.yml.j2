@@ -69,6 +69,11 @@ services:
     environment:
       GATEWAY_APPLICATION_MODE: runner
       GATEWAY_SECRETS_ENCRYPT_KEY_FILE: /etc/gateway-secrets/encrypt.key
+{% if vault_enabled | default(false) | bool %}
+      # aws-vpn-psk (ADR 0068 d5) writes the PSK to Vault from the runner, over the lab CA
+      VAULT_ADDR: "{{ vault.prod.url }}"
+      VAULT_CACERT: /etc/ssl/lab/lab-root-ca.crt
+{% endif %}
       GATEWAY_APPLICATION_CLUSTER_ID: "{{ gateway.cluster_id }}"
       GATEWAY_LOG_LEVEL: "info"
       GATEWAY_STORE_BACKEND: etcd
@@ -85,6 +90,9 @@ services:
       - gateway5-runner-data:/var/lib/gateway
       # ADR 0068 step 4: the same secrets key on server and runner (tasks/gateway-secrets-key.yml)
       - ./volumes/gateway5/secrets/runner.key:/etc/gateway-secrets/encrypt.key:ro
+{% if vault_enabled | default(false) | bool %}
+      - /usr/local/share/ca-certificates:/etc/ssl/lab:ro
+{% endif %}
     deploy:
       resources:
         limits:

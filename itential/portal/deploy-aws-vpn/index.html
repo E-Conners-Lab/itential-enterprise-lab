@@ -1,0 +1,545 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Elliot's Itential Lab · Deploy AWS VPN</title>
+<!--
+  Elliot's Itential Lab: the branded engineer page of the itential-enterprise-lab (ADR 0068, step 5).
+  Starts the Itential workflow "Deploy AWS VPN" through the Operations Manager API trigger `deploy-aws-vpn`
+  and follows the job. Served from the Platform's own address (/portal/), so it uses the engineer's Platform
+  session: it never asks for, stores or sends a password or token of its own.
+  Opened as a file (or with ?preview=1) it runs a simulated job instead - the design mockup.
+-->
+<style>
+  :root {
+    --paper: #EEF3F7;
+    --paper-deep: #E1E9F0;
+    --ink: #0E2A4A;
+    --ink-soft: #4A6380;
+    --cobalt: #1F4FD1;
+    --cobalt-deep: #173C9E;
+    --sand: #D9C9A3;
+    --sand-edge: #C4B185;
+    --kelp: #1E8C6A;
+    --buoy: #D8433A;
+    --flare: #C7851A;
+    --card: #FFFFFF;
+    --display: "Avenir Next Condensed", "Avenir Next", "Segoe UI Semibold", "Arial Narrow", sans-serif;
+    --body: "Avenir Next", "Segoe UI", system-ui, -apple-system, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--paper); }
+  body {
+    margin: 0; color: var(--ink); font-family: var(--body); font-size: 16px; line-height: 1.5;
+    background:
+      radial-gradient(circle at 1px 1px, rgba(14, 42, 74, .07) 1px, transparent 0) 0 0 / 24px 24px,
+      var(--paper);
+  }
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 0 24px; }
+
+  /* header */
+  header.bar { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 20px 0 8px; }
+  .brand { display: flex; align-items: center; gap: 12px; color: var(--ink); text-decoration: none; }
+  .brand svg { width: 40px; height: 40px; }
+  .brand b { font-family: var(--display); font-weight: 700; font-size: 22px; letter-spacing: .01em; display: block; line-height: 1.1; }
+  .brand span { font-size: 13px; color: var(--ink-soft); }
+  .presenter { display: flex; align-items: center; gap: 10px; font-size: 14px; color: var(--ink-soft); cursor: pointer; user-select: none; }
+  .switch { position: relative; width: 40px; height: 22px; border-radius: 11px; background: #C9D5E1; transition: background .2s; flex: none; }
+  .switch::after { content: ""; position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: 50%; background: #fff; transition: transform .2s; }
+  input.visually-hidden:checked + .switch { background: var(--cobalt); }
+  input.visually-hidden:checked + .switch::after { transform: translateX(18px); }
+  input.visually-hidden:focus-visible + .switch { outline: 3px solid var(--cobalt); outline-offset: 2px; }
+  .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+  /* hero */
+  .hero { padding: 28px 0 8px; max-width: 760px; }
+  h1 { font-family: var(--display); font-weight: 700; font-size: clamp(38px, 6vw, 64px); line-height: .98; letter-spacing: -.01em; margin: 0 0 14px; }
+  .lede { font-size: 18px; color: var(--ink-soft); max-width: 62ch; margin: 0; }
+  .runs-on { margin: 18px 0 0; padding: 0; list-style: none; display: flex; flex-wrap: wrap; gap: 8px 22px; font-size: 14px; color: var(--ink-soft); }
+  .runs-on li { display: flex; align-items: center; gap: 8px; }
+  .runs-on li::before { content: ""; width: 8px; height: 8px; border-radius: 2px; background: var(--c, var(--cobalt)); transform: rotate(45deg); }
+
+  /* chart */
+  .chart { margin: 26px 0 8px; background: var(--card); border: 1px solid #D4DEE8; border-radius: 18px; overflow: hidden; }
+  .chart svg { display: block; width: 100%; height: auto; }
+  .chart .sea { overflow-x: auto; }
+  @media (max-width: 760px) { .chart svg { width: 820px; max-width: none; } }
+  .chart .caption { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 12px 20px; border-top: 1px solid #E3EAF1; font-size: 14px; color: var(--ink-soft); }
+  .chart .caption strong { color: var(--ink); }
+  .wp-dot { fill: #fff; stroke: #9DB0C4; stroke-width: 3; }
+  .wp-num { font: 700 15px var(--display); fill: #9DB0C4; }
+  .wp-label { font: 600 15px var(--body); fill: var(--ink-soft); }
+  .wp-sub { font: 13px var(--body); fill: #7C90A6; }
+  .wp.active .wp-dot { stroke: var(--cobalt); fill: #E7EEFF; }
+  .wp.active .wp-num { fill: var(--cobalt); }
+  .wp.active .ring { opacity: 1; }
+  .wp.done .wp-dot { fill: var(--cobalt); stroke: var(--cobalt); }
+  .wp.done .wp-num { fill: #fff; }
+  .wp.failed .wp-dot { fill: var(--buoy); stroke: var(--buoy); }
+  .wp.failed .wp-num { fill: #fff; }
+  .wp.rejected .wp-dot { fill: var(--flare); stroke: var(--flare); }
+  .wp.rejected .wp-num { fill: #fff; }
+  .wp.failed .wp-label, .wp.rejected .wp-label { fill: var(--ink); }
+  /* a run that stopped: the rest of the route fades, so the stop is what the eye lands on */
+  .chart.stopped .wp:not(.done):not(.failed):not(.rejected) { opacity: .4; }
+  .chart.stopped #route-base { opacity: .4; }
+  #aws-note { font: 600 14px var(--body); fill: var(--ink); }
+  .wp.done .wp-label, .wp.active .wp-label { fill: var(--ink); }
+  .ring { opacity: 0; fill: none; stroke: var(--cobalt); stroke-width: 2; transform-box: fill-box; transform-origin: center; }
+  @media (prefers-reduced-motion: no-preference) { .wp.active .ring { animation: ping 1.8s ease-out infinite; } }
+  @keyframes ping { from { transform: scale(1); opacity: .7; } to { transform: scale(2.1); opacity: 0; } }
+  .chart.ready #route-progress { transition: stroke-dashoffset .9s ease; }
+  .all-done #route-progress { stroke: var(--kelp); }
+
+  /* form + log */
+  .panes { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); gap: 24px; margin: 22px 0 40px; align-items: start; }
+  @media (max-width: 860px) { .panes { grid-template-columns: 1fr; } }
+  .pane { background: var(--card); border: 1px solid #D4DEE8; border-radius: 14px; padding: 22px 24px 24px; }
+  h2 { font-family: var(--display); font-weight: 700; font-size: 26px; margin: 0 0 4px; }
+  .pane > p.hint { margin: 0 0 18px; color: var(--ink-soft); font-size: 15px; }
+  label.field { display: block; margin: 0 0 16px; }
+  label.field > span { display: block; font-weight: 600; font-size: 15px; margin-bottom: 6px; }
+  label.field small { display: block; color: var(--ink-soft); font-size: 13px; margin-top: 6px; }
+  input[type=text], textarea {
+    width: 100%; font: 17px var(--body); color: var(--ink); background: var(--paper); border: 1.5px solid #C3D1DF;
+    border-radius: 10px; padding: 11px 13px; font-variant-numeric: tabular-nums;
+  }
+  textarea { min-height: 84px; resize: vertical; font-size: 15px; }
+  input[type=text]:focus, textarea:focus { outline: none; border-color: var(--cobalt); box-shadow: 0 0 0 3px rgba(31, 79, 209, .18); background: #fff; }
+  input[aria-invalid=true] { border-color: var(--buoy); }
+  .err { color: var(--buoy); font-size: 13px; margin-top: 6px; min-height: 1em; }
+  .nat { display: flex; gap: 12px; align-items: flex-start; padding: 12px 14px; border-radius: 10px; background: var(--paper); margin: 0 0 18px; cursor: pointer; }
+  .nat input { margin-top: 4px; width: 18px; height: 18px; accent-color: var(--cobalt); }
+  .nat b { display: block; font-size: 15px; }
+  .nat span { font-size: 13px; color: var(--ink-soft); }
+  button.go {
+    width: 100%; font: 700 19px var(--display); letter-spacing: .01em; color: #fff; background: var(--cobalt);
+    border: none; border-radius: 12px; padding: 14px 18px; cursor: pointer; transition: background .15s;
+  }
+  button.go:hover { background: var(--cobalt-deep); }
+  button.go:focus-visible, a:focus-visible, button.link:focus-visible { outline: 3px solid var(--cobalt); outline-offset: 3px; }
+  button.go:disabled { background: #9DB0C4; cursor: default; }
+  .fineprint { font-size: 13px; color: var(--ink-soft); margin: 12px 0 0; }
+
+  .log { list-style: none; margin: 0; padding: 0; }
+  .log li { display: grid; grid-template-columns: 64px 1fr; gap: 12px; padding: 9px 0; border-bottom: 1px dashed #D4DEE8; font-size: 15px; }
+  .log li:last-child { border-bottom: none; }
+  .log time { color: #7C90A6; font-variant-numeric: tabular-nums; font-size: 13px; padding-top: 2px; }
+  .log .ok { color: var(--kelp); font-weight: 600; }
+  .log .bad { color: var(--buoy); font-weight: 600; }
+  .empty { color: var(--ink-soft); font-size: 15px; padding: 18px 0 6px; }
+  .callout { margin: 16px 0 0; padding: 14px 16px; border-radius: 10px; background: #FFF6DE; border: 1px solid #EBD493; font-size: 15px; display: none; }
+  .callout a { color: var(--cobalt-deep); font-weight: 600; }
+  button.link { background: none; border: none; padding: 0; font: inherit; color: var(--cobalt-deep); text-decoration: underline; cursor: pointer; }
+  dl.outputs { display: grid; grid-template-columns: max-content 1fr; gap: 8px 18px; margin: 18px 0 0; padding: 16px 0 0; border-top: 1px solid #E3EAF1; font-size: 15px; }
+  dl.outputs dt { color: var(--ink-soft); }
+  dl.outputs dd { margin: 0; font-weight: 600; font-variant-numeric: tabular-nums; word-break: break-word; }
+  .jobid { font-size: 13px; color: var(--ink-soft); margin: 0 0 10px; }
+  footer { padding: 0 0 36px; font-size: 13px; color: #7C90A6; }
+  .preview-flag { display: none; margin-left: 10px; font-size: 12px; font-weight: 600; color: var(--cobalt-deep); background: #E7EEFF; border-radius: 6px; padding: 2px 8px; vertical-align: middle; }
+  .is-preview .preview-flag { display: inline-block; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="bar">
+    <a class="brand" href="./" aria-label="Elliot's Itential Lab, network automation portal">
+      <svg viewBox="0 0 40 40" aria-hidden="true">
+        <rect width="40" height="40" rx="10" fill="#1F4FD1"/>
+        <path d="M8 26c4 3 8 3 12 0s8-3 12 0" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round"/>
+        <path d="M20 9v14M15 13.5h10M14 21c1.5 2.5 3.7 3.8 6 3.8s4.5-1.3 6-3.8" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round"/>
+        <circle cx="20" cy="8.5" r="2.2" fill="#fff"/>
+      </svg>
+      <div><b>Elliot's Itential Lab</b><span>Network automation portal</span></div>
+    </a>
+    <label class="presenter" title="Hide public addresses before you share your screen">
+      <input type="checkbox" id="presenter" class="visually-hidden">
+      <span class="switch" aria-hidden="true"></span> Presenter mode
+    </label>
+  </header>
+
+  <section class="hero">
+    <h1>Open a channel to AWS<span class="preview-flag">Preview</span></h1>
+    <p class="lede">Build the AWS side of the lab's site-to-site VPN. Terraform plans the change, a
+      teammate approves that exact plan in Work Center, and the tunnel's pre-shared key goes straight into
+      Vault. Nobody sees it, and nothing reaches AWS until the plan is approved.</p>
+    <ul class="runs-on" aria-label="Runs on">
+      <li style="--c:#1F4FD1">Itential Platform</li>
+      <li style="--c:#7B42BC">Terraform 1.5.7</li>
+      <li style="--c:#E48A1B">AWS us-east-1</li>
+      <li style="--c:#111111">HashiCorp Vault</li>
+      <li style="--c:#1BA0D7">Cisco C8000v</li>
+    </ul>
+  </section>
+
+  <section class="chart" aria-label="Deployment route">
+    <div class="sea" tabindex="0" aria-label="Deployment route, scrolls sideways on small screens">
+    <svg viewBox="0 0 1120 300" role="img" aria-labelledby="chart-title">
+      <title id="chart-title">Route from the lab to AWS through five stages</title>
+      <defs>
+        <pattern id="waves" width="46" height="18" patternUnits="userSpaceOnUse">
+          <path d="M0 9c6-5 11-5 17 0s11 5 17 0 8-4 12-2" fill="none" stroke="#D6E2EE" stroke-width="1.4"/>
+        </pattern>
+      </defs>
+      <rect width="1120" height="300" fill="#F7FAFC"/>
+      <rect width="1120" height="300" fill="url(#waves)"/>
+      <!-- the lab's shore -->
+      <path d="M0 0h150c-18 40 22 70 4 110s30 70 10 110-8 55-8 80H0z" fill="#D9C9A3"/>
+      <path d="M150 0c-18 40 22 70 4 110s30 70 10 110-8 55-8 80" fill="none" stroke="#C4B185" stroke-width="2"/>
+      <!-- the AWS shore -->
+      <path d="M1120 0H968c20 42-18 74 2 112s-26 66-6 108 10 50 10 80h146z" fill="#D9C9A3"/>
+      <path d="M968 0c20 42-18 74 2 112s-26 66-6 108 10 50 10 80" fill="none" stroke="#C4B185" stroke-width="2"/>
+      <!-- harbours -->
+      <g font-family="Avenir Next Condensed, Avenir Next, Segoe UI, sans-serif">
+        <text x="26" y="118" font-size="22" font-weight="700" fill="#0E2A4A">The lab</text>
+        <text x="26" y="142" font-size="14" fill="#4A6380">dc1-wan01</text>
+        <text x="26" y="162" font-size="14" fill="#4A6380" class="mask-ip" data-ip="onprem">your public IP</text>
+        <text x="1094" y="118" font-size="22" font-weight="700" fill="#0E2A4A" text-anchor="end">AWS</text>
+        <text x="1094" y="142" font-size="14" fill="#4A6380" text-anchor="end">strongSwan, us-east-1</text>
+        <text x="1094" y="162" font-size="14" fill="#4A6380" text-anchor="end" class="mask-ip" data-ip="eip">Elastic IP after apply</text>
+        <text id="aws-note" x="1094" y="186" text-anchor="end"></text>
+      </g>
+      <!-- the channel -->
+      <path id="route-base" d="M200 150 C 330 96, 440 204, 565 150 S 800 96, 930 150" fill="none" stroke="#B9C8D8" stroke-width="4" stroke-dasharray="2 12" stroke-linecap="round"/>
+      <path id="route-progress" d="M200 150 C 330 96, 440 204, 565 150 S 800 96, 930 150" fill="none" stroke="#1F4FD1" stroke-width="5" stroke-linecap="round" style="stroke-dasharray: 0 99999"/>
+      <g id="waypoints"></g>
+    </svg>
+    </div>
+    <div class="caption"><span id="chart-status"><strong>Ready.</strong> Fill in the form to plan the deployment.</span><span id="chart-cost">Costs about $1 a day while it is up. The NAT gateway adds about $1 more.</span></div>
+  </section>
+
+  <div class="panes">
+    <section class="pane" aria-labelledby="form-title">
+      <h2 id="form-title">Plan the deployment</h2>
+      <p class="hint">Nothing changes in AWS until the plan is approved.</p>
+      <form id="deploy" novalidate>
+        <label class="field">
+          <span>Your public IP address</span>
+          <input type="text" id="ip" name="onprem_public_ip" inputmode="decimal" autocomplete="off" spellcheck="false" placeholder="203.0.113.10" aria-describedby="ip-help ip-err" required>
+          <small id="ip-help">The address AWS will accept the tunnel from. Check it with <code>curl ifconfig.me</code>.</small>
+          <div class="err" id="ip-err" role="alert"></div>
+        </label>
+        <label class="nat">
+          <input type="checkbox" id="nat" name="enable_nat_gateway">
+          <div><b>Turn on the NAT gateway</b><span>Lets the private subnets reach the internet. The VPN doesn't need it; it adds about $1 a day.</span></div>
+        </label>
+        <label class="field">
+          <span>Change note</span>
+          <textarea id="note" name="change_note" maxlength="280" placeholder="Why this deployment, for the approver"></textarea>
+        </label>
+        <button class="go" type="submit" id="go">Plan the deployment</button>
+        <p class="fineprint">Runs as you. You need a Platform role that can start automations.</p>
+      </form>
+    </section>
+
+    <section class="pane" aria-labelledby="log-title" aria-live="polite">
+      <h2 id="log-title">Voyage log</h2>
+      <p class="jobid" id="jobid" hidden></p>
+      <p class="empty" id="empty">No deployment yet. The log fills in as the job moves along the route.</p>
+      <ul class="log" id="log"></ul>
+      <div class="callout" id="approve-callout">
+        The plan is waiting for approval. Open <a id="wc-link" href="/work-center/" target="_blank" rel="noopener">Work Center</a>
+        to approve or reject it.<span id="sim-approve" hidden> In preview: <button class="link" type="button" data-sim="approve">approve</button> or <button class="link" type="button" data-sim="reject">reject</button>.</span>
+      </div>
+      <dl class="outputs" id="outputs" hidden></dl>
+    </section>
+  </div>
+  <footer>Elliot's Itential Lab. Orchestrated by Itential; the route above is drawn from the job's own progress.</footer>
+</div>
+
+<script>
+(() => {
+  "use strict";
+  const TRIGGER = "/operations-manager/triggers/endpoint/deploy-aws-vpn";
+  const JOB = (id) => `/operations-manager/jobs/${encodeURIComponent(id)}`;
+  const PREVIEW = location.protocol === "file:" || new URLSearchParams(location.search).has("preview");
+  if (PREVIEW) document.body.classList.add("is-preview");
+
+  // the route's waypoints, in the order the workflow runs them; `tasks` are its task ids (itential/workflows/build.py)
+  const STAGES = [
+    { key: "plan", label: "Plan", sub: "terraform plan", tasks: ["1d", "1e", "1f"] },
+    { key: "approve", label: "Approval", sub: "Work Center", tasks: ["2b"] },
+    { key: "apply", label: "Apply", sub: "the approved plan", tasks: ["3e", "3f", "30"] },
+    { key: "psk", label: "Pre-shared key", sub: "Vault + Secrets Manager", tasks: ["4d", "4e", "4f"] },
+    { key: "done", label: "Done", sub: "outputs published", tasks: ["5e"] },
+  ];
+  // each stage's failure branch: plan 8a/8b, apply 8d/8e, pre-shared key 9a/9b (build.py deploy_aws_vpn)
+  const FAIL_BRANCH = { plan: ["8a", "8b"], apply: ["8d", "8e"], psk: ["9a", "9b"] };
+
+  const $ = (id) => document.getElementById(id);
+  const svgNS = "http://www.w3.org/2000/svg";
+  const progress = $("route-progress");
+  const routeLen = progress.getTotalLength();
+  progress.style.strokeDasharray = `${routeLen}`;
+  progress.style.strokeDashoffset = `${routeLen}`;
+  requestAnimationFrame(() => requestAnimationFrame(() => document.querySelector(".chart").classList.add("ready")));
+  // the waypoints sit ON the route, evenly spaced along its length
+  const stageAt = STAGES.map((s, i) => (routeLen * i) / (STAGES.length - 1));
+  STAGES.forEach((s, i) => { const p = progress.getPointAtLength(stageAt[i]); s.x = p.x; s.y = p.y; });
+
+  // draw the waypoints once
+  const wpGroup = $("waypoints");
+  STAGES.forEach((s, i) => {
+    const g = document.createElementNS(svgNS, "g");
+    g.classList.add("wp"); g.id = `wp-${s.key}`;
+    // the label goes on the open-water side: above where the route dips, below where it rises
+    const labelBelow = s.y > 151 ? 40 : s.y < 149 ? -40 : 44;
+    g.innerHTML = `
+      <circle class="ring" cx="${s.x}" cy="${s.y}" r="17"/>
+      <circle class="wp-dot" cx="${s.x}" cy="${s.y}" r="17"/>
+      <text class="wp-num" x="${s.x}" y="${s.y + 5}" text-anchor="middle">${i + 1}</text>
+      <text class="wp-label" x="${s.x}" y="${s.y + labelBelow}" text-anchor="middle">${s.label}</text>
+      <text class="wp-sub" x="${s.x}" y="${s.y + labelBelow + 18}" text-anchor="middle">${s.sub}</text>`;
+    wpGroup.appendChild(g);
+  });
+
+
+  // how a stop reads on the route: a rejection is a decision (amber), a failure is a fault (red)
+  const STOP = {
+    rejected: { glyph: "✕", label: () => "Rejected", sub: "plan discarded" },
+    failed: { glyph: "!", label: (s) => `${s.label} failed`, sub: "the run stopped here" },
+  };
+
+  function drawRoute(state) { // state: {plan: "done"|"active"|"failed"|undefined, ...}
+    let reached = 0;
+    STAGES.forEach((s, i) => {
+      const el = $(`wp-${s.key}`);
+      el.classList.remove("done", "active", "failed");
+      if (state[s.key]) el.classList.add(state[s.key]);
+      if (state[s.key]) reached = stageAt[i];
+      const stop = STOP[state[s.key]];
+      el.querySelector(".wp-num").textContent = stop ? stop.glyph : String(i + 1);
+      el.querySelector(".wp-label").textContent = stop ? stop.label(s) : s.label;
+      el.querySelector(".wp-sub").textContent = stop ? stop.sub : s.sub;
+    });
+    progress.style.strokeDashoffset = `${routeLen - reached}`;
+    const chart = document.querySelector(".chart");
+    chart.classList.toggle("all-done", state.done === "done");
+    chart.classList.toggle("stopped", Object.values(state).some((x) => x in STOP));
+  }
+
+  // --- presenter mode: hide public IPv4 addresses (and 12-digit account ids) everywhere on the page ----------
+  const presenter = $("presenter");
+  const IPV4 = /\b(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})\b/g;
+  const masked = (text) => presenter.checked
+    ? text.replace(IPV4, (m) => (isInternal(m) ? m : "•••.•••.•••.•••")).replace(/\b\d{12}\b/g, "••••••••••••")
+    : text;
+  const realText = new WeakMap();
+  function applyMask() {
+    document.querySelectorAll("[data-mask], .mask-ip").forEach((el) => {
+      if (!realText.has(el)) realText.set(el, el.textContent);
+      el.textContent = masked(realText.get(el));
+    });
+    $("ip").type = presenter.checked ? "password" : "text";
+  }
+  function setMaskable(el, text) { realText.set(el, text); el.textContent = masked(text); }
+  presenter.addEventListener("change", applyMask);
+  if (new URLSearchParams(location.search).has("presenter")) { presenter.checked = true; setTimeout(applyMask, 0); }
+
+  // private and link-local addresses (VPC prefixes, tunnel inner addresses) stay visible; everything else is masked
+  function isInternal(ip) {
+    const [a, b] = ip.split(".").map(Number);
+    return a === 10 || a === 127 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 169 && b === 254);
+  }
+
+  // --- validation: the same rule as terraform-run (a literal, public IPv4 address) -----------------------------
+  function isPublic(ip) {
+    const m = ip.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+    if (!m) return false;
+    const o = m.slice(1).map(Number);
+    if (o.some((n) => n > 255) || m.slice(1).some((s) => s.length > 1 && s[0] === "0")) return false;
+    const [a, b, c] = o;
+    return !(a === 0 || a === 10 || a === 127 || a >= 224 || (a === 100 && b >= 64 && b <= 127) ||
+      (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) ||
+      (a === 192 && b === 0 && (c === 0 || c === 2)) || (a === 198 && (b === 18 || b === 19)) ||
+      (a === 198 && b === 51 && c === 100) || (a === 203 && b === 0 && c === 113));
+  }
+  const ipInput = $("ip");
+  function checkIp() {
+    const v = ipInput.value.trim();
+    const msg = !v ? "Enter the public address the tunnel comes from."
+      : !/^\d{1,3}(\.\d{1,3}){3}$/.test(v) ? "Use a plain IPv4 address, like 203.0.113.10."
+      : !isPublic(v) ? "That address is private or reserved. AWS needs your public address."
+      : "";
+    $("ip-err").textContent = msg;
+    ipInput.setAttribute("aria-invalid", msg ? "true" : "false");
+    return !msg;
+  }
+  ipInput.addEventListener("blur", () => ipInput.value && checkIp());
+
+  // --- the voyage log ------------------------------------------------------------------------------------------
+  const seen = new Set();
+  function log(key, html, cls) {
+    if (key && seen.has(key)) return;
+    if (key) seen.add(key);
+    $("empty").hidden = true;
+    const li = document.createElement("li");
+    const t = new Date();
+    li.innerHTML = `<time>${t.toTimeString().slice(0, 5)}</time><span${cls ? ` class="${cls}"` : ""}></span>`;
+    setMaskable(li.lastElementChild, html);
+    li.lastElementChild.dataset.mask = "1";
+    $("log").appendChild(li);
+  }
+  function showOutputs(o) {
+    const dl = $("outputs"); dl.innerHTML = "";
+    const rows = [
+      ["strongSwan Elastic IP", o.strongswan_eip],
+      ["Tunnel, AWS side", o.tunnel_local_inner],
+      ["Tunnel, lab side", o.tunnel_remote_inner],
+      ["VPC private prefixes", (o.vpc_private_prefixes || []).join(", ")],
+      ["Monitor Lambda", o.vpn_monitor_lambda_name],
+    ].filter(([, v]) => v);
+    rows.forEach(([k, v]) => {
+      const dt = document.createElement("dt"); dt.textContent = k;
+      const dd = document.createElement("dd"); dd.dataset.mask = "1"; setMaskable(dd, String(v));
+      dl.append(dt, dd);
+    });
+    dl.hidden = rows.length === 0;
+    const eip = document.querySelector('[data-ip="eip"]'); if (o.strongswan_eip) setMaskable(eip, o.strongswan_eip);
+  }
+  function status(html) { $("chart-status").innerHTML = html; }
+
+  // --- one job's progress, from the job document ------------------------------------------------------------------
+  function read(job) {
+    const tasks = job.tasks || {}, v = job.variables || {};
+    const st = (id) => (tasks[id] && tasks[id].status) || "";
+    const state = {};
+    STAGES.forEach((s) => {
+      const states = s.tasks.map(st);
+      if (states.some((x) => x === "error" || x === "failed")) state[s.key] = "failed";
+      else if (states.every((x) => x === "complete")) state[s.key] = "done";
+      else if (states.some((x) => x === "running" || x === "complete")) state[s.key] = "active";
+    });
+    // the workflow handles its failures on branches (itential/workflows/build.py), so its tasks end "complete":
+    // a stage failed when its failure branch ran, and the approval was rejected when the discard branch ran
+    const ran = (id) => st(id) === "running" || st(id) === "complete";
+    Object.entries(FAIL_BRANCH).forEach(([key, ids]) => { if (ids.some(ran)) state[key] = "failed"; });
+    if (v.rejected === true || ran("7a")) state.approve = "rejected";
+    const stopAt = STAGES.findIndex((s) => state[s.key] in STOP);
+    if (stopAt < 0 && (job.status === "error" || job.status === "canceled")) {
+      const last = [...STAGES].reverse().find((s) => state[s.key] === "active");
+      if (last) state[last.key] = "failed";
+    }
+    const firstStop = STAGES.findIndex((s) => state[s.key] in STOP);
+    if (firstStop >= 0) STAGES.slice(firstStop + 1).forEach((s) => delete state[s.key]);
+    return { state, v, status: job.status };
+  }
+
+  let pollTimer = null;
+  function follow(jobId) {
+    $("jobid").hidden = false; $("jobid").textContent = `Job ${jobId}`;
+    $("wc-link").href = "/work-center/";
+    const tick = async () => {
+      let job;
+      try {
+        const r = await fetch(JOB(jobId), { credentials: "same-origin" });
+        if (r.status === 401) { status("<strong>Signed out.</strong> Log in to the Platform in this browser, then reload."); return; }
+        const body = await r.json(); job = body.data || body;
+      } catch (e) { status("<strong>Can't reach the Platform.</strong> Retrying."); pollTimer = setTimeout(tick, 8000); return; }
+      render(read(job));
+      if (job.status === "running" || job.status === "paused") pollTimer = setTimeout(tick, 5000);
+    };
+    tick();
+  }
+
+  function render({ state, v, status: jobStatus }) {
+    drawRoute(state);
+    const plan = v.plan || {};
+    if (state.plan === "done" || state.plan === "active") log("plan-start", "Planning with Terraform 1.5.7 on the Gateway.");
+    if (plan.plan_sha256) log("plan-ok", `Plan ready: ${plan.add} to add, ${plan.change} to change, ${plan.destroy} to destroy. Plan ${plan.plan_sha256.slice(0, 12)} from commit ${(plan.commit || "").slice(0, 7)}.`);
+    const waiting = state.approve === "active";
+    $("approve-callout").style.display = waiting ? "block" : "none";
+    $("sim-approve").hidden = !PREVIEW;
+    if (waiting) { log("wait", "Waiting for approval in Work Center."); status("<strong>Waiting for approval.</strong> A teammate reviews the plan in Work Center."); }
+    // the approval task completes on Reject too; only the apply starting proves it was approved
+    if (state.approve === "done" && (state.apply === "active" || state.apply === "done")) log("approved", "Approved. Applying exactly that plan.");
+    if (state.apply === "done") log("applied", "Applied. AWS resources are up.", "ok");
+    if (v.psk && v.psk.vault_version) log("psk", `Pre-shared key written: Vault version ${v.psk.vault_version} and Secrets Manager. Neither this page nor the job holds it.`, "ok");
+    if (v.outputs) showOutputs(v.outputs);
+    if (state.done === "done") { log("done", v.outcome || "Deployed.", "ok"); status("<strong>Deployed.</strong> The AWS side is ready for the router hand-off."); }
+    if (v.error || Object.values(state).includes("failed") || jobStatus === "error") {
+      const changed = v.aws_changed === true ? "AWS has changed; see the job." : v.aws_changed === false ? "Nothing changed in AWS." : "";
+      log("fail", `Stopped: ${v.error || "a step failed"}. ${changed}`, "bad");
+      status(`<strong>Stopped.</strong> ${changed}`);
+    }
+    const stopped = Object.values(state).some((x) => x in STOP);
+    $("aws-note").textContent = !stopped ? "" : v.aws_changed === false ? "Nothing changed" : v.aws_changed === true ? "Changed: see the job" : "";
+    if (v.rejected) { log("rejected", "Rejected. The plan was discarded; nothing changed in AWS.", "bad"); status("<strong>Rejected.</strong> Nothing changed in AWS."); }
+    if (jobStatus !== "running" && jobStatus !== "paused") $("go").disabled = false;
+  }
+
+  // --- start --------------------------------------------------------------------------------------------------------
+  $("deploy").addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    if (!checkIp()) { ipInput.focus(); return; }
+    $("go").disabled = true;
+    // the endpoint trigger takes the workflow's inputs as a plain JSON body (measured 2026-09-23); the NAT gateway is
+    // the string "true" / "false" (the workflow's enum), never a JSON boolean
+    const formData = {
+      onprem_public_ip: ipInput.value.trim(),
+      enable_nat_gateway: $("nat").checked ? "true" : "false",
+      change_note: $("note").value.trim(),
+    };
+    setMaskable(document.querySelector('[data-ip="onprem"]'), formData.onprem_public_ip);
+    seen.clear(); $("log").innerHTML = ""; $("outputs").hidden = true; drawRoute({ plan: "active" });
+    status("<strong>Planning.</strong> Terraform works out what would change in AWS.");
+    if (PREVIEW) return simulate(formData);
+    try {
+      const r = await fetch(TRIGGER, { method: "POST", credentials: "same-origin",
+        headers: { "Content-Type": "application/json" }, body: JSON.stringify(formData) });
+      if (r.status === 401) { status("<strong>Signed out.</strong> Log in to the Platform in this browser, then try again."); $("go").disabled = false; return; }
+      if (!r.ok) { status(`<strong>The Platform refused the request</strong> (HTTP ${r.status}). Check your role.`); $("go").disabled = false; return; }
+      const body = await r.json();
+      const id = body._id || body.job_id || body.jobId || (body.data && (body.data._id || body.data.job_id)) || (body.job && body.job._id);
+      if (!id) { status("<strong>Started, but the Platform returned no job ID.</strong> Find it in Operations Manager."); return; }
+      follow(id);
+    } catch (e) { status("<strong>Can't reach the Platform.</strong> Open this page from the Platform's address."); $("go").disabled = false; }
+  });
+
+  // --- preview: a simulated job, for the design review ---------------------------------------------------------------
+  let sim = null;
+  function simulate(fd) {
+    const job = { status: "running", tasks: {}, variables: {} };
+    const nat = fd.enable_nat_gateway === "true";
+    const set = (ids, s) => ids.forEach((id) => (job.tasks[id] = { status: s }));
+    sim = { job, fd };
+    $("jobid").hidden = false; $("jobid").textContent = "Job 6f1c2a…e04 (preview)";
+    const steps = [
+      [300, () => set(["1d"], "running")],
+      [2400, () => { set(["1d", "1e", "1f"], "complete"); job.variables.plan = { add: nat ? 27 : 24, change: 0, destroy: 0, plan_sha256: "9b41d0c77e2a5f31c6d8e0b9a4f27c55e1d3b6a8f0c2e4d6b8a0c2e4f6a8b0c2", commit: "23a2914a347c" }; set(["2b"], "running"); }],
+    ];
+    steps.forEach(([ms, fn]) => setTimeout(() => { fn(); render(read(job)); }, ms));
+  }
+  // ?preview=1&stage=approval|done|rejected|failed renders that moment straight away (design review, screenshots)
+  const demo = PREVIEW && new URLSearchParams(location.search).get("stage");
+  if (demo) {
+    ipInput.value = "203.0.113.10"; $("note").value = "Lab demo: AWS side of the site-to-site VPN";
+    const fd = { onprem_public_ip: ipInput.value, enable_nat_gateway: "false", change_note: $("note").value };
+    setMaskable(document.querySelector('[data-ip="onprem"]'), fd.onprem_public_ip);
+    $("go").disabled = true; simulate(fd);
+    if (demo === "done") setTimeout(() => document.querySelector('[data-sim="approve"]').click(), 2600);
+    if (demo === "rejected") setTimeout(() => document.querySelector('[data-sim="reject"]').click(), 2600);
+    if (demo === "failed") setTimeout(() => { const job = sim.job; job.tasks = { "1d": { status: "complete" }, "1e": { status: "complete" }, "8b": { status: "complete" } };
+      delete job.variables.plan; job.variables.error = "the Gateway passed arguments this script refuses: unrecognized arguments: --timeout 900";
+      job.variables.aws_changed = false; job.status = "complete"; render(read(job)); }, 2600);
+  }
+  document.addEventListener("click", (ev) => {
+    const b = ev.target.closest("[data-sim]"); if (!b || !sim) return;
+    const { job, fd } = sim; const set = (ids, s) => ids.forEach((id) => (job.tasks[id] = { status: s }));
+    if (b.dataset.sim === "reject") {
+      set(["2b"], "complete"); job.variables.rejected = true; job.variables.aws_changed = false; job.status = "complete";
+      delete job.tasks["2b"]; render(read(job)); return;
+    }
+    set(["2b"], "complete"); set(["3e"], "running"); render(read(job));
+    setTimeout(() => { set(["3e", "3f", "30"], "complete"); set(["4d"], "running");
+      job.variables.outputs = { strongswan_eip: "54.210.17.88", tunnel_local_inner: "169.254.10.2/30", tunnel_remote_inner: "169.254.10.1/30", vpc_private_prefixes: ["10.0.64.0/20", "10.0.80.0/20"], vpn_monitor_lambda_name: "cloud-devops-vpn-monitor" };
+      render(read(job)); }, 3000);
+    setTimeout(() => { set(["4d", "4e", "4f"], "complete"); job.variables.psk = { vault_version: 3 }; set(["5e"], "complete");
+      job.variables.outcome = `Deployed: strongSwan at 54.210.17.88; pre-shared key version 3 in Vault and Secrets Manager.`;
+      job.status = "complete"; render(read(job)); }, 5200);
+  });
+})();
+</script>
+</body>
+</html>
