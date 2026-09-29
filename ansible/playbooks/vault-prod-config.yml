@@ -252,14 +252,24 @@
       register: psk_caps
       no_log: true
 
+    # The registered results hold the login tokens and the test secret IDs, so they are reduced to (role, capabilities)
+    # out of sight first: a task that loops over the raw results prints each whole result, tokens included
+    # (measured on production 2026-09-29 - those tokens were revoked by the next task, but never again).
+    - name: Each role's capabilities on the PSK path, nothing else
+      ansible.builtin.set_fact:
+        psk_caps_seen: >-
+          {{ psk_caps.results | map(attribute='item.item.role')
+             | zip(psk_caps.results | map(attribute='json.capabilities')) | list }}
+      no_log: true
+
     - name: The writer creates and updates only, the Gateway reads only
       ansible.builtin.assert:
-        that: (item.json.capabilities | sort) == want[item.item.item.role]
-        fail_msg: "{{ item.item.item.role }} may {{ item.json.capabilities }} on the PSK path, want {{ want[item.item.item.role] }}"
-        success_msg: "{{ item.item.item.role }} may {{ item.json.capabilities }} on the PSK path"
-      loop: "{{ psk_caps.results }}"
+        that: (item.1 | sort) == want[item.0]
+        fail_msg: "{{ item.0 }} may {{ item.1 }} on the PSK path, want {{ want[item.0] }}"
+        success_msg: "{{ item.0 }} may {{ item.1 }} on the PSK path"
+      loop: "{{ psk_caps_seen }}"
       loop_control:
-        label: "{{ item.item.item.role }}"
+        label: "{{ item.0 }}"
       vars:
         want:
           itential-aws-psk-writer: [create, update]
