@@ -91,10 +91,14 @@ def test_servicenow_is_never_seeded_on_dev() -> None:
 
 
 def test_policies_grant_read_and_nothing_else() -> None:
+    # every reader's policy is read-only: a role without `capabilities` gets exactly [read] from the task file, and
+    # the only role that carries its own is the PSK writer (ADR 0068), which tests/test_aws_vpn.py pins
     text = CONFIG_TASKS.read_text()
-    assert 'capabilities = ["read"]' in text
+    assert "item.item.value.capabilities | default(['read']) | to_json" in text
     for verb in ("create", "update", "delete", "list", "sudo"):
-        assert f'"{verb}"' not in text, verb
+        assert f"'{verb}'" not in text and f'"{verb}"' not in text, verb
+    carrying = {r for r, c in _vault()["approles"].items() if "capabilities" in c}
+    assert carrying == {"itential-aws-psk-writer"}, carrying
 
 
 def test_approles_never_expire_or_run_out_and_are_address_bound() -> None:
