@@ -429,6 +429,8 @@
   let pollTimer = null;
   function follow(jobId) {
     $("jobid").hidden = false; $("jobid").textContent = `Job ${jobId}`;
+    // the job's ID goes in the address, so a reload (or the link, shared) picks the same job back up
+    const url = new URL(location.href); url.searchParams.set("job", jobId); history.replaceState(null, "", url);
     $("wc-link").href = "/work-center/";
     const tick = async () => {
       let job;
@@ -452,6 +454,8 @@
     $("approve-callout").style.display = waiting ? "block" : "none";
     $("sim-approve").hidden = !PREVIEW;
     if (waiting) { log("wait", "Waiting for approval in Work Center."); status("<strong>Waiting for approval.</strong> A teammate reviews the plan in Work Center."); }
+    if (state.apply === "active") status("<strong>Applying.</strong> Terraform builds exactly the approved plan in AWS.");
+    if (state.psk === "active") status("<strong>Storing the key.</strong> The pre-shared key goes to Vault and Secrets Manager.");
     // the approval task completes on Reject too; only the apply starting proves it was approved
     if (state.approve === "done" && (state.apply === "active" || state.apply === "done")) log("approved", "Approved. Applying exactly that plan.");
     if (state.apply === "done") log("applied", "Applied. AWS resources are up.", "ok");
@@ -459,12 +463,15 @@
     if (v.outputs) showOutputs(v.outputs);
     if (state.done === "done") { log("done", v.outcome || "Deployed.", "ok"); status("<strong>Deployed.</strong> The AWS side is ready for the router hand-off."); }
     if (v.error || Object.values(state).includes("failed") || jobStatus === "error") {
-      const changed = v.aws_changed === true ? "AWS has changed; see the job." : v.aws_changed === false ? "Nothing changed in AWS." : "";
+      // the workflow leaves aws_changed unset when an apply stops part-way: it cannot know, so neither does the page
+      const changed = v.aws_changed === true ? "AWS has changed; see the job." : v.aws_changed === false ? "Nothing changed in AWS."
+        : state.apply === "failed" ? "AWS may have changed part-way; check before running again." : "";
       log("fail", `Stopped: ${v.error || "a step failed"}. ${changed}`, "bad");
       status(`<strong>Stopped.</strong> ${changed}`);
     }
     const stopped = Object.values(state).some((x) => x in STOP);
-    $("aws-note").textContent = !stopped ? "" : v.aws_changed === false ? "Nothing changed" : v.aws_changed === true ? "Changed: see the job" : "";
+    $("aws-note").textContent = !stopped ? "" : v.aws_changed === false ? "Nothing changed" : v.aws_changed === true ? "Changed: see the job"
+      : state.apply === "failed" ? "May have changed" : "";
     if (v.rejected) { log("rejected", "Rejected. The plan was discarded; nothing changed in AWS.", "bad"); status("<strong>Rejected.</strong> Nothing changed in AWS."); }
     if (jobStatus !== "running" && jobStatus !== "paused") $("go").disabled = false;
   }
@@ -513,6 +520,8 @@
     steps.forEach(([ms, fn]) => setTimeout(() => { fn(); render(read(job)); }, ms));
   }
   // ?preview=1&stage=approval|done|rejected|failed renders that moment straight away (design review, screenshots)
+  const resume = !PREVIEW && new URLSearchParams(location.search).get("job");
+  if (resume && /^[0-9a-f]{24}$/.test(resume)) { $("go").disabled = true; follow(resume); }
   const demo = PREVIEW && new URLSearchParams(location.search).get("stage");
   if (demo) {
     ipInput.value = "203.0.113.10"; $("note").value = "Lab demo: AWS side of the site-to-site VPN";
