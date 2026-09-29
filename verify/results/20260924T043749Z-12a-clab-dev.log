@@ -1,0 +1,13 @@
+# test-12a-clab-dev 20260924T043749Z
+SKIP  S10.6 clab VM equals the oracle and NetBox (cores, memory, disk), /dev/kvm present, containerlab version equals oracle and manifest, clab devices absent from NetBox
+FAIL  S10.7 four nodes running with the oracle mgmt IPs, reachable over SSH as automation from this Mac and from itential-dev; admin/admin refused on every node
+      04:37:50 INFO Parsing & checking topology file=dev.clab.yml
+      containerlab: 4 running at ['10.100.2.11', '10.100.2.12', '10.100.2.21', '10.100.2.22']
+      clab-rtr1: show version does not name the router: refused
+SKIP  S10.8 vEOS-lab version equals the oracle, the manifest and the EVE-NG lab's vEOS; C8000v runs 17.13.01a with licence level network-advantage
+SKIP  S10.9 OSPF area 0: every adjacency on the oracle's links is FULL on both ends
+SKIP  S10.10 BGP: iBGP rtr1-rtr2 and sw1-sw2 over loopbacks and eBGP rtr1-sw1 Established on both ends; the switch VLAN /27s are on rtr2
+SKIP  S10.11 VLANs 10 and 20 active on both switches and allowed on the switch-to-switch trunk
+SKIP  S10.12 oob-gw and itential-dev route the clab mgmt prefix via clab; the DOCKER-USER allowlist equals the oracle and drops other sources; clab RAM under its budget line
+
+passed=0 failed=1

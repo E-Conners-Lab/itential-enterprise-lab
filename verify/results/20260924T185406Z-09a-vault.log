@@ -1,0 +1,23 @@
+# test-09a-vault 20260924T185406Z
+PASS  S8.2a Vault answers at vault.lab.internal over the lab CA and is unsealed
+      sys/health 200: initialized=True sealed=False version=2.0.4
+FAIL  S8.2g the service name resolves to the VIP versions.yaml gives it
+      vault.lab.internal ->  (want 10.100.0.41)
+PASS  S8.2b a read of lab/devices/automation with no token is refused
+      read of lab/data/devices/automation with no token -> 403
+PASS  S8.2c each reader's policy reads only its own paths (Gateway: devices yes; Platform: devices no, NetBox yes)
+      itential-gateway   policy reads devices/automation   -> 200 (want 200)  keys ['password', 'username']
+      itential-platform  policy reads devices/automation   -> 403 (want 403)
+      itential-platform  policy reads services/netbox      -> 200 (want 200)  keys ['header', 'token']
+PASS  S8.2e each AppRole is bound to its own hosts (iap-01/02, iag-01): a valid secret ID from this machine is refused
+      itential-platform  bound to {'secret_id_bound_cidrs': ['10.100.0.72', '10.100.0.73'], 'token_bound_cidrs': ['10.100.0.72', '10.100.0.73']} (want ['10.100.0.72', '10.100.0.73'])
+      itential-platform  login with a valid secret ID from this machine -> 400 (want refused)
+      itential-gateway   bound to {'secret_id_bound_cidrs': ['10.100.0.80'], 'token_bound_cidrs': ['10.100.0.80']} (want ['10.100.0.80'])
+      itential-gateway   login with a valid secret ID from this machine -> 400 (want refused)
+PASS  S8.2d the device password in Vault equals the .env seed (one-way until Phase 9b)
+      devices/automation equals the .env seed: True (version 1)
+PASS  S8.2f an off-host Raft snapshot exists on this workstation (ADR 0065 decision 8)
+      newest off-host snapshot: vault-raft-20260924T185401Z.snap, 0 h old,  36K
+NOTE  S8.3 (the Platform and the Gateway reading through Vault) is due at the cut-over, not before
+
+passed=6 failed=1 skipped=0

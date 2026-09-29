@@ -250,6 +250,14 @@ Two more facts about Gateway 5 decide how Terraform runs:
   files, installed with `--require-hashes`.
 
 Nothing was created in AWS; the probe does no `plan`. The first `plan` and `apply` are step 5.
+`vaultcheck.py terraform-run` (S13.2b, in both Vault verifies) repeats the probe, so a Gateway whose deploy key, AWS
+key or Vault policy is missing fails the verify instead of a real job.
+
+**Known limit, open for the owner:** every workload on the runner runs as the same user (uid 1001): runCode tasks,
+the netsdk device services and terraform-run. Any of them could read the runner's copy of the secrets key, or the
+`/proc/<pid>/environ` of a running terraform-run, which holds the AWS key for that run. The isolation is per
+container, not per workload. It is accepted for now, since every workload on the runner is the lab's own code; the
+alternative is a second runner that serves terraform-run only.
 
 ## Alternatives rejected
 

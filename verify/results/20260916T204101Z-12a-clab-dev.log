@@ -1,0 +1,65 @@
+# test-12a-clab-dev 20260916T204101Z
+PASS  
+      8 vCPU, 15991 MB, 60 GiB, /dev/kvm, containerlab 0.79.0 (= manifest); NetBox VM record matches; no clab device in NetBox
+FAIL  S10.7 four nodes running with the oracle mgmt IPs, reachable over SSH as automation from this Mac and from itential-dev
+      20:41:08 INFO Parsing & checking topology file=dev.clab.yml
+      containerlab: 4 running at ['10.100.2.11', '10.100.2.12', '10.100.2.21', '10.100.2.22']
+      clab-rtr1 10.100.2.11: no SSH banner from itential-dev (10.100.0.65): ''
+FAIL  S10.8 vEOS-lab version equals the oracle, the manifest and the EVE-NG lab's vEOS; C8000v runs 17.13.01a with licence level network-advantage
+      Traceback (most recent call last):
+        File "/Users/elliotconner/PycharmProjects/itential-enterprise-lab/.venv/lib/python3.14/site-packages/paramiko/channel.py", line 697, in recv
+          out = self.in_buffer.read(nbytes, self.timeout)
+        File "/Users/elliotconner/PycharmProjects/itential-enterprise-lab/.venv/lib/python3.14/site-packages/paramiko/buffered_pipe.py", line 154, in read
+          raise PipeTimeout()
+      paramiko.buffered_pipe.PipeTimeout
+      
+      During handling of the above exception, another exception occurred:
+      
+      Traceback (most recent call last):
+        File "/Users/elliotconner/PycharmProjects/itential-enterprise-lab/verify/devcmd.py", line 48, in <module>
+          sys.stdout.write(run(sys.argv[1], sys.argv[2]))
+                           ~~~^^^^^^^^^^^^^^^^^^^^^^^^^^
+        File "/Users/elliotconner/PycharmProjects/itential-enterprise-lab/verify/devcmd.py", line 25, in run
+          return (out.read().decode(errors="replace") + err.read().decode(errors="replace")).replace("\r", "")
+                  ~~~~~~~~^^
+PASS  S10.9 OSPF area 0: every adjacency on the oracle's links is FULL on both ends
+      4 adjacencies FULL on both ends (4 links in the oracle)
+FAIL  S10.10 BGP: iBGP rtr1-rtr2 and sw1-sw2 over loopbacks and eBGP rtr1-sw1 Established on both ends; the switch VLAN /27s are on rtr2
+      Traceback (most recent call last):
+        File "/Users/elliotconner/PycharmProjects/itential-enterprise-lab/.venv/lib/python3.14/site-packages/paramiko/channel.py", line 697, in recv
+          out = self.in_buffer.read(nbytes, self.timeout)
+        File "/Users/elliotconner/PycharmProjects/itential-enterprise-lab/.venv/lib/python3.14/site-packages/paramiko/buffered_pipe.py", line 154, in read
+          raise PipeTimeout()
+      paramiko.buffered_pipe.PipeTimeout
+      
+      During handling of the above exception, another exception occurred:
+      
+      Traceback (most recent call last):
+        File "/Users/elliotconner/PycharmProjects/itential-enterprise-lab/verify/devcmd.py", line 48, in <module>
+          sys.stdout.write(run(sys.argv[1], sys.argv[2]))
+                           ~~~^^^^^^^^^^^^^^^^^^^^^^^^^^
+        File "/Users/elliotconner/PycharmProjects/itential-enterprise-lab/verify/devcmd.py", line 25, in run
+          return (out.read().decode(errors="replace") + err.read().decode(errors="replace")).replace("\r", "")
+                  ~~~~~~~~^^
+FAIL  S10.11 VLANs 10 and 20 active on both switches and allowed on the switch-to-switch trunk
+      Traceback (most recent call last):
+        File "/Users/elliotconner/PycharmProjects/itential-enterprise-lab/.venv/lib/python3.14/site-packages/paramiko/channel.py", line 697, in recv
+          out = self.in_buffer.read(nbytes, self.timeout)
+        File "/Users/elliotconner/PycharmProjects/itential-enterprise-lab/.venv/lib/python3.14/site-packages/paramiko/buffered_pipe.py", line 154, in read
+          raise PipeTimeout()
+      paramiko.buffered_pipe.PipeTimeout
+      
+      During handling of the above exception, another exception occurred:
+      
+      Traceback (most recent call last):
+        File "/Users/elliotconner/PycharmProjects/itential-enterprise-lab/verify/devcmd.py", line 48, in <module>
+          sys.stdout.write(run(sys.argv[1], sys.argv[2]))
+                           ~~~^^^^^^^^^^^^^^^^^^^^^^^^^^
+        File "/Users/elliotconner/PycharmProjects/itential-enterprise-lab/verify/devcmd.py", line 25, in run
+          return (out.read().decode(errors="replace") + err.read().decode(errors="replace")).replace("\r", "")
+                  ~~~~~~~~^^
+FAIL  S10.12 oob-gw and itential-dev route the clab mgmt prefix via clab; the DOCKER-USER allowlist equals the oracle and drops other sources; clab RAM under its budget line
+      ssh: connect to host 10.100.0.65 port 22: Network is unreachable
+      ssh ubuntu@10.100.0.65 failed
+
+passed=2 failed=5

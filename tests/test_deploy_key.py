@@ -15,24 +15,28 @@ SPEC.loader.exec_module(dk)
 
 
 class World:
-    def __init__(self, vault_has: int = 404, titles: tuple[str, ...] = (), gh_add_rc: int = 0, write: int = 200):
+    def __init__(self, vault_has: int = 404, titles: tuple[str, ...] = (), gh_add_rc: int = 0, write: int = 200,
+                 github_took_it: bool = False):
         self.calls: list[tuple] = []
         self.vault_has, self.titles, self.gh_add_rc, self.write = vault_has, titles, gh_add_rc, write
-        self.stored: dict = {}
+        self.github_took_it, self.stored, self.body = github_took_it, {}, {}
 
     def vault(self, addr, tok, method, path, body=None):
         self.calls.append(("vault", method, path))
         if method == "GET":
             return self.vault_has
         if method == "POST":
-            self.stored = body["data"]
+            self.body, self.stored = body, body["data"]
             return self.write
         return 204
 
     def gh(self, *args):
         self.calls.append(("gh", *args[:3]))
         if args[2] == "list":
-            return subprocess.CompletedProcess(args, 0, json.dumps([{"title": t} for t in self.titles]), "")
+            titles = list(self.titles)
+            if self.github_took_it and any(c[3] == "add" for c in self.calls if c[0] == "gh" and len(c) > 3):
+                titles.append(f"itential-gateway-dev (Vault {dk.GIT['deploy_key_path']})")
+            return subprocess.CompletedProcess(args, 0, json.dumps([{"title": t} for t in titles]), "")
         return subprocess.CompletedProcess(args, self.gh_add_rc, "", "refused" if self.gh_add_rc else "")
 
 
@@ -88,3 +92,15 @@ def test_a_failed_vault_write_never_reaches_github(world) -> None:
 def test_the_key_is_read_only_on_github() -> None:
     code = (Path(__file__).resolve().parent.parent / "scripts" / "deploy-key-to-vault.py").read_text()
     assert "--allow-write" not in code and "-w" not in code.split("deploy-key\", \"add\"")[1].split("\n")[0]
+
+
+def test_the_write_never_replaces_a_key_that_appeared_since_the_check(world) -> None:
+    w = world()
+    assert dk.main("dev") == 0
+    assert w.body["options"] == {"cas": 0}
+
+
+def test_gh_failing_after_github_took_the_key_keeps_the_vault_entry(world) -> None:
+    w = world(gh_add_rc=1, github_took_it=True)
+    assert dk.main("dev") == 0
+    assert not any(c[1] == "DELETE" for c in w.calls)

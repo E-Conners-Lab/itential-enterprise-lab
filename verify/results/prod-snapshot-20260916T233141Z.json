@@ -20,15 +20,15 @@
       "remediation-local": null
     },
     "authorization": {
-      "admin_group_roles": 192,
+      "admin_group_roles": 186,
       "groups": {
-        "admin_group": 192,
+        "admin_group": 186,
         "admins": 0,
         "builders": 0,
         "operators": 0
       },
       "groups_total": 4,
-      "roles_total": 192
+      "roles_total": 186
     },
     "device_groups": {
       "role-access": [
@@ -78,7 +78,6 @@
     },
     "integrations": [
       "netbox-api",
-      "netbox-latest",
       "servicenow-api"
     ],
     "inventories": {
@@ -110,19 +109,10 @@
           "br2-host01",
           "dc1-srv01"
         ]
-      },
-      "nxos": {
-        "groups": [
-          "6aa2adafdd92a98c6d310e2d"
-        ],
-        "nodes": [
-          "dc1-nxos01",
-          "dc1-nxos02"
-        ]
       }
     },
     "netbox": {
-      "devices": 23,
+      "devices": 21,
       "vlans": 1
     },
     "profiles": [
@@ -130,28 +120,18 @@
       "ollama-mac"
     ],
     "workflows": {
-      "@66d0304521161b4df2717497: Clear & Delete Inventory": "2026-09-22T15:14:41.828Z",
-      "@66d0304521161b4df2717497: Create & Update Inventory from NetBox": "2026-09-22T15:14:41.828Z",
-      "@66d0304521161b4df2717497: IOS Upgrade": "2026-09-22T15:14:41.828Z",
-      "@66d0304521161b4df2717497: Port Turn Up": "2026-09-22T15:14:41.828Z",
-      "@66d0304521161b4df2717497: Run Compliance": "2026-09-22T15:14:41.828Z",
-      "@66d0d1ba21161b4df27174c2: Clear & Delete Inventory": "2026-09-22T16:05:27.025Z",
-      "@66d0d1ba21161b4df27174c2: Create & Update Inventory from NetBox": "2026-09-22T16:13:25.115Z",
-      "@66d0d1ba21161b4df27174c2: NX-OS Upgrade": "2026-09-22T16:05:27.025Z",
-      "@66d0d1ba21161b4df27174c2: Port Turn Up": "2026-09-22T16:13:24.552Z",
-      "@66d0d1ba21161b4df27174c2: Run Compliance": "2026-09-22T16:13:24.794Z",
-      "Add Branch VLAN": "2026-09-24T19:56:43.904Z",
-      "Back Up All Device Configs": "2026-09-24T19:56:43.909Z",
-      "Count Devices in NetBox": "2026-09-24T19:56:43.929Z",
-      "Get Device Software Version": "2026-09-24T19:56:43.930Z",
-      "List Devices from NetBox": "2026-09-24T19:56:43.910Z",
-      "Push Configuration with Approval": "2026-09-24T19:56:43.916Z",
-      "Remove Branch VLAN": "2026-09-24T19:56:43.915Z",
-      "Run Nightly Compliance Check": "2026-09-24T19:56:43.923Z",
-      "Run Show Command on All Devices": "2026-09-24T19:56:43.925Z",
-      "Run Show Command on a Device": "2026-09-24T19:56:43.945Z",
-      "Summarize Compliance Results": "2026-09-24T19:56:43.948Z"
+      "wf-backup-all-v1": "2026-09-12T03:36:17.151Z",
+      "wf-branch-vlan-delete-v1": "2026-09-12T03:36:17.154Z",
+      "wf-branch-vlan-v1": "2026-09-12T03:36:17.183Z",
+      "wf-compliance-report-v1": "2026-09-12T03:36:17.185Z",
+      "wf-compliance-run-v1": "2026-09-12T03:36:17.152Z",
+      "wf-config-push-v1": "2026-09-12T03:36:17.157Z",
+      "wf-netbox-device-count-v1": "2026-09-12T03:36:17.156Z",
+      "wf-netbox-devices-v1": "2026-09-12T03:36:17.161Z",
+      "wf-show-all-v1": "2026-09-12T03:36:17.162Z",
+      "wf-show-command-v1": "2026-09-12T03:36:17.174Z",
+      "wf-show-version-v1": "2026-09-12T03:36:17.175Z"
     }
   },
-  "taken": "20260928T143937Z"
+  "taken": "20260916T233141Z"
 }

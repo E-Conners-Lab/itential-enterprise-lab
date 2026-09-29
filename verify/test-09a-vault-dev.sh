@@ -57,6 +57,7 @@ check "S8.2b a read of lab/devices/automation with no token is refused" vc no-to
 check "S8.2c each reader's policy reads only its own paths (Gateway: devices yes; Platform: devices no, NetBox yes)" vc policies
 check "S8.2e the AppRoles are bound to the dev VM: a login with a valid secret ID from this machine is refused" vc bound
 check "S13.2a lab/aws/vpn-psk: the PSK writer may create/update and never read, the Gateway reads, the Platform cannot; its credentials are in Vault" vc aws-psk
+check "S13.2b terraform-run on the Gateway: clones with the Vault deploy key, gets the IAM key from Vault, reaches AWS as itential-terraform (probe: no plan)" vc terraform-run
 check "S8.2d the device password in Vault equals the .env seed (seeded one way)" vc seeded
 
 # --- S8.3: the Platform holds references, the Gateway resolves them, and both still work --------------------------

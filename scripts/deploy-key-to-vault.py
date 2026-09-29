@@ -41,11 +41,13 @@ def token(tier: str) -> str:
         if ADMIN_FILE.is_file() and ADMIN_FILE.stat().st_size:
             return ADMIN_FILE.read_text().strip()
         sys.exit("no administrator token: run make vault-login first")
+    # only the root token leaves the VM, never the rest of init.json (its unseal key)
+    extract = f"import json; print(json.load(open('{VAULT['dev']['dir']}/init.json'))['root_token'], end='')"
     init = subprocess.run(["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=8", f"ubuntu@{V['vm']['ip']}",
-                           f"sudo cat {VAULT['dev']['dir']}/init.json"], capture_output=True, text=True)
-    if init.returncode != 0:
+                           f'sudo python3 -c "{extract}"'], capture_output=True, text=True)
+    if init.returncode != 0 or not init.stdout:
         sys.exit("could not read the dev Vault's root token over SSH (make vault-dev first)")
-    return json.loads(init.stdout)["root_token"]
+    return init.stdout
 
 
 def vault(addr: str, tok: str, method: str, path: str, body: dict | None = None) -> int:
@@ -93,7 +95,9 @@ def main(tier: str) -> int:
                                 serialization.NoEncryption()).decode()
     public = key.public_key().public_bytes(serialization.Encoding.OpenSSH, serialization.PublicFormat.OpenSSH).decode()
     public = f"{public} itential-gateway-{tier}"
-    stored = vault(addr, tok, "POST", data_path, {"data": {"private_key": private, "public_key": public}})
+    # cas 0: Vault writes only if nothing is there, so a key written since the check above is never replaced
+    stored = vault(addr, tok, "POST", data_path,
+                   {"options": {"cas": 0}, "data": {"private_key": private, "public_key": public}})
     del key, private
     if stored != 200:
         print(f"the {tier} Vault answered {stored} to the write - nothing stored, nothing added to GitHub")
@@ -104,6 +108,11 @@ def main(tier: str) -> int:
         pub.flush()
         added = gh("repo", "deploy-key", "add", pub.name, "--title", title)
     if added.returncode != 0:
+        # gh can fail after GitHub took the key: then Vault must keep the private half
+        relisted = gh("repo", "deploy-key", "list", "--json", "title")
+        if relisted.returncode == 0 and any(k["title"] == title for k in json.loads(relisted.stdout or "[]")):
+            print(f"gh reported an error but {GIT['repo']} has the key {title!r}: kept, private half in the {tier} Vault")
+            return 0
         removed = vault(addr, tok, "DELETE", meta_path)
         print(f"GitHub refused the key ({added.stderr.strip()}); the Vault entry was deleted again (HTTP {removed})")
         return 1

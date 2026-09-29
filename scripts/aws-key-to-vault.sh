@@ -23,9 +23,11 @@ TIER=${1:-}
 case "$TIER" in
   dev)
     ADDR=$(val "$V" "d['vault']['dev']['url']")
-    TOKEN=$(${SSH} "ubuntu@$(val "$V" "d['vm']['ip']")" "sudo cat $(val "$V" "d['vault']['dev']['dir']")/init.json" \
-            | ${PY} -c 'import json,sys;print(json.load(sys.stdin)["root_token"],end="")') \
+    # only the root token leaves the VM, never the rest of init.json (its unseal key)
+    TOKEN=$(${SSH} "ubuntu@$(val "$V" "d['vm']['ip']")" \
+            "sudo python3 -c \"import json; print(json.load(open('$(val "$V" "d['vault']['dev']['dir']")/init.json'))['root_token'], end='')\"") \
       || { echo "could not read the dev Vault's root token over SSH (make vault-dev first)"; exit 1; }
+    [ -n "$TOKEN" ] || { echo "the dev Vault's root token came back empty"; exit 1; }
     ;;
   prod)
     ADDR=$(val "$V" "d['vault']['prod']['url']")
