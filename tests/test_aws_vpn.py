@@ -343,3 +343,17 @@ def test_every_service_result_is_read_through_the_json_rpc_envelope() -> None:
             for e in g["evaluations"]:
                 if e["operand_1"]["task"] in services:
                     assert e["query"].startswith("result."), (tid, e["query"])
+
+
+def test_the_page_says_what_each_running_stage_is_doing_and_can_resume_a_job() -> None:
+    # the first real apply showed "Waiting for approval" under the route while Terraform applied (2026-09-29)
+    page = PAGE.read_text()
+    assert 'state.apply === "active") status(' in page and 'state.psk === "active") status(' in page
+    # ?job=<id> picks a job back up after a reload; only a Platform job ID is accepted
+    assert 'url.searchParams.set("job", jobId)' in page and "/^[0-9a-f]{24}$/.test(resume)" in page
+
+
+def test_a_failed_apply_says_aws_may_have_changed() -> None:
+    # the first real apply stopped part-way with aws_changed unset, and the page said only "Stopped." (2026-09-29)
+    page = PAGE.read_text()
+    assert page.count('state.apply === "failed" ?') == 2 and "AWS may have changed part-way" in page
