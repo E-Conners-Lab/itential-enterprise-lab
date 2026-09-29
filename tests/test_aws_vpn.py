@@ -7,6 +7,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+import yaml
+
 ROOT = Path(__file__).resolve().parent.parent
 PID = ROOT / "docs" / "PID.md"
 ADR = ROOT / "docs" / "adr" / "0068-itential-runs-the-aws-vpn-through-terraform-on-the-gateway.md"
@@ -43,3 +45,86 @@ def test_no_aws_secret_is_added_to_env_example() -> None:
     names = {m.group(1) for m in re.finditer(r"^([A-Z0-9_]+)=", (ROOT / ".env.example").read_text(), re.M)}
     aws = {n for n in names if "AWS" in n or n.startswith(("TF_VAR_", "VPN_PSK"))}
     assert aws <= ECR_KEYS, f"AWS secrets belong in Vault only (ADR 0068 decision 3): {sorted(aws - ECR_KEYS)}"
+
+
+# --- step 3: Vault (ADR 0068 decisions 3 and 5, owner decision 2026-09-29: each tier its own key) -----------------
+VAULT = yaml.safe_load((ROOT / "itential" / "versions.yaml").read_text())["vault"]
+KEY_SCRIPT = ROOT / "scripts" / "aws-key-to-vault.sh"
+
+
+def test_adr_records_that_each_tier_holds_its_own_key() -> None:
+    adr = ADR.read_text()
+    assert "**D5** Resolved by the owner, 2026-09-29: each tier's Vault holds its own IAM key" in adr
+    assert "`make aws-key TIER=dev|prod`" in adr and "`lab/aws/psk-writer`" in adr
+
+
+def test_the_psk_writer_is_write_only_on_one_path_and_bound_to_the_gateway_host() -> None:
+    writer = VAULT["approles"]["itential-aws-psk-writer"]
+    assert writer["policy_paths"] == [VAULT["aws"]["psk_path"]] == ["aws/vpn-psk"]
+    assert writer["capabilities"] == ["create", "update"]  # no read, delete, list or sudo
+    assert writer["bound_hosts"] == ["iag-01"]
+
+
+def test_the_gateway_reads_the_aws_paths_and_the_platform_none() -> None:
+    aws = VAULT["aws"]
+    gateway = VAULT["approles"]["itential-gateway"]["policy_paths"]
+    for path in (aws["key_path"], aws["psk_path"], aws["writer_path"]):
+        assert path in gateway, path
+    assert not any(p.startswith("aws") for p in VAULT["approles"]["itential-platform"]["policy_paths"])
+
+
+def test_no_aws_secret_is_seeded_from_env() -> None:
+    assert not any(path.startswith("aws") for path in VAULT["secrets"]), "AWS secrets are never seeded from .env"
+
+
+def test_the_dev_overlay_binds_the_writer_to_the_dev_vm() -> None:
+    overlay = yaml.safe_load((ROOT / "ansible" / "playbooks" / "vars" / "itential-dev.yml").read_text())
+    assert overlay["vault_role_cidrs"]["itential-aws-psk-writer"] == ["{{ vault.dev.docker_gateway }}/32"]
+
+
+def test_the_config_play_keeps_the_writers_credentials_in_vault_and_proves_p6_on_the_gateway_host() -> None:
+    tasks = (ROOT / "ansible" / "playbooks" / "tasks" / "vault-config.yml").read_text()
+    assert "vault.aws.writer_path" in tasks and "vault_reader: itential-aws-psk-writer" in tasks
+    prod = (ROOT / "ansible" / "playbooks" / "vault-prod-config.yml").read_text()
+    assert "sys/capabilities-self" in prod
+    assert "itential-aws-psk-writer: [create, update]" in prod and "itential-gateway: [read]" in prod
+
+
+def test_both_vault_verifies_check_the_psk_path() -> None:
+    for name in ("test-09a-vault.sh", "test-09a-vault-dev.sh"):
+        assert '" vc aws-psk' in (ROOT / "verify" / name).read_text(), name
+
+
+def test_the_key_script_never_shows_or_saves_the_secret_key() -> None:
+    text = KEY_SCRIPT.read_text()
+    code = "\n".join(line for line in text.splitlines() if not line.lstrip().startswith("#"))
+    assert "<<<" not in code  # bash 3.2 writes a here-string to a temporary file
+    assert "set -x" not in code and "echo \"$KEY_JSON" not in code and "echo $KEY_JSON" not in code
+    assert "X-Vault-Token: %s" in code and "-H @<(" in code  # the token through a file descriptor, never argv
+    assert "-o /dev/null" in code  # Vault's answer (which would hold the key on a read) is never read
+    assert "unset KEY_JSON" in code and "delete-access-key" in code  # a key Vault did not take is deleted again
+    assert 'case "$TIER" in' in code and "usage: $0 dev|prod" in code  # the tier is always named, never defaulted
+
+
+def test_the_key_script_never_leaves_a_key_vault_does_not_hold() -> None:
+    code = KEY_SCRIPT.read_text()
+    assert "trap settle INT TERM" in code  # Ctrl-C between create and store
+    assert '[ "$(held_key_id)" = "$KEY_ID" ]' in code  # a timeout after Vault stored it keeps the key
+    assert 'delete access key $KEY_ID of $USER_NAME by hand' in code  # a failed delete names the key to remove
+    assert "cli_history" in code  # AWS CLI history would save the answer, secret included, to disk
+
+
+def test_vault_config_uses_the_owners_admin_login_now_that_root_is_revoked() -> None:
+    target = (ROOT / "Makefile").read_text().split("\nvault-config:", 1)[1].split("\n\n", 1)[0]
+    assert "export VAULT_TOKEN=$$(tr -d '\\n' < $(VAULT_ADMIN_FILE))" in target
+
+
+def test_a_reissued_writer_secret_id_destroys_the_older_ones() -> None:
+    tasks = (ROOT / "ansible" / "playbooks" / "tasks" / "vault-config.yml").read_text()
+    assert "role/itential-aws-psk-writer/secret-id?list=true" in tasks
+    assert "difference([vault_reader_issued.json.data.secret_id_accessor])" in tasks
+
+
+def test_make_aws_key_names_the_tier() -> None:
+    make = (ROOT / "Makefile").read_text()
+    assert "scripts/aws-key-to-vault.sh $(TIER)" in make and "TIER ?=" not in make

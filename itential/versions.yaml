@@ -284,14 +284,29 @@ vault:
       username: {env: SNOW_USER}
       password: {env: SNOW_PASSWORD}
       prod_only: true # ServiceNow stays off on dev (ADR 0063)
-  # the two readers (ADR 0065 decisions 5 and 6); `bound_hosts` are the addresses a secret ID works from
+  # the two readers (ADR 0065 decisions 5 and 6) and the one writer (ADR 0068 decision 5); `bound_hosts` are the
+  # addresses a secret ID works from. A role's policy grants `capabilities` (default [read]) on each path.
   approles:
     itential-platform:
       policy_paths: [services/*]
       bound_hosts: [iap-01, iap-02] # production; dev binds to what the dev probe measures
     itential-gateway:
-      policy_paths: [devices/*, services/netbox]
+      # aws/*: the IAM key terraform-run uses, the PSK it copies to Secrets Manager and the router, and the writer's
+      # own credentials (ADR 0068 decisions 3 and 5)
+      policy_paths: [devices/*, services/netbox, aws/terraform, aws/vpn-psk, aws/psk-writer]
       bound_hosts: [iag-01]
+    itential-aws-psk-writer:
+      # write-only: the deploy workflow writes each new PSK version and can never read one back
+      policy_paths: [aws/vpn-psk]
+      capabilities: [create, update]
+      bound_hosts: [iag-01]
+  # Every AWS secret lives here and nowhere else (owner rule 2026-09-26, ADR 0068 decision 3). None is seeded from
+  # .env: each tier's Vault gets its own IAM key (owner decision 2026-09-29), so either can be revoked alone.
+  aws:
+    iam_user: itential-terraform
+    key_path: aws/terraform # {access_key_id, secret_access_key}: the owner's `make aws-key TIER=dev|prod`
+    psk_path: aws/vpn-psk # {psk}: written by the deploy workflow through itential-aws-psk-writer
+    writer_path: aws/psk-writer # {role_id, secret_id}: written by the Vault config play, read by the Gateway
   # What the Platform stores in place of a credential once vault_enabled is on (measured 2026-09-23): an adapter or
   # integration field resolves a $SECRET_ reference only when the reference is the WHOLE value. Not secrets.
   platform_refs:

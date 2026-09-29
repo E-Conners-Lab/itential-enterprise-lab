@@ -99,9 +99,15 @@ Two more facts about Gateway 5 decide how Terraform runs:
    - The IAM user `itential-terraform` gets only the actions the dev env needs. Its IAM writes are limited to a
      path and a permissions boundary.
    - The owner creates its access key and writes it straight into Vault KV `lab/aws/terraform` in one pipe, so
-     the secret key is never displayed or saved:
-     `aws iam create-access-key ... | jq '{access_key_id, secret_access_key}' | vault kv put lab/aws/terraform -`.
-     This runs under a `make vault-login` token; `lab-admin` can write `lab/*`.
+     the secret key is never displayed or saved: `make aws-key TIER=dev|prod` (`scripts/aws-key-to-vault.sh`)
+     runs `aws iam create-access-key`, keeps the answer in shell memory only, and hands it to Vault's API through
+     a pipe, with the Vault token passed through a file descriptor. If Vault does not take it, the new key is
+     deleted again. Production's run uses the `make vault-login` token (`lab-admin` can write `lab/*`), the dev
+     tier's the dev Vault's root token.
+   - **Each tier's Vault holds its own key (owner, D5, 2026-09-29).** The dev-tier Deploy reads the dev Vault,
+     production's reads production's. IAM allows two keys per user, so each tier can be revoked alone. The IAM
+     description tag of each key names its tier. The dev Vault auto-unseals from its VM, so root on
+     `itential-dev` can read the dev key; that is accepted for a lab tier that holds only its own credentials.
    - The Gateway reads the key through its built-in `vault` provider and hands it to `terraform-run` as
      environment variables for one execution (P1).
    - A later workflow rotates the key: it creates a new key, writes a new Vault version and deletes the old
@@ -134,10 +140,14 @@ Two more facts about Gateway 5 decide how Terraform runs:
    the state can read the value, which is how `errored.tfstate` came to hold one. The new flow:
    - The deploy workflow generates the PSK on the runner.
    - It writes the PSK to Vault `lab/aws/vpn-psk` through a write-only AppRole `itential-aws-psk-writer`. Its
-     policy allows only `create`/`update` on that one path, and it is bound to iag-01. Its secret ID is itself
-     in Vault, read through the Gateway's read-only provider.
+     policy allows only `create`/`update` on that one path, and it is bound to iag-01 (on the dev tier, to the
+     dev VM). Its role ID and secret ID are themselves in Vault at `lab/aws/psk-writer`, written by the Vault
+     configuration play and read through the Gateway's read-only provider. The Gateway's reader policy gains
+     `read` on `aws/terraform`, `aws/vpn-psk` and `aws/psk-writer`; the Platform's gains nothing.
    - It copies the PSK to Secrets Manager with `put-secret-value`. strongSwan still reads it there at boot.
-     Terraform manages only the secret's container (`ignore_changes` on versions).
+     Terraform manages only the secret's container: there is no secret version resource, so a value written
+     outside Terraform is not drift (the provider's secret resource has no version attribute to ignore;
+     `cloud-devops-pipeline` #1, 2026-09-29). A resource policy lets only the strongSwan instance read the value.
    - `vpn-bootstrap` waits for a value to exist, and `null_resource.strongswan_ready` moves out of the apply
      into the workflow. Otherwise the apply would wait on a strongSwan that waits on the PSK.
    - The router stores the key as type 6 (`password encryption aes`). The owner types the master key once and
@@ -183,6 +193,8 @@ Two more facts about Gateway 5 decide how Terraform runs:
 - **D3** Resolved by the owner, 2026-09-27: `enable_nat_gateway`, default true, switched per run (decision 10).
 - **D4** Resolved by the owner, 2026-09-27: a private repo `E-Conners-Lab/cloud-devops-pipeline`, the author
   rewritten first, and the Gateway's access to it set up (decision 9).
+- **D5** Resolved by the owner, 2026-09-29: each tier's Vault holds its own IAM key and its own PSK writer
+  (decision 3), rather than the dev Gateway reading production's Vault.
 - **P1** Does a `$GATEWAYSECRET_` alias resolve into a python-script service's environment or decorated input?
 - **P2** Does the runner reach STS, S3 and Secrets Manager through `oob-gw`?
 - **P3** Does `sendConfig` resolve a `$GATEWAYSECRET_` reference inside the config text (decision 6)?
@@ -193,7 +205,9 @@ Two more facts about Gateway 5 decide how Terraform runs:
   `--secret` take a value from the built-in `vault` provider, or only from the Gateway's own store? This decides
   whether decision 3 needs P1's `$GATEWAYSECRET_` route.
 - **P6** Does a write-only AppRole (`create`/`update`, no `read`) let the runner write `lab/aws/vpn-psk` while
-  the Gateway's reader role still resolves it?
+  the Gateway's reader role still resolves it? The policy half is checked without writing anything: each role's
+  own token asks `sys/capabilities-self` (`vaultcheck.py aws-psk` on dev; on iag-01 by `make vault-config`).
+  The write itself is proven by the first Deploy.
 
 ## Alternatives rejected
 

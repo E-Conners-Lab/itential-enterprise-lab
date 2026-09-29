@@ -140,16 +140,16 @@ def c_policies() -> bool:
 
 
 def c_bound() -> bool:
-    """The AppRoles are address-bound: both carry the expected bound CIDRs, and a login with a freshly issued, valid
+    """The AppRoles are address-bound: each carries the expected bound CIDRs, and a login with a freshly issued, valid
     secret ID is refused from this machine (which is outside them)."""
     def norm(cidrs: list[str]) -> list[str]:  # Vault drops the /32 of a single-host token_bound_cidrs entry
         return sorted(c.removesuffix("/32") for c in cidrs)
 
-    # production binds each role to its own hosts (VAULT_ROLE_CIDRS, JSON {role: [cidr]}); the dev tier binds both
-    # roles to the one vault-dev Docker gateway (VAULT_BOUND_CIDRS, comma-separated)
+    # production binds each role to its own hosts (VAULT_ROLE_CIDRS, JSON {role: [cidr]}); the dev tier binds every
+    # role to the one vault-dev Docker gateway (VAULT_BOUND_CIDRS, comma-separated)
     per_role = json.loads(os.environ["VAULT_ROLE_CIDRS"]) if os.environ.get("VAULT_ROLE_CIDRS") else None
     ok = True
-    for role in ("itential-platform", "itential-gateway"):
+    for role in VAULT["approles"]:
         want = norm(per_role[role] if per_role else os.environ["VAULT_BOUND_CIDRS"].split(","))
         _, d = vault("GET", f"auth/{VAULT['approle_mount']}/role/{role}", admin())
         got = {k: norm(d["data"].get(k) or []) for k in ("secret_id_bound_cidrs", "token_bound_cidrs")}
@@ -167,6 +167,42 @@ def c_bound() -> bool:
             vault("POST", f"auth/{VAULT['approle_mount']}/role/{role}/secret-id-accessor/destroy", admin(),
                   {"secret_id_accessor": sid["data"]["secret_id_accessor"]})
     return ok
+
+
+def c_aws_psk() -> bool:
+    """ADR 0068 decision 5 (P6) at the policy level: the PSK writer may create and update lab/aws/vpn-psk and never
+    read it, the Gateway's reader may read it, the Platform may not touch it. Asked with each policy's own token
+    (sys/capabilities-self), so nothing is written and no PSK is read. Then the writer's own credentials: in Vault at
+    vault.aws.writer_path, with the role's current role ID and a secret ID Vault still knows. Nothing is printed but
+    capabilities and yes/no."""
+    aws, mount = VAULT["aws"], VAULT["approle_mount"]
+    psk, key = kv(aws["psk_path"]), kv(aws["key_path"])
+    meta = f"{VAULT['kv_mount']}/metadata/{aws['psk_path']}"
+    want = {"itential-gateway": {psk: ["read"]}, "itential-platform": {psk: ["deny"], key: ["deny"]}}
+    # production's verify-readers token role predates the writer and only a root token could widen it; there the
+    # writer's policy is proven on iag-01 by make vault-config (its own login, the same capabilities-self question)
+    if os.environ.get("VAULT_TIER") != "prod":
+        want["itential-aws-psk-writer"] = {psk: ["create", "update"], meta: ["deny"], key: ["deny"]}
+    ok = True
+    for role, paths in want.items():
+        token = _policy_token(role)
+        try:
+            for path, caps in paths.items():
+                _, d = vault("POST", "sys/capabilities-self", token, {"paths": [path]})
+                got = sorted((d or {}).get("capabilities", []))
+                print(f"{role:24} may {got} on {path} (want {caps})")
+                ok &= got == caps
+        finally:
+            vault("POST", "auth/token/revoke-self", token)
+    _, d = vault("GET", kv(aws["writer_path"]), admin())
+    creds = (d or {}).get("data", {}).get("data", {})
+    _, rid = vault("GET", f"auth/{mount}/role/itential-aws-psk-writer/role-id", admin())
+    same_role = bool(creds.get("role_id")) and creds.get("role_id") == (rid or {}).get("data", {}).get("role_id")
+    st, look = vault("POST", f"auth/{mount}/role/itential-aws-psk-writer/secret-id/lookup", admin(),
+                     {"secret_id": creds.get("secret_id", "")})
+    live = st == 200 and bool((look or {}).get("data"))
+    print(f"writer credentials at {aws['writer_path']}: role ID current {same_role}, secret ID known to Vault {live}")
+    return ok and same_role and live
 
 
 def c_seeded() -> bool:
@@ -366,7 +402,7 @@ def c_sealed() -> bool:
     return ok and same
 
 
-CHECKS = {"sealed": c_sealed, "health": c_health, "no-token": c_no_token, "policies": c_policies, "bound": c_bound, "seeded": c_seeded,
+CHECKS = {"sealed": c_sealed, "health": c_health, "no-token": c_no_token, "policies": c_policies, "bound": c_bound, "aws-psk": c_aws_psk, "seeded": c_seeded,
           "references": c_references, "gateway": c_gateway, "devices": c_devices, "platform-read": c_platform_read,
           "rotation": c_rotation, "hosts": c_hosts}
 

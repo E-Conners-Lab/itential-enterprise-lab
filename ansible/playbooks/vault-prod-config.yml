@@ -1,10 +1,10 @@
 ---
 # Phase 9a step 3 (ADR 0065): configure production's Vault - `make vault-config`. The KV v2 mount, the two read-only
-# AppRoles bound to their readers' own addresses (topology/ipam.yaml), and the seeds from .env, all through the task
-# file the dev tier proved (tasks/vault-config.yml). Then the binding is proven on the real path instead of assumed:
-# a one-use, five-minute secret ID per reader host must log in from that host, and one from this workstation must be
-# refused. The token is the root token from the owner's init file (VAULT_INIT_FILE), read without printing it;
-# VAULT_TOKEN overrides it (for example a token from `vault operator generate-root` once the root token is revoked).
+# AppRoles and the PSK writer (ADR 0068) bound to their own hosts' addresses (topology/ipam.yaml), and the seeds from
+# .env, all through the task file the dev tier proved (tasks/vault-config.yml). Then the binding is proven on the real
+# path instead of assumed: a one-use, five-minute secret ID per role and host must log in from that host, and one from
+# this workstation must be refused. The token is the root token from the owner's init file (VAULT_INIT_FILE), read
+# without printing it; VAULT_TOKEN overrides it (for example the owner's lab-admin login, now that root is revoked).
 - name: Configure production's Vault
   hosts: localhost
   connection: local
@@ -232,3 +232,48 @@
       loop: "{{ host_login.results }}"
       loop_control:
         label: "{{ item.item.role }}"
+
+    # ADR 0068 P6, on the real path: the PSK writer's token may create and update the PSK and never read it, and the
+    # Gateway's read-only token may read it. Asked of Vault with each role's own token (sys/capabilities-self), so
+    # nothing is written and no PSK is needed.
+    - name: What each token may do with the PSK path, {{ vault.kv_mount ~ '/data/' ~ vault.aws.psk_path }}
+      ansible.builtin.uri:
+        url: "{{ vault_addr }}/v1/sys/capabilities-self"
+        ca_path: /usr/local/share/ca-certificates/lab-root-ca.crt
+        method: POST
+        headers: {X-Vault-Token: "{{ item.json.auth.client_token }}"}
+        body_format: json
+        body: {paths: ["{{ vault.kv_mount }}/data/{{ vault.aws.psk_path }}"]}
+      loop: "{{ host_login.results | selectattr('item.role', 'in', psk_roles) | list }}"
+      loop_control:
+        label: "{{ item.item.role }}"
+      vars:
+        psk_roles: [itential-aws-psk-writer, itential-gateway]
+      register: psk_caps
+      no_log: true
+
+    - name: The writer creates and updates only, the Gateway reads only
+      ansible.builtin.assert:
+        that: (item.json.capabilities | sort) == want[item.item.item.role]
+        fail_msg: "{{ item.item.item.role }} may {{ item.json.capabilities }} on the PSK path, want {{ want[item.item.item.role] }}"
+        success_msg: "{{ item.item.item.role }} may {{ item.json.capabilities }} on the PSK path"
+      loop: "{{ psk_caps.results }}"
+      loop_control:
+        label: "{{ item.item.item.role }}"
+      vars:
+        want:
+          itential-aws-psk-writer: [create, update]
+          itential-gateway: [read]
+
+    - name: The test logins' tokens revoked
+      ansible.builtin.uri:
+        url: "{{ vault_addr }}/v1/auth/token/revoke-self"
+        ca_path: /usr/local/share/ca-certificates/lab-root-ca.crt
+        method: POST
+        headers: {X-Vault-Token: "{{ item.json.auth.client_token }}"}
+        status_code: [204]
+      loop: "{{ host_login.results }}"
+      loop_control:
+        label: "{{ item.item.role }}"
+      changed_when: false
+      no_log: true

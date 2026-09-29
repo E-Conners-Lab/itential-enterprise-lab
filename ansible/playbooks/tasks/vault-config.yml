@@ -1,6 +1,7 @@
 ---
-# Phase 9a (ADR 0065): configure a Vault the lab's readers can use - the KV v2 mount, AppRole, one read-only
-# policy and role per reader, and the secrets seeded one-way from .env (.env stays the source; Phase 9b deferred).
+# Phase 9a (ADR 0065): configure a Vault the lab's readers can use - the KV v2 mount, AppRole, one policy and role
+# per reader (read-only) and per writer (ADR 0068: the PSK writer, write-only), the secrets seeded one-way from .env
+# (.env stays the source; Phase 9b deferred), and the PSK writer's own credentials, kept in Vault.
 # Shared by the dev Vault (vault-dev.yml) and production's; the caller supplies:
 #   vault_addr       https URL the workstation reaches (verified against the lab CA)
 #   vault_token      a token allowed to configure it (dev: the root token from the VM's init output)
@@ -60,7 +61,7 @@
   changed_when: true
   no_log: true
 
-# --- one read-only policy per reader, named after its role ---------------------------------------------------
+# --- one policy per role, named after it: read-only for the readers, create/update only for the PSK writer -----
 - name: Current policies
   ansible.builtin.uri:
     url: "{{ vault_addr }}/v1/sys/policies/acl/{{ item.key }}"
@@ -74,7 +75,7 @@
   changed_when: false
   no_log: true
 
-- name: Read-only policy per reader
+- name: Policy per role
   ansible.builtin.uri:
     url: "{{ vault_addr }}/v1/sys/policies/acl/{{ item.item.key }}"
     ca_path: "{{ playbook_dir }}/../../docs/lab-root-ca.crt"
@@ -87,9 +88,11 @@
     # Vault stores the text as sent, so the comparison above is exact. The separator is a real newline from a
     # double-quoted scalar: '\n' inside a folded block reaches Vault as a backslash and an n, which HCL rejects (400).
     newline: "\n"
+    # `capabilities` defaults to [read]; to_json writes ["read"] exactly as before, so a reader's policy is unchanged
     policy: >-
       {{ item.item.value.policy_paths
-         | map('regex_replace', '^(.+)$', 'path "' ~ vault.kv_mount ~ '/data/\1" { capabilities = ["read"] }')
+         | map('regex_replace', '^(.+)$', 'path "' ~ vault.kv_mount ~ '/data/\1" { capabilities = '
+               ~ (item.item.value.capabilities | default(['read']) | to_json) ~ ' }')
          | join(newline) }}
   loop: "{{ vault_policies.results }}"
   loop_control:
@@ -221,5 +224,74 @@
     status_code: [200]
   loop: "{{ vault_current.results }}"
   when: item.status == 404 or (item.json.data.data | default({})) != vault_seed[item.item]
+  changed_when: true
+  no_log: true
+
+# --- the PSK writer's own credentials, kept in Vault (ADR 0068 decision 5) ---------------------------------------
+# The deploy workflow logs in as itential-aws-psk-writer from the runner. Its role ID and secret ID live at
+# vault.aws.writer_path, which only the Gateway's read-only role (and the administrator) can read, so the credential
+# is never in a file, .env or a job. The secret ID is kept while Vault still knows it (vault-secret-id.yml).
+- name: The PSK writer's credentials as Vault holds them now
+  ansible.builtin.uri:
+    url: "{{ vault_addr }}/v1/{{ vault.kv_mount }}/data/{{ vault.aws.writer_path }}"
+    ca_path: "{{ playbook_dir }}/../../docs/lab-root-ca.crt"
+    headers: {X-Vault-Token: "{{ vault_token }}"}
+    status_code: [200, 404]
+  register: psk_writer_now
+  changed_when: false
+  no_log: true
+
+- name: The PSK writer's AppRole credentials
+  ansible.builtin.include_tasks: vault-secret-id.yml
+  vars:
+    vault_url: "{{ vault_addr }}"
+    vault_ca_path: "{{ playbook_dir }}/../../docs/lab-root-ca.crt"
+    vault_admin_token: "{{ vault_token }}"
+    vault_reader: itential-aws-psk-writer
+    vault_current_secret_id: "{{ (psk_writer_now.json.data.data.secret_id | default('')) if psk_writer_now.status == 200 else '' }}"
+    vault_current_role_id: "{{ (psk_writer_now.json.data.data.role_id | default('')) if psk_writer_now.status == 200 else '' }}"
+  no_log: true
+
+- name: Store them when they changed, at {{ vault.aws.writer_path }}
+  ansible.builtin.uri:
+    url: "{{ vault_addr }}/v1/{{ vault.kv_mount }}/data/{{ vault.aws.writer_path }}"
+    ca_path: "{{ playbook_dir }}/../../docs/lab-root-ca.crt"
+    method: POST
+    headers: {X-Vault-Token: "{{ vault_token }}"}
+    body_format: json
+    body: {data: {role_id: "{{ vault_reader_role_id }}", secret_id: "{{ vault_reader_secret_id }}"}}
+    status_code: [200]
+  when: >-
+    vault_reader_secret_id_changed | bool
+    or psk_writer_now.status != 200
+    or (psk_writer_now.json.data.data.role_id | default('')) != vault_reader_role_id
+  changed_when: true
+  no_log: true
+
+# A new secret ID was issued (first run, or the stored one was lost): destroy every other secret ID of the writer, so
+# exactly one live writer credential exists and none lingers without a TTL (vault-secret-id.yml never destroys).
+- name: The PSK writer's secret IDs now
+  ansible.builtin.uri:
+    url: "{{ vault_addr }}/v1/auth/{{ vault.approle_mount }}/role/itential-aws-psk-writer/secret-id?list=true"
+    ca_path: "{{ playbook_dir }}/../../docs/lab-root-ca.crt"
+    headers: {X-Vault-Token: "{{ vault_token }}"}
+    status_code: [200, 404]
+  register: psk_writer_ids
+  when: vault_reader_secret_id_changed | bool
+  no_log: true
+
+- name: Every older writer secret ID destroyed
+  ansible.builtin.uri:
+    url: "{{ vault_addr }}/v1/auth/{{ vault.approle_mount }}/role/itential-aws-psk-writer/secret-id-accessor/destroy"
+    ca_path: "{{ playbook_dir }}/../../docs/lab-root-ca.crt"
+    method: POST
+    headers: {X-Vault-Token: "{{ vault_token }}"}
+    body_format: json
+    body: {secret_id_accessor: "{{ item }}"}
+    status_code: [204]
+  loop: >-
+    {{ (psk_writer_ids.json.data['keys'] | default([]))
+       | difference([vault_reader_issued.json.data.secret_id_accessor]) }}
+  when: vault_reader_secret_id_changed | bool and psk_writer_ids.status == 200
   changed_when: true
   no_log: true

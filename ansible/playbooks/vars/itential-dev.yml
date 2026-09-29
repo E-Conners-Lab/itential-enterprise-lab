@@ -67,3 +67,4 @@ vault_enabled: true
 vault_role_cidrs:
   itential-platform: ["{{ vault.dev.docker_gateway }}/32"]
   itential-gateway: ["{{ vault.dev.docker_gateway }}/32"]
+  itential-aws-psk-writer: ["{{ vault.dev.docker_gateway }}/32"]
