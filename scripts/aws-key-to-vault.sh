@@ -6,10 +6,13 @@
 #   scripts/aws-key-to-vault.sh dev    the dev Vault on itential-dev (its root token, read over SSH)
 #   scripts/aws-key-to-vault.sh prod   production's Vault (your lab-admin token: make vault-login first)
 # Uses your own AWS admin credentials (AWS_PROFILE, default "default"). It refuses when the tier already holds a key
-# (rotation is a later workflow) and when the user already has two keys. If Vault does not take the key, the new
-# key is deleted again, so no key exists that Vault does not hold. The key's IAM description tag names its tier.
+# (rotation is a later workflow), when the user already has two keys, and when AWS CLI history is on (it would
+# record the create-access-key answer, secret included, in ~/.aws/cli/history). If Vault does not hold the new key
+# at the end - a refused write, a timeout, Ctrl-C - the key is deleted again, so no key exists that Vault does not
+# hold; Vault is asked which key it holds before anything is deleted. The key's IAM description tag names its tier.
 set -euo pipefail
 cd "$(dirname "$0")/.."
+export AWS_PAGER=""
 PY=.venv/bin/python
 CA=docs/lab-root-ca.crt
 V=itential/versions.yaml
@@ -40,6 +43,15 @@ vault() {
   curl -s -m 30 --cacert "$CA" -X "$1" -H 'Content-Type: application/json' \
        -H @<(printf 'X-Vault-Token: %s\n' "$TOKEN") --data-binary @- -o /dev/null -w '%{http_code}' "${ADDR}/v1/${KV_PATH}"
 }
+# held_key_id: the access key ID Vault holds at KV_PATH, or nothing. The answer (secret included) goes through a
+# pipe into jq, which keeps only the ID.
+held_key_id() {
+  curl -s -m 30 --cacert "$CA" -H @<(printf 'X-Vault-Token: %s\n' "$TOKEN") "${ADDR}/v1/${KV_PATH}" \
+    | jq -r '.data.data.access_key_id // empty' 2>/dev/null || true
+}
+
+[ "$(aws configure get cli_history 2>/dev/null || true)" != enabled ] \
+  || { echo "AWS CLI history is on (cli_history = enabled): it would save the new secret key to disk - nothing done"; exit 1; }
 
 # 1. Vault answers this token, and the tier holds no key yet (a 404; the body is never read)
 have=$(printf '' | vault GET)
@@ -54,19 +66,37 @@ count=$(aws iam list-access-keys --user-name "$USER_NAME" --query 'length(Access
   || { echo "cannot list $USER_NAME's keys: apply terraform/bootstrap/itential-iam in cloud-devops-pipeline first"; exit 1; }
 [ "$count" -lt 2 ] || { echo "$USER_NAME already has two access keys - nothing done"; exit 1; }
 
-# 3. Create the key and hand it to Vault through a pipe; on any failure the new key is deleted again
+# 3. Create the key and hand it to Vault through a pipe. From here until Vault is known to hold it, any way out -
+#    a refused write, a timeout, Ctrl-C - asks Vault which key it holds and deletes the new key unless it is that one.
+KEY_ID=""
+settle() {
+  trap - INT TERM
+  unset KEY_JSON
+  if [ -z "$KEY_ID" ]; then
+    echo "a key may have been created without its ID being read: check $USER_NAME's keys in IAM (one with no tier tag)"
+  elif [ "$(held_key_id)" = "$KEY_ID" ]; then
+    echo "Vault holds the new key after all - kept"; return 0
+  elif aws iam delete-access-key --user-name "$USER_NAME" --access-key-id "$KEY_ID"; then
+    echo "Vault does not hold the new key - it was deleted again"
+  else
+    echo "Vault does not hold the new key and deleting it FAILED: delete access key $KEY_ID of $USER_NAME by hand"
+  fi
+  exit 1
+}
+trap settle INT TERM
 KEY_JSON=$(aws iam create-access-key --user-name "$USER_NAME" --output json)
-KEY_ID=$(printf '%s' "$KEY_JSON" | jq -r '.AccessKey.AccessKeyId')
-drop_key() { aws iam delete-access-key --user-name "$USER_NAME" --access-key-id "$KEY_ID" && echo "the new key was deleted again"; }
+KEY_ID=$(printf '%s' "$KEY_JSON" | jq -r '.AccessKey.AccessKeyId // empty') || true
+[ -n "$KEY_ID" ] || settle
 stored=$(printf '%s' "$KEY_JSON" \
          | jq '{data: {access_key_id: .AccessKey.AccessKeyId, secret_access_key: .AccessKey.SecretAccessKey}}' \
          | vault POST) || stored=000
 unset KEY_JSON
 if [ "$stored" != 200 ]; then
-  echo "$TIER Vault answered $stored to the write - nothing stored"
-  drop_key
-  exit 1
+  echo "$TIER Vault answered $stored to the write"
+  settle
+  stored="200 on a re-check"
 fi
+trap - INT TERM
 
 # 4. Name the key's tier (the IAM console's description tag), and show only what is not secret
 aws iam tag-user --user-name "$USER_NAME" --tags "Key=${KEY_ID},Value=vault ${TIER} ${KV_PATH}"

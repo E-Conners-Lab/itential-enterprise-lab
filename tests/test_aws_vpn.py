@@ -106,6 +106,25 @@ def test_the_key_script_never_shows_or_saves_the_secret_key() -> None:
     assert 'case "$TIER" in' in code and "usage: $0 dev|prod" in code  # the tier is always named, never defaulted
 
 
+def test_the_key_script_never_leaves_a_key_vault_does_not_hold() -> None:
+    code = KEY_SCRIPT.read_text()
+    assert "trap settle INT TERM" in code  # Ctrl-C between create and store
+    assert '[ "$(held_key_id)" = "$KEY_ID" ]' in code  # a timeout after Vault stored it keeps the key
+    assert 'delete access key $KEY_ID of $USER_NAME by hand' in code  # a failed delete names the key to remove
+    assert "cli_history" in code  # AWS CLI history would save the answer, secret included, to disk
+
+
+def test_vault_config_uses_the_owners_admin_login_now_that_root_is_revoked() -> None:
+    target = (ROOT / "Makefile").read_text().split("\nvault-config:", 1)[1].split("\n\n", 1)[0]
+    assert "export VAULT_TOKEN=$$(tr -d '\\n' < $(VAULT_ADMIN_FILE))" in target
+
+
+def test_a_reissued_writer_secret_id_destroys_the_older_ones() -> None:
+    tasks = (ROOT / "ansible" / "playbooks" / "tasks" / "vault-config.yml").read_text()
+    assert "role/itential-aws-psk-writer/secret-id?list=true" in tasks
+    assert "difference([vault_reader_issued.json.data.secret_id_accessor])" in tasks
+
+
 def test_make_aws_key_names_the_tier() -> None:
     make = (ROOT / "Makefile").read_text()
     assert "scripts/aws-key-to-vault.sh $(TIER)" in make and "TIER ?=" not in make

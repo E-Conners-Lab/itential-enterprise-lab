@@ -267,3 +267,31 @@
     or (psk_writer_now.json.data.data.role_id | default('')) != vault_reader_role_id
   changed_when: true
   no_log: true
+
+# A new secret ID was issued (first run, or the stored one was lost): destroy every other secret ID of the writer, so
+# exactly one live writer credential exists and none lingers without a TTL (vault-secret-id.yml never destroys).
+- name: The PSK writer's secret IDs now
+  ansible.builtin.uri:
+    url: "{{ vault_addr }}/v1/auth/{{ vault.approle_mount }}/role/itential-aws-psk-writer/secret-id?list=true"
+    ca_path: "{{ playbook_dir }}/../../docs/lab-root-ca.crt"
+    headers: {X-Vault-Token: "{{ vault_token }}"}
+    status_code: [200, 404]
+  register: psk_writer_ids
+  when: vault_reader_secret_id_changed | bool
+  no_log: true
+
+- name: Every older writer secret ID destroyed
+  ansible.builtin.uri:
+    url: "{{ vault_addr }}/v1/auth/{{ vault.approle_mount }}/role/itential-aws-psk-writer/secret-id-accessor/destroy"
+    ca_path: "{{ playbook_dir }}/../../docs/lab-root-ca.crt"
+    method: POST
+    headers: {X-Vault-Token: "{{ vault_token }}"}
+    body_format: json
+    body: {secret_id_accessor: "{{ item }}"}
+    status_code: [204]
+  loop: >-
+    {{ (psk_writer_ids.json.data['keys'] | default([]))
+       | difference([vault_reader_issued.json.data.secret_id_accessor]) }}
+  when: vault_reader_secret_id_changed | bool and psk_writer_ids.status == 200
+  changed_when: true
+  no_log: true

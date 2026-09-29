@@ -164,8 +164,12 @@ vault-init: ## Production Vault, once, in YOUR terminal: one unseal key + root t
 vault-unseal: ## Production Vault: asks for the unseal key without echoing it (FROM_FILE=1 reads the init file)
 	FROM_FILE=$(FROM_FILE) scripts/vault-prod.sh unseal
 
-vault-config: ## Production Vault: KV, read-only AppRoles bound to their hosts, seeds from .env; proves each host can log in and this Mac cannot
-	$(load_env) cd ansible && ansible-playbook -i inventory/netbox.yml playbooks/vault-prod-config.yml
+# The token: VAULT_TOKEN if set, else the owner's administrator login (make vault-login), else the play falls back
+# to the init file's root token (first configuration only; the root token is revoked since ADR 0065 step 5).
+VAULT_ADMIN_FILE ?= $(HOME)/.config/itential-enterprise-lab/vault-admin-token
+vault-config: ## Production Vault: KV, AppRoles bound to their hosts (read-only readers, the PSK writer), seeds from .env; proves each host can log in and this Mac cannot
+	$(load_env) if [ -z "$${VAULT_TOKEN:-}" ] && [ -s $(VAULT_ADMIN_FILE) ]; then export VAULT_TOKEN=$$(tr -d '\n' < $(VAULT_ADMIN_FILE)); fi; \
+	  cd ansible && ansible-playbook -i inventory/netbox.yml playbooks/vault-prod-config.yml
 	scripts/vault-prod.sh snapshot
 
 vault-snapshot: ## Production Vault: a Raft snapshot to ~/Backups/itential-enterprise-lab/vault (mode 600, outside the repo)
@@ -193,7 +197,6 @@ vault-revoke-root: ## Production Vault: revoke the root token - refuses unless t
 # from its file, never printed. Order matters: the Platform's own Vault client, then the Gateway's provider, then the
 # replay that swaps every credential for a reference. The Platform on iap-01 and the Gateway restart on the way.
 # Roll back: the same three plays with -e vault_enabled=false (.env stays the source of the credentials, ADR 0065).
-VAULT_ADMIN_FILE ?= $(HOME)/.config/itential-enterprise-lab/vault-admin-token
 vault-cutover: ## Phase 9a step 5: the Platform and the Gateway read their credentials from Vault (needs make vault-login)
 	@test -s $(VAULT_ADMIN_FILE) || { echo "log in as the administrator first: make vault-login (in your own terminal)"; exit 1; }
 	$(MAKE) prod-snapshot MODE=save

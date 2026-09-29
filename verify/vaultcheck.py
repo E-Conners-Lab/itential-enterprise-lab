@@ -176,20 +176,22 @@ def c_aws_psk() -> bool:
     vault.aws.writer_path, with the role's current role ID and a secret ID Vault still knows. Nothing is printed but
     capabilities and yes/no."""
     aws, mount = VAULT["aws"], VAULT["approle_mount"]
-    path = kv(aws["psk_path"])
-    want = {"itential-gateway": ["read"], "itential-platform": ["deny"]}
+    psk, key = kv(aws["psk_path"]), kv(aws["key_path"])
+    meta = f"{VAULT['kv_mount']}/metadata/{aws['psk_path']}"
+    want = {"itential-gateway": {psk: ["read"]}, "itential-platform": {psk: ["deny"], key: ["deny"]}}
     # production's verify-readers token role predates the writer and only a root token could widen it; there the
     # writer's policy is proven on iag-01 by make vault-config (its own login, the same capabilities-self question)
     if os.environ.get("VAULT_TIER") != "prod":
-        want["itential-aws-psk-writer"] = ["create", "update"]
+        want["itential-aws-psk-writer"] = {psk: ["create", "update"], meta: ["deny"], key: ["deny"]}
     ok = True
-    for role, caps in want.items():
+    for role, paths in want.items():
         token = _policy_token(role)
         try:
-            _, d = vault("POST", "sys/capabilities-self", token, {"paths": [path]})
-            got = sorted((d or {}).get("capabilities", []))
-            print(f"{role:24} may {got} on {path} (want {caps})")
-            ok &= got == caps
+            for path, caps in paths.items():
+                _, d = vault("POST", "sys/capabilities-self", token, {"paths": [path]})
+                got = sorted((d or {}).get("capabilities", []))
+                print(f"{role:24} may {got} on {path} (want {caps})")
+                ok &= got == caps
         finally:
             vault("POST", "auth/token/revoke-self", token)
     _, d = vault("GET", kv(aws["writer_path"]), admin())
