@@ -117,13 +117,14 @@
         group: ubuntu
         mode: "0755"
 
-    - name: Runner build context
+    - name: Runner build context (the Dockerfile and terraform-run's hash-pinned requirements)
       ansible.builtin.copy:
-        src: ../../itential/gateway5-runner/Dockerfile
-        dest: "{{ stack_dir }}/gateway5-runner/Dockerfile"
+        src: "../../itential/gateway5-runner/{{ item }}"
+        dest: "{{ stack_dir }}/gateway5-runner/{{ item }}"
         owner: ubuntu
         group: ubuntu
         mode: "0644"
+      loop: [Dockerfile, requirements-terraform-run.txt, known_hosts]
       register: runner_dockerfile
 
     - name: Runner base image pulled by digest
@@ -136,9 +137,18 @@
         cmd: >-
           docker build --build-arg GATEWAY5_IMAGE={{ images.gateway5.repository }}:{{ images.gateway5.tag }}
           --build-arg PYTHON_IMAGE={{ images.runner_base.repository }}@{{ images.runner_base.digest }}
+          --build-arg TERRAFORM_VERSION={{ runner_terraform.version }} --build-arg TERRAFORM_SHA256={{ runner_terraform.sha256 }}
           -t {{ stack.runner_image }} {{ stack_dir }}/gateway5-runner
       register: runner_build
       changed_when: "'CACHED' not in runner_build.stderr or runner_dockerfile.changed"
+
+    # before the Compose files: a flush of `Compose up` before the key exists makes Docker create each missing
+    # bind-mount source as an empty DIRECTORY (measured 2026-09-29)
+    - name: The Gateway's secrets encryption key, shared by server and runner (ADR 0068 step 4)
+      ansible.builtin.include_tasks: tasks/gateway-secrets-key.yml
+      vars:
+        gw_stack_dir: "{{ stack_dir }}"
+        gw_compose: "{{ compose }}"
 
     - name: Vendored Compose file and the lab override
       ansible.builtin.copy:
@@ -529,6 +539,10 @@
     - name: Gateway resolves device credentials from Vault (Phase 9a, ADR 0065)
       ansible.builtin.include_tasks: tasks/gateway-vault.yml
       when: vault_enabled | default(false) | bool
+
+    - name: The terraform-run service - repository, Python object, service with its Vault secrets (ADR 0068)
+      ansible.builtin.include_tasks: tasks/gateway-terraform-run.yml
+      when: vault_enabled | default(false) | bool # its deploy key and IAM key are Vault aliases
 
     # --- open-source adapters: package into the custom mount, then instances via the API ------
     # The custom directory is bind-mounted read-only into the platform; npm runs in a throw-away

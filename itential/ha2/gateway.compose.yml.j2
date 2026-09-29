@@ -23,6 +23,8 @@ services:
     volumes:
       - ./volumes/gateway5/certificates:/etc/ssl/gateway5:ro
       - gateway5-data:/etc/gateway
+      # ADR 0068 step 4: the same secrets key on server and runner (tasks/gateway-secrets-key.yml)
+      - ./volumes/gateway5/secrets/server.key:/etc/gateway-secrets/encrypt.key:ro
 {% if vault_enabled | default(false) | bool %}
       # Phase 9a (ADR 0065): the lab CA for Vault's certificate (the server resolves $GATEWAYSECRET_ aliases)
       - /usr/local/share/ca-certificates:/etc/ssl/lab:ro
@@ -30,6 +32,7 @@ services:
     environment:
       GATEWAY_APPLICATION_CLUSTER_ID: "{{ gateway.cluster_id }}"
       GATEWAY_APPLICATION_MODE: "server"
+      GATEWAY_SECRETS_ENCRYPT_KEY_FILE: /etc/gateway-secrets/encrypt.key
 {% if vault_enabled | default(false) | bool %}
       # Go adds every certificate in these directories to the image's public bundle (SSL_CERT_FILE would replace it)
       SSL_CERT_DIR: /etc/ssl/certs:/etc/ssl/lab
@@ -65,6 +68,7 @@ services:
       - gateway5
     environment:
       GATEWAY_APPLICATION_MODE: runner
+      GATEWAY_SECRETS_ENCRYPT_KEY_FILE: /etc/gateway-secrets/encrypt.key
       GATEWAY_APPLICATION_CLUSTER_ID: "{{ gateway.cluster_id }}"
       GATEWAY_LOG_LEVEL: "info"
       GATEWAY_STORE_BACKEND: etcd
@@ -79,6 +83,8 @@ services:
       NETBOX_TOKEN: ${NETBOX_TOKEN}
     volumes:
       - gateway5-runner-data:/var/lib/gateway
+      # ADR 0068 step 4: the same secrets key on server and runner (tasks/gateway-secrets-key.yml)
+      - ./volumes/gateway5/secrets/runner.key:/etc/gateway-secrets/encrypt.key:ro
     deploy:
       resources:
         limits:

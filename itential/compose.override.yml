@@ -53,7 +53,10 @@ services:
       # Phase 9a (ADR 0065): the server resolves $GATEWAYSECRET_ references itself (the runner never does), so it
       # must trust Vault's lab-CA certificate; the vault provider has no CA flag (only the cyberark type has --ca)
       - /usr/local/share/ca-certificates/lab-root-ca.crt:/etc/ssl/lab/lab-root-ca.crt:ro
+      # ADR 0068 step 4: the same secrets key on server and runner (tasks/gateway-secrets-key.yml)
+      - ./volumes/gateway5/secrets/server.key:/etc/gateway-secrets/encrypt.key:ro
     environment:
+      GATEWAY_SECRETS_ENCRYPT_KEY_FILE: /etc/gateway-secrets/encrypt.key
       GATEWAY_STORE_BACKEND: etcd
       GATEWAY_STORE_ETCD_HOSTS: etcd:2379
       GATEWAY_STORE_ETCD_USE_TLS: "false" # Docker network only; TLS to etcd with the lab CA is a Phase 9 item
@@ -70,6 +73,7 @@ services:
       - gateway5
     environment:
       GATEWAY_APPLICATION_MODE: runner
+      GATEWAY_SECRETS_ENCRYPT_KEY_FILE: /etc/gateway-secrets/encrypt.key
       GATEWAY_APPLICATION_CLUSTER_ID: ${GATEWAY5_CLUSTER_ID:-lab}
       GATEWAY_LOG_LEVEL: ${LOG_LEVEL:-info}
       GATEWAY_STORE_BACKEND: etcd
@@ -85,6 +89,8 @@ services:
       NETBOX_TOKEN: ${NETBOX_TOKEN}
     volumes:
       - gateway5-runner-data:/var/lib/gateway # cached venvs (Genie ~790 MB), pex, task workspaces
+      # ADR 0068 step 4: the same secrets key on server and runner (tasks/gateway-secrets-key.yml)
+      - ./volumes/gateway5/secrets/runner.key:/etc/gateway-secrets/encrypt.key:ro
     deploy:
       resources:
         limits:

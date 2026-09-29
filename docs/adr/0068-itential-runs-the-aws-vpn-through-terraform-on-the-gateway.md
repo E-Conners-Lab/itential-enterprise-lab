@@ -74,13 +74,15 @@ Two more facts about Gateway 5 decide how Terraform runs:
 1. **Terraform, not OpenTofu (owner, 2026-09-26: "can we not just use terraform?"), through a Gateway 5
    executable service (5.3+, documented for Terraform).** The runner image gets Terraform 1.5.7 (the version
    that wrote the state, and the last MPL-licensed release), pinned with its SHA-256 in `itential/versions.yaml`.
-   The executable object `terraform-1-5-7` points at it.
+   The wrapper calls the pinned binary by its path (`/usr/local/bin/terraform`), so the service needs only one
+   executable object, `python-3-12`, the runner image's Python (built 2026-09-29; the planned `terraform-1-5-7`
+   object has no job).
    - A bare `terraform <args>` run cannot do decision 2. That needs `init`, then `plan -out`, the plan file kept
      past the run, and `apply` of that same file, and each run starts from a fresh checkout.
    - So the executable service `terraform-run` runs a small wrapper committed next to the Terraform
      (`itential/terraform-run.py`, run by a Python 3.12 executable object on the runner). The wrapper calls the
-     pinned binary for `plan`, `apply` and `destroy` against `terraform/environments/dev`. P7 checks how the
-     Gateway builds the command line.
+     pinned binary for `plan`, `apply` and `destroy` against `terraform/environments/dev`. How the Gateway runs
+     it was measured (P7, below).
    - The native `opentofu-plan` service is not used. It re-plans at apply time, and it would move a Terraform
      state to OpenTofu.
    - The lab's own modules stay on OpenTofu with local state (ADR 0029). That is a different code base with a
@@ -196,18 +198,58 @@ Two more facts about Gateway 5 decide how Terraform runs:
 - **D5** Resolved by the owner, 2026-09-29: each tier's Vault holds its own IAM key and its own PSK writer
   (decision 3), rather than the dev Gateway reading production's Vault.
 - **P1** Does a `$GATEWAYSECRET_` alias resolve into a python-script service's environment or decorated input?
-- **P2** Does the runner reach STS, S3 and Secrets Manager through `oob-gw`?
+  **Answered 2026-09-29 (dev):** an executable service's `--secret name=<alias>,type=env,target=VAR` takes an
+  alias on the built-in `vault` provider. The server resolves it per run (its log shows `secret_resolution ...
+  outcome=success`), and the process sees `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`; nothing is stored on
+  the Gateway.
+- **P2** Does the runner reach STS, S3 and Secrets Manager through `oob-gw`? **Answered 2026-09-29 (dev):** yes.
+  Every endpoint Terraform needs (STS, S3, Secrets Manager, DynamoDB, KMS, EC2) answers over verified TLS, and so
+  do the Terraform registry, HashiCorp releases and GitHub SSH. With the key, STS names the caller
+  `user/itential/itential-terraform` and `terraform init` against the S3 backend (state read, CMK decrypt)
+  succeeds.
 - **P3** Does `sendConfig` resolve a `$GATEWAYSECRET_` reference inside the config text (decision 6)?
 - **P4** Does IKEv2 with NAT-T come up through two NAT layers (the EVE-NG host, then the home router)? The home
   address is public (owner, 2026-09-27); whether it stays stable between deployments is still open.
 - **P5** Does a Work Center approval gate the apply, and does a rejection end the job cleanly (ADR 0066)?
 - **P7** How does an executable service build the command line (`<exec-command> <filename> <args>`)? Does its
   `--secret` take a value from the built-in `vault` provider, or only from the Gateway's own store? This decides
-  whether decision 3 needs P1's `$GATEWAYSECRET_` route.
+  whether decision 3 needs P1's `$GATEWAYSECRET_` route. **Answered 2026-09-29 (dev):** see step 4 below.
 - **P6** Does a write-only AppRole (`create`/`update`, no `read`) let the runner write `lab/aws/vpn-psk` while
   the Gateway's reader role still resolves it? The policy half is checked without writing anything: each role's
   own token asks `sys/capabilities-self` (`vaultcheck.py aws-psk` on dev; on iag-01 by `make vault-config`).
   The write itself is proven by the first Deploy.
+
+## Step 4 as built and measured on the dev tier (2026-09-29)
+
+`terraform-run` ran through the Platform's `runService` (`params: {action: probe}`), return code 0, in 24 s:
+
+- **How the Gateway runs it (P7).** Each run clones the repository into a new temporary directory (`/tmp/tmp…`)
+  at the repository's reference, then runs `<exec-command> <clone>/<filename> <args>`: here
+  `/usr/local/bin/python3 /tmp/tmp…/itential/terraform-run.py --action probe`. The `params` become
+  `--key value` pairs (`arg-format`, the default `--{{.Key}} {{.Value}}`). The process runs as the runner's user
+  (uid 1001, `HOME=/home/itential`).
+- **The process inherits the runner container's whole environment**, the dev tier's NetBox token and the
+  Gateway's settings included. The wrapper therefore hands Terraform an allow-listed environment only.
+- **The import format** for the three items is the export's own (`repositories`, `executable-objects`,
+  `services` with `type: executable`, `executable-object`, `arg-format`, `secrets: [{name, type, target}]`),
+  measured by importing and comparing the export. `tasks/gateway-terraform-run.yml` does the same on every run;
+  the repository's reference is `main`, never a feature branch.
+- **The private repository** is cloned over SSH with a read-only deploy key whose private half is only in the
+  tier's Vault (`make deploy-key TIER=dev|prod`, alias `cloud-devops-pipeline-deploy-key`).
+- **Two Gateway prerequisites the documentation lists but the lab had never needed**, because no earlier service
+  carried a secret to the runner:
+  - **A shared secrets encryption key** (`GATEWAY_SECRETS_ENCRYPT_KEY_FILE`) on the server AND the runner. The
+    server encrypts what it resolves before it hands a run to the runner, and without the key the runner refuses
+    to clone. It is generated once on each Gateway host (`tasks/gateway-secrets-key.yml`), never in the repo or
+    `.env`, with one copy per container user. The task must run before any `compose up`: Docker creates a
+    missing bind-mount source as an empty directory (measured).
+  - **GitHub's SSH host keys** in the runner's `~/.gateway.d/known_hosts`. They are pinned in the runner image,
+    not scanned: the three keys of `api.github.com/meta`, whose fingerprints match GitHub's documentation and
+    what `github.com` presented to the dev VM.
+- **The runner image** carries Terraform 1.5.7 (the build refuses any other SHA-256) and `boto3` for the plan
+  files, installed with `--require-hashes`.
+
+Nothing was created in AWS; the probe does no `plan`. The first `plan` and `apply` are step 5.
 
 ## Alternatives rejected
 
