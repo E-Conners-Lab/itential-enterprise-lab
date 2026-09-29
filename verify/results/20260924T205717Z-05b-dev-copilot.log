@@ -1,0 +1,21 @@
+# test-05b-dev-copilot 20260924T205717Z (PROD=0)
+PASS  S12.1 itential-dev matches the budget over SSH; itential-dev and mcp-dev resolve to .65, itential and mcp still to production
+      VM: 8 vCPU, 23.5 GiB, 160 GiB = budget 8/24/160
+      DNS: itential-dev.lab.internal -> 10.100.0.65, mcp-dev.lab.internal -> 10.100.0.65, itential.lab.internal -> 10.100.0.71, mcp.lab.internal -> 10.100.0.81
+PASS  S12.2 itential-dev.lab.internal serves a lab-CA certificate, runs Platform 6.5.2, and its Gateway 5 is connected
+      itential-dev.lab.internal: lab-CA chain, Platform 6.5.2, Gateway 5 connected
+PASS  S12.3 dev inventory and Configuration Manager hold exactly the clab/versions.yaml nodes; no topology/enterprise.yaml name on dev
+      inventory lab = Configuration Manager = ['clab-rtr1', 'clab-rtr2', 'clab-sw1', 'clab-sw2']; 4 nodes across inventories, no EVE-NG name
+PASS  S12.4 NETBOX_DEV_RO_TOKEN reads (200) and cannot write (403); NetBox records it write_enabled=false for plain user itential-dev
+      1 itential-dev token(s), write_enabled false; GET 200, POST 403
+PASS  S12.5 dev Model Registry profiles are exactly [ollama-mac]; every agent is a -local twin
+      profiles: ['ollama-mac']
+      agents: ['compliance-local', 'device-ops-local', 'lab-netops-local', 'netbox-sot-local', 'remediation-local', 'zz-name-probe-local']
+PASS  S12.6 svc-copilot on dev: in copilot-builders, creates and deletes copilot-probe-<ts>, runs show version on a clab switch through Gateway 5
+      svc-copilot in copilot-builders; copilot-probe-20260924t205717z created and deleted; clab-sw1 show version = 4.33.1.1F through Gateway 5
+SKIP  S12.7 svc-copilot on production (PROD=1, after make copilot-prod)
+SKIP  S12.8 production fingerprint against the pre-build snapshot (PROD=1, after make copilot-prod)
+PASS  S12.9 mcp-dev from this Mac: get_health listed and returns 6.5.2; describe_inventory and get_devices hidden
+      74 tools on mcp-dev.lab.internal; get_health reports 6.5.2
+
+passed=7 failed=0

@@ -128,3 +128,72 @@ def test_a_reissued_writer_secret_id_destroys_the_older_ones() -> None:
 def test_make_aws_key_names_the_tier() -> None:
     make = (ROOT / "Makefile").read_text()
     assert "scripts/aws-key-to-vault.sh $(TIER)" in make and "TIER ?=" not in make
+
+
+# --- step 4: terraform-run on the Gateway (ADR 0068 decision 1, probes P1/P2/P7 measured on dev 2026-09-29) ---------
+import base64  # noqa: E402
+import hashlib  # noqa: E402
+
+VERSIONS = yaml.safe_load((ROOT / "itential" / "versions.yaml").read_text())
+RUNNER = ROOT / "itential" / "gateway5-runner"
+PLAYS = {name: (ROOT / "ansible" / "playbooks" / name).read_text() for name in ("itential.yml", "platform-ha2-gateway.yml")}
+
+
+def test_terraform_1_5_7_is_pinned_by_hash_and_the_build_refuses_anything_else() -> None:
+    tf = VERSIONS["runner_terraform"]
+    assert tf["version"] == "1.5.7" and re.fullmatch(r"[0-9a-f]{64}", tf["sha256"])
+    assert "terraform" not in VERSIONS["images"]  # images/fetch.sh pulls every entry there
+    docker = (RUNNER / "Dockerfile").read_text()
+    assert "is not the pinned" in docker and "CHECKPOINT_DISABLE=1" in docker
+    for name, play in PLAYS.items():
+        assert "--build-arg TERRAFORM_SHA256={{ runner_terraform.sha256 }}" in play, name
+        assert "loop: [Dockerfile, requirements-terraform-run.txt, known_hosts]" in play, name
+
+
+def test_boto3_is_installed_only_with_hashes() -> None:
+    req = (RUNNER / "requirements-terraform-run.txt").read_text()
+    pins = re.findall(r"^([a-z0-9_.-]+)==", req, re.M)
+    assert "boto3" in pins and all(f"{p}==" in req for p in pins)
+    assert req.count("--hash=sha256:") >= len(pins)
+    assert "--require-hashes --only-binary=:all:" in (RUNNER / "Dockerfile").read_text()
+
+
+def test_githubs_host_keys_are_the_three_pinned_fingerprints() -> None:
+    def fp(blob: str) -> str:
+        return "SHA256:" + base64.b64encode(hashlib.sha256(base64.b64decode(blob)).digest()).decode().rstrip("=")
+
+    lines = [ln.split() for ln in (RUNNER / "known_hosts").read_text().splitlines() if ln and not ln.startswith("#")]
+    assert all(host == "github.com" for host, _, _ in lines)
+    assert {fp(blob) for _, _, blob in lines} == {
+        "SHA256:+DiY3wvvV6TuJJhbpZisF/zLDA0zPMSvHdkr4UvCOqU",  # ed25519
+        "SHA256:p2QAMXNIC1TJYWeIOttrVc98/R1BUFWu3/LiyKgUfQM",  # ecdsa
+        "SHA256:uNiVztksCsDhcc0u9e8BujQXVUpKZIDTMczCvj3tD2s",  # rsa
+    }
+    assert "install -d -o itential -g itential -m 700 /home/itential/.gateway.d" in (RUNNER / "Dockerfile").read_text()
+
+
+def test_the_secrets_key_exists_before_anything_runs_compose_up() -> None:
+    dev = PLAYS["itential.yml"]
+    assert dev.index("tasks/gateway-secrets-key.yml") < dev.index("name: Vendored Compose file and the lab override")
+    assert dev.index("tasks/gateway-secrets-key.yml") < dev.index("ansible.builtin.meta: flush_handlers")
+    prod = PLAYS["platform-ha2-gateway.yml"]
+    assert prod.index("tasks/gateway-secrets-key.yml") < prod.index("name: Containers up")
+    for f in ("itential/compose.override.yml", "itential/ha2/gateway.compose.yml.j2"):
+        text = (ROOT / f).read_text()
+        assert text.count("GATEWAY_SECRETS_ENCRYPT_KEY_FILE: /etc/gateway-secrets/encrypt.key") == 2, f
+        assert "secrets/server.key:/etc/gateway-secrets/encrypt.key:ro" in text, f
+        assert "secrets/runner.key:/etc/gateway-secrets/encrypt.key:ro" in text, f
+    task = (ROOT / "ansible" / "playbooks" / "tasks" / "gateway-secrets-key.yml").read_text()
+    assert "-type d -empty -delete" in task and "--force-recreate --no-deps" in task
+
+
+def test_terraform_run_uses_reviewed_code_and_vault_secrets_only() -> None:
+    tr = VERSIONS["terraform_run"]
+    assert tr["repository"]["reference"] == "main"
+    aliases = VAULT["gateway_aliases"]
+    for secret in tr["service"]["secrets"]:
+        assert secret["name"] in aliases and aliases[secret["name"]]["path"] == VAULT["aws"]["key_path"]
+    assert {s["target"] for s in tr["service"]["secrets"]} == {"AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY"}
+    assert aliases["cloud-devops-pipeline-deploy-key"]["path"] == VAULT["git"]["deploy_key_path"]
+    for name, play in PLAYS.items():
+        assert play.index("tasks/gateway-vault.yml") < play.index("tasks/gateway-terraform-run.yml"), name

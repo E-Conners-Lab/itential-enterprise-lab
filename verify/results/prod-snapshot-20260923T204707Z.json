@@ -1,0 +1,157 @@
+{
+  "fingerprint": {
+    "adapters": [
+      "InventoryBroker",
+      "LDAP",
+      "NetBox"
+    ],
+    "agents": {
+      "compliance": null,
+      "compliance-local": null,
+      "device-ops": null,
+      "device-ops-local": null,
+      "diagnostics": null,
+      "diagnostics-local": null,
+      "lab-netops": null,
+      "lab-netops-local": null,
+      "netbox-sot": null,
+      "netbox-sot-local": null,
+      "remediation": null,
+      "remediation-local": null
+    },
+    "authorization": {
+      "admin_group_roles": 186,
+      "groups": {
+        "admin_group": 186,
+        "admins": 0,
+        "builders": 0,
+        "operators": 0
+      },
+      "groups_total": 4,
+      "roles_total": 192
+    },
+    "device_groups": {
+      "role-access": [
+        "dc1-acc01"
+      ],
+      "role-branch-switch": [
+        "br1-sw01",
+        "br2-sw01"
+      ],
+      "role-isp-core": [
+        "isp-core01"
+      ],
+      "role-leaf": [
+        "dc1-leaf01",
+        "dc1-leaf02"
+      ],
+      "role-spine": [
+        "dc1-spine01",
+        "dc1-spine02"
+      ],
+      "role-wan-edge": [
+        "br1-wan01",
+        "br2-wan01",
+        "dc1-wan01",
+        "dc1-wan02"
+      ],
+      "site-br1": [
+        "br1-sw01",
+        "br1-wan01"
+      ],
+      "site-br2": [
+        "br2-sw01",
+        "br2-wan01"
+      ],
+      "site-dc1": [
+        "dc1-acc01",
+        "dc1-leaf01",
+        "dc1-leaf02",
+        "dc1-spine01",
+        "dc1-spine02",
+        "dc1-wan01",
+        "dc1-wan02"
+      ],
+      "site-wan": [
+        "isp-core01"
+      ]
+    },
+    "integrations": [
+      "netbox-api",
+      "netbox-latest",
+      "servicenow-api"
+    ],
+    "inventories": {
+      "lab": {
+        "groups": [
+          "6aa2adafdd92a98c6d310e2d"
+        ],
+        "nodes": [
+          "br1-sw01",
+          "br1-wan01",
+          "br2-sw01",
+          "br2-wan01",
+          "dc1-acc01",
+          "dc1-leaf01",
+          "dc1-leaf02",
+          "dc1-spine01",
+          "dc1-spine02",
+          "dc1-wan01",
+          "dc1-wan02",
+          "isp-core01"
+        ]
+      },
+      "lab-hosts": {
+        "groups": [
+          "6aa2adafdd92a98c6d310e2d"
+        ],
+        "nodes": [
+          "br1-host01",
+          "br2-host01",
+          "dc1-srv01"
+        ]
+      },
+      "nxos": {
+        "groups": [
+          "6aa2adafdd92a98c6d310e2d"
+        ],
+        "nodes": [
+          "dc1-nxos01",
+          "dc1-nxos02"
+        ]
+      }
+    },
+    "netbox": {
+      "devices": 23,
+      "vlans": 1
+    },
+    "profiles": [
+      "anthropic",
+      "ollama-mac"
+    ],
+    "workflows": {
+      "@66d0304521161b4df2717497: Clear & Delete Inventory": "2026-09-22T15:14:41.828Z",
+      "@66d0304521161b4df2717497: Create & Update Inventory from NetBox": "2026-09-22T15:14:41.828Z",
+      "@66d0304521161b4df2717497: IOS Upgrade": "2026-09-22T15:14:41.828Z",
+      "@66d0304521161b4df2717497: Port Turn Up": "2026-09-22T15:14:41.828Z",
+      "@66d0304521161b4df2717497: Run Compliance": "2026-09-22T15:14:41.828Z",
+      "@66d0d1ba21161b4df27174c2: Clear & Delete Inventory": "2026-09-22T16:05:27.025Z",
+      "@66d0d1ba21161b4df27174c2: Create & Update Inventory from NetBox": "2026-09-22T16:13:25.115Z",
+      "@66d0d1ba21161b4df27174c2: NX-OS Upgrade": "2026-09-22T16:05:27.025Z",
+      "@66d0d1ba21161b4df27174c2: Port Turn Up": "2026-09-22T16:13:24.552Z",
+      "@66d0d1ba21161b4df27174c2: Run Compliance": "2026-09-22T16:13:24.794Z",
+      "wf-backup-all-v1": "2026-09-12T03:36:17.151Z",
+      "wf-branch-vlan-delete-v1": "2026-09-12T03:36:17.154Z",
+      "wf-branch-vlan-v1": "2026-09-12T03:36:17.183Z",
+      "wf-compliance-report-v1": "2026-09-12T03:36:17.185Z",
+      "wf-compliance-run-v1": "2026-09-19T18:28:43.516Z",
+      "wf-config-push-v1": "2026-09-12T03:36:17.157Z",
+      "wf-netbox-device-count-v1": "2026-09-12T03:36:17.156Z",
+      "wf-netbox-devices-v1": "2026-09-12T03:36:17.161Z",
+      "wf-show-all-v1": "2026-09-12T03:36:17.162Z",
+      "wf-show-command-v1": "2026-09-12T03:36:17.174Z",
+      "wf-show-version-v1": "2026-09-12T03:36:17.175Z"
+    }
+  },
+  "taken": "20260923T204707Z"
+}

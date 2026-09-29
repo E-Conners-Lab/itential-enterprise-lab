@@ -1,0 +1,84 @@
+# test-06-flowai 20260924T171148Z
+Anthropic token meter, last 7 days (31 sessions; prices per MTok in=2.0 out=10.0, anthropic only is billed)
+  anthropic  claude-sonnet-5    sessions=  19 in=   267242 out=   6482  $  0.60
+  ollama     gemma4:26b         sessions=  12 in=    31941 out=   1406  $  0.00
+spent $0.60 of the $15.00 weekly budget; $14.40 left
+  largest: netbox-sot 2026-09-24T14:06 in=28582 (COMPLETE)
+  largest: diagnostics 2026-09-24T14:10 in=26136 (COMPLETE)
+  largest: lab-netops 2026-09-24T14:01 in=24125 (COMPLETE)
+PASS  S4c.1 provider profiles anthropic (claude-sonnet-5) and ollama-mac (gemma4:26b) answer and list their pinned models
+      profiles: ['anthropic', 'ollama-mac']
+      anthropic: claude-sonnet-5 enabled (id b2f044fe...)
+      anthropic provider answered: True 12 models listed
+      ollama-mac: gemma4:26b enabled (id a4accfe7...)
+      ollama-mac provider answered: False 0 models listed
+FAIL  S4c.2 lab-netops answers the running version of br1-wan01 and br1-sw01 via the Gateway 5 tool; equals direct SSH
+      tokens in=24191 out=236
+      tokens in=12236 out=105
+      br1-wan01: no gateway tool call in the session (['Get Device Software Version', 'dcim_devices_list'])
+      br1-sw01: no gateway tool call in the session (['Get Device Software Version'])
+PASS  S4c.3 lab-netops adds agent-20260924t171148z to br1 through Add Branch VLAN with the approval; second request is a no-op
+      approved job 71a3a76ae1b640239e21a702
+      tokens in=13662 out=288
+      run 1: VLAN 12 agent-20260924t171148z reserved, approved, configured
+      tokens in=12030 out=363
+      run 2: no-op (still exactly VLAN 12)
+PASS  S4c.4 lab-netops refuses core-router-99 (not in the inventory) without touching the gateway; session records token usage
+      tokens in=12030 out=178
+      refused: "core-router-99" is not found in NetBox and is not part of the lab inventory. I won't call any gateway tool for it. Please confirm the correct device name — I
+PASS  S4c.5 lab-netops-local (ollama-mac gemma4:26b) answers the br1-sw01 version; response time and what the Mac has loaded recorded
+      tokens in=3577 out=288
+        File [35m"<string>"[0m, line [35m4[0m
+          print(", ".join(f"{x.get(\[1;31m"[0mname\")} {round(x.get(\"size\",0)/1e9,1)}GB" for x in m) or "nothing loaded")
+                                    [1;31m^[0m
+      [1;35mSyntaxError[0m: [35munexpected character after line continuation character[0m
+      ollama-mac (gemma4:26b) answered in 31 s; loaded on the Mac: 
+PASS  S4c.6 Claude Code's MCP tools start a lab-netops session (trigger_automation) and read the answer back (describe_session)
+      tokens in=12228 out=102
+      MCP trigger_automation(lab-netops) -> session 39a8ba52-e5ad-4d41-8f01-5f4552a2b006 -> 4.33.1.1F via describe_session
+PASS  S4c.7 Run Show Command on a Device returns structured 'show version': Genie on br1-wan01, TextFSM on br1-sw01, equal to direct SSH
+      br1-wan01: genie -> version.xe_version = 17.13.01a; matches direct SSH
+      br1-sw01: textfsm -> 0.image = 4.33.1.1F; matches direct SSH
+PASS  S4d.5a netbox-sot counts the active devices of dc1 through the NetBox integration; equals the NetBox API
+      tokens in=28584 out=109
+      netbox-sot: dc1 has 10 active devices (NetBox agrees); tools ['dcim_devices_list']
+PASS  S4d.5b device-ops reports br2-sw01's software version through the show-command workflow; equals direct SSH
+      tokens in=11880 out=263
+      device-ops: br2-sw01 runs 4.33.1.1F (direct SSH agrees); tools ['Run Show Command on a Device', 'dcim_devices_list']
+FAIL  S4d.5c compliance runs lab-baseline and reports the result; the batch reports read directly agree
+      tokens in=3845 out=98
+      the summarising workflow was not used: ['Summarize Compliance Results']
+PASS  S4d.5d diagnostics reads a verify-created incident about br2-sw01, checks the device and writes one 'Proposed fix' work note
+      tokens in=26255 out=1114
+      diagnostics: INC0010016 got the note 'Proposed fix: host'; tools ['Run Show Command on a Device', 'dcim_devices_list', 'listIncidents', 'updateIncident']; push job d44bf018efac4bd8a7dfe473 made the drift
+FAIL  S4d.5e remediation fixes the br2-sw01 hostname drift only through Push Configuration with Approval; the card approved here; direct SSH confirms
+      tokens in=12881 out=824
+      the report was not read: ['Push Configuration with Approval', 'Summarize Compliance Results', 'dcim_devices_list']
+PASS  S4d.5f netbox-sot-local (ollama-mac gemma4:26b) answers br2-sw01's site; response time and what the Mac has loaded recorded
+      tokens in=2458 out=46
+        File [35m"<string>"[0m, line [35m4[0m
+          print(", ".join(f"{x.get(\[1;31m"[0mname\")} {round(x.get(\"size\",0)/1e9,1)}GB" for x in m) or "nothing loaded")
+                                    [1;31m^[0m
+      [1;35mSyntaxError[0m: [35munexpected character after line continuation character[0m
+      netbox-sot-local (gemma4:26b) answered in 10 s; loaded on the Mac: 
+PASS  S4d.5g Run Show Command on All Devices parses 'show version' on every lab device in one call (direct SSH agrees); lab-netops-local answers an all-devices question from it
+      Run Show Command on All Devices: 12 devices, parsers ['genie', 'textfsm']
+      tokens in=5199 out=191
+      lab-netops-local counted 12 devices from one Run Show Command on All Devices call in 31 s; tools ['Run Show Command on All Devices']
+PASS  S4d.5h an unknown device ends Run Show Command on a Device with device_error instead of hanging; device-ops-local reports br2-sw01's version
+      unknown device ends the job with device_error
+      tokens in=3480 out=101
+      device-ops-local: ['List Devices from NetBox', 'Run Show Command on a Device']
+PASS  S4d.5i compliance-local reports the plan results per device through Summarize Compliance Results
+      tokens in=1623 out=71
+      compliance-local: ['Summarize Compliance Results']
+PASS  S4d.5j diagnostics-local reads the verify incident and checks the device it names
+      tokens in=6696 out=248
+      diagnostics-local read INC0010016 and checked the device; tools ['Run Show Command on a Device', 'listIncidents', 'updateIncident']
+PASS  S4d.5k remediation-local refuses anything that is not a hostname and calls no tool
+      tokens in=423 out=30
+      remediation-local refused a non-hostname change without calling a tool
+closed INC0010016
+
+tokens spent this run: in=193278 out=4655 (Anthropic + local)
+passed=15 failed=3

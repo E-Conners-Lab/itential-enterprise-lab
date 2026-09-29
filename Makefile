@@ -8,7 +8,7 @@ SHELL := /bin/bash
 
 PHASES := oob-network platform network-topology itential flowai observability platform-ha2 config-secrets-code identity ddi containerlab firewall-track
 
-.PHONY: help bootstrap lint test up verify vault-dev vault vault-status vault-init vault-unseal vault-config vault-snapshot vault-revoke-root vault-admin-user vault-login vault-logout vault-cutover aws-key discover netbox-enrich tokens agents-push observability-refresh plan-oob plan-platform plan-itential plan-platform-ha2 plan-clab \
+.PHONY: help bootstrap lint test up verify vault-dev vault vault-status vault-init vault-unseal vault-config vault-snapshot vault-revoke-root vault-admin-user vault-login vault-logout vault-cutover aws-key deploy-key discover netbox-enrich tokens agents-push observability-refresh plan-oob plan-platform plan-itential plan-platform-ha2 plan-clab \
 	netbox-token-dev clab-dev dev-stack verify-dev prod-snapshot copilot-prod $(addprefix phase-,$(PHASES))
 
 help: ## Show targets
@@ -188,6 +188,11 @@ vault-logout: ## Production Vault: revoke the administrator token and delete its
 # itential-terraform and one pipe hands it to the tier's Vault; it is never shown, never in a file, never in .env.
 aws-key: ## AWS VPN, OWNER, in YOUR terminal: a new itential-terraform access key straight into TIER=dev|prod's Vault at lab/aws/terraform
 	scripts/aws-key-to-vault.sh $(TIER)
+
+# ADR 0068 decision 9: the Gateway's read-only deploy key for cloud-devops-pipeline, made in memory, the private half
+# only in the tier's Vault, the public half on GitHub (gh as you). Idempotent: refuses when one already exists.
+deploy-key: ## AWS VPN: a read-only deploy key for cloud-devops-pipeline, private half straight into TIER=dev|prod's Vault
+	.venv/bin/python scripts/deploy-key-to-vault.py $(TIER)
 
 vault-revoke-root: ## Production Vault: revoke the root token - refuses unless the administrator login has been proven (make vault-login)
 	scripts/vault-prod.sh revoke-root

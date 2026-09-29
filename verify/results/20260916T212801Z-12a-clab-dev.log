@@ -1,0 +1,19 @@
+# test-12a-clab-dev 20260916T212801Z
+SKIP  S10.6 clab VM equals the oracle and NetBox (8/16/60), /dev/kvm present, containerlab version equals oracle and manifest, clab devices absent from NetBox
+PASS  S10.7 four nodes running with the oracle mgmt IPs, reachable over SSH as automation from this Mac and from itential-dev
+      21:28:02 INFO Parsing & checking topology file=dev.clab.yml
+      containerlab: 4 running at ['10.100.2.11', '10.100.2.12', '10.100.2.21', '10.100.2.22']
+      clab-rtr1 10.100.2.11: login from the Mac; from itential-dev DEFERRED (not built yet, CLAB_DEV_ONLY=1)
+      clab-rtr2 10.100.2.12: login from the Mac; from itential-dev DEFERRED (not built yet, CLAB_DEV_ONLY=1)
+      clab-sw1 10.100.2.21: login from the Mac; from itential-dev DEFERRED (not built yet, CLAB_DEV_ONLY=1)
+      clab-sw2 10.100.2.22: login from the Mac; from itential-dev DEFERRED (not built yet, CLAB_DEV_ONLY=1)
+SKIP  S10.8 vEOS-lab version equals the oracle, the manifest and the EVE-NG lab's vEOS; C8000v runs 17.13.01a with licence level network-advantage
+SKIP  S10.9 OSPF area 0: every adjacency on the oracle's links is FULL on both ends
+SKIP  S10.10 BGP: iBGP rtr1-rtr2 and sw1-sw2 over loopbacks and eBGP rtr1-sw1 Established on both ends; the switch VLAN /27s are on rtr2
+SKIP  S10.11 VLANs 10 and 20 active on both switches and allowed on the switch-to-switch trunk
+PASS  S10.12 oob-gw and itential-dev route the clab mgmt prefix via clab; the DOCKER-USER allowlist equals the oracle and drops other sources; clab RAM under its budget line
+      itential-dev route DEFERRED (not built yet, CLAB_DEV_ONLY=1)
+      allowlist ['10.100.0.65/32', '10.100.0.224/32', '192.168.68.0/22'] + DROP, jump first in DOCKER-USER, unit enabled; RAM 13131/15991 MB
+      oob-gw route 10.100.2.0/24 via 10.100.0.224 (oob-gw persisted); oob-gw itself is refused at the allowlist
+
+passed=2 failed=0 (itential-dev parts of S10.7/S10.12 deferred: run make verify-dev after make dev-stack)

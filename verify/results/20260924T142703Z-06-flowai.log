@@ -1,0 +1,45 @@
+# test-06-flowai 20260924T142703Z
+Anthropic token meter, last 7 days (19 sessions; prices per MTok in=2.0 out=10.0, anthropic only is billed)
+  anthropic  claude-sonnet-5    sessions=  11 in=   169585 out=   3808  $  0.38
+  ollama     gemma4:26b         sessions=   8 in=     8931 out=    619  $  0.00
+spent $0.38 of the $15.00 weekly budget; $14.62 left
+  largest: netbox-sot 2026-09-24T14:06 in=28582 (COMPLETE)
+  largest: diagnostics 2026-09-24T14:10 in=26136 (COMPLETE)
+  largest: lab-netops 2026-09-24T14:01 in=24125 (COMPLETE)
+SKIP  S4c.1 provider profiles anthropic (claude-sonnet-5) and ollama-mac (gemma4:26b) answer and list their pinned models
+SKIP  S4c.2 lab-netops answers the running version of br1-wan01 and br1-sw01 via the Gateway 5 tool; equals direct SSH
+SKIP  S4c.3 lab-netops adds agent-20260924t142703z to br1 through wf-branch-vlan-v1 with the approval; second request is a no-op
+SKIP  S4c.4 lab-netops refuses core-router-99 (not in the inventory) without touching the gateway; session records token usage
+PASS  S4c.5 lab-netops-local (ollama-mac gemma4:26b) answers the br1-sw01 version; response time and what the Mac has loaded recorded
+      tokens in=3619 out=226
+        File [35m"<string>"[0m, line [35m4[0m
+          print(", ".join(f"{x.get(\[1;31m"[0mname\")} {round(x.get(\"size\",0)/1e9,1)}GB" for x in m) or "nothing loaded")
+                                    [1;31m^[0m
+      [1;35mSyntaxError[0m: [35munexpected character after line continuation character[0m
+      ollama-mac (gemma4:26b) answered in 36 s; loaded on the Mac: 
+SKIP  S4c.6 Claude Code's MCP tools start a lab-netops session (trigger_automation) and read the answer back (describe_session)
+SKIP  S4c.7 wf-show-command-v1 returns structured 'show version': Genie on br1-wan01, TextFSM on br1-sw01, equal to direct SSH
+SKIP  S4d.5a netbox-sot counts the active devices of dc1 through the NetBox integration; equals the NetBox API
+SKIP  S4d.5b device-ops reports br2-sw01's software version through the show-command workflow; equals direct SSH
+SKIP  S4d.5c compliance runs lab-baseline and reports the result; the batch reports read directly agree
+SKIP  S4d.5d diagnostics reads a verify-created incident about br2-sw01, checks the device and writes one 'Proposed fix' work note
+SKIP  S4d.5e remediation fixes the br2-sw01 hostname drift only through wf-config-push-v1; the card approved here; direct SSH confirms
+FAIL  S4d.5f netbox-sot-local (ollama-mac gemma4:26b) answers br2-sw01's site; response time and what the Mac has loaded recorded
+      bc39e72d-7f18-45c9-b8c6-69e14abe3512
+      session bc39e72d-7f18-45c9-b8c6-69e14abe3512 failed
+SKIP  S4d.5g wf-show-all-v1 parses 'show version' on every lab device in one call (direct SSH agrees); lab-netops-local answers an all-devices question from it
+FAIL  S4d.5h an unknown device ends wf-show-command-v1 with device_error instead of hanging; device-ops-local reports br2-sw01's version
+      unknown device ends the job with device_error
+      e4d53156-3da0-40e0-a304-917e7defebb5
+      session e4d53156-3da0-40e0-a304-917e7defebb5 failed
+FAIL  S4d.5i compliance-local reports the plan results per device through wf-compliance-report-v1
+      tokens in=1613 out=48
+      compliance-local named no device: COMPLIANT - all 12 devices clean
+FAIL  S4d.5j diagnostics-local reads the verify incident and checks the device it names
+      no verify incident to read (S4d.5d must run first)
+PASS  S4d.5k remediation-local refuses anything that is not a hostname and calls no tool
+      tokens in=429 out=21
+      remediation-local refused a non-hostname change without calling a tool
+
+tokens spent this run: in=5661 out=295 (Anthropic + local)
+passed=2 failed=4

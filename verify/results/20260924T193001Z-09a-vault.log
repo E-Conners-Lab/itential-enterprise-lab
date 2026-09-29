@@ -1,0 +1,25 @@
+# test-09a-vault 20260924T193001Z
+SKIP  S8.2a Vault answers at vault.lab.internal over the lab CA and is unsealed
+SKIP  S8.2g the service name resolves to the VIP versions.yaml gives it
+SKIP  S8.2b a read of lab/devices/automation with no token is refused
+SKIP  S8.2c each reader's policy reads only its own paths (Gateway: devices yes; Platform: devices no, NetBox yes) (no administrator token: VAULT_ADMIN_TOKEN)
+SKIP  S8.2e each AppRole is bound to its own hosts (iap-01/02, iag-01): a valid secret ID from this machine is refused (no administrator token: VAULT_ADMIN_TOKEN)
+SKIP  S8.2d the device password in Vault equals the .env seed (one-way until Phase 9b) (no administrator token: VAULT_ADMIN_TOKEN)
+SKIP  S8.2f an off-host Raft snapshot exists on this workstation (ADR 0065 decision 8)
+FAIL  S8.3a no credential on the Platform: lab and lab-hosts nodes, the NetBox adapter and integrations carry Vault references
+      inventory lab: 0/12 nodes carry $GATEWAYSECRET_(lab-automation-password)
+      inventory lab-hosts: 0/3 nodes carry $GATEWAYSECRET_(lab-automation-password)
+      adapter NetBox token = <not a reference>
+      integration netbox-api value = <not a reference>
+      integration netbox-latest value = <not a reference>
+FAIL  S8.3b the Gateway's Vault provider and aliases match the oracle (export compared)
+      provider lab-vault: []
+      aliases: []
+PASS  S8.3c the NetBox adapter reads NetBox with the token the Platform resolves from Vault
+      NetBox adapter (token from Vault through the Platform): 23 devices
+PASS  S8.3d every lab device logs in with its password resolved from Vault (show clock)
+      show clock with the Vault-held password: {'br1-sw01': True, 'br1-wan01': True, 'br2-sw01': True, 'br2-wan01': True, 'dc1-acc01': True, 'dc1-leaf01': True, 'dc1-leaf02': True, 'dc1-spine01': True, 'dc1-spine02': True, 'dc1-wan01': True, 'dc1-wan02': True, 'isp-core01': True}
+PASS  S8.3e every lab host logs in with its password resolved from Vault (hostname)
+      hostname on lab-hosts with the Vault-held password: {'br1-host01': True, 'br2-host01': True, 'dc1-srv01': True}
+
+passed=3 failed=2 skipped=7

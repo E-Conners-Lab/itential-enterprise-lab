@@ -205,6 +205,33 @@ def c_aws_psk() -> bool:
     return ok and same_role and live
 
 
+def c_terraform_run() -> bool:
+    """ADR 0068 step 4 (P1, P2, P7) end to end through the Platform's runService: terraform-run's probe clones the
+    private repo with the deploy key from Vault, gets the IAM key as environment variables from Vault, and reaches
+    AWS as itential-terraform (STS, then init against the S3 state backend). Reads only: no plan, nothing created.
+    Catches a Gateway whose deploy key, AWS key or Vault policy is missing before a real job does."""
+    d = Platform().call("POST", "/gateway_manager/v1/services/run",
+                        {"serviceName": V["terraform_run"]["service"]["name"], "clusterId": CLUSTER,
+                         "params": {"action": "probe"}})
+    if d.get("error"):
+        print(f"runService error: {str(d['error'].get('data'))[:300]}")
+        return False
+    res = d.get("result") or {}
+    out = res.get("stdout_json") or {}
+    checks = {
+        "return code 0": res.get("return_code") == 0,
+        "AWS key from Vault": out.get("aws_env_set") == ["AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY"],
+        "caller itential-terraform": str(out.get("sts_caller", "")).endswith(f":user/itential/{VAULT['aws']['iam_user']}"),
+        "backend init": out.get("backend_init") == "ok",
+        f"terraform {V['runner_terraform']['version']}": out.get("terraform") == V["runner_terraform"]["version"],
+    }
+    print(f"clone at {out.get('commit', '?')}, argv {out.get('argv')}, uid {out.get('uid')}; "
+          f"caller {out.get('sts_caller', '?')}")
+    for name, ok in checks.items():
+        print(f"  {'ok  ' if ok else 'FAIL'} {name}")
+    return all(checks.values())
+
+
 def c_seeded() -> bool:
     _, d = vault("GET", kv("devices/automation"), admin())
     same = sha(d["data"]["data"]["password"]) == sha(os.environ["DEVICE_PASSWORD"])
@@ -402,7 +429,7 @@ def c_sealed() -> bool:
     return ok and same
 
 
-CHECKS = {"sealed": c_sealed, "health": c_health, "no-token": c_no_token, "policies": c_policies, "bound": c_bound, "aws-psk": c_aws_psk, "seeded": c_seeded,
+CHECKS = {"sealed": c_sealed, "health": c_health, "no-token": c_no_token, "policies": c_policies, "bound": c_bound, "aws-psk": c_aws_psk, "terraform-run": c_terraform_run, "seeded": c_seeded,
           "references": c_references, "gateway": c_gateway, "devices": c_devices, "platform-read": c_platform_read,
           "rotation": c_rotation, "hosts": c_hosts}
 

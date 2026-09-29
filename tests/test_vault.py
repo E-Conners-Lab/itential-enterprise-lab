@@ -73,9 +73,13 @@ def test_oracle_pins_the_manifest_versions() -> None:
 
 
 def test_every_gateway_alias_points_at_a_seeded_key() -> None:
+    # or at one of the paths that are never seeded from .env: the AWS key and the deploy key (ADR 0068)
     v = _vault()
+    unseeded = {v["aws"]["key_path"]: {"access_key_id", "secret_access_key"},
+                v["git"]["deploy_key_path"]: {"private_key"}}
     for alias, ref in v["gateway_aliases"].items():
-        assert ref["key"] in v["secrets"][ref["path"]], alias
+        keys = v["secrets"][ref["path"]] if ref["path"] in v["secrets"] else unseeded.get(ref["path"], set())
+        assert ref["key"] in keys, alias
 
 
 def test_each_reader_reads_only_what_it_resolves() -> None:

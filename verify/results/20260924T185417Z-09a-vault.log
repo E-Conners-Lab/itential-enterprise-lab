@@ -1,0 +1,12 @@
+# test-09a-vault 20260924T185417Z
+SKIP  S8.2a Vault answers at vault.lab.internal over the lab CA and is unsealed
+PASS  S8.2g the service name resolves to the VIP versions.yaml gives it
+      vault.lab.internal -> 10.100.0.41 (want 10.100.0.41)
+SKIP  S8.2b a read of lab/devices/automation with no token is refused
+SKIP  S8.2c each reader's policy reads only its own paths (Gateway: devices yes; Platform: devices no, NetBox yes)
+SKIP  S8.2e each AppRole is bound to its own hosts (iap-01/02, iag-01): a valid secret ID from this machine is refused
+SKIP  S8.2d the device password in Vault equals the .env seed (one-way until Phase 9b)
+SKIP  S8.2f an off-host Raft snapshot exists on this workstation (ADR 0065 decision 8)
+NOTE  S8.3 (the Platform and the Gateway reading through Vault) is due at the cut-over, not before
+
+passed=1 failed=0 skipped=6
