@@ -65,7 +65,11 @@ terraform_run:
   repository:
     name: cloud-devops-pipeline
     description: "terraform-run's repository (ADR 0068), cloned with the read-only deploy key from Vault"
-    reference: main # reviewed code only: a feature branch is never the Gateway's reference
+    # A full commit SHA, never a branch or tag (security review 2026-09-29, ITL-01): the Gateway runs this code with the
+    # AWS key, so new cloud-devops-pipeline code runs only after a lab PR moves the pin, to a commit on its protected
+    # main whose required checks passed (verify S13.2c). Measured on dev 2026-09-29: an older SHA is checked out as
+    # given, an unknown one fails the service ("reference not found"). df62552 = main after cdp #7.
+    reference: "df62552ed9ae6307638e161385aa9ce11b313ff5"
   executable_object:
     name: python-3-12
     description: "the runner image's Python 3.12 (ADR 0038)"

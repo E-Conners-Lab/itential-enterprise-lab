@@ -189,7 +189,8 @@ def test_the_secrets_key_exists_before_anything_runs_compose_up() -> None:
 
 def test_terraform_run_uses_reviewed_code_and_vault_secrets_only() -> None:
     tr = VERSIONS["terraform_run"]
-    assert tr["repository"]["reference"] == "main"
+    # pinned to one commit: a branch or tag would let code nobody pinned run with the AWS key (ITL-01)
+    assert re.fullmatch(r"[0-9a-f]{40}", tr["repository"]["reference"]), tr["repository"]["reference"]
     aliases = VAULT["gateway_aliases"]
     services = {s["name"]: s for s in tr["services"]}
     assert set(services) == {"terraform-run", "aws-vpn-psk"}

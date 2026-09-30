@@ -233,7 +233,8 @@ Two more facts about Gateway 5 decide how Terraform runs:
 - **The import format** for the three items is the export's own (`repositories`, `executable-objects`,
   `services` with `type: executable`, `executable-object`, `arg-format`, `secrets: [{name, type, target}]`),
   measured by importing and comparing the export. `tasks/gateway-terraform-run.yml` does the same on every run;
-  the repository's reference is `main`, never a feature branch.
+  the repository's reference is a full commit SHA on the protected `main` (it was `main` itself until the
+  2026-09-29 security review: see "Pinned to a commit" below).
 - **The private repository** is cloned over SSH with a read-only deploy key whose private half is only in the
   tier's Vault (`make deploy-key TIER=dev|prod`, alias `cloud-devops-pipeline-deploy-key`).
 - **Two Gateway prerequisites the documentation lists but the lab had never needed**, because no earlier service
@@ -259,6 +260,37 @@ the netsdk device services and terraform-run. Any of them could read the runner'
 `/proc/<pid>/environ` of a running terraform-run, which holds the AWS key for that run. The isolation is per
 container, not per workload. Every workload on the runner is the lab's own code; the alternative, kept open, is a
 second runner that serves terraform-run only.
+
+## Pinned to a commit (2026-09-29, after the security review)
+
+The security review of 2026-09-29 found that `cloud-devops-pipeline`'s `main` had no branch protection and no CI,
+while the Gateway cloned `main` on every run and executed it with the AWS key (ITL-01, Critical): one push was code
+execution with the account's rights. Three changes close it:
+
+- **`main` is protected:** pull requests only, admins included, linear history, no force push or deletion. Six
+  required checks, bound to GitHub Actions: `pytest`, `terraform`, `checkov` (against a reviewed baseline),
+  `gitleaks`, `account-ids`, and `ci-guard`, which fails a PR that adds a scanner config file or an inline skip, and
+  requires the label `ci-change` on any PR that changes the checks (`cloud-devops-pipeline` #7). Signed commits are
+  not required (owner, 2026-09-29): every commit on `main` is a GitHub squash commit, which GitHub signs.
+- **The Gateway runs one pinned commit.** `terraform_run.repository.reference` is a full SHA, so a push to
+  `cloud-devops-pipeline` changes nothing the Gateway runs. Moving the pin is a change to this repository, and it
+  reaches a Gateway only through the operator's playbook run (`tasks/gateway-terraform-run.yml`), from whatever
+  checkout that run uses. This repository's own `main` does not yet require `pytest` or include admins in its
+  protection, so the gate on the pin itself is the operator's review plus the verify below, not branch protection.
+- **The verify proves both** (S13.2b, S13.2c). The probe must report the pinned commit. The pin must be a full SHA
+  on `main`, and every required check must have passed on it, from the app the protection binds it to (a
+  same-named run from another app does not count). A pin can name any commit, including one on an unmerged branch,
+  and the Gateway would run it.
+
+Measured on the dev tier (2026-09-29, `runService terraform-run --action probe` after each import of the repository
+item; the export read back each time):
+
+| Reference | Probe |
+|---|---|
+| `main` | rc 0, clone at the head of `main` |
+| an older commit of `main` | rc 0, clone at that commit: the pin is checked out as given |
+| the current head, by SHA | rc 0, clone at that commit |
+| a SHA that does not exist | rc 1, `reference not found`: the service does not run |
 
 ## Alternatives rejected
 
