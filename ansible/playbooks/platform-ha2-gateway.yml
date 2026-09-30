@@ -39,7 +39,7 @@
         owner: ubuntu
         group: ubuntu
         mode: "0644"
-      loop: [Dockerfile, requirements-terraform-run.txt, known_hosts]
+      loop: [Dockerfile, requirements-terraform-run.txt, requirements-lab-edge.txt, known_hosts]
       register: runner_dockerfile
 
     - name: Runner base image pulled by digest

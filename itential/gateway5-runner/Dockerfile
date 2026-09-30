@@ -33,6 +33,11 @@ os.chmod('/usr/local/bin/terraform', 0o755)" "$TERRAFORM_VERSION" "$TERRAFORM_SH
 COPY requirements-terraform-run.txt /tmp/requirements-terraform-run.txt
 RUN pip install --no-cache-dir --require-hashes --only-binary=:all: -r /tmp/requirements-terraform-run.txt \
  && rm /tmp/requirements-terraform-run.txt
+# netmiko for the lab-edge services (ADR 0068 step 6): the router sessions, every wheel checked against its pinned hash
+COPY requirements-lab-edge.txt /tmp/requirements-lab-edge.txt
+RUN pip install --no-cache-dir --require-hashes --only-binary=:all: -r /tmp/requirements-lab-edge.txt \
+ && rm /tmp/requirements-lab-edge.txt \
+ && python3 -c "import netmiko; print('netmiko', netmiko.__version__)"
 # GitHub's pinned host keys, where the runner's Gateway looks for them (~/.gateway.d/known_hosts, measured): without
 # them the SSH clone of terraform-run's repository stops at "knownhosts: key is unknown"
 # (the directory first: a COPY --chmod=600 would give the directory it creates the same mode, with no execute bit)
