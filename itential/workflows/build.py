@@ -3084,7 +3084,7 @@ def deploy_aws_vpn() -> dict:
         "4b": replace("PSK params", PSK_TPL, "__ARN__", "$var.4a.return_data", x=1900),
         "4c": parse("PSK params", "$var.4b.replacedString", x=2000),
         "4d": run_service("the pre-shared key: Vault, then Secrets Manager", "aws-vpn-psk", "$var.4c.textObject", "psk_result", x=2100),
-        "4e": evaluate("PSK written?", "4d", "result", "result.return_code", "==", 0, x=2200),
+        "4e": evaluate("key in place?", "4d", "result", "result.return_code", "==", 0, x=2200),
         "4f": jq("the PSK versions (never the PSK)", "$var.4d.result", "result.stdout_json", x=2300, to_job="psk"),
         # close out
         "5a": jq("the strongSwan EIP", "$var.job.outputs", "strongswan_eip", x=2400),
@@ -3113,7 +3113,7 @@ def deploy_aws_vpn() -> dict:
         ),
         "8d": note("the apply did not run", "the Gateway could not run terraform-run for the apply; check apply_result and AWS", "error", x=1500, y=-700),
         "8e": jq("why the apply stopped", "$var.3e.result", "result.stdout_json.error", x=1600, y=-700, to_job="error", optional=True),
-        "9a": note("the PSK step did not run", "applied, but the Gateway could not run aws-vpn-psk; the PSK is not in place yet", "error", x=2200, y=-1100),
+        "9a": note("the key step did not run", "applied, but the Gateway could not run aws-vpn-psk; the key may not be in place", "error", x=2200, y=-1100),
         "9b": jq("why the PSK step stopped", "$var.4d.result", "result.stdout_json.error", x=2300, y=-1100, to_job="error", optional=True),
     }
     tasks["5e"]["variables"]["outgoing"]["replacedString"] = "$var.job.outcome"

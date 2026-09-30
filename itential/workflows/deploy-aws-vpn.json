@@ -804,8 +804,8 @@
     "4e": {
       "name": "evaluation",
       "canvasName": "evaluation",
-      "summary": "PSK written?",
-      "description": "PSK written?",
+      "summary": "key in place?",
+      "description": "key in place?",
       "location": "Application",
       "locationType": null,
       "app": "WorkFlowEngine",
@@ -1424,8 +1424,8 @@
     "9a": {
       "name": "makeData",
       "canvasName": "makeData",
-      "summary": "the PSK step did not run",
-      "description": "the PSK step did not run",
+      "summary": "the key step did not run",
+      "description": "the key step did not run",
       "location": "Application",
       "locationType": null,
       "app": "WorkFlowEngine",
@@ -1438,7 +1438,7 @@
       },
       "variables": {
         "incoming": {
-          "input": "applied, but the Gateway could not run aws-vpn-psk; the PSK is not in place yet",
+          "input": "applied, but the Gateway could not run aws-vpn-psk; the key may not be in place",
           "outputType": "string",
           "variables": ""
         },
