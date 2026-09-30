@@ -14,6 +14,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import secrets
 import ssl
 import string
@@ -249,20 +250,30 @@ def c_cdp_pin() -> bool:
     name ANY commit, an unmerged branch's included, and the Gateway would run it with the AWS key; branch protection
     alone does not stop that. Reads GitHub only."""
     repo, pin = VAULT["git"]["repo"], V["terraform_run"]["repository"]["reference"]
+    # a branch name would pass every GitHub read below (main...main is "identical"): the pin must be a full SHA first
+    if not re.fullmatch(r"[0-9a-f]{40}", str(pin)):
+        print(f"  FAIL the pin is a full commit SHA (it is {pin!r})")
+        return False
     # "identical" or "ahead": main contains the pin. "behind" or "diverged": the pin is not on main
     status = gh(f"repos/{repo}/compare/{pin}...main", "--jq", ".status")
     protection = json.loads(gh(f"repos/{repo}/branches/main/protection"))
-    required = sorted(c["context"] for c in (protection.get("required_status_checks") or {}).get("checks") or [])
+    # each required check is bound to an app (GitHub Actions); a same-named run from any other app does not count
+    required = {(c["context"], c.get("app_id")) for c in (protection.get("required_status_checks") or {}).get("checks") or []}
     runs = json.loads(gh(f"repos/{repo}/commits/{pin}/check-runs?per_page=100", "--jq",
-                         "[.check_runs[] | {name, conclusion}]"))
-    passed = {r["name"] for r in runs if r["conclusion"] == "success"}
+                         "[.check_runs[] | {name, conclusion, app: .app.id}]"))
+
+    def passed(name: str, app: int | None) -> bool:
+        mine = [r["conclusion"] for r in runs if r["name"] == name and (app is None or r["app"] == app)]
+        return bool(mine) and all(c == "success" for c in mine)  # at least one run, and none that did not succeed
+
+    missing = sorted(f"{n}@{a}" for n, a in required if not passed(n, a))
     checks = {
         "the pin is on main": status in ("identical", "ahead"),
         "main requires checks, admins included": bool(required) and protection["enforce_admins"]["enabled"],
-        "every required check passed on the pin": bool(required) and set(required) <= passed,
+        "every required check passed on the pin, from its bound app": bool(required) and not missing,
     }
-    print(f"pin {pin[:12]}: main is {status} of it; required {', '.join(required) or 'none'}; "
-          f"passed on the pin {', '.join(sorted(passed)) or 'none'}")
+    print(f"pin {pin[:12]} vs main: {status}; required {', '.join(sorted(f'{n}@{a}' for n, a in required)) or 'none'}; "
+          f"not passed on the pin: {', '.join(missing) or 'none'}")
     for name, ok in checks.items():
         print(f"  {'ok  ' if ok else 'FAIL'} {name}")
     return all(checks.values())

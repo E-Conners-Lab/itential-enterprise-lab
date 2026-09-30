@@ -272,11 +272,14 @@ execution with the account's rights. Three changes close it:
   `gitleaks`, `account-ids`, and `ci-guard`, which fails a PR that adds a scanner config file or an inline skip, and
   requires the label `ci-change` on any PR that changes the checks (`cloud-devops-pipeline` #7). Signed commits are
   not required (owner, 2026-09-29): every commit on `main` is a GitHub squash commit, which GitHub signs.
-- **The Gateway runs one pinned commit.** `terraform_run.repository.reference` is a full SHA, so new code runs only
-  after a lab PR moves the pin. The token that owns the private repository can still turn its protection off; it
-  cannot move the pin without a reviewed lab PR.
-- **The verify proves both** (S13.2b, S13.2c). The probe must report the pinned commit. The pin must be on `main`,
-  and every required check must have passed on it. A pin can name any commit, including one on an unmerged branch,
+- **The Gateway runs one pinned commit.** `terraform_run.repository.reference` is a full SHA, so a push to
+  `cloud-devops-pipeline` changes nothing the Gateway runs. Moving the pin is a change to this repository, and it
+  reaches a Gateway only through the operator's playbook run (`tasks/gateway-terraform-run.yml`), from whatever
+  checkout that run uses. This repository's own `main` does not yet require `pytest` or include admins in its
+  protection, so the gate on the pin itself is the operator's review plus the verify below, not branch protection.
+- **The verify proves both** (S13.2b, S13.2c). The probe must report the pinned commit. The pin must be a full SHA
+  on `main`, and every required check must have passed on it, from the app the protection binds it to (a
+  same-named run from another app does not count). A pin can name any commit, including one on an unmerged branch,
   and the Gateway would run it.
 
 Measured on the dev tier (2026-09-29, `runService terraform-run --action probe` after each import of the repository
