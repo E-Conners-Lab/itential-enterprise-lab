@@ -3,12 +3,13 @@
 # included, which brings libstrongswan-standard-plugins - the gcm and openssl plugins behind aes256gcm16 and ecp256),
 # plus iptables and iproute2. One image, two roles: twin.sh (the strongSwan end) and nat.sh (the 1:1 NAT, the EIP).
 # Built on the clab VM by clab-host.yml; BASE is aws_twin.image.base, pinned by digest.
+# (dpkg-query records the installed versions: `swanctl --version` asks the running daemon, and exits 2 without one.)
 ARG BASE
 FROM ${BASE}
 RUN apt-get update \
  && DEBIAN_FRONTEND=noninteractive apt-get install -y strongswan strongswan-swanctl libstrongswan-standard-plugins iptables iproute2 \
  && rm -rf /var/lib/apt/lists/* \
- && swanctl --version \
+ && dpkg-query -W strongswan strongswan-swanctl libstrongswan-standard-plugins \
  && test -f /usr/lib/ipsec/plugins/libstrongswan-gcm.so \
  && test -f /usr/lib/ipsec/plugins/libstrongswan-openssl.so
 COPY charon-lab.conf /etc/strongswan.d/charon-lab.conf
