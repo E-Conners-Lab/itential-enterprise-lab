@@ -15,8 +15,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 0,
-        "y": 450
+        "x": -130,
+        "y": 1050
       },
       "variables": {
         "incoming": {
@@ -45,8 +45,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 0,
-        "y": 600
+        "x": -130,
+        "y": 1200
       },
       "variables": {
         "incoming": {
@@ -75,8 +75,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 0,
-        "y": 750
+        "x": -140,
+        "y": 1350
       },
       "variables": {
         "incoming": {
@@ -105,8 +105,8 @@
       "displayName": "GatewayManager",
       "groups": [],
       "nodeLocation": {
-        "x": -280,
-        "y": 900
+        "x": -420,
+        "y": 1500
       },
       "variables": {
         "incoming": {
@@ -135,8 +135,8 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": -250,
-        "y": 1050
+        "x": -390,
+        "y": 1650
       },
       "variables": {
         "incoming": {
@@ -181,8 +181,8 @@
       "displayName": "GatewayManager",
       "groups": [],
       "nodeLocation": {
-        "x": 530,
-        "y": 1800
+        "x": 520,
+        "y": 2400
       },
       "variables": {
         "incoming": {
@@ -213,8 +213,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 870,
-        "y": 2250
+        "x": 860,
+        "y": 2850
       },
       "variables": {
         "incoming": {
@@ -243,8 +243,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 20,
-        "y": 900
+        "x": -120,
+        "y": 1500
       },
       "variables": {
         "incoming": {
@@ -273,8 +273,8 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 90,
-        "y": 1200
+        "x": -510,
+        "y": 1800
       },
       "variables": {
         "incoming": {
@@ -301,8 +301,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": -110,
-        "y": 1350
+        "x": -280,
+        "y": 1950
       },
       "variables": {
         "incoming": {
@@ -333,8 +333,8 @@
       "displayName": "GatewayManager",
       "groups": [],
       "nodeLocation": {
-        "x": 120,
-        "y": 1500
+        "x": -70,
+        "y": 2100
       },
       "variables": {
         "incoming": {
@@ -368,8 +368,8 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 230,
-        "y": 1650
+        "x": 220,
+        "y": 2250
       },
       "variables": {
         "incoming": {
@@ -414,8 +414,8 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 230,
-        "y": 1800
+        "x": 70,
+        "y": 2400
       },
       "variables": {
         "incoming": {
@@ -442,8 +442,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 180,
-        "y": 1950
+        "x": 170,
+        "y": 2550
       },
       "variables": {
         "incoming": {
@@ -472,8 +472,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": -160,
-        "y": 1650
+        "x": -340,
+        "y": 2250
       },
       "variables": {
         "incoming": {
@@ -502,8 +502,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 0,
-        "y": 150
+        "x": -110,
+        "y": 750
       },
       "variables": {
         "incoming": {
@@ -532,8 +532,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 0,
-        "y": 300
+        "x": -120,
+        "y": 900
       },
       "variables": {
         "incoming": {
@@ -560,8 +560,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": -550,
-        "y": 1050
+        "x": -690,
+        "y": 1650
       },
       "variables": {
         "incoming": {
@@ -590,8 +590,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": -810,
-        "y": 1200
+        "x": -1260,
+        "y": 1800
       },
       "variables": {
         "incoming": {
@@ -620,8 +620,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 710,
-        "y": 2100
+        "x": 700,
+        "y": 2700
       },
       "variables": {
         "incoming": {
@@ -650,8 +650,8 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 830,
-        "y": 1950
+        "x": 820,
+        "y": 2550
       },
       "variables": {
         "incoming": {
@@ -696,8 +696,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": -510,
-        "y": 1200
+        "x": -960,
+        "y": 1800
       },
       "variables": {
         "incoming": {
@@ -726,8 +726,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": -150,
-        "y": 1800
+        "x": -330,
+        "y": 2400
       },
       "variables": {
         "incoming": {
@@ -737,6 +737,193 @@
         },
         "outgoing": {
           "output": "$var.job.changed"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "9a01": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "input to check: device",
+      "description": "input to check: device",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 0,
+        "y": 150
+      },
+      "variables": {
+        "incoming": {
+          "obj": {},
+          "path": [
+            "device"
+          ],
+          "value": "$var.job.device"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "9a02": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "input to check: reason",
+      "description": "input to check: reason",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 0,
+        "y": 300
+      },
+      "variables": {
+        "incoming": {
+          "obj": "$var.9a01.object",
+          "path": [
+            "reason"
+          ],
+          "value": "$var.job.reason"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "9a0a": {
+      "name": "validateJsonSchema",
+      "canvasName": "validateJsonSchema",
+      "summary": "check the inputs",
+      "description": "check the inputs",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 0,
+        "y": 450
+      },
+      "variables": {
+        "incoming": {
+          "jsonData": "$var.9a02.object",
+          "schema": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "device",
+              "reason"
+            ],
+            "properties": {
+              "device": {
+                "type": "string",
+                "pattern": "^[a-z0-9][a-z0-9-]{0,62}$"
+              },
+              "reason": {
+                "type": "string",
+                "maxLength": 500,
+                "pattern": "^[^<>]*$"
+              }
+            }
+          }
+        },
+        "outgoing": {
+          "result": "$var.job.input_check"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "9a0b": {
+      "name": "evaluation",
+      "canvasName": "evaluation",
+      "summary": "inputs valid?",
+      "description": "inputs valid?",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": -100,
+        "y": 600
+      },
+      "variables": {
+        "incoming": {
+          "all_true_flag": true,
+          "evaluation_groups": [
+            {
+              "all_true_flag": true,
+              "evaluations": [
+                {
+                  "query": "valid",
+                  "operand_1": {
+                    "variable": "result",
+                    "task": "9a0a"
+                  },
+                  "operator": "==",
+                  "operand_2": {
+                    "variable": true,
+                    "task": "static"
+                  }
+                }
+              ]
+            }
+          ],
+          "options": {}
+        },
+        "outgoing": {
+          "return_value": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "9a0c": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "the inputs were refused",
+      "description": "the inputs were refused",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 500,
+        "y": 750
+      },
+      "variables": {
+        "incoming": {
+          "input": "the inputs were refused before anything ran (see input_check for which input and why): nothing was sent to a device",
+          "outputType": "string",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.device_error"
         },
         "error": "",
         "decorators": []
@@ -758,14 +945,14 @@
       "summary": "workflow_end",
       "groups": [],
       "nodeLocation": {
-        "x": 100,
-        "y": 2400
+        "x": 250,
+        "y": 3000
       }
     }
   },
   "transitions": {
     "workflow_start": {
-      "0a": {
+      "9a01": {
         "state": "success",
         "type": "standard"
       }
@@ -939,6 +1126,44 @@
         "type": "standard"
       }
     },
+    "9a01": {
+      "9a02": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "9a02": {
+      "9a0a": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "9a0a": {
+      "9a0b": {
+        "state": "success",
+        "type": "standard"
+      },
+      "9a0c": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "9a0b": {
+      "0a": {
+        "state": "success",
+        "type": "standard"
+      },
+      "9a0c": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "9a0c": {
+      "workflow_end": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
     "workflow_end": {}
   },
   "groups": [],
@@ -985,6 +1210,9 @@
       },
       "save_error": {
         "type": "string"
+      },
+      "input_check": {
+        "type": "object"
       }
     }
   },
