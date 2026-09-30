@@ -169,6 +169,11 @@ on its own address:
 the reserved range, outside every prefix in section 1 and away from the in-band /16s. 10.100.3.0/24 holds
 the topology's point-to-point links, loopbacks and VLANs and never leaves the host.
 
+**The AWS end's twin (itential-enterprise-lab step 6).** clab-rtr1's front door and the twin use two ranges that live
+only inside the clab VM, on point-to-point container links, never routed anywhere: 198.51.100.0/24 (TEST-NET-2, the
+twin's "internet": clab-rtr1 Gi4 .2, the NAT's "EIP" .20) and 10.0.1.0/24 (inside the pinned AWS VPC range
+10.0.0.0/16, the twin's "VPC": the NAT .1, the twin .10). See `clab/README.md`.
+
 ## 4. Lab DNS
 
 | Item | Value | Why |

@@ -3,7 +3,8 @@
 # Order: device password persisted before use -> topology and startup configs rendered from clab/versions.yaml
 # -> deploy only when something changed or a node is down -> allowlist re-applied -> every node answers SSH as
 # the automation user -> C8000v licence level (one reload when needed) -> OSPF and BGP converge as the oracle
-# says. The devices are never registered in NetBox (clab/versions.yaml header).
+# says -> the AWS end's twin (clab/versions.yaml aws_twin) and clab-rtr1's Hand Off prerequisites. The devices are
+# never registered in NetBox (clab/versions.yaml header).
 - name: Clab device password, persisted before use
   hosts: localhost
   connection: local
@@ -46,6 +47,16 @@
     clab_password: "{{ hostvars['localhost'].clab_password }}"
     devcmd: /opt/clab/devcmd.py
     routers: "{{ nodes | selectattr('kind', 'equalto', 'cisco_c8000v') | list }}"
+    # the AWS end's twin: two containers beside the devices (clab/versions.yaml aws_twin), never in the device loops
+    twin_dir: "{{ lab_dir }}/aws-twin"
+    twin_containers: ["clab-dev-{{ aws_twin.nat.name }}", "clab-dev-{{ aws_twin.twin.name }}"]
+    device_names: "{{ nodes | map(attribute='name') | map('regex_replace', '^', 'clab-dev-') | list }}"
+    # the twin's connection template: cloud-devops-pipeline at the commit the Gateway runs, from the local clone
+    cdp_repo: >-
+      {{ lookup('ansible.builtin.env', 'CDP_REPO_DIR')
+         or (lookup('ansible.builtin.env', 'HOME') ~ '/PycharmProjects/cloud-devops-pipeline') }}
+    cdp_pin: "{{ (lookup('ansible.builtin.file', '../../itential/versions.yaml') | from_yaml).terraform_run.repository.reference }}"
+    twin_template: terraform/modules/vpn/swanctl.conf.tftpl
     # one startup-config template per kind; a kind without one fails the render instead of borrowing another's
     config_template: {cisco_c8000v: c8000v, arista_veos: veos}
     # OSPF: every link runs area 0 (the routed /31s and the switch pair's Vlan99), so a node's FULL
@@ -65,9 +76,61 @@
       {%- endfor -%}
       {{ out }}
   tasks:
+    # The twin's connection is cloud-devops-pipeline's own swanctl.conf.tftpl at the commit the Gateway runs
+    # (itential/versions.yaml terraform_run.repository.reference), read from the local clone (CDP_REPO_DIR, default
+    # ~/PycharmProjects/cloud-devops-pipeline), so the AWS box and its twin can never drift apart.
+    # git show / cat-file read one file at a commit; the git module only checks out (hence the two noqa)
+    - name: The pinned cloud-devops-pipeline commit is in the local clone
+      register: cdp_commit
+      failed_when: false
+      delegate_to: localhost
+      become: false
+      run_once: true
+      ansible.builtin.command: git -C {{ cdp_repo }} cat-file -e {{ cdp_pin }}^{commit}  # noqa: command-instead-of-module
+      changed_when: false
+
+    - name: The clone holds the pinned commit (else fetch it; the play needs the clone on every run)
+      ansible.builtin.assert:
+        that: cdp_commit.rc == 0
+        fail_msg: "{{ cdp_repo }} has no commit {{ cdp_pin }}: run `git -C {{ cdp_repo }} fetch` (or set CDP_REPO_DIR)"
+        quiet: true
+      delegate_to: localhost
+      become: false
+      run_once: true
+
+    - name: The twin's swanctl.conf, filled in from clab/versions.yaml (only $PSK left, put in at the twin's start)
+      delegate_to: localhost
+      become: false
+      run_once: true
+      ansible.builtin.command: git -C {{ cdp_repo }} show {{ cdp_pin }}:{{ twin_template }}  # noqa: command-instead-of-module
+      register: swanctl_tftpl
+      changed_when: false
+
+    - name: Twin connection rendered
+      delegate_to: localhost
+      become: false
+      run_once: true
+      ansible.builtin.set_fact:
+        twin_swanctl: >-
+          {{ swanctl_tftpl.stdout
+             | replace('${onprem_public_ip}', aws_twin.front_door.ip.split('/')[0])
+             | replace('${local_id}', aws_twin.ids.aws) | replace('${remote_id}', aws_twin.ids.lab)
+             | replace('${if_id}', aws_twin.tunnel.if_id | string) }}
+
+    - name: Every placeholder but the key is filled
+      delegate_to: localhost
+      become: false
+      run_once: true
+      ansible.builtin.assert:
+        that:
+          - "'${' not in twin_swanctl"
+          - "'$PSK' in twin_swanctl"
+          - "'remote_addrs = ' ~ aws_twin.front_door.ip.split('/')[0] in twin_swanctl"
+        quiet: true
+
     - name: Both images are in Docker (clab-host.yml after images/fetch.sh clab-load)
       ansible.builtin.command: docker image inspect {{ item }}
-      loop: ["{{ images.veos.tag }}", "{{ images.c8000v.tag }}"]
+      loop: ["{{ images.veos.tag }}", "{{ images.c8000v.tag }}", "{{ aws_twin.image.tag }}"]
       changed_when: false
 
     - name: Lab directories, 0700 because the configs carry the device password
@@ -75,7 +138,7 @@
         path: "{{ item }}"
         state: directory
         mode: "0700"
-      loop: ["/opt/clab", "{{ lab_dir }}", "{{ lab_dir }}/configs"]
+      loop: ["/opt/clab", "{{ lab_dir }}", "{{ lab_dir }}/configs", "{{ twin_dir }}"]
 
     - name: Topology (clab/dev.clab.yml.j2, no secret)
       ansible.builtin.template:
@@ -95,6 +158,41 @@
         label: "{{ node.name }}"
       register: cfg_files
       no_log: true
+
+    # --- the twin's files (no device password; the twin's key stays on this VM, 0600, never in the repo or a job) ---
+    - name: Twin key, generated once on the clab VM (the dev twin's own; build step 6 moves it to the dev Vault)
+      ansible.builtin.shell:
+        cmd: umask 077 && head -c 64 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | head -c 40 > psk && test -s psk
+        chdir: "{{ twin_dir }}"
+        creates: "{{ twin_dir }}/psk"
+      no_log: true
+
+    - name: Twin and NAT values (clab/versions.yaml aws_twin)
+      ansible.builtin.copy:
+        dest: "{{ twin_dir }}/{{ item.file }}"
+        content: "{{ item.content }}"
+        mode: "0600"
+      loop:
+        - file: nat.env
+          content: |
+            OUTSIDE_ADDR={{ aws_twin.nat.outside.ip }}
+            INSIDE_ADDR={{ aws_twin.nat.inside.ip }}
+            EIP={{ aws_twin.nat.outside.ip.split('/')[0] }}
+            TWIN_IP={{ aws_twin.twin.ip.split('/')[0] }}
+        - file: twin.env
+          content: |
+            TWIN_ADDR={{ aws_twin.twin.ip }}
+            VPC_GATEWAY={{ aws_twin.nat.inside.ip.split('/')[0] }}
+            IF_ID={{ aws_twin.tunnel.if_id }}
+            TUNNEL_LOCAL_INNER={{ aws_twin.tunnel.aws_inner }}
+            TUNNEL_REMOTE_INNER={{ aws_twin.tunnel.router_inner.split('/')[0] }}
+            PEER={{ aws_twin.front_door.ip.split('/')[0] }}
+            LAB_PREFIXES="{{ aws_twin.lab_prefixes | join(' ') }}"
+        - file: swanctl.conf.template
+          content: "{{ twin_swanctl }}\n"
+      loop_control:
+        label: "{{ item.file }}"
+      register: twin_files
 
     - name: Device SSH helper (verify/devcmd.py, the same code the verify runs from the Mac)
       ansible.builtin.copy:
@@ -118,6 +216,15 @@
           {%- set rows = (j.values() | list | flatten) if j is mapping else j -%}
           {{ rows | selectattr('state', 'equalto', 'running') | list | length }}
 
+    # the devices alone decide a redeploy: a stopped twin container must not reboot every device (see below)
+    - name: Running device count (the twin's containers not counted)
+      ansible.builtin.set_fact:
+        devices_running: >-
+          {%- set out = inspect_before.stdout | default('') | trim -%}
+          {%- set j = (out | from_json) if inspect_before.rc == 0 and out[:1] in ['{', '['] else [] -%}
+          {%- set rows = (j.values() | list | flatten) if j is mapping else j -%}
+          {{ rows | selectattr('state', 'equalto', 'running') | selectattr('name', 'in', device_names) | list | length }}
+
     # --reconfigure rebuilds the lab directory so a changed startup config is really applied; every node is a
     # vrnetlab VM and boots again (C8000v 10-20 min, vEOS about 4 min, nested), which is why an unchanged,
     # healthy lab is left alone.
@@ -125,7 +232,20 @@
       ansible.builtin.command:
         cmd: containerlab deploy -t {{ topo }} --reconfigure
         chdir: "{{ lab_dir }}"
-      when: topo_file is changed or cfg_files is changed or (running_before | int) < (nodes | length)
+      when: topo_file is changed or cfg_files is changed or (devices_running | int) < (nodes | length)
+      register: deployed
+      changed_when: true
+
+    # only the twin's own files changed: re-apply them inside the running containers. Never `docker restart`: a new
+    # network namespace would leave containerlab's links (clab-rtr1's front door included) behind in the old one
+    - name: Twin reloaded in place on a changed file
+      ansible.builtin.command: docker exec {{ item.container }} /usr/local/sbin/{{ item.script }} reload
+      loop:
+        - {container: "clab-dev-{{ aws_twin.nat.name }}", script: nat.sh}
+        - {container: "clab-dev-{{ aws_twin.twin.name }}", script: twin.sh}
+      loop_control:
+        label: "{{ item.container }}"
+      when: deployed is skipped and twin_files is changed
       changed_when: true
 
     - name: Allowlist re-applied after the deploy (clab-host.yml installed it)
@@ -145,9 +265,23 @@
       vars:
         j: "{{ inspect_after.stdout | from_json }}"
         rows: "{{ (j.values() | list | flatten) if j is mapping else j }}"
+        # the twin's containers have no management address (network-mode none)
         running_ips: >-
-          {{ rows | selectattr('state', 'equalto', 'running') | map(attribute='ipv4_address')
-             | map('regex_replace', '/[0-9]+$', '') | sort }}
+          {{ rows | selectattr('state', 'equalto', 'running') | rejectattr('name', 'in', twin_containers)
+             | map(attribute='ipv4_address') | map('regex_replace', '/[0-9]+$', '') | sort }}
+
+    - name: Both twin containers running
+      ansible.builtin.assert:
+        that: not_running | length == 0
+        fail_msg: >-
+          not running: {{ not_running }}. A container start cannot restore containerlab's links, and the fix is
+          `containerlab deploy --reconfigure`, which boots every device again and wipes clab-rtr1's master key and
+          `password encryption aes` (the owner sets them again, spec Appendix A) - so it is never done automatically
+        quiet: true
+      vars:
+        j: "{{ inspect_after.stdout | from_json }}"
+        rows: "{{ (j.values() | list | flatten) if j is mapping else j }}"
+        not_running: "{{ twin_containers | difference(rows | selectattr('state', 'equalto', 'running') | map(attribute='name')) }}"
 
     # vrnetlab opens the container's port 22 before IOS XE or EOS is up, and the automation user exists only once
     # vrnetlab has typed the startup config in, so readiness is a real login, not a port
@@ -308,5 +442,73 @@
         | length == 0
       retries: 30
       delay: 10
+      changed_when: false
+      no_log: true
+
+    # --- the AWS end's twin and clab-rtr1's Hand Off prerequisites ------------------------------------------------
+    - name: The NAT maps the "EIP" to the twin both ways
+      ansible.builtin.command: docker exec clab-dev-{{ aws_twin.nat.name }} iptables -t nat -S
+      register: nat_rules
+      until: >-
+        nat_rules.rc == 0
+        and ('--to-destination ' ~ aws_twin.twin.ip.split('/')[0]) in nat_rules.stdout
+        and ('--to-source ' ~ aws_twin.nat.outside.ip.split('/')[0]) in nat_rules.stdout
+      retries: 12
+      delay: 5
+      changed_when: false
+
+    - name: The twin has its XFRM interface and its connection loaded
+      ansible.builtin.shell:
+        cmd: >-
+          docker exec clab-dev-{{ aws_twin.twin.name }} ip -br link show xfrm{{ aws_twin.tunnel.if_id }}
+          && docker exec clab-dev-{{ aws_twin.twin.name }} swanctl --list-conns
+      register: twin_state
+      until: twin_state.rc == 0 and 'lab:' in twin_state.stdout and 'lab-child:' in twin_state.stdout
+      retries: 12
+      delay: 5
+      changed_when: false
+
+    - name: Router clab-rtr1 reaches the "EIP" on its front door (ARP resolved in VRF {{ aws_twin.front_door.vrf }})
+      ansible.builtin.shell:
+        cmd: >-
+          python3 {{ devcmd }} {{ twin_router.mgmt_ipv4 }} "ping vrf {{ aws_twin.front_door.vrf }} {{ eip }} repeat 2 timeout 1";
+          python3 {{ devcmd }} {{ twin_router.mgmt_ipv4 }} "show ip arp vrf {{ aws_twin.front_door.vrf }} {{ eip }}"
+      environment:
+        AUTOMATION_PASSWORD: "{{ clab_password }}"
+      vars:
+        twin_router: "{{ nodes | selectattr('name', 'equalto', aws_twin.router) | first }}"
+        eip: "{{ aws_twin.nat.outside.ip.split('/')[0] }}"
+      register: front_arp
+      until: front_arp.rc == 0 and (eip ~ ' ') in front_arp.stdout and 'Incomplete' not in front_arp.stdout
+      retries: 6
+      delay: 10
+      changed_when: false
+      no_log: true
+
+    - name: The ping reached the twin through the NAT (its firewall dropped it, as the AWS box's would)
+      ansible.builtin.command: docker exec clab-dev-{{ aws_twin.twin.name }} iptables -L INPUT -n -v -x
+      register: twin_input
+      failed_when: >-
+        twin_input.rc != 0
+        or (twin_input.stdout_lines[0].split('policy DROP ')[-1].split(' ')[0] | int) == 0
+      changed_when: false
+
+    - name: Router clab-rtr1 holds the prerequisites lab-edge's precheck reads (the master key aside, the owner's)
+      ansible.builtin.command: python3 {{ devcmd }} {{ twin_router.mgmt_ipv4 }} "{{ item.cmd }}"
+      environment:
+        AUTOMATION_PASSWORD: "{{ clab_password }}"
+      vars:
+        twin_router: "{{ nodes | selectattr('name', 'equalto', aws_twin.router) | first }}"
+      loop:
+        - cmd: show ip access-lists INET-IN
+          want: ["10 deny ip any any fragments", "20 deny udp any host", "30 deny udp any host", "1000 deny ip any any log"]
+        - {cmd: "show running-config | section ^archive", want: ["path bootflash:rb-", "hidekeys"]}
+        - {cmd: "show running-config | include ^zone security", want: ["zone security INSIDE", "zone security AWS"]}
+        - {cmd: "show running-config | section ^line vty", want: ["access-class MGMT-ONLY in vrf-also"]}
+        - {cmd: "show running-config | section ^crypto ikev2 keyring CANARY", want: ["pre-shared-key"]}
+      loop_control:
+        label: "{{ item.cmd }}"
+      register: prereq
+      failed_when: prereq.rc != 0 or (item.want | reject('in', prereq.stdout) | list | length) > 0
       changed_when: false
       no_log: true

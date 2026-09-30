@@ -309,7 +309,9 @@ def test_topology_renders_from_the_oracle(env: jinja2.Environment, oracle: dict)
     assert topo["mgmt"]["bridge"] == oracle["mgmt"]["bridge"]
     assert topo["mgmt"]["external-access"] is False, "clab-host.yml's allowlist is the only gate"
     rendered = topo["topology"]["nodes"]
-    assert set(rendered) == {n["name"] for n in oracle["nodes"]}
+    # the devices, and the AWS end's two twin containers (tests/test_clab_aws_twin.py holds those)
+    twin = {oracle["aws_twin"]["nat"]["name"], oracle["aws_twin"]["twin"]["name"]}
+    assert set(rendered) == {n["name"] for n in oracle["nodes"]} | twin
     for n in oracle["nodes"]:
         assert rendered[n["name"]]["mgmt-ipv4"] == n["mgmt_ipv4"]
         assert rendered[n["name"]]["kind"] == n["kind"]
@@ -325,7 +327,7 @@ def test_topology_renders_from_the_oracle(env: jinja2.Environment, oracle: dict)
     }
     assert "pmu=off" in oracle["images"]["veos"]["cpu"].split(",")
     assert topo["topology"]["kinds"]["cisco_c8000v"]["env"] == {"QEMU_MEMORY": str(oracle["images"]["c8000v"]["ram_mb"])}
-    assert [l["endpoints"] for l in topo["topology"]["links"]] == [
+    assert [l["endpoints"] for l in topo["topology"]["links"]][: len(oracle["links"])] == [
         [f"{l['a']['node']}:{l['a']['endpoint']}", f"{l['b']['node']}:{l['b']['endpoint']}"] for l in oracle["links"]
     ]
 

@@ -32,7 +32,31 @@ topology:
       labels:
         role: {{ node.role }}
 {% endfor %}
+{% if aws_twin is defined %}
+    # the AWS end's twin (clab/versions.yaml aws_twin): containers, not devices - no management network, no SSH
+    {{ aws_twin.nat.name }}:
+      kind: linux
+      image: {{ aws_twin.image.tag }}
+      network-mode: none
+      cap-add: [NET_ADMIN]
+      sysctls:
+        net.ipv4.ip_forward: 1
+      binds: ["aws-twin/nat.env:/etc/aws-twin/nat.env:ro"]
+      cmd: /usr/local/sbin/nat.sh
+    {{ aws_twin.twin.name }}:
+      kind: linux
+      image: {{ aws_twin.image.tag }}
+      network-mode: none
+      cap-add: [NET_ADMIN]
+      binds: ["aws-twin/twin.env:/etc/aws-twin/twin.env:ro", "aws-twin/psk:/etc/aws-twin/psk:ro",
+              "aws-twin/swanctl.conf.template:/etc/aws-twin/swanctl.conf.template:ro"]
+      cmd: /usr/local/sbin/twin.sh
+{% endif %}
   links:
 {% for link in links %}
     - endpoints: ["{{ link.a.node }}:{{ link.a.endpoint }}", "{{ link.b.node }}:{{ link.b.endpoint }}"]
 {% endfor %}
+{% if aws_twin is defined %}
+    - endpoints: ["{{ aws_twin.router }}:{{ aws_twin.front_door.endpoint }}", "{{ aws_twin.nat.name }}:{{ aws_twin.nat.outside.endpoint }}"]
+    - endpoints: ["{{ aws_twin.nat.name }}:{{ aws_twin.nat.inside.endpoint }}", "{{ aws_twin.twin.name }}:{{ aws_twin.twin.endpoint }}"]
+{% endif %}
