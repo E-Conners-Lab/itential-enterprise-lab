@@ -81,6 +81,8 @@ def test_the_twin_image_is_pinned_by_digest() -> None:
     # aes256gcm16 / ecp256), the plugins named, and the build fails without them
     assert "install -y strongswan strongswan-swanctl libstrongswan-standard-plugins iptables iproute2" in docker
     assert "--no-install-recommends" not in docker
+    # nothing in the build may need a running charon (`swanctl --version` queries the daemon: exit 2 at build time)
+    assert "swanctl --" not in docker.split("RUN", 1)[1].split("COPY", 1)[0]
     for plugin in ("gcm", "openssl"):
         assert f"test -f /usr/lib/ipsec/plugins/libstrongswan-{plugin}.so" in docker
 
