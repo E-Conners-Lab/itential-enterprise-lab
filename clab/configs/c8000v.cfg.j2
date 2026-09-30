@@ -2,7 +2,9 @@
     vrnetlab prepends its own bootstrap (hostname, its admin user, GigabitEthernet1 in VRF clab-mgmt with the
     containerlab mgmt address), so this file never touches GigabitEthernet1.
     Inputs: the oracle, `node` (one nodes[] row) and `clab_password` (CLAB_AUTOMATION_PASSWORD, never a literal). -#}
-{% set masks = {'31': '255.255.255.254', '32': '255.255.255.255'} %}
+{% set masks = {'24': '255.255.255.0', '31': '255.255.255.254', '32': '255.255.255.255'} %}
+{% set wildcards = {'22': '0.0.3.255', '24': '0.0.0.255', '32': '0.0.0.0'} %}
+{% set twin_router = aws_twin is defined and node.name == aws_twin.router %}
 {% set by_name = {} %}
 {% for n in nodes %}{% set _ = by_name.update({n.name: n}) %}{% endfor -%}
 hostname {{ node.name }}
@@ -27,7 +29,67 @@ ip ssh version 2
 line vty 0 4
  login authentication default
  transport input ssh
+{% if twin_router %}
+ access-class MGMT-ONLY in vrf-also
+line vty 5 15
+ access-class MGMT-ONLY in vrf-also
+{% endif %}
 !
+{% if twin_router %}
+{% set fd = aws_twin.front_door %}
+{% set fd_addr, fd_plen = fd.ip.split('/') %}
+{# The lab edge's prerequisites for Hand Off AWS VPN (itential-enterprise-lab step 6; spec section 5), as dc1-wan01 will
+    carry them: lab-edge's precheck reads each one. The management plane admits only access_allow and the clab host's
+    own bridge address; the archive has the path the revert timer needs and hides keys; the zones exist with the
+    transit interfaces in INSIDE; the front door is VRF INET with INET-IN closed (slots 20/30 hold the placeholders the
+    Hand Off block swaps for IKE from the peer). Turning on AES encryption of stored keys, and the master one, are the
+    owner's steps (spec Appendix A); CANARY exists so the precheck can see keys stored as type 6 once those are set: a
+    throwaway value (aws_twin.canary_key) for a peer that does not exist (TEST-NET-1). #}
+ip access-list standard MGMT-ONLY
+{% for src in access_allow + [mgmt.gateway ~ '/32'] %}
+{% set net, plen = src.split('/') %}
+ permit {{ net }} {{ wildcards[plen] }}
+{% endfor %}
+!
+archive
+ path bootflash:rb-
+ maximum 5
+ log config
+  logging enable
+  hidekeys
+!
+crypto ikev2 keyring CANARY
+ peer canary
+  address 192.0.2.1
+  pre-shared-key {{ aws_twin.canary_key }}
+!
+zone security INSIDE
+zone security AWS
+!
+vrf definition {{ fd.vrf }}
+ address-family ipv4
+ exit-address-family
+!
+ip access-list extended INET-IN
+ 10 deny ip any any fragments
+ 20 deny udp any host {{ fd_addr }} eq isakmp log
+ 30 deny udp any host {{ fd_addr }} eq non500-isakmp log
+ 40 permit icmp any host {{ fd_addr }} echo-reply
+ 50 permit icmp any host {{ fd_addr }} unreachable
+ 60 permit icmp any host {{ fd_addr }} time-exceeded
+ 1000 deny ip any any log
+!
+interface {{ fd.ifname }}
+ description front door to {{ aws_twin.nat.name }} (the twin's stand-in for the internet)
+ vrf forwarding {{ fd.vrf }}
+ ip address {{ fd_addr }} {{ masks[fd_plen] }}
+ ip access-group INET-IN in
+ no ip unreachables
+ no ip redirects
+ no ip proxy-arp
+ no shutdown
+!
+{% endif %}
 interface Loopback0
  ip address {{ node.loopback }} 255.255.255.255
  ip ospf {{ routing.ospf.process }} area {{ routing.ospf.area }}
@@ -40,6 +102,9 @@ interface {{ side.ifname }}
  ip address {{ addr }} {{ masks[plen] }}
  ip ospf network point-to-point
  ip ospf {{ routing.ospf.process }} area {{ routing.ospf.area }}
+{% if twin_router %}
+ zone-member security INSIDE
+{% endif %}
  no shutdown
 !
 {% endfor %}

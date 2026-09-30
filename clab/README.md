@@ -18,6 +18,20 @@ EVE-NG lab or production (ADR 0063, PID S10.6-S10.12). It runs on VM 230, `clab`
 | `dev.clab.yml.j2` | The containerlab topology. Holds no secret |
 | `configs/c8000v.cfg.j2`, `configs/veos.cfg.j2` | Startup configs per kind. The device password comes only from `CLAB_AUTOMATION_PASSWORD` |
 | `docker-user.sh.j2` | The DOCKER-USER allowlist for the mgmt bridge, installed with a systemd unit by `clab-host.yml` |
+| `aws-twin/` | The AWS VPN box's twin (below): one image, built on the VM by `clab-host.yml` from an Ubuntu 22.04 base pinned by digest |
+
+## The AWS end's twin (itential-enterprise-lab step 6)
+
+Hand Off and Verify AWS VPN are proven here before they touch dc1-wan01. clab-rtr1's GigabitEthernet4 is a front door in
+VRF INET (198.51.100.2, TEST-NET-2), like dc1-wan01's Gi7; behind it `clab-aws-nat` does a 1:1 NAT like an EIP
+(198.51.100.20) to `clab-aws-twin` (10.0.1.10 in the pinned AWS VPC range), which runs strongSwan as the AWS box does:
+the same package, the XFRM interface and firewall of its user data, and the connection from cloud-devops-pipeline's
+`swanctl.conf.tftpl` at the commit `terraform_run` pins. The two are `kind: linux` containers kept out of `nodes` and
+`links`: no management address (network-mode none), no SSH, never in an Itential inventory or NetBox; they are reached
+with `docker exec` on the VM. clab-rtr1 also carries what lab-edge's precheck reads (INET-IN with its IKE placeholders,
+the management ACL on the vty lines, the archive with `hidekeys`, the zones with Gi2 and Gi3 in INSIDE, a canary
+keyring); its master key and `password encryption aes` are the owner's (spec Appendix A). The twin's key is generated
+once on the VM (0600); build step 6 moves it to the dev Vault. `tests/test_clab_aws_twin.py` holds all of it.
 
 ## Addressing and access
 

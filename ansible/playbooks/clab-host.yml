@@ -342,6 +342,39 @@
         label: "{{ item.1.item }}"
       when: item.0.stat.exists
 
+    # --- the AWS end's twin (clab/versions.yaml aws_twin; itential-enterprise-lab step 6) ---------------------------
+    # strongSwan's route-based end needs the XFRM interface and ESP in the host kernel; the containers share it
+    - name: Kernel modules for the twin's route-based IPsec (XFRM interface, ESP)
+      community.general.modprobe:
+        name: "{{ item }}"
+        state: present
+        persistent: present
+      loop: [xfrm_interface, xfrm_user, esp4]
+
+    - name: The twin's build context (clab/aws-twin)
+      ansible.builtin.copy:
+        src: ../../clab/aws-twin/
+        dest: /opt/clab/aws-twin-build/
+        mode: preserve
+      register: twin_context
+
+    - name: Twin image already in Docker
+      ansible.builtin.command: docker image inspect {{ aws_twin.image.tag }}
+      register: have_twin
+      changed_when: false
+      failed_when: false
+
+    # the base is pinned by digest (aws_twin.image.base); a changed context rebuilds under the same tag
+    - name: Build the twin image {{ aws_twin.image.tag }}
+      ansible.builtin.command:
+        cmd: docker build --pull --build-arg BASE={{ aws_twin.image.base }} -t {{ aws_twin.image.tag }} /opt/clab/aws-twin-build
+      when: have_twin.rc != 0 or twin_context is changed
+      changed_when: true
+
+    - name: The twin image is in Docker under the oracle tag
+      ansible.builtin.command: docker image inspect {{ aws_twin.image.tag }}
+      changed_when: false
+
   handlers:
     - name: Restart chrony
       ansible.builtin.systemd:

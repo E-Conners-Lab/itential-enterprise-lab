@@ -119,3 +119,30 @@ routing:
 # clab-host.yml): itential-dev, the clab host itself and the home LAN (the Mac). Everything else on the OOB
 # segment - production iag-01 included - is dropped (owner decision 2026-09-16).
 access_allow: [10.100.0.65/32, 10.100.0.224/32, 192.168.68.0/22]
+
+# The AWS end's twin (itential-enterprise-lab step 6, ADR 0068 d7; PID S13 criterion 15): Hand Off and Verify run end to
+# end against clab-rtr1 before they ever touch dc1-wan01. Two containers behind clab-rtr1's own front door, as the AWS
+# box sits behind its EIP: clab-aws-nat does the 1:1 NAT (the EIP), clab-aws-twin runs strongSwan configured like the
+# AWS box - the same Ubuntu 22.04 package, and the connection from cloud-devops-pipeline's swanctl.conf.tftpl at the
+# commit terraform_run pins, so the two ends can never drift apart. They are linux containers, not devices: kept out of
+# nodes/links (no SSH, no routing protocol, never in an Itential inventory or NetBox), and started with
+# network-mode none, so neither has a management address - reached with `docker exec` on the clab VM only.
+# Addresses: the front-door segment is TEST-NET-2 and the twin's VPC the pinned AWS VPC range; neither is routed off
+# the clab VM.
+aws_twin:
+  router: clab-rtr1
+  front_door: {endpoint: eth3, ifname: GigabitEthernet4, vrf: INET, ip: 198.51.100.2/24}
+  nat: {name: clab-aws-nat, outside: {endpoint: eth1, ip: 198.51.100.20/24}, inside: {endpoint: eth2, ip: 10.0.1.1/24}}
+  twin: {name: clab-aws-twin, endpoint: eth1, ip: 10.0.1.10/24}
+  # what the twin mirrors from the AWS deployment (cloud-devops-pipeline terraform/modules/vpn defaults)
+  vpc_cidr: 10.0.0.0/16
+  lab_prefixes: [10.100.3.0/24] # the clab in-band range: what the twin routes back into the tunnel
+  tunnel: {aws_inner: 169.254.10.2/30, router_inner: 169.254.10.1/30, if_id: 10}
+  ids: {aws: aws-vpn.lab.internal, lab: lab-edge.lab.internal}
+  # not a secret: the key of a keyring whose peer (TEST-NET-1) does not exist, there only so lab-edge's precheck can see
+  # clab-rtr1's keys stored as type 6 once the owner has set its master key
+  canary_key: canary-not-a-secret-never-used-0000
+  # built on the clab VM by clab-host.yml from clab/aws-twin/ (the base pinned by digest, Docker Hub 2026-09-18)
+  image:
+    base: ubuntu:22.04@sha256:b8b6ee6aa931ecd9d0d952abc34dc0e5f7c6a30c6bb71b079fe399fde0329c02
+    tag: lab/aws-twin:jammy-b8b6ee6aa931
