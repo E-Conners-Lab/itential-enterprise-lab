@@ -15,8 +15,8 @@
       "displayName": "GatewayManager",
       "groups": [],
       "nodeLocation": {
-        "x": 0,
-        "y": 450
+        "x": -80,
+        "y": 900
       },
       "variables": {
         "incoming": {
@@ -47,8 +47,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 0,
-        "y": 150
+        "x": -100,
+        "y": 600
       },
       "variables": {
         "incoming": {
@@ -77,8 +77,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 0,
-        "y": 300
+        "x": -90,
+        "y": 750
       },
       "variables": {
         "incoming": {
@@ -105,8 +105,8 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 0,
-        "y": 600
+        "x": 40,
+        "y": 1050
       },
       "variables": {
         "incoming": {
@@ -151,12 +151,161 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": -300,
-        "y": 750
+        "x": -180,
+        "y": 1200
       },
       "variables": {
         "incoming": {
           "input": "the command did not run on the device (credential or connection error); report this and do not retry",
+          "outputType": "string",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.device_error"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "9a01": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "input to check: device",
+      "description": "input to check: device",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 0,
+        "y": 150
+      },
+      "variables": {
+        "incoming": {
+          "obj": {},
+          "path": [
+            "device"
+          ],
+          "value": "$var.job.device"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "9a0a": {
+      "name": "validateJsonSchema",
+      "canvasName": "validateJsonSchema",
+      "summary": "check the inputs",
+      "description": "check the inputs",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 0,
+        "y": 300
+      },
+      "variables": {
+        "incoming": {
+          "jsonData": "$var.9a01.object",
+          "schema": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "device"
+            ],
+            "properties": {
+              "device": {
+                "type": "string",
+                "pattern": "^[a-z0-9][a-z0-9-]{0,62}$"
+              }
+            }
+          }
+        },
+        "outgoing": {
+          "result": "$var.job.input_check"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "9a0b": {
+      "name": "evaluation",
+      "canvasName": "evaluation",
+      "summary": "inputs valid?",
+      "description": "inputs valid?",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": -100,
+        "y": 450
+      },
+      "variables": {
+        "incoming": {
+          "all_true_flag": true,
+          "evaluation_groups": [
+            {
+              "all_true_flag": true,
+              "evaluations": [
+                {
+                  "query": "valid",
+                  "operand_1": {
+                    "variable": "result",
+                    "task": "9a0a"
+                  },
+                  "operator": "==",
+                  "operand_2": {
+                    "variable": true,
+                    "task": "static"
+                  }
+                }
+              ]
+            }
+          ],
+          "options": {}
+        },
+        "outgoing": {
+          "return_value": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "9a0c": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "the inputs were refused",
+      "description": "the inputs were refused",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 200,
+        "y": 600
+      },
+      "variables": {
+        "incoming": {
+          "input": "the inputs were refused before anything ran (see input_check for which input and why): nothing was sent to a device",
           "outputType": "string",
           "variables": ""
         },
@@ -183,14 +332,14 @@
       "summary": "workflow_end",
       "groups": [],
       "nodeLocation": {
-        "x": 0,
-        "y": 900
+        "x": 120,
+        "y": 1350
       }
     }
   },
   "transitions": {
     "workflow_start": {
-      "0a": {
+      "9a01": {
         "state": "success",
         "type": "standard"
       }
@@ -233,6 +382,38 @@
         "type": "standard"
       }
     },
+    "9a01": {
+      "9a0a": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "9a0a": {
+      "9a0b": {
+        "state": "success",
+        "type": "standard"
+      },
+      "9a0c": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "9a0b": {
+      "0a": {
+        "state": "success",
+        "type": "standard"
+      },
+      "9a0c": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "9a0c": {
+      "workflow_end": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
     "workflow_end": {}
   },
   "groups": [],
@@ -258,6 +439,9 @@
       },
       "device_error": {
         "type": "string"
+      },
+      "input_check": {
+        "type": "object"
       }
     }
   },

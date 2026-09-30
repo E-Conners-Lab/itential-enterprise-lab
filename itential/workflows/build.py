@@ -289,6 +289,87 @@ def layout(tasks: dict, transitions: dict) -> dict[str, dict]:
     return _polish(best, edges)
 
 
+# --- input gates (security review 2026-09-29, WEB-12) -----------------------------------------------------------------
+# These workflows put job inputs into text with replace(): JSON that is parsed afterwards (node selectors, command
+# lists, NetBox bodies) and switch configuration. A quote or newline in an input could then add keys, extra commands
+# or extra config lines, and nothing checked the inputs. Each gated workflow now starts by building its inputs as an
+# object and checking it against these patterns (validateJsonSchema, then an evaluate on `valid`: the task completes
+# even for invalid data, measured 2026-09-29); a refusal ends the job with the reason in `error` before anything runs.
+NODE_NAME = {"type": "string", "pattern": r"^[a-z0-9][a-z0-9-]{0,62}$"}
+VLAN_NAME = {"type": "string", "pattern": r"^[A-Za-z0-9][A-Za-z0-9 _.-]{0,31}$"}  # EOS: 32 characters
+# only read commands: `show ...`, optionally one read-only pipe. Never redirect / append / tee (they write files on
+# IOS-XE and EOS), never a quote, backslash or newline. Every command the agents and verifies send fits.
+SHOW_COMMAND = {
+    "type": "string",
+    "maxLength": 200,
+    # (?!.*://): no URL argument, which would make the device fetch from elsewhere (show archive ... tftp://h/f)
+    "pattern": r"^(?!.*://)show [A-Za-z0-9][A-Za-z0-9 ._/:,-]{0,120}( \| (include|exclude|begin|section|count|json)( [A-Za-z0-9 ._/:,^$*-]{1,80})?)?$",
+}
+# Remove Branch VLAN takes the Lifecycle Manager instance whole; a direct start bypasses Lifecycle Manager's own check,
+# so the gate holds the model's bounds (itential/lcm/branch-vlan.yaml) plus the name patterns. null stays allowed:
+# the workflow already handles an instance whose create failed (object keywords do not apply to null).
+BRANCH_VLAN_INSTANCE = {
+    "type": ["object", "null"],
+    "additionalProperties": False,
+    "required": ["branch", "vid", "vlan_name", "switch", "netbox_vlan_id", "status"],
+    "properties": {
+        "branch": {"enum": ["br1", "br2"]},
+        "vid": {"type": "integer", "minimum": 11, "maximum": 99},
+        "vlan_name": VLAN_NAME,
+        "switch": NODE_NAME,
+        "netbox_vlan_id": {"type": "integer", "minimum": 1},
+        "status": {"enum": ["reserved", "active", "deprecated", "deleted"]},
+    },
+}
+INPUT_GATES = {
+    WF["show_version"]: {"device": NODE_NAME},
+    WF["show_command"]: {"device": NODE_NAME, "command": SHOW_COMMAND},
+    WF["show_all"]: {"command": SHOW_COMMAND},
+    # reason is shown on the approval card only; no markup
+    WF["config_push"]: {"device": NODE_NAME, "reason": {"type": "string", "maxLength": 500, "pattern": r"^[^<>]*$"}},
+    WF["branch_vlan"]: {
+        "branch": {"type": "string", "pattern": r"^[a-z0-9][a-z0-9-]{0,31}$"},
+        "vlan_name": VLAN_NAME,
+        "switch_override": {"type": "string", "pattern": r"^([a-z0-9][a-z0-9-]{0,62})?$"},  # empty: the NetBox choice
+        "change_request": {"type": "boolean"},
+    },
+    WF["branch_vlan_delete"]: {"instance": BRANCH_VLAN_INSTANCE},
+}
+# where a refusal is reported: the device workflows already say "did not run" in device_error, which the agents read
+GATE_ERROR_VAR = {WF[k]: "device_error" for k in ("show_version", "show_command", "show_all", "config_push")}
+GATE_IDS = ("9a01", "9a02", "9a03", "9a04", "9a05", "9a06")  # the field copies; then 9a0a validate, 9a0b evaluate, 9a0c refuse
+
+
+def with_input_gate(tasks: dict, transitions: dict, fields: dict, error_var: str = "error") -> tuple[dict, dict]:
+    """workflow_start -> copy each input into an object -> validate -> valid? -> the workflow's first task; refused ->
+    `error` -> workflow_end. The original start edges move behind the gate unchanged."""
+    ids = GATE_IDS[: len(fields)]
+    assert not set(ids + ("9a0a", "9a0b", "9a0c")) & set(tasks), "gate ids collide with the workflow's own"
+    tasks, tr = dict(tasks), {k: dict(v) for k, v in transitions.items()}
+    prev = {}
+    for tid, key in zip(ids, fields):
+        tasks[tid] = task("setObjectKey", "WorkFlowEngine", f"input to check: {key}",
+                          {"obj": prev or {}, "path": [key], "value": f"$var.job.{key}"}, {"object": None},
+                          display="Tools")
+        prev = f"$var.{tid}.object"
+    tasks["9a0a"] = task("validateJsonSchema", "WorkFlowEngine", "check the inputs",
+                       {"jsonData": prev, "schema": {"type": "object", "additionalProperties": False,
+                                                     "required": list(fields), "properties": fields}},
+                       {"result": "$var.job.input_check"}, display="WorkFlowEngine")
+    tasks["9a0b"] = evaluate("inputs valid?", "9a0a", "result", "valid", "==", True, x=0)
+    tasks["9a0c"] = note("the inputs were refused",
+                       "the inputs were refused before anything ran (see input_check for which input and why): "
+                       "nothing was sent to a device", error_var, x=0)
+    first = tr["workflow_start"]
+    tr["workflow_start"] = t("", ids[0])
+    for a, b in zip(ids, ids[1:] + ("9a0a",)):
+        tr[a] = t("", b)
+    tr["9a0a"] = {"9a0b": {"state": "success", "type": "standard"}, "9a0c": {"state": "error", "type": "standard"}}
+    tr["9a0b"] = {**first, "9a0c": {"state": "failure", "type": "standard"}}
+    tr["9a0c"] = t("", "workflow_end")
+    return tasks, tr
+
+
 def workflow(
     name: str,
     description: str,
@@ -297,6 +378,11 @@ def workflow(
     transitions: dict,
     outputs: dict | None = None,
 ) -> dict:
+    if name in INPUT_GATES:
+        error_var = GATE_ERROR_VAR.get(name, "error")
+        tasks, transitions = with_input_gate(tasks, transitions, INPUT_GATES[name], error_var)
+        # a refusal is part of the workflow's answer, so callers (agents, verifies) can see it
+        outputs = {**(outputs or {}), error_var: {"type": "string"}, "input_check": {"type": "object"}}
     where = layout(tasks, transitions)
     tasks = {tid: {**t, "nodeLocation": where[tid]} for tid, t in tasks.items()}
     tasks["workflow_start"] = {

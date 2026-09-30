@@ -16,7 +16,7 @@
       "groups": [],
       "nodeLocation": {
         "x": -650,
-        "y": 150
+        "y": 1050
       },
       "variables": {
         "incoming": {
@@ -62,7 +62,7 @@
       "groups": [],
       "nodeLocation": {
         "x": -800,
-        "y": 300
+        "y": 1200
       },
       "variables": {
         "incoming": {
@@ -96,7 +96,7 @@
       "groups": [],
       "nodeLocation": {
         "x": -800,
-        "y": 450
+        "y": 1350
       },
       "variables": {
         "incoming": {
@@ -124,7 +124,7 @@
       "groups": [],
       "nodeLocation": {
         "x": -1000,
-        "y": 600
+        "y": 1500
       },
       "variables": {
         "incoming": {
@@ -152,7 +152,7 @@
       "groups": [],
       "nodeLocation": {
         "x": -800,
-        "y": 750
+        "y": 1650
       },
       "variables": {
         "incoming": {
@@ -185,7 +185,7 @@
       "groups": [],
       "nodeLocation": {
         "x": -800,
-        "y": 900
+        "y": 1800
       },
       "variables": {
         "incoming": {
@@ -213,7 +213,7 @@
       "groups": [],
       "nodeLocation": {
         "x": -800,
-        "y": 1050
+        "y": 1950
       },
       "variables": {
         "incoming": {
@@ -246,7 +246,7 @@
       "groups": [],
       "nodeLocation": {
         "x": -800,
-        "y": 1200
+        "y": 2100
       },
       "variables": {
         "incoming": {
@@ -274,7 +274,7 @@
       "groups": [],
       "nodeLocation": {
         "x": -200,
-        "y": 1350
+        "y": 2250
       },
       "variables": {
         "incoming": {
@@ -320,7 +320,7 @@
       "groups": [],
       "nodeLocation": {
         "x": -200,
-        "y": 1500
+        "y": 2400
       },
       "variables": {
         "incoming": {
@@ -350,7 +350,7 @@
       "groups": [],
       "nodeLocation": {
         "x": -600,
-        "y": 1500
+        "y": 2400
       },
       "variables": {
         "incoming": {
@@ -380,7 +380,7 @@
       "groups": [],
       "nodeLocation": {
         "x": -200,
-        "y": 1650
+        "y": 2550
       },
       "variables": {
         "incoming": {
@@ -410,7 +410,7 @@
       "groups": [],
       "nodeLocation": {
         "x": -200,
-        "y": 1800
+        "y": 2700
       },
       "variables": {
         "incoming": {
@@ -438,7 +438,7 @@
       "groups": [],
       "nodeLocation": {
         "x": -400,
-        "y": 1950
+        "y": 2850
       },
       "variables": {
         "incoming": {
@@ -468,7 +468,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 0,
-        "y": 2100
+        "y": 3000
       },
       "variables": {
         "incoming": {
@@ -498,7 +498,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 0,
-        "y": 2250
+        "y": 3150
       },
       "variables": {
         "incoming": {
@@ -544,7 +544,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 400,
-        "y": 4200
+        "y": 5100
       },
       "variables": {
         "incoming": {
@@ -574,7 +574,7 @@
       "groups": [],
       "nodeLocation": {
         "x": -200,
-        "y": 2400
+        "y": 3300
       },
       "variables": {
         "incoming": {
@@ -604,7 +604,7 @@
       "groups": [],
       "nodeLocation": {
         "x": -200,
-        "y": 2550
+        "y": 3450
       },
       "variables": {
         "incoming": {
@@ -639,7 +639,7 @@
       "groups": [],
       "nodeLocation": {
         "x": -200,
-        "y": 2700
+        "y": 3600
       },
       "variables": {
         "incoming": {
@@ -667,7 +667,7 @@
       "groups": [],
       "nodeLocation": {
         "x": -200,
-        "y": 2850
+        "y": 3750
       },
       "variables": {
         "incoming": {
@@ -696,7 +696,7 @@
       "groups": [],
       "nodeLocation": {
         "x": -400,
-        "y": 3000
+        "y": 3900
       },
       "variables": {
         "incoming": {
@@ -726,7 +726,7 @@
       "groups": [],
       "nodeLocation": {
         "x": -400,
-        "y": 3150
+        "y": 4050
       },
       "variables": {
         "incoming": {
@@ -756,7 +756,7 @@
       "groups": [],
       "nodeLocation": {
         "x": -400,
-        "y": 3300
+        "y": 4200
       },
       "variables": {
         "incoming": {
@@ -786,7 +786,7 @@
       "groups": [],
       "nodeLocation": {
         "x": -400,
-        "y": 3450
+        "y": 4350
       },
       "variables": {
         "incoming": {
@@ -816,7 +816,7 @@
       "groups": [],
       "nodeLocation": {
         "x": -400,
-        "y": 3600
+        "y": 4500
       },
       "variables": {
         "incoming": {
@@ -844,7 +844,7 @@
       "groups": [],
       "nodeLocation": {
         "x": -200,
-        "y": 3750
+        "y": 4650
       },
       "variables": {
         "incoming": {
@@ -874,7 +874,7 @@
       "groups": [],
       "nodeLocation": {
         "x": -200,
-        "y": 3900
+        "y": 4800
       },
       "variables": {
         "incoming": {
@@ -902,7 +902,7 @@
       "groups": [],
       "nodeLocation": {
         "x": -600,
-        "y": 4050
+        "y": 4950
       },
       "variables": {
         "incoming": {
@@ -948,7 +948,7 @@
       "groups": [],
       "nodeLocation": {
         "x": -800,
-        "y": 4200
+        "y": 5100
       },
       "variables": {
         "incoming": {
@@ -978,7 +978,7 @@
       "groups": [],
       "nodeLocation": {
         "x": -1000,
-        "y": 4350
+        "y": 5250
       },
       "variables": {
         "incoming": {
@@ -1007,7 +1007,7 @@
       "groups": [],
       "nodeLocation": {
         "x": -800,
-        "y": 4500
+        "y": 5400
       },
       "variables": {
         "incoming": {
@@ -1037,7 +1037,7 @@
       "groups": [],
       "nodeLocation": {
         "x": -800,
-        "y": 4650
+        "y": 5550
       },
       "variables": {
         "incoming": {
@@ -1067,7 +1067,7 @@
       "groups": [],
       "nodeLocation": {
         "x": -800,
-        "y": 4800
+        "y": 5700
       },
       "variables": {
         "incoming": {
@@ -1095,7 +1095,7 @@
       "groups": [],
       "nodeLocation": {
         "x": -800,
-        "y": 4950
+        "y": 5850
       },
       "variables": {
         "incoming": {
@@ -1127,7 +1127,7 @@
       "groups": [],
       "nodeLocation": {
         "x": -200,
-        "y": 5100
+        "y": 6000
       },
       "variables": {
         "incoming": {
@@ -1155,8 +1155,8 @@
       "displayName": "JsonForms",
       "groups": [],
       "nodeLocation": {
-        "x": 100,
-        "y": 6300
+        "x": -50,
+        "y": 7200
       },
       "variables": {
         "incoming": {
@@ -1183,8 +1183,8 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": -50,
-        "y": 6450
+        "x": -200,
+        "y": 7350
       },
       "variables": {
         "incoming": {
@@ -1230,7 +1230,7 @@
       "groups": [],
       "nodeLocation": {
         "x": -200,
-        "y": 10050
+        "y": 10950
       },
       "variables": {
         "incoming": {
@@ -1260,7 +1260,7 @@
       "groups": [],
       "nodeLocation": {
         "x": -200,
-        "y": 10200
+        "y": 11100
       },
       "variables": {
         "incoming": {
@@ -1288,7 +1288,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 400,
-        "y": 2400
+        "y": 3300
       },
       "variables": {
         "incoming": {
@@ -1316,7 +1316,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 400,
-        "y": 2550
+        "y": 3450
       },
       "variables": {
         "incoming": {
@@ -1344,7 +1344,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 400,
-        "y": 2700
+        "y": 3600
       },
       "variables": {
         "incoming": {
@@ -1372,7 +1372,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 400,
-        "y": 2850
+        "y": 3750
       },
       "variables": {
         "incoming": {
@@ -1401,7 +1401,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 400,
-        "y": 3000
+        "y": 3900
       },
       "variables": {
         "incoming": {
@@ -1430,7 +1430,7 @@
       "groups": [],
       "nodeLocation": {
         "x": -350,
-        "y": 6600
+        "y": 7500
       },
       "variables": {
         "incoming": {
@@ -1460,7 +1460,7 @@
       "groups": [],
       "nodeLocation": {
         "x": -200,
-        "y": 6750
+        "y": 7650
       },
       "variables": {
         "incoming": {
@@ -1490,7 +1490,7 @@
       "groups": [],
       "nodeLocation": {
         "x": -500,
-        "y": 6900
+        "y": 7800
       },
       "variables": {
         "incoming": {
@@ -1520,7 +1520,7 @@
       "groups": [],
       "nodeLocation": {
         "x": -500,
-        "y": 7050
+        "y": 7950
       },
       "variables": {
         "incoming": {
@@ -1566,7 +1566,7 @@
       "groups": [],
       "nodeLocation": {
         "x": -550,
-        "y": 7200
+        "y": 8100
       },
       "variables": {
         "incoming": {
@@ -1594,7 +1594,7 @@
       "groups": [],
       "nodeLocation": {
         "x": -400,
-        "y": 7350
+        "y": 8250
       },
       "variables": {
         "incoming": {
@@ -1626,7 +1626,7 @@
       "groups": [],
       "nodeLocation": {
         "x": -400,
-        "y": 7500
+        "y": 8400
       },
       "variables": {
         "incoming": {
@@ -1661,7 +1661,7 @@
       "groups": [],
       "nodeLocation": {
         "x": -400,
-        "y": 7650
+        "y": 8550
       },
       "variables": {
         "incoming": {
@@ -1707,7 +1707,7 @@
       "groups": [],
       "nodeLocation": {
         "x": -200,
-        "y": 7800
+        "y": 8700
       },
       "variables": {
         "incoming": {
@@ -1735,7 +1735,7 @@
       "groups": [],
       "nodeLocation": {
         "x": -700,
-        "y": 7650
+        "y": 8550
       },
       "variables": {
         "incoming": {
@@ -1765,7 +1765,7 @@
       "groups": [],
       "nodeLocation": {
         "x": -600,
-        "y": 7800
+        "y": 8700
       },
       "variables": {
         "incoming": {
@@ -1798,7 +1798,7 @@
       "groups": [],
       "nodeLocation": {
         "x": -600,
-        "y": 9300
+        "y": 10200
       },
       "variables": {
         "incoming": {
@@ -1844,7 +1844,7 @@
       "groups": [],
       "nodeLocation": {
         "x": -800,
-        "y": 9450
+        "y": 10350
       },
       "variables": {
         "incoming": {
@@ -1877,7 +1877,7 @@
       "groups": [],
       "nodeLocation": {
         "x": -800,
-        "y": 9600
+        "y": 10500
       },
       "variables": {
         "incoming": {
@@ -1905,7 +1905,7 @@
       "groups": [],
       "nodeLocation": {
         "x": -800,
-        "y": 9750
+        "y": 10650
       },
       "variables": {
         "incoming": {
@@ -1940,7 +1940,7 @@
       "groups": [],
       "nodeLocation": {
         "x": -800,
-        "y": 9900
+        "y": 10800
       },
       "variables": {
         "incoming": {
@@ -1968,7 +1968,7 @@
       "groups": [],
       "nodeLocation": {
         "x": -200,
-        "y": 10350
+        "y": 11250
       },
       "variables": {
         "incoming": {
@@ -1998,7 +1998,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 400,
-        "y": 7950
+        "y": 8850
       },
       "variables": {
         "incoming": {
@@ -2027,7 +2027,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 400,
-        "y": 8100
+        "y": 9000
       },
       "variables": {
         "incoming": {
@@ -2057,7 +2057,7 @@
       "groups": [],
       "nodeLocation": {
         "x": -200,
-        "y": 5250
+        "y": 6150
       },
       "variables": {
         "incoming": {
@@ -2087,7 +2087,7 @@
       "groups": [],
       "nodeLocation": {
         "x": -200,
-        "y": 5400
+        "y": 6300
       },
       "variables": {
         "incoming": {
@@ -2117,7 +2117,7 @@
       "groups": [],
       "nodeLocation": {
         "x": -200,
-        "y": 5550
+        "y": 6450
       },
       "variables": {
         "incoming": {
@@ -2147,7 +2147,7 @@
       "groups": [],
       "nodeLocation": {
         "x": -200,
-        "y": 5700
+        "y": 6600
       },
       "variables": {
         "incoming": {
@@ -2177,7 +2177,7 @@
       "groups": [],
       "nodeLocation": {
         "x": -200,
-        "y": 5850
+        "y": 6750
       },
       "variables": {
         "incoming": {
@@ -2207,7 +2207,7 @@
       "groups": [],
       "nodeLocation": {
         "x": -200,
-        "y": 6000
+        "y": 6900
       },
       "variables": {
         "incoming": {
@@ -2237,7 +2237,7 @@
       "groups": [],
       "nodeLocation": {
         "x": -200,
-        "y": 6150
+        "y": 7050
       },
       "variables": {
         "incoming": {
@@ -2265,7 +2265,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 400,
-        "y": 3150
+        "y": 4050
       },
       "variables": {
         "incoming": {
@@ -2295,7 +2295,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 400,
-        "y": 3300
+        "y": 4200
       },
       "variables": {
         "incoming": {
@@ -2325,7 +2325,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 400,
-        "y": 3450
+        "y": 4350
       },
       "variables": {
         "incoming": {
@@ -2355,7 +2355,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 400,
-        "y": 3600
+        "y": 4500
       },
       "variables": {
         "incoming": {
@@ -2385,7 +2385,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 400,
-        "y": 3750
+        "y": 4650
       },
       "variables": {
         "incoming": {
@@ -2415,7 +2415,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 400,
-        "y": 3900
+        "y": 4800
       },
       "variables": {
         "incoming": {
@@ -2445,7 +2445,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 400,
-        "y": 4050
+        "y": 4950
       },
       "variables": {
         "incoming": {
@@ -2473,7 +2473,7 @@
       "groups": [],
       "nodeLocation": {
         "x": -1100,
-        "y": 7950
+        "y": 8850
       },
       "variables": {
         "incoming": {
@@ -2503,7 +2503,7 @@
       "groups": [],
       "nodeLocation": {
         "x": -1100,
-        "y": 8100
+        "y": 9000
       },
       "variables": {
         "incoming": {
@@ -2531,7 +2531,7 @@
       "groups": [],
       "nodeLocation": {
         "x": -1100,
-        "y": 8250
+        "y": 9150
       },
       "variables": {
         "incoming": {
@@ -2560,7 +2560,7 @@
       "groups": [],
       "nodeLocation": {
         "x": -1100,
-        "y": 8400
+        "y": 9300
       },
       "variables": {
         "incoming": {
@@ -2590,7 +2590,7 @@
       "groups": [],
       "nodeLocation": {
         "x": -1100,
-        "y": 8550
+        "y": 9450
       },
       "variables": {
         "incoming": {
@@ -2620,7 +2620,7 @@
       "groups": [],
       "nodeLocation": {
         "x": -1100,
-        "y": 8700
+        "y": 9600
       },
       "variables": {
         "incoming": {
@@ -2650,7 +2650,7 @@
       "groups": [],
       "nodeLocation": {
         "x": -1100,
-        "y": 8850
+        "y": 9750
       },
       "variables": {
         "incoming": {
@@ -2680,7 +2680,7 @@
       "groups": [],
       "nodeLocation": {
         "x": -1100,
-        "y": 9000
+        "y": 9900
       },
       "variables": {
         "incoming": {
@@ -2708,7 +2708,7 @@
       "groups": [],
       "nodeLocation": {
         "x": -1100,
-        "y": 9150
+        "y": 10050
       },
       "variables": {
         "incoming": {
@@ -2718,6 +2718,265 @@
         },
         "outgoing": {
           "response": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "9a01": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "input to check: branch",
+      "description": "input to check: branch",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 0,
+        "y": 150
+      },
+      "variables": {
+        "incoming": {
+          "obj": {},
+          "path": [
+            "branch"
+          ],
+          "value": "$var.job.branch"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "9a02": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "input to check: vlan_name",
+      "description": "input to check: vlan_name",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 0,
+        "y": 300
+      },
+      "variables": {
+        "incoming": {
+          "obj": "$var.9a01.object",
+          "path": [
+            "vlan_name"
+          ],
+          "value": "$var.job.vlan_name"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "9a03": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "input to check: switch_override",
+      "description": "input to check: switch_override",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 0,
+        "y": 450
+      },
+      "variables": {
+        "incoming": {
+          "obj": "$var.9a02.object",
+          "path": [
+            "switch_override"
+          ],
+          "value": "$var.job.switch_override"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "9a04": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "input to check: change_request",
+      "description": "input to check: change_request",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 0,
+        "y": 600
+      },
+      "variables": {
+        "incoming": {
+          "obj": "$var.9a03.object",
+          "path": [
+            "change_request"
+          ],
+          "value": "$var.job.change_request"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "9a0a": {
+      "name": "validateJsonSchema",
+      "canvasName": "validateJsonSchema",
+      "summary": "check the inputs",
+      "description": "check the inputs",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": -300,
+        "y": 750
+      },
+      "variables": {
+        "incoming": {
+          "jsonData": "$var.9a04.object",
+          "schema": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "branch",
+              "vlan_name",
+              "switch_override",
+              "change_request"
+            ],
+            "properties": {
+              "branch": {
+                "type": "string",
+                "pattern": "^[a-z0-9][a-z0-9-]{0,31}$"
+              },
+              "vlan_name": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9 _.-]{0,31}$"
+              },
+              "switch_override": {
+                "type": "string",
+                "pattern": "^([a-z0-9][a-z0-9-]{0,62})?$"
+              },
+              "change_request": {
+                "type": "boolean"
+              }
+            }
+          }
+        },
+        "outgoing": {
+          "result": "$var.job.input_check"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "9a0b": {
+      "name": "evaluation",
+      "canvasName": "evaluation",
+      "summary": "inputs valid?",
+      "description": "inputs valid?",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": -300,
+        "y": 900
+      },
+      "variables": {
+        "incoming": {
+          "all_true_flag": true,
+          "evaluation_groups": [
+            {
+              "all_true_flag": true,
+              "evaluations": [
+                {
+                  "query": "valid",
+                  "operand_1": {
+                    "variable": "result",
+                    "task": "9a0a"
+                  },
+                  "operator": "==",
+                  "operand_2": {
+                    "variable": true,
+                    "task": "static"
+                  }
+                }
+              ]
+            }
+          ],
+          "options": {}
+        },
+        "outgoing": {
+          "return_value": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "9a0c": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "the inputs were refused",
+      "description": "the inputs were refused",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 150,
+        "y": 1050
+      },
+      "variables": {
+        "incoming": {
+          "input": "the inputs were refused before anything ran (see input_check for which input and why): nothing was sent to a device",
+          "outputType": "string",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.error"
         },
         "error": "",
         "decorators": []
@@ -2740,13 +2999,13 @@
       "groups": [],
       "nodeLocation": {
         "x": 0,
-        "y": 10500
+        "y": 11400
       }
     }
   },
   "transitions": {
     "workflow_start": {
-      "d0": {
+      "9a01": {
         "state": "success",
         "type": "standard"
       }
@@ -3319,6 +3578,56 @@
       }
     },
     "8b": {},
+    "9a01": {
+      "9a02": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "9a02": {
+      "9a03": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "9a03": {
+      "9a04": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "9a04": {
+      "9a0a": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "9a0a": {
+      "9a0b": {
+        "state": "success",
+        "type": "standard"
+      },
+      "9a0c": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "9a0b": {
+      "d0": {
+        "state": "success",
+        "type": "standard"
+      },
+      "9a0c": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "9a0c": {
+      "workflow_end": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
     "workflow_end": {}
   },
   "groups": [],
@@ -3393,6 +3702,12 @@
         "type": "object"
       },
       "approval": {
+        "type": "object"
+      },
+      "error": {
+        "type": "string"
+      },
+      "input_check": {
         "type": "object"
       }
     }
