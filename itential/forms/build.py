@@ -18,11 +18,15 @@ import yaml
 
 HERE = Path(__file__).resolve().parent
 VERSIONS = yaml.safe_load((HERE.parent / "versions.yaml").read_text())
+# the Deploy AWS VPN IPv4 check; tests/test_aws_vpn.py holds it equal to itential/workflows/build.py IPV4
+IPV4 = r"^(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])(\.(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])){3}$"
 
 
 def field(key: str, title: str, *, typ: str = "string", read_only: bool = True, enum: list[str] | None = None,
-          required: bool = False, default: str | None = None, description: str = "") -> dict:
-    """One struct item; customKey is the property name in schema and the key of the submitted export."""
+          required: bool = False, default: str | None = None, description: str = "", pattern: str | None = None,
+          max_length: int | None = None) -> dict:
+    """One struct item; customKey is the property name in schema and the key of the submitted export. pattern and
+    max_length go to the schema only (they validate the submitted value)."""
     item = {"nodeId": f"node-{key}", "type": typ, "title": title, "description": description, "placeholder": "",
             "required": required, "readOnly": read_only, "binding": False, "rel": "item", "targetPointer": "/default",
             "customKey": key}
@@ -33,6 +37,10 @@ def field(key: str, title: str, *, typ: str = "string", read_only: bool = True, 
                      "enumNames": [{"id": f"name-{key}-{v}", "label": v, "value": v} for v in enum]})
     if default is not None:
         item["default"] = default
+    if pattern is not None:
+        item["_pattern"] = pattern
+    if max_length is not None:
+        item["_maxLength"] = max_length
     return item
 
 
@@ -46,6 +54,10 @@ def form(name: str, description: str, fields: list[dict]) -> dict:
             prop["enumNames"] = [e["label"] for e in f["enumNames"]]
         if "default" in f:
             prop["default"] = f["default"]
+        if "_maxLength" in f:
+            prop["maxLength"] = f["_maxLength"]
+        if "_pattern" in f:
+            prop["pattern"] = f["_pattern"]
         if f["readOnly"]:
             prop["readOnly"] = True
             ui[k] = {"ui:readonly": True}
@@ -53,10 +65,11 @@ def form(name: str, description: str, fields: list[dict]) -> dict:
             ui[k] = {"ui:placeholder": f["placeholder"] or "Enter a value"}
         properties[k] = prop
     ui["ui:order"] = [f["customKey"] for f in fields] + ["*"]  # the platform adds this on save; emitting it keeps re-runs idempotent
+    struct_items = [{k: v for k, v in f.items() if not k.startswith("_")} for f in fields]
     return {
         "name": name,
         "description": description,
-        "struct": {"type": "array", "items": fields},  # "object" renders empty
+        "struct": {"type": "array", "items": struct_items},  # "object" renders empty
         "schema": {"title": name, "description": description, "type": "object",
                    "required": [f["customKey"] for f in fields if f["required"]], "properties": properties},
         "uiSchema": ui,
@@ -90,10 +103,13 @@ def deploy_aws_vpn() -> dict:
     return form(VERSIONS["forms"]["deploy_aws_vpn"],
                 "Deploy the AWS side of the lab's site-to-site VPN: Terraform plans it, a Work Center approval shows the plan (PID S13, ADR 0068)",
                 [field("onprem_public_ip", "Your public IP address", read_only=False, required=True,
-                       description="The public IPv4 address the tunnel comes from (curl ifconfig.me)"),
+                       description="The public IPv4 address the tunnel comes from (curl ifconfig.me)",
+                       pattern=IPV4, max_length=15),
                  field("enable_nat_gateway", "NAT gateway", read_only=False, enum=["false", "true"], required=True,
                        default="false", description="true also builds the NAT gateway (about $1 a day more); the VPN does not need it"),
-                 field("change_note", "Change note", read_only=False, description="Why, shown to the approver")])
+                 # required: the Platform refuses a start without it; the same bounds as the workflow's check (WEB-01)
+                 field("change_note", "Change note", read_only=False, required=True, max_length=280,
+                       description="Why, shown to the approver")])
 
 
 def main(check: bool) -> int:

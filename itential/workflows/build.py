@@ -2911,8 +2911,26 @@ def netbox_devices() -> dict:
 # an error edge and its result is evaluated (ADR 0066); every path reaches workflow_end with the reason in `error` and
 # whether AWS changed in `aws_changed` (unset when the apply failed: the error then says "nothing applied" when the
 # service refused before applying; otherwise the apply may have run part-way).
-PLAN_TPL = ('{"action": "plan", "job": "new", "enable_vpn": "true", "enable_nat_gateway": "__N__", '
-            '"onprem_public_ip": "__IP__", "timeout": "900"}')
+# The plan's fixed parameters. The two user inputs are added with setObjectKey, as data: string-replacing them into
+# JSON let an input close the string and add keys ("action": "apply", ...) - security review 2026-09-29, WEB-01.
+PLAN_FIXED = '{"action": "plan", "job": "new", "enable_vpn": "true", "timeout": "900"}'
+IPV4 = r"^(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])(\.(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])){3}$"
+# What the plan step may send, checked before anything runs, whichever trigger (or a direct jobs/start) began the job.
+# validateJsonSchema never fails its task (measured on dev 2026-09-29): its result.valid is evaluated after it.
+PLAN_INPUTS_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["action", "job", "enable_vpn", "timeout", "onprem_public_ip", "enable_nat_gateway", "change_note"],
+    "properties": {
+        "action": {"const": "plan"},
+        "job": {"const": "new"},
+        "enable_vpn": {"const": "true"},
+        "timeout": {"const": "900"},
+        "onprem_public_ip": {"type": "string", "maxLength": 15, "pattern": IPV4},
+        "enable_nat_gateway": {"enum": ["false", "true"]},
+        "change_note": {"type": "string", "maxLength": 280},
+    },
+}
 APPLY_TPL = '{"action": "apply", "job": "__ID__", "plan_sha256": "__SHA__", "timeout": "1800"}'
 DISCARD_TPL = '{"action": "discard", "job": "__ID__", "timeout": "120"}'
 PSK_TPL = '{"action": "write", "secret_arn": "__ARN__", "timeout": "120"}'
@@ -2935,21 +2953,33 @@ def run_service(summary: str, service: str, params_ref: str, out_job: str, x: in
     )
 
 
+def set_key(summary: str, obj_ref, key: str, value_ref: str, x: int, y: int = 0) -> dict:
+    """WorkFlowEngine.setObjectKey: a value goes in as data, so no input can add or change another key."""
+    return task("setObjectKey", "WorkFlowEngine", summary, {"obj": obj_ref, "path": [key], "value": value_ref},
+                {"object": None}, display="Tools", x=x, y=y)
+
+
 def deploy_aws_vpn() -> dict:
     ok, fail, err = "success", "failure", "error"
     tasks = {
-        # plan
-        "1a": replace("plan params: NAT gateway", PLAN_TPL, "__N__", "$var.job.enable_nat_gateway", x=100),
-        "1b": replace("plan params: public IP", "$var.1a.replacedString", "__IP__", "$var.job.onprem_public_ip", x=200),
-        "1c": parse("plan params", "$var.1b.replacedString", x=300),
-        "1d": run_service("terraform plan", "terraform-run", "$var.1c.textObject", "plan_result", x=400),
+        # the inputs, as data, checked before anything runs (WEB-01)
+        "1a": parse("plan params: the fixed part", PLAN_FIXED, x=100),
+        "1b": set_key("plan params: public IP", "$var.1a.textObject", "onprem_public_ip", "$var.job.onprem_public_ip", x=150),
+        "1c": set_key("plan params: NAT gateway", "$var.1b.object", "enable_nat_gateway", "$var.job.enable_nat_gateway", x=200),
+        "11": set_key("the inputs to check (params + change note)", "$var.1c.object", "change_note", "$var.job.change_note", x=250),
+        "12": task("validateJsonSchema", "WorkFlowEngine", "check the inputs",
+                   {"jsonData": "$var.11.object", "schema": PLAN_INPUTS_SCHEMA}, {"result": "$var.job.input_check"},
+                   display="WorkFlowEngine", x=300),
+        "13": evaluate("inputs valid?", "12", "result", "valid", "==", True, x=350),
+        "1d": run_service("terraform plan", "terraform-run", "$var.1c.object", "plan_result", x=400),
         "1e": evaluate("plan made?", "1d", "result", "result.return_code", "==", 0, x=500),
         "1f": jq("the plan summary", "$var.1d.result", "result.stdout_json", x=600, to_job="plan"),
         "10": jq("the plan ID", "$var.1d.result", "result.stdout_json.job", x=700),
         # approve
         "2a": replace(
             "the card's message",
-            "Deploy the AWS side of the site-to-site VPN (costs about $1 a day while it is up). Change note: __NOTE__",
+            "Deploy the AWS side of the site-to-site VPN (costs about $1 a day while it is up). "
+            "The requester's note (their own words, not checked): __NOTE__",
             "__NOTE__", "$var.job.change_note", x=800,
         ),
         "2b": view("approval", "Approve the AWS change", "$var.2a.replacedString", "$var.job.plan", "Approve", "Reject", x=900),
@@ -2992,14 +3022,23 @@ def deploy_aws_vpn() -> dict:
         "8a": note("the plan did not run", "the Gateway could not run terraform-run for the plan; nothing changed in AWS", "error", x=500, y=-300),
         "8b": jq("why the plan was refused", "$var.1d.result", "result.stdout_json.error", x=600, y=-300, to_job="error", optional=True),
         "8c": flag("aws_changed = false (no plan)", "false", "aws_changed", x=700, y=-300),
+        "8f": note(
+            "the inputs were refused",
+            "the inputs were refused before anything ran (see input_check): the on-prem IP must be an IPv4 address "
+            "a.b.c.d, the NAT gateway true or false, the change note at most 280 characters; nothing changed in AWS",
+            "error", x=400, y=-300,
+        ),
         "8d": note("the apply did not run", "the Gateway could not run terraform-run for the apply; check apply_result and AWS", "error", x=1500, y=-700),
         "8e": jq("why the apply stopped", "$var.3e.result", "result.stdout_json.error", x=1600, y=-700, to_job="error", optional=True),
         "9a": note("the PSK step did not run", "applied, but the Gateway could not run aws-vpn-psk; the PSK is not in place yet", "error", x=2200, y=-1100),
         "9b": jq("why the PSK step stopped", "$var.4d.result", "result.stdout_json.error", x=2300, y=-1100, to_job="error", optional=True),
     }
     tasks["5e"]["variables"]["outgoing"]["replacedString"] = "$var.job.outcome"
-    tr = chain("1a", "1b", "1c", "1d", "1e", "1f", "10", "2a", "2b", "3a", "3b", "3c", "3d", "3e", "3f", "30", "31",
+    tr = chain("1a", "1b", "1c", "11", "12", "13", "1d", "1e", "1f", "10", "2a", "2b", "3a", "3b", "3c", "3d", "3e", "3f", "30", "31",
                "4a", "4b", "4c", "4d", "4e", "4f", "5a", "5b", "5c", "5d", "5e")
+    tr["12"] = {"13": {"state": ok, "type": "standard"}, "8f": {"state": err, "type": "standard"}}
+    tr["13"] = {"1d": {"state": ok, "type": "standard"}, "8f": {"state": fail, "type": "standard"}}
+    tr["8f"] = t("", "8c")
     tr["1d"] = {"1e": {"state": ok, "type": "standard"}, "8a": {"state": err, "type": "standard"}}
     tr["1e"] = {"1f": {"state": ok, "type": "standard"}, "8b": {"state": fail, "type": "standard"}}
     tr["2b"] = {"3a": {"state": ok, "type": "standard"}, "7a": {"state": fail, "type": "standard"}}
@@ -3034,7 +3073,9 @@ def deploy_aws_vpn() -> dict:
                                  "description": "The public IPv4 address the tunnel comes from (curl ifconfig.me)"},
             "enable_nat_gateway": {"type": "string", "required": True, "enum": ["false", "true"],
                                    "description": "true also builds the NAT gateway (about $1 a day more); the VPN does not need it"},
-            "change_note": {"type": "string", "required": False, "description": "Why, shown to the approver"},
+            # required in fact: the Platform refuses a start without it (500, metadata.error ["change_note"], measured)
+            "change_note": {"type": "string", "required": True, "maxLength": 280,
+                            "description": "Why, shown to the approver (may be empty)"},
         },
         tasks,
         tr,
@@ -3046,6 +3087,7 @@ def deploy_aws_vpn() -> dict:
             "rejected": {"type": "boolean"},
             "outcome": {"type": "string"},
             "error": {"type": "string"},
+            "input_check": {"type": "object"},
             "plan_result": {"type": "object"},
             "apply_result": {"type": "object"},
             "psk_result": {"type": "object"},

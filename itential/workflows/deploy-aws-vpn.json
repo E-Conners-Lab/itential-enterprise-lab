@@ -4,10 +4,10 @@
   "description": "Deploys the AWS side of the lab's site-to-site VPN: Terraform plans it on the Gateway, a Work Center approval shows the plan, exactly that plan is applied, and the pre-shared key goes to Vault and Secrets Manager (PID S13, ADR 0068)",
   "tasks": {
     "1a": {
-      "name": "replace",
-      "canvasName": "replace",
-      "summary": "plan params: NAT gateway",
-      "description": "plan params: NAT gateway",
+      "name": "parse",
+      "canvasName": "parse",
+      "summary": "plan params: the fixed part",
+      "description": "plan params: the fixed part",
       "location": "Application",
       "locationType": null,
       "app": "WorkFlowEngine",
@@ -20,12 +20,10 @@
       },
       "variables": {
         "incoming": {
-          "str": "{\"action\": \"plan\", \"job\": \"new\", \"enable_vpn\": \"true\", \"enable_nat_gateway\": \"__N__\", \"onprem_public_ip\": \"__IP__\", \"timeout\": \"900\"}",
-          "substr": "__N__",
-          "newSubstr": "$var.job.enable_nat_gateway"
+          "text": "{\"action\": \"plan\", \"job\": \"new\", \"enable_vpn\": \"true\", \"timeout\": \"900\"}"
         },
         "outgoing": {
-          "replacedString": null
+          "textObject": null
         },
         "error": "",
         "decorators": []
@@ -34,8 +32,8 @@
       "scheduled": false
     },
     "1b": {
-      "name": "replace",
-      "canvasName": "replace",
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
       "summary": "plan params: public IP",
       "description": "plan params: public IP",
       "location": "Application",
@@ -50,12 +48,14 @@
       },
       "variables": {
         "incoming": {
-          "str": "$var.1a.replacedString",
-          "substr": "__IP__",
-          "newSubstr": "$var.job.onprem_public_ip"
+          "obj": "$var.1a.textObject",
+          "path": [
+            "onprem_public_ip"
+          ],
+          "value": "$var.job.onprem_public_ip"
         },
         "outgoing": {
-          "replacedString": null
+          "object": null
         },
         "error": "",
         "decorators": []
@@ -64,10 +64,10 @@
       "scheduled": false
     },
     "1c": {
-      "name": "parse",
-      "canvasName": "parse",
-      "summary": "plan params",
-      "description": "plan params",
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "plan params: NAT gateway",
+      "description": "plan params: NAT gateway",
       "location": "Application",
       "locationType": null,
       "app": "WorkFlowEngine",
@@ -80,16 +80,168 @@
       },
       "variables": {
         "incoming": {
-          "text": "$var.1b.replacedString"
+          "obj": "$var.1b.object",
+          "path": [
+            "enable_nat_gateway"
+          ],
+          "value": "$var.job.enable_nat_gateway"
         },
         "outgoing": {
-          "textObject": null
+          "object": null
         },
         "error": "",
         "decorators": []
       },
       "actor": "Pronghorn",
       "scheduled": false
+    },
+    "11": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "the inputs to check (params + change note)",
+      "description": "the inputs to check (params + change note)",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 0,
+        "y": 600
+      },
+      "variables": {
+        "incoming": {
+          "obj": "$var.1c.object",
+          "path": [
+            "change_note"
+          ],
+          "value": "$var.job.change_note"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "12": {
+      "name": "validateJsonSchema",
+      "canvasName": "validateJsonSchema",
+      "summary": "check the inputs",
+      "description": "check the inputs",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 0,
+        "y": 750
+      },
+      "variables": {
+        "incoming": {
+          "jsonData": "$var.11.object",
+          "schema": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "action",
+              "job",
+              "enable_vpn",
+              "timeout",
+              "onprem_public_ip",
+              "enable_nat_gateway",
+              "change_note"
+            ],
+            "properties": {
+              "action": {
+                "const": "plan"
+              },
+              "job": {
+                "const": "new"
+              },
+              "enable_vpn": {
+                "const": "true"
+              },
+              "timeout": {
+                "const": "900"
+              },
+              "onprem_public_ip": {
+                "type": "string",
+                "maxLength": 15,
+                "pattern": "^(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])(\\.(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])){3}$"
+              },
+              "enable_nat_gateway": {
+                "enum": [
+                  "false",
+                  "true"
+                ]
+              },
+              "change_note": {
+                "type": "string",
+                "maxLength": 280
+              }
+            }
+          }
+        },
+        "outgoing": {
+          "result": "$var.job.input_check"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "13": {
+      "name": "evaluation",
+      "canvasName": "evaluation",
+      "summary": "inputs valid?",
+      "description": "inputs valid?",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 100,
+        "y": 900
+      },
+      "variables": {
+        "incoming": {
+          "all_true_flag": true,
+          "evaluation_groups": [
+            {
+              "all_true_flag": true,
+              "evaluations": [
+                {
+                  "query": "valid",
+                  "operand_1": {
+                    "variable": "result",
+                    "task": "12"
+                  },
+                  "operator": "==",
+                  "operand_2": {
+                    "variable": true,
+                    "task": "static"
+                  }
+                }
+              ]
+            }
+          ],
+          "options": {}
+        },
+        "outgoing": {
+          "return_value": null
+        },
+        "error": "",
+        "decorators": []
+      }
     },
     "1d": {
       "name": "runService",
@@ -103,14 +255,14 @@
       "displayName": "GatewayManager",
       "groups": [],
       "nodeLocation": {
-        "x": 0,
-        "y": 600
+        "x": 100,
+        "y": 1050
       },
       "variables": {
         "incoming": {
           "serviceName": "terraform-run",
           "clusterId": "lab",
-          "params": "$var.1c.textObject"
+          "params": "$var.1c.object"
         },
         "outgoing": {
           "result": "$var.job.plan_result"
@@ -133,8 +285,8 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 50,
-        "y": 750
+        "x": 180,
+        "y": 1200
       },
       "variables": {
         "incoming": {
@@ -179,8 +331,8 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 200,
-        "y": 900
+        "x": 400,
+        "y": 1350
       },
       "variables": {
         "incoming": {
@@ -207,8 +359,8 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 180,
-        "y": 1050
+        "x": 340,
+        "y": 1500
       },
       "variables": {
         "incoming": {
@@ -235,12 +387,12 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 150,
-        "y": 1200
+        "x": 280,
+        "y": 1650
       },
       "variables": {
         "incoming": {
-          "str": "Deploy the AWS side of the site-to-site VPN (costs about $1 a day while it is up). Change note: __NOTE__",
+          "str": "Deploy the AWS side of the site-to-site VPN (costs about $1 a day while it is up). The requester's note (their own words, not checked): __NOTE__",
           "substr": "__NOTE__",
           "newSubstr": "$var.job.change_note"
         },
@@ -265,8 +417,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 140,
-        "y": 1350
+        "x": 250,
+        "y": 1800
       },
       "variables": {
         "incoming": {
@@ -295,8 +447,8 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": -40,
-        "y": 1500
+        "x": 50,
+        "y": 1950
       },
       "variables": {
         "incoming": {
@@ -323,8 +475,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": -80,
-        "y": 1650
+        "x": -170,
+        "y": 2100
       },
       "variables": {
         "incoming": {
@@ -353,8 +505,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": -120,
-        "y": 1800
+        "x": -220,
+        "y": 2250
       },
       "variables": {
         "incoming": {
@@ -383,8 +535,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": -160,
-        "y": 1950
+        "x": -120,
+        "y": 2400
       },
       "variables": {
         "incoming": {
@@ -411,8 +563,8 @@
       "displayName": "GatewayManager",
       "groups": [],
       "nodeLocation": {
-        "x": -10,
-        "y": 2100
+        "x": -130,
+        "y": 2550
       },
       "variables": {
         "incoming": {
@@ -441,8 +593,8 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": -10,
-        "y": 2250
+        "x": 10,
+        "y": 2700
       },
       "variables": {
         "incoming": {
@@ -487,8 +639,8 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 240,
-        "y": 2400
+        "x": 400,
+        "y": 2850
       },
       "variables": {
         "incoming": {
@@ -516,7 +668,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 350,
-        "y": 2550
+        "y": 3000
       },
       "variables": {
         "incoming": {
@@ -546,7 +698,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 450,
-        "y": 2700
+        "y": 3150
       },
       "variables": {
         "incoming": {
@@ -574,7 +726,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 540,
-        "y": 2850
+        "y": 3300
       },
       "variables": {
         "incoming": {
@@ -604,7 +756,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 600,
-        "y": 3000
+        "y": 3450
       },
       "variables": {
         "incoming": {
@@ -632,7 +784,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 630,
-        "y": 3150
+        "y": 3600
       },
       "variables": {
         "incoming": {
@@ -662,7 +814,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 930,
-        "y": 3300
+        "y": 3750
       },
       "variables": {
         "incoming": {
@@ -708,7 +860,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 1210,
-        "y": 3450
+        "y": 3900
       },
       "variables": {
         "incoming": {
@@ -736,7 +888,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 1290,
-        "y": 3600
+        "y": 4050
       },
       "variables": {
         "incoming": {
@@ -764,7 +916,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 1360,
-        "y": 3750
+        "y": 4200
       },
       "variables": {
         "incoming": {
@@ -792,7 +944,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 1400,
-        "y": 3900
+        "y": 4350
       },
       "variables": {
         "incoming": {
@@ -821,7 +973,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 1430,
-        "y": 4050
+        "y": 4500
       },
       "variables": {
         "incoming": {
@@ -851,7 +1003,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 1440,
-        "y": 4200
+        "y": 4650
       },
       "variables": {
         "incoming": {
@@ -880,8 +1032,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 260,
-        "y": 1500
+        "x": 350,
+        "y": 1950
       },
       "variables": {
         "incoming": {
@@ -910,8 +1062,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 260,
-        "y": 1650
+        "x": 320,
+        "y": 2100
       },
       "variables": {
         "incoming": {
@@ -938,8 +1090,8 @@
       "displayName": "GatewayManager",
       "groups": [],
       "nodeLocation": {
-        "x": 260,
-        "y": 1800
+        "x": 310,
+        "y": 2250
       },
       "variables": {
         "incoming": {
@@ -968,8 +1120,8 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 210,
-        "y": 1950
+        "x": 250,
+        "y": 2400
       },
       "variables": {
         "incoming": {
@@ -1014,8 +1166,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 590,
-        "y": 2250
+        "x": 620,
+        "y": 2700
       },
       "variables": {
         "incoming": {
@@ -1044,8 +1196,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 700,
-        "y": 2400
+        "x": 720,
+        "y": 2850
       },
       "variables": {
         "incoming": {
@@ -1074,8 +1226,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 810,
-        "y": 2550
+        "x": 680,
+        "y": 3000
       },
       "variables": {
         "incoming": {
@@ -1104,8 +1256,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 600,
-        "y": 2100
+        "x": 630,
+        "y": 2550
       },
       "variables": {
         "incoming": {
@@ -1134,8 +1286,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": -250,
-        "y": 750
+        "x": -120,
+        "y": 1200
       },
       "variables": {
         "incoming": {
@@ -1164,8 +1316,8 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": -100,
-        "y": 900
+        "x": 100,
+        "y": 1350
       },
       "variables": {
         "incoming": {
@@ -1192,8 +1344,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": -690,
-        "y": 1050
+        "x": -260,
+        "y": 1500
       },
       "variables": {
         "incoming": {
@@ -1203,6 +1355,36 @@
         },
         "outgoing": {
           "output": "$var.job.aws_changed"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "8f": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "the inputs were refused",
+      "description": "the inputs were refused",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": -350,
+        "y": 1050
+      },
+      "variables": {
+        "incoming": {
+          "input": "the inputs were refused before anything ran (see input_check): the on-prem IP must be an IPv4 address a.b.c.d, the NAT gateway true or false, the change note at most 280 characters; nothing changed in AWS",
+          "outputType": "string",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.error"
         },
         "error": "",
         "decorators": []
@@ -1222,8 +1404,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": -610,
-        "y": 2250
+        "x": -290,
+        "y": 2700
       },
       "variables": {
         "incoming": {
@@ -1252,8 +1434,8 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": -360,
-        "y": 2400
+        "x": -50,
+        "y": 2850
       },
       "variables": {
         "incoming": {
@@ -1281,7 +1463,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 630,
-        "y": 3300
+        "y": 3750
       },
       "variables": {
         "incoming": {
@@ -1311,7 +1493,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 910,
-        "y": 3450
+        "y": 3900
       },
       "variables": {
         "incoming": {
@@ -1341,7 +1523,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 840,
-        "y": 4350
+        "y": 4800
       }
     }
   },
@@ -1365,8 +1547,34 @@
       }
     },
     "1c": {
+      "11": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "11": {
+      "12": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "12": {
+      "13": {
+        "state": "success",
+        "type": "standard"
+      },
+      "8f": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "13": {
       "1d": {
         "state": "success",
+        "type": "standard"
+      },
+      "8f": {
+        "state": "failure",
         "type": "standard"
       }
     },
@@ -1548,6 +1756,12 @@
         "type": "standard"
       }
     },
+    "8f": {
+      "8c": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
     "7a": {
       "7b": {
         "state": "success",
@@ -1669,13 +1883,15 @@
       },
       "change_note": {
         "type": "string",
-        "required": false,
-        "description": "Why, shown to the approver"
+        "required": true,
+        "maxLength": 280,
+        "description": "Why, shown to the approver (may be empty)"
       }
     },
     "required": [
       "onprem_public_ip",
-      "enable_nat_gateway"
+      "enable_nat_gateway",
+      "change_note"
     ]
   },
   "outputSchema": {
@@ -1701,6 +1917,9 @@
       },
       "error": {
         "type": "string"
+      },
+      "input_check": {
+        "type": "object"
       },
       "plan_result": {
         "type": "object"

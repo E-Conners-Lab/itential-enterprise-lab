@@ -61,7 +61,7 @@
         "title": "Change note",
         "description": "Why, shown to the approver",
         "placeholder": "",
-        "required": false,
+        "required": true,
         "readOnly": false,
         "binding": false,
         "rel": "item",
@@ -76,14 +76,17 @@
     "type": "object",
     "required": [
       "onprem_public_ip",
-      "enable_nat_gateway"
+      "enable_nat_gateway",
+      "change_note"
     ],
     "properties": {
       "onprem_public_ip": {
         "type": "string",
         "title": "Your public IP address",
         "_id": "/properties/onprem_public_ip",
-        "description": "The public IPv4 address the tunnel comes from (curl ifconfig.me)"
+        "description": "The public IPv4 address the tunnel comes from (curl ifconfig.me)",
+        "maxLength": 15,
+        "pattern": "^(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])(\\.(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])){3}$"
       },
       "enable_nat_gateway": {
         "type": "string",
@@ -104,7 +107,8 @@
         "type": "string",
         "title": "Change note",
         "_id": "/properties/change_note",
-        "description": "Why, shown to the approver"
+        "description": "Why, shown to the approver",
+        "maxLength": 280
       }
     }
   },
