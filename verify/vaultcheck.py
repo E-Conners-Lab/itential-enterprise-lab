@@ -17,6 +17,7 @@ import os
 import secrets
 import ssl
 import string
+import subprocess
 import sys
 import time
 import urllib.error
@@ -224,9 +225,44 @@ def c_terraform_run() -> bool:
         "caller itential-terraform": str(out.get("sts_caller", "")).endswith(f":user/itential/{VAULT['aws']['iam_user']}"),
         "backend init": out.get("backend_init") == "ok",
         f"terraform {V['runner_terraform']['version']}": out.get("terraform") == V["runner_terraform"]["version"],
+        # the Gateway ran the pinned commit, not whatever a branch points at (ITL-01; the probe reports 12 characters)
+        "clone at the pinned commit": out.get("commit") == V["terraform_run"]["repository"]["reference"][:12],
     }
     print(f"clone at {out.get('commit', '?')}, argv {out.get('argv')}, uid {out.get('uid')}; "
           f"caller {out.get('sts_caller', '?')}")
+    for name, ok in checks.items():
+        print(f"  {'ok  ' if ok else 'FAIL'} {name}")
+    return all(checks.values())
+
+
+def gh(*args: str) -> str:
+    """A read-only GitHub API call through the workstation's gh login (the repository is private)."""
+    run = subprocess.run(["gh", "api", *args], capture_output=True, text=True, timeout=60, check=False)
+    if run.returncode != 0:
+        raise RuntimeError(f"gh api {args[0]}: {(run.stderr or run.stdout).strip()[:200]}")
+    return run.stdout.strip()
+
+
+def c_cdp_pin() -> bool:
+    """Security review 2026-09-29, ITL-01: the commit the Gateway is pinned to is on cloud-devops-pipeline's protected
+    main, every required check passed on it, and main still requires those checks with admins included. A pin can
+    name ANY commit, an unmerged branch's included, and the Gateway would run it with the AWS key; branch protection
+    alone does not stop that. Reads GitHub only."""
+    repo, pin = VAULT["git"]["repo"], V["terraform_run"]["repository"]["reference"]
+    # "identical" or "ahead": main contains the pin. "behind" or "diverged": the pin is not on main
+    status = gh(f"repos/{repo}/compare/{pin}...main", "--jq", ".status")
+    protection = json.loads(gh(f"repos/{repo}/branches/main/protection"))
+    required = sorted(c["context"] for c in (protection.get("required_status_checks") or {}).get("checks") or [])
+    runs = json.loads(gh(f"repos/{repo}/commits/{pin}/check-runs?per_page=100", "--jq",
+                         "[.check_runs[] | {name, conclusion}]"))
+    passed = {r["name"] for r in runs if r["conclusion"] == "success"}
+    checks = {
+        "the pin is on main": status in ("identical", "ahead"),
+        "main requires checks, admins included": bool(required) and protection["enforce_admins"]["enabled"],
+        "every required check passed on the pin": bool(required) and set(required) <= passed,
+    }
+    print(f"pin {pin[:12]}: main is {status} of it; required {', '.join(required) or 'none'}; "
+          f"passed on the pin {', '.join(sorted(passed)) or 'none'}")
     for name, ok in checks.items():
         print(f"  {'ok  ' if ok else 'FAIL'} {name}")
     return all(checks.values())
@@ -429,7 +465,7 @@ def c_sealed() -> bool:
     return ok and same
 
 
-CHECKS = {"sealed": c_sealed, "health": c_health, "no-token": c_no_token, "policies": c_policies, "bound": c_bound, "aws-psk": c_aws_psk, "terraform-run": c_terraform_run, "seeded": c_seeded,
+CHECKS = {"sealed": c_sealed, "health": c_health, "no-token": c_no_token, "policies": c_policies, "bound": c_bound, "aws-psk": c_aws_psk, "terraform-run": c_terraform_run, "cdp-pin": c_cdp_pin, "seeded": c_seeded,
           "references": c_references, "gateway": c_gateway, "devices": c_devices, "platform-read": c_platform_read,
           "rotation": c_rotation, "hosts": c_hosts}
 
