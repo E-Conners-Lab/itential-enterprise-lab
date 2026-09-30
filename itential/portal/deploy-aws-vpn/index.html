@@ -460,6 +460,7 @@
     if (state.approve === "done" && (state.apply === "active" || state.apply === "done")) log("approved", "Approved. Applying exactly that plan.");
     if (state.apply === "done") log("applied", "Applied. AWS resources are up.", "ok");
     if (v.psk && v.psk.vault_version) log("psk", `Pre-shared key written: Vault version ${v.psk.vault_version} and Secrets Manager. Neither this page nor the job holds it.`, "ok");
+    else if (v.psk && v.psk.present) log("psk", "Pre-shared key already in place: kept, so strongSwan and the router stay on the same key.", "ok");
     if (v.outputs) showOutputs(v.outputs);
     if (state.done === "done") { log("done", v.outcome || "Deployed.", "ok"); status("<strong>Deployed.</strong> The AWS side is ready for the router hand-off."); }
     if (v.error || Object.values(state).includes("failed") || jobStatus === "error") {

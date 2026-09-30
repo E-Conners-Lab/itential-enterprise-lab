@@ -5,6 +5,7 @@ every AWS secret only in Vault. The service, workflows and verify scripts join t
 from __future__ import annotations
 
 import importlib.util
+import json
 import re
 from pathlib import Path
 
@@ -429,3 +430,14 @@ def test_the_manual_form_asks_for_what_the_workflow_accepts() -> None:
     assert form["properties"]["onprem_public_ip"]["maxLength"] == want["onprem_public_ip"]["maxLength"]
     assert form["properties"]["change_note"]["maxLength"] == want["change_note"]["maxLength"]
     assert form["properties"]["enable_nat_gateway"]["enum"] == want["enable_nat_gateway"]["enum"]
+
+
+def test_deploy_keeps_the_key_strongswan_already_has() -> None:
+    """Step 6 feasibility C7: strongSwan reads the PSK only at boot, so Deploy runs `ensure` (a key only when the
+    secret has none), never `write` (a new key on every run would leave the box and the router on different keys)."""
+    _, tasks = _deploy()
+    assert '"action": "ensure"' in tasks["4b"]["variables"]["incoming"]["str"]
+    assert '"action": "write"' not in json.dumps(tasks)
+    # the close-out says what happened to the key from the service's own summary, on one straight path to 5e
+    assert tasks["5b"]["variables"]["incoming"]["query"] == "summary"
+    assert tasks["5e"]["variables"]["incoming"]["newSubstr"] == "$var.5b.return_data"

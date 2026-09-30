@@ -3019,7 +3019,8 @@ PLAN_INPUTS_SCHEMA = {
 }
 APPLY_TPL = '{"action": "apply", "job": "__ID__", "plan_sha256": "__SHA__", "timeout": "1800"}'
 DISCARD_TPL = '{"action": "discard", "job": "__ID__", "timeout": "120"}'
-PSK_TPL = '{"action": "write", "secret_arn": "__ARN__", "timeout": "120"}'
+# ensure, not write: strongSwan reads the key only at boot, so a redeploy keeps the key it has (step 6 feasibility C7)
+PSK_TPL = '{"action": "ensure", "secret_arn": "__ARN__", "timeout": "120"}'
 
 
 def run_service(summary: str, service: str, params_ref: str, out_job: str, x: int, y: int = 0) -> dict:
@@ -3087,14 +3088,10 @@ def deploy_aws_vpn() -> dict:
         "4f": jq("the PSK versions (never the PSK)", "$var.4d.result", "result.stdout_json", x=2300, to_job="psk"),
         # close out
         "5a": jq("the strongSwan EIP", "$var.job.outputs", "strongswan_eip", x=2400),
-        "5b": jq("the Vault version", "$var.job.psk", "vault_version", x=2500),
-        "5c": num2str("the Vault version as text", "$var.5b.return_data", x=2600),
-        "5d": replace(
-            "the outcome: EIP",
-            "Deployed: strongSwan at __EIP__; pre-shared key version __V__ in Vault and Secrets Manager.",
-            "__EIP__", "$var.5a.return_data", x=2700,
-        ),
-        "5e": replace("the outcome", "$var.5d.replacedString", "__V__", "$var.5c.numToString", x=2800),
+        # the key step's own one-line summary: the version written, or that the key in place was kept
+        "5b": jq("what happened to the key", "$var.job.psk", "summary", x=2500),
+        "5d": replace("the outcome: EIP", "Deployed: strongSwan at __EIP__; __V__.", "__EIP__", "$var.5a.return_data", x=2700),
+        "5e": replace("the outcome", "$var.5d.replacedString", "__V__", "$var.5b.return_data", x=2800),
         # reject: discard the stored plan, end cleanly
         "7a": replace("discard params", DISCARD_TPL, "__ID__", "$var.10.return_data", x=1000, y=400),
         "7b": parse("discard params", "$var.7a.replacedString", x=1100, y=400),
@@ -3121,7 +3118,7 @@ def deploy_aws_vpn() -> dict:
     }
     tasks["5e"]["variables"]["outgoing"]["replacedString"] = "$var.job.outcome"
     tr = chain("1a", "1b", "1c", "11", "12", "13", "1d", "1e", "1f", "10", "2a", "2b", "3a", "3b", "3c", "3d", "3e", "3f", "30", "31",
-               "4a", "4b", "4c", "4d", "4e", "4f", "5a", "5b", "5c", "5d", "5e")
+               "4a", "4b", "4c", "4d", "4e", "4f", "5a", "5b", "5d", "5e")
     tr["12"] = {"13": {"state": ok, "type": "standard"}, "8f": {"state": err, "type": "standard"}}
     tr["13"] = {"1d": {"state": ok, "type": "standard"}, "8f": {"state": fail, "type": "standard"}}
     tr["8f"] = t("", "8c")
