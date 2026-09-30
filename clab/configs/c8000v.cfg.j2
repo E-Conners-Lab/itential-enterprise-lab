@@ -45,7 +45,11 @@ line vty 5 15
     Hand Off block swaps for IKE from the peer). Turning on AES encryption of stored keys, and the master one, are the
     owner's steps (spec Appendix A); CANARY exists so the precheck can see keys stored as type 6 once those are set: a
     throwaway value (aws_twin.canary_key) for a peer that does not exist (TEST-NET-1). #}
+{# vrnetlab (no CLAB_MGMT_PASSTHROUGH) forwards SSH into the VM through QEMU's user network: IOS sees every login - the
+    play's devcmd, the Gateway, the Mac - from 10.0.0.2, so that entry is what lets them in, and the clab VM's DOCKER-USER
+    allowlist (access_allow) is the real source filter here. The real sources stay listed for a passthrough setup. #}
 ip access-list standard MGMT-ONLY
+ permit 10.0.0.2 0.0.0.0
 {% for src in access_allow + [mgmt.gateway ~ '/32'] %}
 {% set net, plen = src.split('/') %}
  permit {{ net }} {{ wildcards[plen] }}

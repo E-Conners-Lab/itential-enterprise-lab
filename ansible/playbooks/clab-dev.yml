@@ -50,7 +50,7 @@
     # the AWS end's twin: two containers beside the devices (clab/versions.yaml aws_twin), never in the device loops
     twin_dir: "{{ lab_dir }}/aws-twin"
     twin_containers: ["clab-dev-{{ aws_twin.nat.name }}", "clab-dev-{{ aws_twin.twin.name }}"]
-    expected_running: "{{ nodes | length + 2 }}"
+    device_names: "{{ nodes | map(attribute='name') | map('regex_replace', '^', 'clab-dev-') | list }}"
     # the twin's connection template: cloud-devops-pipeline at the commit the Gateway runs, from the local clone
     cdp_repo: >-
       {{ lookup('ansible.builtin.env', 'CDP_REPO_DIR')
@@ -81,11 +81,22 @@
     # ~/PycharmProjects/cloud-devops-pipeline), so the AWS box and its twin can never drift apart.
     # git show / cat-file read one file at a commit; the git module only checks out (hence the two noqa)
     - name: The pinned cloud-devops-pipeline commit is in the local clone
+      register: cdp_commit
+      failed_when: false
       delegate_to: localhost
       become: false
       run_once: true
       ansible.builtin.command: git -C {{ cdp_repo }} cat-file -e {{ cdp_pin }}^{commit}  # noqa: command-instead-of-module
       changed_when: false
+
+    - name: The clone holds the pinned commit (else fetch it; the play needs the clone on every run)
+      ansible.builtin.assert:
+        that: cdp_commit.rc == 0
+        fail_msg: "{{ cdp_repo }} has no commit {{ cdp_pin }}: run `git -C {{ cdp_repo }} fetch` (or set CDP_REPO_DIR)"
+        quiet: true
+      delegate_to: localhost
+      become: false
+      run_once: true
 
     - name: The twin's swanctl.conf, filled in from clab/versions.yaml (only $PSK left, put in at the twin's start)
       delegate_to: localhost
@@ -205,6 +216,15 @@
           {%- set rows = (j.values() | list | flatten) if j is mapping else j -%}
           {{ rows | selectattr('state', 'equalto', 'running') | list | length }}
 
+    # the devices alone decide a redeploy: a stopped twin container must not reboot every device (see below)
+    - name: Running device count (the twin's containers not counted)
+      ansible.builtin.set_fact:
+        devices_running: >-
+          {%- set out = inspect_before.stdout | default('') | trim -%}
+          {%- set j = (out | from_json) if inspect_before.rc == 0 and out[:1] in ['{', '['] else [] -%}
+          {%- set rows = (j.values() | list | flatten) if j is mapping else j -%}
+          {{ rows | selectattr('state', 'equalto', 'running') | selectattr('name', 'in', device_names) | list | length }}
+
     # --reconfigure rebuilds the lab directory so a changed startup config is really applied; every node is a
     # vrnetlab VM and boots again (C8000v 10-20 min, vEOS about 4 min, nested), which is why an unchanged,
     # healthy lab is left alone.
@@ -212,13 +232,19 @@
       ansible.builtin.command:
         cmd: containerlab deploy -t {{ topo }} --reconfigure
         chdir: "{{ lab_dir }}"
-      when: topo_file is changed or cfg_files is changed or (running_before | int) < (expected_running | int)
+      when: topo_file is changed or cfg_files is changed or (devices_running | int) < (nodes | length)
       register: deployed
       changed_when: true
 
-    # only the twin's own files changed: restart the two containers (they read them at start), not the devices
-    - name: Twin restarted on a changed file
-      ansible.builtin.command: docker restart {{ twin_containers | join(' ') }}
+    # only the twin's own files changed: re-apply them inside the running containers. Never `docker restart`: a new
+    # network namespace would leave containerlab's links (clab-rtr1's front door included) behind in the old one
+    - name: Twin reloaded in place on a changed file
+      ansible.builtin.command: docker exec {{ item.container }} /usr/local/sbin/{{ item.script }} reload
+      loop:
+        - {container: "clab-dev-{{ aws_twin.nat.name }}", script: nat.sh}
+        - {container: "clab-dev-{{ aws_twin.twin.name }}", script: twin.sh}
+      loop_control:
+        label: "{{ item.container }}"
       when: deployed is skipped and twin_files is changed
       changed_when: true
 
@@ -247,7 +273,10 @@
     - name: Both twin containers running
       ansible.builtin.assert:
         that: not_running | length == 0
-        fail_msg: "not running: {{ not_running }}"
+        fail_msg: >-
+          not running: {{ not_running }}. A container start cannot restore containerlab's links, and the fix is
+          `containerlab deploy --reconfigure`, which boots every device again and wipes clab-rtr1's master key and
+          `password encryption aes` (the owner sets them again, spec Appendix A) - so it is never done automatically
         quiet: true
       vars:
         j: "{{ inspect_after.stdout | from_json }}"
@@ -455,6 +484,14 @@
       delay: 10
       changed_when: false
       no_log: true
+
+    - name: The ping reached the twin through the NAT (its firewall dropped it, as the AWS box's would)
+      ansible.builtin.command: docker exec clab-dev-{{ aws_twin.twin.name }} iptables -L INPUT -n -v -x
+      register: twin_input
+      failed_when: >-
+        twin_input.rc != 0
+        or (twin_input.stdout_lines[0].split('policy DROP ')[-1].split(' ')[0] | int) == 0
+      changed_when: false
 
     - name: Router clab-rtr1 holds the prerequisites lab-edge's precheck reads (the master key aside, the owner's)
       ansible.builtin.command: python3 {{ devcmd }} {{ twin_router.mgmt_ipv4 }} "{{ item.cmd }}"

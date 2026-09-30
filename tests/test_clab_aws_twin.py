@@ -77,8 +77,12 @@ def test_the_twin_image_is_pinned_by_digest() -> None:
     assert TWIN["image"]["tag"] == f"lab/aws-twin:jammy-{base.split(':')[-1][:12]}"
     docker = (TWIN_DIR / "Dockerfile").read_text()
     assert "ARG BASE\nFROM ${BASE}" in docker and "latest" not in docker
-    # the packages the AWS box's user data installs for strongSwan (plus the tools the scripts use)
-    assert re.search(r"install -y --no-install-recommends strongswan strongswan-swanctl iptables iproute2", docker)
+    # installed as the AWS box's user data does (recommends included: the gcm and openssl plugins behind
+    # aes256gcm16 / ecp256), the plugins named, and the build fails without them
+    assert "install -y strongswan strongswan-swanctl libstrongswan-standard-plugins iptables iproute2" in docker
+    assert "--no-install-recommends" not in docker
+    for plugin in ("gcm", "openssl"):
+        assert f"test -f /usr/lib/ipsec/plugins/libstrongswan-{plugin}.so" in docker
 
 
 # ── the topology: containers, not devices ──
@@ -137,6 +141,9 @@ def test_exactly_the_transit_interfaces_are_inside() -> None:
 
 def test_the_management_plane_admits_the_allowlist_and_the_clab_host_only() -> None:
     acl = blocks(router_config(TWIN["router"]))["ip access-list standard MGMT-ONLY"]
+    # vrnetlab's QEMU user network: IOS sees every SSH login from 10.0.0.2 (without it, everyone is locked out)
+    assert acl[0] == "permit 10.0.0.2 0.0.0.0"
+    acl = acl[1:]
     wanted = [*ORACLE["access_allow"], ORACLE["mgmt"]["gateway"] + "/32"]
     assert [x.split()[1] for x in acl] == [w.split("/")[0] for w in wanted]
     for entry, cidr in zip(acl, wanted, strict=True):
@@ -155,13 +162,19 @@ def test_clab_rtr2_is_untouched() -> None:
 
 def test_the_twin_boots_like_the_aws_box() -> None:
     twin = (TWIN_DIR / "twin.sh").read_text()
-    inputs = [line.strip() for line in twin.splitlines() if "iptables -A INPUT" in line or "-P INPUT" in line]
-    assert inputs[:2] == ["iptables -A INPUT -i lo -j ACCEPT",
-                          "iptables -A INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT"]
-    assert inputs[-1] == "iptables -P INPUT DROP" and "iptables -P FORWARD DROP" in twin
+    rules = [line.strip() for line in twin.splitlines() if re.match(r"\s*iptables -(A|P|F) (INPUT|FORWARD)", line)]
+    # the policy is DROP before the chains are flushed, so a reload never leaves the box open, even for a moment
+    assert rules[:4] == ["iptables -P INPUT DROP", "iptables -P FORWARD DROP", "iptables -F INPUT", "iptables -F FORWARD"]
+    appended = [r for r in rules if r.startswith("iptables -A INPUT")]
+    assert appended[:2] == ["iptables -A INPUT -i lo -j ACCEPT",
+                            "iptables -A INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT"]
+    assert rules[-1] == "iptables -P INPUT DROP"
     assert not re.search(r"--dport 22|sshd|tcp", twin)
-    assert "grep -Eq '^[A-Za-z0-9._+/=-]{32,}$'" in twin and "umask 077" in twin  # vpn-render.sh's check
-    assert twin.index("iptables -P INPUT DROP") < twin.index("/usr/lib/ipsec/charon")  # closed before charon starts
+    assert twin.index("setup\nrender") < twin.index("/usr/lib/ipsec/charon")  # closed before charon starts
+    # the key: its characters and length checked without grep (an embedded newline passed that), put in by shell
+    # expansion (never a command's argument), never world-readable
+    assert "*[!A-Za-z0-9._+/=-]*)" in twin and '"${#psk}" -lt 32' in twin and "umask 077" in twin
+    assert not re.search(r"\bsed\b", twin) and "${template%%\\$PSK*}${psk}${template#*\\$PSK}" in twin
     assert "install_routes = no" in (TWIN_DIR / "charon-lab.conf").read_text()
 
 
@@ -193,15 +206,33 @@ def test_clab_dev_keeps_the_twin_out_of_the_device_loops_and_reads_the_pinned_te
     for name in ("Every node answers SSH as the automation user (nested boot up to 30 min)",
                  "OSPF adjacencies FULL equal the node's links", "BGP sessions Established on both ends"):
         assert tasks[name]["loop"] == "{{ nodes }}", name  # devices only: the twin is not in nodes
-    assert "expected_running | int" in tasks["Deploy (only when a rendered file changed or a node is not running)"]["when"]
+    deploy_when = tasks["Deploy (only when a rendered file changed or a node is not running)"]["when"]
+    # a redeploy boots every device and wipes clab-rtr1's master key: only a device change or a device down triggers it
+    assert "(devices_running | int) < (nodes | length)" in deploy_when and "running_before" not in deploy_when
+    counted = tasks["Running device count (the twin's containers not counted)"]["ansible.builtin.set_fact"]["devices_running"]
+    assert "device_names" in plays[1]["vars"] and "selectattr('name', 'in', device_names)" in counted
+    # the twin is reloaded in place, never restarted (a new network namespace would lose containerlab's links)
+    commands = [yaml.safe_dump({k: v for k, v in t.items() if k.startswith("ansible.builtin.")}) for t in tasks.values()]
+    assert not any("docker restart" in c or "docker start" in c for c in commands)
+    reload = tasks["Twin reloaded in place on a changed file"]
+    assert reload["ansible.builtin.command"] == "docker exec {{ item.container }} /usr/local/sbin/{{ item.script }} reload"
     key = tasks["Twin key, generated once on the clab VM (the dev twin's own; build step 6 moves it to the dev Vault)"]
     assert key["no_log"] is True and key["ansible.builtin.shell"]["creates"] == "{{ twin_dir }}/psk"
     assert "umask 077" in key["ansible.builtin.shell"]["cmd"]
 
 
-@pytest.mark.parametrize("name", ["clab-dev.yml", "clab-host.yml"])
-def test_no_twin_secret_is_ever_logged(name: str) -> None:
-    for task in yaml.safe_load((PLAYBOOKS / name).read_text())[-1]["tasks"]:
-        text = yaml.safe_dump(task)
-        if "psk" in text.lower() and "creates" in text:
-            assert task.get("no_log") is True, task["name"]
+def test_every_task_that_touches_the_twin_key_is_not_logged() -> None:
+    touching = [t for t in yaml.safe_load((PLAYBOOKS / "clab-dev.yml").read_text())[1]["tasks"]
+                if re.search(r"\bpsk\b", yaml.safe_dump(t)) and "swanctl" not in t["name"]]
+    assert touching, "the key-generation task"
+    for task in touching:
+        assert task.get("no_log") is True, task["name"]
+
+
+def test_the_scripts_reload_in_place() -> None:
+    for script in ("twin.sh", "nat.sh"):
+        text = (TWIN_DIR / script).read_text()
+        assert "reload" in text and "ip addr flush" in text, script
+    assert "ip link show \"xfrm$IF_ID\" >/dev/null 2>&1 || ip link add" in (TWIN_DIR / "twin.sh").read_text()
+    nat = (TWIN_DIR / "nat.sh").read_text()
+    assert nat.index("iptables -t nat -F PREROUTING") < nat.index("iptables -t nat -A PREROUTING")

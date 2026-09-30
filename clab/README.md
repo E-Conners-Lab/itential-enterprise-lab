@@ -33,6 +33,13 @@ the management ACL on the vty lines, the archive with `hidekeys`, the zones with
 keyring); its master key and `password encryption aes` are the owner's (spec Appendix A). The twin's key is generated
 once on the VM (0600); build step 6 moves it to the dev Vault. `tests/test_clab_aws_twin.py` holds all of it.
 
+A change to the twin's own files is applied in place (`twin.sh reload`, `nat.sh reload` through `docker exec`): a
+container restart would leave containerlab's links behind in its old network namespace. If a twin container stops, the
+fix is `containerlab deploy --reconfigure`, which boots every device again and **wipes clab-rtr1's master key and
+`password encryption aes`** - so the play never does it on its own; it stops and says so, and after a redeploy the
+owner sets them again (spec Appendix A). SSH reaches IOS on the C8000v through vrnetlab's QEMU user network, so every
+login arrives from 10.0.0.2: clab-rtr1's `MGMT-ONLY` permits it, and the DOCKER-USER allowlist is the real source filter.
+
 ## Addressing and access
 
 - **Mgmt:** Docker network `clab-dev-mgmt`, 10.100.2.0/24, gateway 10.100.2.1 on bridge `br-clab-dev`. It is
