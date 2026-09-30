@@ -117,7 +117,7 @@
         group: ubuntu
         mode: "0755"
 
-    - name: Runner build context (the Dockerfile and terraform-run's hash-pinned requirements)
+    - name: Runner build context (the Dockerfile and the hash-pinned requirements of terraform-run and lab-edge)
       ansible.builtin.copy:
         src: "../../itential/gateway5-runner/{{ item }}"
         dest: "{{ stack_dir }}/gateway5-runner/{{ item }}"

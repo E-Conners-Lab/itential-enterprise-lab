@@ -164,9 +164,11 @@ def test_netmiko_is_installed_only_with_hashes_and_named_in_the_image_tag() -> N
     req = (RUNNER / "requirements-lab-edge.txt").read_text()
     pins = dict(re.findall(r"^([a-z0-9_.-]+)==([^ \\]+)", req, re.M))
     assert pins.get("netmiko") and {"paramiko", "cryptography"} <= set(pins)
-    for name in pins:  # every package carries at least one hash
-        block = req.split(f"{name}=={pins[name]}", 1)[1].split("==", 1)[0]
-        assert "--hash=sha256:" in block, name
+    for line in req.splitlines():  # pins, their hashes and comments only: no index URL, find-links or editable
+        assert re.fullmatch(r"#.*|[a-z0-9_.-]+==[^ \\]+ \\|\s+--hash=sha256:[0-9a-f]{64}( \\)?|", line), line
+    for name, version in pins.items():  # every package carries at least one hash
+        block = re.split(rf"^{re.escape(name)}=={re.escape(version)} \\$", req, maxsplit=1, flags=re.M)[1]
+        assert re.match(r"\n\s+--hash=sha256:", block), name
     assert not set(pins) & set(re.findall(r"^([a-z0-9_.-]+)==", (RUNNER / "requirements-terraform-run.txt").read_text(), re.M))
     docker = (RUNNER / "Dockerfile").read_text()
     assert "--require-hashes --only-binary=:all: -r /tmp/requirements-lab-edge.txt" in docker

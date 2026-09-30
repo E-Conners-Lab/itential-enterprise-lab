@@ -32,7 +32,7 @@
       loop_control:
         label: "{{ item.path }}"
 
-    - name: Runner build context (the Dockerfile and terraform-run's hash-pinned requirements)
+    - name: Runner build context (the Dockerfile and the hash-pinned requirements of terraform-run and lab-edge)
       ansible.builtin.copy:
         src: "../../itential/gateway5-runner/{{ item }}"
         dest: "{{ dir }}/gateway5-runner/{{ item }}"

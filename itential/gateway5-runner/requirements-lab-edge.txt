@@ -1,5 +1,7 @@
 # lab-edge services (ADR 0068 step 6, build step 3): netmiko for the router sessions, installed with --require-hashes.
 # 4.7.0 rather than 4.8.0 (out 2026-09-21): a release gets a few months in the wild before the key-holding runner runs it.
+# That wait is for netmiko itself; its dependencies are the newest up to the compile cutoff (2026-09-01), so
+# security fixes such as cryptography 50.0.1 (2026-08-25) come in.
 # Regenerate: echo netmiko==<ver> | uv pip compile - --python-version 3.12 --python-platform x86_64-manylinux_2_28 \
 #   --only-binary :all: --generate-hashes --exclude-newer <a date a month or more back> --no-header --no-annotate
 bcrypt==5.0.0 \
