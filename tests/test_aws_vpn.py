@@ -149,7 +149,7 @@ def test_terraform_1_5_7_is_pinned_by_hash_and_the_build_refuses_anything_else()
     assert "is not the pinned" in docker and "CHECKPOINT_DISABLE=1" in docker
     for name, play in PLAYS.items():
         assert "--build-arg TERRAFORM_SHA256={{ runner_terraform.sha256 }}" in play, name
-        assert "loop: [Dockerfile, requirements-terraform-run.txt, known_hosts]" in play, name
+        assert "loop: [Dockerfile, requirements-terraform-run.txt, requirements-lab-edge.txt, known_hosts]" in play, name
 
 
 def test_boto3_is_installed_only_with_hashes() -> None:
@@ -158,6 +158,22 @@ def test_boto3_is_installed_only_with_hashes() -> None:
     assert "boto3" in pins and all(f"{p}==" in req for p in pins)
     assert req.count("--hash=sha256:") >= len(pins)
     assert "--require-hashes --only-binary=:all:" in (RUNNER / "Dockerfile").read_text()
+
+
+def test_netmiko_is_installed_only_with_hashes_and_named_in_the_image_tag() -> None:
+    req = (RUNNER / "requirements-lab-edge.txt").read_text()
+    pins = dict(re.findall(r"^([a-z0-9_.-]+)==([^ \\]+)", req, re.M))
+    assert pins.get("netmiko") and {"paramiko", "cryptography"} <= set(pins)
+    for line in req.splitlines():  # pins, their hashes and comments only: no index URL, find-links or editable
+        assert re.fullmatch(r"#.*|[a-z0-9_.-]+==[^ \\]+ \\|\s+--hash=sha256:[0-9a-f]{64}( \\)?|", line), line
+    for name, version in pins.items():  # every package carries at least one hash
+        block = re.split(rf"^{re.escape(name)}=={re.escape(version)} \\$", req, maxsplit=1, flags=re.M)[1]
+        assert re.match(r"\n\s+--hash=sha256:", block), name
+    assert not set(pins) & set(re.findall(r"^([a-z0-9_.-]+)==", (RUNNER / "requirements-terraform-run.txt").read_text(), re.M))
+    docker = (RUNNER / "Dockerfile").read_text()
+    assert "--require-hashes --only-binary=:all: -r /tmp/requirements-lab-edge.txt" in docker
+    assert docker.index("requirements-lab-edge.txt") < docker.index("USER itential")  # installed as root, run as the runner user
+    assert VERSIONS["stack"]["runner_image"].endswith(f"-nm{pins['netmiko']}")  # a new pin is a new tag: the play rebuilds
 
 
 def test_githubs_host_keys_are_the_three_pinned_fingerprints() -> None:
