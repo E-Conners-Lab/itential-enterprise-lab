@@ -4,6 +4,7 @@ every AWS secret only in Vault. The service, workflows and verify scripts join t
 
 from __future__ import annotations
 
+import importlib.util
 import re
 from pathlib import Path
 
@@ -238,8 +239,8 @@ def test_deploy_plans_then_asks_then_applies_exactly_that_plan() -> None:
     assert names == [("runService", "terraform-run"), ("ViewData", None), ("runService", "terraform-run"),
                      ("runService", "aws-vpn-psk")]
     assert tasks["2b"]["variables"]["incoming"]["body"] == "$var.job.plan"  # the approver sees the plan summary
-    plan_tpl = tasks[_svc(tasks, "plan")]["variables"]["incoming"]["str"]
-    assert '"job": "new"' in plan_tpl and '"enable_vpn": "true"' in plan_tpl
+    plan_fixed = tasks["1a"]["variables"]["incoming"]["text"]  # the inputs are added as data (WEB-01)
+    assert '"job": "new"' in plan_fixed and '"enable_vpn": "true"' in plan_fixed and '"action": "plan"' in plan_fixed
     # the apply's plan ID and SHA-256 are the plan result's own, never typed in
     assert tasks["10"]["variables"]["incoming"] == {"pass_on_null": False, "query": "result.stdout_json.job", "obj": "$var.1d.result"}
     assert tasks["3a"]["variables"]["incoming"]["query"] == "result.stdout_json.plan_sha256"
@@ -270,7 +271,66 @@ def test_the_nat_gateway_is_off_unless_asked() -> None:
     wf, _ = _deploy()
     inputs = wf["inputSchema"]
     assert inputs["properties"]["enable_nat_gateway"]["enum"] == ["false", "true"]
-    assert set(inputs["required"]) == {"onprem_public_ip", "enable_nat_gateway"}
+    # change_note too: the Platform refuses a start without it (measured on dev 2026-09-29)
+    assert set(inputs["required"]) == {"onprem_public_ip", "enable_nat_gateway", "change_note"}
+
+
+# --- WEB-01 (security review 2026-09-29): no input reaches the plan's parameters as text ------------------------------
+_SPEC = importlib.util.spec_from_file_location("wf_build", ROOT / "itential" / "workflows" / "build.py")
+build = importlib.util.module_from_spec(_SPEC)
+_SPEC.loader.exec_module(build)
+
+
+def test_no_job_input_is_templated_into_json() -> None:
+    """replace() + parse() let an input close a JSON string and add keys ("action": "apply"). Every text that is parsed
+    must be built only from fixed text and service outputs, never from a $var.job input."""
+    _, tasks = _deploy()
+    for tid, t in tasks.items():
+        if t["name"] != "parse":
+            continue
+        ref, seen = t["variables"]["incoming"]["text"], []
+        while ref.startswith("$var.") and ref.endswith(".replacedString"):
+            src = tasks[ref.split(".")[1]]
+            seen.append(src["variables"]["incoming"]["newSubstr"])
+            ref = src["variables"]["incoming"]["str"]
+        assert not any(str(v).startswith("$var.job.") for v in seen), f"parse {tid} is built from a job input: {seen}"
+
+
+def test_the_inputs_are_checked_before_anything_runs() -> None:
+    wf, tasks = _deploy()
+    tr = wf["transitions"]
+    assert tasks["1d"]["variables"]["incoming"]["params"] == "$var.1c.object"  # data, not parsed text
+    for tid, key in (("1b", "onprem_public_ip"), ("1c", "enable_nat_gateway")):
+        assert tasks[tid]["name"] == "setObjectKey" and tasks[tid]["variables"]["incoming"]["path"] == [key]
+    assert tasks["12"]["name"] == "validateJsonSchema"
+    assert tasks["12"]["variables"]["incoming"]["schema"] == build.PLAN_INPUTS_SCHEMA
+    # validateJsonSchema completes even for invalid data (measured): only the evaluate after it can refuse
+    assert tasks["13"]["variables"]["incoming"]["evaluation_groups"][0]["evaluations"][0]["query"] == "valid"
+    assert tr["12"] == {"13": {"state": "success", "type": "standard"}, "8f": {"state": "error", "type": "standard"}}
+    assert tr["13"] == {"1d": {"state": "success", "type": "standard"}, "8f": {"state": "failure", "type": "standard"}}
+    assert list(tr["8f"]) == ["8c"] and list(tr["8c"]) == ["workflow_end"]
+    # the plan step has one way in: through the check
+    assert [src for src, dst in tr.items() if "1d" in dst] == ["13"]
+    schema = build.PLAN_INPUTS_SCHEMA
+    assert schema["additionalProperties"] is False and schema["properties"]["action"] == {"const": "plan"}
+    ip = re.compile(schema["properties"]["onprem_public_ip"]["pattern"])
+    assert ip.fullmatch("8.8.8.8") and ip.fullmatch("255.255.255.255")
+    for bad in ('1.2.3.4", "action": "apply', "01.2.3.4", "256.1.1.1", "1.2.3", "1.2.3.4 ", "1.2.3.4\n"):
+        assert not ip.fullmatch(bad), bad
+
+
+def test_the_trigger_refuses_what_the_workflow_refuses() -> None:
+    task_file = yaml.safe_load((ROOT / "ansible" / "playbooks" / "tasks" / "deploy-aws-vpn-triggers.yml").read_text())
+    trigger = next(t for t in task_file if t.get("name") == "The endpoint trigger's schema")
+    schema = trigger["ansible.builtin.set_fact"]["dav_schema"]
+    want = build.PLAN_INPUTS_SCHEMA["properties"]
+    assert schema["additionalProperties"] is False
+    assert set(schema["required"]) == {"onprem_public_ip", "enable_nat_gateway", "change_note"}
+    for key in ("onprem_public_ip", "enable_nat_gateway", "change_note"):
+        got = {k: v for k, v in schema["properties"][key].items() if k != "type"}
+        assert got == {k: v for k, v in want[key].items() if k != "type"}, key
+    patch = next(t for t in task_file if t.get("name") == "The endpoint trigger's schema is current")
+    assert patch["ansible.builtin.uri"]["method"] == "PATCH"  # an existing trigger is brought up to date
 
 
 # --- the branded page (itential/portal/deploy-aws-vpn) reads the workflow it starts ---------------------------------
@@ -358,3 +418,14 @@ def test_a_failed_apply_says_aws_may_have_changed() -> None:
     # the first real apply stopped part-way with aws_changed unset, and the page said only "Stopped." (2026-09-29)
     page = PAGE.read_text()
     assert page.count('state.apply === "failed" ?') == 2 and "AWS may have changed part-way" in page
+
+
+def test_the_manual_form_asks_for_what_the_workflow_accepts() -> None:
+    import json
+    form = json.loads((ROOT / "itential" / "forms" / "lab-deploy-aws-vpn.json").read_text())["schema"]
+    want = build.PLAN_INPUTS_SCHEMA["properties"]
+    assert set(form["required"]) == {"onprem_public_ip", "enable_nat_gateway", "change_note"}
+    assert form["properties"]["onprem_public_ip"]["pattern"] == want["onprem_public_ip"]["pattern"]
+    assert form["properties"]["onprem_public_ip"]["maxLength"] == want["onprem_public_ip"]["maxLength"]
+    assert form["properties"]["change_note"]["maxLength"] == want["change_note"]["maxLength"]
+    assert form["properties"]["enable_nat_gateway"]["enum"] == want["enable_nat_gateway"]["enum"]

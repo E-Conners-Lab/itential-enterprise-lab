@@ -101,6 +101,25 @@
     headers: {Cookie: "{{ login.cookies_string }}"}
   register: dav_triggers
 
+# What an API caller may send (security review 2026-09-29, WEB-01): the same bounds the workflow checks itself (build.py
+# PLAN_INPUTS_SCHEMA), so a bad request is refused here with a 400 and never becomes a job. change_note is required
+# because the Platform refuses a start without it (the page always sends it, empty or not).
+- name: The endpoint trigger's schema
+  ansible.builtin.set_fact:
+    dav_schema:
+      type: object
+      additionalProperties: false
+      required: [onprem_public_ip, enable_nat_gateway, change_note]
+      properties:
+        onprem_public_ip:
+          type: string
+          maxLength: 15
+          pattern: '^(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])(\.(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])){3}$'
+        enable_nat_gateway: {type: string, enum: ["false", "true"]}
+        change_note: {type: string, maxLength: 280}
+    dav_endpoint: >-
+      {{ dav_triggers.json.data | selectattr('name', 'equalto', dav.endpoint.name) | list }}
+
 - name: The branded page's endpoint trigger
   ansible.builtin.uri:
     url: "{{ platform_local }}/operations-manager/triggers"
@@ -118,15 +137,19 @@
       verb: POST
       schema: "{{ dav_schema }}"
     status_code: [200, 201]
-  vars:
-    dav_schema:
-      type: object
-      required: [onprem_public_ip, enable_nat_gateway]
-      properties:
-        onprem_public_ip: {type: string}
-        enable_nat_gateway: {type: string, enum: ["false", "true"]}
-        change_note: {type: string}
-  when: dav.endpoint.name not in (dav_triggers.json.data | map(attribute='name') | list)
+  when: dav_endpoint | length == 0
+  changed_when: true
+
+# an existing trigger keeps its old schema otherwise (it was only ever created): Operations Manager updates are PATCH
+- name: The endpoint trigger's schema is current
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/operations-manager/triggers/{{ dav_endpoint[0]._id }}"
+    method: PATCH
+    headers: {Cookie: "{{ login.cookies_string }}"}
+    body_format: json
+    body: {schema: "{{ dav_schema }}"}
+    status_code: [200]
+  when: dav_endpoint | length > 0 and (dav_endpoint[0].schema | default({})) != dav_schema
   changed_when: true
 
 - name: The form's manual trigger
