@@ -236,6 +236,7 @@ def _envelope(rc, out):
 def test_the_push_summary_reads_every_answer_lab_edge_push_gives() -> None:
     base, router_state = _push_at_pin()
     assert "already_in_place" in base  # the pin's lab-edge-push answers a second Hand Off without sending
+    assert "tunnel_up" in base  # and confirms only once the tunnel is up
     sent = {**base, "sent": True}
     cases = [
         # (exit code, stdout as main emits it, state, changed)
@@ -250,6 +251,9 @@ def test_the_push_summary_reads_every_answer_lab_edge_push_gives() -> None:
         # a rejected line or a post-read that did not prove: rolled back, and it exits 0
         (0, {**sent, "rejected": ["% Invalid input"], "rolled_back": True}, "rolled back", False),
         (0, {**sent, "proved": False, "rolled_back": True}, "rolled back", False),
+        # accepted and proved, but the tunnel never came up: reverted before any confirm or save
+        (0, {**sent, "proved": True, "tunnel_up": False, "tunnel": {"router": "down", "data_plane": "down"},
+             "rolled_back": True}, "rolled back", False),
         # refused before anything was sent (SHA mismatch, prerequisites changed)
         (1, {**base, "error": "the block rendered now is not the approved one", "router": router_state(base)}, "failed", False),
         # confirmed but write memory did not answer [OK]: live and NOT saved
