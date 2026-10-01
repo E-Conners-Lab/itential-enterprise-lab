@@ -582,7 +582,7 @@ def test_no_job_data_ever_becomes_html() -> None:
     assert not re.search(r'status\([^)]*<', script)
     # a resumed (or shared) job must be a job of the tab's own workflow before anything of it is read
     follow = script.split("function follow(")[1].split("\n  }\n")[0]
-    assert follow.index("job.name !== MODES[m].workflow") < follow.index("render(read(job, m), m)")
+    assert follow.index("job.name !== MODES[m].workflow") < follow.index("const r = read(job, m)")
     assert "Object.hasOwn(MODES, askedMode)" in script
 
 
@@ -591,7 +591,7 @@ def test_the_journey_orders_legs_by_the_platforms_own_start_time() -> None:
     """Re-check of build step 9: the Platform sends metrics.start_time as epoch milliseconds (an int, read on the dev
     tier 2026-10-01), so Date.parse made every leg 0 and a stale leg was never skipped. Runs the page's own expression."""
     script = PAGE.read_text().split("<script>")[1].split("</script>")[0]
-    expr = re.search(r"const started = (.+?); //", script).group(1)
+    expr = re.search(r"const startOf = \(job\) => (.+?); //", script).group(1)
     probe = f"""
       const at = (job) => {expr};
       console.log(JSON.stringify([
@@ -611,26 +611,39 @@ def _chrome() -> str | None:
 
 
 # The page in headless Chrome against a stubbed Platform: `latest` maps a workflow name to its latest job's id (a missing
-# name has no runs), `jobs` holds the job documents, and signed_out answers every call 401. The probe reads the route,
-# the status line, the log and every URL the page fetched. Served over HTTP: as a file the page runs its preview instead.
+# name has no runs); `jobs` holds the job documents, or for a job that moves, its documents in the order the page reads
+# them (the last one repeats); `triggers` maps a trigger route to the id of the job it starts; `list_delay` holds the job
+# lists back that long (ms); `actions` run page code at given times (ms); signed_out answers every call 401. The probe
+# reads the route, the status line, the log, the buttons, the address and every URL the page fetched. Served over HTTP:
+# as a file the page runs its preview instead.
 PROBE = """<script>
 window.__calls = [];
-const LATEST = %s, JOBS = %s, SIGNED_OUT = %s;
-window.fetch = async (url) => {
-  url = String(url); window.__calls.push(url);
+const LATEST = %s, JOBS = %s, TRIGGERS = %s, LIST_DELAY = %s, SIGNED_OUT = %s, ACTIONS = %s;
+const reads = {};
+window.fetch = async (url, opts) => {
+  url = String(url); window.__calls.push(((opts && opts.method) || "GET") + " " + url);
   const res = (code, body) => new Response(typeof body === "string" ? body : JSON.stringify(body), { status: code });
   if (SIGNED_OUT) return res(401, "The specified authorization token is malformed or does not correspond with an active session");
   const list = url.match(/contains\\[name\\]=([^&]*)/);
-  if (list) { const wf = decodeURIComponent(list[1]); return res(200, { data: LATEST[wf] ? [{ _id: LATEST[wf], name: wf }] : [] }); }
+  if (list) {
+    await new Promise((ok) => setTimeout(ok, LIST_DELAY));
+    const wf = decodeURIComponent(list[1]); return res(200, { data: LATEST[wf] ? [{ _id: LATEST[wf], name: wf }] : [] });
+  }
+  const trigger = url.match(/\\/triggers\\/endpoint\\/([a-z-]+)$/);
+  if (trigger) return TRIGGERS[trigger[1]] ? res(200, { _id: TRIGGERS[trigger[1]] }) : res(404, {});
   const one = url.match(/\\/operations-manager\\/jobs\\/([0-9a-f]{24})$/);
-  return one && JOBS[one[1]] ? res(200, { data: JOBS[one[1]] }) : res(404, {});
+  if (!one || !JOBS[one[1]]) return res(404, {});
+  const n = (reads[one[1]] = (reads[one[1]] || 0) + 1), docs = JOBS[one[1]];
+  return res(200, { data: docs[Math.min(n, docs.length) - 1] });
 };
+ACTIONS.forEach(([ms, code]) => setTimeout(() => new Function(code)(), ms));
 setTimeout(() => {
-  const wp = {};
+  const wp = {}, q = (id) => document.getElementById(id);
   document.querySelectorAll(".wp").forEach((g) => { wp[g.id.slice(3)] = [...g.classList].filter((c) => c !== "wp").join(" "); });
-  document.body.dataset.probe = JSON.stringify({ wp, status: document.getElementById("chart-status").textContent,
-    log: [...document.querySelectorAll("#log li span")].map((s) => s.textContent),
-    jobid: document.getElementById("jobid").textContent, calls: window.__calls });
+  document.body.dataset.probe = JSON.stringify({ wp, status: q("chart-status").textContent,
+    log: [...document.querySelectorAll("#log li span")].map((s) => s.textContent), jobid: q("jobid").textContent,
+    disabled: Object.fromEntries(["deploy", "handoff", "verify"].map((m) => [m, q("go-" + m).disabled])),
+    search: location.search, calls: window.__calls });
 }, 12000);
 </script>
 """
@@ -646,14 +659,19 @@ def _job(jid: str, workflow: str, start: int, done: list[str], status: str = "co
             "variables": variables or {}}
 
 
-def _run_page(tmp_path: Path, latest: dict, jobs: list[dict], signed_out: bool = False, query: str = "") -> dict:
+def _run_page(tmp_path: Path, latest: dict, jobs: list, signed_out: bool = False, query: str = "",
+              triggers: dict | None = None, list_delay: int = 0, actions: list | None = None) -> dict:
     import html
     import threading
     from functools import partial
     from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 
+    docs = {}
+    for j in jobs:
+        seq = j if isinstance(j, list) else [j]
+        docs[seq[0]["_id"]] = seq
     page = PAGE.read_text()
-    probe = PROBE % (json.dumps(latest), json.dumps({j["_id"]: j for j in jobs}), json.dumps(signed_out))
+    probe = PROBE % tuple(json.dumps(x) for x in (latest, docs, triggers or {}, list_delay, signed_out, actions or []))
     assert page.count("<script>\n(() => {") == 1
     (tmp_path / "index.html").write_text(page.replace("<script>\n(() => {", probe + "<script>\n(() => {"))
 
@@ -666,12 +684,13 @@ def _run_page(tmp_path: Path, latest: dict, jobs: list[dict], signed_out: bool =
     try:
         # no --user-data-dir: headless already uses a throwaway profile, and with one Chrome never exits after the dump
         url = f"http://127.0.0.1:{server.server_port}/index.html{query}"
-        dom = subprocess.run([_chrome(), "--headless=new", "--disable-gpu", "--no-sandbox", "--virtual-time-budget=15000", "--dump-dom", url],
-                             capture_output=True, text=True, timeout=120).stdout
+        run = subprocess.run([_chrome(), "--headless=new", "--disable-gpu", "--no-sandbox", "--virtual-time-budget=15000",
+                              "--dump-dom", url], capture_output=True, text=True, timeout=120)
     finally:
         server.shutdown()
-    found = re.search(r'data-probe="([^"]*)"', dom)
-    assert found, "the probe never ran"
+        server.server_close()
+    found = re.search(r'data-probe="([^"]*)"', run.stdout)
+    assert found, f"the probe never ran (Chrome exit {run.returncode}): {run.stderr[-600:]}"
     return json.loads(html.unescape(found.group(1)))
 
 
@@ -710,19 +729,73 @@ def test_the_route_ends_where_the_latest_run_stopped(tmp_path: Path) -> None:
     assert out["wp"]["push"] == out["wp"]["tunnel"] == out["wp"]["verdict"] == ""
 
 
+def _reads(out: dict, jid: str) -> int:
+    return sum(c == f"GET /operations-manager/jobs/{jid}" for c in out["calls"])
+
+
 @pytest.mark.skipif(_chrome() is None, reason="needs Chrome")
-def test_the_page_follows_one_running_job(tmp_path: Path) -> None:
-    """Two running legs (a Hand Off waiting for approval, a Verify after it) started two pollers; only the furthest
-    along is followed now, and the other is read once."""
+def test_only_the_newest_running_job_writes_the_log(tmp_path: Path) -> None:
+    """Two running legs (a Hand Off waiting for approval, a Verify after it) each had a poller writing the log, the
+    status line and the address. Both are still polled - their stops and buttons stay true - but only the newest is
+    on show."""
     jobs = [_job(_ids(1), "Deploy AWS VPN", 1000, DEPLOY_DONE),
-            _job(_ids(2), "Hand Off AWS VPN", 2000, HANDOFF_CHECKS, status="running", running=["6f"]),
+            _job(_ids(2), "Hand Off AWS VPN", 2000, HANDOFF_CHECKS, status="paused", running=["6f"]),
             _job(_ids(3), "Verify AWS VPN", 3000, ["1a"], status="running", running=["ee"])]
     out = _run_page(tmp_path, {j["name"]: j["_id"] for j in jobs}, jobs)
-    detail = lambda jid: sum(c.endswith(f"/operations-manager/jobs/{jid}") for c in out["calls"])  # noqa: E731
-    assert detail(_ids(2)) == 1, out["calls"]
-    assert detail(_ids(3)) >= 3, out["calls"]
-    assert out["jobid"] == f"Verify AWS VPN: job {_ids(3)}"
+    assert out["jobid"] == f"Verify AWS VPN: job {_ids(3)}" and f"job={_ids(3)}" in out["search"]
+    assert not any("approval" in line for line in out["log"]), out["log"]
+    assert out["status"].startswith("Verifying."), out["status"]
+    assert _reads(out, _ids(2)) >= 2 and _reads(out, _ids(3)) >= 2
+    assert out["disabled"] == {"deploy": False, "handoff": True, "verify": True}
     assert out["wp"]["hoapprove"] == "active" and out["wp"]["verdict"] == "active"
+
+
+@pytest.mark.skipif(_chrome() is None, reason="needs Chrome")
+def test_a_running_leg_after_a_stopped_one_is_followed(tmp_path: Path) -> None:
+    """A Hand Off started after a rejected Deploy runs against the earlier deployment: it is followed and on show, and
+    its button is off, though the finished route ends at the rejection (review of the follow-ups)."""
+    jobs = [_job(_ids(1), "Deploy AWS VPN", 1000, ["1a", "1d", "1e", "1f", "2b", "7a", "7d", "7f"], variables={"rejected": True}),
+            _job(_ids(2), "Hand Off AWS VPN", 2000, HANDOFF_CHECKS, status="paused", running=["6f"])]
+    out = _run_page(tmp_path, {j["name"]: j["_id"] for j in jobs}, jobs)
+    assert out["jobid"] == f"Hand Off AWS VPN: job {_ids(2)}"
+    assert out["disabled"]["handoff"] is True and out["disabled"]["deploy"] is False
+    assert out["wp"]["approve"] == "rejected" and out["wp"]["hoapprove"] == "active"
+
+
+@pytest.mark.skipif(_chrome() is None, reason="needs Chrome")
+def test_a_job_started_here_owns_the_log_while_another_runs(tmp_path: Path) -> None:
+    """Starting a Hand Off while a Verify is on show: the Verify's poller must stop writing the log at once (it used
+    to refill the cleared log until the POST came back), and its button comes back on when it finishes."""
+    verify = [_job(_ids(3), "Verify AWS VPN", 3000, ["1a"], status="running", running=["ee"])] * 2 + [
+        _job(_ids(3), "Verify AWS VPN", 3000, ["1a", "ee", "5f"], variables={"outcome": "tunnel up: from the old job"})]
+    handoff = _job(_ids(5), "Hand Off AWS VPN", 4000, HANDOFF_CHECKS, status="paused", running=["6f"])
+    jobs = [_job(_ids(1), "Deploy AWS VPN", 1000, DEPLOY_DONE), _job(_ids(2), "Hand Off AWS VPN", 2000, HANDOFF_DONE),
+            verify, handoff]
+    out = _run_page(tmp_path, {"Deploy AWS VPN": _ids(1), "Hand Off AWS VPN": _ids(2), "Verify AWS VPN": _ids(3)}, jobs,
+                    triggers={"hand-off-aws-vpn": _ids(5)},
+                    actions=[[1000, 'document.getElementById("tab-handoff").click(); document.getElementById("go-handoff").click();']])
+    assert out["jobid"] == f"Hand Off AWS VPN: job {_ids(5)}" and f"job={_ids(5)}" in out["search"]
+    assert not any("old job" in line for line in out["log"]), out["log"]
+    assert any("Waiting for approval" in line for line in out["log"]), out["log"]
+    assert out["disabled"] == {"deploy": False, "handoff": True, "verify": False}
+    assert out["wp"]["verdict"] == "done"
+
+
+@pytest.mark.skipif(_chrome() is None, reason="needs Chrome")
+def test_the_journey_never_takes_the_page_from_a_job_started_here(tmp_path: Path) -> None:
+    """The journey reads up to six documents one after another; a Verify started meanwhile used to be dropped for an
+    older running job when the journey finished. The older job is still polled, off show."""
+    handoff = _job(_ids(2), "Hand Off AWS VPN", 2000, HANDOFF_CHECKS, status="paused", running=["6f"])
+    verify = _job(_ids(6), "Verify AWS VPN", 5000, ["1a"], status="running", running=["ee"])
+    jobs = [_job(_ids(1), "Deploy AWS VPN", 1000, DEPLOY_DONE), handoff, verify]
+    out = _run_page(tmp_path, {"Deploy AWS VPN": _ids(1), "Hand Off AWS VPN": _ids(2)}, jobs,
+                    triggers={"verify-aws-vpn": _ids(6)}, list_delay=1500,
+                    actions=[[300, 'document.getElementById("tab-verify").click(); document.getElementById("go-verify").click();']])
+    assert out["jobid"] == f"Verify AWS VPN: job {_ids(6)}" and f"job={_ids(6)}" in out["search"]
+    assert not any("approval" in line for line in out["log"]), out["log"]
+    assert _reads(out, _ids(2)) >= 2
+    assert out["disabled"]["handoff"] is True and out["disabled"]["verify"] is True
+    assert out["wp"]["hoapprove"] == "active"
 
 
 @pytest.mark.skipif(_chrome() is None, reason="needs Chrome")
