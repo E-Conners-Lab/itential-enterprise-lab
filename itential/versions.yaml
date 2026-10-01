@@ -123,6 +123,7 @@ terraform_run:
       # exactly the routers in revert_push.targets: their passwords, nothing else
       secrets:
         - {name: lab-automation-password, type: env, target: LAB_EDGE_PASSWORD_CLAB_RTR1}
+        - {name: dc1-wan01-aws-vpn-password, type: env, target: LAB_EDGE_PASSWORD_DC1_WAN01}
     - name: aws-vpn-monitor
       description: "The AWS end's view: readiness (CheckSucceeded) and Verify's signal (the monitor Lambda + metric)"
       filename: itential/aws-vpn-monitor.py
@@ -138,7 +139,10 @@ terraform_run:
 # step 10, after its first plain push adds the archive.
 revert_push:
   targets:
-    clab-rtr1: {mgmt_host: 10.100.2.11, username: automation}
+    clab-rtr1: {mgmt_host: 10.100.2.11, username: automation, password_alias: lab-automation-password}
+    # the time-boxed account the window creates (owner, 2026-10-01): its password only in the dev Vault (make
+    # edge-account), typed on the router once by hand (the change set's by-hand step); all three go when R1 is signed off
+    dc1-wan01: {mgmt_host: 10.100.0.144, username: itential-aws-vpn, password_alias: dc1-wan01-aws-vpn-password}
 
 # The lab edge targets Hand Off and Verify AWS VPN may name (step 6; the workflows' target enum). `target` is exactly
 # what cloud-devops-pipeline's lab_edge_render.check_target takes (passed as --target_json, every value checked again
@@ -518,6 +522,9 @@ vault:
   # Step 6, DEV TIER ONLY (imported where dev_overlay is set, tasks/gateway-vault.yml): the clab twin's key, which
   # lab-edge-push alone binds. Under devices/*, so the Gateway reads it and the Platform cannot (approles above).
   dev_gateway_aliases:
+    # dc1-wan01's time-boxed account (make edge-account): the entry must exist BEFORE the dev converge binds it - the
+    # Gateway resolves every bound alias on every run, so a missing one fails every config-push-revert run, clab's too
+    dc1-wan01-aws-vpn-password: {path: devices/dc1-wan01-aws-vpn, key: password}
     aws-vpn-psk-clab-rtr1: {path: devices/aws-vpn-clab-rtr1, key: psk}
     aws-vpn-psk-version-clab-rtr1: {path: devices/aws-vpn-clab-rtr1, key: version}
   dev:

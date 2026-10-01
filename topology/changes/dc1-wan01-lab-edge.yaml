@@ -18,7 +18,9 @@ pre_window:
   - {command: "show zone-pair security", expect: "none"}
 steps:
   - name: archive
-    # the revert timer needs the archive's path, so this step cannot run under one
+    # the revert timer needs the archive's path, so this step cannot run under one; on the PRODUCTION Platform, whose
+    # inventory holds dc1-wan01 (the dev inventory holds the clab nodes only)
+    platform: production
     workflow: Push Configuration with Approval
     reason: "Step 10 (ADR 0068) 1/4: the configuration archive the revert timer needs, hiding keys in its log"
     config: |
@@ -29,7 +31,16 @@ steps:
         logging enable
         hidekeys
 
+  - name: time-boxed account
+    # after the archive, so hidekeys masks the secret in its change log; the password from the dev Vault (make
+    # edge-account-copy), never typed from anywhere else. config-push-revert logs in with it from here on
+    by_hand: |
+      username itential-aws-vpn privilege 15 algorithm-type scrypt secret <paste>
+      end
+      write memory
+
   - name: management, INET-IN, prefix-lists, zones
+    platform: dev
     workflow: Push Configuration with Revert Timer
     reason: "Step 10 (ADR 0068) 2/4: management ACL on the vty lines, NETCONF and RESTCONF, INET-IN closed by default, the VPC kept from every BGP neighbour but dc1-leaf01, the two zones (no members yet)"
     revert_minutes: 8
@@ -96,6 +107,7 @@ steps:
       write memory
 
   - name: zone membership
+    platform: dev
     workflow: Push Configuration with Revert Timer
     reason: "Step 10 (ADR 0068) 4/4: every global-table transit interface into zone INSIDE (the BGP checks must hold before the confirm)"
     # longer than a Hand Off push's 5: BGP has to stay up through the settle before the confirm (spec)
@@ -144,3 +156,8 @@ steps:
 # keyring's key in clear; hidekeys masks only the change log. The owner removes them (dir bootflash: | include rb-,
 # then delete /force each), and refreshes the Configuration Manager backup and the prod snapshot (spec Appendix A, 4)
 after_window: [remove the step-2 archive snapshots, refresh the Configuration Manager backup, make prod-snapshot MODE=save]
+
+# when R1 is signed off (solution design): the account, its alias and its Vault entry go together - one versions.yaml PR
+# (the alias unbound, dc1-wan01 out of revert_push.targets), then `no username itential-aws-vpn` on the router (by hand
+# or a governed push), then the dev Vault entry deleted; clab-rtr1's runs still pass after it
+after_r1: [unbind dc1-wan01-aws-vpn-password, remove the account on the router, delete devices/dc1-wan01-aws-vpn]

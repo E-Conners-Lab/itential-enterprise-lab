@@ -80,6 +80,10 @@ def test_every_gateway_alias_points_at_a_seeded_key() -> None:
                 v["git"]["deploy_key_path"]: {"private_key"}, v["aws"]["writer_path"]: {"role_id", "secret_id"}}
     targets = yaml.safe_load(VERSIONS.read_text())["aws_vpn"]["targets"]
     unseeded |= {t["psk_path"]: {"psk", "version"} for t in targets.values() if t["window"] == "open"}
+    # and each revert target's own account (make edge-account), when it is not the seeded device account
+    revert = yaml.safe_load(VERSIONS.read_text())["revert_push"]["targets"]
+    unseeded |= {v["dev_gateway_aliases"][t["password_alias"]]["path"]: {"password", "username"}
+                 for t in revert.values() if t["password_alias"] in v["dev_gateway_aliases"]}
     for alias, ref in {**v["gateway_aliases"], **v["dev_gateway_aliases"]}.items():
         keys = v["secrets"][ref["path"]] if ref["path"] in v["secrets"] else unseeded.get(ref["path"], set())
         assert ref["key"] in keys, alias

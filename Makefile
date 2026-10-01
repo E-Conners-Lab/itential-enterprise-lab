@@ -8,7 +8,7 @@ SHELL := /bin/bash
 
 PHASES := oob-network platform network-topology itential flowai observability platform-ha2 config-secrets-code identity ddi containerlab firewall-track
 
-.PHONY: help bootstrap lint test up verify vault-dev vault vault-status vault-init vault-unseal vault-config vault-snapshot vault-revoke-root vault-admin-user vault-login vault-logout vault-cutover aws-key deploy-key twin-key discover netbox-enrich tokens agents-push observability-refresh plan-oob plan-platform plan-itential plan-platform-ha2 plan-clab \
+.PHONY: help bootstrap lint test up verify vault-dev vault vault-status vault-init vault-unseal vault-config vault-snapshot vault-revoke-root vault-admin-user vault-login vault-logout vault-cutover aws-key deploy-key twin-key edge-account edge-account-copy discover netbox-enrich tokens agents-push observability-refresh plan-oob plan-platform plan-itential plan-platform-ha2 plan-clab \
 	netbox-token-dev clab-dev dev-stack verify-dev prod-snapshot copilot-prod $(addprefix phase-,$(PHASES))
 
 help: ## Show targets
@@ -196,6 +196,14 @@ deploy-key: ## AWS VPN: a read-only deploy key for cloud-devops-pipeline, privat
 
 twin-key: ## AWS VPN (dev only): the clab AWS twin's tunnel key, made in memory, straight into the dev Vault
 	.venv/bin/python scripts/twin-key-to-vault.py
+
+# ADR 0068 step 10: the time-boxed account dc1-wan01's window uses. Run edge-account BEFORE the dev converge that binds
+# its alias; edge-account-copy only in the window, to type the account on the router once.
+edge-account: ## AWS VPN (dev only): dc1-wan01's time-boxed account password, made in memory, straight into the dev Vault
+	.venv/bin/python scripts/edge-account-to-vault.py
+
+edge-account-copy: ## AWS VPN (dev only): that password onto the macOS clipboard, for typing on the router once
+	.venv/bin/python scripts/edge-account-to-vault.py --copy
 
 vault-revoke-root: ## Production Vault: revoke the root token - refuses unless the administrator login has been proven (make vault-login)
 	scripts/vault-prod.sh revoke-root

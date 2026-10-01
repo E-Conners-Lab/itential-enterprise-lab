@@ -198,7 +198,8 @@ def _sent_blocks() -> dict[str, set[str]]:
     """Every step's lines (the pushes and the by-hand step), by head - so a line counts only under the head it is sent
     under."""
     out: dict[str, set[str]] = {}
-    for step in CHANGES["steps"]:
+    # the time-boxed account is the window's, not the router's configuration (never in the template)
+    for step in [s for s in CHANGES["steps"] if s["name"] != "time-boxed account"]:
         for head, body in _blocks(step.get("config") or step.get("by_hand") or "").items():
             out.setdefault(head, set()).update(body)
     return out
@@ -240,8 +241,16 @@ def test_inet_in_is_swapped_never_left_open() -> None:
 
 def test_the_steps_run_in_the_order_the_router_needs() -> None:
     names = [s["name"] for s in CHANGES["steps"]]
-    assert names == ["archive", "management, INET-IN, prefix-lists, zones", "master key", "zone membership"]
-    first, *rest = CHANGES["steps"]
+    assert names == ["archive", "time-boxed account", "management, INET-IN, prefix-lists, zones", "master key",
+                     "zone membership"]
+    first, account, *rest = CHANGES["steps"]
+    # the archive on the production Platform (dc1-wan01 is in its inventory); the revert pushes on the dev one (the
+    # service is dev-tier); the account typed after the archive, so hidekeys masks it, before any push needs it
+    assert first["platform"] == "production" and all(s["platform"] == "dev" for s in rest if "workflow" in s)
+    revert = VERSIONS["revert_push"]["targets"]["dc1-wan01"]
+    assert account["by_hand"].splitlines()[0].startswith(f"username {revert['username']} privilege 15 algorithm-type scrypt secret ")
+    assert account["by_hand"].splitlines()[0].endswith("<paste>") and account["by_hand"].splitlines()[-1] == "write memory"
+    assert len(CHANGES["after_r1"]) == 3
     # the archive before any revert timer, and never under one (the timer needs it)
     assert first["workflow"] == VERSIONS["workflows"]["config_push"] and _sent(first)[0] == "archive"
     assert all(s["workflow"] == VERSIONS["workflows"]["config_push_revert"] for s in rest if "workflow" in s)
