@@ -93,7 +93,7 @@ def _run(code: str, data: dict) -> dict:
 @pytest.mark.parametrize("d", [readings(), readings("down", "down"), readings(rc=1), readings(monitor="disagreement")])
 def test_the_code_the_gateway_runs_is_the_judge_tested_here(d: dict) -> None:
     assert _run(build.JUDGE_CODE, d) == build.judge(d)
-    assert WF["tasks"]["5d"]["variables"]["incoming"]["code"] == build.JUDGE_CODE
+    assert WF["tasks"]["ee"]["variables"]["incoming"]["code"] == build.JUDGE_CODE
 
 
 # ── what to read, per target ──
@@ -101,7 +101,7 @@ def test_the_code_the_gateway_runs_is_the_judge_tested_here(d: dict) -> None:
 
 def test_the_twin_reads_its_pinned_outputs_and_needs_no_terraform() -> None:
     entry = TARGETS["clab-rtr1"]
-    plan = _run(build.VERIFY_PLAN_CODE, {"targets": build.VERIFY_TARGETS, "target": "clab-rtr1"})
+    plan = _run(build.LAB_EDGE_PLAN_CODE, {"targets": build.VERIFY_TARGETS, "target": "clab-rtr1"})
     assert plan["need_outputs"] is False and plan["monitor"] == "none" and plan["monitor_params"] is None
     assert plan["ready"] is True and plan["reason"] == ""
     edge = plan["lab_edge"]
@@ -113,21 +113,21 @@ def test_an_aws_target_reads_terraforms_outputs_first_then_checks_the_monitor() 
     # dc1-wan01's entry as it will be once its window opens (its outputs come from the deployment)
     entry = {k: TARGETS["dc1-wan01"][k] for k in ("target", "username", "monitor")}
     targets = {"dc1-wan01": entry}
-    first = _run(build.VERIFY_PLAN_CODE, {"targets": targets, "target": "dc1-wan01"})
+    first = _run(build.LAB_EDGE_PLAN_CODE, {"targets": targets, "target": "dc1-wan01"})
     assert first["need_outputs"] is True and first["lab_edge"] is None and first["monitor_params"] is None
     assert first["ready"] is False
     deployed = {"strongswan_eip": "203.0.113.7", "strongswan_instance_id": "i-0123456789abcdef0"}
-    second = _run(build.VERIFY_PLAN_CODE, {"targets": targets, "target": "dc1-wan01", "deployed": deployed})
+    second = _run(build.LAB_EDGE_PLAN_CODE, {"targets": targets, "target": "dc1-wan01", "deployed": deployed})
     assert second["need_outputs"] is False and json.loads(second["lab_edge"]["outputs_json"]) == deployed
     assert second["monitor_params"] == {"action": "check", "instance_id": "i-0123456789abcdef0",
                                         "timeout": build.MONITOR_TIMEOUT}
     assert second["ready"] is True
     assert int(build.MONITOR_TIMEOUT) >= 200  # the Lambda's 75 s plus up to 90 s for its datapoint
     # nothing deployed: the state has no outputs, so there is nothing to read and the job says why
-    empty = _run(build.VERIFY_PLAN_CODE, {"targets": targets, "target": "dc1-wan01", "deployed": {}})
+    empty = _run(build.LAB_EDGE_PLAN_CODE, {"targets": targets, "target": "dc1-wan01", "deployed": {}})
     assert empty["ready"] is False and empty["need_outputs"] is False and "nothing is deployed" in empty["reason"]
     # a target that is not carried (closed, or unknown) is refused with a reason, never read
-    gone = _run(build.VERIFY_PLAN_CODE, {"targets": targets, "target": "nope"})
+    gone = _run(build.LAB_EDGE_PLAN_CODE, {"targets": targets, "target": "nope"})
     assert gone["ready"] is False and gone["need_outputs"] is False and gone["reason"].endswith("is not an open target")
 
 
@@ -153,10 +153,10 @@ def _pin_present() -> bool:
 
 @pytest.mark.skipif(not _pin_present(), reason="needs the cloud-devops-pipeline clone with the pinned commit")
 def test_the_params_are_exactly_what_each_service_takes() -> None:
-    plan = _run(build.VERIFY_PLAN_CODE, {"targets": build.VERIFY_TARGETS, "target": "clab-rtr1"})
+    plan = _run(build.LAB_EDGE_PLAN_CODE, {"targets": build.VERIFY_TARGETS, "target": "clab-rtr1"})
     assert set(plan["lab_edge"]) == _action_args("lab-edge.py", "verify")
     aws = {"dc1-wan01": {k: TARGETS["dc1-wan01"][k] for k in ("target", "username", "monitor")}}
-    plan = _run(build.VERIFY_PLAN_CODE, {"targets": aws, "target": "dc1-wan01",
+    plan = _run(build.LAB_EDGE_PLAN_CODE, {"targets": aws, "target": "dc1-wan01",
                                          "deployed": {"strongswan_eip": "203.0.113.7", "strongswan_instance_id": "i-0123456789abcdef0"}})
     assert set(plan["monitor_params"]) == _action_args("aws-vpn-monitor.py", "check")
     assert set(json.loads(build.OUTPUTS_PARAMS)) == _action_args("terraform-run.py", "outputs")
@@ -171,10 +171,14 @@ def test_verify_only_reads() -> None:
     assert not names & {"sendConfig", "sendCommand", "ViewData", "childJob"}, names
     services = {t["variables"]["incoming"]["serviceName"] for t in tasks.values() if t["name"] == "runService"}
     assert services == {"lab-edge", "aws-vpn-monitor", "terraform-run"}  # never lab-edge-push
-    # every action the services are handed is a read
+    # every action the services are handed is a read: the plan also carries Hand Off's params (precheck, render,
+    # push), but Verify hands lab-edge only the plan's `lab_edge` (verify) and the monitor only `monitor_params` (check)
     assert json.loads(build.OUTPUTS_PARAMS)["action"] == "outputs"
-    assert '"action": "verify"' in build.VERIFY_PLAN_CODE and '"action": "check"' in build.VERIFY_PLAN_CODE
-    assert '"action": ' not in build.VERIFY_PLAN_CODE.replace('"action": "verify"', "").replace('"action": "check"', "")
+    handed = {t["variables"]["incoming"]["query"] for t in tasks.values()
+              if t["name"] == "query" and t["variables"]["incoming"]["obj"] == "$var.job.verify_plan"}
+    assert handed == {"stdout_json.lab_edge", "stdout_json.monitor_params", "stdout_json.reason"}
+    plan = _run(build.LAB_EDGE_PLAN_CODE, {"targets": build.VERIFY_TARGETS, "target": "clab-rtr1"})
+    assert plan["lab_edge"]["action"] == "verify"
 
 
 def test_only_open_targets_get_in_and_are_carried() -> None:
@@ -191,13 +195,17 @@ def test_every_path_reaches_the_judge_or_ends_with_a_reason() -> None:
     assert tr["1c"]["3e"]["state"] == "failure" and tr["1c"]["2a"]["state"] == "success"
     # nothing to read (nothing deployed): the plan's own reason ends the job
     assert tr["3e"]["3f"]["state"] == "failure" and tasks["3f"]["variables"]["outgoing"]["return_data"] == "$var.job.error"
-    assert tr["3b"]["4a"]["state"] == "error" and tr["3c"]["3d"]["state"] == "failure" and "4a" in tr["3d"]
-    assert tr["4a"]["5a"]["state"] == "failure" and tr["4c"]["5a"]["state"] == "error" and "5a" in tr["4e"]
+    assert tr["3e"]["e0"]["state"] == "success"
+    assert tr["e3"]["e6"]["state"] == "error" and tr["e4"]["e5"]["state"] == "failure" and "e6" in tr["e5"]
+    assert tr["e6"]["eb"]["state"] == "failure" and tr["e8"]["eb"]["state"] == "error" and "eb" in tr["ea"]
+    assert tr["ee"]["8c"]["state"] == "error" and tr["ef"] == {"5f": {"state": "success", "type": "standard"},
+                                                               "50": {"state": "failure", "type": "standard"}}
     for end in ("8a", "8b", "8c"):
         assert list(tr[end]) == ["workflow_end"], end
     # the verdict reads: a judge that printed none still ends with a reason (8c), never a dead end
     for read in ("5f", "50", "3f"):
         assert tr[read]["workflow_end"]["state"] == "success" and tr[read]["8c" if read != "3f" else "8b"]["state"] == "error"
+    assert tasks["5f"]["variables"]["incoming"]["obj"] == "$var.ee.result"
     assert tasks["5f"]["variables"]["outgoing"]["return_data"] == "$var.job.outcome"
     assert tasks["50"]["variables"]["outgoing"]["return_data"] == "$var.job.error"
 

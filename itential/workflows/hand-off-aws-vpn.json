@@ -1,0 +1,3812 @@
+{
+  "name": "Hand Off AWS VPN",
+  "type": "automation",
+  "description": "Hands the lab edge router its side of the AWS VPN: checks the deployed values and both ends, shows the exact block (key masked) for approval, pushes exactly that block with the key from Vault under a revert timer, proves and saves it, then runs the same checks as Verify AWS VPN (PID S13 criterion 3, ADR 0068)",
+  "tasks": {
+    "10": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "changed = false (nothing sent yet)",
+      "description": "changed = false (nothing sent yet)",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": -100,
+        "y": 600
+      },
+      "variables": {
+        "incoming": {
+          "input": "false",
+          "outputType": "boolean",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.changed"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "1a": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "the target and the pinned values",
+      "description": "the target and the pinned values",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": -90,
+        "y": 750
+      },
+      "variables": {
+        "incoming": {
+          "obj": {
+            "targets": {
+              "clab-rtr1": {
+                "target": {
+                  "name": "clab-rtr1",
+                  "fvrf": "INET",
+                  "tunnel_source": "GigabitEthernet4",
+                  "front_door_ip": "198.51.100.2",
+                  "loopback_ip": "10.100.3.201",
+                  "router_inner": "169.254.10.1/30",
+                  "aws_inner": "169.254.10.2/30",
+                  "vpc_cidr": "10.0.0.0/16",
+                  "vpc_private_prefixes": [
+                    "10.0.64.0/20",
+                    "10.0.80.0/20"
+                  ],
+                  "lab_prefixes": [
+                    "10.100.3.0/24"
+                  ],
+                  "local_id": "lab-edge.lab.internal",
+                  "remote_id": "aws-vpn.lab.internal",
+                  "peer_rule": "pinned",
+                  "peer_pinned": "198.51.100.20",
+                  "bgp_asn": 65010,
+                  "inside_interfaces": [
+                    "GigabitEthernet2",
+                    "GigabitEthernet3"
+                  ],
+                  "unzoned_interfaces": [
+                    "GigabitEthernet1",
+                    "GigabitEthernet4"
+                  ],
+                  "mgmt_host": "10.100.2.11"
+                },
+                "outputs": {
+                  "strongswan_eip": "198.51.100.20",
+                  "strongswan_private_ip": "10.0.1.10",
+                  "tunnel_local_inner": "169.254.10.2/30",
+                  "tunnel_remote_inner": "169.254.10.1/30",
+                  "vpc_private_prefixes": [
+                    "10.0.64.0/20",
+                    "10.0.80.0/20"
+                  ]
+                },
+                "username": "automation",
+                "monitor": "none"
+              }
+            }
+          },
+          "path": [
+            "target"
+          ],
+          "value": "$var.job.target"
+        },
+        "outgoing": {
+          "object": "$var.job.handoff_in"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "1b": {
+      "name": "runCode",
+      "canvasName": "runCode",
+      "summary": "what to read and push for this target",
+      "description": "what to read and push for this target",
+      "location": "Application",
+      "locationType": null,
+      "app": "GatewayManager",
+      "type": "automatic",
+      "displayName": "GatewayManager",
+      "groups": [],
+      "nodeLocation": {
+        "x": -230,
+        "y": 900
+      },
+      "variables": {
+        "incoming": {
+          "clusterId": "lab",
+          "language": "python",
+          "code": "import json, sys\nd = json.loads(sys.stdin.read() or \"{}\")\nname = d.get(\"target\")\nentry = (d.get(\"targets\") or {}).get(name) or {}\nmonitor = entry.get(\"monitor\")\ndeployed = entry.get(\"outputs\") if monitor != \"aws\" else d.get(\"deployed\")\nplan = {\"target\": name, \"monitor\": monitor, \"need_outputs\": bool(entry) and monitor == \"aws\" and deployed is None,\n        \"ready\": False, \"reason\": \"\", \"lab_edge\": None, \"monitor_params\": None, \"precheck\": None, \"render\": None,\n        \"push\": None, \"monitor_ready\": None}\nif not entry:\n    plan[\"reason\"] = \"%s is not an open target\" % name\nelif not plan[\"need_outputs\"] and not (deployed or {}).get(\"strongswan_eip\"):\n    plan[\"reason\"] = \"nothing is deployed (the outputs have no strongSwan address)\"\nif entry and deployed and not plan[\"reason\"]:\n    target, outputs, user = json.dumps(entry[\"target\"]), json.dumps(deployed), entry[\"username\"]\n    plan.update(\n        ready=True,\n        lab_edge={\"action\": \"verify\", \"target_json\": target, \"outputs_json\": outputs, \"username\": user, \"timeout\": \"300\"},\n        precheck={\"action\": \"precheck\", \"target_json\": target, \"username\": user, \"timeout\": \"300\"},\n        render={\"action\": \"render\", \"target_json\": target, \"outputs_json\": outputs, \"timeout\": \"300\"},\n        push={\"action\": \"push\", \"target_json\": target, \"outputs_json\": outputs, \"username\": user, \"timeout\": \"600\"})\n    if monitor == \"aws\":\n        instance = str(deployed.get(\"strongswan_instance_id\") or \"\")\n        plan[\"monitor_params\"] = {\"action\": \"check\", \"instance_id\": instance, \"timeout\": \"240\"}\n        plan[\"monitor_ready\"] = {\"action\": \"ready\", \"instance_id\": instance, \"timeout\": \"120\"}\nprint(json.dumps(plan))\n",
+          "data": "$var.job.handoff_in",
+          "safety": {
+            "timeout": 30
+          },
+          "packages": []
+        },
+        "outgoing": {
+          "result": "$var.job.handoff_plan"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "1c": {
+      "name": "evaluation",
+      "canvasName": "evaluation",
+      "summary": "deployed outputs needed (AWS)?",
+      "description": "deployed outputs needed (AWS)?",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": -20,
+        "y": 1050
+      },
+      "variables": {
+        "incoming": {
+          "all_true_flag": true,
+          "evaluation_groups": [
+            {
+              "all_true_flag": true,
+              "evaluations": [
+                {
+                  "query": "stdout_json.need_outputs",
+                  "operand_1": {
+                    "variable": "result",
+                    "task": "1b"
+                  },
+                  "operator": "==",
+                  "operand_2": {
+                    "variable": true,
+                    "task": "static"
+                  }
+                }
+              ]
+            }
+          ],
+          "options": {}
+        },
+        "outgoing": {
+          "return_value": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "2a": {
+      "name": "parse",
+      "canvasName": "parse",
+      "summary": "outputs params",
+      "description": "outputs params",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 170,
+        "y": 1200
+      },
+      "variables": {
+        "incoming": {
+          "text": "{\"action\": \"outputs\", \"timeout\": \"120\"}"
+        },
+        "outgoing": {
+          "textObject": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "2b": {
+      "name": "runService",
+      "canvasName": "runService",
+      "summary": "the deployed outputs (terraform-run, a read)",
+      "description": "the deployed outputs (terraform-run, a read)",
+      "location": "Application",
+      "locationType": null,
+      "app": "GatewayManager",
+      "type": "automatic",
+      "displayName": "GatewayManager",
+      "groups": [],
+      "nodeLocation": {
+        "x": 210,
+        "y": 1350
+      },
+      "variables": {
+        "incoming": {
+          "serviceName": "terraform-run",
+          "clusterId": "lab",
+          "params": "$var.2a.textObject"
+        },
+        "outgoing": {
+          "result": "$var.job.outputs_result"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "2c": {
+      "name": "evaluation",
+      "canvasName": "evaluation",
+      "summary": "outputs read?",
+      "description": "outputs read?",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 200,
+        "y": 1500
+      },
+      "variables": {
+        "incoming": {
+          "all_true_flag": true,
+          "evaluation_groups": [
+            {
+              "all_true_flag": true,
+              "evaluations": [
+                {
+                  "query": "result.return_code",
+                  "operand_1": {
+                    "variable": "result",
+                    "task": "2b"
+                  },
+                  "operator": "==",
+                  "operand_2": {
+                    "variable": 0,
+                    "task": "static"
+                  }
+                }
+              ]
+            }
+          ],
+          "options": {}
+        },
+        "outgoing": {
+          "return_value": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "2d": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "the outputs",
+      "description": "the outputs",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 260,
+        "y": 1650
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "result.stdout_json.outputs",
+          "obj": "$var.2b.result"
+        },
+        "outgoing": {
+          "return_data": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "2e": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "the outputs, as data",
+      "description": "the outputs, as data",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 220,
+        "y": 1800
+      },
+      "variables": {
+        "incoming": {
+          "obj": "$var.job.handoff_in",
+          "path": [
+            "deployed"
+          ],
+          "value": "$var.2d.return_data"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "2f": {
+      "name": "runCode",
+      "canvasName": "runCode",
+      "summary": "what to read and push, with the outputs",
+      "description": "what to read and push, with the outputs",
+      "location": "Application",
+      "locationType": null,
+      "app": "GatewayManager",
+      "type": "automatic",
+      "displayName": "GatewayManager",
+      "groups": [],
+      "nodeLocation": {
+        "x": 480,
+        "y": 1950
+      },
+      "variables": {
+        "incoming": {
+          "clusterId": "lab",
+          "language": "python",
+          "code": "import json, sys\nd = json.loads(sys.stdin.read() or \"{}\")\nname = d.get(\"target\")\nentry = (d.get(\"targets\") or {}).get(name) or {}\nmonitor = entry.get(\"monitor\")\ndeployed = entry.get(\"outputs\") if monitor != \"aws\" else d.get(\"deployed\")\nplan = {\"target\": name, \"monitor\": monitor, \"need_outputs\": bool(entry) and monitor == \"aws\" and deployed is None,\n        \"ready\": False, \"reason\": \"\", \"lab_edge\": None, \"monitor_params\": None, \"precheck\": None, \"render\": None,\n        \"push\": None, \"monitor_ready\": None}\nif not entry:\n    plan[\"reason\"] = \"%s is not an open target\" % name\nelif not plan[\"need_outputs\"] and not (deployed or {}).get(\"strongswan_eip\"):\n    plan[\"reason\"] = \"nothing is deployed (the outputs have no strongSwan address)\"\nif entry and deployed and not plan[\"reason\"]:\n    target, outputs, user = json.dumps(entry[\"target\"]), json.dumps(deployed), entry[\"username\"]\n    plan.update(\n        ready=True,\n        lab_edge={\"action\": \"verify\", \"target_json\": target, \"outputs_json\": outputs, \"username\": user, \"timeout\": \"300\"},\n        precheck={\"action\": \"precheck\", \"target_json\": target, \"username\": user, \"timeout\": \"300\"},\n        render={\"action\": \"render\", \"target_json\": target, \"outputs_json\": outputs, \"timeout\": \"300\"},\n        push={\"action\": \"push\", \"target_json\": target, \"outputs_json\": outputs, \"username\": user, \"timeout\": \"600\"})\n    if monitor == \"aws\":\n        instance = str(deployed.get(\"strongswan_instance_id\") or \"\")\n        plan[\"monitor_params\"] = {\"action\": \"check\", \"instance_id\": instance, \"timeout\": \"240\"}\n        plan[\"monitor_ready\"] = {\"action\": \"ready\", \"instance_id\": instance, \"timeout\": \"120\"}\nprint(json.dumps(plan))\n",
+          "data": "$var.2e.object",
+          "safety": {
+            "timeout": 30
+          },
+          "packages": []
+        },
+        "outgoing": {
+          "result": "$var.job.handoff_plan"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "1d": {
+      "name": "evaluation",
+      "canvasName": "evaluation",
+      "summary": "anything to hand off?",
+      "description": "anything to hand off?",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": -120,
+        "y": 2100
+      },
+      "variables": {
+        "incoming": {
+          "all_true_flag": true,
+          "evaluation_groups": [
+            {
+              "all_true_flag": true,
+              "evaluations": [
+                {
+                  "query": "stdout_json.ready",
+                  "operand_1": {
+                    "variable": "handoff_plan",
+                    "task": "job"
+                  },
+                  "operator": "==",
+                  "operand_2": {
+                    "variable": true,
+                    "task": "static"
+                  }
+                }
+              ]
+            }
+          ],
+          "options": {}
+        },
+        "outgoing": {
+          "return_value": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "1e": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "why there is nothing to hand off",
+      "description": "why there is nothing to hand off",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 610,
+        "y": 2250
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "stdout_json.reason",
+          "obj": "$var.job.handoff_plan"
+        },
+        "outgoing": {
+          "return_data": "$var.job.error"
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "3a": {
+      "name": "evaluation",
+      "canvasName": "evaluation",
+      "summary": "AWS monitor applies?",
+      "description": "AWS monitor applies?",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": -740,
+        "y": 2250
+      },
+      "variables": {
+        "incoming": {
+          "all_true_flag": true,
+          "evaluation_groups": [
+            {
+              "all_true_flag": true,
+              "evaluations": [
+                {
+                  "query": "stdout_json.monitor",
+                  "operand_1": {
+                    "variable": "handoff_plan",
+                    "task": "job"
+                  },
+                  "operator": "==",
+                  "operand_2": {
+                    "variable": "aws",
+                    "task": "static"
+                  }
+                }
+              ]
+            }
+          ],
+          "options": {}
+        },
+        "outgoing": {
+          "return_value": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "3b": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "aws-vpn-monitor's params",
+      "description": "aws-vpn-monitor's params",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": -510,
+        "y": 2400
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "stdout_json.monitor_ready",
+          "obj": "$var.job.handoff_plan"
+        },
+        "outgoing": {
+          "return_data": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "3c": {
+      "name": "runService",
+      "canvasName": "runService",
+      "summary": "the AWS end ready? (a CloudWatch read)",
+      "description": "the AWS end ready? (a CloudWatch read)",
+      "location": "Application",
+      "locationType": null,
+      "app": "GatewayManager",
+      "type": "automatic",
+      "displayName": "GatewayManager",
+      "groups": [],
+      "nodeLocation": {
+        "x": 150,
+        "y": 2550
+      },
+      "variables": {
+        "incoming": {
+          "serviceName": "aws-vpn-monitor",
+          "clusterId": "lab",
+          "params": "$var.3b.return_data"
+        },
+        "outgoing": {
+          "result": "$var.job.ready_result"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "3d": {
+      "name": "evaluation",
+      "canvasName": "evaluation",
+      "summary": "the monitor answered?",
+      "description": "the monitor answered?",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 40,
+        "y": 2700
+      },
+      "variables": {
+        "incoming": {
+          "all_true_flag": true,
+          "evaluation_groups": [
+            {
+              "all_true_flag": true,
+              "evaluations": [
+                {
+                  "query": "result.return_code",
+                  "operand_1": {
+                    "variable": "result",
+                    "task": "3c"
+                  },
+                  "operator": "==",
+                  "operand_2": {
+                    "variable": 0,
+                    "task": "static"
+                  }
+                }
+              ]
+            }
+          ],
+          "options": {}
+        },
+        "outgoing": {
+          "return_value": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "3e": {
+      "name": "evaluation",
+      "canvasName": "evaluation",
+      "summary": "the AWS end checked in recently?",
+      "description": "the AWS end checked in recently?",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 190,
+        "y": 2850
+      },
+      "variables": {
+        "incoming": {
+          "all_true_flag": true,
+          "evaluation_groups": [
+            {
+              "all_true_flag": true,
+              "evaluations": [
+                {
+                  "query": "result.stdout_json.ready",
+                  "operand_1": {
+                    "variable": "result",
+                    "task": "3c"
+                  },
+                  "operator": "==",
+                  "operand_2": {
+                    "variable": true,
+                    "task": "static"
+                  }
+                }
+              ]
+            }
+          ],
+          "options": {}
+        },
+        "outgoing": {
+          "return_value": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "4a": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "lab-edge precheck's params",
+      "description": "lab-edge precheck's params",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": -200,
+        "y": 3000
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "stdout_json.precheck",
+          "obj": "$var.job.handoff_plan"
+        },
+        "outgoing": {
+          "return_data": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "4b": {
+      "name": "runService",
+      "canvasName": "runService",
+      "summary": "the router's prerequisites (lab-edge precheck: show commands)",
+      "description": "the router's prerequisites (lab-edge precheck: show commands)",
+      "location": "Application",
+      "locationType": null,
+      "app": "GatewayManager",
+      "type": "automatic",
+      "displayName": "GatewayManager",
+      "groups": [],
+      "nodeLocation": {
+        "x": -470,
+        "y": 3150
+      },
+      "variables": {
+        "incoming": {
+          "serviceName": "lab-edge",
+          "clusterId": "lab",
+          "params": "$var.4a.return_data"
+        },
+        "outgoing": {
+          "result": "$var.job.precheck_result"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "4c": {
+      "name": "evaluation",
+      "canvasName": "evaluation",
+      "summary": "the precheck ran?",
+      "description": "the precheck ran?",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": -140,
+        "y": 3300
+      },
+      "variables": {
+        "incoming": {
+          "all_true_flag": true,
+          "evaluation_groups": [
+            {
+              "all_true_flag": true,
+              "evaluations": [
+                {
+                  "query": "result.return_code",
+                  "operand_1": {
+                    "variable": "result",
+                    "task": "4b"
+                  },
+                  "operator": "==",
+                  "operand_2": {
+                    "variable": 0,
+                    "task": "static"
+                  }
+                }
+              ]
+            }
+          ],
+          "options": {}
+        },
+        "outgoing": {
+          "return_value": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "4d": {
+      "name": "evaluation",
+      "canvasName": "evaluation",
+      "summary": "the router is ready?",
+      "description": "the router is ready?",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": -100,
+        "y": 3450
+      },
+      "variables": {
+        "incoming": {
+          "all_true_flag": true,
+          "evaluation_groups": [
+            {
+              "all_true_flag": true,
+              "evaluations": [
+                {
+                  "query": "result.stdout_json.ready",
+                  "operand_1": {
+                    "variable": "result",
+                    "task": "4b"
+                  },
+                  "operator": "==",
+                  "operand_2": {
+                    "variable": true,
+                    "task": "static"
+                  }
+                }
+              ]
+            }
+          ],
+          "options": {}
+        },
+        "outgoing": {
+          "return_value": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "4e": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "what the router is missing",
+      "description": "what the router is missing",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": -320,
+        "y": 3600
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": true,
+          "query": "result.stdout_json.missing",
+          "obj": "$var.4b.result"
+        },
+        "outgoing": {
+          "return_data": "$var.job.precheck_missing"
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "5a": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "lab-edge render's params",
+      "description": "lab-edge render's params",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 30,
+        "y": 3600
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "stdout_json.render",
+          "obj": "$var.job.handoff_plan"
+        },
+        "outgoing": {
+          "return_data": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "5b": {
+      "name": "runService",
+      "canvasName": "runService",
+      "summary": "render the block (lab-edge render: no device)",
+      "description": "render the block (lab-edge render: no device)",
+      "location": "Application",
+      "locationType": null,
+      "app": "GatewayManager",
+      "type": "automatic",
+      "displayName": "GatewayManager",
+      "groups": [],
+      "nodeLocation": {
+        "x": -500,
+        "y": 3750
+      },
+      "variables": {
+        "incoming": {
+          "serviceName": "lab-edge",
+          "clusterId": "lab",
+          "params": "$var.5a.return_data"
+        },
+        "outgoing": {
+          "result": "$var.job.render_result"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "5c": {
+      "name": "evaluation",
+      "canvasName": "evaluation",
+      "summary": "rendered?",
+      "description": "rendered?",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": -70,
+        "y": 3900
+      },
+      "variables": {
+        "incoming": {
+          "all_true_flag": true,
+          "evaluation_groups": [
+            {
+              "all_true_flag": true,
+              "evaluations": [
+                {
+                  "query": "result.return_code",
+                  "operand_1": {
+                    "variable": "result",
+                    "task": "5b"
+                  },
+                  "operator": "==",
+                  "operand_2": {
+                    "variable": 0,
+                    "task": "static"
+                  }
+                }
+              ]
+            }
+          ],
+          "options": {}
+        },
+        "outgoing": {
+          "return_value": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "5d": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "the block's SHA-256",
+      "description": "the block's SHA-256",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": -280,
+        "y": 4050
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "result.stdout_json.sha256",
+          "obj": "$var.5b.result"
+        },
+        "outgoing": {
+          "return_data": "$var.job.sha256"
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "5e": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "the block, key masked",
+      "description": "the block, key masked",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": -120,
+        "y": 4200
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "result.stdout_json.block_masked",
+          "obj": "$var.5b.result"
+        },
+        "outgoing": {
+          "return_data": "$var.job.block_masked"
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "6a": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "the card: target",
+      "description": "the card: target",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": -130,
+        "y": 4350
+      },
+      "variables": {
+        "incoming": {
+          "obj": {},
+          "path": [
+            "target"
+          ],
+          "value": "$var.job.target"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "6b": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "the card: SHA-256",
+      "description": "the card: SHA-256",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 260,
+        "y": 4500
+      },
+      "variables": {
+        "incoming": {
+          "obj": "$var.6a.object",
+          "path": [
+            "sha256"
+          ],
+          "value": "$var.job.sha256"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "6c": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "the card: the block (key masked)",
+      "description": "the card: the block (key masked)",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 190,
+        "y": 4650
+      },
+      "variables": {
+        "incoming": {
+          "obj": "$var.6b.object",
+          "path": [
+            "block"
+          ],
+          "value": "$var.job.block_masked"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "6d": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "the card: NetBox",
+      "description": "the card: NetBox",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 130,
+        "y": 4800
+      },
+      "variables": {
+        "incoming": {
+          "obj": "$var.6c.object",
+          "path": [
+            "netbox"
+          ],
+          "value": "not applicable (the read-back is dc1-wan01's, added with its records)"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "6e": {
+      "name": "replace",
+      "canvasName": "replace",
+      "summary": "the card's message",
+      "description": "the card's message",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 100,
+        "y": 4950
+      },
+      "variables": {
+        "incoming": {
+          "str": "Hand Off the AWS VPN to __T__: this block (SHA-256 below) is pushed under a 5-minute revert timer and saved only if the post-read proves it. The pre-shared key comes from Vault at push time and is never shown here.",
+          "substr": "__T__",
+          "newSubstr": "$var.job.target"
+        },
+        "outgoing": {
+          "replacedString": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "6f": {
+      "name": "ViewData",
+      "canvasName": "ViewData",
+      "summary": "approval",
+      "description": "approval",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "manual",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 80,
+        "y": 5100
+      },
+      "variables": {
+        "incoming": {
+          "header": "Approve the router change",
+          "message": "$var.6e.replacedString",
+          "body": "$var.6d.object",
+          "variables": {},
+          "btn_success": "Approve",
+          "btn_failure": "Reject"
+        },
+        "outgoing": {},
+        "error": "",
+        "decorators": []
+      },
+      "view": "/workflow_engine/task/ViewData"
+    },
+    "7a": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "lab-edge-push's params",
+      "description": "lab-edge-push's params",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 60,
+        "y": 5250
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "stdout_json.push",
+          "obj": "$var.job.handoff_plan"
+        },
+        "outgoing": {
+          "return_data": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "7b": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "push params: the approved SHA-256",
+      "description": "push params: the approved SHA-256",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 140,
+        "y": 5400
+      },
+      "variables": {
+        "incoming": {
+          "obj": "$var.7a.return_data",
+          "path": [
+            "sha256"
+          ],
+          "value": "$var.job.sha256"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "7c": {
+      "name": "runService",
+      "canvasName": "runService",
+      "summary": "push the approved block (lab-edge-push: the key from Vault, revert timer, prove, save)",
+      "description": "push the approved block (lab-edge-push: the key from Vault, revert timer, prove, save)",
+      "location": "Application",
+      "locationType": null,
+      "app": "GatewayManager",
+      "type": "automatic",
+      "displayName": "GatewayManager",
+      "groups": [],
+      "nodeLocation": {
+        "x": 270,
+        "y": 5550
+      },
+      "variables": {
+        "incoming": {
+          "serviceName": "lab-edge-push",
+          "clusterId": "lab",
+          "params": "$var.7b.object"
+        },
+        "outgoing": {
+          "result": "$var.job.push_result"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "74": {
+      "name": "evaluation",
+      "canvasName": "evaluation",
+      "summary": "lab-edge-push exited 0?",
+      "description": "lab-edge-push exited 0?",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 320,
+        "y": 5700
+      },
+      "variables": {
+        "incoming": {
+          "all_true_flag": true,
+          "evaluation_groups": [
+            {
+              "all_true_flag": true,
+              "evaluations": [
+                {
+                  "query": "result.return_code",
+                  "operand_1": {
+                    "variable": "result",
+                    "task": "7c"
+                  },
+                  "operator": "==",
+                  "operand_2": {
+                    "variable": 0,
+                    "task": "static"
+                  }
+                }
+              ]
+            }
+          ],
+          "options": {}
+        },
+        "outgoing": {
+          "return_value": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "75": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "lab-edge-push exited non-zero",
+      "description": "lab-edge-push exited non-zero",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 590,
+        "y": 5850
+      },
+      "variables": {
+        "incoming": {
+          "input": "lab-edge-push stopped: push_summary says what the router went through",
+          "outputType": "string",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.push_note"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "7d": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "the push's answer",
+      "description": "the push's answer",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 600,
+        "y": 6000
+      },
+      "variables": {
+        "incoming": {
+          "obj": {},
+          "path": [
+            "push"
+          ],
+          "value": "$var.job.push_result"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "7e": {
+      "name": "runCode",
+      "canvasName": "runCode",
+      "summary": "what the push did (saved, rolled back or failed)",
+      "description": "what the push did (saved, rolled back or failed)",
+      "location": "Application",
+      "locationType": null,
+      "app": "GatewayManager",
+      "type": "automatic",
+      "displayName": "GatewayManager",
+      "groups": [],
+      "nodeLocation": {
+        "x": 2190,
+        "y": 6150
+      },
+      "variables": {
+        "incoming": {
+          "clusterId": "lab",
+          "language": "python",
+          "code": "import json, sys\n\n\ndef push_summary(d: dict) -> dict:\n    \"\"\"lab-edge-push's answer as Hand Off reads it. The service reports `router` only when it fails, and a push that a\n    line rejected or the post-read did not prove is rolled back and still exits 0 (cloud-devops-pipeline at the pin):\n    so the outcome comes from saved / rolled_back, never from the exit code alone. `changed` is the service's own\n    answer when the push saved (a second Hand Off sends lines but changes nothing) and false after a rollback; after a\n    failure it is true when lines were sent, and when there is no answer at all - the router may differ, check it.\n    Pure: runCode runs this function's own source on the Gateway.\"\"\"\n    result = ((d.get(\"push\") or {}).get(\"result\")) or {}\n    rc, out = result.get(\"return_code\"), result.get(\"stdout_json\")\n    out = out if isinstance(out, dict) else {}\n    saved, rolled, sent = out.get(\"saved\") is True, out.get(\"rolled_back\") is True, out.get(\"sent\") is True\n    if rc == 0 and saved:\n        state, changed = \"saved\", out.get(\"changed\") is True\n    elif rolled:\n        state, changed = \"rolled back\", False\n    else:\n        state, changed = \"failed\", out.get(\"changed\") is True or sent or not out\n    if not out:\n        router = \"unknown: no answer from lab-edge-push - check the router (push_result)\"\n    else:\n        router = out.get(\"router\") or (\n            \"saved\" if saved else \"rolled back\" if rolled else \"unchanged: nothing was sent\" if not sent\n            else \"unknown: lines were sent - check the router (push_result)\")\n    messages = {\n        \"saved\": \"\",\n        \"rolled back\": \"the router rejected a line or the change did not prove out, so it was rolled back (see \"\n                       \"push_result: rejected, checks): nothing was left on the router\",\n        \"failed\": f\"the push did not complete ({out.get('error') or 'no answer from lab-edge-push'}); the router: {router}\",\n    }\n    return {\"state\": state, \"changed\": changed, \"router\": router, \"message\": messages[state]}\n\n\nprint(json.dumps(push_summary(json.loads(sys.stdin.read() or \"{}\"))))\n",
+          "data": "$var.7d.object",
+          "safety": {
+            "timeout": 30
+          },
+          "packages": []
+        },
+        "outgoing": {
+          "result": "$var.job.push_summary"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "7f": {
+      "name": "evaluation",
+      "canvasName": "evaluation",
+      "summary": "the router may have changed?",
+      "description": "the router may have changed?",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 2600,
+        "y": 6300
+      },
+      "variables": {
+        "incoming": {
+          "all_true_flag": true,
+          "evaluation_groups": [
+            {
+              "all_true_flag": true,
+              "evaluations": [
+                {
+                  "query": "stdout_json.changed",
+                  "operand_1": {
+                    "variable": "result",
+                    "task": "7e"
+                  },
+                  "operator": "==",
+                  "operand_2": {
+                    "variable": true,
+                    "task": "static"
+                  }
+                }
+              ]
+            }
+          ],
+          "options": {}
+        },
+        "outgoing": {
+          "return_value": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "70": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "changed = true",
+      "description": "changed = true",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 2900,
+        "y": 6450
+      },
+      "variables": {
+        "incoming": {
+          "input": "true",
+          "outputType": "boolean",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.changed"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "71": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "what the router went through",
+      "description": "what the router went through",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 2850,
+        "y": 6600
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "stdout_json.router",
+          "obj": "$var.7e.result"
+        },
+        "outgoing": {
+          "return_data": "$var.job.router_state"
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "72": {
+      "name": "evaluation",
+      "canvasName": "evaluation",
+      "summary": "pushed, proved and saved?",
+      "description": "pushed, proved and saved?",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 3080,
+        "y": 6750
+      },
+      "variables": {
+        "incoming": {
+          "all_true_flag": true,
+          "evaluation_groups": [
+            {
+              "all_true_flag": true,
+              "evaluations": [
+                {
+                  "query": "stdout_json.state",
+                  "operand_1": {
+                    "variable": "result",
+                    "task": "7e"
+                  },
+                  "operator": "==",
+                  "operand_2": {
+                    "variable": "saved",
+                    "task": "static"
+                  }
+                }
+              ]
+            }
+          ],
+          "options": {}
+        },
+        "outgoing": {
+          "return_value": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "73": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "why the push did not save",
+      "description": "why the push did not save",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 3040,
+        "y": 6900
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "stdout_json.message",
+          "obj": "$var.7e.result"
+        },
+        "outgoing": {
+          "return_data": "$var.job.error"
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "8a": {
+      "name": "delay",
+      "canvasName": "delay",
+      "summary": "wait 30 s for the tunnel",
+      "description": "wait 30 s for the tunnel",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 3340,
+        "y": 6900
+      },
+      "variables": {
+        "incoming": {
+          "time": 30
+        },
+        "outgoing": {
+          "time_in_milliseconds": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "90": {
+      "name": "replace",
+      "canvasName": "replace",
+      "summary": "the outcome: router",
+      "description": "the outcome: router",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 4110,
+        "y": 9450
+      },
+      "variables": {
+        "incoming": {
+          "str": "handed off (router: __R__); Verify: __V__",
+          "substr": "__R__",
+          "newSubstr": "$var.job.router_state"
+        },
+        "outgoing": {
+          "replacedString": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "91": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "the verdict",
+      "description": "the verdict",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 4220,
+        "y": 9600
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "stdout_json.verdict",
+          "obj": "$var.ee.result"
+        },
+        "outgoing": {
+          "return_data": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "92": {
+      "name": "replace",
+      "canvasName": "replace",
+      "summary": "the outcome",
+      "description": "the outcome",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 4440,
+        "y": 9750
+      },
+      "variables": {
+        "incoming": {
+          "str": "$var.90.replacedString",
+          "substr": "__V__",
+          "newSubstr": "$var.91.return_data"
+        },
+        "outgoing": {
+          "replacedString": "$var.job.outcome"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "94": {
+      "name": "replace",
+      "canvasName": "replace",
+      "summary": "the outcome (Verify did not pass): router",
+      "description": "the outcome (Verify did not pass): router",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 3810,
+        "y": 9450
+      },
+      "variables": {
+        "incoming": {
+          "str": "handed off (router: __R__); Verify: __V__",
+          "substr": "__R__",
+          "newSubstr": "$var.job.router_state"
+        },
+        "outgoing": {
+          "replacedString": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "95": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "the verdict (not passed)",
+      "description": "the verdict (not passed)",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 3920,
+        "y": 9600
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "stdout_json.verdict",
+          "obj": "$var.ee.result"
+        },
+        "outgoing": {
+          "return_data": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "96": {
+      "name": "replace",
+      "canvasName": "replace",
+      "summary": "the outcome (Verify did not pass)",
+      "description": "the outcome (Verify did not pass)",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 3990,
+        "y": 9750
+      },
+      "variables": {
+        "incoming": {
+          "str": "$var.94.replacedString",
+          "substr": "__V__",
+          "newSubstr": "$var.95.return_data"
+        },
+        "outgoing": {
+          "replacedString": "$var.job.error"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "a0": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "rejected = true",
+      "description": "rejected = true",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 360,
+        "y": 5250
+      },
+      "variables": {
+        "incoming": {
+          "input": "true",
+          "outputType": "boolean",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.rejected"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "a2": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "the rejection",
+      "description": "the rejection",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 610,
+        "y": 5400
+      },
+      "variables": {
+        "incoming": {
+          "input": "rejected in Work Center: nothing was sent to the router",
+          "outputType": "string",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.outcome"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "b0": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "the plan could not run",
+      "description": "the plan could not run",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 230,
+        "y": 2400
+      },
+      "variables": {
+        "incoming": {
+          "input": "the Gateway could not work out what to hand off (see handoff_plan): nothing was sent to the router",
+          "outputType": "string",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.error"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "b7": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "the precheck could not start",
+      "description": "the precheck could not start",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 280,
+        "y": 3150
+      },
+      "variables": {
+        "incoming": {
+          "input": "the precheck's params could not be read (see handoff_plan): nothing was sent to the router",
+          "outputType": "string",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.error"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "b8": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "the render could not run",
+      "description": "the render could not run",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 360,
+        "y": 4350
+      },
+      "variables": {
+        "incoming": {
+          "input": "the Gateway could not run lab-edge render or read its answer (see render_result): nothing was sent to the router",
+          "outputType": "string",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.error"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "b9": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "the push could not start",
+      "description": "the push could not start",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": -310,
+        "y": 5400
+      },
+      "variables": {
+        "incoming": {
+          "input": "the push's params could not be read (see handoff_plan): nothing was sent to the router",
+          "outputType": "string",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.error"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "b1": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "the outputs could not be read",
+      "description": "the outputs could not be read",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 650,
+        "y": 1800
+      },
+      "variables": {
+        "incoming": {
+          "input": "the deployed outputs could not be read from the Terraform state (outputs_result): nothing was sent to the router",
+          "outputType": "string",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.error"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "b2": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "the AWS end could not be checked",
+      "description": "the AWS end could not be checked",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 570,
+        "y": 2850
+      },
+      "variables": {
+        "incoming": {
+          "input": "could not check whether the AWS end is ready (ready_result): nothing was sent to the router",
+          "outputType": "string",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.error"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "b3": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "the AWS end is not ready",
+      "description": "the AWS end is not ready",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 280,
+        "y": 3000
+      },
+      "variables": {
+        "incoming": {
+          "input": "the AWS monitor has not checked the strongSwan box successfully in the last 15 minutes: nothing was sent to the router",
+          "outputType": "string",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.error"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "b4": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "the precheck did not run",
+      "description": "the precheck did not run",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": -950,
+        "y": 3750
+      },
+      "variables": {
+        "incoming": {
+          "input": "lab-edge precheck refused or could not read the router (precheck_result): nothing was sent to the router",
+          "outputType": "string",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.error"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "b5": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "the router is not ready",
+      "description": "the router is not ready",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 250,
+        "y": 3750
+      },
+      "variables": {
+        "incoming": {
+          "input": "the router is not ready for Hand Off (precheck_missing lists what is missing): nothing was sent to the router",
+          "outputType": "string",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.error"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "b6": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "the render refused",
+      "description": "the render refused",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 470,
+        "y": 4050
+      },
+      "variables": {
+        "incoming": {
+          "input": "the render refused the values (an output that does not match versions.yaml, or nothing deployed; see render_result): nothing was sent to the router",
+          "outputType": "string",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.error"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "c0": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "the push could not run",
+      "description": "the push could not run",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 20,
+        "y": 5700
+      },
+      "variables": {
+        "incoming": {
+          "input": "the Gateway could not run lab-edge-push: if any line reached the router, its revert timer rolls it back within 5 minutes - check the router",
+          "outputType": "string",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.error"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "c4": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "the push's answer could not be read",
+      "description": "the push's answer could not be read",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 2620,
+        "y": 7200
+      },
+      "variables": {
+        "incoming": {
+          "input": "lab-edge-push ran but its answer could not be read: check the router (push_result)",
+          "outputType": "string",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.error"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "c3": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "the verify steps could not run",
+      "description": "the verify steps could not run",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 3690,
+        "y": 9750
+      },
+      "variables": {
+        "incoming": {
+          "input": "the push was saved (see changed and router_state), but the verify steps could not run or gave no verdict: run Verify AWS VPN",
+          "outputType": "string",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.error"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "c5": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "changed = true (the push's answer is unknown)",
+      "description": "changed = true (the push's answer is unknown)",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 2690,
+        "y": 7050
+      },
+      "variables": {
+        "incoming": {
+          "input": "true",
+          "outputType": "boolean",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.changed"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "e0": {
+      "name": "parse",
+      "canvasName": "parse",
+      "summary": "no router reading yet",
+      "description": "no router reading yet",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 3370,
+        "y": 7050
+      },
+      "variables": {
+        "incoming": {
+          "text": "{}"
+        },
+        "outgoing": {
+          "textObject": "$var.job.lab_edge_result"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "e1": {
+      "name": "parse",
+      "canvasName": "parse",
+      "summary": "no AWS monitor reading yet",
+      "description": "no AWS monitor reading yet",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 3370,
+        "y": 7200
+      },
+      "variables": {
+        "incoming": {
+          "text": "{}"
+        },
+        "outgoing": {
+          "textObject": "$var.job.monitor_result"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "e2": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "lab-edge verify's params",
+      "description": "lab-edge verify's params",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 3220,
+        "y": 7350
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "stdout_json.lab_edge",
+          "obj": "$var.job.handoff_plan"
+        },
+        "outgoing": {
+          "return_data": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "e3": {
+      "name": "runService",
+      "canvasName": "runService",
+      "summary": "the router and the data plane (lab-edge verify: show commands, one ping)",
+      "description": "the router and the data plane (lab-edge verify: show commands, one ping)",
+      "location": "Application",
+      "locationType": null,
+      "app": "GatewayManager",
+      "type": "automatic",
+      "displayName": "GatewayManager",
+      "groups": [],
+      "nodeLocation": {
+        "x": 3400,
+        "y": 7500
+      },
+      "variables": {
+        "incoming": {
+          "serviceName": "lab-edge",
+          "clusterId": "lab",
+          "params": "$var.e2.return_data"
+        },
+        "outgoing": {
+          "result": "$var.job.lab_edge_result"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "e4": {
+      "name": "evaluation",
+      "canvasName": "evaluation",
+      "summary": "lab-edge read the router?",
+      "description": "lab-edge read the router?",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 3670,
+        "y": 7650
+      },
+      "variables": {
+        "incoming": {
+          "all_true_flag": true,
+          "evaluation_groups": [
+            {
+              "all_true_flag": true,
+              "evaluations": [
+                {
+                  "query": "result.return_code",
+                  "operand_1": {
+                    "variable": "result",
+                    "task": "e3"
+                  },
+                  "operator": "==",
+                  "operand_2": {
+                    "variable": 0,
+                    "task": "static"
+                  }
+                }
+              ]
+            }
+          ],
+          "options": {}
+        },
+        "outgoing": {
+          "return_value": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "e5": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "lab-edge exited non-zero",
+      "description": "lab-edge exited non-zero",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 3760,
+        "y": 7800
+      },
+      "variables": {
+        "incoming": {
+          "input": "lab-edge could not read the router: see lab_edge_result.result.stdout_json.error",
+          "outputType": "string",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.router_note"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "e6": {
+      "name": "evaluation",
+      "canvasName": "evaluation",
+      "summary": "AWS monitor applies?",
+      "description": "AWS monitor applies?",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 3490,
+        "y": 7950
+      },
+      "variables": {
+        "incoming": {
+          "all_true_flag": true,
+          "evaluation_groups": [
+            {
+              "all_true_flag": true,
+              "evaluations": [
+                {
+                  "query": "stdout_json.monitor",
+                  "operand_1": {
+                    "variable": "handoff_plan",
+                    "task": "job"
+                  },
+                  "operator": "==",
+                  "operand_2": {
+                    "variable": "aws",
+                    "task": "static"
+                  }
+                }
+              ]
+            }
+          ],
+          "options": {}
+        },
+        "outgoing": {
+          "return_value": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "e7": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "aws-vpn-monitor's params",
+      "description": "aws-vpn-monitor's params",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 3840,
+        "y": 8100
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "stdout_json.monitor_params",
+          "obj": "$var.job.handoff_plan"
+        },
+        "outgoing": {
+          "return_data": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "e8": {
+      "name": "runService",
+      "canvasName": "runService",
+      "summary": "the AWS monitor (Lambda + CloudWatch)",
+      "description": "the AWS monitor (Lambda + CloudWatch)",
+      "location": "Application",
+      "locationType": null,
+      "app": "GatewayManager",
+      "type": "automatic",
+      "displayName": "GatewayManager",
+      "groups": [],
+      "nodeLocation": {
+        "x": 3680,
+        "y": 8250
+      },
+      "variables": {
+        "incoming": {
+          "serviceName": "aws-vpn-monitor",
+          "clusterId": "lab",
+          "params": "$var.e7.return_data"
+        },
+        "outgoing": {
+          "result": "$var.job.monitor_result"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "e9": {
+      "name": "evaluation",
+      "canvasName": "evaluation",
+      "summary": "the monitor answered?",
+      "description": "the monitor answered?",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 3920,
+        "y": 8400
+      },
+      "variables": {
+        "incoming": {
+          "all_true_flag": true,
+          "evaluation_groups": [
+            {
+              "all_true_flag": true,
+              "evaluations": [
+                {
+                  "query": "result.return_code",
+                  "operand_1": {
+                    "variable": "result",
+                    "task": "e8"
+                  },
+                  "operator": "==",
+                  "operand_2": {
+                    "variable": 0,
+                    "task": "static"
+                  }
+                }
+              ]
+            }
+          ],
+          "options": {}
+        },
+        "outgoing": {
+          "return_value": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "ea": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "aws-vpn-monitor exited non-zero",
+      "description": "aws-vpn-monitor exited non-zero",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 4180,
+        "y": 8550
+      },
+      "variables": {
+        "incoming": {
+          "input": "aws-vpn-monitor could not check: see monitor_result.result.stdout_json.error",
+          "outputType": "string",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.monitor_note"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "eb": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "the readings: what was read",
+      "description": "the readings: what was read",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 3630,
+        "y": 8700
+      },
+      "variables": {
+        "incoming": {
+          "obj": {},
+          "path": [
+            "plan"
+          ],
+          "value": "$var.job.handoff_plan"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "ec": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "the readings: router and data plane",
+      "description": "the readings: router and data plane",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 3650,
+        "y": 8850
+      },
+      "variables": {
+        "incoming": {
+          "obj": "$var.eb.object",
+          "path": [
+            "lab_edge"
+          ],
+          "value": "$var.job.lab_edge_result"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "ed": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "the readings: AWS monitor",
+      "description": "the readings: AWS monitor",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 3660,
+        "y": 9000
+      },
+      "variables": {
+        "incoming": {
+          "obj": "$var.ec.object",
+          "path": [
+            "monitor"
+          ],
+          "value": "$var.job.monitor_result"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "ee": {
+      "name": "runCode",
+      "canvasName": "runCode",
+      "summary": "the judge (every applicable signal up passes)",
+      "description": "the judge (every applicable signal up passes)",
+      "location": "Application",
+      "locationType": null,
+      "app": "GatewayManager",
+      "type": "automatic",
+      "displayName": "GatewayManager",
+      "groups": [],
+      "nodeLocation": {
+        "x": 3360,
+        "y": 9150
+      },
+      "variables": {
+        "incoming": {
+          "clusterId": "lab",
+          "language": "python",
+          "code": "import json, sys\n\n\ndef judge(d: dict) -> dict:\n    \"\"\"Verify's verdict from its readings (the spec's rules): every applicable signal up passes; any signal that could\n    not be read is \"could not check <signal>\"; every signal down is \"tunnel down\"; any other mix is \"disagreement\",\n    naming each reading. The AWS monitor applies only where the target's monitor is `aws`. Pure: runCode runs this\n    very function's source on the Gateway, so the unit tests test what runs.\"\"\"\n    states = (\"up\", \"down\", \"could not check\")\n    plan = (d.get(\"plan\") or {}).get(\"stdout_json\") or {}\n\n    def service(envelope):  # a runService result {id, jsonrpc, result: {return_code, stdout_json}}, or {} if none ran\n        result = (envelope or {}).get(\"result\") or {}\n        return result.get(\"return_code\"), result.get(\"stdout_json\") or {}\n\n    rc, edge = service(d.get(\"lab_edge\"))\n    signals = {}\n    for key in (\"router\", \"data_plane\"):\n        value = edge.get(key) if rc == 0 else \"could not check\"\n        signals[key] = value if value in states else \"could not check\"\n    applicable = plan.get(\"monitor\") == \"aws\"\n    mrc, mon = service(d.get(\"monitor\"))\n    if applicable:\n        value = mon.get(\"monitor\") if mrc == 0 else \"could not check\"\n        signals[\"aws_monitor\"] = value if value in states + (\"disagreement\",) else \"could not check\"\n    label = {\"router\": \"router\", \"data_plane\": \"data plane\", \"aws_monitor\": \"AWS monitor\"}\n    values = list(signals.values())\n    if all(v == \"up\" for v in values):\n        verdict = \"tunnel up: \" + \", \".join(f\"{label[k]} up\" for k in signals)\n    elif \"could not check\" in values:\n        verdict = \"could not check \" + \" and \".join(label[k] for k, v in signals.items() if v == \"could not check\")\n        others = [f\"{label[k]} {v}\" for k, v in signals.items() if v != \"could not check\"]\n        if others:\n            verdict += \" (\" + \", \".join(others) + \")\"\n    elif all(v == \"down\" for v in values):\n        verdict = \"tunnel down: \" + \", \".join(f\"{label[k]} down\" for k in signals)\n    else:\n        verdict = \"disagreement: \" + \", \".join(f\"{label[k]} {v}\" for k, v in signals.items())\n    if not applicable:\n        verdict += \" (AWS monitor not applicable)\"\n    return {\n        \"passed\": all(v == \"up\" for v in values),\n        \"verdict\": verdict,\n        \"signals\": {**signals, **({} if applicable else {\"aws_monitor\": \"not applicable\"})},\n        \"readings\": {\"router\": edge.get(\"readings\"), \"aws_monitor\": mon.get(\"readings\") if applicable else None},\n        # the services return an error as a class name or their own refusal text, never device or AWS output\n        \"errors\": {k: v for k, v in ((\"lab_edge\", edge.get(\"error\")), (\"aws_monitor\", mon.get(\"error\"))) if v},\n    }\n\n\nprint(json.dumps(judge(json.loads(sys.stdin.read() or \"{}\"))))\n",
+          "data": "$var.ed.object",
+          "safety": {
+            "timeout": 30
+          },
+          "packages": []
+        },
+        "outgoing": {
+          "result": "$var.job.judgement"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "ef": {
+      "name": "evaluation",
+      "canvasName": "evaluation",
+      "summary": "passed?",
+      "description": "passed?",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 3850,
+        "y": 9300
+      },
+      "variables": {
+        "incoming": {
+          "all_true_flag": true,
+          "evaluation_groups": [
+            {
+              "all_true_flag": true,
+              "evaluations": [
+                {
+                  "query": "stdout_json.passed",
+                  "operand_1": {
+                    "variable": "result",
+                    "task": "ee"
+                  },
+                  "operator": "==",
+                  "operand_2": {
+                    "variable": true,
+                    "task": "static"
+                  }
+                }
+              ]
+            }
+          ],
+          "options": {}
+        },
+        "outgoing": {
+          "return_value": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "9a01": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "input to check: target",
+      "description": "input to check: target",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 0,
+        "y": 150
+      },
+      "variables": {
+        "incoming": {
+          "obj": {},
+          "path": [
+            "target"
+          ],
+          "value": "$var.job.target"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "9a0a": {
+      "name": "validateJsonSchema",
+      "canvasName": "validateJsonSchema",
+      "summary": "check the inputs",
+      "description": "check the inputs",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 0,
+        "y": 300
+      },
+      "variables": {
+        "incoming": {
+          "jsonData": "$var.9a01.object",
+          "schema": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "target"
+            ],
+            "properties": {
+              "target": {
+                "enum": [
+                  "clab-rtr1"
+                ]
+              }
+            }
+          }
+        },
+        "outgoing": {
+          "result": "$var.job.input_check"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "9a0b": {
+      "name": "evaluation",
+      "canvasName": "evaluation",
+      "summary": "inputs valid?",
+      "description": "inputs valid?",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": -100,
+        "y": 450
+      },
+      "variables": {
+        "incoming": {
+          "all_true_flag": true,
+          "evaluation_groups": [
+            {
+              "all_true_flag": true,
+              "evaluations": [
+                {
+                  "query": "valid",
+                  "operand_1": {
+                    "variable": "result",
+                    "task": "9a0a"
+                  },
+                  "operator": "==",
+                  "operand_2": {
+                    "variable": true,
+                    "task": "static"
+                  }
+                }
+              ]
+            }
+          ],
+          "options": {}
+        },
+        "outgoing": {
+          "return_value": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "9a0c": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "the inputs were refused",
+      "description": "the inputs were refused",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 500,
+        "y": 600
+      },
+      "variables": {
+        "incoming": {
+          "input": "the inputs were refused before anything ran (see input_check for which input and why): nothing was sent to a device",
+          "outputType": "string",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.error"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "workflow_start": {
+      "name": "workflow_start",
+      "summary": "workflow_start",
+      "groups": [],
+      "nodeLocation": {
+        "x": 0,
+        "y": 0
+      }
+    },
+    "workflow_end": {
+      "name": "workflow_end",
+      "summary": "workflow_end",
+      "groups": [],
+      "nodeLocation": {
+        "x": 2530,
+        "y": 9900
+      }
+    }
+  },
+  "transitions": {
+    "workflow_start": {
+      "9a01": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "10": {
+      "1a": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "1a": {
+      "1b": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "1b": {
+      "1c": {
+        "state": "success",
+        "type": "standard"
+      },
+      "b0": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "1c": {
+      "2a": {
+        "state": "success",
+        "type": "standard"
+      },
+      "1d": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "2a": {
+      "2b": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "2b": {
+      "2c": {
+        "state": "success",
+        "type": "standard"
+      },
+      "b1": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "2c": {
+      "2d": {
+        "state": "success",
+        "type": "standard"
+      },
+      "b1": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "2d": {
+      "2e": {
+        "state": "success",
+        "type": "standard"
+      },
+      "b1": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "2e": {
+      "2f": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "2f": {
+      "1d": {
+        "state": "success",
+        "type": "standard"
+      },
+      "b0": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "1d": {
+      "3a": {
+        "state": "success",
+        "type": "standard"
+      },
+      "1e": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "1e": {
+      "workflow_end": {
+        "state": "success",
+        "type": "standard"
+      },
+      "b0": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "3a": {
+      "3b": {
+        "state": "success",
+        "type": "standard"
+      },
+      "4a": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "3b": {
+      "3c": {
+        "state": "success",
+        "type": "standard"
+      },
+      "b2": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "3c": {
+      "3d": {
+        "state": "success",
+        "type": "standard"
+      },
+      "b2": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "3d": {
+      "3e": {
+        "state": "success",
+        "type": "standard"
+      },
+      "b2": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "3e": {
+      "4a": {
+        "state": "success",
+        "type": "standard"
+      },
+      "b3": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "4a": {
+      "4b": {
+        "state": "success",
+        "type": "standard"
+      },
+      "b7": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "4b": {
+      "4c": {
+        "state": "success",
+        "type": "standard"
+      },
+      "b4": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "4c": {
+      "4d": {
+        "state": "success",
+        "type": "standard"
+      },
+      "b4": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "4d": {
+      "5a": {
+        "state": "success",
+        "type": "standard"
+      },
+      "4e": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "4e": {
+      "b5": {
+        "state": "success",
+        "type": "standard"
+      },
+      "b4": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "5a": {
+      "5b": {
+        "state": "success",
+        "type": "standard"
+      },
+      "b8": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "5b": {
+      "5c": {
+        "state": "success",
+        "type": "standard"
+      },
+      "b8": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "5c": {
+      "5d": {
+        "state": "success",
+        "type": "standard"
+      },
+      "b6": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "5d": {
+      "5e": {
+        "state": "success",
+        "type": "standard"
+      },
+      "b8": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "5e": {
+      "6a": {
+        "state": "success",
+        "type": "standard"
+      },
+      "b8": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "6a": {
+      "6b": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "6b": {
+      "6c": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "6c": {
+      "6d": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "6d": {
+      "6e": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "6e": {
+      "6f": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "6f": {
+      "7a": {
+        "state": "success",
+        "type": "standard"
+      },
+      "a0": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "a0": {
+      "a2": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "a2": {
+      "workflow_end": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "7a": {
+      "7b": {
+        "state": "success",
+        "type": "standard"
+      },
+      "b9": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "7b": {
+      "7c": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "7c": {
+      "74": {
+        "state": "success",
+        "type": "standard"
+      },
+      "c0": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "74": {
+      "7d": {
+        "state": "success",
+        "type": "standard"
+      },
+      "75": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "75": {
+      "7d": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "7d": {
+      "7e": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "7e": {
+      "7f": {
+        "state": "success",
+        "type": "standard"
+      },
+      "c5": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "7f": {
+      "70": {
+        "state": "success",
+        "type": "standard"
+      },
+      "71": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "70": {
+      "71": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "71": {
+      "72": {
+        "state": "success",
+        "type": "standard"
+      },
+      "c5": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "72": {
+      "8a": {
+        "state": "success",
+        "type": "standard"
+      },
+      "73": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "73": {
+      "workflow_end": {
+        "state": "success",
+        "type": "standard"
+      },
+      "c5": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "8a": {
+      "e0": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "e0": {
+      "e1": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "e1": {
+      "e2": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "e2": {
+      "e3": {
+        "state": "success",
+        "type": "standard"
+      },
+      "c3": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "e3": {
+      "e4": {
+        "state": "success",
+        "type": "standard"
+      },
+      "e6": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "e4": {
+      "e6": {
+        "state": "success",
+        "type": "standard"
+      },
+      "e5": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "e5": {
+      "e6": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "e6": {
+      "e7": {
+        "state": "success",
+        "type": "standard"
+      },
+      "eb": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "e7": {
+      "e8": {
+        "state": "success",
+        "type": "standard"
+      },
+      "eb": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "e8": {
+      "e9": {
+        "state": "success",
+        "type": "standard"
+      },
+      "eb": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "e9": {
+      "eb": {
+        "state": "success",
+        "type": "standard"
+      },
+      "ea": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "ea": {
+      "eb": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "eb": {
+      "ec": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "ec": {
+      "ed": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "ed": {
+      "ee": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "ee": {
+      "ef": {
+        "state": "success",
+        "type": "standard"
+      },
+      "c3": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "ef": {
+      "90": {
+        "state": "success",
+        "type": "standard"
+      },
+      "94": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "90": {
+      "91": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "91": {
+      "92": {
+        "state": "success",
+        "type": "standard"
+      },
+      "c3": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "92": {
+      "workflow_end": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "94": {
+      "95": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "95": {
+      "96": {
+        "state": "success",
+        "type": "standard"
+      },
+      "c3": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "96": {
+      "workflow_end": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "b0": {
+      "workflow_end": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "b1": {
+      "workflow_end": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "b2": {
+      "workflow_end": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "b3": {
+      "workflow_end": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "b4": {
+      "workflow_end": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "b5": {
+      "workflow_end": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "b6": {
+      "workflow_end": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "b7": {
+      "workflow_end": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "b8": {
+      "workflow_end": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "b9": {
+      "workflow_end": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "c0": {
+      "workflow_end": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "c5": {
+      "c4": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "c4": {
+      "workflow_end": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "c3": {
+      "workflow_end": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "9a01": {
+      "9a0a": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "9a0a": {
+      "9a0b": {
+        "state": "success",
+        "type": "standard"
+      },
+      "9a0c": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "9a0b": {
+      "10": {
+        "state": "success",
+        "type": "standard"
+      },
+      "9a0c": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "9a0c": {
+      "workflow_end": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "workflow_end": {}
+  },
+  "groups": [],
+  "canvasVersion": 3,
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "target": {
+        "type": "string",
+        "required": true,
+        "enum": [
+          "clab-rtr1"
+        ],
+        "description": "The lab edge router to hand the AWS VPN to"
+      }
+    },
+    "required": [
+      "target"
+    ]
+  },
+  "outputSchema": {
+    "type": "object",
+    "properties": {
+      "outcome": {
+        "type": "string"
+      },
+      "error": {
+        "type": "string"
+      },
+      "changed": {
+        "type": "boolean"
+      },
+      "rejected": {
+        "type": "boolean"
+      },
+      "router_state": {
+        "type": "string"
+      },
+      "sha256": {
+        "type": "string"
+      },
+      "block_masked": {
+        "type": "string"
+      },
+      "precheck_missing": {
+        "type": "array"
+      },
+      "handoff_plan": {
+        "type": "object"
+      },
+      "outputs_result": {
+        "type": "object"
+      },
+      "ready_result": {
+        "type": "object"
+      },
+      "precheck_result": {
+        "type": "object"
+      },
+      "render_result": {
+        "type": "object"
+      },
+      "push_result": {
+        "type": "object"
+      },
+      "push_summary": {
+        "type": "object"
+      },
+      "push_note": {
+        "type": "string"
+      },
+      "judgement": {
+        "type": "object"
+      },
+      "lab_edge_result": {
+        "type": "object"
+      },
+      "monitor_result": {
+        "type": "object"
+      },
+      "router_note": {
+        "type": "string"
+      },
+      "monitor_note": {
+        "type": "string"
+      },
+      "input_check": {
+        "type": "object"
+      }
+    }
+  },
+  "tags": [],
+  "preAutomationTime": 300000,
+  "sla": 600000,
+  "font_size": 12,
+  "decorators": []
+}
