@@ -15,6 +15,7 @@ the itentialopensource pre-built automations:
 
 from __future__ import annotations
 
+import inspect
 import itertools
 import json
 import statistics
@@ -334,6 +335,9 @@ INPUT_GATES = {
         "change_request": {"type": "boolean"},
     },
     WF["branch_vlan_delete"]: {"instance": BRANCH_VLAN_INSTANCE},
+    # only a target whose window is open (itential/versions.yaml aws_vpn.targets): a closed one is refused at the gate
+    WF["verify_aws_vpn"]: {"target": {"enum": sorted(n for n, t in VERSIONS["aws_vpn"]["targets"].items()
+                                                if t["window"] == "open")}},
 }
 # where a refusal is reported: the device workflows already say "did not run" in device_error, which the agents read
 GATE_ERROR_VAR = {WF[k]: "device_error" for k in ("show_version", "show_command", "show_all", "config_push")}
@@ -3179,21 +3183,227 @@ def deploy_aws_vpn() -> dict:
     )
 
 
+# --- Verify AWS VPN (PID S13 criterion 4, build step 7) -------------------------------------------------------------
+# Reads only: lab-edge verify (show commands and one ping from Loopback0), aws-vpn-monitor check (the monitor Lambda's
+# own swanctl read and the CloudWatch datapoint it writes), terraform-run outputs (state, read). Three signals - the
+# router, the AWS monitor (only where a target's monitor is `aws`) and the data plane - judged by `judge` below.
+
+# what the workflow carries per open target: the pinned values lab-edge checks, the twin's pinned outputs (a target
+# monitored by AWS reads its outputs from Terraform instead), the login user and which monitor applies
+VERIFY_TARGETS = {
+    name: {k: entry[k] for k in ("target", "outputs", "username", "monitor") if k in entry}
+    for name, entry in VERSIONS["aws_vpn"]["targets"].items()
+    if entry["window"] == "open"
+}
+OUTPUTS_PARAMS = '{"action": "outputs", "timeout": "120"}'
+LAB_EDGE_TIMEOUT = "300"  # the reads, a 5 x 2 s ping and the second read, with room for a slow SSH login
+MONITOR_TIMEOUT = "240"  # the Lambda (75 s read timeout) plus up to 90 s for its datapoint
+
+VERIFY_PLAN_CODE = """import json, sys
+d = json.loads(sys.stdin.read() or "{}")
+name = d.get("target")
+entry = (d.get("targets") or {}).get(name) or {}
+monitor = entry.get("monitor")
+deployed = entry.get("outputs") if monitor != "aws" else d.get("deployed")
+plan = {"target": name, "monitor": monitor, "need_outputs": bool(entry) and monitor == "aws" and deployed is None,
+        "ready": False, "reason": "", "lab_edge": None, "monitor_params": None}
+if not entry:
+    plan["reason"] = "could not check: %%s is not an open target" %% name
+elif not plan["need_outputs"] and not (deployed or {}).get("strongswan_eip"):
+    plan["reason"] = "could not check: nothing is deployed (the outputs have no strongSwan address); nothing was read"
+if entry and deployed and not plan["reason"]:
+    plan["ready"] = True
+    plan["lab_edge"] = {"action": "verify", "target_json": json.dumps(entry["target"]),
+                        "outputs_json": json.dumps(deployed), "username": entry["username"], "timeout": "%s"}
+    if monitor == "aws":
+        plan["monitor_params"] = {"action": "check", "instance_id": str(deployed.get("strongswan_instance_id") or ""),
+                                  "timeout": "%s"}
+print(json.dumps(plan))
+""" % (LAB_EDGE_TIMEOUT, MONITOR_TIMEOUT)
+
+
+def judge(d: dict) -> dict:
+    """Verify's verdict from its readings (the spec's rules): every applicable signal up passes; any signal that could
+    not be read is "could not check <signal>"; every signal down is "tunnel down"; any other mix is "disagreement",
+    naming each reading. The AWS monitor applies only where the target's monitor is `aws`. Pure: runCode runs this
+    very function's source on the Gateway, so the unit tests test what runs."""
+    states = ("up", "down", "could not check")
+    plan = (d.get("plan") or {}).get("stdout_json") or {}
+
+    def service(envelope):  # a runService result {id, jsonrpc, result: {return_code, stdout_json}}, or {} if none ran
+        result = (envelope or {}).get("result") or {}
+        return result.get("return_code"), result.get("stdout_json") or {}
+
+    rc, edge = service(d.get("lab_edge"))
+    signals = {}
+    for key in ("router", "data_plane"):
+        value = edge.get(key) if rc == 0 else "could not check"
+        signals[key] = value if value in states else "could not check"
+    applicable = plan.get("monitor") == "aws"
+    mrc, mon = service(d.get("monitor"))
+    if applicable:
+        value = mon.get("monitor") if mrc == 0 else "could not check"
+        signals["aws_monitor"] = value if value in states + ("disagreement",) else "could not check"
+    label = {"router": "router", "data_plane": "data plane", "aws_monitor": "AWS monitor"}
+    values = list(signals.values())
+    if all(v == "up" for v in values):
+        verdict = "tunnel up: " + ", ".join(f"{label[k]} up" for k in signals)
+    elif "could not check" in values:
+        verdict = "could not check " + " and ".join(label[k] for k, v in signals.items() if v == "could not check")
+        others = [f"{label[k]} {v}" for k, v in signals.items() if v != "could not check"]
+        if others:
+            verdict += " (" + ", ".join(others) + ")"
+    elif all(v == "down" for v in values):
+        verdict = "tunnel down: " + ", ".join(f"{label[k]} down" for k in signals)
+    else:
+        verdict = "disagreement: " + ", ".join(f"{label[k]} {v}" for k, v in signals.items())
+    if not applicable:
+        verdict += " (AWS monitor not applicable)"
+    return {
+        "passed": all(v == "up" for v in values),
+        "verdict": verdict,
+        "signals": {**signals, **({} if applicable else {"aws_monitor": "not applicable"})},
+        "readings": {"router": edge.get("readings"), "aws_monitor": mon.get("readings") if applicable else None},
+        # the services return an error as a class name or their own refusal text, never device or AWS output
+        "errors": {k: v for k, v in (("lab_edge", edge.get("error")), ("aws_monitor", mon.get("error"))) if v},
+    }
+
+
+JUDGE_CODE = ("import json, sys\n\n\n" + inspect.getsource(judge)
+              + "\n\nprint(json.dumps(judge(json.loads(sys.stdin.read() or \"{}\"))))\n")
+
+
+def run_code(summary: str, code: str, data_ref: str, out_job: str, x: int, y: int = 0) -> dict:
+    """GatewayManager.runCode: Python on the runner, the data on stdin; its result carries stdout_json."""
+    return task("runCode", "GatewayManager", summary,
+                {"clusterId": CLUSTER, "language": "python", "code": code, "data": data_ref,
+                 "safety": {"timeout": 30}, "packages": []},
+                {"result": f"$var.job.{out_job}"}, x=x, y=y)
+
+
+def empty(summary: str, job_var: str, x: int, y: int = 0) -> dict:
+    """{} published as a job variable, so a service that never ran reads as no result (could not check)."""
+    t = parse(summary, "{}", x=x, y=y)
+    t["variables"]["outgoing"]["textObject"] = f"$var.job.{job_var}"
+    return t
+
+
+def verify_aws_vpn() -> dict:
+    ok, fail, err = "success", "failure", "error"
+    tasks = {
+        # a service that does not run leaves {} behind: the judge reads it as could not check
+        "0a": empty("no router reading yet", "lab_edge_result", x=100),
+        "0b": empty("no AWS monitor reading yet", "monitor_result", x=150),
+        # the target's pinned values (the target is gated: an open one)
+        "1a": task("setObjectKey", "WorkFlowEngine", "the target and the pinned values",
+                   {"obj": {"targets": VERIFY_TARGETS}, "path": ["target"], "value": "$var.job.target"},
+                   {"object": "$var.job.verify_in"}, display="Tools", x=200),
+        "1b": run_code("what to read for this target", VERIFY_PLAN_CODE, "$var.job.verify_in", "verify_plan", x=300),
+        "1c": evaluate("deployed outputs needed (AWS)?", "1b", "result", "stdout_json.need_outputs", "==", True, x=400),
+        # dc1-wan01: the deployed outputs, read from the Terraform state
+        "2a": parse("outputs params", OUTPUTS_PARAMS, x=450, y=300),
+        "2b": run_service("the deployed outputs (terraform-run, a read)", "terraform-run", "$var.2a.textObject",
+                          "outputs_result", x=500, y=300),
+        "2c": evaluate("outputs read?", "2b", "result", "result.return_code", "==", 0, x=550, y=300),
+        "2d": jq("the outputs", "$var.2b.result", "result.stdout_json.outputs", x=600, y=300),
+        "2e": set_key("the outputs, as data", "$var.job.verify_in", "deployed", "$var.2d.return_data", x=650, y=300),
+        "2f": run_code("what to read, with the outputs", VERIFY_PLAN_CODE, "$var.2e.object", "verify_plan", x=700, y=300),
+        "3e": evaluate("anything to read?", "job", "verify_plan", "stdout_json.ready", "==", True, x=750),
+        "3f": jq("why there is nothing to read", "$var.job.verify_plan", "stdout_json.reason", x=800, y=-900,
+                 to_job="error"),
+        # the router and the data plane
+        "3a": jq("lab-edge's params", "$var.job.verify_plan", "stdout_json.lab_edge", x=800),
+        "3b": run_service("the router and the data plane (lab-edge verify: show commands, one ping)", "lab-edge",
+                          "$var.3a.return_data", "lab_edge_result", x=900),
+        "3c": evaluate("lab-edge read the router?", "3b", "result", "result.return_code", "==", 0, x=1000),
+        # the AWS monitor, where it applies
+        "4a": evaluate("AWS monitor applies?", "job", "verify_plan", "stdout_json.monitor", "==", "aws", x=1100),
+        "4b": jq("aws-vpn-monitor's params", "$var.job.verify_plan", "stdout_json.monitor_params", x=1150, y=300),
+        "4c": run_service("the AWS monitor (Lambda + CloudWatch)", "aws-vpn-monitor", "$var.4b.return_data",
+                          "monitor_result", x=1200, y=300),
+        "4d": evaluate("the monitor answered?", "4c", "result", "result.return_code", "==", 0, x=1250, y=300),
+        # a non-zero exit is a reading too (the judge reads it as could not check), so both outcomes go on
+        "3d": note("lab-edge exited non-zero", "lab-edge could not read the router: see lab_edge_result.result.stdout_json.error",
+                   "router_note", x=1050, y=-300),
+        "4e": note("aws-vpn-monitor exited non-zero",
+                   "aws-vpn-monitor could not check: see monitor_result.result.stdout_json.error", "monitor_note",
+                   x=1300, y=600),
+        # the judge
+        "5a": set_key("the readings: what was read", {}, "plan", "$var.job.verify_plan", x=1300),
+        "5b": set_key("the readings: router and data plane", "$var.5a.object", "lab_edge", "$var.job.lab_edge_result", x=1350),
+        "5c": set_key("the readings: AWS monitor", "$var.5b.object", "monitor", "$var.job.monitor_result", x=1400),
+        "5d": run_code("the judge (every applicable signal up passes)", JUDGE_CODE, "$var.5c.object", "judgement", x=1500),
+        "5e": evaluate("passed?", "5d", "result", "stdout_json.passed", "==", True, x=1600),
+        "5f": jq("the verdict", "$var.5d.result", "stdout_json.verdict", x=1700, to_job="outcome"),
+        "50": jq("the verdict (not passed)", "$var.5d.result", "stdout_json.verdict", x=1700, y=-300, to_job="error"),
+        # failures that leave nothing to judge
+        "8a": note("the outputs could not be read",
+                   "could not check: the deployed outputs could not be read from the Terraform state (outputs_result); "
+                   "nothing was read on the router", "error", x=600, y=600),
+        "8b": note("a read could not run", "could not check: the Gateway could not run the step that reads what to "
+                   "check; nothing was read on the router", "error", x=400, y=-600),
+        "8c": note("the judge did not run", "could not check: the readings were taken but the judge could not run; "
+                   "see lab_edge_result and monitor_result", "error", x=1600, y=-600),
+    }
+    tr = chain("0a", "0b", "1a", "1b", "1c")
+    tr["1b"] = {"1c": {"state": ok, "type": "standard"}, "8b": {"state": err, "type": "standard"}}
+    tr["1c"] = {"2a": {"state": ok, "type": "standard"}, "3e": {"state": fail, "type": "standard"}}
+    tr["2a"] = t("", "2b")
+    tr["2b"] = {"2c": {"state": ok, "type": "standard"}, "8a": {"state": err, "type": "standard"}}
+    tr["2c"] = {"2d": {"state": ok, "type": "standard"}, "8a": {"state": fail, "type": "standard"}}
+    tr["2d"] = {"2e": {"state": ok, "type": "standard"}, "8a": {"state": err, "type": "standard"}}
+    tr["2e"] = t("", "2f")
+    tr["2f"] = {"3e": {"state": ok, "type": "standard"}, "8b": {"state": err, "type": "standard"}}
+    tr["3e"] = {"3a": {"state": ok, "type": "standard"}, "3f": {"state": fail, "type": "standard"}}
+    tr["3f"] = {"workflow_end": {"state": ok, "type": "standard"}, "8b": {"state": err, "type": "standard"}}
+    tr["3a"] = {"3b": {"state": ok, "type": "standard"}, "8b": {"state": err, "type": "standard"}}
+    # a lab-edge that refused or could not log in is still judged: the judge reads it as could not check
+    tr["3b"] = {"3c": {"state": ok, "type": "standard"}, "4a": {"state": err, "type": "standard"}}
+    tr["3c"] = {"4a": {"state": ok, "type": "standard"}, "3d": {"state": fail, "type": "standard"}}
+    tr["3d"] = t("", "4a")
+    tr["4a"] = {"4b": {"state": ok, "type": "standard"}, "5a": {"state": fail, "type": "standard"}}
+    tr["4b"] = {"4c": {"state": ok, "type": "standard"}, "5a": {"state": err, "type": "standard"}}
+    tr["4c"] = {"4d": {"state": ok, "type": "standard"}, "5a": {"state": err, "type": "standard"}}
+    tr["4d"] = {"5a": {"state": ok, "type": "standard"}, "4e": {"state": fail, "type": "standard"}}
+    tr["4e"] = t("", "5a")
+    tr["5a"], tr["5b"], tr["5c"] = t("", "5b"), t("", "5c"), t("", "5d")
+    tr["5d"] = {"5e": {"state": ok, "type": "standard"}, "8c": {"state": err, "type": "standard"}}
+    tr["5e"] = {"5f": {"state": ok, "type": "standard"}, "50": {"state": fail, "type": "standard"}}
+    # a judge that printed no verdict: the reads fail, and still reach the end with a reason
+    tr["5f"] = {"workflow_end": {"state": ok, "type": "standard"}, "8c": {"state": err, "type": "standard"}}
+    tr["50"] = {"workflow_end": {"state": ok, "type": "standard"}, "8c": {"state": err, "type": "standard"}}
+    for end in ("8a", "8b", "8c"):
+        tr[end] = t("", "workflow_end")
+    return workflow(
+        WF["verify_aws_vpn"],
+        "Verifies the lab's site-to-site VPN to AWS without changing anything: the router (IKEv2 SA, IPsec counters "
+        "rising), the AWS monitor (where it applies) and a ping from Loopback0 through the tunnel must all say up "
+        "(PID S13 criterion 4, ADR 0068)",
+        {"target": {"type": "string", "required": True, "enum": INPUT_GATES[WF["verify_aws_vpn"]]["target"]["enum"],
+                    "description": "The lab edge router whose tunnel to check"}},
+        tasks,
+        tr,
+        {
+            "outcome": {"type": "string"},
+            "error": {"type": "string"},
+            "judgement": {"type": "object"},
+            "verify_plan": {"type": "object"},
+            "lab_edge_result": {"type": "object"},
+            "monitor_result": {"type": "object"},
+            "outputs_result": {"type": "object"},
+            "router_note": {"type": "string"},
+            "monitor_note": {"type": "string"},
+        },
+    )
+
+
+BUILDERS = (device_count, show_version, show_command, show_all, branch_vlan, branch_vlan_delete, config_push,
+            compliance_run, compliance_report, netbox_devices, backup_all, deploy_aws_vpn, verify_aws_vpn)
+
+
 if __name__ == "__main__":
-    for wf in (
-        device_count(),
-        show_version(),
-        show_command(),
-        show_all(),
-        branch_vlan(),
-        branch_vlan_delete(),
-        config_push(),
-        compliance_run(),
-        compliance_report(),
-        netbox_devices(),
-        backup_all(),
-        deploy_aws_vpn(),
-    ):
+    for build in BUILDERS:
+        wf = build()
         out = HERE / file_name(wf["name"])
         out.write_text(json.dumps(wf, indent=2) + "\n")
         print(out.relative_to(HERE.parent.parent), len(wf["tasks"]) - 2, "tasks")
