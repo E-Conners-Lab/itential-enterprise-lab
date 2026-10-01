@@ -64,6 +64,10 @@ line vty 0 4
  access-class MGMT-ONLY in vrf-also
 line vty 5 15
  access-class MGMT-ONLY in vrf-also
+{#- NETCONF and RESTCONF do not use the vty lines: their own service-level ACLs (proved on clab-rtr1, IOS-XE 17.13,
+    2026-10-01: a source outside the list gets no NETCONF session and RESTCONF answers 401) #}
+netconf-yang ssh ipv4 access-list name MGMT-ONLY
+restconf ipv4 access-list name MGMT-ONLY
 !
 archive
  path bootflash:rb-

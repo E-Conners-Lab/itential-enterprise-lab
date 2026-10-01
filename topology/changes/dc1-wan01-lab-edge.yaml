@@ -31,7 +31,7 @@ steps:
 
   - name: management, INET-IN, prefix-lists, zones
     workflow: Push Configuration with Revert Timer
-    reason: "Step 10 (ADR 0068) 2/4: management ACL on the vty lines, INET-IN closed by default, the VPC kept from every BGP neighbour but dc1-leaf01, the two zones (no members yet)"
+    reason: "Step 10 (ADR 0068) 2/4: management ACL on the vty lines, NETCONF and RESTCONF, INET-IN closed by default, the VPC kept from every BGP neighbour but dc1-leaf01, the two zones (no members yet)"
     revert_minutes: 8
     # INET-IN stays applied throughout: the new layout goes on as INET-IN-NEXT first (the access-group swap is atomic),
     # INET-IN is rebuilt and swapped back, and INET-IN-NEXT is dropped - Gi7 is never unfiltered
@@ -43,6 +43,8 @@ steps:
        access-class MGMT-ONLY in vrf-also
       line vty 5 15
        access-class MGMT-ONLY in vrf-also
+      netconf-yang ssh ipv4 access-list name MGMT-ONLY
+      restconf ipv4 access-list name MGMT-ONLY
       ip access-list extended INET-IN-NEXT
        10 deny ip any any fragments
        20 deny udp any host 172.29.129.250 eq isakmp log

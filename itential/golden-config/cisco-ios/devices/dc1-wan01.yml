@@ -22,6 +22,8 @@ lines: |
    access-class MGMT-ONLY in vrf-also
   <e/>line vty 5 15
    access-class MGMT-ONLY in vrf-also
+  <e/>netconf-yang ssh ipv4 access-list name MGMT-ONLY
+  <e/>restconf ipv4 access-list name MGMT-ONLY
   <e/>archive
    path bootflash:rb-
    maximum 5

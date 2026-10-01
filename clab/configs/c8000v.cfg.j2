@@ -55,6 +55,10 @@ ip access-list standard MGMT-ONLY
  permit {{ net }} {{ wildcards[plen] }}
 {% endfor %}
 !
+{# NETCONF and RESTCONF do not use the vty lines (vrnetlab's base config enables both): their own service-level ACLs #}
+netconf-yang ssh ipv4 access-list name MGMT-ONLY
+restconf ipv4 access-list name MGMT-ONLY
+!
 archive
  path bootflash:rb-
  maximum 5
