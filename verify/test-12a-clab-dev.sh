@@ -97,10 +97,17 @@ o = yaml.safe_load(open("clab/versions.yaml"))
 j = json.load(open(f"{os.environ['WORK']}/inspect.json"))
 rows = [r for v in j.values() for r in v] if isinstance(j, dict) else j
 have = {r["name"].split("-", 2)[-1]: (r["state"], r["ipv4_address"].split("/")[0]) for r in rows}
+# the AWS end's twin (clab/versions.yaml aws_twin): two containers beside the devices, running, with no mgmt address
+twin = {o["aws_twin"]["nat"]["name"], o["aws_twin"]["twin"]["name"]} if "aws_twin" in o else set()
+twins = {k: v[0] for k, v in have.items() if k in twin}
+have = {k: v for k, v in have.items() if k not in twin}
 want = {n["name"]: ("running", n["mgmt_ipv4"]) for n in o["nodes"]}
 if have != want:
     print(f"containerlab {have} != oracle {want}"); sys.exit(1)
-print(f"containerlab: {len(have)} running at {sorted(v[1] for v in have.values())}")
+if twins != {name: "running" for name in twin}:
+    print(f"the twin's containers {twins} are not both running"); sys.exit(1)
+print(f"containerlab: {len(have)} devices running at {sorted(v[1] for v in have.values())}"
+      + (f"; the twin's {len(twins)} containers running" if twin else ""))
 PY
   local name kind ip out banner adm
   while read -r name kind ip; do

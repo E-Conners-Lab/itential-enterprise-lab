@@ -502,7 +502,9 @@
       loop:
         - cmd: show ip access-lists INET-IN
           want: ["10 deny ip any any fragments", "20 deny udp any host", "30 deny udp any host", "1000 deny ip any any log"]
-        - {cmd: "show running-config | section ^archive", want: ["path bootflash:rb-", "hidekeys"]}
+        # IOS-XE 17.13 leaves `hidekeys` out of the plain running config (measured 2026-10-01): only `all` shows it, and
+        # then as its own line - `no hidekeys` would contain the word too, so the line is matched whole
+        - {cmd: "show running-config all | section ^archive", want: ["path bootflash:rb-", "\n  hidekeys\n"]}
         - {cmd: "show running-config | include ^zone security", want: ["zone security INSIDE", "zone security AWS"]}
         - {cmd: "show running-config | section ^line vty", want: ["access-class MGMT-ONLY in vrf-also"]}
         - {cmd: "show running-config | section ^crypto ikev2 keyring CANARY", want: ["pre-shared-key"]}
