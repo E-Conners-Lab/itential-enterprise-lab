@@ -3449,7 +3449,8 @@ def verify_aws_vpn() -> dict:
 SETTLE_SECONDS = 30  # the router starts IKE once Tunnel10 is up; the verify tasks read after this
 APPROVAL_MESSAGE = (
     "Hand Off the AWS VPN to __T__: this block (SHA-256 below) is pushed under a 5-minute revert timer and saved only "
-    "if the post-read proves it. The pre-shared key comes from Vault at push time and is never shown here."
+    "if the post-read proves it; if the router already holds exactly this block and key version, nothing is sent and "
+    "it is only saved. The pre-shared key comes from Vault at push time and is never shown here."
 )
 OUTCOME_TPL = "handed off (router: __R__); Verify: __V__"
 
@@ -3458,8 +3459,9 @@ def push_summary(d: dict) -> dict:
     """lab-edge-push's answer as Hand Off reads it. The service reports `router` only when it fails, and a push that a
     line rejected or the post-read did not prove is rolled back and still exits 0 (cloud-devops-pipeline at the pin):
     so the outcome comes from saved / rolled_back, never from the exit code alone. `changed` is the service's own
-    answer when the push saved (a second Hand Off sends lines but changes nothing) and false after a rollback; after a
-    failure it is true when lines were sent, and when there is no answer at all - the router may differ, check it.
+    answer when the push saved (a second Hand Off finds the block in place and sends nothing) and false after a
+    rollback; after a failure it is true when lines were sent, and when there is no answer at all - the router may
+    differ, check it.
     Pure: runCode runs this function's own source on the Gateway."""
     result = ((d.get("push") or {}).get("result")) or {}
     rc, out = result.get("return_code"), result.get("stdout_json")
@@ -3475,7 +3477,8 @@ def push_summary(d: dict) -> dict:
         router = "unknown: no answer from lab-edge-push - check the router (push_result)"
     else:
         router = out.get("router") or (
-            "saved" if saved else "rolled back" if rolled else "unchanged: nothing was sent" if not sent
+            "already in place: nothing sent, saved" if saved and out.get("already_in_place") is True
+            else "saved" if saved else "rolled back" if rolled else "unchanged: nothing was sent" if not sent
             else "unknown: lines were sent - check the router (push_result)")
     messages = {
         "saved": "",
