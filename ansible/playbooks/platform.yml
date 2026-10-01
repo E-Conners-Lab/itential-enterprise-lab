@@ -183,10 +183,44 @@
       ansible.builtin.include_tasks: tasks/lcm.yml
       when: "'lcm' in platform_elements | default(['golden_config', 'mop', 'lcm', 'integrations'])"
 
-    # Dev first (ADR 0063): production gets these once Deploy AWS VPN is proven on the dev tier
-    - name: Deploy AWS VPN - its form, automation, the branded page's API trigger and the form's trigger (ADR 0068)
-      ansible.builtin.include_tasks: tasks/deploy-aws-vpn-triggers.yml
+    # Dev first (ADR 0063): production gets these once the AWS VPN workflows are proven on the dev tier
+    - name: AWS VPN workflows - form, automation, the branded page's API trigger and the form's trigger (ADR 0068)
+      ansible.builtin.include_tasks: tasks/aws-vpn-triggers.yml
       when: dev_overlay | default(false) | bool
+      loop: "{{ aws_vpn_triggers }}"
+      loop_control: {loop_var: wt, label: "{{ wt.key }}"}
+      vars:
+        # the open targets: the same list as the workflows' input gates and the forms (itential/versions.yaml)
+        aws_vpn_open_targets: >-
+          {{ aws_vpn.targets | dict2items | selectattr('value.window', 'equalto', 'open') | map(attribute='key') | sort }}
+        aws_vpn_target_schema:
+          type: object
+          additionalProperties: false
+          required: [target]
+          properties:
+            target: {type: string, enum: "{{ aws_vpn_open_targets }}"}
+        aws_vpn_triggers:
+          - key: deploy_aws_vpn
+            description: "Deploys the AWS side of the site-to-site VPN; started by the branded page or the form (ADR 0068)"
+            # what an API caller may send (security review 2026-09-29, WEB-01): the bounds build.py PLAN_INPUTS_SCHEMA
+            # checks itself; change_note is required because the Platform refuses a start without it
+            schema:
+              type: object
+              additionalProperties: false
+              required: [onprem_public_ip, enable_nat_gateway, change_note]
+              properties:
+                onprem_public_ip:
+                  type: string
+                  maxLength: 15
+                  pattern: '^(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])(\.(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])){3}$'
+                enable_nat_gateway: {type: string, enum: ["false", "true"]}
+                change_note: {type: string, maxLength: 280}
+          - key: hand_off_aws_vpn
+            description: "Hands the lab edge router its side of the AWS VPN; started by the branded page or the form (ADR 0068)"
+            schema: "{{ aws_vpn_target_schema }}"
+          - key: verify_aws_vpn
+            description: "Verifies the AWS VPN without changing anything; started by the branded page or the form (ADR 0068)"
+            schema: "{{ aws_vpn_target_schema }}"
 
     - name: Element 4 - Integration Models, integrations and their tools (ADR 0045)
       ansible.builtin.include_tasks: tasks/integrations.yml

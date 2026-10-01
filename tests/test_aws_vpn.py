@@ -7,8 +7,12 @@ from __future__ import annotations
 import importlib.util
 import json
 import re
+import subprocess
+import shutil
+import os
 from pathlib import Path
 
+import pytest
 import yaml
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -336,49 +340,148 @@ def test_the_inputs_are_checked_before_anything_runs() -> None:
         assert not ip.fullmatch(bad), bad
 
 
+def _trigger_specs() -> dict:
+    """platform.yml's loop over tasks/aws-vpn-triggers.yml: {key: spec} and the loop's own vars."""
+    play = yaml.safe_load((ROOT / "ansible" / "playbooks" / "platform.yml").read_text())[0]
+    task = next(t for t in play["tasks"] if t.get("ansible.builtin.include_tasks") == "tasks/aws-vpn-triggers.yml")
+    return {spec["key"]: spec for spec in task["vars"]["aws_vpn_triggers"]}, task
+
+
+OPEN_TARGETS = sorted(n for n, t in VERSIONS["aws_vpn"]["targets"].items() if t["window"] == "open")
+
+
 def test_the_trigger_refuses_what_the_workflow_refuses() -> None:
-    task_file = yaml.safe_load((ROOT / "ansible" / "playbooks" / "tasks" / "deploy-aws-vpn-triggers.yml").read_text())
-    trigger = next(t for t in task_file if t.get("name") == "The endpoint trigger's schema")
-    schema = trigger["ansible.builtin.set_fact"]["dav_schema"]
+    specs, task = _trigger_specs()
+    assert set(specs) == {"deploy_aws_vpn", "hand_off_aws_vpn", "verify_aws_vpn"}
+    assert task["when"] == "dev_overlay | default(false) | bool" and task["loop_control"]["loop_var"] == "wt"
+    schema = specs["deploy_aws_vpn"]["schema"]
     want = build.PLAN_INPUTS_SCHEMA["properties"]
     assert schema["additionalProperties"] is False
     assert set(schema["required"]) == {"onprem_public_ip", "enable_nat_gateway", "change_note"}
     for key in ("onprem_public_ip", "enable_nat_gateway", "change_note"):
         got = {k: v for k, v in schema["properties"][key].items() if k != "type"}
         assert got == {k: v for k, v in want[key].items() if k != "type"}, key
-    patch = next(t for t in task_file if t.get("name") == "The endpoint trigger's schema is current")
+    # Hand Off and Verify take only `target`, one of the open routers - the same as the workflows' own gates
+    for key in ("hand_off_aws_vpn", "verify_aws_vpn"):
+        assert specs[key]["schema"] == "{{ aws_vpn_target_schema }}", key
+        assert build.INPUT_GATES[VERSIONS["workflows"][key]] == {"target": {"enum": OPEN_TARGETS}}
+    target_schema = task["vars"]["aws_vpn_target_schema"]
+    assert target_schema["additionalProperties"] is False and target_schema["required"] == ["target"]
+    assert target_schema["properties"]["target"] == {"type": "string", "enum": "{{ aws_vpn_open_targets }}"}
+    assert "selectattr('value.window', 'equalto', 'open')" in task["vars"]["aws_vpn_open_targets"]
+    tasks_file = yaml.safe_load((ROOT / "ansible" / "playbooks" / "tasks" / "aws-vpn-triggers.yml").read_text())
+    patch = next(t for t in tasks_file if t.get("name", "").startswith("The endpoint trigger's schema is current"))
     assert patch["ansible.builtin.uri"]["method"] == "PATCH"  # an existing trigger is brought up to date
+    created = next(t for t in tasks_file if t.get("name", "").startswith("The branded page's endpoint trigger"))
+    assert created["ansible.builtin.uri"]["body"]["schema"] == "{{ dav_schema }}"
+
+
+def test_each_workflow_has_its_automation_endpoint_and_form_named_in_versions() -> None:
+    om, forms = VERSIONS["operations_manager"], VERSIONS["forms"]
+    routes = set()
+    for key in ("deploy_aws_vpn", "hand_off_aws_vpn", "verify_aws_vpn"):
+        assert om[key]["automation"] == VERSIONS["workflows"][key]
+        assert (ROOT / "itential" / "forms" / f"{forms[key]}.json").exists(), key
+        routes.add(om[key]["endpoint"]["route"])
+    assert routes == {"deploy-aws-vpn", "hand-off-aws-vpn", "verify-aws-vpn"}
+    for key in ("hand_off_aws_vpn", "verify_aws_vpn"):
+        form = json.loads((ROOT / "itential" / "forms" / f"{forms[key]}.json").read_text())["schema"]
+        assert form["required"] == ["target"] and form["properties"]["target"]["enum"] == OPEN_TARGETS
 
 
 # --- the branded page (itential/portal/deploy-aws-vpn) reads the workflow it starts ---------------------------------
 PAGE = ROOT / "itential" / "portal" / "deploy-aws-vpn" / "index.html"
 
 
+def _workflow(file: str) -> tuple[dict, dict]:
+    wf = json.loads((ROOT / "itential" / "workflows" / file).read_text())
+    return wf, {tid: t for tid, t in wf["tasks"].items() if isinstance(t, dict)}
+
+
+PAGE_MODES = {"deploy": "deploy-aws-vpn.json", "handoff": "hand-off-aws-vpn.json", "verify": "verify-aws-vpn.json"}
+
+
+def _mode_block(page: str, mode: str) -> str:
+    """The page's MODES.<mode> entry, up to the next one."""
+    start = page.index(f"    {mode}: {{")
+    ends = [page.index(f"    {m}: {{") for m in PAGE_MODES if page.index(f"    {m}: {{") > start] + [page.index("  const LEGS")]
+    return page[start:min(ends)]
+
+
 def test_the_page_draws_its_route_from_task_ids_the_workflow_has() -> None:
-    wf, tasks = _deploy()
     page = PAGE.read_text()
-    stages = re.findall(r'key: "(\w+)", label: "[^"]+", sub: "[^"]+", tasks: \[([^\]]*)\]', page)
-    assert [k for k, _ in stages] == ["plan", "approve", "apply", "psk", "done"]
-    for key, ids in stages:
-        for tid in re.findall(r'"([0-9a-f]{1,4})"', ids):
-            assert tid in tasks, f"page stage {key} watches {tid}, which Deploy AWS VPN does not have"
+    keys = []
+    for mode, file in PAGE_MODES.items():
+        wf, tasks = _workflow(file)
+        block = _mode_block(page, mode)
+        assert f'workflow: "{wf["name"]}"' in block
+        stages = re.findall(r'key: "(\w+)", label: "[^"]+", sub: "[^"]+", tasks: \[([^\]]*)\]', block)
+        assert stages, mode
+        for key, ids in stages:
+            keys.append(key)
+            for tid in re.findall(r'"([^"]*)"', ids):  # every quoted id, so a typo is caught too
+                assert tid in tasks, f"page stage {key} watches {tid}, which {wf['name']} does not have"
+    assert keys == ["plan", "approve", "apply", "psk", "checks", "hoapprove", "push", "tunnel", "verdict"]
+    assert len(set(keys)) == len(keys)  # one route: a stage key names one waypoint
+    wf, _ = _workflow("deploy-aws-vpn.json")
     for var in ("plan", "outputs", "psk", "outcome", "error", "aws_changed", "rejected"):
         assert var in wf["outputSchema"]["properties"] and f"v.{var}" in page, var
+    wf, _ = _workflow("hand-off-aws-vpn.json")
+    for var in ("sha256", "router_state", "outcome", "error", "changed", "rejected"):
+        assert var in wf["outputSchema"]["properties"] and f"v.{var}" in page, var
+    wf, _ = _workflow("verify-aws-vpn.json")
+    assert "judgement" in wf["outputSchema"]["properties"] and "v.judgement" in page
 
 
 def test_the_page_marks_a_stop_from_the_branches_the_workflow_takes() -> None:
-    """The workflow's failures are branches, so its tasks end "complete": the page finds a failed stage by the failure
-    branch that ran, and a rejection by the discard branch, and both must be the workflow's real edges."""
-    wf, _ = _deploy()
+    """The workflows' failures are branches, so their tasks end "complete": the page finds a failed stage by the failure
+    branch that ran, and a rejection by the reject branch; every one must be a real task that ends the job with a
+    reason (or, for Deploy, the branch its stage's tasks take on failure)."""
     page = PAGE.read_text()
-    branches = dict(re.findall(r'(\w+): \["([0-9a-f]{1,4})", "[0-9a-f]{1,4}"\]', page.split("FAIL_BRANCH = ")[1].split(";")[0]))
+    for mode, file in PAGE_MODES.items():
+        wf, tasks = _workflow(file)
+        block = _mode_block(page, mode)
+        fail = block.split("fail: {")[1].split("}")[0]
+        branches = {k: re.findall(r'"([^"]*)"', v) for k, v in re.findall(r'(\w+): \[([^\]]*)\]', fail)}
+        assert branches, mode
+        stage_keys = re.findall(r'key: "(\w+)"', block)
+        for stage, ids in branches.items():
+            assert stage in stage_keys, (mode, stage)
+            for tid in ids:
+                assert tid in tasks, f"{mode} {stage}: {tid} is not a task of {wf['name']}"
+                # a failure branch ends the job (directly or through the outcome/error notes after it)
+                reach, todo = set(), [tid]
+                while todo:
+                    n = todo.pop()
+                    if n in reach:
+                        continue
+                    reach.add(n)
+                    todo.extend(wf["transitions"].get(n, {}))
+                assert "workflow_end" in reach, (mode, tid)
+    # deploy: each stage's first failure branch is where its tasks go on failure
+    wf, _ = _workflow("deploy-aws-vpn.json")
     starts = {"plan": ("1d", "1e"), "apply": ("3e", "3f"), "psk": ("4d", "4e")}
-    assert branches.keys() == starts.keys()
-    for stage, first in branches.items():
+    fail = _mode_block(page, "deploy").split("fail: {")[1].split("}")[0]
+    for stage, first in re.findall(r'(\w+): \["([0-9a-f]{1,4})"', fail):
         exits = {t for src in starts[stage] for t in wf["transitions"][src]}
         assert first in exits, f"{stage}: {first} is not where {starts[stage]} go on failure"
-    assert wf["transitions"]["2b"]["7a"]["state"] == "failure"  # Reject in Work Center
-    assert 'ran("7a")' in page
+    # Reject in Work Center: the approval's failure edge, for both workflows that ask
+    for mode, file, approval, reject in (("deploy", "deploy-aws-vpn.json", "2b", "7a"), ("handoff", "hand-off-aws-vpn.json", "6f", "a0")):
+        wf, _ = _workflow(file)
+        assert wf["transitions"][approval][reject]["state"] == "failure"
+        assert f'reject: {{ stage: "' in _mode_block(page, mode) and f'task: "{reject}" }}' in _mode_block(page, mode)
+
+
+def test_the_page_starts_each_workflow_through_its_own_trigger_and_lists_the_open_routers() -> None:
+    page = PAGE.read_text()
+    for key, mode in (("deploy_aws_vpn", "deploy"), ("hand_off_aws_vpn", "handoff"), ("verify_aws_vpn", "verify")):
+        route = VERSIONS["operations_manager"][key]["endpoint"]["route"]
+        assert f'trigger: "/operations-manager/triggers/endpoint/{route}"' in _mode_block(page, mode)
+    targets = json.loads(page.split("const TARGETS = ")[1].split(";")[0])
+    assert targets == OPEN_TARGETS
+    # Hand Off and Verify send only the router: what their endpoint triggers accept
+    assert 'start("handoff", { target: $("handoff-target").value }' in page
+    assert 'start("verify", { target: $("verify-target").value }' in page
 
 
 def test_the_page_starts_the_job_under_the_engineers_session_and_holds_no_credential() -> None:
@@ -457,3 +560,87 @@ def test_deploy_keeps_the_key_strongswan_already_has() -> None:
     # the close-out says what happened to the key from the service's own summary, on one straight path to 5e
     assert tasks["5b"]["variables"]["incoming"]["query"] == "summary"
     assert tasks["5e"]["variables"]["incoming"]["newSubstr"] == "$var.5b.return_data"
+
+
+def test_no_job_data_ever_becomes_html() -> None:
+    """Security review of build step 9: the Verify status line put the job's `error` into innerHTML (stored XSS through a
+    shared ?job= link). Now only constants reach HTML: the waypoints (stage constants and numbers), an empty reset, and
+    the log row's frame (its time and a constant class); every text from a job goes through textContent."""
+    page = PAGE.read_text()
+    script = page.split("<script>")[1].split("</script>")[0]
+    html_lines = [ln.strip() for ln in script.splitlines() if "innerHTML" in ln]
+    allowed = ("g.innerHTML = `", 'li.innerHTML = `<time>${t.toTimeString().slice(0, 5)}</time><span${cls ? ` class="${cls}"` : ""}></span>`;',
+               'const dl = $("outputs"); dl.innerHTML = "";', 'seen.clear(); $("log").innerHTML = "";')
+    for ln in html_lines:
+        assert ln.startswith(allowed), ln
+    # the waypoint markup is built from the stage constants only
+    wp = script.split("g.innerHTML = `")[1].split("`;")[0]
+    assert set(re.findall(r"\$\{([^}]*)\}", wp)) <= {"s.x", "s.y", "s.y + 5", "i + 1", "s.label", "s.y + labelBelow", "s.sub", "s.y + labelBelow + 17"}
+    # status(): text only, and no call hands it markup
+    status_fn = script.split("function status(")[1].split("\n  }\n")[0]
+    assert "innerHTML" not in status_fn and "textContent" in status_fn and 'r.dataset.mask = "1"; setMaskable(r, rest' in status_fn
+    assert not re.search(r'status\([^)]*<', script)
+    # a resumed (or shared) job must be a job of the tab's own workflow before anything of it is read
+    follow = script.split("function follow(")[1].split("\n  }\n")[0]
+    assert follow.index("job.name !== MODES[m].workflow") < follow.index("render(read(job, m), m)")
+    assert "Object.hasOwn(MODES, askedMode)" in script
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="needs node")
+def test_the_journey_orders_legs_by_the_platforms_own_start_time() -> None:
+    """Re-check of build step 9: the Platform sends metrics.start_time as epoch milliseconds (an int, read on the dev
+    tier 2026-10-01), so Date.parse made every leg 0 and a stale leg was never skipped. Runs the page's own expression."""
+    script = PAGE.read_text().split("<script>")[1].split("</script>")[0]
+    expr = re.search(r"const started = (.+?); //", script).group(1)
+    probe = f"""
+      const at = (job) => {expr};
+      console.log(JSON.stringify([
+        at({{metrics: {{start_time: 1790829409132}}}}),
+        at({{metrics: {{start_time: "2026-10-01T04:36:49.132Z"}}}}),
+        at({{metrics: {{}}}}), at({{}})]));"""
+    out = subprocess.run(["node", "-e", probe], capture_output=True, text=True, check=True).stdout
+    assert json.loads(out) == [1790829409132, 1790829409132, 0, 0]
+
+
+def test_each_failure_branch_belongs_to_its_own_stage() -> None:
+    """A branch listed under a stage must not be reachable from the next stage's first task: `b9` (the push could not
+    start, after the approval) was listed under Checks and would have drawn Checks failed after an approval."""
+    page = PAGE.read_text()
+
+    def reach(wf, start):
+        seen, todo = set(), [start]
+        while todo:
+            n = todo.pop()
+            if n not in seen:
+                seen.add(n)
+                todo.extend(wf["transitions"].get(n, {}))
+        return seen
+
+    for mode, file in PAGE_MODES.items():
+        wf, tasks = _workflow(file)
+        block = _mode_block(page, mode)
+        stages = re.findall(r'key: "(\w+)", label: "[^"]+", sub: "[^"]+", tasks: \["([^"]+)"', block)
+        starts = re.findall(r'key: "(\w+)"[^\n]*start: \[([^\]]*)\]', block)
+        for key, ids in starts:
+            for tid in re.findall(r'"([^"]*)"', ids):
+                assert tid in tasks, f"{mode} {key}: start task {tid} is not in {wf['name']}"
+        fail = dict(re.findall(r'(\w+): \[([^\]]*)\]', block.split("fail: {")[1].split("}")[0]))
+        order = [k for k, _ in stages]
+        for i, (key, _) in enumerate(stages[:-1]):
+            later = reach(wf, stages[i + 1][1])
+            for tid in re.findall(r'"([^"]*)"', fail.get(key, "")):
+                assert tid not in later, f"{mode}: {tid} is listed under {key} but only happens from {order[i + 1]} on"
+
+
+@pytest.mark.skipif(not shutil.which("ansible"), reason="needs ansible on PATH")
+def test_the_target_schema_renders_to_the_open_targets() -> None:
+    # rendered by Ansible itself: the endpoint triggers of Hand Off and Verify accept exactly the open routers
+    _, task = _trigger_specs()
+    open_expr = task["vars"]["aws_vpn_open_targets"].strip()[2:-2]
+    cmd = ["ansible", "localhost", "-i", "localhost,", "-c", "local", "-o", "-m", "ansible.builtin.debug", "-a",
+           "msg={{ {'targets': (" + open_expr + ")} | to_json }}", "-e", f"@{ROOT / 'itential' / 'versions.yaml'}"]
+    run = subprocess.run(cmd, capture_output=True, text=True, timeout=120, cwd=ROOT, env={**os.environ, "ANSIBLE_NOCOLOR": "1"})
+    assert run.returncode == 0, (run.stdout + run.stderr)[-400:]
+    result = json.loads(run.stdout.split("localhost | SUCCESS => ", 1)[1])
+    got = result["msg"] if isinstance(result["msg"], dict) else json.loads(result["msg"])
+    assert got["targets"] == OPEN_TARGETS

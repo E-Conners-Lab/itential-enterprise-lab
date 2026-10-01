@@ -1,24 +1,28 @@
 ---
-# ADR 0068 step 5: how Deploy AWS VPN is started. An Operations Manager automation wraps the workflow, with two triggers:
-#   - an ENDPOINT trigger (route deploy-aws-vpn): the branded page (itential/portal) POSTs the plain variables to
-#     /operations-manager/triggers/endpoint/deploy-aws-vpn under the engineer's own session. It needs verb POST and a
-#     body schema at creation, or the route answers 404 (measured 2026-09-23);
-#   - a MANUAL trigger with the JSON form lab-deploy-aws-vpn, the fallback in the Platform UI. The form must be set when
-#     the trigger is created (a PATCHed formId does not take, measured 2026-09-23); legacyWrapper false maps the form's
+# How the AWS VPN workflows are started (ADR 0068 step 5; Hand Off and Verify since build step 9). Run once per workflow
+# (platform.yml loops it with `wt`: key = the workflows / forms / operations_manager key, schema = what the endpoint
+# trigger accepts, description). For each: an Operations Manager automation wraps the workflow, with two triggers:
+#   - an ENDPOINT trigger (its route): the branded page (itential/portal) POSTs the plain variables to
+#     /operations-manager/triggers/endpoint/<route> under the engineer's own session. It needs verb POST and a body
+#     schema at creation, or the route answers 404 (measured 2026-09-23). The schema refuses a bad request with a 400
+#     before it becomes a job (security review 2026-09-29, WEB-01): the same bounds the workflow checks itself;
+#   - a MANUAL trigger with the workflow's JSON form, the fallback in the Platform UI. The form must be set when the
+#     trigger is created (a PATCHed formId does not take, measured 2026-09-23); legacyWrapper false maps the form's
 #     fields straight onto the workflow's inputs.
-# Operations Manager updates are PATCH (PUT is 404). Needs: login, platform_local, forms_dir.
-- name: Deploy AWS VPN form document
+# Operations Manager updates are PATCH (PUT is 404). Needs: login, platform_local, forms_dir, wt.
+- name: "Form document ({{ workflows[wt.key] }})"
   ansible.builtin.set_fact:
-    dav_form: "{{ lookup('ansible.builtin.file', forms_dir ~ '/' ~ forms.deploy_aws_vpn ~ '.json') | from_json }}"
-    dav: "{{ operations_manager.deploy_aws_vpn }}"
+    dav_form: "{{ lookup('ansible.builtin.file', forms_dir ~ '/' ~ forms[wt.key] ~ '.json') | from_json }}"
+    dav: "{{ operations_manager[wt.key] }}"
+    dav_schema: "{{ wt.schema }}"
 
-- name: Existing forms (Deploy AWS VPN)
+- name: "Existing forms ({{ workflows[wt.key] }})"
   ansible.builtin.uri:
     url: "{{ platform_local }}/json-forms/forms"
     headers: {Cookie: "{{ login.cookies_string }}"}
   register: dav_forms_now
 
-- name: Deploy AWS VPN form created
+- name: "Form created ({{ workflows[wt.key] }})"
   ansible.builtin.uri:
     url: "{{ platform_local }}/json-forms/forms"
     method: POST
@@ -26,10 +30,10 @@
     body_format: json
     body: "{{ dav_form }}"
     status_code: [200, 201]
-  when: forms.deploy_aws_vpn not in (dav_forms_now.json | map(attribute='name') | list)
+  when: forms[wt.key] not in (dav_forms_now.json | map(attribute='name') | list)
   changed_when: true
 
-- name: Deploy AWS VPN form replaced when it changed
+- name: "Form replaced when it changed ({{ workflows[wt.key] }})"
   ansible.builtin.uri:
     url: "{{ platform_local }}/json-forms/forms/{{ have.id }}"
     method: PUT
@@ -41,13 +45,13 @@
                                'lastUpdated': have.lastUpdated, 'lastUpdatedBy': have.lastUpdatedBy}) }}
     status_code: 200
   vars:
-    have: "{{ (dav_forms_now.json | selectattr('name', 'equalto', forms.deploy_aws_vpn) | first) | default({}) }}"
+    have: "{{ (dav_forms_now.json | selectattr('name', 'equalto', forms[wt.key]) | first) | default({}) }}"
   when: >-
     have | length > 0 and (have.struct != dav_form.struct or have.schema != dav_form.schema
     or have.uiSchema != dav_form.uiSchema or have.description != dav_form.description)
   changed_when: true
 
-- name: Forms and workflows now (Deploy AWS VPN)
+- name: "Forms and workflows now ({{ workflows[wt.key] }})"
   ansible.builtin.uri:
     url: "{{ platform_local }}/{{ item }}"
     headers: {Cookie: "{{ login.cookies_string }}"}
@@ -57,13 +61,13 @@
     - operations-manager/automations?equalsField=componentType&equals=workflows&limit=100
   register: dav_now
 
-- name: Deploy AWS VPN ids
+- name: "Ids ({{ workflows[wt.key] }})"
   ansible.builtin.set_fact:
-    dav_form_id: "{{ (dav_now.results[0].json | selectattr('name', 'equalto', forms.deploy_aws_vpn) | first).id }}"
-    dav_wf_id: "{{ (dav_now.results[1].json['items'] | selectattr('name', 'equalto', workflows.deploy_aws_vpn) | first)._id }}"
+    dav_form_id: "{{ (dav_now.results[0].json | selectattr('name', 'equalto', forms[wt.key]) | first).id }}"
+    dav_wf_id: "{{ (dav_now.results[1].json['items'] | selectattr('name', 'equalto', workflows[wt.key]) | first)._id }}"
     dav_auto: "{{ (dav_now.results[2].json.data | selectattr('name', 'equalto', dav.automation) | first) | default({}) }}"
 
-- name: Automation wrapping Deploy AWS VPN
+- name: "The automation wrapping it ({{ workflows[wt.key] }})"
   ansible.builtin.uri:
     url: "{{ platform_local }}/operations-manager/automations"
     method: POST
@@ -71,56 +75,42 @@
     body_format: json
     body:
       name: "{{ dav.automation }}"
-      description: "Deploys the AWS side of the site-to-site VPN; started by the branded page or the form (ADR 0068)"
+      description: "{{ wt.description }}"
       componentType: workflows
       componentId: "{{ dav_wf_id }}"
-      componentName: "{{ workflows.deploy_aws_vpn }}"
+      componentName: "{{ workflows[wt.key] }}"
     status_code: [200, 201]
   register: dav_created
   when: dav_auto | length == 0
   changed_when: true
 
-- name: Automation follows the re-imported workflow
+- name: "The automation follows the re-imported workflow ({{ workflows[wt.key] }})"
   ansible.builtin.uri:
     url: "{{ platform_local }}/operations-manager/automations/{{ dav_auto._id }}"
     method: PATCH
     headers: {Cookie: "{{ login.cookies_string }}"}
     body_format: json
-    body: {componentId: "{{ dav_wf_id }}", componentName: "{{ workflows.deploy_aws_vpn }}"}
+    body: {componentId: "{{ dav_wf_id }}", componentName: "{{ workflows[wt.key] }}"}
     status_code: 200
   when: dav_auto | length > 0 and dav_auto.componentId != dav_wf_id
   changed_when: true
 
-- name: Automation id (Deploy AWS VPN)
+- name: "Automation id ({{ workflows[wt.key] }})"
   ansible.builtin.set_fact:
     dav_auto_id: "{{ dav_auto._id if dav_auto | length > 0 else (dav_created.json.data._id | default(dav_created.json._id)) }}"
 
-- name: Triggers of the automation
+- name: "Triggers of the automation ({{ workflows[wt.key] }})"
   ansible.builtin.uri:
     url: "{{ platform_local }}/operations-manager/triggers?equalsField=actionId&equals={{ dav_auto_id }}&limit=100"
     headers: {Cookie: "{{ login.cookies_string }}"}
   register: dav_triggers
 
-# What an API caller may send (security review 2026-09-29, WEB-01): the same bounds the workflow checks itself (build.py
-# PLAN_INPUTS_SCHEMA), so a bad request is refused here with a 400 and never becomes a job. change_note is required
-# because the Platform refuses a start without it (the page always sends it, empty or not).
-- name: The endpoint trigger's schema
+- name: "Its endpoint trigger, if it exists ({{ workflows[wt.key] }})"
   ansible.builtin.set_fact:
-    dav_schema:
-      type: object
-      additionalProperties: false
-      required: [onprem_public_ip, enable_nat_gateway, change_note]
-      properties:
-        onprem_public_ip:
-          type: string
-          maxLength: 15
-          pattern: '^(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])(\.(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])){3}$'
-        enable_nat_gateway: {type: string, enum: ["false", "true"]}
-        change_note: {type: string, maxLength: 280}
     dav_endpoint: >-
       {{ dav_triggers.json.data | selectattr('name', 'equalto', dav.endpoint.name) | list }}
 
-- name: The branded page's endpoint trigger
+- name: "The branded page's endpoint trigger ({{ workflows[wt.key] }})"
   ansible.builtin.uri:
     url: "{{ platform_local }}/operations-manager/triggers"
     method: POST
@@ -128,7 +118,7 @@
     body_format: json
     body:
       name: "{{ dav.endpoint.name }}"
-      description: "POST the three inputs as JSON (itential/portal/deploy-aws-vpn)"
+      description: "POST the inputs as JSON (itential/portal/deploy-aws-vpn, the AWS VPN journey page)"
       type: endpoint
       enabled: true
       actionType: automations
@@ -141,7 +131,7 @@
   changed_when: true
 
 # an existing trigger keeps its old schema otherwise (it was only ever created): Operations Manager updates are PATCH
-- name: The endpoint trigger's schema is current
+- name: "The endpoint trigger's schema is current ({{ workflows[wt.key] }})"
   ansible.builtin.uri:
     url: "{{ platform_local }}/operations-manager/triggers/{{ dav_endpoint[0]._id }}"
     method: PATCH
@@ -152,7 +142,7 @@
   when: dav_endpoint | length > 0 and (dav_endpoint[0].schema | default({})) != dav_schema
   changed_when: true
 
-- name: The form's manual trigger
+- name: "The form's manual trigger ({{ workflows[wt.key] }})"
   ansible.builtin.uri:
     url: "{{ platform_local }}/operations-manager/triggers"
     method: POST
