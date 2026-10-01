@@ -235,12 +235,18 @@ def _envelope(rc, out):
 @pytest.mark.skipif(not _pin_present(), reason="needs the cloud-devops-pipeline clone with the pinned commit")
 def test_the_push_summary_reads_every_answer_lab_edge_push_gives() -> None:
     base, router_state = _push_at_pin()
+    assert "already_in_place" in base  # the pin's lab-edge-push answers a second Hand Off without sending
     sent = {**base, "sent": True}
     cases = [
         # (exit code, stdout as main emits it, state, changed)
         (0, {**sent, "key_sent": True, "proved": True, "confirmed": True, "saved": True, "changed": True}, "saved", True),
-        # a second Hand Off with the same values: lines sent, nothing differs, saved
+        # a new key version, or a block that drifted: lines sent under the revert timer, saved
         (0, {**sent, "proved": True, "confirmed": True, "saved": True, "changed": False}, "saved", False),
+        # a second Hand Off with the same values: the router already holds it, nothing is sent, only saved
+        (0, {**base, "already_in_place": True, "proved": True, "saved": True}, "saved", False),
+        # in place, but the save did not answer [OK]: nothing was sent, not saved
+        (1, {**base, "already_in_place": True, "proved": True, "error": "Refused",
+             "router": router_state(base)}, "failed", False),
         # a rejected line or a post-read that did not prove: rolled back, and it exits 0
         (0, {**sent, "rejected": ["% Invalid input"], "rolled_back": True}, "rolled back", False),
         (0, {**sent, "proved": False, "rolled_back": True}, "rolled back", False),
@@ -255,8 +261,10 @@ def test_the_push_summary_reads_every_answer_lab_edge_push_gives() -> None:
     for rc, out, state, changed in cases:
         got = build.push_summary(_envelope(rc, out))
         assert (got["state"], got["changed"]) == (state, changed), (out, got)
-        # the router line: the service's own when it gave one, else what router_state would say
-        assert got["router"] == (out.get("router") or router_state(out)), got
+        # the router line: the service's own when it gave one, else what router_state would say (in place: said so)
+        want = out.get("router") or ("already in place: nothing sent, saved" if out.get("already_in_place")
+                                     else router_state(out))
+        assert got["router"] == want, got
         assert _run(build.PUSH_SUMMARY_CODE, _envelope(rc, out)) == got  # what the Gateway runs
         assert (got["message"] == "") == (state == "saved")
     # no answer at all: unknown, may have changed, check the router
