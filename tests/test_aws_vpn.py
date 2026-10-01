@@ -799,6 +799,17 @@ def test_the_journey_never_takes_the_page_from_a_job_started_here(tmp_path: Path
 
 
 @pytest.mark.skipif(_chrome() is None, reason="needs Chrome")
+def test_a_failed_start_forgets_the_job_shown_before(tmp_path: Path) -> None:
+    """A refused start left the earlier job's ID in the address, so a reload resumed that job (re-check nit)."""
+    verify = _job(_ids(3), "Verify AWS VPN", 3000, ["1a", "ee", "5f"], variables={"outcome": "tunnel up"})
+    out = _run_page(tmp_path, {}, [verify], query=f"?job={_ids(3)}&mode=verify",
+                    actions=[[1000, 'document.getElementById("go-verify").click();']])
+    assert "POST /operations-manager/triggers/endpoint/verify-aws-vpn" in out["calls"]
+    assert "job=" not in out["search"] and out["status"].startswith("The Platform refused the request"), out
+    assert out["disabled"]["verify"] is False
+
+
+@pytest.mark.skipif(_chrome() is None, reason="needs Chrome")
 def test_a_rejected_deploy_is_never_logged_as_stopped(tmp_path: Path) -> None:
     """Deploy's reject branch sets `error` only when the discard fails (task 70); the page logged "Stopped: ..." before
     "Rejected." Now the rejection comes first and the discard failure is a note under it."""

@@ -692,6 +692,8 @@
   // --- start --------------------------------------------------------------------------------------------------------
   async function start(m, formData, firstState) {
     starts++; shown = m; // from here this attempt owns the log and the status line, even if the request fails
+    // and no earlier job is named any more: after a failed request, a reload must not resume the job shown before
+    $("jobid").hidden = true; const url = new URL(location.href); url.searchParams.delete("job"); history.replaceState(null, "", url);
     $(`go-${m}`).disabled = true;
     seen.clear(); $("log").innerHTML = ""; $("outputs").hidden = true; next(""); approvalCallout(false, "");
     legState[m] = firstState; drawRoute();
