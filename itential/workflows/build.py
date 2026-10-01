@@ -3782,7 +3782,7 @@ def revert_plan(d: dict, targets: dict) -> dict:
         "revert_minutes": str(minutes),
     }
     # `check` (no device) runs before the card; the push's Gateway timeout is the one `check` answers
-    check = {"action": "check", **inputs, "timeout": "60"}
+    check = {"action": "check", **inputs, "timeout": "120"}  # the lab's shortest service limit (the checkout runs in it)
     params = {"action": "push", **inputs, "username": target["username"]}
     card = {
         "router": device,
@@ -3845,11 +3845,13 @@ def config_push_revert() -> dict:
                           "$var.12.return_data", "check_result", x=420),
         "14": evaluate("config-push-revert takes it?", "13", "result", "result.return_code", "==", 0, x=430),
         "15": jq("why config-push-revert refuses it", "$var.13.result", "result.stdout_json.error", x=430, y=-1500,
-                 to_job="error", optional=True),
-        "18": note("config-push-revert refuses it", "config-push-revert refuses these inputs (see check_result): "
-                   "nothing was sent to the router", "error", x=440, y=-450),
-        "b8": note("config-push-revert could not run", "the Gateway could not run config-push-revert (it is a dev-tier "
-                   "service until step 10's window): nothing was sent to the router", "error", x=420, y=-1500),
+                 to_job="error"),
+        "18": note("config-push-revert refuses it", "config-push-revert refused these inputs without a reason (see "
+                   "check_result; a pinned cloud-devops-pipeline without `check` answers so): nothing was sent to the "
+                   "router", "error", x=440, y=-450),
+        "b8": note("config-push-revert could not run", "the Gateway could not run config-push-revert (not on this "
+                   "Gateway - a dev-tier service until step 10's window - or it could not start, e.g. an alias that did "
+                   "not resolve; see check_result): nothing was sent to the router", "error", x=420, y=-1500),
         # approve exactly what will be pushed and what must hold afterwards
         "2a": jq("the card", "$var.1f.result", "stdout_json.card", x=450),
         "2b": replace("the card's message", REVERT_APPROVAL_MESSAGE, "__D__", "$var.job.device", x=500),
