@@ -322,6 +322,26 @@ BRANCH_VLAN_INSTANCE = {
         "status": {"enum": ["reserved", "active", "deprecated", "deleted"]},
     },
 }
+# Push Configuration with Revert Timer's checks, as config-push-revert takes them (it checks them again)
+IPV4_TEXT = {"type": "string", "pattern": r"^(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}$"}
+CHECK_VRF = {"type": "string", "pattern": r"^[A-Za-z0-9_-]{1,32}$"}
+REVERT_CHECKS = {
+    "type": "object",
+    "additionalProperties": False,
+    "properties": {
+        "bgp_established": {"type": "array", "maxItems": 20, "items": {"anyOf": [
+            IPV4_TEXT,
+            {"type": "object", "additionalProperties": False, "required": ["neighbor"],
+             "properties": {"neighbor": IPV4_TEXT, "vrf": CHECK_VRF}},
+        ]}},
+        "pings": {"type": "array", "maxItems": 20, "items": {
+            "type": "object", "additionalProperties": False, "required": ["target"],
+            "properties": {"target": IPV4_TEXT, "vrf": CHECK_VRF,
+                           "source": {"type": "string", "pattern": r"^[A-Za-z0-9][A-Za-z0-9/.:-]{0,63}$"},
+                           "min_percent": {"type": "integer", "minimum": 1, "maximum": 100}}}},
+        "settle_seconds": {"type": "integer", "minimum": 0, "maximum": 780},
+    },
+}
 INPUT_GATES = {
     WF["show_version"]: {"device": NODE_NAME},
     WF["show_command"]: {"device": NODE_NAME, "command": SHOW_COMMAND},
@@ -340,6 +360,14 @@ INPUT_GATES = {
                                                 if t["window"] == "open")}},
     WF["hand_off_aws_vpn"]: {"target": {"enum": sorted(n for n, t in VERSIONS["aws_vpn"]["targets"].items()
                                                   if t["window"] == "open")}},
+    # the card shows reason; config and checks go in as data only; the service checks every line and check again
+    WF["config_push_revert"]: {
+        "device": {"enum": sorted(VERSIONS["revert_push"]["targets"])},
+        "reason": {"type": "string", "maxLength": 500, "pattern": r"^[^<>]*$"},
+        "config": {"type": "string", "minLength": 1, "maxLength": 30000},
+        "revert_minutes": {"type": "integer", "minimum": 2, "maximum": 15},
+        "checks": REVERT_CHECKS,
+    },
 }
 # where a refusal is reported: the device workflows already say "did not run" in device_error, which the agents read
 GATE_ERROR_VAR = {WF[k]: "device_error" for k in ("show_version", "show_command", "show_all", "config_push")}
@@ -3713,9 +3741,199 @@ def hand_off_aws_vpn() -> dict:
         },
     )
 
+# --- Push Configuration with Revert Timer (step 10, F9 decision 2a) --------------------------------------------------
+# Owner choice 2026-10-01: a sibling of Push Configuration with Approval, which stays untouched for its agent and
+# Lifecycle Manager callers. The approver sees the router, the reason, the exact lines, the timer and every check; on
+# approval cloud-devops-pipeline's config-push-revert runs the checks, pushes under `configure terminal revert timer N`,
+# checks again (BGP, pings, a fresh login), and confirms and saves - or rolls back and proves it. The outcome comes
+# from saved / rolled_back, never from the exit code alone.
+REVERT_TARGETS = VERSIONS["revert_push"]["targets"]
+REVERT_APPROVAL_MESSAGE = (
+    "Approve this change to __D__. It is pushed under a revert timer and kept only if every check below still passes "
+    "afterwards (and a fresh login still works); otherwise the router rolls it back. Nothing is saved before that."
+)
+
+
+def revert_plan(d: dict, targets: dict) -> dict:
+    """The service's params and the approval card, from the job's inputs (already through the input gate). The card
+    lists exactly what will be pushed and what must hold afterwards; the params carry the same lines.
+    Pure: runCode runs this function's own source on the Gateway, with the targets table written in."""
+    device = d.get("device")
+    target = targets.get(device)
+    if not target:
+        return {"ok": False, "message": f"{device} is not a router this workflow may change (revert_push.targets)"}
+    lines = [line.rstrip() for line in str(d.get("config") or "").splitlines() if line.strip()]
+    if not lines:
+        return {"ok": False, "message": "no configuration lines to push"}
+    checks, minutes = d.get("checks") or {}, d.get("revert_minutes")
+    kept_if = []
+    for b in checks.get("bgp_established") or []:
+        n, vrf = (b.get("neighbor"), b.get("vrf")) if isinstance(b, dict) else (b, None)
+        kept_if.append(f"BGP neighbour {n} Established" + (f" (VRF {vrf})" if vrf else ""))
+    for p in checks.get("pings") or []:
+        kept_if.append(f"ping {p['target']}" + (f" from {p['source']}" if p.get("source") else "")
+                       + (f" in VRF {p['vrf']}" if p.get("vrf") else "") + f" at least {p.get('min_percent', 80)}%")
+    kept_if.append("a fresh login to the router still works")
+    params = {
+        "action": "push",
+        "target_json": json.dumps({"name": device, "mgmt_host": target["mgmt_host"]}),
+        "lines_json": json.dumps(lines),
+        "checks_json": json.dumps(checks),
+        "revert_minutes": str(minutes),
+        "username": target["username"],
+        # the Gateway's own limit: the whole timer and the reads around it (the service stops itself well before)
+        "timeout": str(int(minutes) * 60 + 180),
+    }
+    card = {
+        "router": device,
+        "reason": d.get("reason"),
+        "revert timer": f"{minutes} minutes",
+        "settle before the checks": f"{checks.get('settle_seconds', 75)} s",
+        "kept only if": kept_if,
+        "lines": lines,
+    }
+    return {"ok": True, "params": params, "card": card}
+
+
+def revert_summary(d: dict) -> dict:
+    """config-push-revert's answer as the workflow reads it: saved, rolled back (proved by the service's read-back),
+    nothing sent, or unknown. Only a saved change exits 0, so the exit code alone says nothing about the router; with
+    no answer at all the router may hold a pending change (the revert timer rolls it back) - changed is then true.
+    Pure: runCode runs this function's own source on the Gateway."""
+    result = ((d.get("push") or {}).get("result")) or {}
+    rc, out = result.get("return_code"), result.get("stdout_json")
+    out = out if isinstance(out, dict) else {}
+    if rc == 0 and out.get("saved") is True:
+        state, changed = "saved", out.get("changed") is True
+    elif out.get("rolled_back") is True:
+        state, changed = "rolled back", False
+    elif out and out.get("sent") is False:
+        state, changed = "unchanged", False
+    else:
+        state, changed = "unknown", True
+    router = out.get("router") or {"saved": "saved", "rolled back": "rolled back", "unchanged": "unchanged: nothing was sent"}.get(
+        state, "unknown: the service gave no answer - a change may be pending until the revert timer rolls it back")
+    message = "" if state == "saved" else str(out.get("error") or "config-push-revert did not finish (see push_result)")
+    return {"state": state, "changed": changed, "router": router, "message": message}
+
+
+REVERT_PLAN_CODE = ("import json, sys\n\n\nTARGETS = " + repr(REVERT_TARGETS) + "\n\n\n" + inspect.getsource(revert_plan)
+                    + "\n\nprint(json.dumps(revert_plan(json.loads(sys.stdin.read() or \"{}\"), TARGETS)))\n")
+REVERT_SUMMARY_CODE = ("import json, sys\n\n\n" + inspect.getsource(revert_summary)
+                       + "\n\nprint(json.dumps(revert_summary(json.loads(sys.stdin.read() or \"{}\"))))\n")
+
+
+def config_push_revert() -> dict:
+    ok, fail, err = "success", "failure", "error"
+    tasks = {
+        # the inputs, as data (never templated), into the plan
+        "1a": set_key("plan input: device", {}, "device", "$var.job.device", x=100),
+        "1b": set_key("plan input: config", "$var.1a.object", "config", "$var.job.config", x=150),
+        "1c": set_key("plan input: reason", "$var.1b.object", "reason", "$var.job.reason", x=200),
+        "1d": set_key("plan input: revert_minutes", "$var.1c.object", "revert_minutes", "$var.job.revert_minutes", x=250),
+        "1e": set_key("plan input: checks", "$var.1d.object", "checks", "$var.job.checks", x=300),
+        "1f": run_code("the plan: the service's params and the approval card (Python on the runner)", REVERT_PLAN_CODE,
+                       "$var.1e.object", "revert_plan", x=350),
+        "11": evaluate("planned?", "1f", "result", "stdout_json.ok", "==", True, x=400),
+        # approve exactly what will be pushed and what must hold afterwards
+        "2a": jq("the card", "$var.1f.result", "stdout_json.card", x=450),
+        "2b": replace("the card's message", REVERT_APPROVAL_MESSAGE, "__D__", "$var.job.device", x=500),
+        "2c": view("approval", "Approve the change under a revert timer", "$var.2b.replacedString",
+                   "$var.2a.return_data", "Approve", "Reject", x=550),
+        # push, check, confirm and save - or roll back
+        "3a": jq("config-push-revert's params", "$var.1f.result", "stdout_json.params", x=600),
+        "3b": run_service("push under the revert timer, check, then confirm and save or roll back (config-push-revert)",
+                          "config-push-revert", "$var.3a.return_data", "push_result", x=650),
+        "3c": evaluate("config-push-revert exited 0?", "3b", "result", "result.return_code", "==", 0, x=700),
+        "3d": note("config-push-revert exited non-zero", "config-push-revert did not save: push_summary says what the "
+                   "router went through", "push_note", x=700, y=-300),
+        "3e": set_key("the push's answer", {}, "push", "$var.job.push_result", x=750),
+        "3f": run_code("what the push did (saved, rolled back, nothing sent or unknown)", REVERT_SUMMARY_CODE,
+                       "$var.3e.object", "push_summary", x=800),
+        "31": jq("what the router went through", "$var.3f.result", "stdout_json.router", x=850, to_job="router_state"),
+        "32": evaluate("the router may have changed?", "3f", "result", "stdout_json.changed", "==", True, x=900),
+        "5a": flag("changed = true", "true", "changed", x=950),
+        "5b": flag("changed = false", "false", "changed", x=950, y=300),
+        "33": evaluate("confirmed and saved?", "3f", "result", "stdout_json.state", "==", "saved", x=1000),
+        "4a": note("the outcome: saved", "saved: the change passed every check, was confirmed and saved", "outcome",
+                   x=1050),
+        "4b": jq("why the change was not kept", "$var.3f.result", "stdout_json.message", x=1050, y=300, to_job="error"),
+        # reject: nothing sent
+        "a0": flag("rejected = true", "true", "rejected", x=600, y=600),
+        "a1": flag("changed = false (rejected)", "false", "changed", x=650, y=600),
+        "a2": note("the rejection", "rejected in Work Center: nothing was sent to the router", "outcome", x=700, y=600),
+        # failures before the push: nothing was sent
+        "b0": note("the plan could not run", "the Gateway could not make the plan (see revert_plan): nothing was sent "
+                   "to the router", "error", x=400, y=-600),
+        "b1": jq("why there is no plan", "$var.1f.result", "stdout_json.message", x=450, y=-600, to_job="error"),
+        "b2": flag("changed = false (nothing sent)", "false", "changed", x=500, y=-600),
+        "b3": note("the push could not start", "the push's params could not be read (see revert_plan): nothing was "
+                   "sent to the router", "error", x=650, y=-600),
+        # the Gateway could not run the service or the summary: the router may hold a pending change
+        "b5": note("config-push-revert could not run", "the Gateway could not run config-push-revert or read its "
+                   "answer (push_result): a change may be pending until the revert timer rolls it back - check the "
+                   "router", "error", x=750, y=-900),
+        "b6": flag("changed = true (unknown)", "true", "changed", x=800, y=-900),
+    }
+    tr = {
+        "workflow_start": _edge(**{"1a": ok}),
+        "1a": _edge(**{"1b": ok}), "1b": _edge(**{"1c": ok}), "1c": _edge(**{"1d": ok}), "1d": _edge(**{"1e": ok}),
+        "1e": _edge(**{"1f": ok}),
+        "1f": _edge(**{"11": ok, "b0": err}),
+        "11": _edge(**{"2a": ok, "b1": fail}),
+        "2a": _edge(**{"2b": ok, "b0": err}),
+        "2b": _edge(**{"2c": ok}),
+        "2c": _edge(**{"3a": ok, "a0": fail}),
+        "3a": _edge(**{"3b": ok, "b3": err}),
+        "3b": _edge(**{"3c": ok, "b5": err}),
+        "3c": _edge(**{"3e": ok, "3d": fail}),
+        "3d": _edge(**{"3e": ok}),
+        "3e": _edge(**{"3f": ok}),
+        "3f": _edge(**{"31": ok, "b5": err}),
+        "31": _edge(**{"32": ok, "b5": err}),
+        "32": _edge(**{"5a": ok, "5b": fail}),
+        "5a": _edge(**{"33": ok}), "5b": _edge(**{"33": ok}),
+        "33": _edge(**{"4a": ok, "4b": fail}),
+        "4a": _edge(**{"workflow_end": ok}), "4b": _edge(**{"workflow_end": ok}),
+        "a0": _edge(**{"a1": ok}), "a1": _edge(**{"a2": ok}), "a2": _edge(**{"workflow_end": ok}),
+        "b0": _edge(**{"b2": ok}), "b1": _edge(**{"b2": ok}), "b3": _edge(**{"b2": ok}),
+        "b2": _edge(**{"workflow_end": ok}),
+        "b5": _edge(**{"b6": ok}), "b6": _edge(**{"workflow_end": ok}),
+    }
+    return workflow(
+        WF["config_push_revert"],
+        "Pushes configuration lines to one router after a Work Center approval, under a revert timer: kept and saved "
+        "only if BGP, the pings and a fresh login still pass afterwards, otherwise rolled back and proved (step 10, "
+        "F9 decision 2a)",
+        {
+            "device": {"type": "string", "required": True, "enum": sorted(REVERT_TARGETS),
+                       "description": "The router to change (revert_push.targets)"},
+            "config": {"type": "string", "required": True, "description": "Configuration lines to push, one per line"},
+            "reason": {"type": "string", "required": True, "description": "Why, shown to the approver"},
+            "revert_minutes": {"type": "integer", "required": True, "minimum": 2, "maximum": 15,
+                               "description": "The revert timer, in minutes"},
+            "checks": {"type": "object", "required": True,
+                       "description": "What must hold after the change: bgp_established, pings, settle_seconds"},
+        },
+        tasks,
+        tr,
+        {
+            "outcome": {"type": "string"},
+            "error": {"type": "string"},
+            "changed": {"type": "boolean"},
+            "rejected": {"type": "boolean"},
+            "router_state": {"type": "string"},
+            "revert_plan": {"type": "object"},
+            "push_result": {"type": "object"},
+            "push_summary": {"type": "object"},
+            "push_note": {"type": "string"},
+        },
+    )
+
+
 BUILDERS = (device_count, show_version, show_command, show_all, branch_vlan, branch_vlan_delete, config_push,
             compliance_run, compliance_report, netbox_devices, backup_all, deploy_aws_vpn, verify_aws_vpn,
-            hand_off_aws_vpn)
+            hand_off_aws_vpn, config_push_revert)
 
 
 if __name__ == "__main__":
