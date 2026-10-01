@@ -556,23 +556,50 @@
     return { state, v, status: job.status };
   }
 
-  let pollTimer = null;
-  function follow(jobId, m) {
+  // Every running job is polled, one poller per leg, so its stop on the route and its leg's button stay true (the button
+  // is off while that leg has a job running). Only the job on show - the one started here, resumed, or the newest
+  // running - writes the log, the status line and the address. A newer follow() of a leg retires that leg's older poller,
+  // even one waiting on a fetch; `starts` counts the engineer's own starts, so a journey() still reading can tell.
+  const pollers = { deploy: 0, handoff: 0, verify: 0 };
+  let shown = null, starts = 0;
+  const isLive = (job) => job.status === "running" || job.status === "paused";
+  function show(jobId, m) {
+    shown = m;
     $("jobid").hidden = false; $("jobid").textContent = `${MODES[m].workflow}: job ${jobId}`;
     // the job's ID goes in the address, so a reload (or the link, shared) picks the same job back up
     const url = new URL(location.href); url.searchParams.set("job", jobId); url.searchParams.set("mode", m); history.replaceState(null, "", url);
     $("wc-link").href = "/work-center/";
+  }
+  function follow(jobId, m, onShow = true) {
+    const me = ++pollers[m];
+    if (onShow) show(jobId, m);
+    $(`go-${m}`).disabled = true;
     const tick = async () => {
       let job;
       try {
         const r = await fetch(JOB(jobId), { credentials: "same-origin" });
-        if (r.status === 401) { status("Signed out.", "Log in to the Platform in this browser, then reload."); return; }
+        if (me !== pollers[m]) return;
+        if (r.status === 401) {
+          if (shown === m) status("Signed out.", "Log in to the Platform in this browser, then reload.");
+          $(`go-${m}`).disabled = false; return;
+        }
         const body = await r.json(); job = body.data || body;
-      } catch (e) { status("Can't reach the Platform.", "Retrying."); pollTimer = setTimeout(tick, 8000); return; }
+      } catch (e) {
+        if (me !== pollers[m]) return;
+        if (shown === m) status("Can't reach the Platform.", "Retrying.");
+        setTimeout(tick, 8000); return;
+      }
+      if (me !== pollers[m]) return;
       // a job of another workflow is never drawn or read (a shared ?job= link must not borrow this page)
-      if (job.name !== MODES[m].workflow) { status("Not this workflow.", `That job is not a ${MODES[m].workflow} job.`); $(`go-${m}`).disabled = false; return; }
-      render(read(job, m), m);
-      if (job.status === "running" || job.status === "paused") pollTimer = setTimeout(tick, 5000);
+      if (job.name !== MODES[m].workflow) {
+        if (shown === m) status("Not this workflow.", `That job is not a ${MODES[m].workflow} job.`);
+        $(`go-${m}`).disabled = false; return;
+      }
+      const r = read(job, m);
+      if (shown === m) render(r, m);
+      else { legState[m] = r.state; drawRoute(); }
+      $(`go-${m}`).disabled = isLive(job);
+      if (isLive(job)) setTimeout(tick, 5000);
     };
     tick();
   }
@@ -611,7 +638,8 @@
       const eip = document.querySelector('[data-ip="eip"]'); if (o.strongswan_eip) setMaskable(eip, o.strongswan_eip);
     }
     if (state.psk === "done") { log("done", v.outcome || "Deployed.", "ok"); status("Deployed.", "The AWS side is ready for the router hand-off."); next("Next: hand off to the router", "handoff"); }
-    if (v.error || Object.values(state).includes("failed") || jobStatus === "error") {
+    const rejected = Object.values(state).includes("rejected");
+    if (!rejected && (v.error || Object.values(state).includes("failed") || jobStatus === "error")) {
       // the workflow leaves aws_changed unset when an apply stops part-way: it cannot know, so neither does the page
       const changed = v.aws_changed === true ? "AWS has changed; see the job." : v.aws_changed === false ? "Nothing changed in AWS."
         : state.apply === "failed" ? "AWS may have changed part-way; check before running again." : "";
@@ -621,7 +649,12 @@
     const stopped = Object.values(state).some((x) => x in STOP);
     $("aws-note").textContent = !stopped ? "" : v.aws_changed === false ? "Nothing changed" : v.aws_changed === true ? "Changed: see the job"
       : state.apply === "failed" ? "May have changed" : "";
-    if (v.rejected) { log("rejected", "Rejected. The plan was discarded; nothing changed in AWS.", "bad"); status("Rejected.", "Nothing changed in AWS."); }
+    // a rejected run's only error is the discard failing (task 70): said after the rejection, as a note, not a stop
+    if (rejected) {
+      log("rejected", v.error ? "Rejected. Nothing changed in AWS." : "Rejected. The plan was discarded; nothing changed in AWS.", "bad");
+      if (v.error) log("rejected-note", `Note: ${v.error}.`, "bad");
+      status("Rejected.", v.error ? "Nothing changed in AWS; the plan could not be discarded." : "Nothing changed in AWS.");
+    }
   }
 
   function renderHandoff({ state, v, status: jobStatus }) {
@@ -638,12 +671,13 @@
     if (state.tunnel === "active") status("Checking the tunnel.", "The same three signals as Verify.");
     showOutputs([["Router", v.target || $("handoff-target").value], ["Block SHA-256", v.sha256 ? v.sha256.slice(0, 16) + "…" : ""], ["Router state", v.router_state]]);
     if (state.tunnel === "done") { log("ho-done", v.outcome || "Handed off.", "ok"); status("Handed off.", "The tunnel is up."); next("Next: verify the tunnel any time", "verify"); }
-    if (v.error || Object.values(state).includes("failed") || jobStatus === "error") {
+    const rejected = Object.values(state).includes("rejected");
+    if (!rejected && (v.error || Object.values(state).includes("failed") || jobStatus === "error")) {
       const changed = v.changed === true ? "The router changed; see the job." : v.changed === false ? "Nothing changed on the router." : "";
       log("ho-fail", `Stopped: ${v.error || "a step failed"}. ${changed}`, "bad");
       status(`Stopped.`, `${changed}`);
     }
-    if (v.rejected) { log("ho-rejected", "Rejected. Nothing was sent to the router.", "bad"); status("Rejected.", "Nothing was sent to the router."); }
+    if (rejected) { log("ho-rejected", "Rejected. Nothing was sent to the router.", "bad"); status("Rejected.", "Nothing was sent to the router."); }
   }
 
   function renderVerify({ state, v }) {
@@ -657,8 +691,11 @@
 
   // --- start --------------------------------------------------------------------------------------------------------
   async function start(m, formData, firstState) {
+    starts++; shown = m; // from here this attempt owns the log and the status line, even if the request fails
+    // and no earlier job is named any more: after a failed request, a reload must not resume the job shown before
+    $("jobid").hidden = true; const url = new URL(location.href); url.searchParams.delete("job"); history.replaceState(null, "", url);
     $(`go-${m}`).disabled = true;
-    seen.clear(); $("log").innerHTML = ""; $("outputs").hidden = true; next("");
+    seen.clear(); $("log").innerHTML = ""; $("outputs").hidden = true; next(""); approvalCallout(false, "");
     legState[m] = firstState; drawRoute();
     if (PREVIEW) return simulate(m, formData);
     try {
@@ -698,33 +735,53 @@
   });
 
   // --- where the journey stands: each leg from its workflow's latest job (the engineer's own session) -------------
+  const SIGNED_OUT = "signed-out", UNREADABLE = "unreadable";
   async function latest(m) {
     try {
       const wf = MODES[m].workflow;
       const r = await fetch(`/operations-manager/jobs?contains[name]=${encodeURIComponent(wf)}&limit=5&sort=metrics.start_time&order=-1`, { credentials: "same-origin" });
-      if (!r.ok) return null;
+      if (r.status === 401) return SIGNED_OUT;
+      if (!r.ok) return UNREADABLE;
       const list = (await r.json()).data || [];
       const hit = list.find((j) => j.name === wf);
       if (!hit) return null;
       const one = await fetch(JOB(hit._id), { credentials: "same-origin" });
-      if (!one.ok) return null;
+      if (one.status === 401) return SIGNED_OUT;
+      if (!one.ok) return UNREADABLE;
       const body = await one.json(); return body.data || body;
-    } catch (e) { return null; }
+    } catch (e) { return UNREADABLE; }
   }
+  const startOf = (job) => new Date((job.metrics && job.metrics.start_time) || 0).getTime() || 0; // epoch ms on the Platform
   async function journey() {
-    // each leg from its latest job - but a leg older than the newest run of an earlier leg is from before it, so it
-    // is not drawn (a Verify that passed last week says nothing about a Deploy re-run today); a running job is followed
-    let newestUpstream = 0;
+    // `raced`: the engineer started a job while this was still reading; that job owns the log, the status line and its
+    // own leg from then on, and this only fills in the legs before it and polls the other running jobs, off show
+    const before = starts, raced = () => starts !== before, jobs = {};
+    let unreadable = false;
     for (const m of LEGS) {
       const job = await latest(m);
-      if (!job) continue;
-      const started = new Date((job.metrics && job.metrics.start_time) || 0).getTime() || 0; // epoch ms on the Platform
-      if (started < newestUpstream) continue;
-      newestUpstream = Math.max(newestUpstream, started);
-      if (job.status === "running" || job.status === "paused") { setMode(m); $(`go-${m}`).disabled = true; follow(job._id, m); continue; }
+      if (job === SIGNED_OUT) { if (!raced()) status("Signed out.", "Log in to the Platform in this browser, then reload."); return; }
+      if (job === UNREADABLE) unreadable = true;
+      jobs[m] = job && job !== UNREADABLE ? job : null;
+    }
+    // The finished legs are one chain: each is drawn from its latest job only while every earlier leg was, and only
+    // when it started after the earlier leg's run (a Verify that passed last week says nothing about a Deploy re-run
+    // today), so the route has no gap, and it ends at a leg that was rejected or failed.
+    let previousStart = 0;
+    for (const m of LEGS) {
+      const job = jobs[m];
+      if ((raced() && m === shown) || !job || startOf(job) < previousStart) break;
+      previousStart = startOf(job);
       legState[m] = read(job, m).state;
+      if (Object.values(legState[m]).some((x) => x in STOP)) break;
     }
     drawRoute();
+    // A running job is live work, so it is followed wherever it sits (a Hand Off started after a rejected Deploy runs
+    // against the earlier deployment); the newest running job is the one on show.
+    const running = LEGS.filter((m) => jobs[m] && isLive(jobs[m])).sort((a, b) => startOf(jobs[b]) - startOf(jobs[a]));
+    if (raced()) { running.filter((m) => m !== shown).forEach((m) => follow(jobs[m]._id, m, false)); return; }
+    if (unreadable) status("Some runs could not be read.", "The route shows the ones that could; reload to try again.");
+    running.forEach((m) => follow(jobs[m]._id, m, m === running[0]));
+    if (running.length) setMode(running[0]);
   }
 
   // --- preview: simulated jobs, for the design review ---------------------------------------------------------------
