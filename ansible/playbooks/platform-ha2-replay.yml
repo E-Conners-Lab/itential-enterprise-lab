@@ -73,7 +73,9 @@
       ansible.builtin.command:
         cmd: docker rm -f ollama
       register: ollama_gone
-      changed_when: ollama_gone.rc == 0
+      # `docker rm -f` exits 0 with or without the container; it prints the name only when it removed one (measured on
+      # the dev host 2026-10-01), so only that counts as a change
+      changed_when: ollama_gone.rc == 0 and ollama_gone.stdout | trim == 'ollama'
       failed_when: false
 
 - name: The FlowAI assets of phase 6 on production

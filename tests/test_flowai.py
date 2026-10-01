@@ -104,3 +104,30 @@ def test_play_and_verify_exist() -> None:
 def test_env_example_has_provider_keys_only_as_placeholders() -> None:
     text = ENV_EXAMPLE.read_text()
     assert re.search(r"^ANTHROPIC_API_KEY=\s*(#.*)?$", text, re.M), "ANTHROPIC_API_KEY placeholder missing or not empty"
+
+
+def _ollama_removal_tasks() -> list[tuple[str, dict]]:
+    found = []
+    for play in sorted((ROOT / "ansible" / "playbooks").glob("*.yml")):
+        for doc in yaml.safe_load(play.read_text()) or []:
+            for task in (doc or {}).get("tasks", []) if isinstance(doc, dict) else []:
+                command = task.get("ansible.builtin.command") or {}
+                if (command if isinstance(command, str) else command.get("cmd")) == "docker rm -f ollama":
+                    found.append((play.name, task))
+    return found
+
+
+def test_removing_ollama_counts_as_a_change_only_when_a_container_went() -> None:
+    """`docker rm -f` exits 0 whether or not the container exists, so `changed_when: rc == 0` reported a change on
+    every dev flowai.yml run with no Ollama container on the host (2026-10-01). It prints the name only when it removed
+    one (measured on the dev host); each copy of the task is evaluated against both outputs."""
+    import jinja2
+
+    tasks = _ollama_removal_tasks()
+    assert sorted(name for name, _ in tasks) == ["flowai.yml", "platform-ha2-replay.yml", "platform-ha2-tools.yml"]
+    for name, task in tasks:
+        changed = jinja2.Environment().compile_expression(task["changed_when"])
+        assert changed(ollama_gone={"rc": 0, "stdout": "ollama\n"}) is True, name
+        assert changed(ollama_gone={"rc": 0, "stdout": ""}) is False, name
+        assert changed(ollama_gone={"rc": 1, "stdout": ""}) is False, name
+        assert task["failed_when"] is False, name
