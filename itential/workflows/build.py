@@ -337,7 +337,8 @@ REVERT_CHECKS = {
         "pings": {"type": "array", "maxItems": 20, "items": {
             "type": "object", "additionalProperties": False, "required": ["target"],
             "properties": {"target": IPV4_TEXT, "vrf": CHECK_VRF,
-                           "source": {"type": "string", "pattern": r"^[A-Za-z0-9][A-Za-z0-9/.:-]{0,63}$"},
+                           "source": {"anyOf": [{"type": "string", "pattern": r"^[A-Za-z][A-Za-z0-9/.:-]{0,63}$"},
+                                                IPV4_TEXT]},
                            "min_percent": {"type": "integer", "minimum": 1, "maximum": 100}}}},
         "settle_seconds": {"type": "integer", "minimum": 0, "maximum": 780},
     },
@@ -3774,25 +3775,26 @@ def revert_plan(d: dict, targets: dict) -> dict:
         kept_if.append(f"ping {p['target']}" + (f" from {p['source']}" if p.get("source") else "")
                        + (f" in VRF {p['vrf']}" if p.get("vrf") else "") + f" at least {p.get('min_percent', 80)}%")
     kept_if.append("a fresh login to the router still works")
-    params = {
-        "action": "push",
+    inputs = {
         "target_json": json.dumps({"name": device, "mgmt_host": target["mgmt_host"]}),
         "lines_json": json.dumps(lines),
         "checks_json": json.dumps(checks),
         "revert_minutes": str(minutes),
-        "username": target["username"],
-        # the Gateway's own limit: the whole timer and the reads around it (the service stops itself well before)
-        "timeout": str(int(minutes) * 60 + 180),
     }
+    # `check` (no device) runs before the card; the push's Gateway timeout is the one `check` answers
+    check = {"action": "check", **inputs, "timeout": "60"}
+    params = {"action": "push", **inputs, "username": target["username"]}
     card = {
         "router": device,
         "reason": d.get("reason"),
         "revert timer": f"{minutes} minutes",
         "settle before the checks": f"{checks.get('settle_seconds', 75)} s",
         "kept only if": kept_if,
+        "saving": "`write memory` saves the whole running configuration - with any change already on the router and "
+                  "not yet saved",
         "lines": lines,
     }
-    return {"ok": True, "params": params, "card": card}
+    return {"ok": True, "check": check, "params": params, "card": card}
 
 
 def revert_summary(d: dict) -> dict:
@@ -3826,6 +3828,8 @@ REVERT_SUMMARY_CODE = ("import json, sys\n\n\n" + inspect.getsource(revert_summa
 def config_push_revert() -> dict:
     ok, fail, err = "success", "failure", "error"
     tasks = {
+        # nothing has changed until the service says so: every early end leaves this as it is
+        "10": flag("changed = false", "false", "changed", x=50),
         # the inputs, as data (never templated), into the plan
         "1a": set_key("plan input: device", {}, "device", "$var.job.device", x=100),
         "1b": set_key("plan input: config", "$var.1a.object", "config", "$var.job.config", x=150),
@@ -3835,15 +3839,30 @@ def config_push_revert() -> dict:
         "1f": run_code("the plan: the service's params and the approval card (Python on the runner)", REVERT_PLAN_CODE,
                        "$var.1e.object", "revert_plan", x=350),
         "11": evaluate("planned?", "1f", "result", "stdout_json.ok", "==", True, x=400),
+        # config-push-revert's own check, with no device: what it would refuse never reaches an approver
+        "12": jq("config-push-revert check's params", "$var.1f.result", "stdout_json.check", x=410),
+        "13": run_service("would config-push-revert take this? (check: no device)", "config-push-revert",
+                          "$var.12.return_data", "check_result", x=420),
+        "14": evaluate("config-push-revert takes it?", "13", "result", "result.return_code", "==", 0, x=430),
+        "15": jq("why config-push-revert refuses it", "$var.13.result", "result.stdout_json.error", x=430, y=-1500,
+                 to_job="error", optional=True),
+        "18": note("config-push-revert refuses it", "config-push-revert refuses these inputs (see check_result): "
+                   "nothing was sent to the router", "error", x=440, y=-450),
+        "b8": note("config-push-revert could not run", "the Gateway could not run config-push-revert (it is a dev-tier "
+                   "service until step 10's window): nothing was sent to the router", "error", x=420, y=-1500),
         # approve exactly what will be pushed and what must hold afterwards
         "2a": jq("the card", "$var.1f.result", "stdout_json.card", x=450),
         "2b": replace("the card's message", REVERT_APPROVAL_MESSAGE, "__D__", "$var.job.device", x=500),
         "2c": view("approval", "Approve the change under a revert timer", "$var.2b.replacedString",
                    "$var.2a.return_data", "Approve", "Reject", x=550),
         # push, check, confirm and save - or roll back
+        "17": flag("rejected = false", "false", "rejected", x=570),
         "3a": jq("config-push-revert's params", "$var.1f.result", "stdout_json.params", x=600),
+        "16": jq("the timeout a push needs (check's answer)", "$var.13.result", "result.stdout_json.timeout", x=610),
+        "34": set_key("push params: the Gateway timeout", "$var.3a.return_data", "timeout", "$var.16.return_data",
+                      x=620),
         "3b": run_service("push under the revert timer, check, then confirm and save or roll back (config-push-revert)",
-                          "config-push-revert", "$var.3a.return_data", "push_result", x=650),
+                          "config-push-revert", "$var.34.object", "push_result", x=650),
         "3c": evaluate("config-push-revert exited 0?", "3b", "result", "result.return_code", "==", 0, x=700),
         "3d": note("config-push-revert exited non-zero", "config-push-revert did not save: push_summary says what the "
                    "router went through", "push_note", x=700, y=-300),
@@ -3860,31 +3879,39 @@ def config_push_revert() -> dict:
         "4b": jq("why the change was not kept", "$var.3f.result", "stdout_json.message", x=1050, y=300, to_job="error"),
         # reject: nothing sent
         "a0": flag("rejected = true", "true", "rejected", x=600, y=600),
-        "a1": flag("changed = false (rejected)", "false", "changed", x=650, y=600),
-        "a2": note("the rejection", "rejected in Work Center: nothing was sent to the router", "outcome", x=700, y=600),
+        "a2": note("the rejection", "rejected in Work Center: nothing was sent to the router", "outcome", x=700, y=300),
         # failures before the push: nothing was sent
         "b0": note("the plan could not run", "the Gateway could not make the plan (see revert_plan): nothing was sent "
                    "to the router", "error", x=400, y=-600),
-        "b1": jq("why there is no plan", "$var.1f.result", "stdout_json.message", x=450, y=-600, to_job="error"),
-        "b2": flag("changed = false (nothing sent)", "false", "changed", x=500, y=-600),
+        "b1": jq("why there is no plan", "$var.1f.result", "stdout_json.message", x=450, y=600, to_job="error"),
         "b3": note("the push could not start", "the push's params could not be read (see revert_plan): nothing was "
                    "sent to the router", "error", x=650, y=-600),
         # the Gateway could not run the service or the summary: the router may hold a pending change
-        "b5": note("config-push-revert could not run", "the Gateway could not run config-push-revert or read its "
-                   "answer (push_result): a change may be pending until the revert timer rolls it back - check the "
-                   "router", "error", x=750, y=-900),
-        "b6": flag("changed = true (unknown)", "true", "changed", x=800, y=-900),
+        "b5": note("config-push-revert could not finish", "the Gateway could not run config-push-revert or read its "
+                   "answer (push_result): check the router - the change may be live and unsaved, or pending until "
+                   "the revert timer rolls it back", "error", x=750, y=-1500),
+        "b6": flag("changed = true (unknown)", "true", "changed", x=800, y=-1500),
     }
     tr = {
-        "workflow_start": _edge(**{"1a": ok}),
+        "workflow_start": _edge(**{"10": ok}),
+        "10": _edge(**{"1a": ok}),
         "1a": _edge(**{"1b": ok}), "1b": _edge(**{"1c": ok}), "1c": _edge(**{"1d": ok}), "1d": _edge(**{"1e": ok}),
         "1e": _edge(**{"1f": ok}),
         "1f": _edge(**{"11": ok, "b0": err}),
-        "11": _edge(**{"2a": ok, "b1": fail}),
+        "11": _edge(**{"12": ok, "b1": fail}),
+        "12": _edge(**{"13": ok, "b0": err}),
+        "13": _edge(**{"14": ok, "b8": err}),
+        "14": _edge(**{"2a": ok, "15": fail}),
+        "15": _edge(**{"workflow_end": ok, "18": err}),
+        "18": _edge(**{"workflow_end": ok}),
+        "b8": _edge(**{"workflow_end": ok}),
         "2a": _edge(**{"2b": ok, "b0": err}),
         "2b": _edge(**{"2c": ok}),
-        "2c": _edge(**{"3a": ok, "a0": fail}),
-        "3a": _edge(**{"3b": ok, "b3": err}),
+        "2c": _edge(**{"17": ok, "a0": fail}),
+        "17": _edge(**{"3a": ok}),
+        "3a": _edge(**{"16": ok, "b3": err}),
+        "16": _edge(**{"34": ok, "b3": err}),
+        "34": _edge(**{"3b": ok}),
         "3b": _edge(**{"3c": ok, "b5": err}),
         "3c": _edge(**{"3e": ok, "3d": fail}),
         "3d": _edge(**{"3e": ok}),
@@ -3895,9 +3922,8 @@ def config_push_revert() -> dict:
         "5a": _edge(**{"33": ok}), "5b": _edge(**{"33": ok}),
         "33": _edge(**{"4a": ok, "4b": fail}),
         "4a": _edge(**{"workflow_end": ok}), "4b": _edge(**{"workflow_end": ok}),
-        "a0": _edge(**{"a1": ok}), "a1": _edge(**{"a2": ok}), "a2": _edge(**{"workflow_end": ok}),
-        "b0": _edge(**{"b2": ok}), "b1": _edge(**{"b2": ok}), "b3": _edge(**{"b2": ok}),
-        "b2": _edge(**{"workflow_end": ok}),
+        "a0": _edge(**{"a2": ok}), "a2": _edge(**{"workflow_end": ok}),
+        "b0": _edge(**{"workflow_end": ok}), "b1": _edge(**{"workflow_end": ok}), "b3": _edge(**{"workflow_end": ok}),
         "b5": _edge(**{"b6": ok}), "b6": _edge(**{"workflow_end": ok}),
     }
     return workflow(
@@ -3924,6 +3950,7 @@ def config_push_revert() -> dict:
             "rejected": {"type": "boolean"},
             "router_state": {"type": "string"},
             "revert_plan": {"type": "object"},
+            "check_result": {"type": "object"},
             "push_result": {"type": "object"},
             "push_summary": {"type": "object"},
             "push_note": {"type": "string"},

@@ -38,6 +38,14 @@ def _task(name: str) -> str:
     return next(k for k, t in WF["tasks"].items() if t["name"] == name)
 
 
+def _by_summary(start: str) -> str:
+    return next(k for k, t in WF["tasks"].items() if t.get("summary", "").startswith(start))
+
+
+PUSH = _by_summary("push under the revert timer")
+CHECK = _by_summary("would config-push-revert take this?")
+
+
 def _reach(start: str, skip: set[str] = frozenset(), states: set[str] | None = None) -> set[str]:
     seen, todo = set(), [start]
     while todo:
@@ -55,11 +63,15 @@ def test_the_workflow_is_registered_under_its_name() -> None:
 
 
 def test_nothing_reaches_the_router_before_the_approval() -> None:
-    approval, push = _task("ViewData"), _task("runService")
-    assert push in _reach("workflow_start")
-    assert push not in _reach("workflow_start", skip={approval})
+    approval = _task("ViewData")
+    assert PUSH in _reach("workflow_start")
+    assert PUSH not in _reach("workflow_start", skip={approval})
     # Reject (the view's failure) never reaches the push
-    assert push not in _reach(next(d for d, e in WF["transitions"][approval].items() if e["state"] == "failure"))
+    assert PUSH not in _reach(next(d for d, e in WF["transitions"][approval].items() if e["state"] == "failure"))
+    # the service's no-device check runs before the card: what it refuses never reaches an approver
+    assert CHECK in _reach("workflow_start", skip={approval}) and approval not in _reach("workflow_start", skip={CHECK})
+    plan = build.revert_plan(INPUTS, TARGETS)
+    assert plan["check"]["action"] == "check" and "username" not in plan["check"]
 
 
 def test_the_card_shows_every_line_and_every_check_and_the_service_gets_the_same_lines() -> None:
@@ -73,14 +85,23 @@ def test_the_card_shows_every_line_and_every_check_and_the_service_gets_the_same
     assert json.loads(params["target_json"]) == {"name": "clab-rtr1", "mgmt_host": TARGETS["clab-rtr1"]["mgmt_host"]}
     assert params["username"] == TARGETS["clab-rtr1"]["username"] and params["revert_minutes"] == "5"
     assert json.loads(params["checks_json"]) == INPUTS["checks"]
-    # the Gateway's own limit covers the whole timer: the service stops itself first
-    assert int(params["timeout"]) >= 5 * 60 + 120
+    assert "write memory" in card["saving"]
+    # the check is asked about exactly what the push will send
+    assert {k: v for k, v in plan["check"].items() if k not in ("action", "timeout")} == {
+        k: v for k, v in params.items() if k not in ("action", "username")}
+    # the push's Gateway timeout is the one the check answers, set on the push params just before the push
+    push_params = WF["tasks"][PUSH]["variables"]["incoming"]["params"].split(".")[1]
+    timeout_key = WF["tasks"][push_params]["variables"]["incoming"]
+    assert timeout_key["path"] == ["timeout"]
+    answer = WF["tasks"][timeout_key["value"].split(".")[1]]["variables"]["incoming"]
+    assert answer["query"] == "result.stdout_json.timeout" and answer["obj"] == f"$var.{CHECK}.result"
     # the card the approver sees is the plan's card, and the push takes the plan's params
     view = WF["tasks"][_task("ViewData")]["variables"]["incoming"]
     card = WF["tasks"][view["body"].split(".")[2] if view["body"].count(".") > 2 else view["body"].split(".")[1]]
     assert card["variables"]["incoming"]["query"] == "stdout_json.card"
     plan_task = card["variables"]["incoming"]["obj"].split(".")[1]
-    params = WF["tasks"][WF["tasks"][_task("runService")]["variables"]["incoming"]["params"].split(".")[1]]
+    with_timeout = WF["tasks"][WF["tasks"][PUSH]["variables"]["incoming"]["params"].split(".")[1]]
+    params = WF["tasks"][with_timeout["variables"]["incoming"]["obj"].split(".")[1]]
     assert params["variables"]["incoming"] == {**params["variables"]["incoming"], "query": "stdout_json.params",
                                                 "obj": f"$var.{plan_task}.result"}
 
@@ -92,12 +113,18 @@ def test_a_plan_that_cannot_be_made_sends_nothing(change, said) -> None:
     assert not plan["ok"] and said in plan["message"]
 
 
-def test_the_shipped_plan_code_runs_as_the_runner_runs_it() -> None:
-    out = subprocess.run([sys.executable, "-I", "-c", build.REVERT_PLAN_CODE], input=json.dumps(INPUTS),
-                         capture_output=True, text=True, check=True).stdout
-    assert json.loads(out) == build.revert_plan(INPUTS, TARGETS)
-    assert WF["tasks"][_task("runCode")]["variables"]["incoming"]["code"] in (build.REVERT_PLAN_CODE,
-                                                                             build.REVERT_SUMMARY_CODE)
+def test_the_shipped_code_runs_as_the_runner_runs_it() -> None:
+    def runs(code: str, data: dict) -> dict:
+        return json.loads(subprocess.run([sys.executable, "-I", "-c", code], input=json.dumps(data),
+                                         capture_output=True, text=True, check=True).stdout)
+
+    assert runs(build.REVERT_PLAN_CODE, INPUTS) == build.revert_plan(INPUTS, TARGETS)
+    answer = {"push": {"result": {"return_code": 0, "stdout_json": {"saved": True, "changed": True}}}}
+    assert runs(build.REVERT_SUMMARY_CODE, answer) == build.revert_summary(answer)
+    # each runCode task carries its own code
+    code = {t["summary"]: t["variables"]["incoming"]["code"] for t in WF["tasks"].values() if t["name"] == "runCode"}
+    assert code == {"the plan: the service's params and the approval card (Python on the runner)": build.REVERT_PLAN_CODE,
+                    "what the push did (saved, rolled back, nothing sent or unknown)": build.REVERT_SUMMARY_CODE}
 
 
 @pytest.mark.parametrize("answer, state, changed", [
@@ -106,6 +133,7 @@ def test_the_shipped_plan_code_runs_as_the_runner_runs_it() -> None:
     ({"return_code": 1, "stdout_json": {"rolled_back": True, "sent": True, "router": "rolled back",
                                         "error": "rolled back: a check failed after the change"}}, "rolled back", False),
     ({"return_code": 1, "stdout_json": {"sent": False, "error": "the checks fail before any change"}}, "unchanged", False),
+    ({"return_code": 1, "stdout_json": {"action": None, "sent": False, "error": "refused"}}, "unchanged", False),
     ({"return_code": 1, "stdout_json": {"sent": True, "confirmed": True, "router": "changed and confirmed but NOT saved"}},
      "unknown", True),
     ({}, "unknown", True),  # no answer at all: a change may be pending
@@ -145,3 +173,16 @@ def test_push_configuration_with_approval_is_untouched() -> None:
     original = json.loads((ROOT / "itential" / "workflows" / "push-configuration-with-approval.json").read_text())
     assert set(original["inputSchema"]["properties"]) == {"device", "config", "reason"}
     assert not any(t["name"] == "runService" for t in original["tasks"].values())
+
+
+def test_a_refusal_or_an_unavailable_service_before_the_card_sends_nothing() -> None:
+    """On a Gateway without the service (production until step 10's window), or for inputs it refuses, the job ends
+    before the card with changed = false - never after an approval."""
+    first = _by_summary("changed = false")
+    # changed = false is set before anything else can run, so every early end leaves it false
+    assert CHECK not in _reach("workflow_start", skip={first})
+    for src, state in (("13", "error"), ("14", "failure")):
+        branch = next(d for d, e in WF["transitions"][src].items() if e["state"] == state)
+        reached = _reach(branch)
+        assert "workflow_end" in reached and PUSH not in reached and _task("ViewData") not in reached
+        assert not any(WF["tasks"].get(k, {}).get("summary", "").startswith("changed = true") for k in reached)

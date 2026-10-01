@@ -3,6 +3,36 @@
   "type": "automation",
   "description": "Pushes configuration lines to one router after a Work Center approval, under a revert timer: kept and saved only if BGP, the pings and a fresh login still pass afterwards, otherwise rolled back and proved (step 10, F9 decision 2a)",
   "tasks": {
+    "10": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "changed = false",
+      "description": "changed = false",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": -150,
+        "y": 1200
+      },
+      "variables": {
+        "incoming": {
+          "input": "false",
+          "outputType": "boolean",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.changed"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
     "1a": {
       "name": "setObjectKey",
       "canvasName": "setObjectKey",
@@ -15,8 +45,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": -90,
-        "y": 1200
+        "x": 0,
+        "y": 1350
       },
       "variables": {
         "incoming": {
@@ -47,8 +77,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": -70,
-        "y": 1350
+        "x": 0,
+        "y": 1500
       },
       "variables": {
         "incoming": {
@@ -79,8 +109,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": -50,
-        "y": 1500
+        "x": 0,
+        "y": 1650
       },
       "variables": {
         "incoming": {
@@ -111,8 +141,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": -40,
-        "y": 1650
+        "x": 0,
+        "y": 1800
       },
       "variables": {
         "incoming": {
@@ -143,8 +173,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": -30,
-        "y": 1800
+        "x": 0,
+        "y": 1950
       },
       "variables": {
         "incoming": {
@@ -175,14 +205,14 @@
       "displayName": "GatewayManager",
       "groups": [],
       "nodeLocation": {
-        "x": -30,
-        "y": 1950
+        "x": -150,
+        "y": 2100
       },
       "variables": {
         "incoming": {
           "clusterId": "lab",
           "language": "python",
-          "code": "import json, sys\n\n\nTARGETS = {'clab-rtr1': {'mgmt_host': '10.100.2.11', 'username': 'automation'}}\n\n\ndef revert_plan(d: dict, targets: dict) -> dict:\n    \"\"\"The service's params and the approval card, from the job's inputs (already through the input gate). The card\n    lists exactly what will be pushed and what must hold afterwards; the params carry the same lines.\n    Pure: runCode runs this function's own source on the Gateway, with the targets table written in.\"\"\"\n    device = d.get(\"device\")\n    target = targets.get(device)\n    if not target:\n        return {\"ok\": False, \"message\": f\"{device} is not a router this workflow may change (revert_push.targets)\"}\n    lines = [line.rstrip() for line in str(d.get(\"config\") or \"\").splitlines() if line.strip()]\n    if not lines:\n        return {\"ok\": False, \"message\": \"no configuration lines to push\"}\n    checks, minutes = d.get(\"checks\") or {}, d.get(\"revert_minutes\")\n    kept_if = []\n    for b in checks.get(\"bgp_established\") or []:\n        n, vrf = (b.get(\"neighbor\"), b.get(\"vrf\")) if isinstance(b, dict) else (b, None)\n        kept_if.append(f\"BGP neighbour {n} Established\" + (f\" (VRF {vrf})\" if vrf else \"\"))\n    for p in checks.get(\"pings\") or []:\n        kept_if.append(f\"ping {p['target']}\" + (f\" from {p['source']}\" if p.get(\"source\") else \"\")\n                       + (f\" in VRF {p['vrf']}\" if p.get(\"vrf\") else \"\") + f\" at least {p.get('min_percent', 80)}%\")\n    kept_if.append(\"a fresh login to the router still works\")\n    params = {\n        \"action\": \"push\",\n        \"target_json\": json.dumps({\"name\": device, \"mgmt_host\": target[\"mgmt_host\"]}),\n        \"lines_json\": json.dumps(lines),\n        \"checks_json\": json.dumps(checks),\n        \"revert_minutes\": str(minutes),\n        \"username\": target[\"username\"],\n        # the Gateway's own limit: the whole timer and the reads around it (the service stops itself well before)\n        \"timeout\": str(int(minutes) * 60 + 180),\n    }\n    card = {\n        \"router\": device,\n        \"reason\": d.get(\"reason\"),\n        \"revert timer\": f\"{minutes} minutes\",\n        \"settle before the checks\": f\"{checks.get('settle_seconds', 75)} s\",\n        \"kept only if\": kept_if,\n        \"lines\": lines,\n    }\n    return {\"ok\": True, \"params\": params, \"card\": card}\n\n\nprint(json.dumps(revert_plan(json.loads(sys.stdin.read() or \"{}\"), TARGETS)))\n",
+          "code": "import json, sys\n\n\nTARGETS = {'clab-rtr1': {'mgmt_host': '10.100.2.11', 'username': 'automation'}}\n\n\ndef revert_plan(d: dict, targets: dict) -> dict:\n    \"\"\"The service's params and the approval card, from the job's inputs (already through the input gate). The card\n    lists exactly what will be pushed and what must hold afterwards; the params carry the same lines.\n    Pure: runCode runs this function's own source on the Gateway, with the targets table written in.\"\"\"\n    device = d.get(\"device\")\n    target = targets.get(device)\n    if not target:\n        return {\"ok\": False, \"message\": f\"{device} is not a router this workflow may change (revert_push.targets)\"}\n    lines = [line.rstrip() for line in str(d.get(\"config\") or \"\").splitlines() if line.strip()]\n    if not lines:\n        return {\"ok\": False, \"message\": \"no configuration lines to push\"}\n    checks, minutes = d.get(\"checks\") or {}, d.get(\"revert_minutes\")\n    kept_if = []\n    for b in checks.get(\"bgp_established\") or []:\n        n, vrf = (b.get(\"neighbor\"), b.get(\"vrf\")) if isinstance(b, dict) else (b, None)\n        kept_if.append(f\"BGP neighbour {n} Established\" + (f\" (VRF {vrf})\" if vrf else \"\"))\n    for p in checks.get(\"pings\") or []:\n        kept_if.append(f\"ping {p['target']}\" + (f\" from {p['source']}\" if p.get(\"source\") else \"\")\n                       + (f\" in VRF {p['vrf']}\" if p.get(\"vrf\") else \"\") + f\" at least {p.get('min_percent', 80)}%\")\n    kept_if.append(\"a fresh login to the router still works\")\n    inputs = {\n        \"target_json\": json.dumps({\"name\": device, \"mgmt_host\": target[\"mgmt_host\"]}),\n        \"lines_json\": json.dumps(lines),\n        \"checks_json\": json.dumps(checks),\n        \"revert_minutes\": str(minutes),\n    }\n    # `check` (no device) runs before the card; the push's Gateway timeout is the one `check` answers\n    check = {\"action\": \"check\", **inputs, \"timeout\": \"60\"}\n    params = {\"action\": \"push\", **inputs, \"username\": target[\"username\"]}\n    card = {\n        \"router\": device,\n        \"reason\": d.get(\"reason\"),\n        \"revert timer\": f\"{minutes} minutes\",\n        \"settle before the checks\": f\"{checks.get('settle_seconds', 75)} s\",\n        \"kept only if\": kept_if,\n        \"saving\": \"`write memory` saves the whole running configuration - with any change already on the router and \"\n                  \"not yet saved\",\n        \"lines\": lines,\n    }\n    return {\"ok\": True, \"check\": check, \"params\": params, \"card\": card}\n\n\nprint(json.dumps(revert_plan(json.loads(sys.stdin.read() or \"{}\"), TARGETS)))\n",
           "data": "$var.1e.object",
           "safety": {
             "timeout": 30
@@ -211,7 +241,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 0,
-        "y": 2100
+        "y": 2250
       },
       "variables": {
         "incoming": {
@@ -244,6 +274,198 @@
         "decorators": []
       }
     },
+    "12": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "config-push-revert check's params",
+      "description": "config-push-revert check's params",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 0,
+        "y": 2400
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "stdout_json.check",
+          "obj": "$var.1f.result"
+        },
+        "outgoing": {
+          "return_data": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "13": {
+      "name": "runService",
+      "canvasName": "runService",
+      "summary": "would config-push-revert take this? (check: no device)",
+      "description": "would config-push-revert take this? (check: no device)",
+      "location": "Application",
+      "locationType": null,
+      "app": "GatewayManager",
+      "type": "automatic",
+      "displayName": "GatewayManager",
+      "groups": [],
+      "nodeLocation": {
+        "x": 0,
+        "y": 2550
+      },
+      "variables": {
+        "incoming": {
+          "serviceName": "config-push-revert",
+          "clusterId": "lab",
+          "params": "$var.12.return_data"
+        },
+        "outgoing": {
+          "result": "$var.job.check_result"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "14": {
+      "name": "evaluation",
+      "canvasName": "evaluation",
+      "summary": "config-push-revert takes it?",
+      "description": "config-push-revert takes it?",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 0,
+        "y": 2700
+      },
+      "variables": {
+        "incoming": {
+          "all_true_flag": true,
+          "evaluation_groups": [
+            {
+              "all_true_flag": true,
+              "evaluations": [
+                {
+                  "query": "result.return_code",
+                  "operand_1": {
+                    "variable": "result",
+                    "task": "13"
+                  },
+                  "operator": "==",
+                  "operand_2": {
+                    "variable": 0,
+                    "task": "static"
+                  }
+                }
+              ]
+            }
+          ],
+          "options": {}
+        },
+        "outgoing": {
+          "return_value": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "15": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "why config-push-revert refuses it",
+      "description": "why config-push-revert refuses it",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": -1350,
+        "y": 2850
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": true,
+          "query": "result.stdout_json.error",
+          "obj": "$var.13.result"
+        },
+        "outgoing": {
+          "return_data": "$var.job.error"
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "18": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "config-push-revert refuses it",
+      "description": "config-push-revert refuses it",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": -1130,
+        "y": 3000
+      },
+      "variables": {
+        "incoming": {
+          "input": "config-push-revert refuses these inputs (see check_result): nothing was sent to the router",
+          "outputType": "string",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.error"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "b8": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "config-push-revert could not run",
+      "description": "config-push-revert could not run",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": -1650,
+        "y": 2700
+      },
+      "variables": {
+        "incoming": {
+          "input": "the Gateway could not run config-push-revert (it is a dev-tier service until step 10's window): nothing was sent to the router",
+          "outputType": "string",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.error"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
     "2a": {
       "name": "query",
       "canvasName": "query",
@@ -256,8 +478,8 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 100,
-        "y": 2250
+        "x": 0,
+        "y": 2850
       },
       "variables": {
         "incoming": {
@@ -284,8 +506,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 100,
-        "y": 2400
+        "x": 0,
+        "y": 3000
       },
       "variables": {
         "incoming": {
@@ -314,8 +536,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 100,
-        "y": 2550
+        "x": 0,
+        "y": 3150
       },
       "variables": {
         "incoming": {
@@ -332,6 +554,36 @@
       },
       "view": "/workflow_engine/task/ViewData"
     },
+    "17": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "rejected = false",
+      "description": "rejected = false",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 0,
+        "y": 3300
+      },
+      "variables": {
+        "incoming": {
+          "input": "false",
+          "outputType": "boolean",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.rejected"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
     "3a": {
       "name": "query",
       "canvasName": "query",
@@ -344,8 +596,8 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 60,
-        "y": 2700
+        "x": 0,
+        "y": 3450
       },
       "variables": {
         "incoming": {
@@ -360,6 +612,66 @@
         "decorators": []
       }
     },
+    "16": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "the timeout a push needs (check's answer)",
+      "description": "the timeout a push needs (check's answer)",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 0,
+        "y": 3600
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "result.stdout_json.timeout",
+          "obj": "$var.13.result"
+        },
+        "outgoing": {
+          "return_data": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "34": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "push params: the Gateway timeout",
+      "description": "push params: the Gateway timeout",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 0,
+        "y": 3750
+      },
+      "variables": {
+        "incoming": {
+          "obj": "$var.3a.return_data",
+          "path": [
+            "timeout"
+          ],
+          "value": "$var.16.return_data"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
     "3b": {
       "name": "runService",
       "canvasName": "runService",
@@ -372,14 +684,14 @@
       "displayName": "GatewayManager",
       "groups": [],
       "nodeLocation": {
-        "x": -300,
-        "y": 2850
+        "x": 0,
+        "y": 3900
       },
       "variables": {
         "incoming": {
           "serviceName": "config-push-revert",
           "clusterId": "lab",
-          "params": "$var.3a.return_data"
+          "params": "$var.34.object"
         },
         "outgoing": {
           "result": "$var.job.push_result"
@@ -402,8 +714,8 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 180,
-        "y": 3000
+        "x": 0,
+        "y": 4050
       },
       "variables": {
         "incoming": {
@@ -448,8 +760,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": -50,
-        "y": 3150
+        "x": -150,
+        "y": 4200
       },
       "variables": {
         "incoming": {
@@ -478,8 +790,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 20,
-        "y": 3300
+        "x": 0,
+        "y": 4350
       },
       "variables": {
         "incoming": {
@@ -510,8 +822,8 @@
       "displayName": "GatewayManager",
       "groups": [],
       "nodeLocation": {
-        "x": 20,
-        "y": 3450
+        "x": 0,
+        "y": 4500
       },
       "variables": {
         "incoming": {
@@ -545,8 +857,8 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 180,
-        "y": 3600
+        "x": 0,
+        "y": 4650
       },
       "variables": {
         "incoming": {
@@ -573,8 +885,8 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 220,
-        "y": 3750
+        "x": 0,
+        "y": 4800
       },
       "variables": {
         "incoming": {
@@ -619,8 +931,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 220,
-        "y": 3900
+        "x": 0,
+        "y": 4950
       },
       "variables": {
         "incoming": {
@@ -649,8 +961,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 670,
-        "y": 3900
+        "x": 300,
+        "y": 4950
       },
       "variables": {
         "incoming": {
@@ -679,8 +991,8 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 290,
-        "y": 4050
+        "x": 300,
+        "y": 5100
       },
       "variables": {
         "incoming": {
@@ -725,8 +1037,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 330,
-        "y": 4200
+        "x": -300,
+        "y": 5250
       },
       "variables": {
         "incoming": {
@@ -755,8 +1067,8 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 630,
-        "y": 4200
+        "x": 300,
+        "y": 5250
       },
       "variables": {
         "incoming": {
@@ -783,8 +1095,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 510,
-        "y": 2700
+        "x": 300,
+        "y": 3300
       },
       "variables": {
         "incoming": {
@@ -794,36 +1106,6 @@
         },
         "outgoing": {
           "output": "$var.job.rejected"
-        },
-        "error": "",
-        "decorators": []
-      },
-      "actor": "Pronghorn",
-      "scheduled": false
-    },
-    "a1": {
-      "name": "makeData",
-      "canvasName": "makeData",
-      "summary": "changed = false (rejected)",
-      "description": "changed = false (rejected)",
-      "location": "Application",
-      "locationType": null,
-      "app": "WorkFlowEngine",
-      "type": "automatic",
-      "displayName": "Tools",
-      "groups": [],
-      "nodeLocation": {
-        "x": 530,
-        "y": 2850
-      },
-      "variables": {
-        "incoming": {
-          "input": "false",
-          "outputType": "boolean",
-          "variables": ""
-        },
-        "outgoing": {
-          "output": "$var.job.changed"
         },
         "error": "",
         "decorators": []
@@ -843,8 +1125,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 610,
-        "y": 3000
+        "x": 600,
+        "y": 3450
       },
       "variables": {
         "incoming": {
@@ -873,8 +1155,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": -530,
-        "y": 2400
+        "x": -830,
+        "y": 3000
       },
       "variables": {
         "incoming": {
@@ -903,8 +1185,8 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": -200,
-        "y": 2250
+        "x": 1200,
+        "y": 2400
       },
       "variables": {
         "incoming": {
@@ -919,36 +1201,6 @@
         "decorators": []
       }
     },
-    "b2": {
-      "name": "makeData",
-      "canvasName": "makeData",
-      "summary": "changed = false (nothing sent)",
-      "description": "changed = false (nothing sent)",
-      "location": "Application",
-      "locationType": null,
-      "app": "WorkFlowEngine",
-      "type": "automatic",
-      "displayName": "Tools",
-      "groups": [],
-      "nodeLocation": {
-        "x": -880,
-        "y": 3000
-      },
-      "variables": {
-        "incoming": {
-          "input": "false",
-          "outputType": "boolean",
-          "variables": ""
-        },
-        "outgoing": {
-          "output": "$var.job.changed"
-        },
-        "error": "",
-        "decorators": []
-      },
-      "actor": "Pronghorn",
-      "scheduled": false
-    },
     "b3": {
       "name": "makeData",
       "canvasName": "makeData",
@@ -961,8 +1213,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 160,
-        "y": 2850
+        "x": -450,
+        "y": 3750
       },
       "variables": {
         "incoming": {
@@ -982,8 +1234,8 @@
     "b5": {
       "name": "makeData",
       "canvasName": "makeData",
-      "summary": "config-push-revert could not run",
-      "description": "config-push-revert could not run",
+      "summary": "config-push-revert could not finish",
+      "description": "config-push-revert could not finish",
       "location": "Application",
       "locationType": null,
       "app": "WorkFlowEngine",
@@ -991,12 +1243,12 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": -290,
-        "y": 3750
+        "x": -1500,
+        "y": 4800
       },
       "variables": {
         "incoming": {
-          "input": "the Gateway could not run config-push-revert or read its answer (push_result): a change may be pending until the revert timer rolls it back - check the router",
+          "input": "the Gateway could not run config-push-revert or read its answer (push_result): check the router - the change may be live and unsaved, or pending until the revert timer rolls it back",
           "outputType": "string",
           "variables": ""
         },
@@ -1021,8 +1273,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": -470,
-        "y": 3900
+        "x": -1500,
+        "y": 4950
       },
       "variables": {
         "incoming": {
@@ -1300,8 +1552,16 @@
                           "pattern": "^[A-Za-z0-9_-]{1,32}$"
                         },
                         "source": {
-                          "type": "string",
-                          "pattern": "^[A-Za-z0-9][A-Za-z0-9/.:-]{0,63}$"
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "pattern": "^[A-Za-z][A-Za-z0-9/.:-]{0,63}$"
+                            },
+                            {
+                              "type": "string",
+                              "pattern": "^(25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)(\\.(25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)){3}$"
+                            }
+                          ]
                         },
                         "min_percent": {
                           "type": "integer",
@@ -1342,7 +1602,7 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": -100,
+        "x": 0,
         "y": 1050
       },
       "variables": {
@@ -1388,7 +1648,7 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 210,
+        "x": 1050,
         "y": 1200
       },
       "variables": {
@@ -1420,14 +1680,20 @@
       "summary": "workflow_end",
       "groups": [],
       "nodeLocation": {
-        "x": 480,
-        "y": 4350
+        "x": 0,
+        "y": 5400
       }
     }
   },
   "transitions": {
     "workflow_start": {
       "9a01": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "10": {
+      "1a": {
         "state": "success",
         "type": "standard"
       }
@@ -1473,12 +1739,64 @@
       }
     },
     "11": {
-      "2a": {
+      "12": {
         "state": "success",
         "type": "standard"
       },
       "b1": {
         "state": "failure",
+        "type": "standard"
+      }
+    },
+    "12": {
+      "13": {
+        "state": "success",
+        "type": "standard"
+      },
+      "b0": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "13": {
+      "14": {
+        "state": "success",
+        "type": "standard"
+      },
+      "b8": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "14": {
+      "2a": {
+        "state": "success",
+        "type": "standard"
+      },
+      "15": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "15": {
+      "workflow_end": {
+        "state": "success",
+        "type": "standard"
+      },
+      "18": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "18": {
+      "workflow_end": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "b8": {
+      "workflow_end": {
+        "state": "success",
         "type": "standard"
       }
     },
@@ -1499,7 +1817,7 @@
       }
     },
     "2c": {
-      "3a": {
+      "17": {
         "state": "success",
         "type": "standard"
       },
@@ -1508,13 +1826,35 @@
         "type": "standard"
       }
     },
+    "17": {
+      "3a": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
     "3a": {
-      "3b": {
+      "16": {
         "state": "success",
         "type": "standard"
       },
       "b3": {
         "state": "error",
+        "type": "standard"
+      }
+    },
+    "16": {
+      "34": {
+        "state": "success",
+        "type": "standard"
+      },
+      "b3": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "34": {
+      "3b": {
+        "state": "success",
         "type": "standard"
       }
     },
@@ -1615,12 +1955,6 @@
       }
     },
     "a0": {
-      "a1": {
-        "state": "success",
-        "type": "standard"
-      }
-    },
-    "a1": {
       "a2": {
         "state": "success",
         "type": "standard"
@@ -1633,24 +1967,18 @@
       }
     },
     "b0": {
-      "b2": {
+      "workflow_end": {
         "state": "success",
         "type": "standard"
       }
     },
     "b1": {
-      "b2": {
+      "workflow_end": {
         "state": "success",
         "type": "standard"
       }
     },
     "b3": {
-      "b2": {
-        "state": "success",
-        "type": "standard"
-      }
-    },
-    "b2": {
       "workflow_end": {
         "state": "success",
         "type": "standard"
@@ -1709,7 +2037,7 @@
       }
     },
     "9a0b": {
-      "1a": {
+      "10": {
         "state": "success",
         "type": "standard"
       },
@@ -1789,6 +2117,9 @@
         "type": "string"
       },
       "revert_plan": {
+        "type": "object"
+      },
+      "check_result": {
         "type": "object"
       },
       "push_result": {
