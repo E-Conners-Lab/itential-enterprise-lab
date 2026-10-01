@@ -68,9 +68,9 @@ terraform_run:
     # A full commit SHA, never a branch or tag (security review 2026-09-29, ITL-01): the Gateway runs this code with the
     # AWS key, so new cloud-devops-pipeline code runs only after a lab PR moves the pin, to a commit on its protected
     # main whose required checks passed (verify S13.2c). Measured on dev 2026-09-29: an older SHA is checked out as
-    # given, an unknown one fails the service ("reference not found"). a03a3de = main after cdp #14 (the VPN
-    # monitor alerts once per state change from its alarms; a failed check never reads as a tunnel recovery).
-    reference: "a03a3de69c8ea741deed1f545a3ba9d797a659ec"
+    # given, an unknown one fails the service ("reference not found"). 4cb44ee = main after cdp #19: the step-6
+    # services (lab-edge, lab-edge-push, aws-vpn-monitor; #15-#18) with the precheck reading hidekeys where 17.13 shows it.
+    reference: "4cb44eee4b7c7966d9866f0e84ae7c5730582020"
   executable_object:
     name: python-3-12
     description: "the runner image's Python 3.12 (ADR 0038)"
@@ -96,6 +96,97 @@ terraform_run:
         - {name: aws-psk-writer-secret-id, type: env, target: PSK_WRITER_SECRET_ID}
         - {name: aws-terraform-access-key-id, type: env, target: AWS_ACCESS_KEY_ID}
         - {name: aws-terraform-secret-access-key, type: env, target: AWS_SECRET_ACCESS_KEY}
+  # Step 6 (Hand Off / Verify AWS VPN), DEV TIER ONLY: imported where dev_overlay is set (tasks/gateway-terraform-run.yml)
+  # until the dc1-wan01 window and production (R8) give them their own bindings. Each binds exactly the aliases of the
+  # targets that are open (aws_vpn.targets): the Gateway resolves every bound alias on every run, so an alias whose
+  # Vault path does not exist yet would fail every run. Each service takes only its own arguments (cloud-devops-pipeline
+  # itential/lab_edge_device.py); a timeout is passed per run by the workflow, as for terraform-run.
+  dev_services:
+    - name: lab-edge
+      description: "The lab edge router's AWS VPN side: precheck, render, verify - never the key (step 6, ADR 0068 d6/d7)"
+      filename: itential/lab-edge.py
+      working-directory: "."
+      secrets:
+        - {name: lab-automation-password, type: env, target: LAB_EDGE_PASSWORD_CLAB_RTR1}
+    - name: lab-edge-push
+      description: "The approved AWS VPN block pushed under a revert timer - the only service bound to the key (ADR 0068 d6)"
+      filename: itential/lab-edge-push.py
+      working-directory: "."
+      secrets:
+        - {name: lab-automation-password, type: env, target: LAB_EDGE_PASSWORD_CLAB_RTR1}
+        - {name: aws-vpn-psk-clab-rtr1, type: env, target: LAB_EDGE_PSK_CLAB_RTR1}
+        - {name: aws-vpn-psk-version-clab-rtr1, type: env, target: LAB_EDGE_PSK_VERSION_CLAB_RTR1}
+    - name: aws-vpn-monitor
+      description: "The AWS end's view: readiness (CheckSucceeded) and Verify's signal (the monitor Lambda + metric)"
+      filename: itential/aws-vpn-monitor.py
+      working-directory: "."
+      secrets:
+        - {name: aws-terraform-access-key-id, type: env, target: AWS_ACCESS_KEY_ID}
+        - {name: aws-terraform-secret-access-key, type: env, target: AWS_SECRET_ACCESS_KEY}
+
+# The lab edge targets Hand Off and Verify AWS VPN may name (step 6; the workflows' target enum). `target` is exactly
+# what cloud-devops-pipeline's lab_edge_render.check_target takes (passed as --target_json, every value checked again
+# there); `outputs` is the AWS end for a target without a deployment of its own (the clab twin), held to
+# clab/versions.yaml aws_twin by tests/test_aws_vpn_targets.py. A target is usable only while `window: open`: dc1-wan01
+# waits for the owner's window (build steps 10-11), with its own aliases bound then. The router login is the device
+# account (`username`, its password the Gateway alias the services bind); `psk_path` holds that target's {psk, version}.
+aws_vpn:
+  targets:
+    clab-rtr1:
+      window: open
+      username: automation
+      monitor: none # the twin has no AWS monitor: Verify's AWS signal is "not applicable" (spec, Verify)
+      psk_path: devices/aws-vpn-clab-rtr1 # the twin's dev-only key: make twin-key (dev Vault only)
+      target:
+        name: clab-rtr1
+        fvrf: INET
+        tunnel_source: GigabitEthernet4
+        front_door_ip: 198.51.100.2
+        loopback_ip: 10.100.3.201
+        router_inner: 169.254.10.1/30
+        aws_inner: 169.254.10.2/30
+        vpc_cidr: 10.0.0.0/16
+        vpc_private_prefixes: [10.0.64.0/20, 10.0.80.0/20]
+        lab_prefixes: [10.100.3.0/24]
+        local_id: lab-edge.lab.internal
+        remote_id: aws-vpn.lab.internal
+        peer_rule: pinned # the twin's "EIP" is TEST-NET-2, never a global address
+        peer_pinned: 198.51.100.20
+        bgp_asn: 65010
+        inside_interfaces: [GigabitEthernet2, GigabitEthernet3]
+        unzoned_interfaces: [GigabitEthernet1, GigabitEthernet4]
+        mgmt_host: 10.100.2.11
+      outputs:
+        strongswan_eip: 198.51.100.20
+        strongswan_private_ip: 10.0.1.10
+        tunnel_local_inner: 169.254.10.2/30
+        tunnel_remote_inner: 169.254.10.1/30
+        vpc_private_prefixes: [10.0.64.0/20, 10.0.80.0/20]
+    dc1-wan01:
+      window: closed # the owner opens it (build step 10-11): a time-boxed account, its aliases, then Hand Off
+      username: itential-aws-vpn # the time-boxed account the window creates
+      monitor: aws
+      psk_path: aws/vpn-psk # the deployment's own key (aws-vpn-psk ensure)
+      target:
+        name: dc1-wan01
+        fvrf: INET
+        tunnel_source: GigabitEthernet7
+        front_door_ip: 172.29.129.250
+        loopback_ip: 10.103.255.11
+        router_inner: 169.254.10.1/30
+        aws_inner: 169.254.10.2/30
+        vpc_cidr: 10.0.0.0/16
+        # as deployed (Deploy AWS VPN job 39fd9d23, 2026-09-30): the vpc module's two private /20s
+        vpc_private_prefixes: [10.0.64.0/20, 10.0.80.0/20]
+        lab_prefixes: [10.101.0.0/16, 10.103.255.0/24]
+        local_id: lab-edge.lab.internal
+        remote_id: aws-vpn.lab.internal
+        peer_rule: public
+        peer_pinned: null
+        bgp_asn: 65100
+        inside_interfaces: [GigabitEthernet5, GigabitEthernet6, Tunnel1, Tunnel2]
+        unzoned_interfaces: [GigabitEthernet1, GigabitEthernet2, GigabitEthernet7]
+        mgmt_host: 10.100.0.144
 
 # Operations Manager (ADR 0068 step 5): how Deploy AWS VPN is started - tasks/deploy-aws-vpn-triggers.yml
 operations_manager:
@@ -395,6 +486,11 @@ vault:
     # aws-vpn-psk (ADR 0068 d5): the write-only writer's own credentials, which the vault config play keeps here
     aws-psk-writer-role-id: {path: aws/psk-writer, key: role_id}
     aws-psk-writer-secret-id: {path: aws/psk-writer, key: secret_id}
+  # Step 6, DEV TIER ONLY (imported where dev_overlay is set, tasks/gateway-vault.yml): the clab twin's key, which
+  # lab-edge-push alone binds. Under devices/*, so the Gateway reads it and the Platform cannot (approles above).
+  dev_gateway_aliases:
+    aws-vpn-psk-clab-rtr1: {path: devices/aws-vpn-clab-rtr1, key: psk}
+    aws-vpn-psk-version-clab-rtr1: {path: devices/aws-vpn-clab-rtr1, key: version}
   dev:
     dir: /opt/vault-dev # on itential-dev: config, tls (the VM's lab-CA certificate), raft data, init output
     # The address, not the name: on itential-dev the name resolves to 127.0.1.1 (Ubuntu's /etc/hosts entry), for the

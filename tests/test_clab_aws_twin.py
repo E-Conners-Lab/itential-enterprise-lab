@@ -218,17 +218,80 @@ def test_clab_dev_keeps_the_twin_out_of_the_device_loops_and_reads_the_pinned_te
     assert not any("docker restart" in c or "docker start" in c for c in commands)
     reload = tasks["Twin reloaded in place on a changed file"]
     assert reload["ansible.builtin.command"] == "docker exec {{ item.container }} /usr/local/sbin/{{ item.script }} reload"
-    key = tasks["Twin key, generated once on the clab VM (the dev twin's own; build step 6 moves it to the dev Vault)"]
-    assert key["no_log"] is True and key["ansible.builtin.shell"]["creates"] == "{{ twin_dir }}/psk"
-    assert "umask 077" in key["ansible.builtin.shell"]["cmd"]
+    # each container reloads for its own files only; a new key (from Vault or the placeholder) reaches the twin
+    assert reload["when"] == "deployed is skipped and twin_changed | intersect(item.files) | length > 0"
+    assert [i["files"] for i in reload["loop"]] == [["nat.env"], ["twin.env", "swanctl.conf.template", "psk"]]
+    changed = tasks["The twin's files that changed on this run"]["ansible.builtin.set_fact"]["twin_changed"]
+    assert "twin_key is changed or twin_key_placeholder is changed" in changed
+
+
+def test_the_twin_key_comes_from_the_dev_vault_entry_hand_off_reads() -> None:
+    play = yaml.safe_load((PLAYBOOKS / "clab-dev.yml").read_text())[1]
+    tasks = {t["name"]: t for t in play["tasks"]}
+    assert play["vars"]["twin_psk_path"] == "{{ lab.aws_vpn.targets[aws_twin.router].psk_path }}"
+    read = tasks["Twin key, read from the dev Vault (on the Mac, with the lab CA)"]
+    uri = read["ansible.builtin.uri"]
+    assert uri["url"] == "{{ lab.vault.dev.url }}/v1/{{ lab.vault.kv_mount }}/data/{{ twin_psk_path }}"
+    assert uri["ca_path"].endswith("docs/lab-root-ca.crt") and "validate_certs" not in uri
+    assert read["delegate_to"] == "localhost" and read["no_log"] is True
+    token = tasks["Dev Vault root token (beside the dev Vault on itential-dev, vault-dev.yml)"]
+    assert token["ansible.builtin.slurp"]["src"] == "{{ lab.vault.dev.dir }}/init.json" and token["no_log"] is True
+    assert "prod" not in yaml.safe_dump(read) + yaml.safe_dump(token)  # the dev Vault only
+    write = tasks["Twin key copied in place on the clab VM (0600)"]
+    shell = write["ansible.builtin.shell"]
+    # stdin, never argv; truncate-and-write keeps the inode the twin's bind mount holds
+    assert shell["stdin"] == "{{ twin_key_read.json.data.data.psk }}" and "{{" not in shell["cmd"]
+    assert "umask 077" in shell["cmd"] and "> psk" in shell["cmd"] and "mv " not in shell["cmd"]
+    assert write["no_log"] is True and write["changed_when"] == "twin_key.stdout == 'changed'"
+    names = list(tasks)
+    assert names.index("Twin key copied in place on the clab VM (0600)") < names.index(
+        "Deploy (only when a rendered file changed or a node is not running)")
+    # Vault first; the placeholder only when the dev Vault gave nothing, made once, and said out loud
+    assert write["when"] == "twin_key_vault_status == 200"
+    placeholder = tasks["Twin key placeholder, made once on the clab VM while the dev Vault has none to give"]
+    assert placeholder["when"] == "twin_key_vault_status != 200" and placeholder["no_log"] is True
+    assert placeholder["ansible.builtin.shell"]["creates"] == "{{ twin_dir }}/psk"  # never over a Vault key
+    assert tasks["Say so when the twin is not on the dev Vault's key"]["when"] == "twin_key_vault_status != 200"
+    # a clean build runs this before itential-dev and its Vault exist: neither read may fail the play
+    assert token["when"] == "groups['itential-host'] | default([]) | length > 0" and token["failed_when"] is False
+    # delegate_to is resolved before `when`: an empty or missing group must still give a host name
+    assert token["delegate_to"] == "{{ (groups['itential-host'] | default([])) | first | default('localhost') }}"
+    # a write that did not happen never reports ok
+    assert write["failed_when"] == "twin_key.rc != 0 or twin_key.stdout not in ['same', 'changed']"
+    assert "test -f psk -a -s psk" in tasks["The twin's key file is a regular, non-empty file"]["ansible.builtin.command"]
+    assert read["when"] == "dev_vault_init.content is defined" and read["failed_when"] is False
+    assert "twin_key_read.status" in tasks["Where the twin's key comes from on this run (no key value, only the source)"][
+        "ansible.builtin.set_fact"]["twin_key_vault_status"]
+
+
+def test_every_twin_file_is_written_in_place() -> None:
+    # each is a single-file bind mount (dev.clab.yml.j2): a copy's rename would leave the container on the old file
+    tasks = {t["name"]: t for t in yaml.safe_load((PLAYBOOKS / "clab-dev.yml").read_text())[1]["tasks"]}
+    values = tasks["Twin and NAT values written in place (clab/versions.yaml aws_twin)"]
+    assert [i["file"] for i in values["loop"]] == ["nat.env", "twin.env", "swanctl.conf.template"]
+    cmd = values["ansible.builtin.shell"]["cmd"]
+    assert "> {{ item.file }}" in cmd and "mv " not in cmd and values["ansible.builtin.shell"]["stdin"] == "{{ item.content }}"
+    assert values["failed_when"] == "twin_files.rc != 0 or twin_files.stdout not in ['same', 'changed']"
+    topo = (ROOT / "clab" / "dev.clab.yml.j2").read_text()
+    for f in ("nat.env", "twin.env", "swanctl.conf.template", "psk"):
+        assert f"aws-twin/{f}:" in topo, f  # every bind-mounted twin file is one this play writes in place
+    twin_tasks = [t for t in tasks.values() if "twin_dir" in yaml.safe_dump(t)]
+    assert not any("ansible.builtin.copy" in t or "ansible.builtin.template" in t for t in twin_tasks)
 
 
 def test_every_task_that_touches_the_twin_key_is_not_logged() -> None:
-    touching = [t for t in yaml.safe_load((PLAYBOOKS / "clab-dev.yml").read_text())[1]["tasks"]
-                if re.search(r"\bpsk\b", yaml.safe_dump(t)) and "swanctl" not in t["name"]]
-    assert touching, "the key-generation task"
+    # these two only name the file (which ones changed, which container reloads): neither holds the key
+    names_only = {"The twin's files that changed on this run", "Twin reloaded in place on a changed file"}
+    tasks = yaml.safe_load((PLAYBOOKS / "clab-dev.yml").read_text())[1]["tasks"]
+    touching = [t for t in tasks if (re.search(r"\bpsk\b", yaml.safe_dump(t)) or "twin_key_read.json" in yaml.safe_dump(t)
+                                     or "init.json" in yaml.safe_dump(t) or "dev_vault_init.content" in yaml.safe_dump(t))
+                and "swanctl" not in t["name"] and t["name"] not in names_only]
+    assert len(touching) == 6, [t["name"] for t in touching]  # token, read, format, copy, placeholder, file check
     for task in touching:
         assert task.get("no_log") is True, task["name"]
+    for task in tasks:
+        if task["name"] in names_only:
+            assert "twin_key_read" not in yaml.safe_dump(task) and "cat psk" not in yaml.safe_dump(task)
 
 
 def test_the_scripts_reload_in_place() -> None:

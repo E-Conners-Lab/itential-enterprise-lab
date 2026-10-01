@@ -22,8 +22,10 @@
           private-key-name: cloud-devops-pipeline-deploy-key
       executable-objects:
         - "{{ terraform_run.executable_object }}"
-      services: "{{ terraform_run.services | map('combine', gw_tr_common) | sort(attribute='name') | list }}"
+      services: "{{ gw_tr_services | map('combine', gw_tr_common) | sort(attribute='name') | list }}"
   vars:
+    # the step-6 services only on the dev tier (versions.yaml terraform_run.dev_services)
+    gw_tr_services: "{{ terraform_run.services + (terraform_run.dev_services if dev_overlay | default(false) | bool else []) }}"
     gw_tr_common:
       type: executable
       repository: "{{ terraform_run.repository.name }}"
@@ -42,7 +44,7 @@
            | selectattr('name', 'equalto', terraform_run.executable_object.name) | list }}
       services: >-
         {{ gw_tr_export.json.services | default([], true)
-           | selectattr('name', 'in', terraform_run.services | map(attribute='name') | list)
+           | selectattr('name', 'in', gw_tr_wanted.services | map(attribute='name') | list)
            | sort(attribute='name') | list }}
 
 - name: Import terraform-run (replaces the three items by name)
@@ -74,7 +76,7 @@
         (gw_tr_after.json['executable-objects'] | selectattr('name', 'equalto', terraform_run.executable_object.name)
          | list) == gw_tr_wanted['executable-objects']
       - >-
-        (gw_tr_after.json.services | selectattr('name', 'in', terraform_run.services | map(attribute='name') | list)
+        (gw_tr_after.json.services | selectattr('name', 'in', gw_tr_wanted.services | map(attribute='name') | list)
          | sort(attribute='name') | list) == gw_tr_wanted.services
     fail_msg: "the Gateway stored something other than the terraform-run items sent: compare the export by hand"
     quiet: true

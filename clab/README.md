@@ -30,8 +30,12 @@ the same package, the XFRM interface and firewall of its user data, and the conn
 `links`: no management address (network-mode none), no SSH, never in an Itential inventory or NetBox; they are reached
 with `docker exec` on the VM. clab-rtr1 also carries what lab-edge's precheck reads (INET-IN with its IKE placeholders,
 the management ACL on the vty lines, the archive with `hidekeys`, the zones with Gi2 and Gi3 in INSIDE, a canary
-keyring); its master key and `password encryption aes` are the owner's (spec Appendix A). The twin's key is generated
-once on the VM (0600); build step 6 moves it to the dev Vault. `tests/test_clab_aws_twin.py` holds all of it.
+keyring); its master key and `password encryption aes` are the owner's (spec Appendix A). The twin's key lives in the dev
+Vault (`make twin-key`, at `aws_vpn.targets.clab-rtr1.psk_path`, the entry Hand Off reads through the Gateway); the
+play copies it in place to the VM (0600) for the twin's bind mount and reloads the twin when it changes. On a clean
+build the play runs before the dev Vault exists: the twin then starts on a placeholder key made once on the VM (no
+router holds it, and the play says so) until `make vault-dev`, `make twin-key` and the play again.
+`tests/test_clab_aws_twin.py` holds all of it.
 
 A change to the twin's own files is applied in place (`twin.sh reload`, `nat.sh reload` through `docker exec`): a
 container restart would leave containerlab's links behind in its old network namespace. If a twin container stops, the
