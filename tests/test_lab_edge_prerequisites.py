@@ -248,9 +248,16 @@ def test_the_steps_run_in_the_order_the_router_needs() -> None:
     # service is dev-tier); the account typed after the archive, so hidekeys masks it, before any push needs it
     assert first["platform"] == "production" and all(s["platform"] == "dev" for s in rest if "workflow" in s)
     revert = VERSIONS["revert_push"]["targets"]["dc1-wan01"]
-    assert account["by_hand"].splitlines()[0].startswith(f"username {revert['username']} privilege 15 algorithm-type scrypt secret ")
-    assert account["by_hand"].splitlines()[0].endswith("<paste>") and account["by_hand"].splitlines()[-1] == "write memory"
-    assert len(CHANGES["after_r1"]) == 3
+    # the type-9 line only (make edge-account-line): the plain password never reaches the router
+    assert account["by_hand"].splitlines()[0] == (f"username {revert['username']} privilege 15 secret 9 "
+                                                  "<the line from make edge-account-line>")
+    assert account["by_hand"].splitlines()[-1] == "write memory" and "accepted risk" in (
+        ROOT / "topology" / "changes" / "dc1-wan01-lab-edge.yaml").read_text()
+    # after R1: unbind and converge FIRST, then the account, then the entry for good (the reverse of the binding hazard)
+    unbind, account_off, entry_off = CHANGES["after_r1"]
+    assert "unbind" in unbind and "dev converge" in unbind
+    assert account_off.startswith(f"no username {revert['username']}") and "write memory" in account_off
+    assert entry_off.startswith("vault kv metadata delete lab/devices/")
     # the archive before any revert timer, and never under one (the timer needs it)
     assert first["workflow"] == VERSIONS["workflows"]["config_push"] and _sent(first)[0] == "archive"
     assert all(s["workflow"] == VERSIONS["workflows"]["config_push_revert"] for s in rest if "workflow" in s)
@@ -341,3 +348,25 @@ def test_netconf_and_restconf_admit_only_the_management_sources() -> None:
     twin = (ROOT / "clab" / "configs" / "c8000v.cfg.j2").read_text()
     assert twin.index("ip access-list standard MGMT-ONLY") < twin.index("netconf-yang ssh ipv4 access-list name MGMT-ONLY")
     assert "restconf ipv4 access-list name MGMT-ONLY" in twin
+
+
+def test_the_converge_refuses_to_bind_a_dev_alias_before_its_entry_exists() -> None:
+    """The guard in tasks/gateway-vault.yml (step 10 review): a missing entry, or one without the alias's key, stops
+    the dev converge before the import binds it."""
+    tasks = yaml.safe_load((ROOT / "ansible" / "playbooks" / "tasks" / "gateway-vault.yml").read_text())
+    guard = next(t for t in tasks if t["name"] == "No dev alias is bound before its entry exists")
+    names = [t["name"] for t in tasks]
+    assert names.index("No dev alias is bound before its entry exists") < names.index(
+        "Import the provider and aliases (replaces them by name)")
+    missing = jinja2.Environment().from_string(guard["vars"]["missing"])
+
+    def result(alias, key, status, data=None):
+        return {"item": {"key": alias, "value": {"key": key}}, "status": status, "json": {"data": {"data": data or {}}}}
+
+    out = missing.render(gw_dev_alias_entries={"results": [
+        result("a-present", "password", 200, {"password": "x"}),
+        result("b-absent", "password", 404),
+        result("c-no-key", "psk", 200, {"version": "1"}),
+        {"skipped": True, "item": {"key": "d-skipped"}},
+    ]})
+    assert out.strip() == "['b-absent', 'c-no-key']"

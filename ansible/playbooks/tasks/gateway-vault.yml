@@ -54,6 +54,41 @@
   changed_when: true
   no_log: true
 
+# The Gateway resolves every bound alias on every run, so an alias whose Vault entry is missing fails every service
+# that binds it (config-push-revert on clab-rtr1 too, once dc1-wan01's account is bound). The dev aliases are made by
+# make targets (twin-key, edge-account), not seeded from .env: each must exist before it is bound (step 10 review).
+- name: Each dev alias's Vault entry exists before it is bound
+  ansible.builtin.uri:
+    url: "{{ vault_url }}/v1/{{ vault.kv_mount }}/data/{{ item.value.path }}"
+    headers: {X-Vault-Token: "{{ vault_admin_token }}"}
+    ca_path: "{{ vault_ca_path }}"
+    status_code: [200, 404]
+  loop: "{{ vault.dev_gateway_aliases | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"
+  register: gw_dev_alias_entries
+  when: dev_overlay | default(false) | bool
+  no_log: true
+
+- name: No dev alias is bound before its entry exists
+  ansible.builtin.assert:
+    that: missing | length == 0
+    fail_msg: >-
+      the dev Vault has no entry (or no key) for {{ missing | join(', ') }}: binding it would fail every run of the
+      services that use it - make it first (make twin-key / make edge-account), then converge again
+    quiet: true
+  vars:
+    # an entry that is not there, or is there without the key the alias names
+    missing: >-
+      {%- set out = [] -%}
+      {%- for r in gw_dev_alias_entries.results | default([]) if r.skipped is not defined -%}
+        {%- if r.status != 200 or r.item.value.key not in (r.json.data.data | default({})) -%}
+          {%- set _ = out.append(r.item.key) -%}
+        {%- endif -%}
+      {%- endfor -%}
+      {{ out }}
+  when: dev_overlay | default(false) | bool
+
 - name: Provider and aliases wanted (the iagctl db import form)
   ansible.builtin.set_fact:
     gw_vault_wanted:
