@@ -25,6 +25,14 @@
     headers: {Cookie: "{{ login.cookies_string }}"}
   register: leaf_doc
 
+# a device's own lines (itential/golden-config/<deviceType>/devices/<name>.yml), when it has any: the lab edge's
+# prerequisites (ADR 0068 step 10)
+- name: "Device's own lines for {{ dev.name }}"
+  ansible.builtin.set_fact:
+    dev_own: >-
+      {{ (lookup('ansible.builtin.file', gc_dir ~ '/' ~ tree.key ~ '/devices/' ~ dev.name ~ '.yml') | from_yaml)
+         if (gc_dir ~ '/' ~ tree.key ~ '/devices/' ~ dev.name ~ '.yml') is file else {} }}
+
 - name: "Leaf attributes for {{ dev.name }}"
   ansible.builtin.set_fact:
     leaf: >-
@@ -34,7 +42,10 @@
     leaf_text: >-
       {{ lookup('ansible.builtin.template', gc_dir ~ '/' ~ tree.key ~ '/device.j2',
                 template_vars={'device': dev, 'mgmt_ip': dev.mgmt_ip, 'mgmt_if': dev.mgmt_if,
-                               'interfaces': dev.interfaces | default([])}) }}
+                               'interfaces': dev.interfaces | default([]),
+                               'zone_members': dev_own.zone_members | default({}),
+                               'skip_interfaces': dev_own.skip_interfaces | default([]),
+                               'extra_lines': dev_own.lines | default('')}) }}
 
 - name: "Current leaf spec for {{ dev.name }}"
   ansible.builtin.uri:

@@ -1,0 +1,144 @@
+# Step 10's production change on dc1-wan01 (ADR 0068; F9 decided 2026-10-01): how the prerequisites c8000v.j2 now
+# renders (enterprise.yaml lab_edge) reach the running router - in order, each step through its own Work Center
+# approval, in the owner's window. tests/test_lab_edge_prerequisites.py holds these lines to the difference between the
+# router before (dc1-wan01-before.cfg: the render before this change, which the 2026-10-01 Configuration Manager backup
+# matches apart from display noise) and the new render: every new line is sent, every line the render dropped is
+# removed, and nothing else is sent.
+#
+# Each step is the input of a workflow, as given: device, config (one line per line), reason, and for the revert
+# steps revert_minutes and checks. The checks ping every global BGP neighbour - a broken path still shows
+# Established for its hold time (proved on clab-rtr1, 2026-10-01) - and each branch LAN gateway from Loopback0.
+device: dc1-wan01
+# read before step 1 (show commands only): the zones can drop only traffic between a zoned and an unzoned interface in
+# the same table, so the global table must hold no interface but the ones step 4 zones (and Loopback0 and Null0); the
+# vty range the access-class covers; and no zone-pair yet (Hand Off adds the AWS ones)
+pre_window:
+  - {command: "show ip interface brief | exclude unassigned", expect: "addressed: Gi1 (MGMT), Gi2 (WAN), Gi5, Gi6, Gi7 (INET), Loopback0, Tunnel1, Tunnel2 - nothing else"}
+  - {command: "show line | include VTY", expect: "VTY lines 0-15 only (0-4 and 5-15 carry the access-class)"}
+  - {command: "show zone-pair security", expect: "none"}
+steps:
+  - name: archive
+    # the revert timer needs the archive's path, so this step cannot run under one
+    workflow: Push Configuration with Approval
+    reason: "Step 10 (ADR 0068) 1/4: the configuration archive the revert timer needs, hiding keys in its log"
+    config: |
+      archive
+       path bootflash:rb-
+       maximum 5
+       log config
+        logging enable
+        hidekeys
+
+  - name: management, INET-IN, prefix-lists, zones
+    workflow: Push Configuration with Revert Timer
+    reason: "Step 10 (ADR 0068) 2/4: management ACL on the vty lines, INET-IN closed by default, the VPC kept from every BGP neighbour but dc1-leaf01, the two zones (no members yet)"
+    revert_minutes: 8
+    # INET-IN stays applied throughout: the new layout goes on as INET-IN-NEXT first (the access-group swap is atomic),
+    # INET-IN is rebuilt and swapped back, and INET-IN-NEXT is dropped - Gi7 is never unfiltered
+    config: |
+      ip access-list standard MGMT-ONLY
+       10 permit 10.100.0.0 0.0.0.255
+       20 permit 192.168.68.0 0.0.3.255
+      line vty 0 4
+       access-class MGMT-ONLY in vrf-also
+      line vty 5 15
+       access-class MGMT-ONLY in vrf-also
+      ip access-list extended INET-IN-NEXT
+       10 deny ip any any fragments
+       20 deny udp any host 172.29.129.250 eq isakmp log
+       30 deny udp any host 172.29.129.250 eq non500-isakmp log
+       40 permit icmp any host 172.29.129.250 echo-reply
+       50 permit icmp any host 172.29.129.250 unreachable
+       60 permit icmp any host 172.29.129.250 time-exceeded
+       1000 deny ip any any log
+      interface GigabitEthernet7
+       ip access-group INET-IN-NEXT in
+      no ip access-list extended INET-IN
+      ip access-list extended INET-IN
+       10 deny ip any any fragments
+       20 deny udp any host 172.29.129.250 eq isakmp log
+       30 deny udp any host 172.29.129.250 eq non500-isakmp log
+       40 permit icmp any host 172.29.129.250 echo-reply
+       50 permit icmp any host 172.29.129.250 unreachable
+       60 permit icmp any host 172.29.129.250 time-exceeded
+       1000 deny ip any any log
+      interface GigabitEthernet7
+       ip access-group INET-IN in
+      no ip access-list extended INET-IN-NEXT
+      ip prefix-list NO-AWS-VPC seq 5 deny 10.0.0.0/16 le 32
+      ip prefix-list NO-AWS-VPC seq 10 permit 0.0.0.0/0 le 32
+      router bgp 65100
+       address-family ipv4
+        neighbor 10.101.2.250 prefix-list NO-AWS-VPC out
+        neighbor 10.103.100.2 prefix-list NO-AWS-VPC out
+        neighbor 10.103.100.6 prefix-list NO-AWS-VPC out
+      zone security INSIDE
+      zone security AWS
+    checks: &checks
+      bgp_established: [10.101.2.250, 10.101.3.2, 10.103.100.2, 10.103.100.6]
+      pings:
+        - {target: 10.101.2.250}
+        - {target: 10.101.3.2}
+        - {target: 10.103.100.2}
+        - {target: 10.103.100.6}
+        - {target: 10.102.17.1, source: Loopback0}
+        - {target: 10.102.33.1, source: Loopback0}
+      settle_seconds: 60
+
+  - name: master key
+    # never through Itential: the owner types it (spec Appendix A), so the branch keyring is stored as type 6
+    by_hand: |
+      key config-key password-encrypt
+      password encryption aes
+      end
+      write memory
+
+  - name: zone membership
+    workflow: Push Configuration with Revert Timer
+    reason: "Step 10 (ADR 0068) 4/4: every global-table transit interface into zone INSIDE (the BGP checks must hold before the confirm)"
+    # longer than a Hand Off push's 5: BGP has to stay up through the settle before the confirm (spec)
+    revert_minutes: 10
+    config: |
+      interface GigabitEthernet5
+       zone-member security INSIDE
+      interface GigabitEthernet6
+       zone-member security INSIDE
+      interface Tunnel1
+       zone-member security INSIDE
+      interface Tunnel2
+       zone-member security INSIDE
+    checks: *checks
+    # every check above starts or ends on the router itself, which the zones never inspect: forwarding THROUGH it is
+    # proved right after the confirm, and if any of it fails, the inverse goes back through the same workflow at once
+    # each probe counts only once its path is proved to cross dc1-wan01 (a branch learns the DC range from both edges,
+    # so S3.5 alone can pass through dc1-wan02); at least one probe must count, and every one that counts must pass
+    transit_proof:
+      - device: dc1-leaf01   # its direct eBGP peer: the branch LANs via dc1-wan01's Gi6 -> Tunnel1/2 (INSIDE to INSIDE)
+        path: {read: "show ip route 10.102.17.1", via: 10.101.3.1}
+        probe: "ping 10.102.17.1 source 10.101.3.2"
+      - device: dc1-leaf01
+        path: {read: "show ip route 10.102.33.1", via: 10.101.3.1}
+        probe: "ping 10.102.33.1 source 10.101.3.2"
+      - device: br1-wan01    # Tunnel1 -> Gi6, when br1 prefers dc1-wan01
+        path: {read: "show ip cef 10.101.3.2", via: 10.103.100.1}
+        probe: "traceroute 10.101.3.2 source 10.102.17.1"
+      - device: br2-wan01
+        path: {read: "show ip cef 10.101.3.2", via: 10.103.100.5}
+        probe: "traceroute 10.101.3.2 source 10.102.33.1"
+      - device: verify
+        path: null
+        probe: "verify/test-04-topology.sh: S3.4 (BGP and tunnels) and S3.5 (branch host to DC host), whichever edge it takes"
+    inverse: |
+      interface GigabitEthernet5
+       no zone-member security INSIDE
+      interface GigabitEthernet6
+       no zone-member security INSIDE
+      interface Tunnel1
+       no zone-member security INSIDE
+      interface Tunnel2
+       no zone-member security INSIDE
+
+# after step 4: the revert timer's archive snapshots from step 2 predate AES encryption (step 3), so they hold the branch
+# keyring's key in clear; hidekeys masks only the change log. The owner removes them (dir bootflash: | include rb-,
+# then delete /force each), and refreshes the Configuration Manager backup and the prod snapshot (spec Appendix A, 4)
+after_window: [remove the step-2 archive snapshots, refresh the Configuration Manager backup, make prod-snapshot MODE=save]

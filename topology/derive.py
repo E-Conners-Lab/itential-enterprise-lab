@@ -125,6 +125,19 @@ def _aggregate(topo: dict, site: str) -> dict | None:
     return {"prefix": prefix, "net": str(net.network_address), "mask": str(net.netmask)}
 
 
+def lab_edge(topo: dict, name: str) -> dict | None:
+    """The lab edge's prerequisite values (lab_edge, ADR 0068 step 10), with each management source as the network
+    and wildcard a standard ACL takes; None for every other router."""
+    edge = (topo.get("lab_edge") or {}).get(name)
+    if not edge:
+        return None
+    nets = [ipaddress.ip_network(n) for n in edge["mgmt_allow"]]
+    return {
+        **edge,
+        "mgmt_acl": [{"net": str(n.network_address), "wildcard": str(n.hostmask)} for n in nets],
+    }
+
+
 def node_internet_ports(topo: dict, name: str) -> list[dict]:
     """This node's ports on an EVE-NG cloud network (internet_ports, ADR 0068): device name, VRF, address, gateway."""
     out = []
@@ -176,8 +189,10 @@ def render_context(topo: dict, name: str) -> dict:
         "svi100": None,
         "evpn_peers": [],
         "internet": [],
+        "lab_edge": None,
     }
     if node["platform"] == "c8000v":
+        ctx["lab_edge"] = lab_edge(topo, name)
         ctx["asn"] = site_asn(routing, site)
         ctx["internet"] = node_internet_ports(topo, name)
         wan = _wan_end(topo, name)
@@ -310,6 +325,20 @@ def interfaces(topo: dict) -> dict[str, list[dict]]:
                     "address": p["address"],
                     "vrf": p["vrf"],
                     "peer": p["network"],
+                }
+            )
+        edge = (topo.get("lab_edge") or {}).get(name)
+        if edge and edge.get("tunnel"):
+            # NetBox only: Hand Off AWS VPN renders and pushes it (it is never in the startup configuration)
+            t = edge["tunnel"]
+            rows.append(
+                {
+                    "name": f"Tunnel{t['id']}",
+                    "kind": "tunnel",
+                    "address": t["address"],
+                    "vrf": None,
+                    "description": t["description"],
+                    "peer": "cloud-aws",
                 }
             )
         for t in ctx["tunnels"]:

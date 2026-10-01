@@ -207,6 +207,10 @@ twin's "internet": clab-rtr1 Gi4 .2, the NAT's "EIP" .20) and 10.0.1.0/24 (insid
 
 | Prefix | Site | Role | Purpose |
 |---|---|---|---|
+| `10.0.0.0/16` | AWS us-east-1 | cloud | AWS VPC (pinned range) |
+| `10.0.64.0/20` | AWS us-east-1 | cloud | AWS VPC private subnet |
+| `10.0.80.0/20` | AWS us-east-1 | cloud | AWS VPC private subnet |
+| `169.254.10.0/30` | WAN | wan-transit | Tunnel10 inner /30: dc1-wan01 .1, AWS .2 |
 | `10.103.0.0/24` | WAN | wan-transit | ISP-to-site /30s |
 | `10.103.100.0/24` | WAN | wan-transit | GRE/IPsec tunnels |
 | `10.103.255.0/24` | WAN | wan-transit | router loopbacks |

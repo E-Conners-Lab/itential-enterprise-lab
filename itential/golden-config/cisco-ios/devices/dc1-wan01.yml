@@ -1,0 +1,40 @@
+# dc1-wan01's own Golden Config lines (ADR 0068 step 10): the lab edge's prerequisites, as the running configuration
+# shows them, so the nightly compliance plan flags any that a rebuild or a hand edit loses. tasks/golden-config-device.yml
+# merges zone_members into device.j2's interface blocks and appends `lines`. Every line here is one the template
+# renders (tests/test_lab_edge_prerequisites.py); `hidekeys` is not one of them - IOS-XE shows it only with `all` - and
+# INET-IN's slots 20 and 30 are Hand Off's to change, so they are not pinned.
+# Tunnel10 is Hand Off AWS VPN's: NetBox holds it for the read-back, but the router has it only after a Hand Off (never
+# after a rebuild), so it is no Golden Config requirement
+skip_interfaces: [Tunnel10]
+zone_members:
+  GigabitEthernet5: INSIDE
+  GigabitEthernet6: INSIDE
+  Tunnel1: INSIDE
+  Tunnel2: INSIDE
+lines: |
+  <e/>password encryption aes
+  <e/>zone security INSIDE
+  <e/>zone security AWS
+  <e/>ip access-list standard MGMT-ONLY
+   10 permit 10.100.0.0 0.0.0.255
+   20 permit 192.168.68.0 0.0.3.255
+  <e/>line vty 0 4
+   access-class MGMT-ONLY in vrf-also
+  <e/>line vty 5 15
+   access-class MGMT-ONLY in vrf-also
+  <e/>archive
+   path bootflash:rb-
+   maximum 5
+  <e/>ip access-list extended INET-IN
+   10 deny ip any any fragments
+   40 permit icmp any host 172.29.129.250 echo-reply
+   50 permit icmp any host 172.29.129.250 unreachable
+   60 permit icmp any host 172.29.129.250 time-exceeded
+   1000 deny ip any any log
+  <e/>ip prefix-list NO-AWS-VPC seq 5 deny 10.0.0.0/16 le 32
+  <e/>ip prefix-list NO-AWS-VPC seq 10 permit 0.0.0.0/0 le 32
+  <e/>router bgp 65100
+   address-family ipv4
+    neighbor 10.101.2.250 prefix-list NO-AWS-VPC out
+    neighbor 10.103.100.2 prefix-list NO-AWS-VPC out
+    neighbor 10.103.100.6 prefix-list NO-AWS-VPC out

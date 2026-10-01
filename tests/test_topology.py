@@ -396,10 +396,18 @@ def test_only_the_dc_edge_renders_the_internet_port(topo: dict) -> None:
     lines = wan01.splitlines()
     assert lines.index("vrf definition INET") < lines.index(" vrf forwarding INET")
     assert lines.index("ip access-list extended INET-IN") < lines.index(" ip access-group INET-IN in")
-    # the ACL admits IKE, NAT-T and ESP and ends in a deny
+    # closed by default (step 10): lab-edge's layout - fragments first, the two IKE slots Hand Off swaps for its peer,
+    # the replies to the router's own checks, deny-and-log last; nothing admits IKE, NAT-T or ESP from anywhere
     acl = lines[lines.index("ip access-list extended INET-IN") : lines.index("interface GigabitEthernet7")]
-    assert " permit udp any any eq isakmp" in acl and " permit udp any any eq non500-isakmp" in acl
-    assert " permit esp any any" in acl and acl[-2] == " deny ip any any"
+    assert acl[1:-1] == [
+        " 10 deny ip any any fragments",
+        " 20 deny udp any host 172.29.129.250 eq isakmp log",
+        " 30 deny udp any host 172.29.129.250 eq non500-isakmp log",
+        " 40 permit icmp any host 172.29.129.250 echo-reply",
+        " 50 permit icmp any host 172.29.129.250 unreachable",
+        " 60 permit icmp any host 172.29.129.250 time-exceeded",
+        " 1000 deny ip any any log",
+    ]
     for name, text in rendered.items():
         if name != "dc1-wan01":
             assert "INET" not in text, f"{name} renders the internet VRF"

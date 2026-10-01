@@ -81,6 +81,13 @@ Two things `make phase-network-topology` deliberately does **not** run:
 `push-configs` **wipes and restarts** the nodes it touches, so it is a considered action after a topology
 or template change, never part of a routine build. Use `--only <node> <node>` to limit it.
 
+The lab edge (the router under `lab_edge` in `topology/enterprise.yaml`, ADR 0068) comes back from `push-configs`
+with every prerequisite of Hand Off AWS VPN but two, by design: the type-6 master key, which lives only in the
+router's private NVRAM and never in a template, and the AWS tunnel, which Hand Off renders and pushes. After a
+rebuild of that router, type the master key by hand first (ADR 0068, the owner's master-key step: `key config-key
+password-encrypt` with no argument, so it never reaches the history), then run Hand Off AWS VPN again. Until both are
+done its tunnel is down, and Hand Off's precheck refuses to run (the keyrings are not stored as type 6).
+
 ---
 
 ## What "done" looks like
