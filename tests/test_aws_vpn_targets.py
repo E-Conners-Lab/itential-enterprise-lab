@@ -350,3 +350,12 @@ def test_s8_3b_passes_only_on_the_tiers_own_alias_set(gateway, monkeypatch, tier
     other = {**base, **dev} if tier == "prod" else base  # the other tier's set: prod must never hold the dev aliases
     world["secrets"] = _export(other, name)
     assert vc.c_gateway() is False
+
+
+def test_the_terraform_run_export_waits_out_a_gateway_restart() -> None:
+    """The first converge that bound a new alias (dc1-wan01's, 2026-10-01) restarted the Gateway and then failed the
+    very next export read: the read retries until the Platform answers again."""
+    tasks = yaml.safe_load((ROOT / "ansible" / "playbooks" / "tasks" / "gateway-terraform-run.yml").read_text())
+    first = tasks[0]
+    assert first["name"] == "Gateway configuration now (terraform-run)"
+    assert "status" in first["until"] and first["retries"] * first["delay"] >= 60 and first["no_log"] is True
