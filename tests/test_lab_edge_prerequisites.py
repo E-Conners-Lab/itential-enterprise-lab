@@ -321,3 +321,14 @@ def test_the_pre_window_reads_change_nothing_and_the_master_key_step_saves() -> 
     by_hand = [s for s in CHANGES["steps"] if "by_hand" in s][0]["by_hand"].splitlines()
     assert by_hand[-2:] == ["end", "write memory"]  # a later rollback must not take the master key step with it
     assert "remove the step-2 archive snapshots" in CHANGES["after_window"]
+
+
+def test_netconf_and_restconf_admit_only_the_management_sources() -> None:
+    """NETCONF and RESTCONF do not use the vty lines; their service-level ACLs (proved on clab-rtr1, IOS-XE 17.13,
+    2026-10-01: outside the list NETCONF gets no session and RESTCONF answers 401; inside, a hello and 200)."""
+    for line in ("netconf-yang ssh ipv4 access-list name MGMT-ONLY", "restconf ipv4 access-list name MGMT-ONLY"):
+        assert line in A and line not in B
+        assert f"<e/>{line}" in GC_DEVICE["lines"]
+    twin = (ROOT / "clab" / "configs" / "c8000v.cfg.j2").read_text()
+    assert twin.index("ip access-list standard MGMT-ONLY") < twin.index("netconf-yang ssh ipv4 access-list name MGMT-ONLY")
+    assert "restconf ipv4 access-list name MGMT-ONLY" in twin
