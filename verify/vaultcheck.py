@@ -279,6 +279,107 @@ def c_cdp_pin() -> bool:
     return all(checks.values())
 
 
+
+# lab-edge-push's own checks on what the Gateway hands it (cloud-devops-pipeline itential/lab-edge-push.py PSK, VERSION)
+PUSH_PSK = re.compile(r"[A-Za-z0-9._+/=-]{32,}")
+PUSH_VERSION = re.compile(r"[A-Za-z0-9-]{1,64}")
+
+
+def _open_targets() -> dict[str, dict]:
+    return {n: t for n, t in V["aws_vpn"]["targets"].items() if t["window"] == "open"}
+
+
+def _pinned_source() -> str:
+    """cloud-devops-pipeline's lab_edge_render.py at the Gateway's pin (stdlib only), read from GitHub."""
+    import base64
+
+    repo, pin = VAULT["git"]["repo"], V["terraform_run"]["repository"]["reference"]
+    return base64.b64decode(gh(f"repos/{repo}/contents/itential/lab_edge_render.py?ref={pin}", "--jq", ".content")).decode()
+
+
+# run in its own interpreter with an empty environment: this process holds the Vault administrator token and the
+# Platform password, and fetched code never runs beside them
+_RENDER_DRIVER = """
+import json, sys, types
+d = json.load(sys.stdin)
+r = types.ModuleType("lab_edge_render")
+exec(compile(d["code"], "lab_edge_render.py", "exec"), r.__dict__)
+t = r.check_target(d["target"])
+print(r.sha256(r.render(t, r.check_outputs(t, d["outputs"]))))
+"""
+
+
+def _pinned_sha(target: dict, outputs: dict) -> str:
+    """The second source for the block the Gateway renders: the pinned module's SHA-256 for the same inputs."""
+    run = subprocess.run([sys.executable, "-I", "-c", _RENDER_DRIVER], env={}, capture_output=True, text=True,
+                         timeout=60, check=False,
+                         input=json.dumps({"code": _pinned_source(), "target": target, "outputs": outputs}))
+    if run.returncode != 0:
+        raise RuntimeError(f"the pinned render failed: {run.stderr.strip().splitlines()[-1:]}")
+    return run.stdout.strip()
+
+
+def _service(name: str, params: dict) -> tuple[int | None, dict]:
+    d = Platform().call("POST", "/gateway_manager/v1/services/run",
+                        {"serviceName": name, "clusterId": CLUSTER, "params": params})
+    if d.get("error"):
+        print(f"  {name}: runService error: {str(d['error'].get('data'))[:300]}")
+        return None, {}
+    res = d.get("result") or {}
+    return res.get("return_code"), res.get("stdout_json") or {}
+
+
+def c_lab_edge() -> bool:
+    """AWS VPN step 6 (S13.2d) on the dev tier: each open target's tunnel key in Vault, the Gateway's reader may read
+    it and the Platform's may not, and the three step-6 services run on the dev Gateway with their aliases resolved.
+    The probes never reach a device or AWS: lab-edge renders (no device), lab-edge-push is handed a SHA-256 that
+    cannot match and refuses before it reads the key or logs in, and aws-vpn-monitor is handed an instance ID it
+    refuses before any AWS call. A refused run still proves the Gateway resolved every alias bound to the service.
+    The rendered block's SHA-256 must equal the pinned render module's, run here. Prints yes/no and hashes only."""
+    if os.environ.get("VAULT_TIER") == "prod":
+        print("  FAIL the step-6 services and aliases are dev-tier only (dev_overlay): run this on the dev tier")
+        return False
+    targets, ok = _open_targets(), True
+    if not targets:
+        print("  FAIL no target is open in aws_vpn.targets")
+        return False
+    for name, entry in sorted(targets.items()):
+        path = entry["psk_path"]
+        _, d = vault("GET", kv(path), admin())
+        data = (d or {}).get("data", {}).get("data", {})
+        checks = {
+            f"{path} holds a key lab-edge-push accepts": bool(PUSH_PSK.fullmatch(str(data.get("psk", "")))),
+            f"{path} holds a valid key version": bool(PUSH_VERSION.fullmatch(str(data.get("version", "")))),
+        }
+        for role, want in (("itential-gateway", ["read"]), ("itential-platform", ["deny"])):
+            token = _policy_token(role)
+            try:
+                _, c = vault("POST", "sys/capabilities-self", token, {"paths": [kv(path)]})
+            finally:
+                vault("POST", "auth/token/revoke-self", token)
+            got = sorted((c or {}).get("capabilities", []))
+            checks[f"{role} may {want} on {path} (has {got})"] = got == want
+        target_json, outputs_json = json.dumps(entry["target"]), json.dumps(entry["outputs"])
+        want_sha = _pinned_sha(entry["target"], entry["outputs"])
+        rc, out = _service("lab-edge", {"action": "render", "target_json": target_json, "outputs_json": outputs_json})
+        checks["lab-edge render answers 0 for " + name] = rc == 0 and out.get("target") == name
+        checks[f"lab-edge's SHA-256 equals the pinned module's ({want_sha[:12]})"] = out.get("sha256") == want_sha
+        psk = data.get("psk")
+        checks["the masked block holds no key"] = bool(out.get("block_masked")) and not (psk and psk in json.dumps(out))
+        wrong = "0" * 64 if want_sha != "0" * 64 else "1" * 64
+        rc, out = _service("lab-edge-push", {"action": "push", "target_json": target_json, "outputs_json": outputs_json,
+                                             "sha256": wrong, "username": entry["username"]})
+        checks["lab-edge-push ran with its aliases and refused before the device"] = (
+            rc == 1 and out.get("sent") is False and out.get("key_sent") is False
+            and "SHA-256 differs" in str(out.get("error")) and out.get("router") == "unchanged: nothing was sent")
+        for check, passed in checks.items():
+            print(f"  {'ok  ' if passed else 'FAIL'} {check}")
+            ok &= passed
+    rc, out = _service("aws-vpn-monitor", {"action": "ready", "instance_id": "not-an-instance"})
+    monitor = rc == 1 and "not an EC2 instance ID" in str(out.get("error"))
+    print(f"  {'ok  ' if monitor else 'FAIL'} aws-vpn-monitor ran with its aliases and refused before AWS")
+    return ok and monitor
+
 def c_seeded() -> bool:
     _, d = vault("GET", kv("devices/automation"), admin())
     same = sha(d["data"]["data"]["password"]) == sha(os.environ["DEVICE_PASSWORD"])
@@ -329,11 +430,15 @@ def c_gateway() -> bool:
         ok = prov[0].get("role-id") == rid["data"]["role_id"]
     print(f"provider {VAULT['gateway_provider']}: {'as the oracle says' if ok else [{k: v for k, v in x.items() if k != 'role-id'} for x in prov]}"
           f"{', role ID matches Vault' if ok and os.environ.get('VAULT_ADMIN_TOKEN') else ''}")
-    aliases = {s["name"]: (s["secret"], s.get("key")) for s in exp.get("secrets") or []
-               if s.get("provider") == VAULT["gateway_provider"]}
-    want = {k: (v["path"], v["key"]) for k, v in VAULT["gateway_aliases"].items()}
-    print(f"aliases: {sorted(aliases)}")
-    return ok and aliases == want
+    got = {s["name"]: (s["secret"], s.get("key")) for s in exp.get("secrets") or []
+           if s.get("provider") == VAULT["gateway_provider"]}
+    # the dev tier also holds the step-6 aliases (versions.yaml vault.dev_gateway_aliases, imported where dev_overlay is)
+    dev = VAULT.get("dev_gateway_aliases", {}) if os.environ.get("VAULT_TIER") != "prod" else {}
+    want = {k: (v["path"], v["key"]) for k, v in {**VAULT["gateway_aliases"], **dev}.items()}
+    print(f"aliases: {sorted(got)}" + ("" if got == want else
+          f"; missing {sorted(set(want) - set(got))}, extra {sorted(set(got) - set(want))}, "
+          f"different {sorted(k for k in set(got) & set(want) if got[k] != want[k])}"))
+    return ok and got == want
 
 
 def c_devices() -> bool:
@@ -476,7 +581,7 @@ def c_sealed() -> bool:
     return ok and same
 
 
-CHECKS = {"sealed": c_sealed, "health": c_health, "no-token": c_no_token, "policies": c_policies, "bound": c_bound, "aws-psk": c_aws_psk, "terraform-run": c_terraform_run, "cdp-pin": c_cdp_pin, "seeded": c_seeded,
+CHECKS = {"sealed": c_sealed, "health": c_health, "no-token": c_no_token, "policies": c_policies, "bound": c_bound, "aws-psk": c_aws_psk, "terraform-run": c_terraform_run, "cdp-pin": c_cdp_pin, "lab-edge": c_lab_edge, "seeded": c_seeded,
           "references": c_references, "gateway": c_gateway, "devices": c_devices, "platform-read": c_platform_read,
           "rotation": c_rotation, "hosts": c_hosts}
 

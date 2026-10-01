@@ -55,7 +55,10 @@
     cdp_repo: >-
       {{ lookup('ansible.builtin.env', 'CDP_REPO_DIR')
          or (lookup('ansible.builtin.env', 'HOME') ~ '/PycharmProjects/cloud-devops-pipeline') }}
-    cdp_pin: "{{ (lookup('ansible.builtin.file', '../../itential/versions.yaml') | from_yaml).terraform_run.repository.reference }}"
+    lab: "{{ lookup('ansible.builtin.file', '../../itential/versions.yaml') | from_yaml }}"
+    cdp_pin: "{{ lab.terraform_run.repository.reference }}"
+    # the entry Hand Off reads for the twin's router (itential/versions.yaml aws_vpn.targets, make twin-key)
+    twin_psk_path: "{{ lab.aws_vpn.targets[aws_twin.router].psk_path }}"
     twin_template: terraform/modules/vpn/swanctl.conf.tftpl
     # one startup-config template per kind; a kind without one fails the render instead of borrowing another's
     config_template: {cisco_c8000v: c8000v, arista_veos: veos}
@@ -159,19 +162,98 @@
       register: cfg_files
       no_log: true
 
-    # --- the twin's files (no device password; the twin's key stays on this VM, 0600, never in the repo or a job) ---
-    - name: Twin key, generated once on the clab VM (the dev twin's own; build step 6 moves it to the dev Vault)
+    # --- the twin's files (no device password). The twin's key lives in the dev Vault (make twin-key), the entry
+    # Hand Off reads through the Gateway for clab-rtr1; this VM holds only the copy the twin reads, 0600. On a clean
+    # build this play runs before itential-dev and its Vault exist (make phase-itential): the twin then starts on a
+    # placeholder key made once here, which no router holds, until make vault-dev, make twin-key and this play again.
+    # Every twin file is a single-file bind mount (clab/dev.clab.yml.j2), so each is written in place: a copy's
+    # rename would leave the running container on the old file.
+    - name: Dev Vault root token (beside the dev Vault on itential-dev, vault-dev.yml)
+      ansible.builtin.slurp:
+        src: "{{ lab.vault.dev.dir }}/init.json"
+      # delegate_to is resolved before `when`: with no itential-dev yet it must still name a host for the skip
+      delegate_to: "{{ (groups['itential-host'] | default([])) | first | default('localhost') }}"
+      run_once: true
+      when: groups['itential-host'] | default([]) | length > 0
+      register: dev_vault_init
+      failed_when: false
+      no_log: true
+
+    - name: Twin key, read from the dev Vault (on the Mac, with the lab CA)
+      ansible.builtin.uri:
+        url: "{{ lab.vault.dev.url }}/v1/{{ lab.vault.kv_mount }}/data/{{ twin_psk_path }}"
+        headers:
+          X-Vault-Token: "{{ (dev_vault_init.content | b64decode | from_json).root_token }}"
+        ca_path: "{{ playbook_dir }}/../../docs/lab-root-ca.crt"
+        status_code: [200, 404]
+      delegate_to: localhost
+      become: false
+      run_once: true
+      when: dev_vault_init.content is defined
+      register: twin_key_read
+      failed_when: false
+      no_log: true
+
+    - name: Where the twin's key comes from on this run (no key value, only the source)
+      ansible.builtin.set_fact:
+        twin_key_vault_status: "{{ twin_key_read.status | default('no dev Vault yet') }}"
+
+    - name: The key is one the twin and lab-edge-push accept (32+ of strongSwan's secret characters)
+      ansible.builtin.assert:
+        that: twin_key_read.json.data.data.psk is match('^[A-Za-z0-9._+/=-]{32,}$')
+        quiet: true
+      when: twin_key_vault_status == 200
+      no_log: true
+
+    # the key goes in on stdin, never in argv
+    - name: Twin key copied in place on the clab VM (0600)
+      ansible.builtin.shell:
+        cmd: >-
+          umask 077; new=$(cat);
+          if [ -f psk ] && [ "$(cat psk)" = "$new" ]; then echo same;
+          else printf '%s' "$new" > psk && echo changed; fi; chmod 0600 psk
+        chdir: "{{ twin_dir }}"
+        stdin: "{{ twin_key_read.json.data.data.psk }}"
+        stdin_add_newline: false
+      when: twin_key_vault_status == 200
+      register: twin_key
+      changed_when: twin_key.stdout == 'changed'
+      failed_when: twin_key.rc != 0 or twin_key.stdout not in ['same', 'changed']
+      no_log: true
+
+    - name: Twin key placeholder, made once on the clab VM while the dev Vault has none to give
       ansible.builtin.shell:
         cmd: umask 077 && head -c 64 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | head -c 40 > psk && test -s psk
         chdir: "{{ twin_dir }}"
         creates: "{{ twin_dir }}/psk"
+      when: twin_key_vault_status != 200
+      register: twin_key_placeholder
       no_log: true
 
-    - name: Twin and NAT values (clab/versions.yaml aws_twin)
-      ansible.builtin.copy:
-        dest: "{{ twin_dir }}/{{ item.file }}"
-        content: "{{ item.content }}"
-        mode: "0600"
+    # `creates:` and a failed write both pass when Docker made psk a directory (a bind of a missing file does)
+    - name: The twin's key file is a regular, non-empty file
+      ansible.builtin.command: test -f psk -a -s psk
+      args:
+        chdir: "{{ twin_dir }}"
+      changed_when: false
+      no_log: true
+
+    - name: Say so when the twin is not on the dev Vault's key
+      ansible.builtin.debug:
+        msg: >-
+          the dev Vault gave no twin key ({{ twin_key_vault_status }}): the twin keeps its current key or a placeholder;
+          run make vault-dev and make twin-key, then this play again
+      when: twin_key_vault_status != 200
+
+    - name: Twin and NAT values written in place (clab/versions.yaml aws_twin)
+      ansible.builtin.shell:
+        cmd: >-
+          umask 077; new=$(cat);
+          if [ -f {{ item.file }} ] && [ "$(cat {{ item.file }})" = "$new" ]; then echo same;
+          else printf '%s\n' "$new" > {{ item.file }} && echo changed; fi; chmod 0600 {{ item.file }}
+        chdir: "{{ twin_dir }}"
+        stdin: "{{ item.content }}"
+        stdin_add_newline: false
       loop:
         - file: nat.env
           content: |
@@ -193,6 +275,14 @@
       loop_control:
         label: "{{ item.file }}"
       register: twin_files
+      changed_when: twin_files.stdout == 'changed'
+      failed_when: twin_files.rc != 0 or twin_files.stdout not in ['same', 'changed']
+
+    - name: The twin's files that changed on this run
+      ansible.builtin.set_fact:
+        twin_changed: >-
+          {{ (twin_files.results | selectattr('changed') | map(attribute='item.file') | list)
+             + (['psk'] if twin_key is changed or twin_key_placeholder is changed else []) }}
 
     - name: Device SSH helper (verify/devcmd.py, the same code the verify runs from the Mac)
       ansible.builtin.copy:
@@ -241,11 +331,11 @@
     - name: Twin reloaded in place on a changed file
       ansible.builtin.command: docker exec {{ item.container }} /usr/local/sbin/{{ item.script }} reload
       loop:
-        - {container: "clab-dev-{{ aws_twin.nat.name }}", script: nat.sh}
-        - {container: "clab-dev-{{ aws_twin.twin.name }}", script: twin.sh}
+        - {container: "clab-dev-{{ aws_twin.nat.name }}", script: nat.sh, files: [nat.env]}
+        - {container: "clab-dev-{{ aws_twin.twin.name }}", script: twin.sh, files: [twin.env, swanctl.conf.template, psk]}
       loop_control:
         label: "{{ item.container }}"
-      when: deployed is skipped and twin_files is changed
+      when: deployed is skipped and twin_changed | intersect(item.files) | length > 0
       changed_when: true
 
     - name: Allowlist re-applied after the deploy (clab-host.yml installed it)

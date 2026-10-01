@@ -68,10 +68,12 @@
           secrets-endpoint: "{{ vault.kv_mount }}/data"
       secrets: "{{ gw_aliases }}"
   vars:
+    # the step-6 aliases only on the dev tier (versions.yaml vault.dev_gateway_aliases)
+    gw_alias_map: "{{ vault.gateway_aliases | combine(vault.dev_gateway_aliases if dev_overlay | default(false) | bool else {}) }}"
     # sorted by name, as the comparison below sorts the export
     gw_aliases: >-
       {%- set out = [] -%}
-      {%- for name, ref in vault.gateway_aliases.items() | sort -%}
+      {%- for name, ref in gw_alias_map.items() | sort -%}
         {%- set _ = out.append({'name': name, 'provider': vault.gateway_provider, 'secret': ref.path, 'key': ref.key}) -%}
       {%- endfor -%}
       {{ out }}
