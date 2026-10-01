@@ -68,9 +68,9 @@ terraform_run:
     # A full commit SHA, never a branch or tag (security review 2026-09-29, ITL-01): the Gateway runs this code with the
     # AWS key, so new cloud-devops-pipeline code runs only after a lab PR moves the pin, to a commit on its protected
     # main whose required checks passed (verify S13.2c). Measured on dev 2026-09-29: an older SHA is checked out as
-    # given, an unknown one fails the service ("reference not found"). 67ec6af = main after cdp #23: the step-6
-    # services (#15-#22); lab-edge-push saves only once the tunnel is up (on a new SA after a key change).
-    reference: "67ec6afc34a23517c233d75e904ab3cca5d49708"
+    # given, an unknown one fails the service ("reference not found"). 590cd0a = main after cdp #26: the step-6
+    # services (#15-#23) and config-push-revert (#25) with its `check` action and the Gateway-limit guard (#26).
+    reference: "590cd0a20f32414a8825ba5a602cb95bfeae0b68"
   executable_object:
     name: python-3-12
     description: "the runner image's Python 3.12 (ADR 0038)"
@@ -116,6 +116,13 @@ terraform_run:
         - {name: lab-automation-password, type: env, target: LAB_EDGE_PASSWORD_CLAB_RTR1}
         - {name: aws-vpn-psk-clab-rtr1, type: env, target: LAB_EDGE_PSK_CLAB_RTR1}
         - {name: aws-vpn-psk-version-clab-rtr1, type: env, target: LAB_EDGE_PSK_VERSION_CLAB_RTR1}
+    - name: config-push-revert
+      description: "Approved IOS-XE lines under a revert timer, kept only if the router still works (step 10, F9 2a)"
+      filename: itential/config-push-revert.py
+      working-directory: "."
+      # exactly the routers in revert_push.targets: their passwords, nothing else
+      secrets:
+        - {name: lab-automation-password, type: env, target: LAB_EDGE_PASSWORD_CLAB_RTR1}
     - name: aws-vpn-monitor
       description: "The AWS end's view: readiness (CheckSucceeded) and Verify's signal (the monitor Lambda + metric)"
       filename: itential/aws-vpn-monitor.py
@@ -123,6 +130,15 @@ terraform_run:
       secrets:
         - {name: aws-terraform-access-key-id, type: env, target: AWS_ACCESS_KEY_ID}
         - {name: aws-terraform-secret-access-key, type: env, target: AWS_SECRET_ACCESS_KEY}
+
+# Push Configuration with Revert Timer (step 10, F9 decision 2a, owner choice 2026-10-01: a sibling of Push Configuration
+# with Approval, which stays untouched for its agent and Lifecycle Manager callers): the routers it may change and how
+# config-push-revert logs in to each (`username`; its password the Gateway alias config-push-revert binds, one per
+# target). A router joins only with its alias bound and `archive` configured (the revert timer needs it): dc1-wan01 in
+# step 10, after its first plain push adds the archive.
+revert_push:
+  targets:
+    clab-rtr1: {mgmt_host: 10.100.2.11, username: automation}
 
 # The lab edge targets Hand Off and Verify AWS VPN may name (step 6; the workflows' target enum). `target` is exactly
 # what cloud-devops-pipeline's lab_edge_render.check_target takes (passed as --target_json, every value checked again
@@ -272,6 +288,7 @@ workflows:
   show_command: Run Show Command on a Device # S4c.7 (ADR 0038)
   show_all: Run Show Command on All Devices # S4d.5: one show command on every lab device, parsed per device (ADR 0046)
   config_push: Push Configuration with Approval # S4d: the only write path, Work Center approval (ADR 0040/0041)
+  config_push_revert: Push Configuration with Revert Timer # step 10 (F9 2a): approval, revert timer, checks, confirm or roll back
   deploy_aws_vpn: Deploy AWS VPN # S13: plan, Work Center approval, apply that plan, PSK to Vault (ADR 0068)
   verify_aws_vpn: Verify AWS VPN # S13 criterion 4: router, AWS monitor and data plane must agree; reads only (build step 7)
   hand_off_aws_vpn: Hand Off AWS VPN # S13 criterion 3: readiness, render, approval, push with the Vault key, verify (step 8)
