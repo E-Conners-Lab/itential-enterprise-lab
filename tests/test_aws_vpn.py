@@ -602,6 +602,144 @@ def test_the_journey_orders_legs_by_the_platforms_own_start_time() -> None:
     assert json.loads(out) == [1790829409132, 1790829409132, 0, 0]
 
 
+def _chrome() -> str | None:
+    for name in ("google-chrome", "google-chrome-stable", "chromium", "chromium-browser"):
+        if shutil.which(name):
+            return shutil.which(name)
+    mac = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+    return mac if os.path.exists(mac) else None
+
+
+# The page in headless Chrome against a stubbed Platform: `latest` maps a workflow name to its latest job's id (a missing
+# name has no runs), `jobs` holds the job documents, and signed_out answers every call 401. The probe reads the route,
+# the status line, the log and every URL the page fetched. Served over HTTP: as a file the page runs its preview instead.
+PROBE = """<script>
+window.__calls = [];
+const LATEST = %s, JOBS = %s, SIGNED_OUT = %s;
+window.fetch = async (url) => {
+  url = String(url); window.__calls.push(url);
+  const res = (code, body) => new Response(typeof body === "string" ? body : JSON.stringify(body), { status: code });
+  if (SIGNED_OUT) return res(401, "The specified authorization token is malformed or does not correspond with an active session");
+  const list = url.match(/contains\\[name\\]=([^&]*)/);
+  if (list) { const wf = decodeURIComponent(list[1]); return res(200, { data: LATEST[wf] ? [{ _id: LATEST[wf], name: wf }] : [] }); }
+  const one = url.match(/\\/operations-manager\\/jobs\\/([0-9a-f]{24})$/);
+  return one && JOBS[one[1]] ? res(200, { data: JOBS[one[1]] }) : res(404, {});
+};
+setTimeout(() => {
+  const wp = {};
+  document.querySelectorAll(".wp").forEach((g) => { wp[g.id.slice(3)] = [...g.classList].filter((c) => c !== "wp").join(" "); });
+  document.body.dataset.probe = JSON.stringify({ wp, status: document.getElementById("chart-status").textContent,
+    log: [...document.querySelectorAll("#log li span")].map((s) => s.textContent),
+    jobid: document.getElementById("jobid").textContent, calls: window.__calls });
+}, 12000);
+</script>
+"""
+DEPLOY_DONE = ["1d", "1e", "1f", "2b", "3e", "3f", "30", "4d", "4e", "4f", "5e"]
+HANDOFF_CHECKS = ["10", "4b", "4c", "4d", "5b", "5c"]
+HANDOFF_DONE = [*HANDOFF_CHECKS, "6f", "7c", "74", "7e", "72", "8a", "ee", "92"]
+
+
+def _job(jid: str, workflow: str, start: int, done: list[str], status: str = "complete", running: list[str] = (),
+         variables: dict | None = None) -> dict:
+    tasks = {t: {"status": "complete"} for t in done} | {t: {"status": "running"} for t in running}
+    return {"_id": jid, "name": workflow, "status": status, "metrics": {"start_time": start}, "tasks": tasks,
+            "variables": variables or {}}
+
+
+def _run_page(tmp_path: Path, latest: dict, jobs: list[dict], signed_out: bool = False, query: str = "") -> dict:
+    import html
+    import threading
+    from functools import partial
+    from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
+
+    page = PAGE.read_text()
+    probe = PROBE % (json.dumps(latest), json.dumps({j["_id"]: j for j in jobs}), json.dumps(signed_out))
+    assert page.count("<script>\n(() => {") == 1
+    (tmp_path / "index.html").write_text(page.replace("<script>\n(() => {", probe + "<script>\n(() => {"))
+
+    class Quiet(SimpleHTTPRequestHandler):
+        def log_message(self, *args) -> None:
+            pass
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), partial(Quiet, directory=str(tmp_path)))
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        # no --user-data-dir: headless already uses a throwaway profile, and with one Chrome never exits after the dump
+        url = f"http://127.0.0.1:{server.server_port}/index.html{query}"
+        dom = subprocess.run([_chrome(), "--headless=new", "--disable-gpu", "--no-sandbox", "--virtual-time-budget=15000", "--dump-dom", url],
+                             capture_output=True, text=True, timeout=120).stdout
+    finally:
+        server.shutdown()
+    found = re.search(r'data-probe="([^"]*)"', dom)
+    assert found, "the probe never ran"
+    return json.loads(html.unescape(found.group(1)))
+
+
+def _ids(n: int) -> str:
+    return f"{n:024x}"
+
+
+@pytest.mark.skipif(_chrome() is None, reason="needs Chrome")
+def test_the_page_says_signed_out_instead_of_an_empty_route(tmp_path: Path) -> None:
+    """Dev check 2026-10-01: an expired Platform session answered 401 to every job query and the page showed an empty
+    route under "Ready. Pick a step below." - as if nothing had ever run."""
+    out = _run_page(tmp_path, {}, [], signed_out=True)
+    assert out["status"].startswith("Signed out. Log in to the Platform"), out["status"]
+    assert not any(out["wp"].values())
+
+
+@pytest.mark.skipif(_chrome() is None, reason="needs Chrome")
+def test_the_route_has_no_gap_when_a_middle_leg_is_older(tmp_path: Path) -> None:
+    """A Deploy re-run after the last Hand Off makes that Hand Off stale; a Verify run after both must not be drawn
+    on its own beyond the gap (the re-check of build step 9)."""
+    jobs = [_job(_ids(1), "Deploy AWS VPN", 2000, DEPLOY_DONE), _job(_ids(2), "Hand Off AWS VPN", 1000, HANDOFF_DONE),
+            _job(_ids(3), "Verify AWS VPN", 3000, ["1a", "ee", "5f"])]
+    out = _run_page(tmp_path, {j["name"]: j["_id"] for j in jobs}, jobs)
+    assert [out["wp"][k] for k in ("plan", "approve", "apply", "psk")] == ["done"] * 4
+    assert [out["wp"][k] for k in ("checks", "hoapprove", "push", "tunnel", "verdict")] == [""] * 5
+
+
+@pytest.mark.skipif(_chrome() is None, reason="needs Chrome")
+def test_the_route_ends_where_the_latest_run_stopped(tmp_path: Path) -> None:
+    """A Hand Off rejected today ends the route at its approval, even with a later Verify (from the earlier tunnel)."""
+    jobs = [_job(_ids(1), "Deploy AWS VPN", 1000, DEPLOY_DONE),
+            _job(_ids(2), "Hand Off AWS VPN", 2000, [*HANDOFF_CHECKS, "a0", "a2"], variables={"rejected": True}),
+            _job(_ids(3), "Verify AWS VPN", 3000, ["1a", "ee", "5f"])]
+    out = _run_page(tmp_path, {j["name"]: j["_id"] for j in jobs}, jobs)
+    assert out["wp"]["checks"] == "done" and out["wp"]["hoapprove"] == "rejected"
+    assert out["wp"]["push"] == out["wp"]["tunnel"] == out["wp"]["verdict"] == ""
+
+
+@pytest.mark.skipif(_chrome() is None, reason="needs Chrome")
+def test_the_page_follows_one_running_job(tmp_path: Path) -> None:
+    """Two running legs (a Hand Off waiting for approval, a Verify after it) started two pollers; only the furthest
+    along is followed now, and the other is read once."""
+    jobs = [_job(_ids(1), "Deploy AWS VPN", 1000, DEPLOY_DONE),
+            _job(_ids(2), "Hand Off AWS VPN", 2000, HANDOFF_CHECKS, status="running", running=["6f"]),
+            _job(_ids(3), "Verify AWS VPN", 3000, ["1a"], status="running", running=["ee"])]
+    out = _run_page(tmp_path, {j["name"]: j["_id"] for j in jobs}, jobs)
+    detail = lambda jid: sum(c.endswith(f"/operations-manager/jobs/{jid}") for c in out["calls"])  # noqa: E731
+    assert detail(_ids(2)) == 1, out["calls"]
+    assert detail(_ids(3)) >= 3, out["calls"]
+    assert out["jobid"] == f"Verify AWS VPN: job {_ids(3)}"
+    assert out["wp"]["hoapprove"] == "active" and out["wp"]["verdict"] == "active"
+
+
+@pytest.mark.skipif(_chrome() is None, reason="needs Chrome")
+def test_a_rejected_deploy_is_never_logged_as_stopped(tmp_path: Path) -> None:
+    """Deploy's reject branch sets `error` only when the discard fails (task 70); the page logged "Stopped: ..." before
+    "Rejected." Now the rejection comes first and the discard failure is a note under it."""
+    error = "the rejected plan could not be discarded; it stays in the state bucket until removed"
+    job = _job(_ids(4), "Deploy AWS VPN", 1000, ["1a", "1d", "1e", "1f", "2b", "7a", "7b", "7c", "71", "70", "7d", "7e", "7f"],
+               variables={"rejected": True, "aws_changed": False, "error": error,
+                          "outcome": "rejected in Work Center: the plan was discarded, nothing changed in AWS"})
+    out = _run_page(tmp_path, {}, [job], query=f"?job={_ids(4)}&mode=deploy")
+    assert not any(line.startswith("Stopped") for line in out["log"]), out["log"]
+    assert out["log"][-2:] == ["Rejected. Nothing changed in AWS.", f"Note: {error}."]
+    assert out["status"] == "Rejected. Nothing changed in AWS; the plan could not be discarded."
+    assert out["wp"]["approve"] == "rejected"
+
+
 def test_each_failure_branch_belongs_to_its_own_stage() -> None:
     """A branch listed under a stage must not be reachable from the next stage's first task: `b9` (the push could not
     start, after the approval) was listed under Checks and would have drawn Checks failed after an approval."""
