@@ -44,6 +44,7 @@
                 template_vars={'device': dev, 'mgmt_ip': dev.mgmt_ip, 'mgmt_if': dev.mgmt_if,
                                'interfaces': dev.interfaces | default([]),
                                'zone_members': dev_own.zone_members | default({}),
+                               'skip_interfaces': dev_own.skip_interfaces | default([]),
                                'extra_lines': dev_own.lines | default('')}) }}
 
 - name: "Current leaf spec for {{ dev.name }}"

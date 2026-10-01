@@ -137,7 +137,9 @@ def test_golden_config_requires_only_rendered_lines() -> None:
 
 
 def test_device_j2_merges_the_zone_members_and_appends_the_lines() -> None:
-    env = jinja2.Environment(loader=jinja2.FileSystemLoader(str(ROOT / "itential" / "golden-config" / "cisco-ios")))
+    # as Ansible's template lookup renders it (trim_blocks)
+    env = jinja2.Environment(loader=jinja2.FileSystemLoader(str(ROOT / "itential" / "golden-config" / "cisco-ios")),
+                             trim_blocks=True)
 
     def ipaddr(value: str, what: str) -> str:
         i = ipaddress.ip_interface(value)
@@ -148,12 +150,18 @@ def test_device_j2_merges_the_zone_members_and_appends_the_lines() -> None:
         device={"name": "dc1-wan01"}, mgmt_if="GigabitEthernet1", mgmt_ip="10.100.0.144",
         interfaces=[{"name": "GigabitEthernet5", "description": "to dc1-wan02:Gi5", "vrf": None,
                      "addresses": [{"address": "10.101.2.249/30"}]},
-                    {"name": "GigabitEthernet6", "description": None, "vrf": None, "addresses": []}],
-        zone_members=GC_DEVICE["zone_members"], extra_lines=GC_DEVICE["lines"])
+                    {"name": "GigabitEthernet6", "description": None, "vrf": None, "addresses": []},
+                    {"name": "Tunnel10", "description": "IPsec VTI to AWS", "vrf": None,
+                     "addresses": [{"address": "169.254.10.1/30"}]}],
+        zone_members=GC_DEVICE["zone_members"], skip_interfaces=GC_DEVICE["skip_interfaces"],
+        extra_lines=GC_DEVICE["lines"])
     blocks = _blocks(text)
     for iface in ("GigabitEthernet5", "GigabitEthernet6", "Tunnel1", "Tunnel2"):
         assert " zone-member security INSIDE" in blocks[f"<e/>interface {iface}"], iface
     assert "<e/>password encryption aes" in blocks
+    # Tunnel10 is Hand Off's (NetBox holds it, a rebuilt router does not): never a requirement
+    assert GC_DEVICE["skip_interfaces"] == [f"Tunnel{EDGE['tunnel']['id']}"]
+    assert not any("Tunnel10" in h for h in blocks) and "169.254.10.1" not in text
     # a device without its own file renders as before
     plain = env.get_template("device.j2").render(device={"name": "br1-wan01"}, mgmt_if="GigabitEthernet1",
                                                  mgmt_ip="10.100.0.1", interfaces=[])
@@ -182,22 +190,35 @@ def _sent(step: dict) -> list[str]:
     return [line.rstrip() for line in (step.get("config") or step.get("by_hand") or "").splitlines() if line.strip()]
 
 
-SCAFFOLD = re.compile(r"^(interface \S+|router bgp \d+| address-family ipv4| ip access-group INET-IN(-NEXT)? in"
-                      r"|no ip access-list extended INET-IN(-NEXT)?|ip access-list extended INET-IN-NEXT)$")
+SCAFFOLD_HEADS = {"ip access-list extended INET-IN-NEXT", "no ip access-list extended INET-IN",
+                  "no ip access-list extended INET-IN-NEXT", "key config-key password-encrypt", "end", "write memory"}
 
 
-def test_every_new_line_is_sent_and_nothing_else() -> None:
-    sent = [line for step in CHANGES["steps"] for line in _sent(step)]
-    # the new lines: every top-level line the render added, and every child line it added under a shared head
-    new = {h for h in A if h not in B} | {line for h in A if h in B for line in A[h] if line not in B[h]}
-    new_children_of_new_heads = {line for h in A if h not in B for line in A[h]}
-    flat = set(sent)
-    assert new <= flat, sorted(new - flat)
-    assert new_children_of_new_heads <= flat, sorted(new_children_of_new_heads - flat)
-    rendered = set(A) | {line for body in A.values() for line in body}
-    nothing_else = {line for line in flat if line not in rendered and not SCAFFOLD.match(line)}
-    # INET-IN-NEXT's entries are INET-IN's own (the ACL the swap puts on Gi7 for a moment)
-    assert nothing_else <= set(A["ip access-list extended INET-IN"]) | {"key config-key password-encrypt"}, nothing_else
+def _sent_blocks() -> dict[str, set[str]]:
+    """Every step's lines (the pushes and the by-hand step), by head - so a line counts only under the head it is sent
+    under."""
+    out: dict[str, set[str]] = {}
+    for step in CHANGES["steps"]:
+        for head, body in _blocks(step.get("config") or step.get("by_hand") or "").items():
+            out.setdefault(head, set()).update(body)
+    return out
+
+
+def test_every_new_line_is_sent_under_its_head_and_nothing_else() -> None:
+    sent = _sent_blocks()
+    for head, body in A.items():
+        new = set(body) - set(B.get(head, []))
+        if head not in B:
+            assert head in sent, f"new line not sent: {head}"
+        assert new <= sent.get(head, set()), (head, sorted(new - sent.get(head, set())))
+    for head, body in sent.items():
+        if head not in A:
+            assert head in SCAFFOLD_HEADS, f"sent but not rendered: {head}"
+            continue
+        extra = body - set(A[head]) - {" ip access-group INET-IN-NEXT in"}
+        assert not extra, (head, sorted(extra))
+    # the swap's temporary list is INET-IN's own layout
+    assert sent["ip access-list extended INET-IN-NEXT"] == set(A["ip access-list extended INET-IN"])
 
 
 def test_inet_in_is_swapped_never_left_open() -> None:
@@ -208,8 +229,9 @@ def test_inet_in_is_swapped_never_left_open() -> None:
     assert nxt == rebuilt == A["ip access-list extended INET-IN"]
     # NEXT is applied before INET-IN is removed, INET-IN back on before NEXT is dropped: Gi7 always has a filter
     assert i(" ip access-group INET-IN-NEXT in") < i("no ip access-list extended INET-IN") < i(" ip access-group INET-IN in")
-    assert i(" ip access-group INET-IN in") < i("no ip access-list extended INET-IN-NEXT") == len(lines) - 1 - (
-        len(lines) - 1 - i("no ip access-list extended INET-IN-NEXT"))
+    dropped_at = i("no ip access-list extended INET-IN-NEXT")
+    assert i(" ip access-group INET-IN in") < dropped_at
+    assert not any("INET-IN-NEXT" in line for line in lines[dropped_at + 1:])
     # and every line the render dropped from INET-IN is gone with the old list
     dropped = set(B["ip access-list extended INET-IN"]) - set(A["ip access-list extended INET-IN"])
     assert dropped and "no ip access-list extended INET-IN" in lines
@@ -264,3 +286,23 @@ def test_the_steps_fit_the_workflows_input_gates() -> None:
         assert props["settle_seconds"]["minimum"] <= checks["settle_seconds"] <= props["settle_seconds"]["maximum"]
         assert gate["revert_minutes"]["minimum"] <= step["revert_minutes"] <= gate["revert_minutes"]["maximum"]
         assert len(step["reason"]) <= gate["reason"]["maxLength"] and "<" not in step["reason"]
+
+
+def test_the_zone_change_has_its_exact_inverse_and_a_transit_proof() -> None:
+    """Step 4's checks all start or end on the router itself, which the zones never inspect (review of part C):
+    forwarding through it is proved after the confirm, and the inverse is ready to go back the same way."""
+    step = CHANGES["steps"][-1]
+    assert step["inverse"].splitlines() == [line.replace(" zone-member", " no zone-member") for line in
+                                            step["config"].splitlines()]
+    proof = " ".join(step["transit_proof"])
+    assert "S3.5" in proof and "verify/test-04-topology.sh" in proof
+    assert 'check "S3.5 ' in (ROOT / "verify" / "test-04-topology.sh").read_text()
+    tunnels = {t["ip"] for t in derive.render_context(TOPO, "dc1-wan01")["tunnels"]}
+    assert tunnels == {"10.103.100.1", "10.103.100.5"} and all(t in proof for t in tunnels)
+
+
+def test_the_pre_window_reads_change_nothing_and_the_master_key_step_saves() -> None:
+    assert [c["command"].split()[0] for c in CHANGES["pre_window"]] == ["show"] * len(CHANGES["pre_window"])
+    by_hand = [s for s in CHANGES["steps"] if "by_hand" in s][0]["by_hand"].splitlines()
+    assert by_hand[-2:] == ["end", "write memory"]  # a later rollback must not take the master key step with it
+    assert "remove the step-2 archive snapshots" in CHANGES["after_window"]

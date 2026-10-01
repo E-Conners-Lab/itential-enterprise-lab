@@ -3,6 +3,9 @@
 # merges zone_members into device.j2's interface blocks and appends `lines`. Every line here is one the template
 # renders (tests/test_lab_edge_prerequisites.py); `hidekeys` is not one of them - IOS-XE shows it only with `all` - and
 # INET-IN's slots 20 and 30 are Hand Off's to change, so they are not pinned.
+# Tunnel10 is Hand Off AWS VPN's: NetBox holds it for the read-back, but the router has it only after a Hand Off (never
+# after a rebuild), so it is no Golden Config requirement
+skip_interfaces: [Tunnel10]
 zone_members:
   GigabitEthernet5: INSIDE
   GigabitEthernet6: INSIDE

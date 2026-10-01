@@ -2,7 +2,7 @@
 <e/>interface {{ mgmt_if }}
  vrf forwarding MGMT
  ip address {{ mgmt_ip }} 255.255.255.0
-{% for i in interfaces %}
+{% for i in interfaces if i.name not in skip_interfaces | default([]) %}
 <e/>interface {{ i.name }}
 {% if i.description %} description {{ i.description }}
 {% endif %}{% if i.vrf %} vrf forwarding {{ i.vrf }}

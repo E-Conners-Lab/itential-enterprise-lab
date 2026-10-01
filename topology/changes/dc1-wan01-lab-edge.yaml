@@ -9,6 +9,13 @@
 # steps revert_minutes and checks. The checks ping every global BGP neighbour - a broken path still shows
 # Established for its hold time (proved on clab-rtr1, 2026-10-01) - and each branch LAN gateway from Loopback0.
 device: dc1-wan01
+# read before step 1 (show commands only): the zones can drop only traffic between a zoned and an unzoned interface in
+# the same table, so the global table must hold no interface but the ones step 4 zones (and Loopback0 and Null0); the
+# vty range the access-class covers; and no zone-pair yet (Hand Off adds the AWS ones)
+pre_window:
+  - {command: "show ip interface brief | exclude unassigned", expect: "addressed: Gi1 (MGMT), Gi2 (WAN), Gi5, Gi6, Gi7 (INET), Loopback0, Tunnel1, Tunnel2 - nothing else"}
+  - {command: "show line | include VTY", expect: "VTY lines 0-15 only (0-4 and 5-15 carry the access-class)"}
+  - {command: "show zone-pair security", expect: "none"}
 steps:
   - name: archive
     # the revert timer needs the archive's path, so this step cannot run under one
@@ -83,6 +90,8 @@ steps:
     by_hand: |
       key config-key password-encrypt
       password encryption aes
+      end
+      write memory
 
   - name: zone membership
     workflow: Push Configuration with Revert Timer
@@ -99,3 +108,22 @@ steps:
       interface Tunnel2
        zone-member security INSIDE
     checks: *checks
+    # every check above starts or ends on the router itself, which the zones never inspect: forwarding THROUGH it is
+    # proved right after the confirm, and if any of it fails, the inverse goes back through the same workflow at once
+    transit_proof:
+      - "verify/test-04-topology.sh: S3.4 and S3.5 (br1-host01 reaches dc1-srv01 through a branch tunnel and a DC edge)"
+      - "traceroute 10.101.3.2 source <branch LAN gateway> on br1-wan01 and br2-wan01: completes, first hop dc1-wan01's tunnel address (10.103.100.1 / 10.103.100.5)"
+    inverse: |
+      interface GigabitEthernet5
+       no zone-member security INSIDE
+      interface GigabitEthernet6
+       no zone-member security INSIDE
+      interface Tunnel1
+       no zone-member security INSIDE
+      interface Tunnel2
+       no zone-member security INSIDE
+
+# after step 4: the revert timer's archive snapshots from step 2 predate AES encryption (step 3), so they hold the branch
+# keyring's key in clear; hidekeys masks only the change log. The owner removes them (dir bootflash: | include rb-,
+# then delete /force each), and refreshes the Configuration Manager backup and the prod snapshot (spec Appendix A, 4)
+after_window: [remove the step-2 archive snapshots, refresh the Configuration Manager backup, make prod-snapshot MODE=save]
