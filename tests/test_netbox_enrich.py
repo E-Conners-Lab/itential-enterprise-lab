@@ -302,9 +302,12 @@ def test_seed_play_creates_vrfs_before_prefixes() -> None:
 # --- S4e.3: locations and racks ------------------------------------------------------------------------------
 def test_every_node_is_racked_once_with_a_unique_position(topo: dict) -> None:
     rows = derive.racks(topo)
-    assert {r["site"] for r in rows} == set(topo["racks"]) == set(topo["sites"]), (
+    # one rack per site that holds devices: cloud-aws (ADR 0068) is the far end of the AWS VPN, not a room
+    with_nodes = {n["site"] for n in topo["nodes"].values()}
+    assert {r["site"] for r in rows} == set(topo["racks"]) == with_nodes, (
         "one rack per site"
     )
+    assert set(topo["sites"]) - with_nodes == {"cloud-aws"}
     racked = [d["name"] for r in rows for d in r["devices"]]
     assert sorted(racked) == sorted(topo["nodes"]), "every node is racked exactly once"
     for r in rows:

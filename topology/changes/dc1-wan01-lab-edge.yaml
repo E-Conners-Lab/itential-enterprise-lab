@@ -1,0 +1,101 @@
+# Step 10's production change on dc1-wan01 (ADR 0068; F9 decided 2026-10-01): how the prerequisites c8000v.j2 now
+# renders (enterprise.yaml lab_edge) reach the running router - in order, each step through its own Work Center
+# approval, in the owner's window. tests/test_lab_edge_prerequisites.py holds these lines to the difference between the
+# router before (dc1-wan01-before.cfg: the render before this change, which the 2026-10-01 Configuration Manager backup
+# matches apart from display noise) and the new render: every new line is sent, every line the render dropped is
+# removed, and nothing else is sent.
+#
+# Each step is the input of a workflow, as given: device, config (one line per line), reason, and for the revert
+# steps revert_minutes and checks. The checks ping every global BGP neighbour - a broken path still shows
+# Established for its hold time (proved on clab-rtr1, 2026-10-01) - and each branch LAN gateway from Loopback0.
+device: dc1-wan01
+steps:
+  - name: archive
+    # the revert timer needs the archive's path, so this step cannot run under one
+    workflow: Push Configuration with Approval
+    reason: "Step 10 (ADR 0068) 1/4: the configuration archive the revert timer needs, hiding keys in its log"
+    config: |
+      archive
+       path bootflash:rb-
+       maximum 5
+       log config
+        logging enable
+        hidekeys
+
+  - name: management, INET-IN, prefix-lists, zones
+    workflow: Push Configuration with Revert Timer
+    reason: "Step 10 (ADR 0068) 2/4: management ACL on the vty lines, INET-IN closed by default, the VPC kept from every BGP neighbour but dc1-leaf01, the two zones (no members yet)"
+    revert_minutes: 8
+    # INET-IN stays applied throughout: the new layout goes on as INET-IN-NEXT first (the access-group swap is atomic),
+    # INET-IN is rebuilt and swapped back, and INET-IN-NEXT is dropped - Gi7 is never unfiltered
+    config: |
+      ip access-list standard MGMT-ONLY
+       10 permit 10.100.0.0 0.0.0.255
+       20 permit 192.168.68.0 0.0.3.255
+      line vty 0 4
+       access-class MGMT-ONLY in vrf-also
+      line vty 5 15
+       access-class MGMT-ONLY in vrf-also
+      ip access-list extended INET-IN-NEXT
+       10 deny ip any any fragments
+       20 deny udp any host 172.29.129.250 eq isakmp log
+       30 deny udp any host 172.29.129.250 eq non500-isakmp log
+       40 permit icmp any host 172.29.129.250 echo-reply
+       50 permit icmp any host 172.29.129.250 unreachable
+       60 permit icmp any host 172.29.129.250 time-exceeded
+       1000 deny ip any any log
+      interface GigabitEthernet7
+       ip access-group INET-IN-NEXT in
+      no ip access-list extended INET-IN
+      ip access-list extended INET-IN
+       10 deny ip any any fragments
+       20 deny udp any host 172.29.129.250 eq isakmp log
+       30 deny udp any host 172.29.129.250 eq non500-isakmp log
+       40 permit icmp any host 172.29.129.250 echo-reply
+       50 permit icmp any host 172.29.129.250 unreachable
+       60 permit icmp any host 172.29.129.250 time-exceeded
+       1000 deny ip any any log
+      interface GigabitEthernet7
+       ip access-group INET-IN in
+      no ip access-list extended INET-IN-NEXT
+      ip prefix-list NO-AWS-VPC seq 5 deny 10.0.0.0/16 le 32
+      ip prefix-list NO-AWS-VPC seq 10 permit 0.0.0.0/0 le 32
+      router bgp 65100
+       address-family ipv4
+        neighbor 10.101.2.250 prefix-list NO-AWS-VPC out
+        neighbor 10.103.100.2 prefix-list NO-AWS-VPC out
+        neighbor 10.103.100.6 prefix-list NO-AWS-VPC out
+      zone security INSIDE
+      zone security AWS
+    checks: &checks
+      bgp_established: [10.101.2.250, 10.101.3.2, 10.103.100.2, 10.103.100.6]
+      pings:
+        - {target: 10.101.2.250}
+        - {target: 10.101.3.2}
+        - {target: 10.103.100.2}
+        - {target: 10.103.100.6}
+        - {target: 10.102.17.1, source: Loopback0}
+        - {target: 10.102.33.1, source: Loopback0}
+      settle_seconds: 60
+
+  - name: master key
+    # never through Itential: the owner types it (spec Appendix A), so the branch keyring is stored as type 6
+    by_hand: |
+      key config-key password-encrypt
+      password encryption aes
+
+  - name: zone membership
+    workflow: Push Configuration with Revert Timer
+    reason: "Step 10 (ADR 0068) 4/4: every global-table transit interface into zone INSIDE (the BGP checks must hold before the confirm)"
+    # longer than a Hand Off push's 5: BGP has to stay up through the settle before the confirm (spec)
+    revert_minutes: 10
+    config: |
+      interface GigabitEthernet5
+       zone-member security INSIDE
+      interface GigabitEthernet6
+       zone-member security INSIDE
+      interface Tunnel1
+       zone-member security INSIDE
+      interface Tunnel2
+       zone-member security INSIDE
+    checks: *checks

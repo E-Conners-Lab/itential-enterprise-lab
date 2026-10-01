@@ -7,4 +7,8 @@
 {% if i.description %} description {{ i.description }}
 {% endif %}{% if i.vrf %} vrf forwarding {{ i.vrf }}
 {% endif %}{% for a in i.addresses %} ip address {{ a.address | ansible.utils.ipaddr('address') }} {{ a.address | ansible.utils.ipaddr('netmask') }}
-{% endfor %}{% endfor %}
+{% endfor %}{% if i.name in zone_members | default({}) %} zone-member security {{ zone_members[i.name] }}
+{% endif %}{% endfor %}{% for name, zone in (zone_members | default({})).items() if name not in interfaces | map(attribute='name') %}
+<e/>interface {{ name }}
+ zone-member security {{ zone }}
+{% endfor %}{{ extra_lines | default('') }}

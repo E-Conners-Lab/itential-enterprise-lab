@@ -28,6 +28,8 @@ sites:
   dc1: {name: DC1, description: "Data centre: HA firewalls, EVPN-VXLAN fabric", aggregate: 10.101.0.0/16}
   br1: {name: Branch 1, description: "Branch: WAN router, firewall, switch, clients", aggregate: 10.102.16.0/20}
   br2: {name: Branch 2, description: "Branch: WAN router, firewall, switch, clients", aggregate: 10.102.32.0/20}
+  # the far end of the AWS VPN (ADR 0068): its records are what Hand Off AWS VPN reads back (no device lives here)
+  cloud-aws: {name: AWS us-east-1, description: "The AWS end of the site-to-site VPN: the VPC behind the strongSwan box"}
 
 routing:
   asn: {isp: 65000, dc1_edge: 65100, dc1_spine: 65101, dc1_leaf: 65102, dc1_fw: 65103, br1: 65201, br2: 65202}
@@ -369,6 +371,21 @@ links:
 internet_ports:
   - {port: "dc1-wan01:Gi7", network: nat0, vrf: INET, address: 172.29.129.250/24, gateway: 172.29.129.254}
 
+# The lab edge (ADR 0068 step 10, F9 decided 2026-10-01): the router Hand Off AWS VPN changes. c8000v.j2 renders its
+# prerequisites from here - lab-edge's precheck reads each one: the management plane admits only mgmt_allow (the OOB
+# network, and the home LAN, which oob-gw routes into the lab without NAT, so a workstation keeps its own address); the
+# archive the revert timer needs, hiding keys; AES password encryption (the master key itself is typed by the owner,
+# spec Appendix A); the zones, with every global-table transit link and tunnel in INSIDE; INET-IN closed by default;
+# and an outbound prefix-list that keeps aws_vpc away from every BGP neighbour but aws_bgp_peer.
+lab_edge:
+  dc1-wan01:
+    mgmt_allow: [10.100.0.0/24, 192.168.68.0/22]
+    aws_vpc: 10.0.0.0/16
+    aws_bgp_peer: dc1-leaf01
+    # Hand Off AWS VPN's tunnel: NetBox holds it (the read-back), the startup configuration never does - Hand Off renders
+    # and pushes it, so a rebuild comes up without it until Hand Off runs again (F9 decision 3a)
+    tunnel: {id: 10, address: 169.254.10.1/30, description: "IPsec VTI to AWS (Hand Off AWS VPN)"}
+
 # The four provider links are circuits (ADR 0048): the link's a-side is the provider port (termination Z at the
 # WAN site), the b-side the customer edge (termination A at its site). links[].circuit names the circuit.
 providers:
@@ -397,6 +414,13 @@ vrfs:
 
 # in-band prefixes (docs/ip-plan.md section 6); netbox-topology.yml seeds them, netbox-enrich.yml fills them
 inband_prefixes:
+  # the AWS end (ADR 0068; Hand Off's NetBox read-back): the pinned VPC range, its private subnets as deployed
+  # (Deploy AWS VPN 2026-09-30) and the tunnel's inner /30. Never the Elastic IP or the home address.
+  - {prefix: 10.0.0.0/16, site: cloud-aws, role: cloud, description: "AWS VPC (pinned range)"}
+  - {prefix: 10.0.64.0/20, site: cloud-aws, role: cloud, description: "AWS VPC private subnet"}
+  - {prefix: 10.0.80.0/20, site: cloud-aws, role: cloud, description: "AWS VPC private subnet"}
+  # like every tunnel's /30, the inner /30 belongs to the WAN (it joins two sites)
+  - {prefix: 169.254.10.0/30, site: wan, role: wan-transit, description: "Tunnel10 inner /30: dc1-wan01 .1, AWS .2"}
   - {prefix: 10.103.0.0/24, site: wan, role: wan-transit, description: "ISP-to-site /30s"}
   - {prefix: 10.103.100.0/24, site: wan, role: wan-transit, description: "GRE/IPsec tunnels"}
   - {prefix: 10.103.255.0/24, site: wan, role: wan-transit, description: "router loopbacks"}
