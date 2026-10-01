@@ -68,9 +68,9 @@ terraform_run:
     # A full commit SHA, never a branch or tag (security review 2026-09-29, ITL-01): the Gateway runs this code with the
     # AWS key, so new cloud-devops-pipeline code runs only after a lab PR moves the pin, to a commit on its protected
     # main whose required checks passed (verify S13.2c). Measured on dev 2026-09-29: an older SHA is checked out as
-    # given, an unknown one fails the service ("reference not found"). 385fdd9 = main after cdp #22: the step-6
-    # services (lab-edge, lab-edge-push, aws-vpn-monitor; #15-#21); a second Hand Off sends nothing, exact post-read.
-    reference: "385fdd99a6e1b7479aab33ea8f090312c023f6e7"
+    # given, an unknown one fails the service ("reference not found"). 67ec6af = main after cdp #23: the step-6
+    # services (#15-#22); lab-edge-push saves only once the tunnel is up (on a new SA after a key change).
+    reference: "67ec6afc34a23517c233d75e904ab3cca5d49708"
   executable_object:
     name: python-3-12
     description: "the runner image's Python 3.12 (ADR 0038)"

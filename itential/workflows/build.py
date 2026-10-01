@@ -3203,7 +3203,8 @@ OUTPUTS_PARAMS = '{"action": "outputs", "timeout": "120"}'
 LAB_EDGE_TIMEOUT = "300"  # the reads, a 5 x 2 s ping and the second read, with room for a slow SSH login
 MONITOR_TIMEOUT = "240"  # the Lambda (75 s read timeout) plus up to 90 s for its datapoint
 PRECHECK_TIMEOUT = "300"
-PUSH_TIMEOUT = "600"  # login, precheck again, the block, the post-read, confirm, the post-read again, write memory
+PUSH_TIMEOUT = "600"  # login, precheck again, the block, the post-read, up to 120 s for the tunnel, confirm, the
+# post-read again, write memory (a job the Gateway stops leaves the change to the router's revert timer)
 READY_TIMEOUT = "120"
 
 # One plan for both workflows: every service's params for this target, or why there is nothing to do.
@@ -3449,8 +3450,9 @@ def verify_aws_vpn() -> dict:
 SETTLE_SECONDS = 30  # the router starts IKE once Tunnel10 is up; the verify tasks read after this
 APPROVAL_MESSAGE = (
     "Hand Off the AWS VPN to __T__: this block (SHA-256 below) is pushed under a 5-minute revert timer and saved only "
-    "if the post-read proves it; if the router already holds exactly this block and key version, nothing is sent and "
-    "it is only saved. The pre-shared key comes from Vault at push time and is never shown here."
+    "if the post-read proves it and the tunnel comes up; otherwise the router rolls it back. If the router already "
+    "holds exactly this block and key version, nothing is sent and it is only saved. The pre-shared key comes from "
+    "Vault at push time and is never shown here."
 )
 OUTCOME_TPL = "handed off (router: __R__); Verify: __V__"
 
@@ -3482,8 +3484,9 @@ def push_summary(d: dict) -> dict:
             else "unknown: lines were sent - check the router (push_result)")
     messages = {
         "saved": "",
-        "rolled back": "the router rejected a line or the change did not prove out, so it was rolled back (see "
-                       "push_result: rejected, checks): nothing was left on the router",
+        "rolled back": "the router rejected a line, the change did not prove out, or the tunnel did not come up in "
+                       "time, so it was rolled back (see push_result: rejected, checks, tunnel): nothing was left on "
+                       "the router",
         "failed": f"the push did not complete ({out.get('error') or 'no answer from lab-edge-push'}); the router: {router}",
     }
     return {"state": state, "changed": changed, "router": router, "message": messages[state]}
