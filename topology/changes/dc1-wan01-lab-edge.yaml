@@ -18,7 +18,9 @@ pre_window:
   - {command: "show zone-pair security", expect: "none"}
 steps:
   - name: archive
-    # the revert timer needs the archive's path, so this step cannot run under one
+    # the revert timer needs the archive's path, so this step cannot run under one; on the PRODUCTION Platform, whose
+    # inventory holds dc1-wan01 (the dev inventory holds the clab nodes only)
+    platform: production
     workflow: Push Configuration with Approval
     reason: "Step 10 (ADR 0068) 1/4: the configuration archive the revert timer needs, hiding keys in its log"
     config: |
@@ -29,7 +31,21 @@ steps:
         logging enable
         hidekeys
 
+  - name: time-boxed account
+    # the account config-push-revert logs in as from here on. Its password lives only in the dev Vault (make
+    # edge-account); make edge-account-line puts this line on the clipboard with the type-9 (scrypt) hash only, so the
+    # plain password reaches no router, clipboard, terminal or CLI history
+    by_hand: |
+      <paste the line from make edge-account-line: username itential-aws-vpn privilege 15 secret 9 $9$...>
+      end
+      write memory
+    # accepted risk (owner sign-off at the window, ADR 0068 amendment in step 12): until R1 is signed off a
+    # privilege-15 credential for this production router sits in the dev Vault (its root token on the dev VM's disk),
+    # and the dev Platform can push to it with only a Work Center approval in the way; IOS-XE gives the account no
+    # expiry, so after_r1 below is what ends it
+
   - name: management, INET-IN, prefix-lists, zones
+    platform: dev
     workflow: Push Configuration with Revert Timer
     reason: "Step 10 (ADR 0068) 2/4: management ACL on the vty lines, NETCONF and RESTCONF, INET-IN closed by default, the VPC kept from every BGP neighbour but dc1-leaf01, the two zones (no members yet)"
     revert_minutes: 8
@@ -96,6 +112,7 @@ steps:
       write memory
 
   - name: zone membership
+    platform: dev
     workflow: Push Configuration with Revert Timer
     reason: "Step 10 (ADR 0068) 4/4: every global-table transit interface into zone INSIDE (the BGP checks must hold before the confirm)"
     # longer than a Hand Off push's 5: BGP has to stay up through the settle before the confirm (spec)
@@ -144,3 +161,15 @@ steps:
 # keyring's key in clear; hidekeys masks only the change log. The owner removes them (dir bootflash: | include rb-,
 # then delete /force each), and refreshes the Configuration Manager backup and the prod snapshot (spec Appendix A, 4)
 after_window: [remove the step-2 archive snapshots, refresh the Configuration Manager backup, make prod-snapshot MODE=save]
+
+# when R1 is signed off (solution design), in this order - the reverse of the binding hazard:
+#   1. a versions.yaml PR: the alias unbound from config-push-revert, dc1-wan01 out of revert_push.targets and
+#      dev_gateway_aliases; merged, then the dev converge (the Gateway must stop resolving it before the entry goes; if
+#      the converge's export check fails because the Gateway kept the alias, delete it in Gateway Manager and re-run)
+#   2. `no username itential-aws-vpn` on the router (by hand, or a governed push), then write memory
+#   3. `vault kv metadata delete lab/devices/dc1-wan01-aws-vpn` (a plain `kv delete` is soft: undelete brings it back)
+#   clab-rtr1's runs still pass after it
+after_r1:
+  - unbind dc1-wan01-aws-vpn-password, then the dev converge
+  - no username itential-aws-vpn on the router, then write memory
+  - vault kv metadata delete lab/devices/dc1-wan01-aws-vpn

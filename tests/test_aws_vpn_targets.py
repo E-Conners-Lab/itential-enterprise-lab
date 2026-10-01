@@ -127,8 +127,10 @@ def test_dc1_wan01_is_the_router_its_generated_configuration_describes() -> None
 
 
 def test_only_open_targets_have_aliases_bound() -> None:
+    # the AWS VPN services; config-push-revert binds the revert targets' passwords (revert_push, test_config_push_revert)
+    aws_vpn = {n: s for n, s in DEV_SERVICES.items() if n != "config-push-revert"}
     for name, entry in TARGETS.items():
-        bound = {s["target"] for svc in DEV_SERVICES.values() for s in svc["secrets"]}
+        bound = {s["target"] for svc in aws_vpn.values() for s in svc["secrets"]}
         names = {env("PASSWORD", name), env("PSK", name), env("PSK_VERSION", name)}
         if entry["window"] == "open":
             assert names <= bound, name
@@ -155,7 +157,9 @@ def test_every_bound_alias_exists_and_the_key_reads_from_the_targets_path() -> N
     dev = V["vault"]["dev_gateway_aliases"]
     psk_path = TARGETS["clab-rtr1"]["psk_path"]
     assert dev == {"aws-vpn-psk-clab-rtr1": {"path": psk_path, "key": "psk"},
-                   "aws-vpn-psk-version-clab-rtr1": {"path": psk_path, "key": "version"}}
+                   "aws-vpn-psk-version-clab-rtr1": {"path": psk_path, "key": "version"},
+                   # dc1-wan01's time-boxed account (make edge-account), bound by config-push-revert
+                   "dc1-wan01-aws-vpn-password": {"path": "devices/dc1-wan01-aws-vpn", "key": "password"}}
     # under devices/*: the Gateway reads it, the Platform cannot
     roles = V["vault"]["approles"]
     assert psk_path.startswith("devices/") and "devices/*" in roles["itential-gateway"]["policy_paths"]

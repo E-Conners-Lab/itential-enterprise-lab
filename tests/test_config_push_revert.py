@@ -106,7 +106,7 @@ def test_the_card_shows_every_line_and_every_check_and_the_service_gets_the_same
                                                 "obj": f"$var.{plan_task}.result"}
 
 
-@pytest.mark.parametrize("change, said", [({"device": "dc1-wan01"}, "is not a router this workflow may change"),
+@pytest.mark.parametrize("change, said", [({"device": "br1-wan01"}, "is not a router this workflow may change"),
                                           ({"config": "\n  \n"}, "no configuration lines")])
 def test_a_plan_that_cannot_be_made_sends_nothing(change, said) -> None:
     plan = build.revert_plan({**INPUTS, **change}, TARGETS)
@@ -152,9 +152,15 @@ def test_only_a_saved_change_reads_as_saved() -> None:
 
 
 def test_the_service_binds_exactly_its_routers_passwords() -> None:
-    want = {f"LAB_EDGE_PASSWORD_{n.upper().replace('-', '_')}" for n in TARGETS}
-    assert {s["target"] for s in SERVICE["secrets"]} == want
-    assert all(s["name"] == "lab-automation-password" for s in SERVICE["secrets"])  # clab-rtr1's, the device account
+    want = {f"LAB_EDGE_PASSWORD_{n.upper().replace('-', '_')}": t["password_alias"] for n, t in TARGETS.items()}
+    assert {s["target"]: s["name"] for s in SERVICE["secrets"]} == want
+    # clab-rtr1 logs in as the device account; dc1-wan01 as the window's time-boxed account, its password only in the dev
+    # Vault, and the same account Hand Off will use (aws_vpn.targets)
+    assert TARGETS["clab-rtr1"]["password_alias"] == "lab-automation-password"
+    assert TARGETS["dc1-wan01"]["username"] == VERSIONS["aws_vpn"]["targets"]["dc1-wan01"]["username"]
+    assert TARGETS["dc1-wan01"]["mgmt_host"] == VERSIONS["aws_vpn"]["targets"]["dc1-wan01"]["target"]["mgmt_host"]
+    path = VERSIONS["vault"]["dev_gateway_aliases"][TARGETS["dc1-wan01"]["password_alias"]]["path"]
+    assert path.startswith("devices/")  # the Gateway reads it, the Platform cannot
     assert SERVICE["filename"] == "itential/config-push-revert.py"
 
 
