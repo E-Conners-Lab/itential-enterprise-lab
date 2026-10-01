@@ -249,8 +249,9 @@ def test_the_steps_run_in_the_order_the_router_needs() -> None:
     assert first["platform"] == "production" and all(s["platform"] == "dev" for s in rest if "workflow" in s)
     revert = VERSIONS["revert_push"]["targets"]["dc1-wan01"]
     # the type-9 line only (make edge-account-line): the plain password never reaches the router
-    assert account["by_hand"].splitlines()[0] == (f"username {revert['username']} privilege 15 secret 9 "
-                                                  "<the line from make edge-account-line>")
+    # the whole line comes from the clipboard (make edge-account-line), nothing typed around it
+    assert account["by_hand"].splitlines()[0] == (f"<paste the line from make edge-account-line: username "
+                                                  f"{revert['username']} privilege 15 secret 9 $9$...>")
     assert account["by_hand"].splitlines()[-1] == "write memory" and "accepted risk" in (
         ROOT / "topology" / "changes" / "dc1-wan01-lab-edge.yaml").read_text()
     # after R1: unbind and converge FIRST, then the account, then the entry for good (the reverse of the binding hazard)
@@ -368,5 +369,11 @@ def test_the_converge_refuses_to_bind_a_dev_alias_before_its_entry_exists() -> N
         result("b-absent", "password", 404),
         result("c-no-key", "psk", 200, {"version": "1"}),
         {"skipped": True, "item": {"key": "d-skipped"}},
+        # Vault's real 404 body, and a 200 whose data is null (a soft-deleted version)
+        {"item": {"key": "e-404-body", "value": {"key": "password"}}, "status": 404, "json": {"errors": []}},
+        {"item": {"key": "f-null-data", "value": {"key": "password"}}, "status": 200, "json": {"data": {"data": None}}},
     ]})
-    assert out.strip() == "['b-absent', 'c-no-key']"
+    assert out.strip() == "['b-absent', 'c-no-key', 'e-404-body', 'f-null-data']"
+    # first in the file: a refusal comes before a secret ID is issued or anything is imported
+    assert names.index("No dev alias is bound before its entry exists") < names.index("The Gateway's AppRole credentials")
+    assert guard["no_log"] is True

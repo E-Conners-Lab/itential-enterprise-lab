@@ -4,9 +4,9 @@ reaches the clipboard on stdin alone."""
 
 from __future__ import annotations
 
-import importlib.util
 import base64
 import hashlib
+import importlib.util
 import io
 import json
 import re

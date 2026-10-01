@@ -18,9 +18,9 @@ when R1 is signed off. Token: the dev Vault's root token over SSH (vault-dev.yml
 
 from __future__ import annotations
 
-import importlib.util
 import base64
 import hashlib
+import importlib.util
 import json
 import secrets
 import string
@@ -46,8 +46,8 @@ CISCO_B64 = "./0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
 
 
 def type9(password: str, salt: str) -> str:
-    dk = hashlib.scrypt(password.encode(), salt=salt.encode(), n=16384, r=1, p=1, dklen=32)
-    return "$9$" + salt + "$" + base64.b64encode(dk).decode().rstrip("=").translate(str.maketrans(STD_B64, CISCO_B64))
+    key = hashlib.scrypt(password.encode(), salt=salt.encode(), n=16384, r=1, p=1, dklen=32)
+    return "$9$" + salt + "$" + base64.b64encode(key).decode().rstrip("=").translate(str.maketrans(STD_B64, CISCO_B64))
 
 
 def account_line(password: str) -> str:

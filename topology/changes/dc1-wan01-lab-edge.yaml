@@ -36,7 +36,7 @@ steps:
     # edge-account); make edge-account-line puts this line on the clipboard with the type-9 (scrypt) hash only, so the
     # plain password reaches no router, clipboard, terminal or CLI history
     by_hand: |
-      username itential-aws-vpn privilege 15 secret 9 <the line from make edge-account-line>
+      <paste the line from make edge-account-line: username itential-aws-vpn privilege 15 secret 9 $9$...>
       end
       write memory
     # accepted risk (owner sign-off at the window, ADR 0068 amendment in step 12): until R1 is signed off a
