@@ -110,9 +110,24 @@ steps:
     checks: *checks
     # every check above starts or ends on the router itself, which the zones never inspect: forwarding THROUGH it is
     # proved right after the confirm, and if any of it fails, the inverse goes back through the same workflow at once
+    # each probe counts only once its path is proved to cross dc1-wan01 (a branch learns the DC range from both edges,
+    # so S3.5 alone can pass through dc1-wan02); at least one probe must count, and every one that counts must pass
     transit_proof:
-      - "verify/test-04-topology.sh: S3.4 and S3.5 (br1-host01 reaches dc1-srv01 through a branch tunnel and a DC edge)"
-      - "traceroute 10.101.3.2 source <branch LAN gateway> on br1-wan01 and br2-wan01: completes, first hop dc1-wan01's tunnel address (10.103.100.1 / 10.103.100.5)"
+      - device: dc1-leaf01   # its direct eBGP peer: the branch LANs via dc1-wan01's Gi6 -> Tunnel1/2 (INSIDE to INSIDE)
+        path: {read: "show ip route 10.102.17.1", via: 10.101.3.1}
+        probe: "ping 10.102.17.1 source 10.101.3.2"
+      - device: dc1-leaf01
+        path: {read: "show ip route 10.102.33.1", via: 10.101.3.1}
+        probe: "ping 10.102.33.1 source 10.101.3.2"
+      - device: br1-wan01    # Tunnel1 -> Gi6, when br1 prefers dc1-wan01
+        path: {read: "show ip cef 10.101.3.2", via: 10.103.100.1}
+        probe: "traceroute 10.101.3.2 source 10.102.17.1"
+      - device: br2-wan01
+        path: {read: "show ip cef 10.101.3.2", via: 10.103.100.5}
+        probe: "traceroute 10.101.3.2 source 10.102.33.1"
+      - device: verify
+        path: null
+        probe: "verify/test-04-topology.sh: S3.4 (BGP and tunnels) and S3.5 (branch host to DC host), whichever edge it takes"
     inverse: |
       interface GigabitEthernet5
        no zone-member security INSIDE

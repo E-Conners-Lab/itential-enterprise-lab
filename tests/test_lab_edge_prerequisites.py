@@ -215,7 +215,8 @@ def test_every_new_line_is_sent_under_its_head_and_nothing_else() -> None:
         if head not in A:
             assert head in SCAFFOLD_HEADS, f"sent but not rendered: {head}"
             continue
-        extra = body - set(A[head]) - {" ip access-group INET-IN-NEXT in"}
+        swap = {" ip access-group INET-IN-NEXT in"} if head == "interface GigabitEthernet7" else set()
+        extra = body - set(A[head]) - swap
         assert not extra, (head, sorted(extra))
     # the swap's temporary list is INET-IN's own layout
     assert sent["ip access-list extended INET-IN-NEXT"] == set(A["ip access-list extended INET-IN"])
@@ -290,15 +291,29 @@ def test_the_steps_fit_the_workflows_input_gates() -> None:
 
 def test_the_zone_change_has_its_exact_inverse_and_a_transit_proof() -> None:
     """Step 4's checks all start or end on the router itself, which the zones never inspect (review of part C):
-    forwarding through it is proved after the confirm, and the inverse is ready to go back the same way."""
+    forwarding through it is proved after the confirm - each probe counted only once its path is shown to cross
+    dc1-wan01 - and the inverse is ready to go back the same way."""
     step = CHANGES["steps"][-1]
     assert step["inverse"].splitlines() == [line.replace(" zone-member", " no zone-member") for line in
                                             step["config"].splitlines()]
-    proof = " ".join(step["transit_proof"])
-    assert "S3.5" in proof and "verify/test-04-topology.sh" in proof
-    assert 'check "S3.5 ' in (ROOT / "verify" / "test-04-topology.sh").read_text()
-    tunnels = {t["ip"] for t in derive.render_context(TOPO, "dc1-wan01")["tunnels"]}
-    assert tunnels == {"10.103.100.1", "10.103.100.5"} and all(t in proof for t in tunnels)
+    gi6 = A["interface GigabitEthernet6"]
+    wan01_gi6 = next(line.split()[2] for line in gi6 if line.startswith(" ip address "))
+    leaf = wan01_gi6.rsplit(".", 1)[0] + "." + str(int(wan01_gi6.rsplit(".", 1)[1]) + 1)
+    tunnel_of = {t["peer"]: t["ip"] for t in derive.render_context(TOPO, "dc1-wan01")["tunnels"]}
+    gateways = {n: derive.render_context(TOPO, n)["lan"]["gw"] for n in ("br1-wan01", "br2-wan01")}
+    devices = [p for p in step["transit_proof"] if p["device"] != "verify"]
+    for p in devices:
+        assert p["path"]["read"].split()[0] == "show" and p["probe"].split()[0] in ("ping", "traceroute")
+        if p["device"] == "dc1-leaf01":
+            # the leaf reaches each branch LAN through dc1-wan01's Gi6: INSIDE in, a tunnel (INSIDE) out
+            assert p["path"]["via"] == wan01_gi6 and p["probe"].endswith(f"source {leaf}")
+        else:
+            # a branch's path to the leaf crosses dc1-wan01 only via its own tunnel to dc1-wan01
+            assert p["path"]["via"] == tunnel_of[p["device"]] and p["probe"].endswith(f"source {gateways[p['device']]}")
+    assert {p["probe"].split()[1] for p in devices if p["device"] == "dc1-leaf01"} == set(gateways.values())
+    assert {p["device"] for p in devices} == {"dc1-leaf01", "br1-wan01", "br2-wan01"}
+    verify = [p for p in step["transit_proof"] if p["device"] == "verify"][0]["probe"]
+    assert "S3.5" in verify and 'check "S3.5 ' in (ROOT / "verify" / "test-04-topology.sh").read_text()
 
 
 def test_the_pre_window_reads_change_nothing_and_the_master_key_step_saves() -> None:
