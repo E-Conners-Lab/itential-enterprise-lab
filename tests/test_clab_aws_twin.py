@@ -238,3 +238,23 @@ def test_the_scripts_reload_in_place() -> None:
     assert "ip link show \"xfrm$IF_ID\" >/dev/null 2>&1 || ip link add" in (TWIN_DIR / "twin.sh").read_text()
     nat = (TWIN_DIR / "nat.sh").read_text()
     assert nat.index("iptables -t nat -F PREROUTING") < nat.index("iptables -t nat -A PREROUTING")
+
+
+def test_the_hidekeys_check_reads_what_ios_xe_shows_and_matches_the_whole_line() -> None:
+    tasks = {t["name"]: t for t in yaml.safe_load((PLAYBOOKS / "clab-dev.yml").read_text())[1]["tasks"]}
+    reads = tasks["Router clab-rtr1 holds the prerequisites lab-edge's precheck reads (the master key aside, the owner's)"]
+    archive = next(r for r in reads["loop"] if "archive" in r["cmd"])
+    # 17.13 shows hidekeys only in `show running-config all` (measured on clab-rtr1, 2026-10-01)
+    assert archive["cmd"] == "show running-config all | section ^archive"
+    shown = "archive\n log config\n  logging enable\n  hidekeys\n path bootflash:rb-\n"
+    disabled = shown.replace("  hidekeys", "  no hidekeys")
+    assert all(w in shown for w in archive["want"]) and not all(w in disabled for w in archive["want"])
+
+
+def test_the_verify_counts_devices_and_the_twins_containers_apart() -> None:
+    # S10.7 compares containerlab's devices with the oracle's nodes, and wants both twin containers running (2026-10-01:
+    # it failed when the twin's containers were counted as nodes)
+    verify = (ROOT / "verify" / "test-12a-clab-dev.sh").read_text()
+    assert 'twin = {o["aws_twin"]["nat"]["name"], o["aws_twin"]["twin"]["name"]}' in verify
+    assert "have = {k: v for k, v in have.items() if k not in twin}" in verify
+    assert 'twins != {name: "running" for name in twin}' in verify
