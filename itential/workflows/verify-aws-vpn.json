@@ -3,62 +3,6 @@
   "type": "automation",
   "description": "Verifies the lab's site-to-site VPN to AWS without changing anything: the router (IKEv2 SA, IPsec counters rising), the AWS monitor (where it applies) and a ping from Loopback0 through the tunnel must all say up (PID S13 criterion 4, ADR 0068)",
   "tasks": {
-    "0a": {
-      "name": "parse",
-      "canvasName": "parse",
-      "summary": "no router reading yet",
-      "description": "no router reading yet",
-      "location": "Application",
-      "locationType": null,
-      "app": "WorkFlowEngine",
-      "type": "automatic",
-      "displayName": "Tools",
-      "groups": [],
-      "nodeLocation": {
-        "x": 150,
-        "y": 600
-      },
-      "variables": {
-        "incoming": {
-          "text": "{}"
-        },
-        "outgoing": {
-          "textObject": "$var.job.lab_edge_result"
-        },
-        "error": "",
-        "decorators": []
-      },
-      "actor": "Pronghorn",
-      "scheduled": false
-    },
-    "0b": {
-      "name": "parse",
-      "canvasName": "parse",
-      "summary": "no AWS monitor reading yet",
-      "description": "no AWS monitor reading yet",
-      "location": "Application",
-      "locationType": null,
-      "app": "WorkFlowEngine",
-      "type": "automatic",
-      "displayName": "Tools",
-      "groups": [],
-      "nodeLocation": {
-        "x": 0,
-        "y": 750
-      },
-      "variables": {
-        "incoming": {
-          "text": "{}"
-        },
-        "outgoing": {
-          "textObject": "$var.job.monitor_result"
-        },
-        "error": "",
-        "decorators": []
-      },
-      "actor": "Pronghorn",
-      "scheduled": false
-    },
     "1a": {
       "name": "setObjectKey",
       "canvasName": "setObjectKey",
@@ -71,8 +15,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 0,
-        "y": 900
+        "x": 150,
+        "y": 600
       },
       "variables": {
         "incoming": {
@@ -152,13 +96,13 @@
       "groups": [],
       "nodeLocation": {
         "x": -150,
-        "y": 1050
+        "y": 750
       },
       "variables": {
         "incoming": {
           "clusterId": "lab",
           "language": "python",
-          "code": "import json, sys\nd = json.loads(sys.stdin.read() or \"{}\")\nname = d.get(\"target\")\nentry = (d.get(\"targets\") or {}).get(name) or {}\nmonitor = entry.get(\"monitor\")\ndeployed = entry.get(\"outputs\") if monitor != \"aws\" else d.get(\"deployed\")\nplan = {\"target\": name, \"monitor\": monitor, \"need_outputs\": bool(entry) and monitor == \"aws\" and deployed is None,\n        \"ready\": False, \"reason\": \"\", \"lab_edge\": None, \"monitor_params\": None}\nif not entry:\n    plan[\"reason\"] = \"could not check: %s is not an open target\" % name\nelif not plan[\"need_outputs\"] and not (deployed or {}).get(\"strongswan_eip\"):\n    plan[\"reason\"] = \"could not check: nothing is deployed (the outputs have no strongSwan address); nothing was read\"\nif entry and deployed and not plan[\"reason\"]:\n    plan[\"ready\"] = True\n    plan[\"lab_edge\"] = {\"action\": \"verify\", \"target_json\": json.dumps(entry[\"target\"]),\n                        \"outputs_json\": json.dumps(deployed), \"username\": entry[\"username\"], \"timeout\": \"300\"}\n    if monitor == \"aws\":\n        plan[\"monitor_params\"] = {\"action\": \"check\", \"instance_id\": str(deployed.get(\"strongswan_instance_id\") or \"\"),\n                                  \"timeout\": \"240\"}\nprint(json.dumps(plan))\n",
+          "code": "import json, sys\nd = json.loads(sys.stdin.read() or \"{}\")\nname = d.get(\"target\")\nentry = (d.get(\"targets\") or {}).get(name) or {}\nmonitor = entry.get(\"monitor\")\ndeployed = entry.get(\"outputs\") if monitor != \"aws\" else d.get(\"deployed\")\nplan = {\"target\": name, \"monitor\": monitor, \"need_outputs\": bool(entry) and monitor == \"aws\" and deployed is None,\n        \"ready\": False, \"reason\": \"\", \"lab_edge\": None, \"monitor_params\": None, \"precheck\": None, \"render\": None,\n        \"push\": None, \"monitor_ready\": None}\nif not entry:\n    plan[\"reason\"] = \"%s is not an open target\" % name\nelif not plan[\"need_outputs\"] and not (deployed or {}).get(\"strongswan_eip\"):\n    plan[\"reason\"] = \"nothing is deployed (the outputs have no strongSwan address)\"\nif entry and deployed and not plan[\"reason\"]:\n    target, outputs, user = json.dumps(entry[\"target\"]), json.dumps(deployed), entry[\"username\"]\n    plan.update(\n        ready=True,\n        lab_edge={\"action\": \"verify\", \"target_json\": target, \"outputs_json\": outputs, \"username\": user, \"timeout\": \"300\"},\n        precheck={\"action\": \"precheck\", \"target_json\": target, \"username\": user, \"timeout\": \"300\"},\n        render={\"action\": \"render\", \"target_json\": target, \"outputs_json\": outputs, \"timeout\": \"300\"},\n        push={\"action\": \"push\", \"target_json\": target, \"outputs_json\": outputs, \"username\": user, \"timeout\": \"600\"})\n    if monitor == \"aws\":\n        instance = str(deployed.get(\"strongswan_instance_id\") or \"\")\n        plan[\"monitor_params\"] = {\"action\": \"check\", \"instance_id\": instance, \"timeout\": \"240\"}\n        plan[\"monitor_ready\"] = {\"action\": \"ready\", \"instance_id\": instance, \"timeout\": \"120\"}\nprint(json.dumps(plan))\n",
           "data": "$var.job.verify_in",
           "safety": {
             "timeout": 30
@@ -187,7 +131,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 0,
-        "y": 1200
+        "y": 900
       },
       "variables": {
         "incoming": {
@@ -233,7 +177,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 300,
-        "y": 1350
+        "y": 1050
       },
       "variables": {
         "incoming": {
@@ -261,7 +205,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 450,
-        "y": 1500
+        "y": 1200
       },
       "variables": {
         "incoming": {
@@ -291,7 +235,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 300,
-        "y": 1650
+        "y": 1350
       },
       "variables": {
         "incoming": {
@@ -337,7 +281,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 300,
-        "y": 1800
+        "y": 1500
       },
       "variables": {
         "incoming": {
@@ -365,7 +309,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 300,
-        "y": 1950
+        "y": 1650
       },
       "variables": {
         "incoming": {
@@ -396,14 +340,14 @@
       "displayName": "GatewayManager",
       "groups": [],
       "nodeLocation": {
-        "x": 600,
-        "y": 2100
+        "x": -150,
+        "y": 1800
       },
       "variables": {
         "incoming": {
           "clusterId": "lab",
           "language": "python",
-          "code": "import json, sys\nd = json.loads(sys.stdin.read() or \"{}\")\nname = d.get(\"target\")\nentry = (d.get(\"targets\") or {}).get(name) or {}\nmonitor = entry.get(\"monitor\")\ndeployed = entry.get(\"outputs\") if monitor != \"aws\" else d.get(\"deployed\")\nplan = {\"target\": name, \"monitor\": monitor, \"need_outputs\": bool(entry) and monitor == \"aws\" and deployed is None,\n        \"ready\": False, \"reason\": \"\", \"lab_edge\": None, \"monitor_params\": None}\nif not entry:\n    plan[\"reason\"] = \"could not check: %s is not an open target\" % name\nelif not plan[\"need_outputs\"] and not (deployed or {}).get(\"strongswan_eip\"):\n    plan[\"reason\"] = \"could not check: nothing is deployed (the outputs have no strongSwan address); nothing was read\"\nif entry and deployed and not plan[\"reason\"]:\n    plan[\"ready\"] = True\n    plan[\"lab_edge\"] = {\"action\": \"verify\", \"target_json\": json.dumps(entry[\"target\"]),\n                        \"outputs_json\": json.dumps(deployed), \"username\": entry[\"username\"], \"timeout\": \"300\"}\n    if monitor == \"aws\":\n        plan[\"monitor_params\"] = {\"action\": \"check\", \"instance_id\": str(deployed.get(\"strongswan_instance_id\") or \"\"),\n                                  \"timeout\": \"240\"}\nprint(json.dumps(plan))\n",
+          "code": "import json, sys\nd = json.loads(sys.stdin.read() or \"{}\")\nname = d.get(\"target\")\nentry = (d.get(\"targets\") or {}).get(name) or {}\nmonitor = entry.get(\"monitor\")\ndeployed = entry.get(\"outputs\") if monitor != \"aws\" else d.get(\"deployed\")\nplan = {\"target\": name, \"monitor\": monitor, \"need_outputs\": bool(entry) and monitor == \"aws\" and deployed is None,\n        \"ready\": False, \"reason\": \"\", \"lab_edge\": None, \"monitor_params\": None, \"precheck\": None, \"render\": None,\n        \"push\": None, \"monitor_ready\": None}\nif not entry:\n    plan[\"reason\"] = \"%s is not an open target\" % name\nelif not plan[\"need_outputs\"] and not (deployed or {}).get(\"strongswan_eip\"):\n    plan[\"reason\"] = \"nothing is deployed (the outputs have no strongSwan address)\"\nif entry and deployed and not plan[\"reason\"]:\n    target, outputs, user = json.dumps(entry[\"target\"]), json.dumps(deployed), entry[\"username\"]\n    plan.update(\n        ready=True,\n        lab_edge={\"action\": \"verify\", \"target_json\": target, \"outputs_json\": outputs, \"username\": user, \"timeout\": \"300\"},\n        precheck={\"action\": \"precheck\", \"target_json\": target, \"username\": user, \"timeout\": \"300\"},\n        render={\"action\": \"render\", \"target_json\": target, \"outputs_json\": outputs, \"timeout\": \"300\"},\n        push={\"action\": \"push\", \"target_json\": target, \"outputs_json\": outputs, \"username\": user, \"timeout\": \"600\"})\n    if monitor == \"aws\":\n        instance = str(deployed.get(\"strongswan_instance_id\") or \"\")\n        plan[\"monitor_params\"] = {\"action\": \"check\", \"instance_id\": instance, \"timeout\": \"240\"}\n        plan[\"monitor_ready\"] = {\"action\": \"ready\", \"instance_id\": instance, \"timeout\": \"120\"}\nprint(json.dumps(plan))\n",
           "data": "$var.2e.object",
           "safety": {
             "timeout": 30
@@ -432,7 +376,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 0,
-        "y": 2250
+        "y": 1950
       },
       "variables": {
         "incoming": {
@@ -477,8 +421,8 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": -900,
-        "y": 2400
+        "x": -1050,
+        "y": 2100
       },
       "variables": {
         "incoming": {
@@ -493,11 +437,213 @@
         "decorators": []
       }
     },
-    "3a": {
+    "5f": {
       "name": "query",
       "canvasName": "query",
-      "summary": "lab-edge's params",
-      "description": "lab-edge's params",
+      "summary": "the verdict",
+      "description": "the verdict",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": -300,
+        "y": 4500
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "stdout_json.verdict",
+          "obj": "$var.ee.result"
+        },
+        "outgoing": {
+          "return_data": "$var.job.outcome"
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "50": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "the verdict (not passed)",
+      "description": "the verdict (not passed)",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": -750,
+        "y": 4500
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "stdout_json.verdict",
+          "obj": "$var.ee.result"
+        },
+        "outgoing": {
+          "return_data": "$var.job.error"
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "8a": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "the outputs could not be read",
+      "description": "the outputs could not be read",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 750,
+        "y": 1650
+      },
+      "variables": {
+        "incoming": {
+          "input": "could not check: the deployed outputs could not be read from the Terraform state (outputs_result); nothing was read on the router",
+          "outputType": "string",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.error"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "8b": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "a read could not run",
+      "description": "a read could not run",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": -600,
+        "y": 2550
+      },
+      "variables": {
+        "incoming": {
+          "input": "could not check: the Gateway could not run a step of the check (see the job's results); nothing more was read",
+          "outputType": "string",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.error"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "8c": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "the judge did not run",
+      "description": "the judge did not run",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": -900,
+        "y": 4650
+      },
+      "variables": {
+        "incoming": {
+          "input": "could not check: the readings were taken but the judge could not run; see lab_edge_result and monitor_result",
+          "outputType": "string",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.error"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "e0": {
+      "name": "parse",
+      "canvasName": "parse",
+      "summary": "no router reading yet",
+      "description": "no router reading yet",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 0,
+        "y": 2100
+      },
+      "variables": {
+        "incoming": {
+          "text": "{}"
+        },
+        "outgoing": {
+          "textObject": "$var.job.lab_edge_result"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "e1": {
+      "name": "parse",
+      "canvasName": "parse",
+      "summary": "no AWS monitor reading yet",
+      "description": "no AWS monitor reading yet",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 0,
+        "y": 2250
+      },
+      "variables": {
+        "incoming": {
+          "text": "{}"
+        },
+        "outgoing": {
+          "textObject": "$var.job.monitor_result"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "e2": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "lab-edge verify's params",
+      "description": "lab-edge verify's params",
       "location": "Application",
       "locationType": null,
       "app": "WorkFlowEngine",
@@ -521,7 +667,7 @@
         "decorators": []
       }
     },
-    "3b": {
+    "e3": {
       "name": "runService",
       "canvasName": "runService",
       "summary": "the router and the data plane (lab-edge verify: show commands, one ping)",
@@ -540,7 +686,7 @@
         "incoming": {
           "serviceName": "lab-edge",
           "clusterId": "lab",
-          "params": "$var.3a.return_data"
+          "params": "$var.e2.return_data"
         },
         "outgoing": {
           "result": "$var.job.lab_edge_result"
@@ -551,7 +697,7 @@
       "actor": "Pronghorn",
       "scheduled": false
     },
-    "3c": {
+    "e4": {
       "name": "evaluation",
       "canvasName": "evaluation",
       "summary": "lab-edge read the router?",
@@ -577,7 +723,7 @@
                   "query": "result.return_code",
                   "operand_1": {
                     "variable": "result",
-                    "task": "3b"
+                    "task": "e3"
                   },
                   "operator": "==",
                   "operand_2": {
@@ -597,7 +743,37 @@
         "decorators": []
       }
     },
-    "4a": {
+    "e5": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "lab-edge exited non-zero",
+      "description": "lab-edge exited non-zero",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": -150,
+        "y": 2850
+      },
+      "variables": {
+        "incoming": {
+          "input": "lab-edge could not read the router: see lab_edge_result.result.stdout_json.error",
+          "outputType": "string",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.router_note"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "e6": {
       "name": "evaluation",
       "canvasName": "evaluation",
       "summary": "AWS monitor applies?",
@@ -643,7 +819,7 @@
         "decorators": []
       }
     },
-    "4b": {
+    "e7": {
       "name": "query",
       "canvasName": "query",
       "summary": "aws-vpn-monitor's params",
@@ -671,7 +847,7 @@
         "decorators": []
       }
     },
-    "4c": {
+    "e8": {
       "name": "runService",
       "canvasName": "runService",
       "summary": "the AWS monitor (Lambda + CloudWatch)",
@@ -690,7 +866,7 @@
         "incoming": {
           "serviceName": "aws-vpn-monitor",
           "clusterId": "lab",
-          "params": "$var.4b.return_data"
+          "params": "$var.e7.return_data"
         },
         "outgoing": {
           "result": "$var.job.monitor_result"
@@ -701,7 +877,7 @@
       "actor": "Pronghorn",
       "scheduled": false
     },
-    "4d": {
+    "e9": {
       "name": "evaluation",
       "canvasName": "evaluation",
       "summary": "the monitor answered?",
@@ -713,7 +889,7 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 600,
+        "x": 450,
         "y": 3450
       },
       "variables": {
@@ -727,7 +903,7 @@
                   "query": "result.return_code",
                   "operand_1": {
                     "variable": "result",
-                    "task": "4c"
+                    "task": "e8"
                   },
                   "operator": "==",
                   "operand_2": {
@@ -747,37 +923,7 @@
         "decorators": []
       }
     },
-    "3d": {
-      "name": "makeData",
-      "canvasName": "makeData",
-      "summary": "lab-edge exited non-zero",
-      "description": "lab-edge exited non-zero",
-      "location": "Application",
-      "locationType": null,
-      "app": "WorkFlowEngine",
-      "type": "automatic",
-      "displayName": "Tools",
-      "groups": [],
-      "nodeLocation": {
-        "x": -150,
-        "y": 2850
-      },
-      "variables": {
-        "incoming": {
-          "input": "lab-edge could not read the router: see lab_edge_result.result.stdout_json.error",
-          "outputType": "string",
-          "variables": ""
-        },
-        "outgoing": {
-          "output": "$var.job.router_note"
-        },
-        "error": "",
-        "decorators": []
-      },
-      "actor": "Pronghorn",
-      "scheduled": false
-    },
-    "4e": {
+    "ea": {
       "name": "makeData",
       "canvasName": "makeData",
       "summary": "aws-vpn-monitor exited non-zero",
@@ -807,7 +953,7 @@
       "actor": "Pronghorn",
       "scheduled": false
     },
-    "5a": {
+    "eb": {
       "name": "setObjectKey",
       "canvasName": "setObjectKey",
       "summary": "the readings: what was read",
@@ -839,7 +985,7 @@
       "actor": "Pronghorn",
       "scheduled": false
     },
-    "5b": {
+    "ec": {
       "name": "setObjectKey",
       "canvasName": "setObjectKey",
       "summary": "the readings: router and data plane",
@@ -856,7 +1002,7 @@
       },
       "variables": {
         "incoming": {
-          "obj": "$var.5a.object",
+          "obj": "$var.eb.object",
           "path": [
             "lab_edge"
           ],
@@ -871,7 +1017,7 @@
       "actor": "Pronghorn",
       "scheduled": false
     },
-    "5c": {
+    "ed": {
       "name": "setObjectKey",
       "canvasName": "setObjectKey",
       "summary": "the readings: AWS monitor",
@@ -888,7 +1034,7 @@
       },
       "variables": {
         "incoming": {
-          "obj": "$var.5b.object",
+          "obj": "$var.ec.object",
           "path": [
             "monitor"
           ],
@@ -903,7 +1049,7 @@
       "actor": "Pronghorn",
       "scheduled": false
     },
-    "5d": {
+    "ee": {
       "name": "runCode",
       "canvasName": "runCode",
       "summary": "the judge (every applicable signal up passes)",
@@ -923,7 +1069,7 @@
           "clusterId": "lab",
           "language": "python",
           "code": "import json, sys\n\n\ndef judge(d: dict) -> dict:\n    \"\"\"Verify's verdict from its readings (the spec's rules): every applicable signal up passes; any signal that could\n    not be read is \"could not check <signal>\"; every signal down is \"tunnel down\"; any other mix is \"disagreement\",\n    naming each reading. The AWS monitor applies only where the target's monitor is `aws`. Pure: runCode runs this\n    very function's source on the Gateway, so the unit tests test what runs.\"\"\"\n    states = (\"up\", \"down\", \"could not check\")\n    plan = (d.get(\"plan\") or {}).get(\"stdout_json\") or {}\n\n    def service(envelope):  # a runService result {id, jsonrpc, result: {return_code, stdout_json}}, or {} if none ran\n        result = (envelope or {}).get(\"result\") or {}\n        return result.get(\"return_code\"), result.get(\"stdout_json\") or {}\n\n    rc, edge = service(d.get(\"lab_edge\"))\n    signals = {}\n    for key in (\"router\", \"data_plane\"):\n        value = edge.get(key) if rc == 0 else \"could not check\"\n        signals[key] = value if value in states else \"could not check\"\n    applicable = plan.get(\"monitor\") == \"aws\"\n    mrc, mon = service(d.get(\"monitor\"))\n    if applicable:\n        value = mon.get(\"monitor\") if mrc == 0 else \"could not check\"\n        signals[\"aws_monitor\"] = value if value in states + (\"disagreement\",) else \"could not check\"\n    label = {\"router\": \"router\", \"data_plane\": \"data plane\", \"aws_monitor\": \"AWS monitor\"}\n    values = list(signals.values())\n    if all(v == \"up\" for v in values):\n        verdict = \"tunnel up: \" + \", \".join(f\"{label[k]} up\" for k in signals)\n    elif \"could not check\" in values:\n        verdict = \"could not check \" + \" and \".join(label[k] for k, v in signals.items() if v == \"could not check\")\n        others = [f\"{label[k]} {v}\" for k, v in signals.items() if v != \"could not check\"]\n        if others:\n            verdict += \" (\" + \", \".join(others) + \")\"\n    elif all(v == \"down\" for v in values):\n        verdict = \"tunnel down: \" + \", \".join(f\"{label[k]} down\" for k in signals)\n    else:\n        verdict = \"disagreement: \" + \", \".join(f\"{label[k]} {v}\" for k, v in signals.items())\n    if not applicable:\n        verdict += \" (AWS monitor not applicable)\"\n    return {\n        \"passed\": all(v == \"up\" for v in values),\n        \"verdict\": verdict,\n        \"signals\": {**signals, **({} if applicable else {\"aws_monitor\": \"not applicable\"})},\n        \"readings\": {\"router\": edge.get(\"readings\"), \"aws_monitor\": mon.get(\"readings\") if applicable else None},\n        # the services return an error as a class name or their own refusal text, never device or AWS output\n        \"errors\": {k: v for k, v in ((\"lab_edge\", edge.get(\"error\")), (\"aws_monitor\", mon.get(\"error\"))) if v},\n    }\n\n\nprint(json.dumps(judge(json.loads(sys.stdin.read() or \"{}\"))))\n",
-          "data": "$var.5c.object",
+          "data": "$var.ed.object",
           "safety": {
             "timeout": 30
           },
@@ -938,7 +1084,7 @@
       "actor": "Pronghorn",
       "scheduled": false
     },
-    "5e": {
+    "ef": {
       "name": "evaluation",
       "canvasName": "evaluation",
       "summary": "passed?",
@@ -964,7 +1110,7 @@
                   "query": "stdout_json.passed",
                   "operand_1": {
                     "variable": "result",
-                    "task": "5d"
+                    "task": "ee"
                   },
                   "operator": "==",
                   "operand_2": {
@@ -983,152 +1129,6 @@
         "error": "",
         "decorators": []
       }
-    },
-    "5f": {
-      "name": "query",
-      "canvasName": "query",
-      "summary": "the verdict",
-      "description": "the verdict",
-      "location": "Application",
-      "locationType": null,
-      "app": "WorkFlowEngine",
-      "type": "operation",
-      "displayName": "WorkFlowEngine",
-      "groups": [],
-      "nodeLocation": {
-        "x": -300,
-        "y": 4500
-      },
-      "variables": {
-        "incoming": {
-          "pass_on_null": false,
-          "query": "stdout_json.verdict",
-          "obj": "$var.5d.result"
-        },
-        "outgoing": {
-          "return_data": "$var.job.outcome"
-        },
-        "error": "",
-        "decorators": []
-      }
-    },
-    "50": {
-      "name": "query",
-      "canvasName": "query",
-      "summary": "the verdict (not passed)",
-      "description": "the verdict (not passed)",
-      "location": "Application",
-      "locationType": null,
-      "app": "WorkFlowEngine",
-      "type": "operation",
-      "displayName": "WorkFlowEngine",
-      "groups": [],
-      "nodeLocation": {
-        "x": -750,
-        "y": 4500
-      },
-      "variables": {
-        "incoming": {
-          "pass_on_null": false,
-          "query": "stdout_json.verdict",
-          "obj": "$var.5d.result"
-        },
-        "outgoing": {
-          "return_data": "$var.job.error"
-        },
-        "error": "",
-        "decorators": []
-      }
-    },
-    "8a": {
-      "name": "makeData",
-      "canvasName": "makeData",
-      "summary": "the outputs could not be read",
-      "description": "the outputs could not be read",
-      "location": "Application",
-      "locationType": null,
-      "app": "WorkFlowEngine",
-      "type": "automatic",
-      "displayName": "Tools",
-      "groups": [],
-      "nodeLocation": {
-        "x": 750,
-        "y": 1950
-      },
-      "variables": {
-        "incoming": {
-          "input": "could not check: the deployed outputs could not be read from the Terraform state (outputs_result); nothing was read on the router",
-          "outputType": "string",
-          "variables": ""
-        },
-        "outgoing": {
-          "output": "$var.job.error"
-        },
-        "error": "",
-        "decorators": []
-      },
-      "actor": "Pronghorn",
-      "scheduled": false
-    },
-    "8b": {
-      "name": "makeData",
-      "canvasName": "makeData",
-      "summary": "a read could not run",
-      "description": "a read could not run",
-      "location": "Application",
-      "locationType": null,
-      "app": "WorkFlowEngine",
-      "type": "automatic",
-      "displayName": "Tools",
-      "groups": [],
-      "nodeLocation": {
-        "x": -600,
-        "y": 2550
-      },
-      "variables": {
-        "incoming": {
-          "input": "could not check: the Gateway could not run the step that reads what to check; nothing was read on the router",
-          "outputType": "string",
-          "variables": ""
-        },
-        "outgoing": {
-          "output": "$var.job.error"
-        },
-        "error": "",
-        "decorators": []
-      },
-      "actor": "Pronghorn",
-      "scheduled": false
-    },
-    "8c": {
-      "name": "makeData",
-      "canvasName": "makeData",
-      "summary": "the judge did not run",
-      "description": "the judge did not run",
-      "location": "Application",
-      "locationType": null,
-      "app": "WorkFlowEngine",
-      "type": "automatic",
-      "displayName": "Tools",
-      "groups": [],
-      "nodeLocation": {
-        "x": -900,
-        "y": 4650
-      },
-      "variables": {
-        "incoming": {
-          "input": "could not check: the readings were taken but the judge could not run; see lab_edge_result and monitor_result",
-          "outputType": "string",
-          "variables": ""
-        },
-        "outgoing": {
-          "output": "$var.job.error"
-        },
-        "error": "",
-        "decorators": []
-      },
-      "actor": "Pronghorn",
-      "scheduled": false
     },
     "9a01": {
       "name": "setObjectKey",
@@ -1306,18 +1306,6 @@
         "type": "standard"
       }
     },
-    "0a": {
-      "0b": {
-        "state": "success",
-        "type": "standard"
-      }
-    },
-    "0b": {
-      "1a": {
-        "state": "success",
-        "type": "standard"
-      }
-    },
     "1a": {
       "1b": {
         "state": "success",
@@ -1397,7 +1385,7 @@
       }
     },
     "3e": {
-      "3a": {
+      "e0": {
         "state": "success",
         "type": "standard"
       },
@@ -1416,8 +1404,20 @@
         "type": "standard"
       }
     },
-    "3a": {
-      "3b": {
+    "e0": {
+      "e1": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "e1": {
+      "e2": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "e2": {
+      "e3": {
         "state": "success",
         "type": "standard"
       },
@@ -1426,98 +1426,98 @@
         "type": "standard"
       }
     },
-    "3b": {
-      "3c": {
+    "e3": {
+      "e4": {
         "state": "success",
         "type": "standard"
       },
-      "4a": {
+      "e6": {
         "state": "error",
         "type": "standard"
       }
     },
-    "3c": {
-      "4a": {
+    "e4": {
+      "e6": {
         "state": "success",
         "type": "standard"
       },
-      "3d": {
+      "e5": {
         "state": "failure",
         "type": "standard"
       }
     },
-    "3d": {
-      "4a": {
+    "e5": {
+      "e6": {
         "state": "success",
         "type": "standard"
       }
     },
-    "4a": {
-      "4b": {
+    "e6": {
+      "e7": {
         "state": "success",
         "type": "standard"
       },
-      "5a": {
+      "eb": {
         "state": "failure",
         "type": "standard"
       }
     },
-    "4b": {
-      "4c": {
+    "e7": {
+      "e8": {
         "state": "success",
         "type": "standard"
       },
-      "5a": {
+      "eb": {
         "state": "error",
         "type": "standard"
       }
     },
-    "4c": {
-      "4d": {
+    "e8": {
+      "e9": {
         "state": "success",
         "type": "standard"
       },
-      "5a": {
+      "eb": {
         "state": "error",
         "type": "standard"
       }
     },
-    "4d": {
-      "5a": {
+    "e9": {
+      "eb": {
         "state": "success",
         "type": "standard"
       },
-      "4e": {
+      "ea": {
         "state": "failure",
         "type": "standard"
       }
     },
-    "4e": {
-      "5a": {
+    "ea": {
+      "eb": {
         "state": "success",
         "type": "standard"
       }
     },
-    "5a": {
-      "5b": {
+    "eb": {
+      "ec": {
         "state": "success",
         "type": "standard"
       }
     },
-    "5b": {
-      "5c": {
+    "ec": {
+      "ed": {
         "state": "success",
         "type": "standard"
       }
     },
-    "5c": {
-      "5d": {
+    "ed": {
+      "ee": {
         "state": "success",
         "type": "standard"
       }
     },
-    "5d": {
-      "5e": {
+    "ee": {
+      "ef": {
         "state": "success",
         "type": "standard"
       },
@@ -1526,7 +1526,7 @@
         "type": "standard"
       }
     },
-    "5e": {
+    "ef": {
       "5f": {
         "state": "success",
         "type": "standard"
@@ -1591,7 +1591,7 @@
       }
     },
     "9a0b": {
-      "0a": {
+      "1a": {
         "state": "success",
         "type": "standard"
       },

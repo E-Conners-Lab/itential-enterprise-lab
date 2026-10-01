@@ -27,7 +27,7 @@ NAMES = VERSIONS["workflows"]
 RETIRED = VERSIONS["retired_workflows"]
 
 # The first word of every name. A new workflow whose verb is not here adds it on purpose, in review.
-VERBS = {"Add", "Back", "Count", "Deploy", "Get", "List", "Push", "Remove", "Run", "Summarize", "Verify"}  # Deploy: S13 (ADR 0068), 2026-09-29; Verify: S13 step 7, 2026-10-01
+VERBS = {"Add", "Back", "Count", "Deploy", "Get", "List", "Push", "Remove", "Run", "Summarize", "Verify", "Hand"}  # Deploy: S13 (ADR 0068), 2026-09-29; Verify: S13 step 7, Hand: step 8, 2026-10-01
 # Where old names may still appear: the history of what was decided and measured.
 HISTORY = ("docs/adr/", "docs/handoffs/", "verify/results/")
 
