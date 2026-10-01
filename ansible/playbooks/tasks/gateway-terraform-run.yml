@@ -9,6 +9,12 @@
     url: "{{ platform_local }}/gateway_manager/v1/gateways/{{ stack.gateway5_cluster_id }}/configuration/export"
     headers: {Cookie: "{{ login.cookies_string }}"}
   register: gw_tr_export
+  # right after tasks/gateway-vault.yml restarts the Gateway server and runner, the Platform's export can fail for a
+  # few seconds - the first converge that bound a new alias stopped here (2026-10-01); the runner check there is not
+  # enough, the Platform's own connection to the server comes back later
+  until: gw_tr_export.status | default(0) == 200
+  retries: 12
+  delay: 5
   no_log: true # the export carries `users` with a password field
 
 - name: The terraform-run items wanted (the iagctl db import form)
