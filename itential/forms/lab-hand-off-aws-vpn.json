@@ -1,0 +1,73 @@
+{
+  "name": "lab-hand-off-aws-vpn",
+  "description": "Hand the lab edge router its side of the AWS VPN: render, Work Center approval, push with the key from Vault, saved only once the tunnel is up (PID S13, ADR 0068)",
+  "struct": {
+    "type": "array",
+    "items": [
+      {
+        "nodeId": "node-target",
+        "type": "string",
+        "title": "Lab edge router",
+        "description": "The router whose side of the AWS VPN this runs on (open targets only)",
+        "placeholder": "Select",
+        "required": true,
+        "readOnly": false,
+        "binding": false,
+        "rel": "collection",
+        "targetPointer": "/enum",
+        "customKey": "target",
+        "enum": [
+          {
+            "id": "enum-target-clab-rtr1",
+            "label": "clab-rtr1",
+            "value": "clab-rtr1"
+          }
+        ],
+        "enumNames": [
+          {
+            "id": "name-target-clab-rtr1",
+            "label": "clab-rtr1",
+            "value": "clab-rtr1"
+          }
+        ],
+        "default": "clab-rtr1"
+      }
+    ]
+  },
+  "schema": {
+    "title": "lab-hand-off-aws-vpn",
+    "description": "Hand the lab edge router its side of the AWS VPN: render, Work Center approval, push with the key from Vault, saved only once the tunnel is up (PID S13, ADR 0068)",
+    "type": "object",
+    "required": [
+      "target"
+    ],
+    "properties": {
+      "target": {
+        "type": "string",
+        "title": "Lab edge router",
+        "_id": "/properties/target",
+        "description": "The router whose side of the AWS VPN this runs on (open targets only)",
+        "enum": [
+          "clab-rtr1"
+        ],
+        "enumNames": [
+          "clab-rtr1"
+        ],
+        "default": "clab-rtr1"
+      }
+    }
+  },
+  "uiSchema": {
+    "target": {
+      "ui:placeholder": "Select"
+    },
+    "ui:order": [
+      "target",
+      "*"
+    ]
+  },
+  "bindingSchema": {},
+  "validationSchema": {},
+  "tags": [],
+  "version": "2020.1"
+}

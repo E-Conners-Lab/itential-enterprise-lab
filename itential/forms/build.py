@@ -112,9 +112,32 @@ def deploy_aws_vpn() -> dict:
                        description="Why, shown to the approver")])
 
 
+# --- lab-hand-off-aws-vpn / lab-verify-aws-vpn: the manual triggers of Hand Off and Verify AWS VPN (step 9) -----------
+# One input, the target, from the open targets (itential/versions.yaml aws_vpn.targets): the same list as the workflows'
+# input gates and the endpoint triggers' schemas.
+OPEN_TARGETS = sorted(n for n, t in VERSIONS["aws_vpn"]["targets"].items() if t["window"] == "open")
+
+
+def target_form(key: str, description: str) -> dict:
+    return form(VERSIONS["forms"][key], description,
+                [field("target", "Lab edge router", read_only=False, enum=OPEN_TARGETS, required=True,
+                       default=OPEN_TARGETS[0] if OPEN_TARGETS else None,
+                       description="The router whose side of the AWS VPN this runs on (open targets only)")])
+
+
+def hand_off_aws_vpn() -> dict:
+    return target_form("hand_off_aws_vpn", "Hand the lab edge router its side of the AWS VPN: render, Work Center "
+                       "approval, push with the key from Vault, saved only once the tunnel is up (PID S13, ADR 0068)")
+
+
+def verify_aws_vpn() -> dict:
+    return target_form("verify_aws_vpn", "Verify the AWS VPN without changing anything: the router, the AWS monitor "
+                       "where it applies and a ping through the tunnel must all say up (PID S13, ADR 0068)")
+
+
 def main(check: bool) -> int:
     rc = 0
-    for doc in (branch_vlan_approval(), deploy_aws_vpn()):
+    for doc in (branch_vlan_approval(), deploy_aws_vpn(), hand_off_aws_vpn(), verify_aws_vpn()):
         out = HERE / f"{doc['name']}.json"
         text = json.dumps(doc, indent=2) + "\n"
         if check:
