@@ -132,12 +132,14 @@ steps:
     # each probe counts only once its path is proved to cross dc1-wan01 (a branch learns the DC range from both edges,
     # so S3.5 alone can pass through dc1-wan02); at least one probe must count, and every one that counts must pass
     transit_proof:
+      # the leaf's end of that link (Ethernet7) is in VRF PROD, so both its reads name the VRF: in the default table
+      # the route is absent and the source address is not the leaf's (seen in the window, 2026-10-01)
       - device: dc1-leaf01   # its direct eBGP peer: the branch LANs via dc1-wan01's Gi6 -> Tunnel1/2 (INSIDE to INSIDE)
-        path: {read: "show ip route 10.102.17.1", via: 10.101.3.1}
-        probe: "ping 10.102.17.1 source 10.101.3.2"
+        path: {read: "show ip route vrf PROD 10.102.17.1", via: 10.101.3.1}
+        probe: "ping vrf PROD 10.102.17.1 source 10.101.3.2"
       - device: dc1-leaf01
-        path: {read: "show ip route 10.102.33.1", via: 10.101.3.1}
-        probe: "ping 10.102.33.1 source 10.101.3.2"
+        path: {read: "show ip route vrf PROD 10.102.33.1", via: 10.101.3.1}
+        probe: "ping vrf PROD 10.102.33.1 source 10.101.3.2"
       - device: br1-wan01    # Tunnel1 -> Gi6, when br1 prefers dc1-wan01
         path: {read: "show ip cef 10.101.3.2", via: 10.103.100.1}
         probe: "traceroute 10.101.3.2 source 10.102.17.1"
