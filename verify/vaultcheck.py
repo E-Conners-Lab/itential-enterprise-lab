@@ -359,8 +359,20 @@ def c_lab_edge() -> bool:
                 vault("POST", "auth/token/revoke-self", token)
             got = sorted((c or {}).get("capabilities", []))
             checks[f"{role} may {want} on {path} (has {got})"] = got == want
-        target_json, outputs_json = json.dumps(entry["target"]), json.dumps(entry["outputs"])
-        want_sha = _pinned_sha(entry["target"], entry["outputs"])
+        # a target without pinned outputs (dc1-wan01, monitored by AWS) renders against its deployment's own, read
+        # as Hand Off reads them: terraform-run's outputs action (a state read; nothing is planned or applied)
+        outputs = entry.get("outputs")
+        if outputs is None:
+            rc, out = _service("terraform-run", {"action": "outputs", "timeout": "120"})
+            outputs = out.get("outputs") if rc == 0 else None
+            checks[f"the deployment's outputs read for {name} (terraform-run outputs)"] = bool(outputs)
+            if not outputs:
+                for check, passed in checks.items():
+                    print(f"  {'ok  ' if passed else 'FAIL'} {check}")
+                ok = False
+                continue
+        target_json, outputs_json = json.dumps(entry["target"]), json.dumps(outputs)
+        want_sha = _pinned_sha(entry["target"], outputs)
         rc, out = _service("lab-edge", {"action": "render", "target_json": target_json, "outputs_json": outputs_json})
         checks["lab-edge render answers 0 for " + name] = rc == 0 and out.get("target") == name
         checks[f"lab-edge's SHA-256 equals the pinned module's ({want_sha[:12]})"] = out.get("sha256") == want_sha

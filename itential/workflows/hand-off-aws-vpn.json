@@ -96,6 +96,55 @@
                 },
                 "username": "automation",
                 "monitor": "none"
+              },
+              "dc1-wan01": {
+                "target": {
+                  "name": "dc1-wan01",
+                  "fvrf": "INET",
+                  "tunnel_source": "GigabitEthernet7",
+                  "front_door_ip": "172.29.129.250",
+                  "loopback_ip": "10.103.255.11",
+                  "router_inner": "169.254.10.1/30",
+                  "aws_inner": "169.254.10.2/30",
+                  "vpc_cidr": "10.0.0.0/16",
+                  "vpc_private_prefixes": [
+                    "10.0.64.0/20",
+                    "10.0.80.0/20"
+                  ],
+                  "lab_prefixes": [
+                    "10.101.0.0/16",
+                    "10.103.255.0/24"
+                  ],
+                  "local_id": "lab-edge.lab.internal",
+                  "remote_id": "aws-vpn.lab.internal",
+                  "peer_rule": "public",
+                  "peer_pinned": null,
+                  "bgp_asn": 65100,
+                  "inside_interfaces": [
+                    "GigabitEthernet5",
+                    "GigabitEthernet6",
+                    "Tunnel1",
+                    "Tunnel2"
+                  ],
+                  "unzoned_interfaces": [
+                    "GigabitEthernet1",
+                    "GigabitEthernet2",
+                    "GigabitEthernet7"
+                  ],
+                  "mgmt_host": "10.100.0.144"
+                },
+                "username": "itential-aws-vpn",
+                "monitor": "aws",
+                "netbox": {
+                  "site": "cloud-aws",
+                  "interface": "Tunnel10",
+                  "prefixes": {
+                    "10.0.0.0/16": "cloud-aws",
+                    "10.0.64.0/20": "cloud-aws",
+                    "10.0.80.0/20": "cloud-aws",
+                    "169.254.10.0/30": "wan"
+                  }
+                }
               }
             }
           },
@@ -132,7 +181,7 @@
         "incoming": {
           "clusterId": "lab",
           "language": "python",
-          "code": "import json, sys\nd = json.loads(sys.stdin.read() or \"{}\")\nname = d.get(\"target\")\nentry = (d.get(\"targets\") or {}).get(name) or {}\nmonitor = entry.get(\"monitor\")\ndeployed = entry.get(\"outputs\") if monitor != \"aws\" else d.get(\"deployed\")\nplan = {\"target\": name, \"monitor\": monitor, \"need_outputs\": bool(entry) and monitor == \"aws\" and deployed is None,\n        \"ready\": False, \"reason\": \"\", \"lab_edge\": None, \"monitor_params\": None, \"precheck\": None, \"render\": None,\n        \"push\": None, \"monitor_ready\": None}\nif not entry:\n    plan[\"reason\"] = \"%s is not an open target\" % name\nelif not plan[\"need_outputs\"] and not (deployed or {}).get(\"strongswan_eip\"):\n    plan[\"reason\"] = \"nothing is deployed (the outputs have no strongSwan address)\"\nif entry and deployed and not plan[\"reason\"]:\n    target, outputs, user = json.dumps(entry[\"target\"]), json.dumps(deployed), entry[\"username\"]\n    plan.update(\n        ready=True,\n        lab_edge={\"action\": \"verify\", \"target_json\": target, \"outputs_json\": outputs, \"username\": user, \"timeout\": \"300\"},\n        precheck={\"action\": \"precheck\", \"target_json\": target, \"username\": user, \"timeout\": \"300\"},\n        render={\"action\": \"render\", \"target_json\": target, \"outputs_json\": outputs, \"timeout\": \"300\"},\n        push={\"action\": \"push\", \"target_json\": target, \"outputs_json\": outputs, \"username\": user, \"timeout\": \"600\"})\n    if monitor == \"aws\":\n        instance = str(deployed.get(\"strongswan_instance_id\") or \"\")\n        plan[\"monitor_params\"] = {\"action\": \"check\", \"instance_id\": instance, \"timeout\": \"240\"}\n        plan[\"monitor_ready\"] = {\"action\": \"ready\", \"instance_id\": instance, \"timeout\": \"120\"}\nprint(json.dumps(plan))\n",
+          "code": "import json, sys\nd = json.loads(sys.stdin.read() or \"{}\")\nname = d.get(\"target\")\nentry = (d.get(\"targets\") or {}).get(name) or {}\nmonitor = entry.get(\"monitor\")\ndeployed = entry.get(\"outputs\") if monitor != \"aws\" else d.get(\"deployed\")\nplan = {\"target\": name, \"monitor\": monitor, \"need_outputs\": bool(entry) and monitor == \"aws\" and deployed is None,\n        \"ready\": False, \"reason\": \"\", \"lab_edge\": None, \"monitor_params\": None, \"precheck\": None, \"render\": None,\n        \"push\": None, \"monitor_ready\": None, \"netbox\": bool(entry.get(\"netbox\"))}\nif not entry:\n    plan[\"reason\"] = \"%s is not an open target\" % name\nelif not plan[\"need_outputs\"] and not (deployed or {}).get(\"strongswan_eip\"):\n    plan[\"reason\"] = \"nothing is deployed (the outputs have no strongSwan address)\"\nif entry and deployed and not plan[\"reason\"]:\n    target, outputs, user = json.dumps(entry[\"target\"]), json.dumps(deployed), entry[\"username\"]\n    plan.update(\n        ready=True,\n        lab_edge={\"action\": \"verify\", \"target_json\": target, \"outputs_json\": outputs, \"username\": user, \"timeout\": \"300\"},\n        precheck={\"action\": \"precheck\", \"target_json\": target, \"username\": user, \"timeout\": \"300\"},\n        render={\"action\": \"render\", \"target_json\": target, \"outputs_json\": outputs, \"timeout\": \"300\"},\n        push={\"action\": \"push\", \"target_json\": target, \"outputs_json\": outputs, \"username\": user, \"timeout\": \"600\"})\n    if monitor == \"aws\":\n        instance = str(deployed.get(\"strongswan_instance_id\") or \"\")\n        plan[\"monitor_params\"] = {\"action\": \"check\", \"instance_id\": instance, \"timeout\": \"240\"}\n        plan[\"monitor_ready\"] = {\"action\": \"ready\", \"instance_id\": instance, \"timeout\": \"120\"}\nprint(json.dumps(plan))\n",
           "data": "$var.job.handoff_in",
           "safety": {
             "timeout": 30
@@ -370,14 +419,14 @@
       "displayName": "GatewayManager",
       "groups": [],
       "nodeLocation": {
-        "x": 480,
+        "x": 330,
         "y": 1950
       },
       "variables": {
         "incoming": {
           "clusterId": "lab",
           "language": "python",
-          "code": "import json, sys\nd = json.loads(sys.stdin.read() or \"{}\")\nname = d.get(\"target\")\nentry = (d.get(\"targets\") or {}).get(name) or {}\nmonitor = entry.get(\"monitor\")\ndeployed = entry.get(\"outputs\") if monitor != \"aws\" else d.get(\"deployed\")\nplan = {\"target\": name, \"monitor\": monitor, \"need_outputs\": bool(entry) and monitor == \"aws\" and deployed is None,\n        \"ready\": False, \"reason\": \"\", \"lab_edge\": None, \"monitor_params\": None, \"precheck\": None, \"render\": None,\n        \"push\": None, \"monitor_ready\": None}\nif not entry:\n    plan[\"reason\"] = \"%s is not an open target\" % name\nelif not plan[\"need_outputs\"] and not (deployed or {}).get(\"strongswan_eip\"):\n    plan[\"reason\"] = \"nothing is deployed (the outputs have no strongSwan address)\"\nif entry and deployed and not plan[\"reason\"]:\n    target, outputs, user = json.dumps(entry[\"target\"]), json.dumps(deployed), entry[\"username\"]\n    plan.update(\n        ready=True,\n        lab_edge={\"action\": \"verify\", \"target_json\": target, \"outputs_json\": outputs, \"username\": user, \"timeout\": \"300\"},\n        precheck={\"action\": \"precheck\", \"target_json\": target, \"username\": user, \"timeout\": \"300\"},\n        render={\"action\": \"render\", \"target_json\": target, \"outputs_json\": outputs, \"timeout\": \"300\"},\n        push={\"action\": \"push\", \"target_json\": target, \"outputs_json\": outputs, \"username\": user, \"timeout\": \"600\"})\n    if monitor == \"aws\":\n        instance = str(deployed.get(\"strongswan_instance_id\") or \"\")\n        plan[\"monitor_params\"] = {\"action\": \"check\", \"instance_id\": instance, \"timeout\": \"240\"}\n        plan[\"monitor_ready\"] = {\"action\": \"ready\", \"instance_id\": instance, \"timeout\": \"120\"}\nprint(json.dumps(plan))\n",
+          "code": "import json, sys\nd = json.loads(sys.stdin.read() or \"{}\")\nname = d.get(\"target\")\nentry = (d.get(\"targets\") or {}).get(name) or {}\nmonitor = entry.get(\"monitor\")\ndeployed = entry.get(\"outputs\") if monitor != \"aws\" else d.get(\"deployed\")\nplan = {\"target\": name, \"monitor\": monitor, \"need_outputs\": bool(entry) and monitor == \"aws\" and deployed is None,\n        \"ready\": False, \"reason\": \"\", \"lab_edge\": None, \"monitor_params\": None, \"precheck\": None, \"render\": None,\n        \"push\": None, \"monitor_ready\": None, \"netbox\": bool(entry.get(\"netbox\"))}\nif not entry:\n    plan[\"reason\"] = \"%s is not an open target\" % name\nelif not plan[\"need_outputs\"] and not (deployed or {}).get(\"strongswan_eip\"):\n    plan[\"reason\"] = \"nothing is deployed (the outputs have no strongSwan address)\"\nif entry and deployed and not plan[\"reason\"]:\n    target, outputs, user = json.dumps(entry[\"target\"]), json.dumps(deployed), entry[\"username\"]\n    plan.update(\n        ready=True,\n        lab_edge={\"action\": \"verify\", \"target_json\": target, \"outputs_json\": outputs, \"username\": user, \"timeout\": \"300\"},\n        precheck={\"action\": \"precheck\", \"target_json\": target, \"username\": user, \"timeout\": \"300\"},\n        render={\"action\": \"render\", \"target_json\": target, \"outputs_json\": outputs, \"timeout\": \"300\"},\n        push={\"action\": \"push\", \"target_json\": target, \"outputs_json\": outputs, \"username\": user, \"timeout\": \"600\"})\n    if monitor == \"aws\":\n        instance = str(deployed.get(\"strongswan_instance_id\") or \"\")\n        plan[\"monitor_params\"] = {\"action\": \"check\", \"instance_id\": instance, \"timeout\": \"240\"}\n        plan[\"monitor_ready\"] = {\"action\": \"ready\", \"instance_id\": instance, \"timeout\": \"120\"}\nprint(json.dumps(plan))\n",
           "data": "$var.2e.object",
           "safety": {
             "timeout": 30
@@ -703,7 +752,7 @@
       "displayName": "GatewayManager",
       "groups": [],
       "nodeLocation": {
-        "x": -470,
+        "x": -170,
         "y": 3150
       },
       "variables": {
@@ -825,7 +874,7 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": -320,
+        "x": -330,
         "y": 3600
       },
       "variables": {
@@ -853,7 +902,7 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 30,
+        "x": 180,
         "y": 3600
       },
       "variables": {
@@ -881,7 +930,7 @@
       "displayName": "GatewayManager",
       "groups": [],
       "nodeLocation": {
-        "x": -500,
+        "x": 250,
         "y": 3750
       },
       "variables": {
@@ -911,7 +960,7 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": -70,
+        "x": -230,
         "y": 3900
       },
       "variables": {
@@ -957,7 +1006,7 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": -280,
+        "x": 310,
         "y": 4050
       },
       "variables": {
@@ -985,7 +1034,7 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": -120,
+        "x": 470,
         "y": 4200
       },
       "variables": {
@@ -1013,8 +1062,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": -130,
-        "y": 4350
+        "x": 1090,
+        "y": 6600
       },
       "variables": {
         "incoming": {
@@ -1045,8 +1094,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 260,
-        "y": 4500
+        "x": 870,
+        "y": 6750
       },
       "variables": {
         "incoming": {
@@ -1077,8 +1126,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 190,
-        "y": 4650
+        "x": 1040,
+        "y": 6900
       },
       "variables": {
         "incoming": {
@@ -1109,8 +1158,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 130,
-        "y": 4800
+        "x": 1140,
+        "y": 7050
       },
       "variables": {
         "incoming": {
@@ -1118,7 +1167,7 @@
           "path": [
             "netbox"
           ],
-          "value": "not applicable (the read-back is dc1-wan01's, added with its records)"
+          "value": "$var.job.netbox"
         },
         "outgoing": {
           "object": null
@@ -1141,8 +1190,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 100,
-        "y": 4950
+        "x": 1890,
+        "y": 7200
       },
       "variables": {
         "incoming": {
@@ -1171,8 +1220,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 80,
-        "y": 5100
+        "x": 1920,
+        "y": 7350
       },
       "variables": {
         "incoming": {
@@ -1201,8 +1250,8 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 60,
-        "y": 5250
+        "x": 1920,
+        "y": 7500
       },
       "variables": {
         "incoming": {
@@ -1229,8 +1278,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 140,
-        "y": 5400
+        "x": 2090,
+        "y": 7650
       },
       "variables": {
         "incoming": {
@@ -1261,8 +1310,8 @@
       "displayName": "GatewayManager",
       "groups": [],
       "nodeLocation": {
-        "x": 270,
-        "y": 5550
+        "x": 2110,
+        "y": 7800
       },
       "variables": {
         "incoming": {
@@ -1291,8 +1340,8 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 320,
-        "y": 5700
+        "x": 2420,
+        "y": 7950
       },
       "variables": {
         "incoming": {
@@ -1337,8 +1386,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 590,
-        "y": 5850
+        "x": 2420,
+        "y": 8100
       },
       "variables": {
         "incoming": {
@@ -1367,8 +1416,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 600,
-        "y": 6000
+        "x": 2700,
+        "y": 8250
       },
       "variables": {
         "incoming": {
@@ -1399,8 +1448,8 @@
       "displayName": "GatewayManager",
       "groups": [],
       "nodeLocation": {
-        "x": 2190,
-        "y": 6150
+        "x": 2700,
+        "y": 8400
       },
       "variables": {
         "incoming": {
@@ -1434,8 +1483,8 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 2600,
-        "y": 6300
+        "x": 2770,
+        "y": 8550
       },
       "variables": {
         "incoming": {
@@ -1480,8 +1529,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 2900,
-        "y": 6450
+        "x": 3010,
+        "y": 8700
       },
       "variables": {
         "incoming": {
@@ -1510,8 +1559,8 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 2850,
-        "y": 6600
+        "x": 2920,
+        "y": 8850
       },
       "variables": {
         "incoming": {
@@ -1538,8 +1587,8 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 3080,
-        "y": 6750
+        "x": 3120,
+        "y": 9000
       },
       "variables": {
         "incoming": {
@@ -1584,8 +1633,8 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 3040,
-        "y": 6900
+        "x": 3080,
+        "y": 9150
       },
       "variables": {
         "incoming": {
@@ -1612,8 +1661,8 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 3340,
-        "y": 6900
+        "x": 3380,
+        "y": 9150
       },
       "variables": {
         "incoming": {
@@ -1639,7 +1688,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 4110,
-        "y": 9450
+        "y": 11700
       },
       "variables": {
         "incoming": {
@@ -1669,7 +1718,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 4220,
-        "y": 9600
+        "y": 11850
       },
       "variables": {
         "incoming": {
@@ -1697,7 +1746,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 4440,
-        "y": 9750
+        "y": 12000
       },
       "variables": {
         "incoming": {
@@ -1727,7 +1776,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 3810,
-        "y": 9450
+        "y": 11700
       },
       "variables": {
         "incoming": {
@@ -1757,7 +1806,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 3920,
-        "y": 9600
+        "y": 11850
       },
       "variables": {
         "incoming": {
@@ -1785,7 +1834,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 3990,
-        "y": 9750
+        "y": 12000
       },
       "variables": {
         "incoming": {
@@ -1814,8 +1863,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 360,
-        "y": 5250
+        "x": 2220,
+        "y": 7500
       },
       "variables": {
         "incoming": {
@@ -1844,8 +1893,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 610,
-        "y": 5400
+        "x": 2610,
+        "y": 7650
       },
       "variables": {
         "incoming": {
@@ -1904,7 +1953,7 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 280,
+        "x": -1220,
         "y": 3150
       },
       "variables": {
@@ -1934,7 +1983,7 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 360,
+        "x": -440,
         "y": 4350
       },
       "variables": {
@@ -1964,8 +2013,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": -310,
-        "y": 5400
+        "x": 1790,
+        "y": 7650
       },
       "variables": {
         "incoming": {
@@ -2054,7 +2103,7 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 280,
+        "x": 730,
         "y": 3000
       },
       "variables": {
@@ -2084,7 +2133,7 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": -950,
+        "x": -1100,
         "y": 3750
       },
       "variables": {
@@ -2114,7 +2163,7 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 250,
+        "x": -800,
         "y": 3750
       },
       "variables": {
@@ -2144,7 +2193,7 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 470,
+        "x": -1190,
         "y": 4050
       },
       "variables": {
@@ -2174,8 +2223,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 20,
-        "y": 5700
+        "x": 2070,
+        "y": 7950
       },
       "variables": {
         "incoming": {
@@ -2204,8 +2253,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 2620,
-        "y": 7200
+        "x": 2780,
+        "y": 9450
       },
       "variables": {
         "incoming": {
@@ -2235,7 +2284,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 3690,
-        "y": 9750
+        "y": 12000
       },
       "variables": {
         "incoming": {
@@ -2264,8 +2313,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 2690,
-        "y": 7050
+        "x": 2710,
+        "y": 9300
       },
       "variables": {
         "incoming": {
@@ -2294,8 +2343,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 3370,
-        "y": 7050
+        "x": 3390,
+        "y": 9300
       },
       "variables": {
         "incoming": {
@@ -2322,8 +2371,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 3370,
-        "y": 7200
+        "x": 3390,
+        "y": 9450
       },
       "variables": {
         "incoming": {
@@ -2350,8 +2399,8 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 3220,
-        "y": 7350
+        "x": 3240,
+        "y": 9600
       },
       "variables": {
         "incoming": {
@@ -2378,8 +2427,8 @@
       "displayName": "GatewayManager",
       "groups": [],
       "nodeLocation": {
-        "x": 3400,
-        "y": 7500
+        "x": 3420,
+        "y": 9750
       },
       "variables": {
         "incoming": {
@@ -2408,8 +2457,8 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 3670,
-        "y": 7650
+        "x": 3680,
+        "y": 9900
       },
       "variables": {
         "incoming": {
@@ -2455,7 +2504,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 3760,
-        "y": 7800
+        "y": 10050
       },
       "variables": {
         "incoming": {
@@ -2484,8 +2533,8 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 3490,
-        "y": 7950
+        "x": 3500,
+        "y": 10200
       },
       "variables": {
         "incoming": {
@@ -2531,7 +2580,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 3840,
-        "y": 8100
+        "y": 10350
       },
       "variables": {
         "incoming": {
@@ -2559,7 +2608,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 3680,
-        "y": 8250
+        "y": 10500
       },
       "variables": {
         "incoming": {
@@ -2589,7 +2638,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 3920,
-        "y": 8400
+        "y": 10650
       },
       "variables": {
         "incoming": {
@@ -2635,7 +2684,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 4180,
-        "y": 8550
+        "y": 10800
       },
       "variables": {
         "incoming": {
@@ -2665,7 +2714,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 3630,
-        "y": 8700
+        "y": 10950
       },
       "variables": {
         "incoming": {
@@ -2697,7 +2746,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 3650,
-        "y": 8850
+        "y": 11100
       },
       "variables": {
         "incoming": {
@@ -2729,7 +2778,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 3660,
-        "y": 9000
+        "y": 11250
       },
       "variables": {
         "incoming": {
@@ -2761,7 +2810,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 3360,
-        "y": 9150
+        "y": 11400
       },
       "variables": {
         "incoming": {
@@ -2796,7 +2845,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 3850,
-        "y": 9300
+        "y": 11550
       },
       "variables": {
         "incoming": {
@@ -2828,6 +2877,513 @@
         "error": "",
         "decorators": []
       }
+    },
+    "d0": {
+      "name": "evaluation",
+      "canvasName": "evaluation",
+      "summary": "NetBox read-back applies? (a target with NetBox records)",
+      "description": "NetBox read-back applies? (a target with NetBox records)",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 460,
+        "y": 4350
+      },
+      "variables": {
+        "incoming": {
+          "all_true_flag": true,
+          "evaluation_groups": [
+            {
+              "all_true_flag": true,
+              "evaluations": [
+                {
+                  "query": "stdout_json.netbox",
+                  "operand_1": {
+                    "variable": "handoff_plan",
+                    "task": "job"
+                  },
+                  "operator": "==",
+                  "operand_2": {
+                    "variable": true,
+                    "task": "static"
+                  }
+                }
+              ]
+            }
+          ],
+          "options": {}
+        },
+        "outgoing": {
+          "return_value": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "d1": {
+      "name": "dcim_sites_list",
+      "canvasName": "dcim_sites_list",
+      "summary": "NetBox: site cloud-aws",
+      "description": "NetBox: site cloud-aws",
+      "location": "Adapter",
+      "locationType": "lab-netbox:1.0.0",
+      "app": "lab-netbox:1.0.0",
+      "type": "automatic",
+      "displayName": "lab-netbox:1.0.0",
+      "groups": [],
+      "nodeLocation": {
+        "x": 150,
+        "y": 4500
+      },
+      "variables": {
+        "incoming": {
+          "adapter_id": "netbox-api",
+          "slug": "cloud-aws",
+          "limit": 1
+        },
+        "outgoing": {
+          "response": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "d4": {
+      "name": "dcim_interfaces_list",
+      "canvasName": "dcim_interfaces_list",
+      "summary": "NetBox: dc1-wan01 Tunnel10",
+      "description": "NetBox: dc1-wan01 Tunnel10",
+      "location": "Adapter",
+      "locationType": "lab-netbox:1.0.0",
+      "app": "lab-netbox:1.0.0",
+      "type": "automatic",
+      "displayName": "lab-netbox:1.0.0",
+      "groups": [],
+      "nodeLocation": {
+        "x": 380,
+        "y": 4950
+      },
+      "variables": {
+        "incoming": {
+          "adapter_id": "netbox-api",
+          "device": "dc1-wan01",
+          "name": "Tunnel10"
+        },
+        "outgoing": {
+          "response": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "d5": {
+      "name": "ipam_ip_addresses_list",
+      "canvasName": "ipam_ip_addresses_list",
+      "summary": "NetBox: 169.254.10.1 on dc1-wan01",
+      "description": "NetBox: 169.254.10.1 on dc1-wan01",
+      "location": "Adapter",
+      "locationType": "lab-netbox:1.0.0",
+      "app": "lab-netbox:1.0.0",
+      "type": "automatic",
+      "displayName": "lab-netbox:1.0.0",
+      "groups": [],
+      "nodeLocation": {
+        "x": 510,
+        "y": 5100
+      },
+      "variables": {
+        "incoming": {
+          "adapter_id": "netbox-api",
+          "device": "dc1-wan01",
+          "address": "169.254.10.1"
+        },
+        "outgoing": {
+          "response": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "d6": {
+      "name": "parse",
+      "canvasName": "parse",
+      "summary": "the records NetBox should hold",
+      "description": "the records NetBox should hold",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 750,
+        "y": 5250
+      },
+      "variables": {
+        "incoming": {
+          "text": "{\"want\": {\"device\": \"dc1-wan01\", \"site\": \"cloud-aws\", \"interface\": \"Tunnel10\", \"address\": \"169.254.10.1/30\", \"prefixes\": {\"10.0.0.0/16\": \"cloud-aws\", \"10.0.64.0/20\": \"cloud-aws\", \"10.0.80.0/20\": \"cloud-aws\", \"169.254.10.0/30\": \"wan\"}}}"
+        },
+        "outgoing": {
+          "textObject": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "d7": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "read-back: the site",
+      "description": "read-back: the site",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 750,
+        "y": 5400
+      },
+      "variables": {
+        "incoming": {
+          "obj": "$var.d6.textObject",
+          "path": [
+            "site"
+          ],
+          "value": "$var.d1.response"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "d8": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "read-back: the interface",
+      "description": "read-back: the interface",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 700,
+        "y": 5550
+      },
+      "variables": {
+        "incoming": {
+          "obj": "$var.d7.object",
+          "path": [
+            "interface"
+          ],
+          "value": "$var.d4.response"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "d9": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "read-back: the address",
+      "description": "read-back: the address",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 640,
+        "y": 5700
+      },
+      "variables": {
+        "incoming": {
+          "obj": "$var.d8.object",
+          "path": [
+            "address"
+          ],
+          "value": "$var.d5.response"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "dc": {
+      "name": "runCode",
+      "canvasName": "runCode",
+      "summary": "compare NetBox with the records it should hold",
+      "description": "compare NetBox with the records it should hold",
+      "location": "Application",
+      "locationType": null,
+      "app": "GatewayManager",
+      "type": "automatic",
+      "displayName": "GatewayManager",
+      "groups": [],
+      "nodeLocation": {
+        "x": 650,
+        "y": 6150
+      },
+      "variables": {
+        "incoming": {
+          "clusterId": "lab",
+          "language": "python",
+          "code": "import json, sys\n\n\ndef netbox_readback(d: dict) -> dict:\n    \"\"\"Which of the target's records production NetBox holds (`exists`), which it does not (`missing`) and which it\n    holds otherwise (`differ`), from the reads Hand Off makes before its card. Reads only: nothing is written. Each\n    answer comes as the Integration Model gives it (the payload in `body`); an answer that is not a list of results\n    counts as not found. Pure: runCode runs this very function's source, so the unit tests test what runs.\"\"\"\n    want = d.get(\"want\") or {}\n\n    def rows(answer) -> list:\n        body = answer.get(\"body\", answer) if isinstance(answer, dict) else None\n        results = body.get(\"results\") if isinstance(body, dict) else None\n        return [r for r in results if isinstance(r, dict)] if isinstance(results, list) else []\n\n    exists, missing, differ = [], [], []\n\n    def record(label: str, found: bool, wrong: str = \"\") -> None:\n        (missing if not found else differ if wrong else exists).append(f\"{label}: {wrong}\" if found and wrong else label)\n\n    site = want.get(\"site\")\n    record(f\"site {site}\", any(r.get(\"slug\") == site for r in rows(d.get(\"site\"))))\n    prefixes = {}\n    for key in sorted(k for k in d if k.startswith(\"prefixes_\")):  # one answer per parent block read\n        prefixes.update({r.get(\"prefix\"): r for r in rows(d[key])})\n    for prefix, scope in sorted((want.get(\"prefixes\") or {}).items()):\n        row = prefixes.get(prefix)\n        got = ((row or {}).get(\"scope\") or {}).get(\"slug\")\n        record(f\"prefix {prefix} ({scope})\", row is not None, \"\" if got == scope else f\"scoped to {got or 'nothing'}\")\n    device, interface, address = want.get(\"device\"), want.get(\"interface\"), want.get(\"address\")\n    record(f\"{device} {interface}\", any(r.get(\"name\") == interface for r in rows(d.get(\"interface\"))))\n    ips = rows(d.get(\"address\"))\n    on_it = [r for r in ips if (r.get(\"assigned_object\") or {}).get(\"name\") == interface]\n    wrong = (\"\" if any(r.get(\"address\") == address for r in on_it)\n             else f\"holds {on_it[0].get('address')}\" if on_it\n             else f\"assigned to {(ips[0].get('assigned_object') or {}).get('name') or 'nothing'}\" if ips else \"\")\n    record(f\"{address} on {interface}\", bool(ips), wrong)\n    return {\"agrees\": not missing and not differ, \"exists\": exists, \"missing\": missing, \"differ\": differ}\n\n\nprint(json.dumps(netbox_readback(json.loads(sys.stdin.read() or \"{}\"))))\n",
+          "data": "$var.db.object",
+          "safety": {
+            "timeout": 30
+          },
+          "packages": []
+        },
+        "outgoing": {
+          "result": "$var.job.netbox_result"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "dd": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "the read-back",
+      "description": "the read-back",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 950,
+        "y": 6300
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "stdout_json",
+          "obj": "$var.job.netbox_result"
+        },
+        "outgoing": {
+          "return_data": "$var.job.netbox"
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "de": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "NetBox could not be read",
+      "description": "NetBox could not be read",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 470,
+        "y": 6450
+      },
+      "variables": {
+        "incoming": {
+          "input": "could not read NetBox (a read failed): check site, prefixes, Tunnel10 and its address by hand before approving",
+          "outputType": "string",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.netbox"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "df": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "no NetBox read-back for this target",
+      "description": "no NetBox read-back for this target",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 900,
+        "y": 4500
+      },
+      "variables": {
+        "incoming": {
+          "input": "not applicable (only dc1-wan01 has NetBox records: the clab twin is not a NetBox device)",
+          "outputType": "string",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.netbox"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "d2": {
+      "name": "ipam_prefixes_list",
+      "canvasName": "ipam_prefixes_list",
+      "summary": "NetBox: prefixes within 10.0.0.0/15",
+      "description": "NetBox: prefixes within 10.0.0.0/15",
+      "location": "Adapter",
+      "locationType": "lab-netbox:1.0.0",
+      "app": "lab-netbox:1.0.0",
+      "type": "automatic",
+      "displayName": "lab-netbox:1.0.0",
+      "groups": [],
+      "nodeLocation": {
+        "x": -150,
+        "y": 4650
+      },
+      "variables": {
+        "incoming": {
+          "adapter_id": "netbox-api",
+          "within": "10.0.0.0/15",
+          "limit": 100
+        },
+        "outgoing": {
+          "response": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "da": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "read-back: prefixes within 10.0.0.0/15",
+      "description": "read-back: prefixes within 10.0.0.0/15",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 600,
+        "y": 5850
+      },
+      "variables": {
+        "incoming": {
+          "obj": "$var.d9.object",
+          "path": [
+            "prefixes_0"
+          ],
+          "value": "$var.d2.response"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "d3": {
+      "name": "ipam_prefixes_list",
+      "canvasName": "ipam_prefixes_list",
+      "summary": "NetBox: prefixes within 169.254.10.0/29",
+      "description": "NetBox: prefixes within 169.254.10.0/29",
+      "location": "Adapter",
+      "locationType": "lab-netbox:1.0.0",
+      "app": "lab-netbox:1.0.0",
+      "type": "automatic",
+      "displayName": "lab-netbox:1.0.0",
+      "groups": [],
+      "nodeLocation": {
+        "x": 20,
+        "y": 4800
+      },
+      "variables": {
+        "incoming": {
+          "adapter_id": "netbox-api",
+          "within": "169.254.10.0/29",
+          "limit": 100
+        },
+        "outgoing": {
+          "response": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "db": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "read-back: prefixes within 169.254.10.0/29",
+      "description": "read-back: prefixes within 169.254.10.0/29",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 600,
+        "y": 6000
+      },
+      "variables": {
+        "incoming": {
+          "obj": "$var.da.object",
+          "path": [
+            "prefixes_1"
+          ],
+          "value": "$var.d3.response"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
     },
     "9a01": {
       "name": "setObjectKey",
@@ -2888,7 +3444,8 @@
             "properties": {
               "target": {
                 "enum": [
-                  "clab-rtr1"
+                  "clab-rtr1",
+                  "dc1-wan01"
                 ]
               }
             }
@@ -2961,7 +3518,7 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 500,
+        "x": 650,
         "y": 600
       },
       "variables": {
@@ -2994,11 +3551,139 @@
       "groups": [],
       "nodeLocation": {
         "x": 2530,
-        "y": 9900
+        "y": 12150
       }
     }
   },
   "transitions": {
+    "d0": {
+      "d1": {
+        "state": "success",
+        "type": "standard"
+      },
+      "df": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "d1": {
+      "d2": {
+        "state": "success",
+        "type": "standard"
+      },
+      "de": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "d2": {
+      "d3": {
+        "state": "success",
+        "type": "standard"
+      },
+      "de": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "d3": {
+      "d4": {
+        "state": "success",
+        "type": "standard"
+      },
+      "de": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "d4": {
+      "d5": {
+        "state": "success",
+        "type": "standard"
+      },
+      "de": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "d5": {
+      "d6": {
+        "state": "success",
+        "type": "standard"
+      },
+      "de": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "d6": {
+      "d7": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "d7": {
+      "d8": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "d8": {
+      "d9": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "d9": {
+      "da": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "da": {
+      "db": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "db": {
+      "dc": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "dc": {
+      "dd": {
+        "state": "success",
+        "type": "standard"
+      },
+      "de": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "dd": {
+      "6a": {
+        "state": "success",
+        "type": "standard"
+      },
+      "de": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "de": {
+      "6a": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "df": {
+      "6a": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
     "workflow_start": {
       "9a01": {
         "state": "success",
@@ -3250,7 +3935,7 @@
       }
     },
     "5e": {
-      "6a": {
+      "d0": {
         "state": "success",
         "type": "standard"
       },
@@ -3724,7 +4409,8 @@
         "type": "string",
         "required": true,
         "enum": [
-          "clab-rtr1"
+          "clab-rtr1",
+          "dc1-wan01"
         ],
         "description": "The lab edge router to hand the AWS VPN to"
       }
@@ -3798,6 +4484,15 @@
       },
       "monitor_note": {
         "type": "string"
+      },
+      "netbox": {
+        "type": [
+          "object",
+          "string"
+        ]
+      },
+      "netbox_result": {
+        "type": "object"
       },
       "input_check": {
         "type": "object"

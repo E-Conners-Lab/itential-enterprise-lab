@@ -106,7 +106,8 @@ def test_clab_rtr1_is_the_twins_router_as_the_clab_oracle_has_it() -> None:
 def test_dc1_wan01_is_the_router_its_generated_configuration_describes() -> None:
     entry = TARGETS["dc1-wan01"]
     t, ifs = entry["target"], interfaces(DC1_CFG)
-    assert entry["window"] == "closed" and entry["monitor"] == "aws" and entry["psk_path"] == V["vault"]["aws"]["psk_path"]
+    # open since build step 11 (2026-10-01): the step-10 window saved its prerequisites; closed again when R1 is signed off
+    assert entry["window"] == "open" and entry["monitor"] == "aws" and entry["psk_path"] == V["vault"]["aws"]["psk_path"]
     assert f"vrf forwarding {t['fvrf']}" in ifs[t["tunnel_source"]]
     assert any(x.startswith(f"ip address {t['front_door_ip']} ") for x in ifs[t["tunnel_source"]])
     assert any(x.startswith(f"ip address {t['loopback_ip']} ") for x in ifs["Loopback0"])
@@ -139,7 +140,7 @@ def test_only_open_targets_have_aliases_bound() -> None:
 
 
 def test_the_key_is_bound_to_lab_edge_push_alone() -> None:
-    psk_targets = {"LAB_EDGE_PSK_CLAB_RTR1", "LAB_EDGE_PSK_VERSION_CLAB_RTR1"}
+    psk_targets = {env(kind, name) for name in TARGETS for kind in ("PSK", "PSK_VERSION")}
     for name, svc in DEV_SERVICES.items():
         targets = {s["target"] for s in svc["secrets"]}
         assert bool(targets & psk_targets) == (name == "lab-edge-push"), name
@@ -156,10 +157,17 @@ def test_every_bound_alias_exists_and_the_key_reads_from_the_targets_path() -> N
             assert s["name"] in aliases, s["name"]
     dev = V["vault"]["dev_gateway_aliases"]
     psk_path = TARGETS["clab-rtr1"]["psk_path"]
+    # each open target's key reads from that target's own psk_path (dc1-wan01's: the deployment's, aws/vpn-psk)
+    deployed = TARGETS["dc1-wan01"]["psk_path"]
     assert dev == {"aws-vpn-psk-clab-rtr1": {"path": psk_path, "key": "psk"},
                    "aws-vpn-psk-version-clab-rtr1": {"path": psk_path, "key": "version"},
-                   # dc1-wan01's time-boxed account (make edge-account), bound by config-push-revert
+                   "aws-vpn-psk-dc1-wan01": {"path": deployed, "key": "psk"},
+                   "aws-vpn-psk-version-dc1-wan01": {"path": deployed, "key": "version"},
+                   # dc1-wan01's time-boxed account (make edge-account), bound by config-push-revert and the step-6
+                   # services
                    "dc1-wan01-aws-vpn-password": {"path": "devices/dc1-wan01-aws-vpn", "key": "password"}}
+    readers = {r: c["policy_paths"] for r, c in V["vault"]["approles"].items()}
+    assert deployed in readers["itential-gateway"] and deployed not in readers["itential-platform"]
     # under devices/*: the Gateway reads it, the Platform cannot
     roles = V["vault"]["approles"]
     assert psk_path.startswith("devices/") and "devices/*" in roles["itential-gateway"]["policy_paths"]
@@ -248,7 +256,47 @@ def lab_edge(monkeypatch):
     monkeypatch.setattr(vc, "_policy_token", lambda role: role)
     monkeypatch.setattr(vc, "_service", service)
     monkeypatch.setattr(vc, "_pinned_source", CDP_RENDER.read_text)  # the real subprocess render runs on it
+    # the twin alone: its pinned outputs render for real here; a deployment's own outputs are tested on their own below
+    monkeypatch.setattr(vc, "_open_targets", lambda: {"clab-rtr1": entry})
     return vc, world
+
+
+def _deployed_only(vc, world, monkeypatch, outputs_answer):
+    """dc1-wan01 open alone, its outputs coming from terraform-run (a stand-in render: the real one needs a global EIP)."""
+    entry = TARGETS["dc1-wan01"]
+    monkeypatch.setattr(vc, "_open_targets", lambda: {"dc1-wan01": entry})
+    monkeypatch.setattr(vc, "_pinned_sha", lambda target, outputs: world["sha"])
+    real = vc._service
+
+    def service(name, params):
+        if name == "terraform-run":
+            world["runs"].append((name, params))
+            return outputs_answer
+        rc, out = real(name, params)
+        return (rc, {**out, "target": "dc1-wan01"}) if name == "lab-edge" else (rc, out)
+
+    monkeypatch.setattr(vc, "_service", service)
+    return entry
+
+
+def test_s13_2d_renders_a_deployed_target_against_its_own_outputs(lab_edge, monkeypatch) -> None:
+    vc, world = lab_edge
+    _deployed_only(vc, world, monkeypatch, (0, {"outputs": {"strongswan_eip": "x"}}))
+    assert vc.c_lab_edge() is True
+    names = [n for n, _ in world["runs"]]
+    assert names.index("terraform-run") < names.index("lab-edge")  # the outputs are read before the render
+    assert ("terraform-run", {"action": "outputs", "timeout": "120"}) in world["runs"]  # a read: never plan or apply
+    render = next(p for n, p in world["runs"] if n == "lab-edge")
+    assert json.loads(render["outputs_json"]) == {"strongswan_eip": "x"}
+
+
+@pytest.mark.parametrize("answer", [(1, {"error": "no state"}), (0, {"outputs": {}}), (None, {})],
+                         ids=["read-failed", "nothing-deployed", "runservice-error"])
+def test_s13_2d_fails_a_deployed_target_whose_outputs_cannot_be_read(lab_edge, monkeypatch, answer) -> None:
+    vc, world = lab_edge
+    _deployed_only(vc, world, monkeypatch, answer)
+    assert vc.c_lab_edge() is False
+    assert not [n for n, _ in world["runs"] if n in ("lab-edge", "lab-edge-push")]  # nothing renders or pushes
 
 
 def test_s13_2d_passes_when_everything_holds_and_never_hands_push_the_real_sha(lab_edge) -> None:
