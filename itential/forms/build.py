@@ -135,9 +135,14 @@ def verify_aws_vpn() -> dict:
                        "where it applies and a ping through the tunnel must all say up (PID S13, ADR 0068)")
 
 
+def tear_down_aws_vpn() -> dict:
+    return target_form("tear_down_aws_vpn", "Tear the AWS VPN down: the router's AWS block removed under a revert timer "
+                       "and proved gone, then the AWS side destroyed - each after its own Work Center approval (R2)")
+
+
 def main(check: bool) -> int:
     rc = 0
-    for doc in (branch_vlan_approval(), deploy_aws_vpn(), hand_off_aws_vpn(), verify_aws_vpn()):
+    for doc in (branch_vlan_approval(), deploy_aws_vpn(), hand_off_aws_vpn(), verify_aws_vpn(), tear_down_aws_vpn()):
         out = HERE / f"{doc['name']}.json"
         text = json.dumps(doc, indent=2) + "\n"
         if check:

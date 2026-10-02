@@ -352,7 +352,7 @@ OPEN_TARGETS = sorted(n for n, t in VERSIONS["aws_vpn"]["targets"].items() if t[
 
 def test_the_trigger_refuses_what_the_workflow_refuses() -> None:
     specs, task = _trigger_specs()
-    assert set(specs) == {"deploy_aws_vpn", "hand_off_aws_vpn", "verify_aws_vpn"}
+    assert set(specs) == {"deploy_aws_vpn", "hand_off_aws_vpn", "verify_aws_vpn", "tear_down_aws_vpn"}
     assert task["when"] == "dev_overlay | default(false) | bool" and task["loop_control"]["loop_var"] == "wt"
     schema = specs["deploy_aws_vpn"]["schema"]
     want = build.PLAN_INPUTS_SCHEMA["properties"]
@@ -361,8 +361,9 @@ def test_the_trigger_refuses_what_the_workflow_refuses() -> None:
     for key in ("onprem_public_ip", "enable_nat_gateway", "change_note"):
         got = {k: v for k, v in schema["properties"][key].items() if k != "type"}
         assert got == {k: v for k, v in want[key].items() if k != "type"}, key
-    # Hand Off and Verify take only `target`, one of the open routers - the same as the workflows' own gates
-    for key in ("hand_off_aws_vpn", "verify_aws_vpn"):
+    # Hand Off, Verify and Tear Down take only `target`, one of the open routers - the same as the workflows' own
+    # gates (Tear Down's routers are the open ones that are also revert targets: today every open one is)
+    for key in ("hand_off_aws_vpn", "verify_aws_vpn", "tear_down_aws_vpn"):
         assert specs[key]["schema"] == "{{ aws_vpn_target_schema }}", key
         assert build.INPUT_GATES[VERSIONS["workflows"][key]] == {"target": {"enum": OPEN_TARGETS}}
     target_schema = task["vars"]["aws_vpn_target_schema"]
@@ -398,7 +399,8 @@ def _workflow(file: str) -> tuple[dict, dict]:
     return wf, {tid: t for tid, t in wf["tasks"].items() if isinstance(t, dict)}
 
 
-PAGE_MODES = {"deploy": "deploy-aws-vpn.json", "handoff": "hand-off-aws-vpn.json", "verify": "verify-aws-vpn.json"}
+PAGE_MODES = {"deploy": "deploy-aws-vpn.json", "handoff": "hand-off-aws-vpn.json", "verify": "verify-aws-vpn.json",
+              "teardown": "tear-down-aws-vpn.json"}
 
 
 def _mode_block(page: str, mode: str) -> str:
@@ -421,7 +423,8 @@ def test_the_page_draws_its_route_from_task_ids_the_workflow_has() -> None:
             keys.append(key)
             for tid in re.findall(r'"([^"]*)"', ids):  # every quoted id, so a typo is caught too
                 assert tid in tasks, f"page stage {key} watches {tid}, which {wf['name']} does not have"
-    assert keys == ["plan", "approve", "apply", "psk", "checks", "hoapprove", "push", "tunnel", "verdict"]
+    assert keys == ["plan", "approve", "apply", "psk", "checks", "hoapprove", "push", "tunnel", "verdict",
+                    "tdapprove", "remove", "awsapprove", "destroy"]
     assert len(set(keys)) == len(keys)  # one route: a stage key names one waypoint
     wf, _ = _workflow("deploy-aws-vpn.json")
     for var in ("plan", "outputs", "psk", "outcome", "error", "aws_changed", "rejected"):
@@ -431,6 +434,21 @@ def test_the_page_draws_its_route_from_task_ids_the_workflow_has() -> None:
         assert var in wf["outputSchema"]["properties"] and f"v.{var}" in page, var
     wf, _ = _workflow("verify-aws-vpn.json")
     assert "judgement" in wf["outputSchema"]["properties"] and "v.judgement" in page
+    wf, _ = _workflow("tear-down-aws-vpn.json")
+    for var in ("removal_result", "router_state", "destroy_plan", "outcome", "error", "aws_changed", "router_changed"):
+        assert var in wf["outputSchema"]["properties"] and f"v.{var}" in page, var
+
+
+def test_tear_downs_two_cards_each_reject_on_their_own_branch_and_the_page_never_shows_the_lines() -> None:
+    page = PAGE.read_text()
+    wf, tasks = _workflow("tear-down-aws-vpn.json")
+    block = _mode_block(page, "teardown")
+    assert 'reject: [{ stage: "tdapprove", task: "a0" }, { stage: "awsapprove", task: "a2" }]' in block
+    assert wf["transitions"]["2c"]["a0"]["state"] == "failure" and wf["transitions"]["5f"]["a2"]["state"] == "failure"
+    assert 'trigger: "/operations-manager/triggers/endpoint/tear-down-aws-vpn"' in block
+    render = page.split("function renderTeardown")[1].split("\n  }\n")[0]
+    assert "removal.sha256" in render and "removal.lines" not in render  # the SHA-256 only, never the lines
+    assert 'id="tab-teardown"' in page and 'id="teardown-target"' in page and '"teardown-target"].forEach' in page
 
 
 def test_the_page_marks_a_stop_from_the_branches_the_workflow_takes() -> None:
