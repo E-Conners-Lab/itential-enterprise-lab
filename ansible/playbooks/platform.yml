@@ -221,6 +221,10 @@
           - key: verify_aws_vpn
             description: "Verifies the AWS VPN without changing anything; started by the branded page or the form (ADR 0068)"
             schema: "{{ aws_vpn_target_schema }}"
+          # its routers are the open targets that are also revert targets: today the same list (a test holds it)
+          - key: tear_down_aws_vpn
+            description: "Tears the AWS VPN down (the router's block, then the AWS side); started by the branded page or the form (R2)"
+            schema: "{{ aws_vpn_target_schema }}"
 
     - name: Element 4 - Integration Models, integrations and their tools (ADR 0045)
       ansible.builtin.include_tasks: tasks/integrations.yml

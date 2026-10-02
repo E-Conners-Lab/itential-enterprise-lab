@@ -1,0 +1,3545 @@
+{
+  "name": "Tear Down AWS VPN",
+  "type": "automation",
+  "description": "Tears the AWS VPN down: removes the router's AWS block under a revert timer after a Work Center approval, proves it gone, then - for a target deployed in AWS - plans the destroy, shows it on a second card and applies exactly that plan (PID S13 criterion 5, R2, ADR 0068)",
+  "tasks": {
+    "10": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "router_changed = false",
+      "description": "router_changed = false",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": -90,
+        "y": 600
+      },
+      "variables": {
+        "incoming": {
+          "input": "false",
+          "outputType": "boolean",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.router_changed"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "11": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "aws_changed = false",
+      "description": "aws_changed = false",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": -80,
+        "y": 750
+      },
+      "variables": {
+        "incoming": {
+          "input": "false",
+          "outputType": "boolean",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.aws_changed"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "1a": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "the router (the target is gated: an open one)",
+      "description": "the router (the target is gated: an open one)",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": -70,
+        "y": 900
+      },
+      "variables": {
+        "incoming": {
+          "obj": {},
+          "path": [
+            "target"
+          ],
+          "value": "$var.job.target"
+        },
+        "outgoing": {
+          "object": "$var.job.teardown_in"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "1b": {
+      "name": "runCode",
+      "canvasName": "runCode",
+      "summary": "the plan (Python on the runner)",
+      "description": "the plan (Python on the runner)",
+      "location": "Application",
+      "locationType": null,
+      "app": "GatewayManager",
+      "type": "automatic",
+      "displayName": "GatewayManager",
+      "groups": [],
+      "nodeLocation": {
+        "x": -360,
+        "y": 1050
+      },
+      "variables": {
+        "incoming": {
+          "clusterId": "lab",
+          "language": "python",
+          "code": "import json, sys\n\n\nTARGETS = {'clab-rtr1': {'target': {'name': 'clab-rtr1', 'fvrf': 'INET', 'tunnel_source': 'GigabitEthernet4', 'front_door_ip': '198.51.100.2', 'loopback_ip': '10.100.3.201', 'router_inner': '169.254.10.1/30', 'aws_inner': '169.254.10.2/30', 'vpc_cidr': '10.0.0.0/16', 'vpc_private_prefixes': ['10.0.64.0/20', '10.0.80.0/20'], 'lab_prefixes': ['10.100.3.0/24'], 'local_id': 'lab-edge.lab.internal', 'remote_id': 'aws-vpn.lab.internal', 'peer_rule': 'pinned', 'peer_pinned': '198.51.100.20', 'bgp_asn': 65010, 'inside_interfaces': ['GigabitEthernet2', 'GigabitEthernet3'], 'unzoned_interfaces': ['GigabitEthernet1', 'GigabitEthernet4'], 'mgmt_host': '10.100.2.11'}, 'username': 'automation', 'monitor': 'none'}, 'dc1-wan01': {'target': {'name': 'dc1-wan01', 'fvrf': 'INET', 'tunnel_source': 'GigabitEthernet7', 'front_door_ip': '172.29.129.250', 'loopback_ip': '10.103.255.11', 'router_inner': '169.254.10.1/30', 'aws_inner': '169.254.10.2/30', 'vpc_cidr': '10.0.0.0/16', 'vpc_private_prefixes': ['10.0.64.0/20', '10.0.80.0/20'], 'lab_prefixes': ['10.101.0.0/16', '10.103.255.0/24'], 'local_id': 'lab-edge.lab.internal', 'remote_id': 'aws-vpn.lab.internal', 'peer_rule': 'public', 'peer_pinned': None, 'bgp_asn': 65100, 'inside_interfaces': ['GigabitEthernet5', 'GigabitEthernet6', 'Tunnel1', 'Tunnel2'], 'unzoned_interfaces': ['GigabitEthernet1', 'GigabitEthernet2', 'GigabitEthernet7'], 'mgmt_host': '10.100.0.144'}, 'username': 'itential-aws-vpn', 'monitor': 'aws'}}\nREVERT_TARGETS = {'clab-rtr1': {'mgmt_host': '10.100.2.11', 'username': 'automation', 'password_alias': 'lab-automation-password', 'teardown_checks': {'bgp_established': ['10.100.3.202', '10.100.3.3'], 'pings': [{'target': '10.100.3.202', 'source': 'Loopback0', 'min_percent': 80}, {'target': '10.100.3.3', 'min_percent': 80}], 'settle_seconds': 60}}, 'dc1-wan01': {'mgmt_host': '10.100.0.144', 'username': 'itential-aws-vpn', 'password_alias': 'dc1-wan01-aws-vpn-password', 'teardown_checks': {'bgp_established': ['10.101.2.250', '10.101.3.2', '10.103.100.2', '10.103.100.6'], 'pings': [{'target': '10.101.2.250'}, {'target': '10.101.3.2'}, {'target': '10.103.100.2'}, {'target': '10.103.100.6'}, {'target': '10.102.17.1', 'source': 'Loopback0'}, {'target': '10.102.33.1', 'source': 'Loopback0'}], 'settle_seconds': 60}}}\n\n\ndef revert_plan(d: dict, targets: dict) -> dict:\n    \"\"\"The service's params and the approval card, from the job's inputs (already through the input gate). The card\n    lists exactly what will be pushed and what must hold afterwards; the params carry the same lines.\n    Pure: runCode runs this function's own source on the Gateway, with the targets table written in.\"\"\"\n    device = d.get(\"device\")\n    target = targets.get(device)\n    if not target:\n        return {\"ok\": False, \"message\": f\"{device} is not a router this workflow may change (revert_push.targets)\"}\n    lines = [line.rstrip() for line in str(d.get(\"config\") or \"\").splitlines() if line.strip()]\n    if not lines:\n        return {\"ok\": False, \"message\": \"no configuration lines to push\"}\n    checks, minutes = d.get(\"checks\") or {}, d.get(\"revert_minutes\")\n    kept_if = []\n    for b in checks.get(\"bgp_established\") or []:\n        n, vrf = (b.get(\"neighbor\"), b.get(\"vrf\")) if isinstance(b, dict) else (b, None)\n        kept_if.append(f\"BGP neighbour {n} Established\" + (f\" (VRF {vrf})\" if vrf else \"\"))\n    for p in checks.get(\"pings\") or []:\n        kept_if.append(f\"ping {p['target']}\" + (f\" from {p['source']}\" if p.get(\"source\") else \"\")\n                       + (f\" in VRF {p['vrf']}\" if p.get(\"vrf\") else \"\") + f\" at least {p.get('min_percent', 80)}%\")\n    kept_if.append(\"a fresh login to the router still works\")\n    inputs = {\n        \"target_json\": json.dumps({\"name\": device, \"mgmt_host\": target[\"mgmt_host\"]}),\n        \"lines_json\": json.dumps(lines),\n        \"checks_json\": json.dumps(checks),\n        \"revert_minutes\": str(minutes),\n    }\n    # `check` (no device) runs before the card; the push's Gateway timeout is the one `check` answers\n    check = {\"action\": \"check\", **inputs, \"timeout\": \"120\"}  # the lab's shortest service limit (the checkout runs in it)\n    params = {\"action\": \"push\", **inputs, \"username\": target[\"username\"]}\n    card = {\n        \"router\": device,\n        \"reason\": d.get(\"reason\"),\n        \"revert timer\": f\"{minutes} minutes\",\n        \"settle before the checks\": f\"{checks.get('settle_seconds', 75)} s\",\n        \"kept only if\": kept_if,\n        \"saving\": \"`write memory` saves the whole running configuration - with any change already on the router and \"\n                  \"not yet saved\",\n        \"lines\": lines,\n    }\n    return {\"ok\": True, \"check\": check, \"params\": params, \"card\": card}\n\n\ndef teardown_plan(d: dict, targets: dict, revert_targets: dict, revert_minutes: int, lab_edge_timeout: str) -> dict:\n    \"\"\"Tear Down's plan for one router. First call (no `removal` yet): the params of lab-edge `removal` and `absent`,\n    and whether an AWS deployment follows. Second call (with lab-edge removal's answer): config-push-revert's params\n    and the first card, through `revert_plan` with this router's own teardown checks. Pure: runCode runs this source\n    on the Gateway, with the tables and `revert_plan` written in.\"\"\"\n    name = d.get(\"target\")\n    entry, revert = (targets or {}).get(name), (revert_targets or {}).get(name)\n    if not entry or not revert:\n        return {\"ok\": False, \"message\": f\"{name} is not a router Tear Down may change (an open target with a revert target)\"}\n    target_json = json.dumps(entry[\"target\"])\n    plan = {\n        \"ok\": True,\n        \"target\": name,\n        \"aws\": entry.get(\"monitor\") == \"aws\",\n        \"removal\": {\"action\": \"removal\", \"target_json\": target_json, \"timeout\": \"120\"},\n        \"absent\": {\"action\": \"absent\", \"target_json\": target_json, \"username\": entry[\"username\"],\n                   \"timeout\": lab_edge_timeout},\n    }\n    removal = d.get(\"removal\")\n    if removal is None:\n        return plan\n    out = ((removal or {}).get(\"result\") or {}).get(\"stdout_json\") or {}\n    lines = out.get(\"lines\") if (removal.get(\"result\") or {}).get(\"return_code\") == 0 else None\n    if not lines or out.get(\"target\") != name:\n        return {\"ok\": False, \"message\": \"lab-edge removal gave no lines for \" + str(name) + \" (see removal_result)\"}\n    pushed = revert_plan({\"device\": name, \"config\": lines, \"revert_minutes\": revert_minutes,\n                          \"reason\": \"Tear Down AWS VPN: remove the router's AWS block (lab-edge removal \"\n                                    + str(out.get(\"sha256\", \"\"))[:12] + \")\",\n                          \"checks\": revert[\"teardown_checks\"]}, revert_targets)\n    if not pushed.get(\"ok\"):\n        return pushed\n    pushed[\"card\"][\"after this\"] = (\"the router is read back to prove the block is gone, then the AWS destroy is \"\n                                    \"planned for a second card\" if plan[\"aws\"] else\n                                    \"the router is read back to prove the block is gone; nothing of this target is \"\n                                    \"deployed in AWS\")\n    return {**plan, **pushed}\n\n\nprint(json.dumps(teardown_plan(json.loads(sys.stdin.read() or \"{}\"), TARGETS, REVERT_TARGETS, 8, '300')))\n",
+          "data": "$var.job.teardown_in",
+          "safety": {
+            "timeout": 30
+          },
+          "packages": []
+        },
+        "outgoing": {
+          "result": "$var.job.teardown_plan"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "1c": {
+      "name": "evaluation",
+      "canvasName": "evaluation",
+      "summary": "planned?",
+      "description": "planned?",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": -30,
+        "y": 1200
+      },
+      "variables": {
+        "incoming": {
+          "all_true_flag": true,
+          "evaluation_groups": [
+            {
+              "all_true_flag": true,
+              "evaluations": [
+                {
+                  "query": "stdout_json.ok",
+                  "operand_1": {
+                    "variable": "teardown_plan",
+                    "task": "job"
+                  },
+                  "operator": "==",
+                  "operand_2": {
+                    "variable": true,
+                    "task": "static"
+                  }
+                }
+              ]
+            }
+          ],
+          "options": {}
+        },
+        "outgoing": {
+          "return_value": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "1d": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "lab-edge removal's params",
+      "description": "lab-edge removal's params",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 80,
+        "y": 1350
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "stdout_json.removal",
+          "obj": "$var.job.teardown_plan"
+        },
+        "outgoing": {
+          "return_data": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "1e": {
+      "name": "runService",
+      "canvasName": "runService",
+      "summary": "the removal lines (lab-edge removal: no device)",
+      "description": "the removal lines (lab-edge removal: no device)",
+      "location": "Application",
+      "locationType": null,
+      "app": "GatewayManager",
+      "type": "automatic",
+      "displayName": "GatewayManager",
+      "groups": [],
+      "nodeLocation": {
+        "x": 290,
+        "y": 1500
+      },
+      "variables": {
+        "incoming": {
+          "serviceName": "lab-edge",
+          "clusterId": "lab",
+          "params": "$var.1d.return_data"
+        },
+        "outgoing": {
+          "result": "$var.job.removal_result"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "17": {
+      "name": "evaluation",
+      "canvasName": "evaluation",
+      "summary": "lab-edge removal answered?",
+      "description": "lab-edge removal answered?",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 370,
+        "y": 1650
+      },
+      "variables": {
+        "incoming": {
+          "all_true_flag": true,
+          "evaluation_groups": [
+            {
+              "all_true_flag": true,
+              "evaluations": [
+                {
+                  "query": "result.return_code",
+                  "operand_1": {
+                    "variable": "result",
+                    "task": "1e"
+                  },
+                  "operator": "==",
+                  "operand_2": {
+                    "variable": 0,
+                    "task": "static"
+                  }
+                }
+              ]
+            }
+          ],
+          "options": {}
+        },
+        "outgoing": {
+          "return_value": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "1f": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "the plan's input, with the removal",
+      "description": "the plan's input, with the removal",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 660,
+        "y": 1800
+      },
+      "variables": {
+        "incoming": {
+          "obj": "$var.job.teardown_in",
+          "path": [
+            "removal"
+          ],
+          "value": "$var.job.removal_result"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "18": {
+      "name": "runCode",
+      "canvasName": "runCode",
+      "summary": "the push's params and the first card (Python on the runner)",
+      "description": "the push's params and the first card (Python on the runner)",
+      "location": "Application",
+      "locationType": null,
+      "app": "GatewayManager",
+      "type": "automatic",
+      "displayName": "GatewayManager",
+      "groups": [],
+      "nodeLocation": {
+        "x": 890,
+        "y": 1950
+      },
+      "variables": {
+        "incoming": {
+          "clusterId": "lab",
+          "language": "python",
+          "code": "import json, sys\n\n\nTARGETS = {'clab-rtr1': {'target': {'name': 'clab-rtr1', 'fvrf': 'INET', 'tunnel_source': 'GigabitEthernet4', 'front_door_ip': '198.51.100.2', 'loopback_ip': '10.100.3.201', 'router_inner': '169.254.10.1/30', 'aws_inner': '169.254.10.2/30', 'vpc_cidr': '10.0.0.0/16', 'vpc_private_prefixes': ['10.0.64.0/20', '10.0.80.0/20'], 'lab_prefixes': ['10.100.3.0/24'], 'local_id': 'lab-edge.lab.internal', 'remote_id': 'aws-vpn.lab.internal', 'peer_rule': 'pinned', 'peer_pinned': '198.51.100.20', 'bgp_asn': 65010, 'inside_interfaces': ['GigabitEthernet2', 'GigabitEthernet3'], 'unzoned_interfaces': ['GigabitEthernet1', 'GigabitEthernet4'], 'mgmt_host': '10.100.2.11'}, 'username': 'automation', 'monitor': 'none'}, 'dc1-wan01': {'target': {'name': 'dc1-wan01', 'fvrf': 'INET', 'tunnel_source': 'GigabitEthernet7', 'front_door_ip': '172.29.129.250', 'loopback_ip': '10.103.255.11', 'router_inner': '169.254.10.1/30', 'aws_inner': '169.254.10.2/30', 'vpc_cidr': '10.0.0.0/16', 'vpc_private_prefixes': ['10.0.64.0/20', '10.0.80.0/20'], 'lab_prefixes': ['10.101.0.0/16', '10.103.255.0/24'], 'local_id': 'lab-edge.lab.internal', 'remote_id': 'aws-vpn.lab.internal', 'peer_rule': 'public', 'peer_pinned': None, 'bgp_asn': 65100, 'inside_interfaces': ['GigabitEthernet5', 'GigabitEthernet6', 'Tunnel1', 'Tunnel2'], 'unzoned_interfaces': ['GigabitEthernet1', 'GigabitEthernet2', 'GigabitEthernet7'], 'mgmt_host': '10.100.0.144'}, 'username': 'itential-aws-vpn', 'monitor': 'aws'}}\nREVERT_TARGETS = {'clab-rtr1': {'mgmt_host': '10.100.2.11', 'username': 'automation', 'password_alias': 'lab-automation-password', 'teardown_checks': {'bgp_established': ['10.100.3.202', '10.100.3.3'], 'pings': [{'target': '10.100.3.202', 'source': 'Loopback0', 'min_percent': 80}, {'target': '10.100.3.3', 'min_percent': 80}], 'settle_seconds': 60}}, 'dc1-wan01': {'mgmt_host': '10.100.0.144', 'username': 'itential-aws-vpn', 'password_alias': 'dc1-wan01-aws-vpn-password', 'teardown_checks': {'bgp_established': ['10.101.2.250', '10.101.3.2', '10.103.100.2', '10.103.100.6'], 'pings': [{'target': '10.101.2.250'}, {'target': '10.101.3.2'}, {'target': '10.103.100.2'}, {'target': '10.103.100.6'}, {'target': '10.102.17.1', 'source': 'Loopback0'}, {'target': '10.102.33.1', 'source': 'Loopback0'}], 'settle_seconds': 60}}}\n\n\ndef revert_plan(d: dict, targets: dict) -> dict:\n    \"\"\"The service's params and the approval card, from the job's inputs (already through the input gate). The card\n    lists exactly what will be pushed and what must hold afterwards; the params carry the same lines.\n    Pure: runCode runs this function's own source on the Gateway, with the targets table written in.\"\"\"\n    device = d.get(\"device\")\n    target = targets.get(device)\n    if not target:\n        return {\"ok\": False, \"message\": f\"{device} is not a router this workflow may change (revert_push.targets)\"}\n    lines = [line.rstrip() for line in str(d.get(\"config\") or \"\").splitlines() if line.strip()]\n    if not lines:\n        return {\"ok\": False, \"message\": \"no configuration lines to push\"}\n    checks, minutes = d.get(\"checks\") or {}, d.get(\"revert_minutes\")\n    kept_if = []\n    for b in checks.get(\"bgp_established\") or []:\n        n, vrf = (b.get(\"neighbor\"), b.get(\"vrf\")) if isinstance(b, dict) else (b, None)\n        kept_if.append(f\"BGP neighbour {n} Established\" + (f\" (VRF {vrf})\" if vrf else \"\"))\n    for p in checks.get(\"pings\") or []:\n        kept_if.append(f\"ping {p['target']}\" + (f\" from {p['source']}\" if p.get(\"source\") else \"\")\n                       + (f\" in VRF {p['vrf']}\" if p.get(\"vrf\") else \"\") + f\" at least {p.get('min_percent', 80)}%\")\n    kept_if.append(\"a fresh login to the router still works\")\n    inputs = {\n        \"target_json\": json.dumps({\"name\": device, \"mgmt_host\": target[\"mgmt_host\"]}),\n        \"lines_json\": json.dumps(lines),\n        \"checks_json\": json.dumps(checks),\n        \"revert_minutes\": str(minutes),\n    }\n    # `check` (no device) runs before the card; the push's Gateway timeout is the one `check` answers\n    check = {\"action\": \"check\", **inputs, \"timeout\": \"120\"}  # the lab's shortest service limit (the checkout runs in it)\n    params = {\"action\": \"push\", **inputs, \"username\": target[\"username\"]}\n    card = {\n        \"router\": device,\n        \"reason\": d.get(\"reason\"),\n        \"revert timer\": f\"{minutes} minutes\",\n        \"settle before the checks\": f\"{checks.get('settle_seconds', 75)} s\",\n        \"kept only if\": kept_if,\n        \"saving\": \"`write memory` saves the whole running configuration - with any change already on the router and \"\n                  \"not yet saved\",\n        \"lines\": lines,\n    }\n    return {\"ok\": True, \"check\": check, \"params\": params, \"card\": card}\n\n\ndef teardown_plan(d: dict, targets: dict, revert_targets: dict, revert_minutes: int, lab_edge_timeout: str) -> dict:\n    \"\"\"Tear Down's plan for one router. First call (no `removal` yet): the params of lab-edge `removal` and `absent`,\n    and whether an AWS deployment follows. Second call (with lab-edge removal's answer): config-push-revert's params\n    and the first card, through `revert_plan` with this router's own teardown checks. Pure: runCode runs this source\n    on the Gateway, with the tables and `revert_plan` written in.\"\"\"\n    name = d.get(\"target\")\n    entry, revert = (targets or {}).get(name), (revert_targets or {}).get(name)\n    if not entry or not revert:\n        return {\"ok\": False, \"message\": f\"{name} is not a router Tear Down may change (an open target with a revert target)\"}\n    target_json = json.dumps(entry[\"target\"])\n    plan = {\n        \"ok\": True,\n        \"target\": name,\n        \"aws\": entry.get(\"monitor\") == \"aws\",\n        \"removal\": {\"action\": \"removal\", \"target_json\": target_json, \"timeout\": \"120\"},\n        \"absent\": {\"action\": \"absent\", \"target_json\": target_json, \"username\": entry[\"username\"],\n                   \"timeout\": lab_edge_timeout},\n    }\n    removal = d.get(\"removal\")\n    if removal is None:\n        return plan\n    out = ((removal or {}).get(\"result\") or {}).get(\"stdout_json\") or {}\n    lines = out.get(\"lines\") if (removal.get(\"result\") or {}).get(\"return_code\") == 0 else None\n    if not lines or out.get(\"target\") != name:\n        return {\"ok\": False, \"message\": \"lab-edge removal gave no lines for \" + str(name) + \" (see removal_result)\"}\n    pushed = revert_plan({\"device\": name, \"config\": lines, \"revert_minutes\": revert_minutes,\n                          \"reason\": \"Tear Down AWS VPN: remove the router's AWS block (lab-edge removal \"\n                                    + str(out.get(\"sha256\", \"\"))[:12] + \")\",\n                          \"checks\": revert[\"teardown_checks\"]}, revert_targets)\n    if not pushed.get(\"ok\"):\n        return pushed\n    pushed[\"card\"][\"after this\"] = (\"the router is read back to prove the block is gone, then the AWS destroy is \"\n                                    \"planned for a second card\" if plan[\"aws\"] else\n                                    \"the router is read back to prove the block is gone; nothing of this target is \"\n                                    \"deployed in AWS\")\n    return {**plan, **pushed}\n\n\nprint(json.dumps(teardown_plan(json.loads(sys.stdin.read() or \"{}\"), TARGETS, REVERT_TARGETS, 8, '300')))\n",
+          "data": "$var.1f.object",
+          "safety": {
+            "timeout": 30
+          },
+          "packages": []
+        },
+        "outgoing": {
+          "result": "$var.job.push_plan"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "19": {
+      "name": "evaluation",
+      "canvasName": "evaluation",
+      "summary": "push planned?",
+      "description": "push planned?",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 900,
+        "y": 2100
+      },
+      "variables": {
+        "incoming": {
+          "all_true_flag": true,
+          "evaluation_groups": [
+            {
+              "all_true_flag": true,
+              "evaluations": [
+                {
+                  "query": "stdout_json.ok",
+                  "operand_1": {
+                    "variable": "push_plan",
+                    "task": "job"
+                  },
+                  "operator": "==",
+                  "operand_2": {
+                    "variable": true,
+                    "task": "static"
+                  }
+                }
+              ]
+            }
+          ],
+          "options": {}
+        },
+        "outgoing": {
+          "return_value": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "12": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "config-push-revert check's params",
+      "description": "config-push-revert check's params",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 810,
+        "y": 2250
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "stdout_json.check",
+          "obj": "$var.job.push_plan"
+        },
+        "outgoing": {
+          "return_data": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "13": {
+      "name": "runService",
+      "canvasName": "runService",
+      "summary": "would config-push-revert take this? (check: no device)",
+      "description": "would config-push-revert take this? (check: no device)",
+      "location": "Application",
+      "locationType": null,
+      "app": "GatewayManager",
+      "type": "automatic",
+      "displayName": "GatewayManager",
+      "groups": [],
+      "nodeLocation": {
+        "x": 870,
+        "y": 2400
+      },
+      "variables": {
+        "incoming": {
+          "serviceName": "config-push-revert",
+          "clusterId": "lab",
+          "params": "$var.12.return_data"
+        },
+        "outgoing": {
+          "result": "$var.job.check_result"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "14": {
+      "name": "evaluation",
+      "canvasName": "evaluation",
+      "summary": "config-push-revert takes it?",
+      "description": "config-push-revert takes it?",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 1010,
+        "y": 2550
+      },
+      "variables": {
+        "incoming": {
+          "all_true_flag": true,
+          "evaluation_groups": [
+            {
+              "all_true_flag": true,
+              "evaluations": [
+                {
+                  "query": "result.return_code",
+                  "operand_1": {
+                    "variable": "result",
+                    "task": "13"
+                  },
+                  "operator": "==",
+                  "operand_2": {
+                    "variable": 0,
+                    "task": "static"
+                  }
+                }
+              ]
+            }
+          ],
+          "options": {}
+        },
+        "outgoing": {
+          "return_value": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "2a": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "the first card",
+      "description": "the first card",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 1020,
+        "y": 2700
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "stdout_json.card",
+          "obj": "$var.job.push_plan"
+        },
+        "outgoing": {
+          "return_data": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "2b": {
+      "name": "replace",
+      "canvasName": "replace",
+      "summary": "the first card's message",
+      "description": "the first card's message",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 1090,
+        "y": 2850
+      },
+      "variables": {
+        "incoming": {
+          "str": "Tear Down the AWS VPN on __D__, step 1 of 2: remove the router's AWS block. The lines below are pushed under a revert timer and kept only if every check still passes (and a fresh login still works); then the router is read back to prove nothing of the block is left. Only after that is the AWS side planned for destruction, on a second card. Nothing is saved before the checks pass.",
+          "substr": "__D__",
+          "newSubstr": "$var.job.target"
+        },
+        "outgoing": {
+          "replacedString": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "2c": {
+      "name": "ViewData",
+      "canvasName": "ViewData",
+      "summary": "approval",
+      "description": "approval",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "manual",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 1050,
+        "y": 3000
+      },
+      "variables": {
+        "incoming": {
+          "header": "Approve removing the router's AWS block",
+          "message": "$var.2b.replacedString",
+          "body": "$var.2a.return_data",
+          "variables": {},
+          "btn_success": "Approve",
+          "btn_failure": "Reject"
+        },
+        "outgoing": {},
+        "error": "",
+        "decorators": []
+      },
+      "view": "/workflow_engine/task/ViewData"
+    },
+    "15": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "rejected = false",
+      "description": "rejected = false",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 970,
+        "y": 3150
+      },
+      "variables": {
+        "incoming": {
+          "input": "false",
+          "outputType": "boolean",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.rejected"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "3a": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "config-push-revert's params",
+      "description": "config-push-revert's params",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 900,
+        "y": 3300
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "stdout_json.params",
+          "obj": "$var.job.push_plan"
+        },
+        "outgoing": {
+          "return_data": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "16": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "the timeout a push needs (check's answer)",
+      "description": "the timeout a push needs (check's answer)",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 1320,
+        "y": 3450
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "result.stdout_json.timeout",
+          "obj": "$var.13.result"
+        },
+        "outgoing": {
+          "return_data": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "34": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "push params: the Gateway timeout",
+      "description": "push params: the Gateway timeout",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 940,
+        "y": 3600
+      },
+      "variables": {
+        "incoming": {
+          "obj": "$var.3a.return_data",
+          "path": [
+            "timeout"
+          ],
+          "value": "$var.16.return_data"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "3b": {
+      "name": "runService",
+      "canvasName": "runService",
+      "summary": "remove the block under the revert timer (config-push-revert)",
+      "description": "remove the block under the revert timer (config-push-revert)",
+      "location": "Application",
+      "locationType": null,
+      "app": "GatewayManager",
+      "type": "automatic",
+      "displayName": "GatewayManager",
+      "groups": [],
+      "nodeLocation": {
+        "x": 160,
+        "y": 3750
+      },
+      "variables": {
+        "incoming": {
+          "serviceName": "config-push-revert",
+          "clusterId": "lab",
+          "params": "$var.34.object"
+        },
+        "outgoing": {
+          "result": "$var.job.push_result"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "3c": {
+      "name": "evaluation",
+      "canvasName": "evaluation",
+      "summary": "config-push-revert exited 0?",
+      "description": "config-push-revert exited 0?",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 310,
+        "y": 3900
+      },
+      "variables": {
+        "incoming": {
+          "all_true_flag": true,
+          "evaluation_groups": [
+            {
+              "all_true_flag": true,
+              "evaluations": [
+                {
+                  "query": "result.return_code",
+                  "operand_1": {
+                    "variable": "result",
+                    "task": "3b"
+                  },
+                  "operator": "==",
+                  "operand_2": {
+                    "variable": 0,
+                    "task": "static"
+                  }
+                }
+              ]
+            }
+          ],
+          "options": {}
+        },
+        "outgoing": {
+          "return_value": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "3d": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "config-push-revert exited non-zero",
+      "description": "config-push-revert exited non-zero",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": -130,
+        "y": 4050
+      },
+      "variables": {
+        "incoming": {
+          "input": "config-push-revert did not save: push_summary says what the router went through",
+          "outputType": "string",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.push_note"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "3e": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "the push's answer",
+      "description": "the push's answer",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 40,
+        "y": 4200
+      },
+      "variables": {
+        "incoming": {
+          "obj": {},
+          "path": [
+            "push"
+          ],
+          "value": "$var.job.push_result"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "3f": {
+      "name": "runCode",
+      "canvasName": "runCode",
+      "summary": "what the push did (saved, rolled back, nothing sent or unknown)",
+      "description": "what the push did (saved, rolled back, nothing sent or unknown)",
+      "location": "Application",
+      "locationType": null,
+      "app": "GatewayManager",
+      "type": "automatic",
+      "displayName": "GatewayManager",
+      "groups": [],
+      "nodeLocation": {
+        "x": 40,
+        "y": 4350
+      },
+      "variables": {
+        "incoming": {
+          "clusterId": "lab",
+          "language": "python",
+          "code": "import json, sys\n\n\ndef revert_summary(d: dict) -> dict:\n    \"\"\"config-push-revert's answer as the workflow reads it: saved, rolled back (proved by the service's read-back),\n    nothing sent, or unknown. Only a saved change exits 0, so the exit code alone says nothing about the router; with\n    no answer at all the router may hold a pending change (the revert timer rolls it back) - changed is then true.\n    Pure: runCode runs this function's own source on the Gateway.\"\"\"\n    result = ((d.get(\"push\") or {}).get(\"result\")) or {}\n    rc, out = result.get(\"return_code\"), result.get(\"stdout_json\")\n    out = out if isinstance(out, dict) else {}\n    if rc == 0 and out.get(\"saved\") is True:\n        state, changed = \"saved\", out.get(\"changed\") is True\n    elif out.get(\"rolled_back\") is True:\n        state, changed = \"rolled back\", False\n    elif out and out.get(\"sent\") is False:\n        state, changed = \"unchanged\", False\n    else:\n        state, changed = \"unknown\", True\n    router = out.get(\"router\") or {\"saved\": \"saved\", \"rolled back\": \"rolled back\", \"unchanged\": \"unchanged: nothing was sent\"}.get(\n        state, \"unknown: the service gave no answer - a change may be pending until the revert timer rolls it back\")\n    message = \"\" if state == \"saved\" else str(out.get(\"error\") or \"config-push-revert did not finish (see push_result)\")\n    return {\"state\": state, \"changed\": changed, \"router\": router, \"message\": message}\n\n\nprint(json.dumps(revert_summary(json.loads(sys.stdin.read() or \"{}\"))))\n",
+          "data": "$var.3e.object",
+          "safety": {
+            "timeout": 30
+          },
+          "packages": []
+        },
+        "outgoing": {
+          "result": "$var.job.push_summary"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "31": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "what the router went through",
+      "description": "what the router went through",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 140,
+        "y": 4500
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "stdout_json.router",
+          "obj": "$var.3f.result"
+        },
+        "outgoing": {
+          "return_data": "$var.job.router_state"
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "32": {
+      "name": "evaluation",
+      "canvasName": "evaluation",
+      "summary": "the router may have changed?",
+      "description": "the router may have changed?",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 140,
+        "y": 4650
+      },
+      "variables": {
+        "incoming": {
+          "all_true_flag": true,
+          "evaluation_groups": [
+            {
+              "all_true_flag": true,
+              "evaluations": [
+                {
+                  "query": "stdout_json.changed",
+                  "operand_1": {
+                    "variable": "result",
+                    "task": "3f"
+                  },
+                  "operator": "==",
+                  "operand_2": {
+                    "variable": true,
+                    "task": "static"
+                  }
+                }
+              ]
+            }
+          ],
+          "options": {}
+        },
+        "outgoing": {
+          "return_value": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "35": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "router_changed = true",
+      "description": "router_changed = true",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": -240,
+        "y": 4800
+      },
+      "variables": {
+        "incoming": {
+          "input": "true",
+          "outputType": "boolean",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.router_changed"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "33": {
+      "name": "evaluation",
+      "canvasName": "evaluation",
+      "summary": "removed and saved?",
+      "description": "removed and saved?",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": -100,
+        "y": 4950
+      },
+      "variables": {
+        "incoming": {
+          "all_true_flag": true,
+          "evaluation_groups": [
+            {
+              "all_true_flag": true,
+              "evaluations": [
+                {
+                  "query": "stdout_json.state",
+                  "operand_1": {
+                    "variable": "result",
+                    "task": "3f"
+                  },
+                  "operator": "==",
+                  "operand_2": {
+                    "variable": "saved",
+                    "task": "static"
+                  }
+                }
+              ]
+            }
+          ],
+          "options": {}
+        },
+        "outgoing": {
+          "return_value": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "4a": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "lab-edge absent's params",
+      "description": "lab-edge absent's params",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": -80,
+        "y": 5100
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "stdout_json.absent",
+          "obj": "$var.job.teardown_plan"
+        },
+        "outgoing": {
+          "return_data": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "4b": {
+      "name": "runService",
+      "canvasName": "runService",
+      "summary": "prove the block is gone (lab-edge absent: show commands)",
+      "description": "prove the block is gone (lab-edge absent: show commands)",
+      "location": "Application",
+      "locationType": null,
+      "app": "GatewayManager",
+      "type": "automatic",
+      "displayName": "GatewayManager",
+      "groups": [],
+      "nodeLocation": {
+        "x": 140,
+        "y": 5250
+      },
+      "variables": {
+        "incoming": {
+          "serviceName": "lab-edge",
+          "clusterId": "lab",
+          "params": "$var.4a.return_data"
+        },
+        "outgoing": {
+          "result": "$var.job.absent_result"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "4c": {
+      "name": "evaluation",
+      "canvasName": "evaluation",
+      "summary": "the proof ran?",
+      "description": "the proof ran?",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 190,
+        "y": 5400
+      },
+      "variables": {
+        "incoming": {
+          "all_true_flag": true,
+          "evaluation_groups": [
+            {
+              "all_true_flag": true,
+              "evaluations": [
+                {
+                  "query": "result.return_code",
+                  "operand_1": {
+                    "variable": "result",
+                    "task": "4b"
+                  },
+                  "operator": "==",
+                  "operand_2": {
+                    "variable": 0,
+                    "task": "static"
+                  }
+                }
+              ]
+            }
+          ],
+          "options": {}
+        },
+        "outgoing": {
+          "return_value": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "4d": {
+      "name": "evaluation",
+      "canvasName": "evaluation",
+      "summary": "nothing of the block left?",
+      "description": "nothing of the block left?",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 200,
+        "y": 5550
+      },
+      "variables": {
+        "incoming": {
+          "all_true_flag": true,
+          "evaluation_groups": [
+            {
+              "all_true_flag": true,
+              "evaluations": [
+                {
+                  "query": "result.stdout_json.absent",
+                  "operand_1": {
+                    "variable": "result",
+                    "task": "4b"
+                  },
+                  "operator": "==",
+                  "operand_2": {
+                    "variable": true,
+                    "task": "static"
+                  }
+                }
+              ]
+            }
+          ],
+          "options": {}
+        },
+        "outgoing": {
+          "return_value": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "4e": {
+      "name": "evaluation",
+      "canvasName": "evaluation",
+      "summary": "deployed in AWS?",
+      "description": "deployed in AWS?",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 650,
+        "y": 5700
+      },
+      "variables": {
+        "incoming": {
+          "all_true_flag": true,
+          "evaluation_groups": [
+            {
+              "all_true_flag": true,
+              "evaluations": [
+                {
+                  "query": "stdout_json.aws",
+                  "operand_1": {
+                    "variable": "teardown_plan",
+                    "task": "job"
+                  },
+                  "operator": "==",
+                  "operand_2": {
+                    "variable": true,
+                    "task": "static"
+                  }
+                }
+              ]
+            }
+          ],
+          "options": {}
+        },
+        "outgoing": {
+          "return_value": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "4f": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "the outcome: router only",
+      "description": "the outcome: router only",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 650,
+        "y": 5850
+      },
+      "variables": {
+        "incoming": {
+          "input": "torn down: the router's AWS block was removed, saved and proved gone; nothing of this target is deployed in AWS",
+          "outputType": "string",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.outcome"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "5a": {
+      "name": "parse",
+      "canvasName": "parse",
+      "summary": "the destroy plan's params",
+      "description": "the destroy plan's params",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 1100,
+        "y": 5850
+      },
+      "variables": {
+        "incoming": {
+          "text": "{\"action\": \"plan-destroy\", \"job\": \"new\", \"timeout\": \"900\"}"
+        },
+        "outgoing": {
+          "textObject": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "5b": {
+      "name": "runService",
+      "canvasName": "runService",
+      "summary": "terraform plan -destroy",
+      "description": "terraform plan -destroy",
+      "location": "Application",
+      "locationType": null,
+      "app": "GatewayManager",
+      "type": "automatic",
+      "displayName": "GatewayManager",
+      "groups": [],
+      "nodeLocation": {
+        "x": 820,
+        "y": 6000
+      },
+      "variables": {
+        "incoming": {
+          "serviceName": "terraform-run",
+          "clusterId": "lab",
+          "params": "$var.5a.textObject"
+        },
+        "outgoing": {
+          "result": "$var.job.destroy_plan_result"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "5c": {
+      "name": "evaluation",
+      "canvasName": "evaluation",
+      "summary": "destroy planned?",
+      "description": "destroy planned?",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 1210,
+        "y": 6150
+      },
+      "variables": {
+        "incoming": {
+          "all_true_flag": true,
+          "evaluation_groups": [
+            {
+              "all_true_flag": true,
+              "evaluations": [
+                {
+                  "query": "result.return_code",
+                  "operand_1": {
+                    "variable": "result",
+                    "task": "5b"
+                  },
+                  "operator": "==",
+                  "operand_2": {
+                    "variable": 0,
+                    "task": "static"
+                  }
+                }
+              ]
+            }
+          ],
+          "options": {}
+        },
+        "outgoing": {
+          "return_value": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "5d": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "the destroy plan",
+      "description": "the destroy plan",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 1660,
+        "y": 6300
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "result.stdout_json",
+          "obj": "$var.5b.result"
+        },
+        "outgoing": {
+          "return_data": "$var.job.destroy_plan"
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "5e": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "the plan ID",
+      "description": "the plan ID",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 1790,
+        "y": 6450
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "result.stdout_json.job",
+          "obj": "$var.5b.result"
+        },
+        "outgoing": {
+          "return_data": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "5f": {
+      "name": "ViewData",
+      "canvasName": "ViewData",
+      "summary": "approval",
+      "description": "approval",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "manual",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 1820,
+        "y": 6600
+      },
+      "variables": {
+        "incoming": {
+          "header": "Approve destroying the AWS side",
+          "message": "Tear Down the AWS VPN, step 2 of 2: destroy the AWS side. The router's block is already removed and proved gone. Exactly this plan is applied (the strongSwan box, its Elastic IP, the key's secret and the VPC go); rejecting keeps it all, at about $1 a day.",
+          "body": "$var.job.destroy_plan",
+          "variables": {},
+          "btn_success": "Approve",
+          "btn_failure": "Reject"
+        },
+        "outgoing": {},
+        "error": "",
+        "decorators": []
+      },
+      "view": "/workflow_engine/task/ViewData"
+    },
+    "6a": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "the approved plan's SHA-256",
+      "description": "the approved plan's SHA-256",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 1820,
+        "y": 6750
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "result.stdout_json.plan_sha256",
+          "obj": "$var.5b.result"
+        },
+        "outgoing": {
+          "return_data": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "6b": {
+      "name": "replace",
+      "canvasName": "replace",
+      "summary": "apply params: plan ID",
+      "description": "apply params: plan ID",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 1980,
+        "y": 6900
+      },
+      "variables": {
+        "incoming": {
+          "str": "{\"action\": \"apply\", \"job\": \"__ID__\", \"plan_sha256\": \"__SHA__\", \"timeout\": \"1800\"}",
+          "substr": "__ID__",
+          "newSubstr": "$var.5e.return_data"
+        },
+        "outgoing": {
+          "replacedString": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "6c": {
+      "name": "replace",
+      "canvasName": "replace",
+      "summary": "apply params: SHA-256",
+      "description": "apply params: SHA-256",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 2000,
+        "y": 7050
+      },
+      "variables": {
+        "incoming": {
+          "str": "$var.6b.replacedString",
+          "substr": "__SHA__",
+          "newSubstr": "$var.6a.return_data"
+        },
+        "outgoing": {
+          "replacedString": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "6d": {
+      "name": "parse",
+      "canvasName": "parse",
+      "summary": "apply params",
+      "description": "apply params",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 2000,
+        "y": 7200
+      },
+      "variables": {
+        "incoming": {
+          "text": "$var.6c.replacedString"
+        },
+        "outgoing": {
+          "textObject": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "6e": {
+      "name": "runService",
+      "canvasName": "runService",
+      "summary": "terraform apply (the approved destroy)",
+      "description": "terraform apply (the approved destroy)",
+      "location": "Application",
+      "locationType": null,
+      "app": "GatewayManager",
+      "type": "automatic",
+      "displayName": "GatewayManager",
+      "groups": [],
+      "nodeLocation": {
+        "x": 2000,
+        "y": 7350
+      },
+      "variables": {
+        "incoming": {
+          "serviceName": "terraform-run",
+          "clusterId": "lab",
+          "params": "$var.6d.textObject"
+        },
+        "outgoing": {
+          "result": "$var.job.apply_result"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "6f": {
+      "name": "evaluation",
+      "canvasName": "evaluation",
+      "summary": "destroyed?",
+      "description": "destroyed?",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 2150,
+        "y": 7500
+      },
+      "variables": {
+        "incoming": {
+          "all_true_flag": true,
+          "evaluation_groups": [
+            {
+              "all_true_flag": true,
+              "evaluations": [
+                {
+                  "query": "result.return_code",
+                  "operand_1": {
+                    "variable": "result",
+                    "task": "6e"
+                  },
+                  "operator": "==",
+                  "operand_2": {
+                    "variable": 0,
+                    "task": "static"
+                  }
+                }
+              ]
+            }
+          ],
+          "options": {}
+        },
+        "outgoing": {
+          "return_value": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "60": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "aws_changed = true",
+      "description": "aws_changed = true",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 2740,
+        "y": 7650
+      },
+      "variables": {
+        "incoming": {
+          "input": "true",
+          "outputType": "boolean",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.aws_changed"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "61": {
+      "name": "parse",
+      "canvasName": "parse",
+      "summary": "terraform-run outputs' params",
+      "description": "terraform-run outputs' params",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 2290,
+        "y": 7800
+      },
+      "variables": {
+        "incoming": {
+          "text": "{\"action\": \"outputs\", \"timeout\": \"120\"}"
+        },
+        "outgoing": {
+          "textObject": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "62": {
+      "name": "runService",
+      "canvasName": "runService",
+      "summary": "what is left (terraform-run outputs, a state read)",
+      "description": "what is left (terraform-run outputs, a state read)",
+      "location": "Application",
+      "locationType": null,
+      "app": "GatewayManager",
+      "type": "automatic",
+      "displayName": "GatewayManager",
+      "groups": [],
+      "nodeLocation": {
+        "x": 2140,
+        "y": 7950
+      },
+      "variables": {
+        "incoming": {
+          "serviceName": "terraform-run",
+          "clusterId": "lab",
+          "params": "$var.61.textObject"
+        },
+        "outgoing": {
+          "result": "$var.job.outputs_result"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "67": {
+      "name": "evaluation",
+      "canvasName": "evaluation",
+      "summary": "the state read answered?",
+      "description": "the state read answered?",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 2050,
+        "y": 8100
+      },
+      "variables": {
+        "incoming": {
+          "all_true_flag": true,
+          "evaluation_groups": [
+            {
+              "all_true_flag": true,
+              "evaluations": [
+                {
+                  "query": "result.return_code",
+                  "operand_1": {
+                    "variable": "result",
+                    "task": "62"
+                  },
+                  "operator": "==",
+                  "operand_2": {
+                    "variable": 0,
+                    "task": "static"
+                  }
+                }
+              ]
+            }
+          ],
+          "options": {}
+        },
+        "outgoing": {
+          "return_value": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "63": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "the outputs' answer",
+      "description": "the outputs' answer",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 2390,
+        "y": 8250
+      },
+      "variables": {
+        "incoming": {
+          "obj": {},
+          "path": [
+            "outputs"
+          ],
+          "value": "$var.job.outputs_result"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "64": {
+      "name": "runCode",
+      "canvasName": "runCode",
+      "summary": "anything left?",
+      "description": "anything left?",
+      "location": "Application",
+      "locationType": null,
+      "app": "GatewayManager",
+      "type": "automatic",
+      "displayName": "GatewayManager",
+      "groups": [],
+      "nodeLocation": {
+        "x": 2420,
+        "y": 8400
+      },
+      "variables": {
+        "incoming": {
+          "clusterId": "lab",
+          "language": "python",
+          "code": "import json, sys\n\n\ndef destroy_left(d: dict) -> dict:\n    \"\"\"After the destroy: what terraform-run outputs still reports (nothing, when the state is empty).\"\"\"\n    result = (d.get(\"outputs\") or {}).get(\"result\") or {}\n    outputs = (result.get(\"stdout_json\") or {}).get(\"outputs\")\n    return {\"read\": result.get(\"return_code\") == 0 and isinstance(outputs, dict),\n            \"empty\": result.get(\"return_code\") == 0 and outputs == {}}\n\n\nprint(json.dumps(destroy_left(json.loads(sys.stdin.read() or \"{}\"))))\n",
+          "data": "$var.63.object",
+          "safety": {
+            "timeout": 30
+          },
+          "packages": []
+        },
+        "outgoing": {
+          "result": "$var.job.left"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "65": {
+      "name": "evaluation",
+      "canvasName": "evaluation",
+      "summary": "nothing left in the state?",
+      "description": "nothing left in the state?",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 2700,
+        "y": 8550
+      },
+      "variables": {
+        "incoming": {
+          "all_true_flag": true,
+          "evaluation_groups": [
+            {
+              "all_true_flag": true,
+              "evaluations": [
+                {
+                  "query": "stdout_json.empty",
+                  "operand_1": {
+                    "variable": "result",
+                    "task": "64"
+                  },
+                  "operator": "==",
+                  "operand_2": {
+                    "variable": true,
+                    "task": "static"
+                  }
+                }
+              ]
+            }
+          ],
+          "options": {}
+        },
+        "outgoing": {
+          "return_value": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "66": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "the outcome: torn down",
+      "description": "the outcome: torn down",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 2710,
+        "y": 8700
+      },
+      "variables": {
+        "incoming": {
+          "input": "torn down: the router's AWS block was removed, saved and proved gone, and the AWS side was destroyed - nothing of the deployment is left",
+          "outputType": "string",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.outcome"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "a0": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "rejected = true (router)",
+      "description": "rejected = true (router)",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 1270,
+        "y": 3150
+      },
+      "variables": {
+        "incoming": {
+          "input": "true",
+          "outputType": "boolean",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.rejected"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "a1": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "the router rejection",
+      "description": "the router rejection",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 1800,
+        "y": 3300
+      },
+      "variables": {
+        "incoming": {
+          "input": "rejected in Work Center: nothing was sent to the router and nothing changed in AWS",
+          "outputType": "string",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.outcome"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "a2": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "rejected = true (AWS)",
+      "description": "rejected = true (AWS)",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 2120,
+        "y": 6750
+      },
+      "variables": {
+        "incoming": {
+          "input": "true",
+          "outputType": "boolean",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.rejected"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "a3": {
+      "name": "replace",
+      "canvasName": "replace",
+      "summary": "discard params",
+      "description": "discard params",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 2290,
+        "y": 6900
+      },
+      "variables": {
+        "incoming": {
+          "str": "{\"action\": \"discard\", \"job\": \"__ID__\", \"timeout\": \"120\"}",
+          "substr": "__ID__",
+          "newSubstr": "$var.5e.return_data"
+        },
+        "outgoing": {
+          "replacedString": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "a4": {
+      "name": "parse",
+      "canvasName": "parse",
+      "summary": "discard params",
+      "description": "discard params",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 2350,
+        "y": 7050
+      },
+      "variables": {
+        "incoming": {
+          "text": "$var.a3.replacedString"
+        },
+        "outgoing": {
+          "textObject": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "a5": {
+      "name": "runService",
+      "canvasName": "runService",
+      "summary": "discard the rejected destroy plan",
+      "description": "discard the rejected destroy plan",
+      "location": "Application",
+      "locationType": null,
+      "app": "GatewayManager",
+      "type": "automatic",
+      "displayName": "GatewayManager",
+      "groups": [],
+      "nodeLocation": {
+        "x": 2390,
+        "y": 7200
+      },
+      "variables": {
+        "incoming": {
+          "serviceName": "terraform-run",
+          "clusterId": "lab",
+          "params": "$var.a4.textObject"
+        },
+        "outgoing": {
+          "result": "$var.job.discard_result"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "a8": {
+      "name": "evaluation",
+      "canvasName": "evaluation",
+      "summary": "discarded?",
+      "description": "discarded?",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 2390,
+        "y": 7350
+      },
+      "variables": {
+        "incoming": {
+          "all_true_flag": true,
+          "evaluation_groups": [
+            {
+              "all_true_flag": true,
+              "evaluations": [
+                {
+                  "query": "result.return_code",
+                  "operand_1": {
+                    "variable": "result",
+                    "task": "a5"
+                  },
+                  "operator": "==",
+                  "operand_2": {
+                    "variable": 0,
+                    "task": "static"
+                  }
+                }
+              ]
+            }
+          ],
+          "options": {}
+        },
+        "outgoing": {
+          "return_value": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "a6": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "the AWS rejection",
+      "description": "the AWS rejection",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 2150,
+        "y": 7650
+      },
+      "variables": {
+        "incoming": {
+          "input": "the router's AWS block was removed and proved gone; the AWS destroy was rejected in Work Center, so the AWS side stays (about $1 a day) - Tear Down again to remove it",
+          "outputType": "string",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.outcome"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "a7": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "the discard did not run",
+      "description": "the discard did not run",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 2790,
+        "y": 7500
+      },
+      "variables": {
+        "incoming": {
+          "input": "the rejected destroy plan could not be discarded; it stays in the state bucket until removed",
+          "outputType": "string",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.error"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "b0": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "the plan could not run",
+      "description": "the plan could not run",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": -380,
+        "y": 3600
+      },
+      "variables": {
+        "incoming": {
+          "input": "the Gateway could not make Tear Down's plan (see teardown_plan / push_plan): nothing was sent to the router, nothing changed in AWS",
+          "outputType": "string",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.error"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "b1": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "why there is no plan",
+      "description": "why there is no plan",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": -220,
+        "y": 1350
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "stdout_json.message",
+          "obj": "$var.job.teardown_plan"
+        },
+        "outgoing": {
+          "return_data": "$var.job.error"
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "b2": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "the removal lines could not be made",
+      "description": "the removal lines could not be made",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 130,
+        "y": 1800
+      },
+      "variables": {
+        "incoming": {
+          "input": "lab-edge removal did not answer (see removal_result): nothing was sent to the router, nothing changed in AWS",
+          "outputType": "string",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.error"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "b3": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "why there is no push plan",
+      "description": "why there is no push plan",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 360,
+        "y": 2250
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "stdout_json.message",
+          "obj": "$var.job.push_plan"
+        },
+        "outgoing": {
+          "return_data": "$var.job.error"
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "b4": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "config-push-revert refuses it",
+      "description": "config-push-revert refuses it",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 720,
+        "y": 2700
+      },
+      "variables": {
+        "incoming": {
+          "input": "config-push-revert's check refused the removal (see check_result): nothing was sent to the router, nothing changed in AWS",
+          "outputType": "string",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.error"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "bf": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "router_changed = false (nothing sent)",
+      "description": "router_changed = false (nothing sent)",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": -1320,
+        "y": 3750
+      },
+      "variables": {
+        "incoming": {
+          "input": "false",
+          "outputType": "boolean",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.router_changed"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "c0": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "the push could not finish",
+      "description": "the push could not finish",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": -310,
+        "y": 4650
+      },
+      "variables": {
+        "incoming": {
+          "input": "the Gateway could not run config-push-revert or read its answer (push_result): check the router - the removal may be live and unsaved, or pending until the revert timer rolls it back. Nothing changed in AWS",
+          "outputType": "string",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.error"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "c1": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "router_changed = true (unknown)",
+      "description": "router_changed = true (unknown)",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 170,
+        "y": 4800
+      },
+      "variables": {
+        "incoming": {
+          "input": "true",
+          "outputType": "boolean",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.router_changed"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "c2": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "why the removal was not kept",
+      "description": "why the removal was not kept",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": -830,
+        "y": 5100
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "stdout_json.message",
+          "obj": "$var.3f.result"
+        },
+        "outgoing": {
+          "return_data": "$var.job.error"
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "c3": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "the proof could not run",
+      "description": "the proof could not run",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": -130,
+        "y": 5550
+      },
+      "variables": {
+        "incoming": {
+          "input": "the removal was saved, but lab-edge absent could not read the router (absent_result): the AWS side was NOT touched - check the router, then Tear Down again",
+          "outputType": "string",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.error"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "c4": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "the block is not gone",
+      "description": "the block is not gone",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 200,
+        "y": 5700
+      },
+      "variables": {
+        "incoming": {
+          "input": "the removal was saved, but lab-edge absent still finds part of the block (absent_result.left): the AWS side was NOT touched",
+          "outputType": "string",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.error"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "c5": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "the destroy could not be planned",
+      "description": "the destroy could not be planned",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 1370,
+        "y": 6600
+      },
+      "variables": {
+        "incoming": {
+          "input": "the router is clean; the Gateway could not plan the AWS destroy (destroy_plan_result): nothing changed in AWS - Tear Down again to remove it",
+          "outputType": "string",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.error"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "c6": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "the destroy did not complete",
+      "description": "the destroy did not complete",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 1780,
+        "y": 7650
+      },
+      "variables": {
+        "incoming": {
+          "input": "the router is clean; terraform apply of the destroy did not finish (apply_result): part of the AWS side may be left - check it, then Tear Down again",
+          "outputType": "string",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.error"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "c7": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "something is left",
+      "description": "something is left",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 2260,
+        "y": 8700
+      },
+      "variables": {
+        "incoming": {
+          "input": "the destroy applied, but terraform-run outputs still reports outputs (outputs_result): check AWS",
+          "outputType": "string",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.error"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "9a01": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "input to check: target",
+      "description": "input to check: target",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 0,
+        "y": 150
+      },
+      "variables": {
+        "incoming": {
+          "obj": {},
+          "path": [
+            "target"
+          ],
+          "value": "$var.job.target"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "9a0a": {
+      "name": "validateJsonSchema",
+      "canvasName": "validateJsonSchema",
+      "summary": "check the inputs",
+      "description": "check the inputs",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 0,
+        "y": 300
+      },
+      "variables": {
+        "incoming": {
+          "jsonData": "$var.9a01.object",
+          "schema": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "target"
+            ],
+            "properties": {
+              "target": {
+                "enum": [
+                  "clab-rtr1",
+                  "dc1-wan01"
+                ]
+              }
+            }
+          }
+        },
+        "outgoing": {
+          "result": "$var.job.input_check"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "9a0b": {
+      "name": "evaluation",
+      "canvasName": "evaluation",
+      "summary": "inputs valid?",
+      "description": "inputs valid?",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": -100,
+        "y": 450
+      },
+      "variables": {
+        "incoming": {
+          "all_true_flag": true,
+          "evaluation_groups": [
+            {
+              "all_true_flag": true,
+              "evaluations": [
+                {
+                  "query": "valid",
+                  "operand_1": {
+                    "variable": "result",
+                    "task": "9a0a"
+                  },
+                  "operator": "==",
+                  "operand_2": {
+                    "variable": true,
+                    "task": "static"
+                  }
+                }
+              ]
+            }
+          ],
+          "options": {}
+        },
+        "outgoing": {
+          "return_value": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "9a0c": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "the inputs were refused",
+      "description": "the inputs were refused",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 360,
+        "y": 600
+      },
+      "variables": {
+        "incoming": {
+          "input": "the inputs were refused before anything ran (see input_check for which input and why): nothing was sent to a device",
+          "outputType": "string",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.error"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "workflow_start": {
+      "name": "workflow_start",
+      "summary": "workflow_start",
+      "groups": [],
+      "nodeLocation": {
+        "x": 0,
+        "y": 0
+      }
+    },
+    "workflow_end": {
+      "name": "workflow_end",
+      "summary": "workflow_end",
+      "groups": [],
+      "nodeLocation": {
+        "x": 1330,
+        "y": 8850
+      }
+    }
+  },
+  "transitions": {
+    "workflow_start": {
+      "9a01": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "10": {
+      "11": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "11": {
+      "1a": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "1a": {
+      "1b": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "1b": {
+      "1c": {
+        "state": "success",
+        "type": "standard"
+      },
+      "b0": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "1c": {
+      "1d": {
+        "state": "success",
+        "type": "standard"
+      },
+      "b1": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "1d": {
+      "1e": {
+        "state": "success",
+        "type": "standard"
+      },
+      "b0": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "1e": {
+      "17": {
+        "state": "success",
+        "type": "standard"
+      },
+      "b2": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "17": {
+      "1f": {
+        "state": "success",
+        "type": "standard"
+      },
+      "b2": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "1f": {
+      "18": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "18": {
+      "19": {
+        "state": "success",
+        "type": "standard"
+      },
+      "b0": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "19": {
+      "12": {
+        "state": "success",
+        "type": "standard"
+      },
+      "b3": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "12": {
+      "13": {
+        "state": "success",
+        "type": "standard"
+      },
+      "b0": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "13": {
+      "14": {
+        "state": "success",
+        "type": "standard"
+      },
+      "b4": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "14": {
+      "2a": {
+        "state": "success",
+        "type": "standard"
+      },
+      "b4": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "2a": {
+      "2b": {
+        "state": "success",
+        "type": "standard"
+      },
+      "b0": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "2b": {
+      "2c": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "2c": {
+      "15": {
+        "state": "success",
+        "type": "standard"
+      },
+      "a0": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "15": {
+      "3a": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "3a": {
+      "16": {
+        "state": "success",
+        "type": "standard"
+      },
+      "b0": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "16": {
+      "34": {
+        "state": "success",
+        "type": "standard"
+      },
+      "b0": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "34": {
+      "3b": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "3b": {
+      "3c": {
+        "state": "success",
+        "type": "standard"
+      },
+      "c0": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "3c": {
+      "3e": {
+        "state": "success",
+        "type": "standard"
+      },
+      "3d": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "3d": {
+      "3e": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "3e": {
+      "3f": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "3f": {
+      "31": {
+        "state": "success",
+        "type": "standard"
+      },
+      "c0": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "31": {
+      "32": {
+        "state": "success",
+        "type": "standard"
+      },
+      "c0": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "32": {
+      "35": {
+        "state": "success",
+        "type": "standard"
+      },
+      "33": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "35": {
+      "33": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "33": {
+      "4a": {
+        "state": "success",
+        "type": "standard"
+      },
+      "c2": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "4a": {
+      "4b": {
+        "state": "success",
+        "type": "standard"
+      },
+      "c3": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "4b": {
+      "4c": {
+        "state": "success",
+        "type": "standard"
+      },
+      "c3": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "4c": {
+      "4d": {
+        "state": "success",
+        "type": "standard"
+      },
+      "c3": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "4d": {
+      "4e": {
+        "state": "success",
+        "type": "standard"
+      },
+      "c4": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "4e": {
+      "5a": {
+        "state": "success",
+        "type": "standard"
+      },
+      "4f": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "4f": {
+      "workflow_end": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "5a": {
+      "5b": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "5b": {
+      "5c": {
+        "state": "success",
+        "type": "standard"
+      },
+      "c5": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "5c": {
+      "5d": {
+        "state": "success",
+        "type": "standard"
+      },
+      "c5": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "5d": {
+      "5e": {
+        "state": "success",
+        "type": "standard"
+      },
+      "c5": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "5e": {
+      "5f": {
+        "state": "success",
+        "type": "standard"
+      },
+      "c5": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "5f": {
+      "6a": {
+        "state": "success",
+        "type": "standard"
+      },
+      "a2": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "6a": {
+      "6b": {
+        "state": "success",
+        "type": "standard"
+      },
+      "c6": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "6b": {
+      "6c": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "6c": {
+      "6d": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "6d": {
+      "6e": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "6e": {
+      "6f": {
+        "state": "success",
+        "type": "standard"
+      },
+      "c6": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "6f": {
+      "60": {
+        "state": "success",
+        "type": "standard"
+      },
+      "c6": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "60": {
+      "61": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "61": {
+      "62": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "62": {
+      "67": {
+        "state": "success",
+        "type": "standard"
+      },
+      "c7": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "67": {
+      "63": {
+        "state": "success",
+        "type": "standard"
+      },
+      "c7": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "63": {
+      "64": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "64": {
+      "65": {
+        "state": "success",
+        "type": "standard"
+      },
+      "c7": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "65": {
+      "66": {
+        "state": "success",
+        "type": "standard"
+      },
+      "c7": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "66": {
+      "workflow_end": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "a0": {
+      "a1": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "a1": {
+      "workflow_end": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "a2": {
+      "a3": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "a3": {
+      "a4": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "a4": {
+      "a5": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "a5": {
+      "a8": {
+        "state": "success",
+        "type": "standard"
+      },
+      "a7": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "a8": {
+      "a6": {
+        "state": "success",
+        "type": "standard"
+      },
+      "a7": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "a7": {
+      "a6": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "a6": {
+      "workflow_end": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "b0": {
+      "bf": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "b1": {
+      "bf": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "b2": {
+      "bf": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "b3": {
+      "bf": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "b4": {
+      "bf": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "bf": {
+      "workflow_end": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "c0": {
+      "c1": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "c1": {
+      "workflow_end": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "c2": {
+      "workflow_end": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "c3": {
+      "workflow_end": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "c4": {
+      "workflow_end": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "c5": {
+      "workflow_end": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "c6": {
+      "workflow_end": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "c7": {
+      "workflow_end": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "9a01": {
+      "9a0a": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "9a0a": {
+      "9a0b": {
+        "state": "success",
+        "type": "standard"
+      },
+      "9a0c": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "9a0b": {
+      "10": {
+        "state": "success",
+        "type": "standard"
+      },
+      "9a0c": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "9a0c": {
+      "workflow_end": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "workflow_end": {}
+  },
+  "groups": [],
+  "canvasVersion": 3,
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "target": {
+        "type": "string",
+        "required": true,
+        "enum": [
+          "clab-rtr1",
+          "dc1-wan01"
+        ],
+        "description": "The lab edge router whose AWS VPN to tear down"
+      }
+    },
+    "required": [
+      "target"
+    ]
+  },
+  "outputSchema": {
+    "type": "object",
+    "properties": {
+      "outcome": {
+        "type": "string"
+      },
+      "error": {
+        "type": "string"
+      },
+      "router_changed": {
+        "type": "boolean"
+      },
+      "aws_changed": {
+        "type": "boolean"
+      },
+      "rejected": {
+        "type": "boolean"
+      },
+      "router_state": {
+        "type": "string"
+      },
+      "teardown_in": {
+        "type": "object"
+      },
+      "teardown_plan": {
+        "type": "object"
+      },
+      "push_plan": {
+        "type": "object"
+      },
+      "removal_result": {
+        "type": "object"
+      },
+      "check_result": {
+        "type": "object"
+      },
+      "push_result": {
+        "type": "object"
+      },
+      "push_summary": {
+        "type": "object"
+      },
+      "absent_result": {
+        "type": "object"
+      },
+      "destroy_plan_result": {
+        "type": "object"
+      },
+      "destroy_plan": {
+        "type": "object"
+      },
+      "apply_result": {
+        "type": "object"
+      },
+      "outputs_result": {
+        "type": "object"
+      },
+      "discard_result": {
+        "type": "object"
+      },
+      "left": {
+        "type": "object"
+      },
+      "input_check": {
+        "type": "object"
+      }
+    }
+  },
+  "tags": [],
+  "preAutomationTime": 300000,
+  "sla": 600000,
+  "font_size": 12,
+  "decorators": []
+}
