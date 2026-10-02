@@ -22,14 +22,14 @@ steps:
     # inventory holds dc1-wan01 (the dev inventory holds the clab nodes only)
     platform: production
     workflow: Push Configuration with Approval
-    reason: "Step 10 (ADR 0068) 1/4: the configuration archive the revert timer needs, hiding keys in its log"
+    reason: "Step 10 (ADR 0068) 1/4: the configuration archive the revert timer needs"
+    # path and maximum only. The window (2026-10-01) also turned on `log config` with `logging enable` and `hidekeys`;
+    # the leak sweep after Hand Off found the keyring's pre-shared-key in clear in that log (hidekeys does not mask it),
+    # so the owner ran `clear archive log config` and `archive` / `no log config` the same evening (lab PR: this one)
     config: |
       archive
        path bootflash:rb-
        maximum 5
-       log config
-        logging enable
-        hidekeys
 
   - name: time-boxed account
     # the account config-push-revert logs in as from here on. Its password lives only in the dev Vault (make
@@ -160,7 +160,7 @@ steps:
        no zone-member security INSIDE
 
 # after step 4: the revert timer's archive snapshots from step 2 predate AES encryption (step 3), so they hold the branch
-# keyring's key in clear; hidekeys masks only the change log. The owner removes them (dir bootflash: | include rb-,
+# keyring's key in clear. The owner removes them (dir bootflash: | include rb-,
 # then delete /force each), and refreshes the Configuration Manager backup and the prod snapshot (spec Appendix A, 4)
 after_window: [remove the step-2 archive snapshots, refresh the Configuration Manager backup, make prod-snapshot MODE=save]
 

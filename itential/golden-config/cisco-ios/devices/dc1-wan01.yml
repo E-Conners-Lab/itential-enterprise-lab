@@ -1,7 +1,8 @@
 # dc1-wan01's own Golden Config lines (ADR 0068 step 10): the lab edge's prerequisites, as the running configuration
 # shows them, so the nightly compliance plan flags any that a rebuild or a hand edit loses. tasks/golden-config-device.yml
 # merges zone_members into device.j2's interface blocks and appends `lines`. Every line here is one the template
-# renders (tests/test_lab_edge_prerequisites.py); `hidekeys` is not one of them - IOS-XE shows it only with `all` - and
+# renders (tests/test_lab_edge_prerequisites.py); the archive has no config-change log (it kept a pushed key in clear:
+# hidekeys does not mask an IKEv2 keyring's pre-shared-key, leak sweep 2026-10-01), and
 # INET-IN's slots 20 and 30 are Hand Off's to change, so they are not pinned.
 # Tunnel10 is Hand Off AWS VPN's: NetBox holds it for the read-back, but the router has it only after a Hand Off (never
 # after a rebuild), so it is no Golden Config requirement
