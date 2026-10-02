@@ -108,6 +108,7 @@ terraform_run:
       working-directory: "."
       secrets:
         - {name: lab-automation-password, type: env, target: LAB_EDGE_PASSWORD_CLAB_RTR1}
+        - {name: dc1-wan01-aws-vpn-password, type: env, target: LAB_EDGE_PASSWORD_DC1_WAN01}
     - name: lab-edge-push
       description: "The approved AWS VPN block pushed under a revert timer - the only service bound to the key (ADR 0068 d6)"
       filename: itential/lab-edge-push.py
@@ -116,6 +117,9 @@ terraform_run:
         - {name: lab-automation-password, type: env, target: LAB_EDGE_PASSWORD_CLAB_RTR1}
         - {name: aws-vpn-psk-clab-rtr1, type: env, target: LAB_EDGE_PSK_CLAB_RTR1}
         - {name: aws-vpn-psk-version-clab-rtr1, type: env, target: LAB_EDGE_PSK_VERSION_CLAB_RTR1}
+        - {name: dc1-wan01-aws-vpn-password, type: env, target: LAB_EDGE_PASSWORD_DC1_WAN01}
+        - {name: aws-vpn-psk-dc1-wan01, type: env, target: LAB_EDGE_PSK_DC1_WAN01}
+        - {name: aws-vpn-psk-version-dc1-wan01, type: env, target: LAB_EDGE_PSK_VERSION_DC1_WAN01}
     - name: config-push-revert
       description: "Approved IOS-XE lines under a revert timer, kept only if the router still works (step 10, F9 2a)"
       filename: itential/config-push-revert.py
@@ -183,9 +187,18 @@ aws_vpn:
         tunnel_remote_inner: 169.254.10.1/30
         vpc_private_prefixes: [10.0.64.0/20, 10.0.80.0/20]
     dc1-wan01:
-      window: closed # the owner opens it (build step 10-11): a time-boxed account, its aliases, then Hand Off
+      # opened by the owner (build step 11, 2026-10-01) after the step-10 window saved its prerequisites; closed again
+      # when R1 is signed off, together with the alias unbinding (topology/changes/dc1-wan01-lab-edge.yaml after_r1)
+      window: open
       username: itential-aws-vpn # the time-boxed account the window creates
       monitor: aws
+      # Hand Off's NetBox read-back (spec "NetBox read-back"; dev reads production NetBox view-only): the records the
+      # step-10 window wrote (netbox-topology + netbox-enrich), each prefix with the site it is scoped to; the card
+      # reports which exist, which are missing and which differ. clab-rtr1 is not a NetBox device, so it has none.
+      netbox:
+        site: cloud-aws
+        interface: Tunnel10
+        prefixes: {10.0.0.0/16: cloud-aws, 10.0.64.0/20: cloud-aws, 10.0.80.0/20: cloud-aws, 169.254.10.0/30: wan}
       psk_path: aws/vpn-psk # the deployment's own key (aws-vpn-psk ensure)
       target:
         name: dc1-wan01
@@ -527,6 +540,10 @@ vault:
     dc1-wan01-aws-vpn-password: {path: devices/dc1-wan01-aws-vpn, key: password}
     aws-vpn-psk-clab-rtr1: {path: devices/aws-vpn-clab-rtr1, key: psk}
     aws-vpn-psk-version-clab-rtr1: {path: devices/aws-vpn-clab-rtr1, key: version}
+    # the deployment's own key (Deploy AWS VPN's aws-vpn-psk ensure wrote it to the dev Vault, the dev runner's Vault):
+    # only lab-edge-push binds it, from step 11; the gateway-vault guard refuses the converge while it is missing
+    aws-vpn-psk-dc1-wan01: {path: aws/vpn-psk, key: psk}
+    aws-vpn-psk-version-dc1-wan01: {path: aws/vpn-psk, key: version}
   dev:
     dir: /opt/vault-dev # on itential-dev: config, tls (the VM's lab-CA certificate), raft data, init output
     # The address, not the name: on itential-dev the name resolves to 127.0.1.1 (Ubuntu's /etc/hosts entry), for the

@@ -16,6 +16,7 @@ the itentialopensource pre-built automations:
 from __future__ import annotations
 
 import inspect
+import ipaddress
 import itertools
 import json
 import statistics
@@ -3224,7 +3225,7 @@ def deploy_aws_vpn() -> dict:
 # what the workflows carry per open target: the pinned values lab-edge checks, the twin's pinned outputs (a target
 # monitored by AWS reads its outputs from Terraform instead), the login user and which monitor applies
 VERIFY_TARGETS = {
-    name: {k: entry[k] for k in ("target", "outputs", "username", "monitor") if k in entry}
+    name: {k: entry[k] for k in ("target", "outputs", "username", "monitor", "netbox") if k in entry}
     for name, entry in VERSIONS["aws_vpn"]["targets"].items()
     if entry["window"] == "open"
 }
@@ -3245,7 +3246,7 @@ monitor = entry.get("monitor")
 deployed = entry.get("outputs") if monitor != "aws" else d.get("deployed")
 plan = {"target": name, "monitor": monitor, "need_outputs": bool(entry) and monitor == "aws" and deployed is None,
         "ready": False, "reason": "", "lab_edge": None, "monitor_params": None, "precheck": None, "render": None,
-        "push": None, "monitor_ready": None}
+        "push": None, "monitor_ready": None, "netbox": bool(entry.get("netbox"))}
 if not entry:
     plan["reason"] = "%%s is not an open target" %% name
 elif not plan["need_outputs"] and not (deployed or {}).get("strongswan_eip"):
@@ -3524,6 +3525,120 @@ PUSH_SUMMARY_CODE = ("import json, sys\n\n\n" + inspect.getsource(push_summary)
                      + "\n\nprint(json.dumps(push_summary(json.loads(sys.stdin.read() or \"{}\"))))\n")
 
 
+# Hand Off's NetBox read-back (spec "NetBox read-back"): the one open target with NetBox records, read view-only from
+# production NetBox through the lab-netbox Integration Model before the card. A second such target would need its own
+# reads (the reads are generated per target), so this is refused until then rather than guessed.
+_NB_TARGETS = {n: e for n, e in VERSIONS["aws_vpn"]["targets"].items() if e["window"] == "open" and e.get("netbox")}
+if len(_NB_TARGETS) > 1:
+    raise SystemExit(f"NetBox read-back is generated for one target, not {sorted(_NB_TARGETS)}")
+NETBOX_WANT = {
+    name: {"device": e["target"]["name"], "site": e["netbox"]["site"], "interface": e["netbox"]["interface"],
+           "address": e["target"]["router_inner"], "prefixes": dict(e["netbox"]["prefixes"])}
+    for name, e in _NB_TARGETS.items()
+}
+# NetBox answers 400 to a filter naming an object it does not have (a missing site), so the prefixes are read from
+# each top-level expected prefix's parent block (`within`) and their scope is compared here, never filtered on
+NETBOX_WITHIN = {
+    name: sorted({str(ipaddress.ip_network(p).supernet()) for p in want["prefixes"]
+                  if not any(ipaddress.ip_network(p) != ipaddress.ip_network(q)
+                             and ipaddress.ip_network(p).subnet_of(ipaddress.ip_network(q)) for q in want["prefixes"])})
+    for name, want in NETBOX_WANT.items()
+}
+
+
+def netbox_readback(d: dict) -> dict:
+    """Which of the target's records production NetBox holds (`exists`), which it does not (`missing`) and which it
+    holds otherwise (`differ`), from the reads Hand Off makes before its card. Reads only: nothing is written. Each
+    answer comes as the Integration Model gives it (the payload in `body`); an answer that is not a list of results
+    counts as not found. Pure: runCode runs this very function's source, so the unit tests test what runs."""
+    want = d.get("want") or {}
+
+    def rows(answer) -> list:
+        body = answer.get("body", answer) if isinstance(answer, dict) else None
+        results = body.get("results") if isinstance(body, dict) else None
+        return [r for r in results if isinstance(r, dict)] if isinstance(results, list) else []
+
+    exists, missing, differ = [], [], []
+
+    def record(label: str, found: bool, wrong: str = "") -> None:
+        (missing if not found else differ if wrong else exists).append(f"{label}: {wrong}" if found and wrong else label)
+
+    site = want.get("site")
+    record(f"site {site}", any(r.get("slug") == site for r in rows(d.get("site"))))
+    prefixes = {}
+    for key in sorted(k for k in d if k.startswith("prefixes_")):  # one answer per parent block read
+        prefixes.update({r.get("prefix"): r for r in rows(d[key])})
+    for prefix, scope in sorted((want.get("prefixes") or {}).items()):
+        row = prefixes.get(prefix)
+        got = ((row or {}).get("scope") or {}).get("slug")
+        record(f"prefix {prefix} ({scope})", row is not None, "" if got == scope else f"scoped to {got or 'nothing'}")
+    device, interface, address = want.get("device"), want.get("interface"), want.get("address")
+    record(f"{device} {interface}", any(r.get("name") == interface for r in rows(d.get("interface"))))
+    ips = rows(d.get("address"))
+    on_it = [r for r in ips if (r.get("assigned_object") or {}).get("name") == interface]
+    wrong = ("" if any(r.get("address") == address for r in on_it)
+             else f"holds {on_it[0].get('address')}" if on_it
+             else f"assigned to {(ips[0].get('assigned_object') or {}).get('name') or 'nothing'}" if ips else "")
+    record(f"{address} on {interface}", bool(ips), wrong)
+    return {"agrees": not missing and not differ, "exists": exists, "missing": missing, "differ": differ}
+
+
+NETBOX_READBACK_CODE = ("import json, sys\n\n\n" + inspect.getsource(netbox_readback)
+                        + "\n\nprint(json.dumps(netbox_readback(json.loads(sys.stdin.read() or \"{}\"))))\n")
+
+
+def netbox_readback_section(name: str, want: dict, within: list[str], card: str, x: int) -> tuple[dict, dict]:
+    """The read-back's tasks (d0-df) between the render and the card: five view-only reads, then the comparison. A read
+    that throws (NetBox down, a refused filter) does not stop Hand Off: the card says the read-back could not be made,
+    and the approver decides. Publishes `netbox` (the card's NetBox entry) and goes on to `card`."""
+    ok, fail, err = "success", "failure", "error"
+    host = want["address"].split("/")[0]  # without the mask: a record with the wrong mask still answers, and differs
+    tasks = {
+        "d0": evaluate("NetBox read-back applies? (a target with NetBox records)", "job", "handoff_plan",
+                       "stdout_json.netbox", "==", True, x=x),
+        "d1": nbi("dcim_sites_list", f"NetBox: site {want['site']}", {"slug": want["site"], "limit": 1}, x=x + 5),
+        "d4": nbi("dcim_interfaces_list", f"NetBox: {want['device']} {want['interface']}",
+                  {"device": want["device"], "name": want["interface"]}, x=x + 20),
+        "d5": nbi("ipam_ip_addresses_list", f"NetBox: {host} on {want['device']}",
+                  {"device": want["device"], "address": host}, x=x + 25),
+        "d6": parse("the records NetBox should hold", json.dumps({"want": want}), x=x + 30),
+        "d7": set_key("read-back: the site", "$var.d6.textObject", "site", "$var.d1.response", x=x + 31),
+        "d8": set_key("read-back: the interface", "$var.d7.object", "interface", "$var.d4.response", x=x + 32),
+        "d9": set_key("read-back: the address", "$var.d8.object", "address", "$var.d5.response", x=x + 33),
+        "dc": run_code("compare NetBox with the records it should hold", NETBOX_READBACK_CODE, "",
+                       "netbox_result", x=x + 40),
+        "dd": jq("the read-back", "$var.job.netbox_result", "stdout_json", x=x + 42, to_job="netbox"),
+        "de": note("NetBox could not be read",
+                   "could not read NetBox (a read failed): check site, prefixes, Tunnel10 and its address by hand "
+                   "before approving", "netbox", x=x + 44, y=1500),
+        "df": note("no NetBox read-back for this target",
+                   f"not applicable (only {name} has NetBox records: the clab twin is not a NetBox device)",
+                   "netbox", x=x + 44, y=300),
+    }
+    # the prefixes, one read per parent block (d2, d3), each its own key: a $var resolves only at the top of an input
+    if not 1 <= len(within) <= 2:
+        raise SystemExit(f"the read-back reads one or two parent blocks, not {within}")
+    reads, keyed = ["d2", "d3"][: len(within)], ["da", "db"][: len(within)]
+    obj = "$var.d9.object"
+    for i, (read, key, block) in enumerate(zip(reads, keyed, within)):
+        tasks[read] = nbi("ipam_prefixes_list", f"NetBox: prefixes within {block}", {"within": block, "limit": 100},
+                          x=x + 10 + i)
+        tasks[key] = set_key(f"read-back: prefixes within {block}", obj, f"prefixes_{i}", f"$var.{read}.response",
+                             x=x + 35 + i)
+        obj = f"$var.{key}.object"
+    tasks["dc"]["variables"]["incoming"]["data"] = obj
+    chain_ids = ["d1", *reads, "d4", "d5", "d6", "d7", "d8", "d9", *keyed, "dc", "dd"]
+    tr = {"d0": _edge(d1=ok, df=fail)}
+    # the reads, the runCode and the query can fail; parse and setObjectKey on these values cannot (as at 6a-6d)
+    can_fail = {"d1", *reads, "d4", "d5", "dc", "dd"}
+    for a, b in zip(chain_ids, chain_ids[1:]):
+        tr[a] = _edge(**{b: ok, "de": err}) if a in can_fail else _edge(**{b: ok})
+    tr["dd"] = _edge(**{card: ok, "de": err})
+    tr["de"] = _edge(**{card: ok})
+    tr["df"] = _edge(**{card: ok})
+    return tasks, tr
+
+
 def hand_off_aws_vpn() -> dict:
     ok, fail, err = "success", "failure", "error"
     tasks = {
@@ -3574,8 +3689,7 @@ def hand_off_aws_vpn() -> dict:
         "6a": set_key("the card: target", {}, "target", "$var.job.target", x=1500),
         "6b": set_key("the card: SHA-256", "$var.6a.object", "sha256", "$var.job.sha256", x=1550),
         "6c": set_key("the card: the block (key masked)", "$var.6b.object", "block", "$var.job.block_masked", x=1600),
-        "6d": set_key("the card: NetBox", "$var.6c.object", "netbox",
-                      "not applicable (the read-back is dc1-wan01's, added with its records)", x=1650),
+        "6d": set_key("the card: NetBox", "$var.6c.object", "netbox", "$var.job.netbox", x=1650),
         "6e": replace("the card's message", APPROVAL_MESSAGE, "__T__", "$var.job.target", x=1700),
         "6f": view("approval", "Approve the router change", "$var.6e.replacedString", "$var.6d.object", "Approve",
                    "Reject", x=1750),
@@ -3645,7 +3759,15 @@ def hand_off_aws_vpn() -> dict:
     tasks["96"]["variables"]["outgoing"]["replacedString"] = "$var.job.error"
     vtasks, vtr, first = verify_section("handoff_plan", passed="90", failed="94", broken="c3", judge_broken="c3", x=2150)
     tasks.update(vtasks)
+    # the NetBox read-back before the card (dc1-wan01's records); with no such target open, the card says so itself
+    nb_tr = {}
+    for name, want in NETBOX_WANT.items():
+        nb_tasks, nb_tr = netbox_readback_section(name, want, NETBOX_WITHIN[name], card="6a", x=1455)
+        tasks.update(nb_tasks)
+    if not NETBOX_WANT:
+        tasks["6d"]["variables"]["incoming"]["value"] = "not applicable (no open target has NetBox records)"
     tr = {
+        **nb_tr,
         "workflow_start": _edge(**{"10": ok}),
         "10": _edge(**{"1a": ok}),
         "1a": _edge(**{"1b": ok}),
@@ -3673,7 +3795,7 @@ def hand_off_aws_vpn() -> dict:
         "5b": _edge(**{"5c": ok, "b8": err}),
         "5c": _edge(**{"5d": ok, "b6": fail}),
         "5d": _edge(**{"5e": ok, "b8": err}),
-        "5e": _edge(**{"6a": ok, "b8": err}),
+        "5e": _edge(**{"d0" if NETBOX_WANT else "6a": ok, "b8": err}),
         "6a": _edge(**{"6b": ok}),
         "6b": _edge(**{"6c": ok}),
         "6c": _edge(**{"6d": ok}),
@@ -3739,6 +3861,8 @@ def hand_off_aws_vpn() -> dict:
             "monitor_result": {"type": "object"},
             "router_note": {"type": "string"},
             "monitor_note": {"type": "string"},
+            "netbox": {"type": ["object", "string"]},
+            "netbox_result": {"type": "object"},
         },
     )
 

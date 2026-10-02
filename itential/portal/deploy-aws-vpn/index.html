@@ -307,7 +307,7 @@
 
   // the routers whose change window is open (itential/versions.yaml aws_vpn.targets): the same list as the workflows'
   // input gates and the endpoint triggers' schemas, which refuse any other (tests/test_aws_vpn.py holds them equal)
-  const TARGETS = ["clab-rtr1"];
+  const TARGETS = ["clab-rtr1", "dc1-wan01"];
 
   // The three workflows of the journey. `stages` are the route's waypoints in the order the workflow runs them, with the
   // task ids that show each one (itential/workflows/build.py); `fail` is each stage's failure branch (the workflows

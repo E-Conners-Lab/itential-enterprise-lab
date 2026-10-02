@@ -194,11 +194,103 @@ def test_hand_offs_params_are_exactly_what_each_service_takes_at_the_pin() -> No
     assert plan["monitor_ready"]["instance_id"] == "i-0123456789abcdef0"
 
 
-def test_no_target_monitored_by_aws_is_open_until_its_netbox_read_back_exists() -> None:
-    # Hand Off reads NetBox back for dc1-wan01 only, and that is built with its records (build step 10): until then a
-    # target monitored by AWS must stay closed, or its Hand Off would skip a read-back the spec requires
-    assert not [n for n, e in TARGETS.items() if e["window"] == "open" and e["monitor"] == "aws"]
-    assert "not applicable" in _tasks(HAND)["6d"]["variables"]["incoming"]["value"]
+def test_every_open_target_monitored_by_aws_has_its_netbox_read_back() -> None:
+    # the spec's read-back is the production target's (clab-rtr1 is not a NetBox device): no such target is open
+    # without its records named, and Hand Off reads them before the card, whose NetBox entry is the read-back
+    open_aws = [n for n, e in TARGETS.items() if e["window"] == "open" and e["monitor"] == "aws"]
+    assert open_aws and all(TARGETS[n].get("netbox") for n in open_aws) and set(build.NETBOX_WANT) == set(open_aws)
+    assert not TARGETS["clab-rtr1"].get("netbox")
+    tasks = _tasks(HAND)
+    assert HAND["transitions"]["5e"]["d0"]["state"] == "success" and "6a" not in HAND["transitions"]["5e"]
+    assert tasks["6d"]["variables"]["incoming"]["value"] == "$var.job.netbox"
+    # every way through the read-back reaches the card: read, could not read, not applicable
+    for tid in ("dd", "de", "df"):
+        assert "6a" in HAND["transitions"][tid]
+    assert {"d1", "d2", "d3", "d4", "d5", "dc", "dd"} <= {s for s, ds in HAND["transitions"].items() if "de" in ds}
+    assert _reach(HAND, "d0") >= {"6f"}  # and the card's approval after it
+
+
+NB = _tasks(HAND)
+
+
+def test_the_read_back_names_the_records_the_topology_gave_netbox() -> None:
+    """The records are the ones netbox-topology and netbox-enrich wrote in the step-10 window, from enterprise.yaml."""
+    import yaml
+
+    topo = yaml.safe_load((ROOT / "topology" / "enterprise.yaml").read_text())
+    entry, edge = TARGETS["dc1-wan01"], topo["lab_edge"]["dc1-wan01"]
+    want = build.NETBOX_WANT["dc1-wan01"]
+    assert want["site"] in topo["sites"] and want["interface"] == f"Tunnel{edge['tunnel']['id']}"
+    assert want["address"] == edge["tunnel"]["address"] == entry["target"]["router_inner"]
+    inband = {p["prefix"]: p["site"] for p in topo["inband_prefixes"]}
+    assert want["prefixes"] == {p: inband[p] for p in want["prefixes"]}
+    target = entry["target"]
+    link = str(__import__("ipaddress").ip_network(target["router_inner"], strict=False))
+    assert set(want["prefixes"]) == {target["vpc_cidr"], *target["vpc_private_prefixes"], link}
+    assert all(s == want["site"] for p, s in want["prefixes"].items() if p != link)
+
+
+def test_the_reads_are_view_only_and_never_filter_on_a_record_that_may_be_missing() -> None:
+    """NetBox answers 400 to a filter naming a site it does not have (measured 2026-10-01), so a missing site would read
+    as a failed read: prefixes are read from their parent blocks and compared, never filtered by site."""
+    reads = {tid: t for tid, t in NB.items() if tid.startswith("d") and t.get("location") == "Adapter"}
+    assert sorted(t["name"] for t in reads.values()) == sorted(
+        ["dcim_sites_list", "ipam_prefixes_list", "ipam_prefixes_list", "dcim_interfaces_list", "ipam_ip_addresses_list"])
+    for t in reads.values():
+        assert t["name"].endswith("_list") and "site" not in t["variables"]["incoming"]
+    within = sorted(t["variables"]["incoming"]["within"] for t in reads.values() if t["name"] == "ipam_prefixes_list")
+    assert within == build.NETBOX_WITHIN["dc1-wan01"] == ["10.0.0.0/15", "169.254.10.0/29"]
+    ip = next(t for t in reads.values() if t["name"] == "ipam_ip_addresses_list")["variables"]["incoming"]
+    assert "/" not in ip["address"]  # a record with the wrong mask still answers, and is reported as differing
+
+
+def _answers(**over) -> dict:
+    """The read-back's input as Hand Off builds it, NetBox's answers shaped as the Integration Model returns them."""
+    want = build.NETBOX_WANT["dc1-wan01"]
+
+    def page(*rows):
+        return {"body": {"count": len(rows), "results": list(rows)}}
+
+    d = {
+        "want": want,
+        "site": page({"slug": "cloud-aws"}),
+        "prefixes_0": page(*({"prefix": p, "scope": {"slug": "cloud-aws"}} for p in
+                             ("10.0.0.0/16", "10.0.64.0/20", "10.0.80.0/20"))),
+        "prefixes_1": page({"prefix": "169.254.10.0/30", "scope": {"slug": "wan"}}),
+        "interface": page({"name": "Tunnel10"}),
+        "address": page({"address": "169.254.10.1/30", "assigned_object": {"name": "Tunnel10"}}),
+    }
+    d.update(over)
+    return d
+
+
+def test_netbox_agrees_when_every_record_is_there() -> None:
+    got = build.netbox_readback(_answers())
+    assert got == {"agrees": True, "missing": [], "differ": [], "exists": got["exists"]} and len(got["exists"]) == 7
+
+
+@pytest.mark.parametrize("over, kind, says", [
+    ({"site": {"body": {"results": []}}}, "missing", "site cloud-aws"),
+    ({"prefixes_1": {"body": {"results": []}}}, "missing", "prefix 169.254.10.0/30 (wan)"),
+    ({"interface": {"body": {"results": []}}}, "missing", "dc1-wan01 Tunnel10"),
+    ({"address": {"body": {"results": []}}}, "missing", "169.254.10.1/30 on Tunnel10"),
+    ({"prefixes_1": {"body": {"results": [{"prefix": "169.254.10.0/30", "scope": {"slug": "dc1"}}]}}}, "differ",
+     "prefix 169.254.10.0/30 (wan): scoped to dc1"),
+    ({"address": {"body": {"results": [{"address": "169.254.10.1/24", "assigned_object": {"name": "Tunnel10"}}]}}},
+     "differ", "169.254.10.1/30 on Tunnel10: holds 169.254.10.1/24"),
+    ({"address": {"body": {"results": [{"address": "169.254.10.1/30", "assigned_object": {"name": "Tunnel11"}}]}}},
+     "differ", "169.254.10.1/30 on Tunnel10: assigned to Tunnel11"),
+    ({"site": "not an answer"}, "missing", "site cloud-aws"),
+], ids=["no-site", "no-link", "no-tunnel", "no-address", "link-scoped-elsewhere", "wrong-mask", "other-interface",
+        "garbled-answer"])
+def test_the_read_back_names_each_record_that_is_missing_or_differs(over, kind, says) -> None:
+    got = build.netbox_readback(_answers(**over))
+    assert got["agrees"] is False and got[kind] == [says]
+
+
+def test_the_read_back_runs_as_the_gateway_runs_it() -> None:
+    assert _run(build.NETBOX_READBACK_CODE, _answers()) == build.netbox_readback(_answers())
+    assert NB["dc"]["variables"]["incoming"]["code"] == build.NETBOX_READBACK_CODE
 
 
 def test_only_open_targets_get_in() -> None:

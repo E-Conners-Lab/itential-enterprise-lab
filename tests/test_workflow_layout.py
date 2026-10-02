@@ -62,4 +62,10 @@ def test_arrows_stay_clear_of_the_tasks(file: str) -> None:
     if len(doc["tasks"]) < 20:
         assert (crossing, through) <= (1, 1), f"{file}: {crossing} crossings, {through} arrows through a task"
     else:
-        assert through <= 2, f"{file}: {through} arrows pass through a task"
+        assert through <= THROUGH_ALLOWED.get(file, 2), f"{file}: {through} arrows pass through a task"
+
+
+# Owner decision 2026-10-01 (option C): Hand Off's NetBox read-back added ~14 rows to its main path, and no placement
+# of the notes gets back under 2 (best measured: 3, at more crossings). Canvas only - the job runs the same. The
+# follow-up shortens the read-back (one merge task for its data, proved on dev) and removes this allowance.
+THROUGH_ALLOWED = {"hand-off-aws-vpn.json": 5}

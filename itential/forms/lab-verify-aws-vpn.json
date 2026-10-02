@@ -21,6 +21,11 @@
             "id": "enum-target-clab-rtr1",
             "label": "clab-rtr1",
             "value": "clab-rtr1"
+          },
+          {
+            "id": "enum-target-dc1-wan01",
+            "label": "dc1-wan01",
+            "value": "dc1-wan01"
           }
         ],
         "enumNames": [
@@ -28,6 +33,11 @@
             "id": "name-target-clab-rtr1",
             "label": "clab-rtr1",
             "value": "clab-rtr1"
+          },
+          {
+            "id": "name-target-dc1-wan01",
+            "label": "dc1-wan01",
+            "value": "dc1-wan01"
           }
         ],
         "default": "clab-rtr1"
@@ -48,10 +58,12 @@
         "_id": "/properties/target",
         "description": "The router whose side of the AWS VPN this runs on (open targets only)",
         "enum": [
-          "clab-rtr1"
+          "clab-rtr1",
+          "dc1-wan01"
         ],
         "enumNames": [
-          "clab-rtr1"
+          "clab-rtr1",
+          "dc1-wan01"
         ],
         "default": "clab-rtr1"
       }
