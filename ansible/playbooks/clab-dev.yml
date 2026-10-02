@@ -592,15 +592,17 @@
       loop:
         - cmd: show ip access-lists INET-IN
           want: ["10 deny ip any any fragments", "20 deny udp any host", "30 deny udp any host", "1000 deny ip any any log"]
-        # IOS-XE 17.13 leaves `hidekeys` out of the plain running config (measured 2026-10-01): only `all` shows it, and
-        # then as its own line - `no hidekeys` would contain the word too, so the line is matched whole
-        - {cmd: "show running-config all | section ^archive", want: ["path bootflash:rb-", "\n  hidekeys\n"]}
+        # the archive the revert timer needs, and NO config-change log: `hidekeys` does not mask an IKEv2 keyring's
+        # pre-shared-key line, so a logged Hand Off kept the key in clear (dc1-wan01, leak sweep 2026-10-01)
+        - {cmd: "show running-config | section ^archive", want: ["path bootflash:rb-"], absent: ["log config"]}
         - {cmd: "show running-config | include ^zone security", want: ["zone security INSIDE", "zone security AWS"]}
         - {cmd: "show running-config | section ^line vty", want: ["access-class MGMT-ONLY in vrf-also"]}
         - {cmd: "show running-config | section ^crypto ikev2 keyring CANARY", want: ["pre-shared-key"]}
       loop_control:
         label: "{{ item.cmd }}"
       register: prereq
-      failed_when: prereq.rc != 0 or (item.want | reject('in', prereq.stdout) | list | length) > 0
+      failed_when: >-
+        prereq.rc != 0 or (item.want | reject('in', prereq.stdout) | list | length) > 0
+        or (item.absent | default([]) | select('in', prereq.stdout) | list | length) > 0
       changed_when: false
       no_log: true

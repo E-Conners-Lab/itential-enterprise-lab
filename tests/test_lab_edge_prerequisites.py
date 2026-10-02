@@ -106,7 +106,10 @@ def test_the_zones_hold_exactly_the_interfaces_lab_edge_expects() -> None:
 
 
 def test_the_archive_and_aes_encryption_are_there_and_the_master_key_never_is() -> None:
-    assert A["archive"] == [" path bootflash:rb-", " maximum 5", " log config", "  logging enable", "  hidekeys"]
+    # the path the revert timer needs and NO config-change log: hidekeys does not mask an IKEv2 keyring's pre-shared-key
+    # line, so a logged Hand Off kept the key in clear (dc1-wan01, leak sweep 2026-10-01)
+    assert A["archive"] == [" path bootflash:rb-", " maximum 5"]
+    assert "log config" not in AFTER and "logging enable" not in AFTER
     assert "password encryption aes" in A
     assert "key config-key" not in AFTER
 
@@ -130,8 +133,8 @@ def test_golden_config_requires_only_rendered_lines() -> None:
         head = head.removeprefix("<e/>")
         assert head in A, head
         assert set(body) <= set(A[head]), (head, set(body) - set(A[head]))
-    # hidekeys is not required (IOS-XE shows it only with `all`); INET-IN's slots 20/30 are Hand Off's to change
-    assert "hidekeys" not in GC_DEVICE["lines"]
+    # no config-change log is ever required (it would keep a pushed key in clear); INET-IN's slots 20/30 are Hand Off's
+    assert "log config" not in GC_DEVICE["lines"] and "hidekeys" not in GC_DEVICE["lines"]
     inet_in = _blocks(GC_DEVICE["lines"])["<e/>ip access-list extended INET-IN"]
     assert not any(line.split()[0] in ("20", "30") for line in inet_in)
 
@@ -245,7 +248,7 @@ def test_the_steps_run_in_the_order_the_router_needs() -> None:
                      "zone membership"]
     first, account, *rest = CHANGES["steps"]
     # the archive on the production Platform (dc1-wan01 is in its inventory); the revert pushes on the dev one (the
-    # service is dev-tier); the account typed after the archive, so hidekeys masks it, before any push needs it
+    # service is dev-tier); the account typed after the archive (as a type-9 hash only), before any push needs it
     assert first["platform"] == "production" and all(s["platform"] == "dev" for s in rest if "workflow" in s)
     revert = VERSIONS["revert_push"]["targets"]["dc1-wan01"]
     # the type-9 line only (make edge-account-line): the plain password never reaches the router

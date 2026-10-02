@@ -69,12 +69,12 @@ line vty 5 15
 netconf-yang ssh ipv4 access-list name MGMT-ONLY
 restconf ipv4 access-list name MGMT-ONLY
 !
+{# No `log config`: IOS-XE's config-change log keeps each command as typed, and `hidekeys` does NOT mask an IKEv2
+   keyring's PSK line - on dc1-wan01 a Hand Off was logged with its PSK in clear (leak sweep,
+   2026-10-01). The revert timer needs only the path; the change history is the Platform's (jobs, backups). -#}
 archive
  path bootflash:rb-
  maximum 5
- log config
-  logging enable
-  hidekeys
 !
 password encryption aes
 !

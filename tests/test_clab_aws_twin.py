@@ -125,7 +125,7 @@ def test_clab_rtr1_carries_the_hand_off_prerequisites() -> None:
     front = b[f"interface {TWIN['front_door']['ifname']}"]
     assert {"vrf forwarding INET", f"ip address {FD} 255.255.255.0", "ip access-group INET-IN in", "no shutdown"} <= set(front)
     assert not any("zone-member" in x or "ospf" in x for x in front)  # the front door stays unzoned, no routing protocol
-    assert b["archive"] == ["path bootflash:rb-", "maximum 5", "log config", "logging enable", "hidekeys"]
+    assert b["archive"] == ["path bootflash:rb-", "maximum 5"]  # no config-change log: it keeps a pushed key in clear
     assert {"zone security INSIDE", "zone security AWS"} <= set(b)
     for vty in ("line vty 0 4", "line vty 5 15"):
         assert "access-class MGMT-ONLY in vrf-also" in b[vty]
@@ -303,15 +303,21 @@ def test_the_scripts_reload_in_place() -> None:
     assert nat.index("iptables -t nat -F PREROUTING") < nat.index("iptables -t nat -A PREROUTING")
 
 
-def test_the_hidekeys_check_reads_what_ios_xe_shows_and_matches_the_whole_line() -> None:
+def test_the_archive_check_refuses_a_config_change_log() -> None:
+    """hidekeys does not mask an IKEv2 keyring's pre-shared-key line (dc1-wan01, leak sweep 2026-10-01): the twin's
+    check wants the archive path and refuses any `log config`, as the play's failed_when evaluates it."""
     tasks = {t["name"]: t for t in yaml.safe_load((PLAYBOOKS / "clab-dev.yml").read_text())[1]["tasks"]}
     reads = tasks["Router clab-rtr1 holds the prerequisites lab-edge's precheck reads (the master key aside, the owner's)"]
     archive = next(r for r in reads["loop"] if "archive" in r["cmd"])
-    # 17.13 shows hidekeys only in `show running-config all` (measured on clab-rtr1, 2026-10-01)
-    assert archive["cmd"] == "show running-config all | section ^archive"
-    shown = "archive\n log config\n  logging enable\n  hidekeys\n path bootflash:rb-\n"
-    disabled = shown.replace("  hidekeys", "  no hidekeys")
-    assert all(w in shown for w in archive["want"]) and not all(w in disabled for w in archive["want"])
+    assert archive["cmd"] == "show running-config | section ^archive"
+    assert "absent | default([]) | select('in', prereq.stdout)" in reads["failed_when"]
+
+    def fails(stdout: str) -> bool:
+        return any(w not in stdout for w in archive["want"]) or any(a in stdout for a in archive.get("absent", []))
+
+    assert not fails("archive\n path bootflash:rb-\n maximum 5\n")
+    assert fails("archive\n log config\n  logging enable\n  hidekeys\n path bootflash:rb-\n maximum 5\n")
+    assert fails("archive\n maximum 5\n")
 
 
 def test_the_verify_counts_devices_and_the_twins_containers_apart() -> None:

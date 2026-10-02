@@ -29,7 +29,7 @@ the same package, the XFRM interface and firewall of its user data, and the conn
 `swanctl.conf.tftpl` at the commit `terraform_run` pins. The two are `kind: linux` containers kept out of `nodes` and
 `links`: no management address (network-mode none), no SSH, never in an Itential inventory or NetBox; they are reached
 with `docker exec` on the VM. clab-rtr1 also carries what lab-edge's precheck reads (INET-IN with its IKE placeholders,
-the management ACL on the vty lines, the archive with `hidekeys`, the zones with Gi2 and Gi3 in INSIDE, a canary
+the management ACL on the vty lines, the archive (no config-change log), the zones with Gi2 and Gi3 in INSIDE, a canary
 keyring); its master key and `password encryption aes` are the owner's (spec Appendix A). The twin's key lives in the dev
 Vault (`make twin-key`, at `aws_vpn.targets.clab-rtr1.psk_path`, the entry Hand Off reads through the Gateway); the
 play copies it in place to the VM (0600) for the twin's bind mount and reloads the twin when it changes. On a clean
