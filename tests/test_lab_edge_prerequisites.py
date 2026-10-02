@@ -318,16 +318,19 @@ def test_the_zone_change_has_its_exact_inverse_and_a_transit_proof() -> None:
     leaf = wan01_gi6.rsplit(".", 1)[0] + "." + str(int(wan01_gi6.rsplit(".", 1)[1]) + 1)
     tunnel_of = {t["peer"]: t["ip"] for t in derive.render_context(TOPO, "dc1-wan01")["tunnels"]}
     gateways = {n: derive.render_context(TOPO, n)["lan"]["gw"] for n in ("br1-wan01", "br2-wan01")}
+    # the leaf's end of the link sits in a VRF (PROD): a read or probe without it misses the route and the source
+    leaf_vrf = next(r["vrf"] for r in derive.interfaces(TOPO)["dc1-leaf01"] if (r["address"] or "").split("/")[0] == leaf)
     devices = [p for p in step["transit_proof"] if p["device"] != "verify"]
     for p in devices:
         assert p["path"]["read"].split()[0] == "show" and p["probe"].split()[0] in ("ping", "traceroute")
         if p["device"] == "dc1-leaf01":
             # the leaf reaches each branch LAN through dc1-wan01's Gi6: INSIDE in, a tunnel (INSIDE) out
             assert p["path"]["via"] == wan01_gi6 and p["probe"].endswith(f"source {leaf}")
+            assert leaf_vrf and f"vrf {leaf_vrf} " in p["path"]["read"] and f"vrf {leaf_vrf} " in p["probe"]
         else:
             # a branch's path to the leaf crosses dc1-wan01 only via its own tunnel to dc1-wan01
             assert p["path"]["via"] == tunnel_of[p["device"]] and p["probe"].endswith(f"source {gateways[p['device']]}")
-    assert {p["probe"].split()[1] for p in devices if p["device"] == "dc1-leaf01"} == set(gateways.values())
+    assert {p["probe"].split()[-3] for p in devices if p["device"] == "dc1-leaf01"} == set(gateways.values())
     assert {p["device"] for p in devices} == {"dc1-leaf01", "br1-wan01", "br2-wan01"}
     verify = [p for p in step["transit_proof"] if p["device"] == "verify"][0]["probe"]
     assert "S3.5" in verify and 'check "S3.5 ' in (ROOT / "verify" / "test-04-topology.sh").read_text()
