@@ -493,11 +493,19 @@
   }
   ipInput.addEventListener("blur", () => ipInput.value && checkIp());
 
-  // the router pickers: only the open targets
-  ["handoff-target", "verify-target", "teardown-target"].forEach((id) => {
+  // the router pickers: only the open targets, and one choice for the whole page - the lab's shore and every picker
+  // name the same router: the one just picked, or the one the job on show (or the newest run on the route) ran on
+  const PICKERS = ["handoff-target", "verify-target", "teardown-target"];
+  function showRouter(target) {
+    if (!TARGETS.includes(target)) return;
+    $("lab-router").textContent = target;
+    PICKERS.forEach((id) => { $(id).value = target; });
+  }
+  PICKERS.forEach((id) => {
     TARGETS.forEach((t) => { const o = document.createElement("option"); o.value = t; o.textContent = t; $(id).appendChild(o); });
-    $(id).addEventListener("change", () => { $("lab-router").textContent = $(id).value; });
+    $(id).addEventListener("change", () => showRouter($(id).value));
   });
+  showRouter(TARGETS[0]);
 
   // --- tabs ----------------------------------------------------------------------------------------------------------
   let mode = "deploy";
@@ -591,7 +599,7 @@
   // running - writes the log, the status line and the address. A newer follow() of a leg retires that leg's older poller,
   // even one waiting on a fetch; `starts` counts the engineer's own starts, so a journey() still reading can tell.
   const pollers = { deploy: 0, handoff: 0, verify: 0, teardown: 0 };
-  let shown = null, starts = 0;
+  let shown = null, starts = 0, routerOf = null; // routerOf: the job whose router the page last named
   const isLive = (job) => job.status === "running" || job.status === "paused";
   function show(jobId, m) {
     shown = m;
@@ -626,6 +634,8 @@
         $(`go-${m}`).disabled = false; return;
       }
       const r = read(job, m);
+      // once per job, so a router picked while it runs is not undone by the next poll
+      if (shown === m && routerOf !== jobId) { routerOf = jobId; showRouter((job.variables || {}).target); }
       if (shown === m) render(r, m);
       else { legState[m] = r.state; drawRoute(); }
       $(`go-${m}`).disabled = isLive(job);
@@ -754,7 +764,8 @@
     $("jobid").hidden = true; const url = new URL(location.href); url.searchParams.delete("job"); history.replaceState(null, "", url);
     $(`go-${m}`).disabled = true;
     seen.clear(); $("log").innerHTML = ""; $("outputs").hidden = true; next(""); approvalCallout(false, "");
-    legState[m] = firstState; drawRoute();
+    // a new run makes every leg after it stale (the journey's own rule), so they leave the route at once
+    legState[m] = firstState; LEGS.slice(LEGS.indexOf(m) + 1).forEach((leg) => { legState[leg] = {}; }); drawRoute();
     if (PREVIEW) return simulate(m, formData);
     try {
       const r = await fetch(MODES[m].trigger, { method: "POST", credentials: "same-origin",
@@ -829,14 +840,16 @@
     // The finished legs are one chain: each is drawn from its latest job only while every earlier leg was, and only
     // when it started after the earlier leg's run (a Verify that passed last week says nothing about a Deploy re-run
     // today), so the route has no gap, and it ends at a leg that was rejected or failed.
-    let previousStart = 0;
+    let previousStart = 0, named = null;
     for (const m of LEGS) {
       const job = jobs[m];
       if ((raced() && m === shown) || !job || startOf(job) < previousStart) break;
       previousStart = startOf(job);
       legState[m] = read(job, m).state;
+      if ((job.variables || {}).target) named = job; // the chain runs oldest to newest, so the last one is the newest
       if (Object.values(legState[m]).some((x) => x in STOP)) break;
     }
+    if (named && !raced()) showRouter(named.variables.target);
     drawRoute();
     // A running job is live work, so it is followed wherever it sits (a Hand Off started after a rejected Deploy runs
     // against the earlier deployment); the newest running job is the one on show.
