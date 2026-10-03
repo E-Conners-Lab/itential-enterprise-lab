@@ -324,3 +324,51 @@ item; the export read back each time):
   noncurrent-version expiry rule would remove the copies.
 - Every apply costs money: about $1 a day with the NAT gateway, cents without it, plus the fixed $1 a month for
   the CMK. The `vpn-lab-monthly` budget ($5) stays.
+
+## Amendment 2026-10-03: `hidekeys` does not mask an IKEv2 keyring's key; the key is rotated by teardown and rebuild
+
+**What happened.** The step-10 window on dc1-wan01 (2026-10-01) turned on the config-change log (`archive` with
+`log config`, `logging enable` and `hidekeys`) next to the archive path the revert timer needs. After the first Hand
+Off, the leak sweep for criterion 2 found the keyring's `pre-shared-key` in clear in that log. On IOS-XE 17.13,
+`hidekeys` does not mask the key line of a `crypto ikev2 keyring`. The sweep made it worse: it read
+`show archive log config all` through production's `Run Show Command on a Device`, which copied the key into a
+production job. The same night that job was deleted, the owner cleared the change log and removed `log config` on
+dc1-wan01 and clab-rtr1 (checked count-only), and the Platform and Gateway logs were found clean.
+
+**Decision 5, corrected.** Type 6 (`password encryption aes`) still keeps the key out of the running configuration
+and every Configuration Manager backup. It does nothing for a change log, and no IOS-XE setting masks the key there.
+So:
+
+- The lab edges run no config-change log. `topology/configs/c8000v.j2`, the clab twin, the change set and the Golden
+  Config carry the archive path only (#106). `lab-edge precheck` refuses a router whose archive logs configuration
+  (cloud-devops-pipeline #27).
+- A leak sweep never reads a router's records through a job. The router half is
+  `lab-edge-push --action sweep` in cloud-devops-pipeline, the only service that holds the key. It reads
+  `show logging`, `show archive log config all` and `show running-config` whole inside the service and counts the key
+  and the router's password in them, whole and in every 16-character piece, plus the key lines that are not type 6.
+  Only numbers leave it. A router-side `| count` alone was rejected: it matches a keyword, and a `%` echo of the key
+  carries none.
+- `verify/test-13a-aws-vpn-dev.sh` is the test decision 5 asks for (S13.2e-i, opt-in `AWS_VPN=1`). It counts every
+  live Vault version of every AWS VPN secret (the key, the IAM key, the PSK writer's AppRole, the edge account's
+  password, the twin's key) in:
+  - every job document and task record of the AWS VPN workflows and of the two hand paths to the edge (`Push
+    Configuration with Revert Timer`, `Run Show Command on a Device`);
+  - the dev `gateway5`, `gateway5-runner` and `platform` logs;
+  - every tracked file of both repositories;
+  - the router, through the sweep.
+
+  Production's `test-13a-aws-vpn.sh` comes with R8.
+- The owner's rule stands for any read by hand: never `show archive log config all` through a job, and never without
+  `| count`.
+
+**The key is rotated by teardown and rebuild until R4.** The leaked key was retired on 2026-10-02 by the owner's
+choice:
+
+1. The router's block was removed under a revert timer.
+2. The AWS side was destroyed and redeployed.
+3. Deploy wrote a new key version (decision 8) and Hand Off pushed it.
+4. The leaked versions were destroyed in the dev Vault.
+
+Since R2 the same rotation is `Tear Down AWS VPN`, then `Deploy`, `Hand Off` and `Verify` (the recorded cycle of
+2026-10-02). It costs a rebuild and a few minutes without the tunnel. R4 (`Rotate AWS VPN Key`) replaces it with a
+rotation in place.

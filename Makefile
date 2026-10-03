@@ -247,6 +247,7 @@ verify-dev: ## Dev tier only: Containerlab topology and the dev stack; never par
 	verify/test-12a-clab-dev.sh
 	verify/test-05b-dev-copilot.sh
 	verify/test-09a-vault-dev.sh
+	verify/test-13a-aws-vpn-dev.sh
 
 # ALLOW=path is the compare allowlist: without it a compare after `make copilot-prod` always fails (test-05b S12.8
 # derives the allowlist from itential/copilot/roles.yaml). prod-snapshot.py also passes with an empty section (a
