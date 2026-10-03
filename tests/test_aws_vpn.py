@@ -448,7 +448,7 @@ def test_tear_downs_two_cards_each_reject_on_their_own_branch_and_the_page_never
     assert 'trigger: "/operations-manager/triggers/endpoint/tear-down-aws-vpn"' in block
     render = page.split("function renderTeardown")[1].split("\n  }\n")[0]
     assert "removal.sha256" in render and "removal.lines" not in render  # the SHA-256 only, never the lines
-    assert 'id="tab-teardown"' in page and 'id="teardown-target"' in page and '"teardown-target"].forEach' in page
+    assert 'id="tab-teardown"' in page and 'id="teardown-target"' in page and 'const PICKERS = ["handoff-target", "verify-target", "teardown-target"];' in page
 
 
 def test_the_page_marks_a_stop_from_the_branches_the_workflow_takes() -> None:
@@ -661,6 +661,8 @@ setTimeout(() => {
   document.body.dataset.probe = JSON.stringify({ wp, status: q("chart-status").textContent,
     log: [...document.querySelectorAll("#log li span")].map((s) => s.textContent), jobid: q("jobid").textContent,
     disabled: Object.fromEntries(["deploy", "handoff", "verify"].map((m) => [m, q("go-" + m).disabled])),
+    router: q("lab-router").textContent,
+    pickers: Object.fromEntries(["handoff", "verify", "teardown"].map((m) => [m, q(m + "-target").value])),
     search: location.search, calls: window.__calls });
 }, 12000);
 </script>
@@ -814,6 +816,51 @@ def test_the_journey_never_takes_the_page_from_a_job_started_here(tmp_path: Path
     assert _reads(out, _ids(2)) >= 2
     assert out["disabled"]["handoff"] is True and out["disabled"]["verify"] is True
     assert out["wp"]["hoapprove"] == "active"
+
+
+@pytest.mark.skipif(_chrome() is None, reason="needs Chrome")
+def test_the_lab_names_the_router_of_the_job_on_show(tmp_path: Path) -> None:
+    """Recorded cycle 2026-10-02: a Tear Down of dc1-wan01, resumed by its link, showed "clab-rtr1" on the lab's shore
+    and in the pickers (the first router in the list), so three captures of that run could not be used."""
+    td = _job(_ids(7), "Tear Down AWS VPN", 1000, ["1e", "17"], status="paused", running=["2c"],
+              variables={"target": "dc1-wan01"})
+    out = _run_page(tmp_path, {}, [td], query=f"?job={_ids(7)}&mode=teardown")
+    assert out["router"] == "dc1-wan01", out["router"]
+    assert out["pickers"] == {"handoff": "dc1-wan01", "verify": "dc1-wan01", "teardown": "dc1-wan01"}
+
+
+@pytest.mark.skipif(_chrome() is None, reason="needs Chrome")
+def test_the_route_names_the_router_its_latest_leg_ran_on(tmp_path: Path) -> None:
+    """Without a link, the lab's shore names the router of the newest run drawn on the route, not the list's first."""
+    jobs = [_job(_ids(1), "Deploy AWS VPN", 1000, DEPLOY_DONE),
+            _job(_ids(2), "Hand Off AWS VPN", 2000, HANDOFF_DONE, variables={"target": "dc1-wan01"}),
+            _job(_ids(3), "Verify AWS VPN", 3000, ["1a", "ee", "5f"], variables={"target": "dc1-wan01"})]
+    out = _run_page(tmp_path, {j["name"]: j["_id"] for j in jobs}, jobs)
+    assert out["router"] == "dc1-wan01" and out["pickers"]["verify"] == "dc1-wan01", out
+
+
+@pytest.mark.skipif(_chrome() is None, reason="needs Chrome")
+def test_picking_a_router_names_it_everywhere(tmp_path: Path) -> None:
+    """One router choice for the page: the shore and every picker follow the one just made."""
+    pick = 'const s = document.getElementById("verify-target"); s.value = "dc1-wan01"; s.dispatchEvent(new Event("change"));'
+    out = _run_page(tmp_path, {}, [], actions=[[500, pick]])
+    assert out["router"] == "dc1-wan01"
+    assert out["pickers"] == {"handoff": "dc1-wan01", "verify": "dc1-wan01", "teardown": "dc1-wan01"}
+
+
+@pytest.mark.skipif(_chrome() is None, reason="needs Chrome")
+def test_starting_a_leg_clears_the_legs_after_it(tmp_path: Path) -> None:
+    """Recorded cycle 2026-10-02: a Hand Off started from the page kept the earlier Verify's stop drawn as done until a
+    reload (the journey's own rule: a leg older than the one before it is stale)."""
+    jobs = [_job(_ids(1), "Deploy AWS VPN", 1000, DEPLOY_DONE), _job(_ids(2), "Hand Off AWS VPN", 2000, HANDOFF_DONE),
+            _job(_ids(3), "Verify AWS VPN", 3000, ["1a", "ee", "5f"]),
+            _job(_ids(5), "Hand Off AWS VPN", 4000, HANDOFF_CHECKS, status="paused", running=["6f"])]
+    out = _run_page(tmp_path, {"Deploy AWS VPN": _ids(1), "Hand Off AWS VPN": _ids(2), "Verify AWS VPN": _ids(3)}, jobs,
+                    triggers={"hand-off-aws-vpn": _ids(5)},
+                    actions=[[1500, 'document.getElementById("tab-handoff").click(); document.getElementById("go-handoff").click();']])
+    assert out["jobid"] == f"Hand Off AWS VPN: job {_ids(5)}"
+    assert out["wp"]["plan"] == "done" and out["wp"]["hoapprove"] == "active"
+    assert out["wp"]["verdict"] == "" and out["wp"]["tunnel"] == "", out["wp"]
 
 
 @pytest.mark.skipif(_chrome() is None, reason="needs Chrome")
