@@ -235,17 +235,19 @@ def c_router() -> bool:
         keys = out.get("pre_shared_key_lines") or {}
         checks = {
             "the sweep ran on the Gateway (exit 0)": rc == 0,
-            "every record read and not empty": bool(sources)
-            and all(src.get("read") and src.get("lines", 0) > 0 for src in sources.values()),
+            # a router with no change log refuses that read with one `%` line: nothing there to sweep (2026-10-03)
+            "every record read (the change log only if one is kept) and not empty": bool(sources)
+            and all((src.get("read") or (n == "archive_log" and out.get("change_log") is False))
+                    and src.get("lines", 0) > 0 for n, src in sources.items()),
             "no copy of the key or the password": out.get("clean") is True and out.get("hits") == 0,
         }
         if entry["monitor"] == "aws":
             checks["the deployment's key is on the router as type 6"] = (
                 keys.get("type6", 0) >= 1 and keys.get("type6") == keys.get("total"))
-        print(f"  {name}: " + ("; ".join(f"{n} {src.get('lines')} lines, key {src.get('key')}, password "
+        print(f"  {name}: " + ("; ".join(f"{n} {'read' if src.get('read') else 'refused'} {src.get('lines')} lines, key {src.get('key')}, password "
                                          f"{src.get('password')}" for n, src in sources.items())
                                or f"error: {out.get('error')}")
-              + f"; pre-shared-key lines {keys}")
+              + f"; pre-shared-key lines {keys}; change log kept: {out.get('change_log')}")
         for check, passed in checks.items():
             print(f"    {'ok  ' if passed else 'FAIL'} {check}")
             ok &= passed
