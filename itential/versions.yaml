@@ -68,9 +68,10 @@ terraform_run:
     # A full commit SHA, never a branch or tag (security review 2026-09-29, ITL-01): the Gateway runs this code with the
     # AWS key, so new cloud-devops-pipeline code runs only after a lab PR moves the pin, to a commit on its protected
     # main whose required checks passed (verify S13.2c). Measured on dev 2026-09-29: an older SHA is checked out as
-    # given, an unknown one fails the service ("reference not found"). 590cd0a = main after cdp #26: the step-6
-    # services (#15-#23) and config-push-revert (#25) with its `check` action and the Gateway-limit guard (#26).
-    reference: "ef882400c4f0be0c1269df1c8f4cc169189990b5"
+    # given, an unknown one fails the service ("reference not found"). 47a9a6c = main after cdp #28: the step-6
+    # services (#15-#23), config-push-revert (#25, #26), Tear Down's lab-edge removal / absent (#27) and
+    # lab-edge-push's leak sweep (#28, build step 12).
+    reference: "47a9a6c436b834d52e438ce50370969865320372"
   executable_object:
     name: python-3-12
     description: "the runner image's Python 3.12 (ADR 0038)"
@@ -110,7 +111,7 @@ terraform_run:
         - {name: lab-automation-password, type: env, target: LAB_EDGE_PASSWORD_CLAB_RTR1}
         - {name: dc1-wan01-aws-vpn-password, type: env, target: LAB_EDGE_PASSWORD_DC1_WAN01}
     - name: lab-edge-push
-      description: "The approved AWS VPN block pushed under a revert timer - the only service bound to the key (ADR 0068 d6)"
+      description: "Pushes the AWS VPN block under a revert timer; sweeps the router for leaks. The only service with the key (ADR 0068 d6)"
       filename: itential/lab-edge-push.py
       working-directory: "."
       secrets:
