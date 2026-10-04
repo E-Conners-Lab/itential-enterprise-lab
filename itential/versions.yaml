@@ -68,10 +68,10 @@ terraform_run:
     # A full commit SHA, never a branch or tag (security review 2026-09-29, ITL-01): the Gateway runs this code with the
     # AWS key, so new cloud-devops-pipeline code runs only after a lab PR moves the pin, to a commit on its protected
     # main whose required checks passed (verify S13.2c). Measured on dev 2026-09-29: an older SHA is checked out as
-    # given, an unknown one fails the service ("reference not found"). 8302b66 = main after cdp #31: the step-6
+    # given, an unknown one fails the service ("reference not found"). f734b4a = main after cdp #32: the step-6
     # services (#15-#23), config-push-revert (#25, #26), Tear Down's lab-edge removal / absent (#27), lab-edge-push's
-    # leak sweep (#28, #29), expires_at (#30, R2b) and outputs' state metadata + cost inputs (#31, A1).
-    reference: "8302b660522fb7c6610298d2b3799a318ff9fa73"
+    # leak sweep (#28, #29), expires_at (#30, R2b), outputs' state metadata + cost inputs (#31, A1), drift (#32, R3).
+    reference: "f734b4a30002feb9fc5efba78b730d12b56082e4"
   executable_object:
     name: python-3-12
     description: "the runner image's Python 3.12 (ADR 0038)"
@@ -276,7 +276,13 @@ operations_manager:
   # are not replayed, the next hour's run catches a deployment that came due meanwhile
   tear_down_expired_aws_vpn:
     automation: Tear Down Expired AWS VPN
+    description: "Ends an AWS VPN deployment whose time is up, every hour (R2b, ADR 0068)"
     schedule: {name: Tear Down Expired AWS VPN every hour, repeat_unit: hour, repeat_frequency: 1}
+  # R3 (owner decisions 2026-10-04): once a day; drift opens a Work Center task, nothing is changed
+  check_aws_drift:
+    automation: Check AWS Drift
+    description: "Reports what changed in AWS outside Terraform, every day; drift opens a Work Center task (R3)"
+    schedule: {name: Check AWS Drift every day, repeat_unit: day, repeat_frequency: 1, at_utc: "07:00"}
 
 vm:
   # itential-dev, never `itential` or `mcp`: since the S11 cut-over those names belong to production's load
@@ -352,6 +358,7 @@ workflows:
   verify_aws_vpn: Verify AWS VPN # S13 criterion 4: router, AWS monitor and data plane must agree; reads only (build step 7)
   hand_off_aws_vpn: Hand Off AWS VPN # S13 criterion 3: readiness, render, approval, push with the Vault key, verify (step 8)
   tear_down_aws_vpn: Tear Down AWS VPN # S13 criterion 5 (R2): the router's block removed and proved gone, then the AWS destroy
+  check_aws_drift: Check AWS Drift # R3: daily refresh-only plan; drift opens a Work Center task, names only; reads only
   get_aws_vpn_status: Get AWS VPN Status # A1: what is deployed, until when, last change, an estimated cost; reads only
   tear_down_expired_aws_vpn: Tear Down Expired AWS VPN # R2b: hourly schedule; Tear Down without cards once expires_at passed
   compliance_run: Run Nightly Compliance Check # S4d.1: target of the nightly schedule trigger

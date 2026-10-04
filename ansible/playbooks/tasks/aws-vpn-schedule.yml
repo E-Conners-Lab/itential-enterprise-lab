@@ -1,99 +1,114 @@
 ---
-# R2b (owner decisions 2026-10-04): Tear Down Expired AWS VPN, run every hour by an Operations Manager schedule. An
-# automation wraps the workflow (it follows the workflow's id, which every itential.yml import changes) and a schedule
-# trigger starts it at the top of each hour. No form and no endpoint: a schedule passes no input (6.5.2 does not keep
-# formData on schedule triggers, golden-config.yml), and the workflow reads the end time from the Terraform state.
-# Missed runs are not replayed: the next hour's run finds a deployment that came due meanwhile. Probes P1 and P2
-# (2026-10-04, dev): an hourly repeat is kept, and a schedule-started job runs Gateway services and opens a Work Center
-# task. Needs: login, platform_local, workflows, operations_manager.
-- name: Workflows and automations now (Tear Down Expired AWS VPN)
+# The AWS VPN's scheduled workflows, one automation and one schedule trigger each, keyed by `sk` (a key of
+# versions.yaml operations_manager and workflows; platform.yml loops this file):
+#   - tear_down_expired_aws_vpn (R2b): every hour, from the top of the next hour
+#   - check_aws_drift (R3, owner decisions 2026-10-04): every day at schedule.at_utc
+# The automation follows the workflow's id, which every itential.yml import changes. No form and no endpoint: a
+# schedule passes no input (6.5.2 does not keep formData on schedule triggers, golden-config.yml). Missed runs are not
+# replayed: the next run catches up. Probes P1 and P2 (2026-10-04, dev): an hourly repeat is kept, and a
+# schedule-started job runs Gateway services and opens a Work Center task. Needs: login, platform_local, workflows,
+# operations_manager, sk.
+- name: Workflows and automations now ({{ workflows[sk] }})
   ansible.builtin.uri:
     url: "{{ platform_local }}/{{ item }}"
     headers: {Cookie: "{{ login.cookies_string }}"}
   loop:
     - automation-studio/workflows?limit=500
     - operations-manager/automations?equalsField=componentType&equals=workflows&limit=100
-  register: tde_now
+  register: avs_now
 
-- name: Ids (Tear Down Expired AWS VPN)
+- name: Ids ({{ workflows[sk] }})
   ansible.builtin.set_fact:
-    tde: "{{ operations_manager.tear_down_expired_aws_vpn }}"
-    tde_wf_id: >-
-      {{ (tde_now.results[0].json['items'] | selectattr('name', 'equalto', workflows.tear_down_expired_aws_vpn)
-          | first)._id }}
-    tde_auto: >-
-      {{ (tde_now.results[1].json.data | selectattr('name', 'equalto', operations_manager.tear_down_expired_aws_vpn.automation)
-          | first) | default({}) }}
+    avs: "{{ operations_manager[sk] }}"
+    avs_wf_id: "{{ (avs_now.results[0].json['items'] | selectattr('name', 'equalto', workflows[sk]) | first)._id }}"
+    avs_auto: >-
+      {{ (avs_now.results[1].json.data | selectattr('name', 'equalto', operations_manager[sk].automation) | first)
+         | default({}) }}
 
-- name: The automation wrapping it (Tear Down Expired AWS VPN)
+- name: The automation wrapping it ({{ workflows[sk] }})
   ansible.builtin.uri:
     url: "{{ platform_local }}/operations-manager/automations"
     method: POST
     headers: {Cookie: "{{ login.cookies_string }}"}
     body_format: json
     body:
-      name: "{{ tde.automation }}"
-      description: "Ends an AWS VPN deployment whose time is up, every hour (R2b, ADR 0068)"
+      name: "{{ avs.automation }}"
+      description: "{{ avs.description }}"
       componentType: workflows
-      componentId: "{{ tde_wf_id }}"
-      componentName: "{{ workflows.tear_down_expired_aws_vpn }}"
+      componentId: "{{ avs_wf_id }}"
+      componentName: "{{ workflows[sk] }}"
     status_code: [200, 201]
-  register: tde_created
-  when: tde_auto | length == 0
+  register: avs_created
+  when: avs_auto | length == 0
   changed_when: true
 
-- name: The automation follows the re-imported workflow (Tear Down Expired AWS VPN)
+- name: The automation follows the re-imported workflow ({{ workflows[sk] }})
   ansible.builtin.uri:
-    url: "{{ platform_local }}/operations-manager/automations/{{ tde_auto._id }}"
+    url: "{{ platform_local }}/operations-manager/automations/{{ avs_auto._id }}"
     method: PATCH
     headers: {Cookie: "{{ login.cookies_string }}"}
     body_format: json
-    body: {componentId: "{{ tde_wf_id }}", componentName: "{{ workflows.tear_down_expired_aws_vpn }}"}
+    body: {componentId: "{{ avs_wf_id }}", componentName: "{{ workflows[sk] }}"}
     status_code: 200
-  when: tde_auto | length > 0 and tde_auto.componentId != tde_wf_id
+  when: avs_auto | length > 0 and avs_auto.componentId != avs_wf_id
   changed_when: true
 
-- name: Automation id (Tear Down Expired AWS VPN)
+- name: Automation id and first run ({{ workflows[sk] }})
   ansible.builtin.set_fact:
-    tde_auto_id: "{{ tde_auto._id if tde_auto | length > 0 else (tde_created.json.data._id | default(tde_created.json._id)) }}"
+    avs_auto_id: "{{ avs_auto._id if avs_auto | length > 0 else (avs_created.json.data._id | default(avs_created.json._id)) }}"
+    # an hourly schedule starts at the top of the next hour; a daily one at the next at_utc (today's if still ahead)
+    avs_first_ms: >-
+      {%- set now = lookup('ansible.builtin.pipe', 'date -u +%s') | int -%}
+      {%- if avs.schedule.repeat_unit == 'hour' -%}
+        {{ ((now // 3600 + 1) * 3600 * 1000) | int }}
+      {%- else -%}
+        {%- set at = (avs.schedule.at_utc.split(':')[0] | int) * 3600 + (avs.schedule.at_utc.split(':')[1] | int) * 60 -%}
+        {%- set today = (now // 86400) * 86400 + at -%}
+        {{ ((today if today > now else today + 86400) * 1000) | int }}
+      {%- endif -%}
 
-- name: Its schedule, if it exists (Tear Down Expired AWS VPN)
+- name: Its schedule, if it exists ({{ workflows[sk] }})
   ansible.builtin.uri:
     url: "{{ platform_local }}/operations-manager/triggers?equalsField=type&equals=schedule&limit=100"
     headers: {Cookie: "{{ login.cookies_string }}"}
-  register: tde_sched
+  register: avs_sched
 
-# the first run at the top of the next hour, then every hour
-- name: The hourly schedule (Tear Down Expired AWS VPN)
+- name: The schedule ({{ workflows[sk] }})
   ansible.builtin.uri:
     url: "{{ platform_local }}/operations-manager/triggers"
     method: POST
     headers: {Cookie: "{{ login.cookies_string }}"}
     body_format: json
     body:
-      name: "{{ tde.schedule.name }}"
-      description: "Ends an AWS VPN deployment whose expires_at has passed (R2b); most runs find nothing due"
+      name: "{{ avs.schedule.name }}"
+      description: "{{ avs.description }}"
       type: schedule
       actionType: automations
-      actionId: "{{ tde_auto_id }}"
+      actionId: "{{ avs_auto_id }}"
       enabled: true
-      firstRunAt: "{{ (((lookup('ansible.builtin.pipe', 'date -u +%s') | int) // 3600 + 1) * 3600 * 1000) | int }}"
-      repeatUnit: "{{ tde.schedule.repeat_unit }}"
-      repeatFrequency: "{{ tde.schedule.repeat_frequency | int }}"
+      firstRunAt: "{{ avs_first_ms | int }}"
+      repeatUnit: "{{ avs.schedule.repeat_unit }}"
+      repeatFrequency: "{{ avs.schedule.repeat_frequency | int }}"
       processMissedRuns: none
     status_code: [200, 201]
-  when: tde.schedule.name not in (tde_sched.json.data | map(attribute='name') | list)
+  when: avs.schedule.name not in (avs_sched.json.data | map(attribute='name') | list)
   changed_when: true
 
-- name: The schedule runs this automation and is enabled (Tear Down Expired AWS VPN)
+- name: The schedule runs this automation, is enabled and keeps its time of day ({{ workflows[sk] }})
   ansible.builtin.uri:
     url: "{{ platform_local }}/operations-manager/triggers/{{ have._id }}"
     method: PATCH
     headers: {Cookie: "{{ login.cookies_string }}"}
     body_format: json
-    body: {actionId: "{{ tde_auto_id }}", enabled: true}
+    body: >-
+      {{ {'actionId': avs_auto_id, 'enabled': true}
+         | combine({'firstRunAt': avs_first_ms | int} if off_time else {}) }}
     status_code: 200
   vars:
-    have: "{{ (tde_sched.json.data | selectattr('name', 'equalto', tde.schedule.name) | first) | default({}) }}"
-  when: have | length > 0 and (have.actionId != tde_auto_id or not have.enabled)
+    have: "{{ (avs_sched.json.data | selectattr('name', 'equalto', avs.schedule.name) | first) | default({}) }}"
+    # a daily schedule whose time of day is not at_utc any more (an hourly one has none to keep)
+    off_time: >-
+      {{ avs.schedule.repeat_unit == 'day'
+         and ((have.firstRunAt | default(0) | int) // 1000) % 86400 != ((avs_first_ms | int) // 1000) % 86400 }}
+  when: have | length > 0 and (have.actionId != avs_auto_id or not have.enabled or off_time | bool)
   changed_when: true

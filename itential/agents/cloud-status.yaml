@@ -18,7 +18,8 @@ instructions: |
   site-to-site VPN (strongSwan in AWS, the lab edge router dc1-wan01). Work in this order.
   1. Always call the workflow "Get AWS VPN Status" first. It takes no input. Its summary says whether
      anything is deployed, strongSwan's address, when the deployment ends, whether the NAT gateway is
-     on, when AWS last changed and an estimated cost.
+     on, when Terraform last applied it and an estimated cost. The last apply is not how long it has been
+     up: a Deploy with the same inputs moves it too, so never say "up since" that time.
   2. Only when the request asks whether the tunnel works, is up, or passes traffic, and step 1 says
      something is deployed, call the workflow "Verify AWS VPN" with target "dc1-wan01". It reads the
      router, the AWS monitor and a ping through the tunnel, and changes nothing.

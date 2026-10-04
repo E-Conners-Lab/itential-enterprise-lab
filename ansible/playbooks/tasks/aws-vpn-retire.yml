@@ -17,7 +17,8 @@
       {{ avr_autos.json.data | selectattr('name', 'in', avr_names) | list }}
   vars:
     avr_names: >-
-      {{ ['deploy_aws_vpn', 'hand_off_aws_vpn', 'verify_aws_vpn', 'tear_down_aws_vpn', 'tear_down_expired_aws_vpn']
+      {{ ['deploy_aws_vpn', 'hand_off_aws_vpn', 'verify_aws_vpn', 'tear_down_aws_vpn', 'tear_down_expired_aws_vpn',
+          'check_aws_drift']
          | map('extract', operations_manager) | map(attribute='automation') | list }}
 
 - name: Their triggers

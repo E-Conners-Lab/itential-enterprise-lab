@@ -227,10 +227,13 @@
             description: "Tears the AWS VPN down (the router's block, then the AWS side); started by the branded page or the form (R2)"
             schema: "{{ aws_vpn_target_schema }}"
 
-    # R2b: after the AWS VPN automations, on the tier that runs the AWS VPN with them (it owns the single AWS state)
-    - name: AWS VPN timed teardown - Tear Down Expired AWS VPN's automation and hourly schedule
+    # After the AWS VPN automations, on the tier that runs the AWS VPN with them (it owns the single AWS state):
+    # the timed teardown every hour (R2b) and the drift check every day (R3)
+    - name: AWS VPN schedules - the timed teardown and the drift check, an automation and a schedule each
       ansible.builtin.include_tasks: tasks/aws-vpn-schedule.yml
       when: (aws_vpn.tier == 'dev') == (dev_overlay | default(false) | bool)
+      loop: [tear_down_expired_aws_vpn, check_aws_drift]
+      loop_control: {loop_var: sk}
 
     # ADR 0070: the tier that does not run the AWS VPN keeps no way to start it - no trigger, no automation, no schedule
     - name: AWS VPN retired on this tier - its triggers and automations removed

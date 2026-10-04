@@ -4488,7 +4488,9 @@ def aws_vpn_status(d: dict, now: datetime, prices: dict) -> dict:
     if changed:
         then = datetime.strptime(changed, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
         hours = round((now - then).total_seconds() / 3600, 1)
-    when = f"last changed {changed} ({hours} h ago)" if changed else "when it last changed is not known"
+    # the state's own metadata: the last Terraform apply, which a no-change apply moves too - not "up since"
+    when = (f"last Terraform apply {changed} ({hours} h ago)" if changed
+            else "when Terraform last applied it is not known")
     if not outputs:
         return {"ok": True, "deployed": False, "last_changed": changed, "hours_since_change": hours,
                 "estimate": {"per_day_usd": 0, "since_change_usd": 0, "basis": prices["basis"]},
@@ -4565,6 +4567,86 @@ def get_aws_vpn_status() -> dict:
         tr,
         {"summary": {"type": "string"}, "status": {"type": "object"}, "error": {"type": "string"},
          "outputs_result": {"type": "object"}},
+    )
+
+
+# --- Check AWS Drift (R3, owner decisions 2026-10-04) -----------------------------------------------------------------
+# Once a day (operations_manager.check_aws_drift): terraform-run drift, a refresh-only plan (cloud-devops-pipeline #32)
+# that reads every resource from AWS and reports what changed outside Terraform by NAME only. No drift and nothing
+# deployed end quietly; drift opens a Work Center task with the two ways back. The check never changes anything; a
+# check that could not run ends with the reason (no task, as the hourly timed teardown).
+DRIFT_PARAMS = '{"action": "drift", "timeout": "600"}'
+
+
+def drift_summary(d: dict) -> dict:
+    """What the drift check found, in words. `d` holds terraform-run drift's answer under `drift`. Pure: runCode runs
+    this source on the Gateway."""
+    result = (d.get("drift") or {}).get("result") or {}
+    rep = (result.get("stdout_json") or {}).get("drift")
+    if result.get("return_code") != 0 or not isinstance(rep, dict):
+        return {"ok": False, "found": False, "summary": "The drift check could not run (see drift_result): nothing "
+                                                        "was changed."}
+    checked, resources = rep.get("resources_checked", 0), rep.get("resources") or []
+    if not checked:
+        return {"ok": True, "found": False, "drifted": 0, "summary": "nothing is deployed in AWS: nothing to check"}
+    if not resources:
+        return {"ok": True, "found": False, "drifted": 0,
+                "summary": f"no drift: {checked} resources in AWS match the Terraform state"}
+    named = [r.get("address", "?") + (" (deleted outside Terraform)" if "delete" in (r.get("actions") or [])
+                                      else " (" + ", ".join(r.get("attributes") or ["changed"]) + ")")
+             for r in resources]
+    return {"ok": True, "found": True, "drifted": len(resources), "resources": resources,
+            "summary": f"Drift in AWS: {len(resources)} of {checked} resources changed outside Terraform: "
+                       + "; ".join(named) + ". Nothing was changed by this check. Two ways back: Deploy AWS VPN with "
+                       "the same inputs puts AWS back to what Terraform wants, or Tear Down AWS VPN removes it all."}
+
+
+DRIFT_CODE = ("import json, sys\n\n\n" + inspect.getsource(drift_summary)
+              + "\n\nprint(json.dumps(drift_summary(json.loads(sys.stdin.read() or \"{}\"))))\n")
+
+
+def check_aws_drift() -> dict:
+    ok, fail, err = "success", "failure", "error"
+    tasks = {
+        "1a": parse("terraform-run drift's params", DRIFT_PARAMS, x=100),
+        "1b": run_service("what changed in AWS outside Terraform (terraform-run drift, a refresh-only plan)",
+                          "terraform-run", "$var.1a.textObject", "drift_result", x=200),
+        "1c": evaluate("the drift check answered?", "1b", "result", "result.return_code", "==", 0, x=300),
+        "1d": set_key("the drift check's answer", {}, "drift", "$var.job.drift_result", x=400),
+        "1e": run_code("what was found (Python on the runner)", DRIFT_CODE, "$var.1d.object", "drift", x=500),
+        "1f": evaluate("drift found?", "1e", "result", "stdout_json.found", "==", True, x=600),
+        "10": jq("the outcome: no drift", "$var.job.drift", "stdout_json.summary", x=700, y=300, to_job="outcome"),
+        "2a": jq("the drift, in words", "$var.job.drift", "stdout_json.summary", x=700, to_job="outcome"),
+        "2b": view("Work Center task", "Drift in AWS: changed outside Terraform", "$var.job.outcome",
+                   "$var.job.drift", "Seen", "Seen", x=800),
+        "8a": note("the drift check could not run", "terraform-run drift did not answer (see drift_result): nothing "
+                   "was changed", "error", x=250, y=-300),
+        "8b": note("the drift could not be read", "the Gateway could not read the drift check's answer (see drift): "
+                   "nothing was changed", "error", x=450, y=-300),
+    }
+    tr = {
+        "workflow_start": _edge(**{"1a": ok}),
+        "1a": _edge(**{"1b": ok}),
+        "1b": _edge(**{"1c": ok, "8a": err}),
+        "1c": _edge(**{"1d": ok, "8a": fail}),
+        "1d": _edge(**{"1e": ok}),
+        "1e": _edge(**{"1f": ok, "8b": err}),
+        "1f": _edge(**{"2a": ok, "10": fail}),
+        "10": _edge(**{"workflow_end": ok}),
+        "2a": _edge(**{"2b": ok}),
+        "2b": _edge(**{"workflow_end": ok}),
+        "8a": _edge(**{"workflow_end": ok}),
+        "8b": _edge(**{"workflow_end": ok}),
+    }
+    return workflow(
+        WF["check_aws_drift"],
+        "Reports what changed in AWS outside Terraform without changing anything: a refresh-only plan reads every "
+        "resource and names the ones that drifted and their attributes; drift opens a Work Center task (R3, ADR 0068)",
+        {},
+        tasks,
+        tr,
+        {"outcome": {"type": "string"}, "drift": {"type": "object"}, "error": {"type": "string"},
+         "drift_result": {"type": "object"}},
     )
 
 
@@ -4695,7 +4777,8 @@ def tear_down_expired_aws_vpn() -> dict:
 
 BUILDERS = (device_count, show_version, show_command, show_all, branch_vlan, branch_vlan_delete, config_push,
             compliance_run, compliance_report, netbox_devices, backup_all, deploy_aws_vpn, verify_aws_vpn,
-            hand_off_aws_vpn, config_push_revert, tear_down_aws_vpn, tear_down_expired_aws_vpn, get_aws_vpn_status)
+            hand_off_aws_vpn, config_push_revert, tear_down_aws_vpn, tear_down_expired_aws_vpn, get_aws_vpn_status,
+            check_aws_drift)
 
 
 if __name__ == "__main__":
