@@ -403,3 +403,57 @@
       with_fileglob: "{{ obs_dir }}/grafana/dashboards/*.json"
       loop_control:
         label: "{{ item | basename }}"
+
+    # --- the Zabbix app's files (ADR 0071 amendment) ---------------------------------------------------------------
+    # `plugins: []` stops new installs but Grafana loads whatever is already on its volume, and the image has no shell:
+    # Grafana's own CLI lists and removes the app, then the pod is replaced (Recreate) so it starts without it.
+    - name: Grafana's pod
+      kubernetes.core.k8s_info:
+        kubeconfig: "{{ kubeconfig }}"
+        kind: Pod
+        namespace: "{{ obs_namespace }}"
+        label_selectors: [app.kubernetes.io/name=grafana]
+        field_selectors: [status.phase=Running]
+      register: grafana_pod
+
+    - name: The Zabbix app on Grafana's volume
+      kubernetes.core.k8s_exec:
+        kubeconfig: "{{ kubeconfig }}"
+        namespace: "{{ obs_namespace }}"
+        pod: "{{ grafana_pod.resources[0].metadata.name }}"
+        container: grafana
+        command: grafana cli --pluginsDir /var/lib/grafana/plugins plugins ls
+      register: zbx_app
+      changed_when: false
+
+    - name: The Zabbix app removed from Grafana's volume
+      kubernetes.core.k8s_exec:
+        kubeconfig: "{{ kubeconfig }}"
+        namespace: "{{ obs_namespace }}"
+        pod: "{{ grafana_pod.resources[0].metadata.name }}"
+        container: grafana
+        command: grafana cli --pluginsDir /var/lib/grafana/plugins plugins remove alexanderzobnin-zabbix-app
+      when: "'alexanderzobnin-zabbix-app' in zbx_app.stdout"
+      register: zbx_app_removed
+
+    - name: Grafana restarted without it (the Deployment replaces the pod)
+      kubernetes.core.k8s:
+        kubeconfig: "{{ kubeconfig }}"
+        state: absent
+        kind: Pod
+        namespace: "{{ obs_namespace }}"
+        name: "{{ grafana_pod.resources[0].metadata.name }}"
+        wait: true
+      when: zbx_app_removed is changed
+
+    - name: Grafana ready again
+      kubernetes.core.k8s_info:
+        kubeconfig: "{{ kubeconfig }}"
+        kind: Deployment
+        namespace: "{{ obs_namespace }}"
+        name: kps-grafana
+      register: grafana_deploy
+      retries: 30
+      delay: 10
+      until: (grafana_deploy.resources[0].status.readyReplicas | default(0)) == 1
+      when: zbx_app_removed is changed

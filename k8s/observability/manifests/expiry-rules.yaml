@@ -9,7 +9,6 @@ metadata:
 spec:
   groups:
     - name: lab-expiries
-      interval: 1h
       rules:
         - record: lab:expiry_days_left
           expr: (1820188800 - time()) / 86400
