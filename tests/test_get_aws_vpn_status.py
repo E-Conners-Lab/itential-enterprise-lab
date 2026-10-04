@@ -81,7 +81,13 @@ def test_a_deployment_from_before_a1_says_what_it_does_not_know() -> None:
 def test_an_unread_state_time_leaves_out_only_the_cost_since_the_change() -> None:
     s = _status(_answer(DEPLOYED, state={"read": False, "error": "AccessDenied"}))
     assert s["ok"] and s["last_changed"] is None and s["estimate"]["since_change_usd"] is None
-    assert s["estimate"]["per_day_usd"] > 0 and "not known" in s["summary"]
+    assert s["estimate"]["per_day_usd"] > 0 and "when Terraform last applied it is not known" in s["summary"]
+
+
+def test_the_state_time_is_called_the_last_terraform_apply_not_a_change() -> None:
+    """A no-change apply moves it too (2026-10-04: the agent read it as "up since"): the words say what it is."""
+    s = _status(_answer(DEPLOYED))["summary"]
+    assert "last Terraform apply 2026-10-04T06:26:01Z" in s and "last changed" not in s
 
 
 def test_nothing_deployed_costs_nothing_but_says_when_it_was_torn_down() -> None:
