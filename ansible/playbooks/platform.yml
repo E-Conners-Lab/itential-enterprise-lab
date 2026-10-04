@@ -228,11 +228,11 @@
             schema: "{{ aws_vpn_target_schema }}"
 
     # After the AWS VPN automations, on the tier that runs the AWS VPN with them (it owns the single AWS state):
-    # the timed teardown every hour (R2b) and the drift check every day (R3)
-    - name: AWS VPN schedules - the timed teardown and the drift check, an automation and a schedule each
+    # the timed teardown every hour (R2b), the drift check every day (R3), the key rotation's daily due check (R4)
+    - name: AWS VPN schedules - the timed teardown, the drift check and the key rotation, an automation and a schedule each
       ansible.builtin.include_tasks: tasks/aws-vpn-schedule.yml
       when: (aws_vpn.tier == 'dev') == (dev_overlay | default(false) | bool)
-      loop: [tear_down_expired_aws_vpn, check_aws_drift]
+      loop: [tear_down_expired_aws_vpn, check_aws_drift, rotate_aws_vpn_key_monthly]
       loop_control: {loop_var: sk}
 
     # ADR 0070: the tier that does not run the AWS VPN keeps no way to start it - no trigger, no automation, no schedule

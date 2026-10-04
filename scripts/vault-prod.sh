@@ -11,6 +11,10 @@
 #                 to VAULT_ADMIN_FILE (default ~/.config/itential-enterprise-lab/vault-admin-token, mode 600), which
 #                 make vault-config / vault-snapshot / vault-cutover and the verify's admin checks use
 #   logout        revokes that token and deletes the file
+#   renew         renews that token (auth/token/renew-self) by another token_ttl, never past token_max_ttl, and says
+#                 how long it has left; make vault-config / vault-cutover and the Vault and AWS VPN verifies run it
+#                 first, so one login lasts until token_max_ttl (owner decision 2026-10-04, option 3). Exits 1 when
+#                 the token has expired or was revoked: make vault-login again
 #   snapshot      a Raft snapshot to VAULT_SNAPSHOT_DIR (default ~/Backups/itential-enterprise-lab/vault), mode 600,
 #                 outside the repo (ADR 0065 decision 8); useless without the unseal key, which is kept apart
 #   revoke-root   revokes the root token in VAULT_INIT_FILE - but only once an administrator login has been proven
@@ -108,6 +112,21 @@ print(f"logged in: a {auth["lease_duration"] // 60}-minute {policy} token is in 
     rm -f "$ADMIN_FILE"
     echo "logged out: token revoked (HTTP ${out%% *}) and $ADMIN_FILE deleted"
     ;;
+  renew)
+    [ -s "$ADMIN_FILE" ] || { echo "no administrator token: make vault-login first (in your own terminal)"; exit 1; }
+    at=$(tr -d '\n' < "$ADMIN_FILE")
+    out=$(printf '{}' | vcall POST auth/token/renew-self at); unset at
+    # the answer holds the token itself: only its lease is read out of it, nothing else is printed
+    left=$(printf '%s' "${out#* }" | ${PY} -c 'import sys,json
+try: print(int(json.load(sys.stdin)["auth"]["lease_duration"]) // 60)
+except Exception: print("")' 2>/dev/null); unset out
+    [ -n "$left" ] || { echo "the administrator token could not be renewed (expired or revoked): make vault-login (in your own terminal)"; exit 1; }
+    if [ "$left" -lt 30 ]; then
+      echo "administrator token renewed: ${left} min left - it is near its maximum lifetime, make vault-login soon"
+    else
+      echo "administrator token renewed: ${left} min left"
+    fi
+    ;;
   snapshot)
     token=$(admin_token)
     [ -n "$token" ] || { echo "no administrator token: make vault-login first (in your own terminal)"; exit 1; }
@@ -135,5 +154,5 @@ print(f"logged in: a {auth["lease_duration"] // 60}-minute {policy} token is in 
     echo "root token revoked (a lookup with it now answers HTTP ${after%% *}) and removed from $INIT_FILE; the administrator login remains"
     [ "${after%% *}" = 403 ]
     ;;
-  *) echo "usage: $0 status|init|unseal|admin-user|login|logout|snapshot|revoke-root"; exit 2 ;;
+  *) echo "usage: $0 status|init|unseal|admin-user|login|logout|renew|snapshot|revoke-root"; exit 2 ;;
 esac

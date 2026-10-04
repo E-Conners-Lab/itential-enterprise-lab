@@ -233,47 +233,49 @@
       loop_control:
         label: "{{ item.item.role }}"
 
-    # ADR 0068 P6, on the real path: the PSK writer's token may create and update the PSK and never read it, and the
-    # Gateway's read-only token may read it. Asked of Vault with each role's own token (sys/capabilities-self), so
-    # nothing is written and no PSK is needed.
-    - name: What each token may do with the PSK path, {{ vault.kv_mount ~ '/data/' ~ vault.aws.psk_path }}
+    # ADR 0068 P6, on the real path, with R4's amendment (owner decision 2026-10-04): the PSK writer's token may create,
+    # update and read the PSK, read its metadata and destroy its old versions, and the Gateway's read-only token may only
+    # read it. Asked of Vault with each role's own token (sys/capabilities-self) for each of the path's three KV v2
+    # endpoints, so nothing is written and no PSK is read.
+    - name: What each token may do on the PSK's data, metadata and destroy endpoints
       ansible.builtin.uri:
         url: "{{ vault_addr }}/v1/sys/capabilities-self"
         ca_path: /usr/local/share/ca-certificates/lab-root-ca.crt
         method: POST
-        headers: {X-Vault-Token: "{{ item.json.auth.client_token }}"}
+        headers: {X-Vault-Token: "{{ item.0.json.auth.client_token }}"}
         body_format: json
-        body: {paths: ["{{ vault.kv_mount }}/data/{{ vault.aws.psk_path }}"]}
-      loop: "{{ host_login.results | selectattr('item.role', 'in', psk_roles) | list }}"
+        body: {paths: ["{{ vault.kv_mount ~ '/' ~ item.1 ~ '/' ~ vault.aws.psk_path }}"]}
+      loop: "{{ host_login.results | selectattr('item.role', 'in', psk_roles) | product(['data', 'metadata', 'destroy']) | list }}"
       loop_control:
-        label: "{{ item.item.role }}"
+        label: "{{ item.0.item.role }} on {{ item.1 }}"
       vars:
         psk_roles: [itential-aws-psk-writer, itential-gateway]
       register: psk_caps
       no_log: true
 
-    # The registered results hold the login tokens and the test secret IDs, so they are reduced to (role, capabilities)
-    # out of sight first: a task that loops over the raw results prints each whole result, tokens included
+    # The registered results hold the login tokens and the test secret IDs, so they are reduced to (role, endpoint,
+    # capabilities) out of sight first: a task that loops over the raw results prints each whole result, tokens included
     # (measured on production 2026-09-29 - those tokens were revoked by the next task, but never again).
-    - name: Each role's capabilities on the PSK path, nothing else
+    - name: Each role's capabilities on the PSK's endpoints, nothing else
       ansible.builtin.set_fact:
         psk_caps_seen: >-
-          {{ psk_caps.results | map(attribute='item.item.role')
-             | zip(psk_caps.results | map(attribute='json.capabilities')) | list }}
+          {{ psk_caps.results | map(attribute='item.0.item.role')
+             | zip(psk_caps.results | map(attribute='item.1'), psk_caps.results | map(attribute='json.capabilities'))
+             | list }}
       no_log: true
 
-    - name: The writer creates and updates only, the Gateway reads only
+    - name: The writer creates, updates, reads and prunes its path only; the Gateway reads only
       ansible.builtin.assert:
-        that: (item.1 | sort) == want[item.0]
-        fail_msg: "{{ item.0 }} may {{ item.1 }} on the PSK path, want {{ want[item.0] }}"
-        success_msg: "{{ item.0 }} may {{ item.1 }} on the PSK path"
+        that: (item.2 | sort) == want[item.0][item.1]
+        fail_msg: "{{ item.0 }} may {{ item.2 }} on the PSK's {{ item.1 }}, want {{ want[item.0][item.1] }}"
+        success_msg: "{{ item.0 }} may {{ item.2 }} on the PSK's {{ item.1 }}"
       loop: "{{ psk_caps_seen }}"
       loop_control:
-        label: "{{ item.0 }}"
+        label: "{{ item.0 }} on {{ item.1 }}"
       vars:
         want:
-          itential-aws-psk-writer: [create, update]
-          itential-gateway: [read]
+          itential-aws-psk-writer: {data: [create, read, update], metadata: [read], destroy: [update]}
+          itential-gateway: {data: [read], metadata: [deny], destroy: [deny]}
 
     - name: The test logins' tokens revoked
       ansible.builtin.uri:

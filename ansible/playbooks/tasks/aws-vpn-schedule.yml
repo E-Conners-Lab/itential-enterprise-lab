@@ -3,6 +3,8 @@
 # versions.yaml operations_manager and workflows; platform.yml loops this file):
 #   - tear_down_expired_aws_vpn (R2b): every hour, from the top of the next hour
 #   - check_aws_drift (R3, owner decisions 2026-10-04): every day at schedule.at_utc
+#   - rotate_aws_vpn_key_monthly (R4): every day at schedule.at_utc; the workflow rotates on the 1st only (no monthly
+#     repeat unit exists)
 # The automation follows the workflow's id, which every itential.yml import changes. No form and no endpoint: a
 # schedule passes no input (6.5.2 does not keep formData on schedule triggers, golden-config.yml). Missed runs are not
 # replayed: the next run catches up. Probes P1 and P2 (2026-10-04, dev): an hourly repeat is kept, and a

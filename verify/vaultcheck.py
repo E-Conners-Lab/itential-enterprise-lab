@@ -172,19 +172,22 @@ def c_bound() -> bool:
 
 
 def c_aws_psk() -> bool:
-    """ADR 0068 decision 5 (P6) at the policy level: the PSK writer may create and update lab/aws/vpn-psk and never
-    read it, the Gateway's reader may read it, the Platform may not touch it. Asked with each policy's own token
+    """ADR 0068 decision 5 (P6) at the policy level, with R4's amendment (2026-10-04): the PSK writer may create, update
+    and read lab/aws/vpn-psk, read its metadata and destroy its old versions, and nothing else; the Gateway's reader
+    may read it, the Platform may not touch it. Asked with each policy's own token
     (sys/capabilities-self), so nothing is written and no PSK is read. Then the writer's own credentials: in Vault at
     vault.aws.writer_path, with the role's current role ID and a secret ID Vault still knows. Nothing is printed but
     capabilities and yes/no."""
     aws, mount = VAULT["aws"], VAULT["approle_mount"]
     psk, key = kv(aws["psk_path"]), kv(aws["key_path"])
     meta = f"{VAULT['kv_mount']}/metadata/{aws['psk_path']}"
+    destroy = f"{VAULT['kv_mount']}/destroy/{aws['psk_path']}"
     want = {"itential-gateway": {psk: ["read"]}, "itential-platform": {psk: ["deny"], key: ["deny"]}}
     # production's verify-readers token role predates the writer and only a root token could widen it; there the
     # writer's policy is proven on iag-01 by make vault-config (its own login, the same capabilities-self question)
     if os.environ.get("VAULT_TIER") != "prod":
-        want["itential-aws-psk-writer"] = {psk: ["create", "update"], meta: ["deny"], key: ["deny"]}
+        want["itential-aws-psk-writer"] = {psk: ["create", "read", "update"], meta: ["read"], destroy: ["update"],
+                                           key: ["deny"]}
     ok = True
     for role, paths in want.items():
         token = _policy_token(role)

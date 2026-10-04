@@ -71,7 +71,8 @@ terraform_run:
     # given, an unknown one fails the service ("reference not found"). f734b4a = main after cdp #32: the step-6
     # services (#15-#23), config-push-revert (#25, #26), Tear Down's lab-edge removal / absent (#27), lab-edge-push's
     # leak sweep (#28, #29), expires_at (#30, R2b), outputs' state metadata + cost inputs (#31, A1), drift (#32, R3).
-    reference: "f734b4a30002feb9fc5efba78b730d12b56082e4"
+    # 3e3f032 = main after cdp #33 (R4): aws-vpn-monitor reload, aws-vpn-psk restore-previous and prune.
+    reference: "3e3f032a6f4b4a0678111f45dd60968c00f7deed"
   executable_object:
     name: python-3-12
     description: "the runner image's Python 3.12 (ADR 0038)"
@@ -283,6 +284,13 @@ operations_manager:
     automation: Check AWS Drift
     description: "Reports what changed in AWS outside Terraform, every day; drift opens a Work Center task (R3)"
     schedule: {name: Check AWS Drift every day, repeat_unit: day, repeat_frequency: 1, at_utc: "07:00"}
+  # R4 (owner decisions 2026-10-04): monthly and unattended, no card. Operations Manager repeats by minute, hour, day or
+  # week only (no month), so this runs every day and the workflow rotates on the 1st (UTC) only; off the hour, so it
+  # never starts with Tear Down Expired AWS VPN (top of the hour) or Check AWS Drift (07:00)
+  rotate_aws_vpn_key_monthly:
+    automation: Rotate AWS VPN Key Monthly
+    description: "Rotates the AWS VPN's pre-shared key on the 1st of each month; a failure opens a Work Center task (R4)"
+    schedule: {name: Rotate AWS VPN Key every day (rotates on the 1st), repeat_unit: day, repeat_frequency: 1, at_utc: "08:30"}
 
 vm:
   # itential-dev, never `itential` or `mcp`: since the S11 cut-over those names belong to production's load
@@ -360,6 +368,8 @@ workflows:
   tear_down_aws_vpn: Tear Down AWS VPN # S13 criterion 5 (R2): the router's block removed and proved gone, then the AWS destroy
   check_aws_drift: Check AWS Drift # R3: daily refresh-only plan; drift opens a Work Center task, names only; reads only
   get_aws_vpn_status: Get AWS VPN Status # A1: what is deployed, until when, last change, an estimated cost; reads only
+  rotate_aws_vpn_key: Rotate AWS VPN Key # R4: the key changed in place, AWS rolled back by itself when the router fails
+  rotate_aws_vpn_key_monthly: Rotate AWS VPN Key Monthly # R4: the same, from a daily schedule, on the 1st (UTC) only
   tear_down_expired_aws_vpn: Tear Down Expired AWS VPN # R2b: hourly schedule; Tear Down without cards once expires_at passed
   compliance_run: Run Nightly Compliance Check # S4d.1: target of the nightly schedule trigger
   backup_all: Back Up All Device Configs # S4d.2: every Configuration Manager device backed up (forEach), nightly
@@ -542,16 +552,22 @@ vault:
       policy_paths: [devices/*, services/netbox, aws/terraform, aws/vpn-psk, aws/psk-writer, git/cloud-devops-pipeline]
       bound_hosts: [iag-01]
     itential-aws-psk-writer:
-      # write-only: the deploy workflow writes each new PSK version and can never read one back
+      # its own path only. Write-only until R4; since then (owner decision 2026-10-04, ADR 0068 amendment) it may read
+      # it too - Rotate AWS VPN Key's rollback restores the previous version (aws-vpn-psk restore-previous) - and read
+      # the path's metadata and destroy its old versions (prune: the current one and one previous are kept)
       policy_paths: [aws/vpn-psk]
-      capabilities: [create, update]
+      capabilities: [create, update, read]
+      # KV v2 endpoints beside data/, under the same mount: {path relative to the mount: capabilities}
+      kv_endpoints:
+        metadata/aws/vpn-psk: [read]
+        destroy/aws/vpn-psk: [update]
       bound_hosts: [iag-01]
   # Every AWS secret lives here and nowhere else (owner rule 2026-09-26, ADR 0068 decision 3). None is seeded from
   # .env: each tier's Vault gets its own IAM key (owner decision 2026-09-29), so either can be revoked alone.
   aws:
     iam_user: itential-terraform
     key_path: aws/terraform # {access_key_id, secret_access_key}: the owner's `make aws-key TIER=dev|prod`
-    psk_path: aws/vpn-psk # {psk}: written by the deploy workflow through itential-aws-psk-writer
+    psk_path: aws/vpn-psk # {psk, version}: written by Deploy and Rotate AWS VPN Key through itential-aws-psk-writer
     writer_path: aws/psk-writer # {role_id, secret_id}: written by the Vault config play, read by the Gateway
   # The Gateway's read-only SSH deploy key for the private repo terraform-run clones (ADR 0068 decision 9): one key per
   # tier, made in memory by `make deploy-key TIER=dev|prod`, the private half only in that tier's Vault.

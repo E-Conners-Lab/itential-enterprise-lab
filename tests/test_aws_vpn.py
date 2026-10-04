@@ -64,11 +64,18 @@ def test_adr_records_that_each_tier_holds_its_own_key() -> None:
     assert "`make aws-key TIER=dev|prod`" in adr and "`lab/aws/psk-writer`" in adr
 
 
-def test_the_psk_writer_is_write_only_on_one_path_and_bound_to_the_gateway_host() -> None:
+def test_the_psk_writer_keeps_to_its_one_path_and_is_bound_to_the_gateway_host() -> None:
     writer = VAULT["approles"]["itential-aws-psk-writer"]
     assert writer["policy_paths"] == [VAULT["aws"]["psk_path"]] == ["aws/vpn-psk"]
-    assert writer["capabilities"] == ["create", "update"]  # no read, delete, list or sudo
+    # R4 (owner decision 2026-10-04): it reads its own path (restore-previous) - no delete, list or sudo
+    assert writer["capabilities"] == ["create", "update", "read"]
+    # prune: the path's metadata (which versions are live) and destroy (the older ones), on the same path only
+    assert writer["kv_endpoints"] == {"metadata/aws/vpn-psk": ["read"], "destroy/aws/vpn-psk": ["update"]}
     assert writer["bound_hosts"] == ["iag-01"]
+
+
+def test_only_the_writer_has_kv_endpoints() -> None:
+    assert [r for r, c in VAULT["approles"].items() if "kv_endpoints" in c] == ["itential-aws-psk-writer"]
 
 
 def test_the_gateway_reads_the_aws_paths_and_the_platform_none() -> None:
@@ -93,7 +100,8 @@ def test_the_config_play_keeps_the_writers_credentials_in_vault_and_proves_p6_on
     assert "vault.aws.writer_path" in tasks and "vault_reader: itential-aws-psk-writer" in tasks
     prod = (ROOT / "ansible" / "playbooks" / "vault-prod-config.yml").read_text()
     assert "sys/capabilities-self" in prod
-    assert "itential-aws-psk-writer: [create, update]" in prod and "itential-gateway: [read]" in prod
+    assert "itential-aws-psk-writer: {data: [create, read, update], metadata: [read], destroy: [update]}" in prod
+    assert "itential-gateway: {data: [read], metadata: [deny], destroy: [deny]}" in prod
 
 
 def test_the_aws_vpn_tiers_vault_verify_checks_the_psk_path() -> None:

@@ -146,8 +146,21 @@ def test_a_job_sweep_that_finds_no_jobs_fails(monkeypatch, capsys) -> None:
 
 def test_the_swept_workflows_are_the_aws_vpn_ones_and_the_hand_paths_to_the_edge() -> None:
     wf = V["workflows"]
-    assert set(ac.JOB_WORKFLOWS) == {wf[k] for k in ("deploy_aws_vpn", "hand_off_aws_vpn", "verify_aws_vpn",
-                                                      "tear_down_aws_vpn", "config_push_revert", "show_command")}
+    assert set(ac.JOB_WORKFLOWS) == {wf[k] for k in (
+        "deploy_aws_vpn", "hand_off_aws_vpn", "verify_aws_vpn", "tear_down_aws_vpn", "tear_down_expired_aws_vpn",
+        "get_aws_vpn_status", "check_aws_drift", "rotate_aws_vpn_key", "rotate_aws_vpn_key_monthly",
+        "config_push_revert", "show_command")}
+
+
+def test_every_aws_vpn_workflow_is_swept() -> None:
+    """A workflow that runs an AWS VPN service is swept from the day it exists (R2b's and A1's were missed until R4)."""
+    services = {"terraform-run", "aws-vpn-psk", "lab-edge", "lab-edge-push", "aws-vpn-monitor"}
+    for path in sorted((ROOT / "itential" / "workflows").glob("*.json")):  # build.py's output, kept in sync by a test
+        doc = json.loads(path.read_text())
+        runs = {t.get("variables", {}).get("incoming", {}).get("serviceName") for t in doc["tasks"].values()
+                if t.get("name") == "runService"}
+        if runs & services:
+            assert doc["name"] in ac.JOB_WORKFLOWS, doc["name"]
 
 
 # ── the router: lab-edge-push sweep, counts only ──

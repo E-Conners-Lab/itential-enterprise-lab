@@ -45,12 +45,13 @@ SECRET_FIELDS = {
     "aws/psk-writer": ["role_id", "secret_id"],
     "devices/dc1-wan01-aws-vpn": ["password"],
 }
-# The AWS VPN workflows, and the two hand paths to the lab edge (the teardown by hand on 2026-10-02, the show reads
-# of the windows)
+# The AWS VPN workflows (every one that runs an AWS VPN service: tests/test_awsvpncheck.py), and the two hand paths to
+# the lab edge (the teardown by hand on 2026-10-02, the show reads of the windows)
 JOB_WORKFLOWS = [
     V["workflows"][k]
-    for k in ("deploy_aws_vpn", "hand_off_aws_vpn", "verify_aws_vpn", "tear_down_aws_vpn", "config_push_revert",
-              "show_command")
+    for k in ("deploy_aws_vpn", "hand_off_aws_vpn", "verify_aws_vpn", "tear_down_aws_vpn", "tear_down_expired_aws_vpn",
+              "get_aws_vpn_status", "check_aws_drift", "rotate_aws_vpn_key", "rotate_aws_vpn_key_monthly",
+              "config_push_revert", "show_command")
 ]
 TIER = os.environ.get("AWS_VPN_TIER") or V["aws_vpn"]["tier"]
 HA2 = yaml.safe_load((HERE.parent / "itential" / "ha2" / "versions.yaml").read_text())
