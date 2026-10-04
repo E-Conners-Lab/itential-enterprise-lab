@@ -221,6 +221,48 @@
       delay: 10
       until: zdb_pvcs.resources | length == 0
 
+    # The longhorn StorageClass reclaims with Retain, so the claim's deletion leaves its PV Released and the data on
+    # disk (~21 GB, measured 2026-10-04). Only the PV that was bound to zabbix-db-1 is deleted, then its Longhorn volume.
+    - name: PersistentVolumes now
+      kubernetes.core.k8s_info:
+        kubeconfig: "{{ kubeconfig }}"
+        kind: PersistentVolume
+      register: all_pvs
+
+    - name: The retained zabbix-db PersistentVolume deleted
+      kubernetes.core.k8s:
+        kubeconfig: "{{ kubeconfig }}"
+        state: absent
+        api_version: v1
+        kind: PersistentVolume
+        name: "{{ item.metadata.name }}"
+        wait: true
+      loop: "{{ zdb_pvs }}"
+      loop_control:
+        label: "{{ item.metadata.name }}"
+      vars:
+        zdb_pvs: >-
+          {{ all_pvs.resources | selectattr('spec.claimRef', 'defined')
+             | selectattr('spec.claimRef.namespace', 'equalto', obs_namespace)
+             | selectattr('spec.claimRef.name', 'equalto', 'zabbix-db-1') | list }}
+
+    - name: Its Longhorn volume deleted
+      kubernetes.core.k8s:
+        kubeconfig: "{{ kubeconfig }}"
+        state: absent
+        api_version: longhorn.io/v1beta2
+        kind: Volume
+        namespace: longhorn-system
+        name: "{{ item.metadata.name }}"
+      loop: "{{ zdb_pvs }}"
+      loop_control:
+        label: "{{ item.metadata.name }}"
+      vars:
+        zdb_pvs: >-
+          {{ all_pvs.resources | selectattr('spec.claimRef', 'defined')
+             | selectattr('spec.claimRef.namespace', 'equalto', obs_namespace)
+             | selectattr('spec.claimRef.name', 'equalto', 'zabbix-db-1') | list }}
+
     - name: The Zabbix web Ingress, its Traefik VIP and Grafana's Zabbix password gone
       kubernetes.core.k8s:
         kubeconfig: "{{ kubeconfig }}"

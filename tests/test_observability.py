@@ -406,3 +406,24 @@ def test_zabbix_stays_removed_and_the_plays_delete_what_it_left() -> None:
     hosts = (ROOT / "ansible" / "playbooks" / "observability-hosts.yml").read_text()
     assert "name: [zabbix-agent2, zabbix-release]" in hosts and "purge: true" in hosts
     assert "zabbix_agent2.d" not in hosts and "rsyslog" in hosts
+
+
+def test_grafana_is_recreated_not_rolled() -> None:
+    """2026-10-04: Grafana's Longhorn volume attaches to one node at a time, so a rolling update deadlocks - the new pod
+    waits for the volume the old pod keeps until the new one is ready - and the kps upgrade timed out at 15 minutes.
+    Recreate stops the old pod first (Grafana is down for about a minute per change)."""
+    values = yaml.safe_load((ROOT / "k8s" / "observability" / "values" / "kube-prometheus-stack.yaml").read_text())
+    grafana = values["grafana"]
+    assert grafana["persistence"]["enabled"] is True and grafana["persistence"]["storageClassName"] == "longhorn"
+    assert grafana["deploymentStrategy"] == {"type": "Recreate"}
+
+
+def test_the_retained_zabbix_db_volume_is_deleted_too() -> None:
+    """The longhorn StorageClass reclaims with Retain, so deleting the PVC left zabbix-db's PV Released and its ~21 GB
+    Longhorn volume on disk (measured 2026-10-04). The play deletes the PV bound to zabbix-db-1, then that volume."""
+    play = (ROOT / "ansible" / "playbooks" / "observability.yml").read_text()
+    pv = play.index("The retained zabbix-db PersistentVolume deleted")
+    lh = play.index("Its Longhorn volume deleted")
+    assert play.index("No zabbix-db volume left") < pv < lh
+    assert "selectattr('spec.claimRef.name', 'equalto', 'zabbix-db-1')" in play  # only that PV, never another
+    assert "kind: Volume" in play and "api_version: longhorn.io/v1beta2" in play
