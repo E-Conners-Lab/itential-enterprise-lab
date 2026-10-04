@@ -586,8 +586,7 @@ def test_make_dev_targets_never_run_the_production_verify_suite() -> None:
             assert "verify/run.sh" not in ln, f"{target} runs the production verify suite"
     assert _make_recipe("verify") == ["\tverify/run.sh"], "make verify is run.sh's selection, nothing else"
     assert _make_recipe("verify-dev") == ["\tverify/test-12a-clab-dev.sh", "\tverify/test-05b-dev-copilot.sh",
-                                          "\tverify/test-09a-vault-dev.sh",  # ADR 0065
-                                          "\tverify/test-13a-aws-vpn-dev.sh"]  # S13, opt-in (AWS_VPN=1)
+                                          "\tverify/test-09a-vault-dev.sh"]  # ADR 0065 (test-13a runs on prod, ADR 0070)
 
 
 def _run_sh_selection(tmp_path: Path, names: list[str]) -> list[str]:

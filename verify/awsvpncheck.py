@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
-"""PID S13 criteria 2 and 4 on the dev tier (step 12, ADR 0068 amendment 2026-10-03) for
-verify/test-13a-aws-vpn-dev.sh. One subcommand per check; each prints evidence and exits 0 on pass, 1 on fail.
+"""PID S13 criteria 2 and 4 on the tier that runs the AWS VPN (step 12, ADR 0068 amendment 2026-10-03; production since
+ADR 0070) for verify/test-13a-aws-vpn.sh. One subcommand per check; each prints evidence and exits 0 on pass, 1 on fail.
 
-The leak sweep counts every AWS VPN secret the dev Vault holds - each live version, so a key rotated away is still
+The leak sweep counts every AWS VPN secret the tier's Vault holds - each live version, so a key rotated away is still
 looked for - whole and in every 16-character piece, in each place a copy could land: the job documents and task
-records of every job of the workflows that touch AWS or the lab edge, the dev containers' logs, both repositories,
+records of every job of the workflows that touch AWS or the lab edge, the tier's container logs, both repositories,
 and the router's own records. The router's are counted on the Gateway by cloud-devops-pipeline's
 `lab-edge-push --action sweep`, so a router log never reaches a job or this machine (dc1-wan01, 2026-10-01). Only
 labels and numbers are printed; an error prints its class.
 
-Environment (never argv, which ps can read): VAULT_ADDR, VAULT_ADMIN_TOKEN (the dev Vault's), PLATFORM_URL and
-ITENTIAL_ADMIN_USER / ITENTIAL_ADMIN_PASSWORD (the dev Platform's).
+Environment (never argv, which ps can read): AWS_VPN_TIER (default versions.yaml aws_vpn.tier), VAULT_ADDR,
+VAULT_ADMIN_TOKEN (that tier's Vault), PLATFORM_URL and ITENTIAL_ADMIN_USER / ITENTIAL_ADMIN_PASSWORD (its Platform).
 """
 
 from __future__ import annotations
@@ -19,12 +19,15 @@ import functools
 import importlib.util
 import io
 import json
+import os
 import subprocess
 import sys
 import tarfile
 import time
 from pathlib import Path
 from urllib.parse import quote
+
+import yaml
 
 HERE = Path(__file__).resolve().parent
 _spec = importlib.util.spec_from_file_location("vaultcheck", HERE / "vaultcheck.py")
@@ -34,7 +37,7 @@ V = vc.V
 
 WINDOW = 16  # lab-edge-push's: any 16 characters of a secret count as a copy
 PAGE = 100
-# Every AWS VPN secret in the dev Vault, by path and field (a key's `version` is not a secret). All are bound to the dev
+# Every AWS VPN secret in the tier's Vault, by path and field (a key's `version` is not a secret). All are bound to its
 # Gateway, so any of them could reach a job or a log through a service.
 SECRET_FIELDS = {
     "aws/vpn-psk": ["psk"],
@@ -49,7 +52,15 @@ JOB_WORKFLOWS = [
     for k in ("deploy_aws_vpn", "hand_off_aws_vpn", "verify_aws_vpn", "tear_down_aws_vpn", "config_push_revert",
               "show_command")
 ]
-CONTAINERS = ("gateway5", "gateway5-runner", "platform")
+TIER = os.environ.get("AWS_VPN_TIER") or V["aws_vpn"]["tier"]
+HA2 = yaml.safe_load((HERE.parent / "itential" / "ha2" / "versions.yaml").read_text())
+_IP = {vm["name"]: vm["ip"] for vm in HA2["vms"]}
+# where each tier's containers log: the dev stack on one VM; production's Platform nodes and its Gateway VM (HA2)
+LOG_SOURCES = {
+    "dev": [(V["vm"]["ip"], ("gateway5", "gateway5-runner", "platform"))],
+    "prod": [(_IP["iap-01"], ("platform",)), (_IP["iap-02"], ("platform",)),
+             (_IP["iag-01"], ("gateway5", "gateway5-runner"))],
+}
 CDP = Path.home() / "PycharmProjects" / "cloud-devops-pipeline"
 VERIFY_TARGET = "dc1-wan01"  # the target with a deployment of its own (monitor: aws)
 VERIFY_POLLS, VERIFY_POLL_SECONDS = 60, 10  # Verify takes ~1 min (job 0fe8ee24: 46 s); 10 min is the ceiling
@@ -187,16 +198,18 @@ def c_jobs() -> bool:
 
 def c_logs() -> bool:
     ok, s = True, secrets()
-    for c in CONTAINERS:
-        run = subprocess.run(
-            ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=8", f"ubuntu@{V['vm']['ip']}",
-             f"sudo docker logs {c} 2>&1"],
-            capture_output=True, text=True, timeout=600, check=False)
-        lines, counts = len(run.stdout.splitlines()), count(run.stdout, s)
-        good = run.returncode == 0 and lines > 0 and not hits(counts)
-        ok &= good
-        print(f"  {'ok  ' if good else 'FAIL'} {c}: {lines} lines since the container started, {hits(counts)} hits"
-              + (f" ({found(counts)})" if hits(counts) else "") + ("" if run.returncode == 0 else ", ssh failed"))
+    for host, containers in LOG_SOURCES[TIER]:
+        for c in containers:
+            run = subprocess.run(
+                ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=8", "-o", "StrictHostKeyChecking=accept-new",
+                 f"ubuntu@{host}", f"sudo docker logs {c} 2>&1"],
+                capture_output=True, text=True, timeout=600, check=False)
+            lines, counts = len(run.stdout.splitlines()), count(run.stdout, s)
+            good = run.returncode == 0 and lines > 0 and not hits(counts)
+            ok &= good
+            print(f"  {'ok  ' if good else 'FAIL'} {host} {c}: {lines} lines since the container started, "
+                  f"{hits(counts)} hits" + (f" ({found(counts)})" if hits(counts) else "")
+                  + ("" if run.returncode == 0 else ", ssh failed"))
     return ok
 
 

@@ -1,4 +1,5 @@
-"""verify/awsvpncheck.py, the leak sweep of verify/test-13a-aws-vpn-dev.sh (PID S13 criterion 2, step 12). It counts
+"""verify/awsvpncheck.py, the leak sweep of verify/test-13a-aws-vpn.sh (PID S13 criterion 2, step 12; production since
+ADR 0070). It counts
 every AWS VPN secret Vault holds in the places a copy could land - job documents and task records, the dev
 containers' logs, both repositories, the router's own records (through lab-edge-push sweep, which counts on the
 Gateway) - and prints only labels and numbers. The counter must find a planted copy, whole or cut, and no check
@@ -263,9 +264,9 @@ def test_the_verify_target_is_an_open_target_with_a_deployment() -> None:
     assert t["window"] == "open" and t["monitor"] == "aws"
 
 
-# ── the script: dev only, opt-in, never in make verify ──
+# ── the script: production (ADR 0070), opt-in, selected by make verify where it skips without AWS_VPN=1 ──
 
-SCRIPT = ROOT / "verify" / "test-13a-aws-vpn-dev.sh"
+SCRIPT = ROOT / "verify" / "test-13a-aws-vpn.sh"
 
 
 def test_the_script_does_nothing_without_aws_vpn_1(tmp_path) -> None:
@@ -274,11 +275,30 @@ def test_the_script_does_nothing_without_aws_vpn_1(tmp_path) -> None:
     assert run.returncode == 0 and "SKIP" in run.stdout and "AWS_VPN=1" in run.stdout
 
 
-def test_the_script_is_in_verify_dev_and_named_so_make_verify_skips_it() -> None:
+def test_the_script_runs_on_production_and_make_verify_selects_it(tmp_path) -> None:
+    import shutil
+    shutil.copy(ROOT / "verify" / "run.sh", tmp_path / "run.sh")
+    (tmp_path / SCRIPT.name).write_text("exit 99\n")
+    listed = subprocess.run(["bash", str(tmp_path / "run.sh"), "--list"], capture_output=True, text=True, timeout=30,
+                            check=True)
+    assert SCRIPT.name in listed.stdout  # opt-in inside: without AWS_VPN=1 it skips, so make verify stays green
     makefile = (ROOT / "Makefile").read_text()
-    verify_dev = makefile.split("\nverify-dev:")[1].split("\n\n")[0]
-    assert "verify/test-13a-aws-vpn-dev.sh" in verify_dev
-    assert "-dev." in SCRIPT.name  # verify/run.sh leaves every *-dev script out (ADR 0063)
+    assert "test-13a" not in makefile.split("\nverify-dev:")[1].split("\n\n")[0]
+    assert not (ROOT / "verify" / "test-13a-aws-vpn-dev.sh").exists()
+    text = SCRIPT.read_text()
+    assert "export AWS_VPN_TIER=prod VAULT_TIER=prod" in text and "d['vault']['prod']['url']" in text
+    assert "aws_vpn']['tier']\")\" = prod" in text  # refuses unless production runs the AWS VPN
+
+
+def test_the_logs_are_read_where_each_tier_keeps_them() -> None:
+    ha2 = yaml.safe_load((ROOT / "itential" / "ha2" / "versions.yaml").read_text())
+    ip = {vm["name"]: vm["ip"] for vm in ha2["vms"]}
+    platform_nodes = [vm["name"] for vm in ha2["vms"] if vm["role"] == "platform"]
+    prod = dict(ac.LOG_SOURCES["prod"])
+    assert {ip[n] for n in platform_nodes} | {ip["iag-01"]} == set(prod)
+    assert all(prod[ip[n]] == ("platform",) for n in platform_nodes)
+    assert prod[ip["iag-01"]] == ("gateway5", "gateway5-runner")
+    assert ac.TIER == V["aws_vpn"]["tier"]
 
 
 def test_the_script_runs_verify_before_the_sweeps_so_the_new_job_is_swept() -> None:

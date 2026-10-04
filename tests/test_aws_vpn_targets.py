@@ -183,11 +183,11 @@ def _task_var(path: Path, task_name: str, var: str) -> str:
 
 def _render(expr: str, extra: dict) -> object:
     """`expr` (a whole "{{ ... }}" or {%- -%} template) rendered by Ansible itself, with versions.yaml and `extra`."""
-    msg = "{{ (%s) | to_json }}" % expr[2:-2] if expr.startswith("{{") else expr
+    msg = f"{{{{ ({expr[2:-2]}) | to_json }}}}" if expr.startswith("{{") else expr
     # the module args as JSON: key=value parsing would split a template at its own `=`
     cmd = ["ansible", "localhost", "-i", "localhost,", "-c", "local", "-o", "-m", "ansible.builtin.debug", "-a",
            json.dumps({"msg": msg}), "-e", f"@{ROOT / 'itential' / 'versions.yaml'}", "-e", json.dumps(extra)]
-    run = subprocess.run(cmd, capture_output=True, text=True, timeout=120, cwd=ROOT,
+    run = subprocess.run(cmd, capture_output=True, text=True, timeout=120, cwd=ROOT, check=False,
                          env={**os.environ, "ANSIBLE_NOCOLOR": "1"})
     assert run.returncode == 0, (run.stdout + run.stderr)[-500:]
     got = json.loads(run.stdout.split("localhost | SUCCESS => ", 1)[1])["msg"]  # -o: one line per host
@@ -202,7 +202,7 @@ GATE = "(aws_vpn.tier == 'dev') == (dev_overlay | default(false) | bool)"
 def test_the_aws_vpn_runs_only_on_its_tier_whatever_form_dev_overlay_takes(overlay: str | None) -> None:
     # `-e dev_overlay=false` arrives as the string 'false', which is truthy without | bool
     extra = {} if overlay is None else {"dev_overlay": overlay}
-    here = _render("{{ %s }}" % GATE, extra)
+    here = _render(f"{{{{ {GATE} }}}}", extra)
     assert here is ((V["aws_vpn"]["tier"] == "dev") == (overlay == "true"))
     play = (ROOT / "ansible" / "playbooks" / "platform.yml").read_text()
     assert play.count(f"when: {GATE}") == 2  # the triggers and the hourly schedule
@@ -441,9 +441,13 @@ def test_s8_3b_passes_only_on_the_tiers_own_alias_set(gateway, monkeypatch, tier
     first = next(iter(own))
     world["secrets"] = _export({**own, first: {"path": own[first]["path"], "key": "other"}}, name)  # same name, wrong key
     assert vc.c_gateway() is False
-    other = base if tier == V["aws_vpn"]["tier"] else {**base, **dev}  # the other tier's set
-    world["secrets"] = _export(other, name)
-    assert vc.c_gateway() is False
+    if tier == V["aws_vpn"]["tier"]:
+        world["secrets"] = _export(base, name)  # the AWS VPN's tier without its edge aliases
+        assert vc.c_gateway() is False
+    else:
+        # the other tier may still hold them as inert leftovers (owner, 2026-10-04): named, not a failure
+        world["secrets"] = _export({**base, **dev}, name)
+        assert vc.c_gateway() is True
 
 
 def test_the_terraform_run_export_waits_out_a_gateway_restart() -> None:
@@ -453,3 +457,45 @@ def test_the_terraform_run_export_waits_out_a_gateway_restart() -> None:
     first = tasks[0]
     assert first["name"] == "Gateway configuration now (terraform-run)"
     assert "status" in first["until"] and first["retries"] * first["delay"] >= 60 and first["no_log"] is True
+
+
+@pytest.mark.parametrize("tier", ["dev", "prod"])
+def test_s8_3b_names_the_inert_leftovers_and_still_fails_on_anything_else(gateway, monkeypatch, tier) -> None:
+    """Gateway 5.5 removes an alias only through iagctl in client mode (owner, 2026-10-04): the retired twin's aliases,
+    and on the tier that does not run the AWS VPN its edge aliases, are named and left out of the comparison."""
+    vc, world = gateway
+    monkeypatch.setenv("VAULT_TIER", tier) if tier == "prod" else monkeypatch.delenv("VAULT_TIER", raising=False)
+    base, edge, name = vc.VAULT["gateway_aliases"], vc.VAULT["edge_gateway_aliases"], vc.VAULT["gateway_provider"]
+    aws_here = tier == V["aws_vpn"]["tier"]
+    own = {**base, **edge} if aws_here else base
+    retired = {n: {"path": "devices/aws-vpn-clab-rtr1", "key": "psk"} for n in vc.VAULT["retired_gateway_aliases"]}
+    leftovers = {**retired, **({} if aws_here else edge)}
+    world["secrets"] = _export({**own, **leftovers}, name)
+    assert vc.c_gateway() is True
+    world["secrets"] = _export({**own, **leftovers, "stray": {"path": "devices/x", "key": "y"}}, name)
+    assert vc.c_gateway() is False
+
+
+def test_the_converge_leaves_exactly_the_named_leftovers_out() -> None:
+    tasks = yaml.safe_load((TASKS / "gateway-vault.yml").read_text())
+    names = [t["name"] for t in tasks]
+    left = next(t for t in tasks if t["name"] == "The aliases this tier may hold as inert leftovers")
+    expr = left["ansible.builtin.set_fact"]["gw_leftover_names"]
+    assert "vault.retired_gateway_aliases" in expr and GATE in expr and "vault.edge_gateway_aliases" in expr
+    assert names.index("The aliases this tier may hold as inert leftovers") < names.index("What the Gateway holds for this provider")
+    for task in ("What the Gateway holds for this provider", "The export matches what was sent (the import drops unknown fields without a word)"):
+        assert "rejectattr('name', 'in', gw_leftover_names)" in json.dumps(next(t for t in tasks if t["name"] == task))
+    assert set(V["vault"]["retired_gateway_aliases"]).isdisjoint(V["vault"]["edge_gateway_aliases"])
+    assert set(V["vault"]["retired_gateway_aliases"]).isdisjoint(V["vault"]["gateway_aliases"])
+
+
+@pytest.mark.parametrize("path, task", [
+    ("gateway-vault.yml", "Gateway configuration now"),
+    ("gateway-vault.yml", "Gateway configuration after the import"),
+    ("gateway-terraform-run.yml", "Gateway configuration now (terraform-run)"),
+    ("gateway-terraform-run.yml", "Gateway configuration after the import (terraform-run)"),
+])
+def test_every_export_read_waits_out_a_gateway_restart(path: str, task: str) -> None:
+    """Production, 2026-10-04: two converges failed on a 503 from an export read right after the Gateway restarted."""
+    t = next(x for x in yaml.safe_load((TASKS / path).read_text()) if x["name"] == task)
+    assert "status" in t["until"] and t["retries"] * t["delay"] >= 60 and t["no_log"] is True

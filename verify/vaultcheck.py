@@ -446,6 +446,13 @@ def c_gateway() -> bool:
     got = {s["name"]: (s["secret"], s.get("key")) for s in exp.get("secrets") or []
            if s.get("provider") == VAULT["gateway_provider"]}
     want = {k: (v["path"], v["key"]) for k, v in {**VAULT["gateway_aliases"], **_edge_bound()}.items()}
+    # inert leftovers the import cannot remove (versions.yaml vault.retired_gateway_aliases; ADR 0070): named, not compared
+    leftovers = set(VAULT["retired_gateway_aliases"]) | (set() if V["aws_vpn"]["tier"] == _tier()
+                                                         else set(VAULT["edge_gateway_aliases"]))
+    held = sorted(set(got) & leftovers)
+    got = {k: v for k, v in got.items() if k not in leftovers}
+    if held:
+        print(f"inert leftovers (not compared): {held}")
     print(f"aliases: {sorted(got)}" + ("" if got == want else
           f"; missing {sorted(set(want) - set(got))}, extra {sorted(set(got) - set(want))}, "
           f"different {sorted(k for k in set(got) & set(want) if got[k] != want[k])}"))

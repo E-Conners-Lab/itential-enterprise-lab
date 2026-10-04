@@ -76,6 +76,11 @@
     headers: {Cookie: "{{ login.cookies_string }}"}
   register: gw_tr_after
   when: gw_tr_import is changed
+  # right after a Gateway server restart the Platform's export can answer 503 for a while (production, 2026-10-04:
+  # the first run after the secrets key was generated, and the run that bound the deployment's key)
+  until: gw_tr_after.status | default(0) == 200
+  retries: 12
+  delay: 5
   no_log: true
 
 - name: The export matches what was sent (the import drops unknown fields without a word)
