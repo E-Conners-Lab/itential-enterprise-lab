@@ -204,7 +204,7 @@
       <!-- harbours -->
       <g font-family="Avenir Next Condensed, Avenir Next, Segoe UI, sans-serif">
         <text x="26" y="118" font-size="22" font-weight="700" fill="#0E2A4A">The lab</text>
-        <text x="26" y="142" font-size="14" fill="#4A6380" id="lab-router">clab-rtr1</text>
+        <text x="26" y="142" font-size="14" fill="#4A6380" id="lab-router">dc1-wan01</text>
         <text x="26" y="162" font-size="14" fill="#4A6380" class="mask-ip" data-ip="onprem">your public IP</text>
         <text x="1094" y="118" font-size="22" font-weight="700" fill="#0E2A4A" text-anchor="end">AWS</text>
         <text x="1094" y="142" font-size="14" fill="#4A6380" text-anchor="end">strongSwan, us-east-1</text>
@@ -334,7 +334,7 @@
 
   // the routers whose change window is open (itential/versions.yaml aws_vpn.targets): the same list as the workflows'
   // input gates and the endpoint triggers' schemas, which refuse any other (tests/test_aws_vpn.py holds them equal)
-  const TARGETS = ["clab-rtr1", "dc1-wan01"];
+  const TARGETS = ["dc1-wan01"];
 
   // The three workflows of the journey. `stages` are the route's waypoints in the order the workflow runs them, with the
   // task ids that show each one (itential/workflows/build.py); `fail` is each stage's failure branch (the workflows

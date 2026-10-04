@@ -199,11 +199,11 @@ twin-key: ## AWS VPN (dev only): the clab AWS twin's tunnel key, made in memory,
 
 # ADR 0068 step 10: the time-boxed account dc1-wan01's window uses. Run edge-account BEFORE the dev converge that binds
 # its alias (the converge refuses otherwise); edge-account-line in the window: the router gets the type-9 hash only.
-edge-account: ## AWS VPN (dev only): dc1-wan01's time-boxed account password, made in memory, straight into the dev Vault
-	.venv/bin/python scripts/edge-account-to-vault.py
+edge-account: ## AWS VPN: dc1-wan01's account password, made in memory, straight into TIER=dev|prod's Vault
+	.venv/bin/python scripts/edge-account-to-vault.py $(TIER)
 
-edge-account-line: ## AWS VPN (dev only): the router's account line for it, type-9 hash only, onto the macOS clipboard
-	.venv/bin/python scripts/edge-account-to-vault.py --line
+edge-account-line: ## AWS VPN: the router's account line for TIER=dev|prod's password, type-9 hash only, onto the clipboard
+	.venv/bin/python scripts/edge-account-to-vault.py $(TIER) --line
 
 vault-revoke-root: ## Production Vault: revoke the root token - refuses unless the administrator login has been proven (make vault-login)
 	scripts/vault-prod.sh revoke-root

@@ -278,6 +278,24 @@
         mode: "0644"
       register: nginx_conf
 
+    # ADR 0070: the AWS VPN runs on production, so its branded page is served here at /portal/deploy-aws-vpn/
+    - name: Branded pages directory
+      ansible.builtin.file:
+        path: "{{ dir }}/portal"
+        state: directory
+        owner: ubuntu
+        group: ubuntu
+        mode: "0755"
+
+    - name: Branded pages (the AWS VPN journey page)
+      ansible.builtin.copy:
+        src: ../../itential/portal/deploy-aws-vpn
+        dest: "{{ dir }}/portal/"
+        owner: ubuntu
+        group: ubuntu
+        mode: "0644"
+        directory_mode: "0755"
+
     - name: Compose file
       ansible.builtin.template:
         src: ../../itential/ha2/loadbalancer.compose.yml.j2

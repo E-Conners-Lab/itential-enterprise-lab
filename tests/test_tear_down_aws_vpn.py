@@ -41,9 +41,13 @@ def _run(code: str, data: dict) -> dict:
     return json.loads(run.stdout)
 
 
-def _plan(d: dict) -> dict:
-    return build.teardown_plan(d, build.TEARDOWN_TARGETS, build.REVERT_TARGETS, build.TEARDOWN_REVERT_MINUTES,
-                               build.LAB_EDGE_TIMEOUT)
+def _plan(d: dict, twin: bool = False) -> dict:
+    """`twin`: a table that includes clab-rtr1, whose window is closed since ADR 0070 - its path (no AWS deployment)
+    is still the code a twin would take."""
+    entry = VERSIONS["aws_vpn"]["targets"]["clab-rtr1"]
+    targets = {**build.TEARDOWN_TARGETS, "clab-rtr1": {k: entry[k] for k in ("target", "username", "monitor")}} \
+        if twin else build.TEARDOWN_TARGETS
+    return build.teardown_plan(d, targets, build.REVERT_TARGETS, build.TEARDOWN_REVERT_MINUTES, build.LAB_EDGE_TIMEOUT)
 
 
 def _removal(target: str, rc: int = 0, lines: str = "no interface Tunnel10\n") -> dict:
@@ -56,7 +60,7 @@ def _removal(target: str, rc: int = 0, lines: str = "no interface Tunnel10\n") -
 
 @pytest.mark.parametrize("target, aws", [("dc1-wan01", True), ("clab-rtr1", False)])
 def test_the_first_call_gives_the_lab_edge_params_and_whether_aws_follows(target: str, aws: bool) -> None:
-    p = _plan({"target": target})
+    p = _plan({"target": target}, twin=target == "clab-rtr1")
     entry = VERSIONS["aws_vpn"]["targets"][target]
     assert p["ok"] and p["aws"] is aws
     assert p["removal"] == {"action": "removal", "target_json": json.dumps(entry["target"]), "timeout": "120"}
@@ -73,16 +77,17 @@ def test_the_second_call_pushes_the_removal_lines_with_the_routers_own_checks() 
     assert p["params"]["revert_minutes"] == str(build.TEARDOWN_REVERT_MINUTES)
     assert p["params"]["username"] == "itential-aws-vpn"  # the revert target's login, never the key's service
     assert "second card" in p["card"]["after this"] and p["card"]["router"] == "dc1-wan01"
-    twin = _plan({"target": "clab-rtr1", "removal": _removal("clab-rtr1")})
+    twin = _plan({"target": "clab-rtr1", "removal": _removal("clab-rtr1")}, twin=True)
     assert "nothing of this target is deployed in AWS" in twin["card"]["after this"]
 
 
 @pytest.mark.parametrize("d, says", [
     ({"target": "br1-wan01"}, "is not a router Tear Down may change"),
+    ({"target": "clab-rtr1"}, "is not a router Tear Down may change"),  # closed with dev's AWS access (ADR 0070)
     ({"target": "dc1-wan01", "removal": _removal("dc1-wan01", rc=1)}, "gave no lines"),
     ({"target": "dc1-wan01", "removal": _removal("clab-rtr1")}, "gave no lines"),  # an answer for another router
     ({"target": "dc1-wan01", "removal": _removal("dc1-wan01", lines="")}, "gave no lines"),
-], ids=["unknown-router", "removal-failed", "other-router", "no-lines"])
+], ids=["unknown-router", "closed-twin", "removal-failed", "other-router", "no-lines"])
 def test_the_plan_refuses_what_it_cannot_tear_down(d: dict, says: str) -> None:
     p = _plan(d)
     assert p["ok"] is False and says in p["message"]

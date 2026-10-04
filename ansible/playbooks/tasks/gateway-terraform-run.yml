@@ -30,8 +30,14 @@
         - "{{ terraform_run.executable_object }}"
       services: "{{ gw_tr_services | map('combine', gw_tr_common) | sort(attribute='name') | list }}"
   vars:
-    # the step-6 services only on the dev tier (versions.yaml terraform_run.dev_services)
-    gw_tr_services: "{{ terraform_run.services + (terraform_run.dev_services if dev_overlay | default(false) | bool else []) }}"
+    # the services of the tier that runs the AWS VPN (its plays include this file only there, aws_vpn.tier); each
+    # keeps only the secrets whose alias tasks/gateway-vault.yml bound (an after_deploy alias waits for the first Deploy)
+    gw_tr_services: >-
+      {%- set out = [] -%}
+      {%- for svc in terraform_run.services + terraform_run.edge_services -%}
+        {%- set _ = out.append(svc | combine({'secrets': svc.secrets | selectattr('name', 'in', gw_bound_aliases) | list})) -%}
+      {%- endfor -%}
+      {{ out }}
     gw_tr_common:
       type: executable
       repository: "{{ terraform_run.repository.name }}"

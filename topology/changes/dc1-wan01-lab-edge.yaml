@@ -166,7 +166,7 @@ after_window: [remove the step-2 archive snapshots, refresh the Configuration Ma
 
 # when R1 is signed off (solution design), in this order - the reverse of the binding hazard:
 #   1. a versions.yaml PR: the alias unbound from config-push-revert, dc1-wan01 out of revert_push.targets and
-#      dev_gateway_aliases; merged, then the dev converge (the Gateway must stop resolving it before the entry goes; if
+#      edge_gateway_aliases; merged, then the dev converge (the Gateway must stop resolving it before the entry goes; if
 #      the converge's export check fails because the Gateway kept the alias, delete it in Gateway Manager and re-run)
 #   2. `no username itential-aws-vpn` on the router (by hand, or a governed push), then write memory
 #   3. `vault kv metadata delete lab/devices/dc1-wan01-aws-vpn` (a plain `kv delete` is soft: undelete brings it back)

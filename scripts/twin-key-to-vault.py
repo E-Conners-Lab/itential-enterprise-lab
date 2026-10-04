@@ -6,7 +6,7 @@
 Dev only: the twin is a dev-tier stand-in for the AWS box, and production's key is the real deployment's (Secrets
 Manager, then vault.aws.psk_path). Makes a 40-character alphanumeric key and a version id in memory and writes both to
 the dev Vault at aws_vpn.targets.<twin router>.psk_path, the entry the Gateway resolves for Hand Off
-(vault.dev_gateway_aliases) and the clab play copies into the twin. The key is never printed, never written to a file
+(vault.edge_gateway_aliases) and the clab play copies into the twin. The key is never printed, never written to a file
 and never in argv. Refuses when the entry already exists: a new key is a rotation, and a rotation is Hand Off's to
 carry to the router, not this script's. Token: the dev Vault's root token over SSH (vault-dev.yml).
 """

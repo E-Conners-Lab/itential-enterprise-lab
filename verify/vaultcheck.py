@@ -330,14 +330,15 @@ def _service(name: str, params: dict) -> tuple[int | None, dict]:
 
 
 def c_lab_edge() -> bool:
-    """AWS VPN step 6 (S13.2d) on the dev tier: each open target's tunnel key in Vault, the Gateway's reader may read
-    it and the Platform's may not, and the three step-6 services run on the dev Gateway with their aliases resolved.
+    """AWS VPN step 6 (S13.2d) on the tier that runs the AWS VPN: each open target's tunnel key in Vault, the Gateway's
+    reader may read it and the Platform's may not, and the edge services run on its Gateway with their aliases resolved.
     The probes never reach a device or AWS: lab-edge renders (no device), lab-edge-push is handed a SHA-256 that
     cannot match and refuses before it reads the key or logs in, and aws-vpn-monitor is handed an instance ID it
     refuses before any AWS call. A refused run still proves the Gateway resolved every alias bound to the service.
     The rendered block's SHA-256 must equal the pinned render module's, run here. Prints yes/no and hashes only."""
-    if os.environ.get("VAULT_TIER") == "prod":
-        print("  FAIL the step-6 services and aliases are dev-tier only (dev_overlay): run this on the dev tier")
+    if V["aws_vpn"]["tier"] != _tier():
+        print(f"  FAIL the edge services and aliases are on the {V['aws_vpn']['tier']} tier only (aws_vpn.tier, ADR 0070): "
+              "run this there")
         return False
     targets, ok = _open_targets(), True
     if not targets:
@@ -444,13 +445,29 @@ def c_gateway() -> bool:
           f"{', role ID matches Vault' if ok and os.environ.get('VAULT_ADMIN_TOKEN') else ''}")
     got = {s["name"]: (s["secret"], s.get("key")) for s in exp.get("secrets") or []
            if s.get("provider") == VAULT["gateway_provider"]}
-    # the dev tier also holds the step-6 aliases (versions.yaml vault.dev_gateway_aliases, imported where dev_overlay is)
-    dev = VAULT.get("dev_gateway_aliases", {}) if os.environ.get("VAULT_TIER") != "prod" else {}
-    want = {k: (v["path"], v["key"]) for k, v in {**VAULT["gateway_aliases"], **dev}.items()}
+    want = {k: (v["path"], v["key"]) for k, v in {**VAULT["gateway_aliases"], **_edge_bound()}.items()}
     print(f"aliases: {sorted(got)}" + ("" if got == want else
           f"; missing {sorted(set(want) - set(got))}, extra {sorted(set(got) - set(want))}, "
           f"different {sorted(k for k in set(got) & set(want) if got[k] != want[k])}"))
     return ok and got == want
+
+
+def _tier() -> str:
+    return "prod" if os.environ.get("VAULT_TIER") == "prod" else "dev"
+
+
+def _edge_bound() -> dict:
+    """The edge aliases this tier's Gateway should hold (tasks/gateway-vault.yml): none unless this tier runs the AWS
+    VPN (versions.yaml aws_vpn.tier, ADR 0070); there, each whose Vault entry has its key - an after_deploy one is
+    bound only once the first Deploy AWS VPN has written it."""
+    if V["aws_vpn"]["tier"] != _tier():
+        return {}
+    out = {}
+    for name, ref in VAULT["edge_gateway_aliases"].items():
+        _, d = vault("GET", kv(ref["path"]), admin())
+        if ref["key"] in ((d or {}).get("data") or {}).get("data", {}) or {}:
+            out[name] = ref
+    return out
 
 
 def c_devices() -> bool:

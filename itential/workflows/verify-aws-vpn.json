@@ -22,51 +22,6 @@
         "incoming": {
           "obj": {
             "targets": {
-              "clab-rtr1": {
-                "target": {
-                  "name": "clab-rtr1",
-                  "fvrf": "INET",
-                  "tunnel_source": "GigabitEthernet4",
-                  "front_door_ip": "198.51.100.2",
-                  "loopback_ip": "10.100.3.201",
-                  "router_inner": "169.254.10.1/30",
-                  "aws_inner": "169.254.10.2/30",
-                  "vpc_cidr": "10.0.0.0/16",
-                  "vpc_private_prefixes": [
-                    "10.0.64.0/20",
-                    "10.0.80.0/20"
-                  ],
-                  "lab_prefixes": [
-                    "10.100.3.0/24"
-                  ],
-                  "local_id": "lab-edge.lab.internal",
-                  "remote_id": "aws-vpn.lab.internal",
-                  "peer_rule": "pinned",
-                  "peer_pinned": "198.51.100.20",
-                  "bgp_asn": 65010,
-                  "inside_interfaces": [
-                    "GigabitEthernet2",
-                    "GigabitEthernet3"
-                  ],
-                  "unzoned_interfaces": [
-                    "GigabitEthernet1",
-                    "GigabitEthernet4"
-                  ],
-                  "mgmt_host": "10.100.2.11"
-                },
-                "outputs": {
-                  "strongswan_eip": "198.51.100.20",
-                  "strongswan_private_ip": "10.0.1.10",
-                  "tunnel_local_inner": "169.254.10.2/30",
-                  "tunnel_remote_inner": "169.254.10.1/30",
-                  "vpc_private_prefixes": [
-                    "10.0.64.0/20",
-                    "10.0.80.0/20"
-                  ]
-                },
-                "username": "automation",
-                "monitor": "none"
-              },
               "dc1-wan01": {
                 "target": {
                   "name": "dc1-wan01",
@@ -1238,7 +1193,6 @@
             "properties": {
               "target": {
                 "enum": [
-                  "clab-rtr1",
                   "dc1-wan01"
                 ]
               }
@@ -1667,7 +1621,6 @@
         "type": "string",
         "required": true,
         "enum": [
-          "clab-rtr1",
           "dc1-wan01"
         ],
         "description": "The lab edge router whose tunnel to check"

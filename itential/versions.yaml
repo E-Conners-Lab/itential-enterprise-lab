@@ -97,27 +97,23 @@ terraform_run:
         - {name: aws-psk-writer-secret-id, type: env, target: PSK_WRITER_SECRET_ID}
         - {name: aws-terraform-access-key-id, type: env, target: AWS_ACCESS_KEY_ID}
         - {name: aws-terraform-secret-access-key, type: env, target: AWS_SECRET_ACCESS_KEY}
-  # Step 6 (Hand Off / Verify AWS VPN), DEV TIER ONLY: imported where dev_overlay is set (tasks/gateway-terraform-run.yml)
-  # until the dc1-wan01 window and production (R8) give them their own bindings. Each binds exactly the aliases of the
-  # targets that are open (aws_vpn.targets): the Gateway resolves every bound alias on every run, so an alias whose
-  # Vault path does not exist yet would fail every run. Each service takes only its own arguments (cloud-devops-pipeline
+  # The edge services (Hand Off, Verify, Tear Down AWS VPN): imported on the tier that runs the AWS VPN (aws_vpn.tier,
+  # tasks/gateway-terraform-run.yml). Each binds exactly the aliases of the targets that are open (aws_vpn.targets):
+  # the Gateway resolves every bound alias on every run, so a secret whose alias is not bound yet (after_deploy, below)
+  # is left out of the service until it is. Each service takes only its own arguments (cloud-devops-pipeline
   # itential/lab_edge_device.py); a timeout is passed per run by the workflow, as for terraform-run.
-  dev_services:
+  edge_services:
     - name: lab-edge
       description: "The lab edge router's AWS VPN side: precheck, render, verify - never the key (step 6, ADR 0068 d6/d7)"
       filename: itential/lab-edge.py
       working-directory: "."
       secrets:
-        - {name: lab-automation-password, type: env, target: LAB_EDGE_PASSWORD_CLAB_RTR1}
         - {name: dc1-wan01-aws-vpn-password, type: env, target: LAB_EDGE_PASSWORD_DC1_WAN01}
     - name: lab-edge-push
       description: "Pushes the AWS VPN block under a revert timer; sweeps the router for leaks. The only service with the key (ADR 0068 d6)"
       filename: itential/lab-edge-push.py
       working-directory: "."
       secrets:
-        - {name: lab-automation-password, type: env, target: LAB_EDGE_PASSWORD_CLAB_RTR1}
-        - {name: aws-vpn-psk-clab-rtr1, type: env, target: LAB_EDGE_PSK_CLAB_RTR1}
-        - {name: aws-vpn-psk-version-clab-rtr1, type: env, target: LAB_EDGE_PSK_VERSION_CLAB_RTR1}
         - {name: dc1-wan01-aws-vpn-password, type: env, target: LAB_EDGE_PASSWORD_DC1_WAN01}
         - {name: aws-vpn-psk-dc1-wan01, type: env, target: LAB_EDGE_PSK_DC1_WAN01}
         - {name: aws-vpn-psk-version-dc1-wan01, type: env, target: LAB_EDGE_PSK_VERSION_DC1_WAN01}
@@ -125,7 +121,8 @@ terraform_run:
       description: "Approved IOS-XE lines under a revert timer, kept only if the router still works (step 10, F9 2a)"
       filename: itential/config-push-revert.py
       working-directory: "."
-      # exactly the routers in revert_push.targets: their passwords, nothing else
+      # exactly the routers in revert_push.targets: their passwords, nothing else (clab-rtr1's is the shared device
+      # password, which every tier's Vault holds)
       secrets:
         - {name: lab-automation-password, type: env, target: LAB_EDGE_PASSWORD_CLAB_RTR1}
         - {name: dc1-wan01-aws-vpn-password, type: env, target: LAB_EDGE_PASSWORD_DC1_WAN01}
@@ -168,13 +165,19 @@ revert_push:
 # waits for the owner's window (build steps 10-11), with its own aliases bound then. The router login is the device
 # account (`username`, its password the Gateway alias the services bind); `psk_path` holds that target's {psk, version}.
 aws_vpn:
+  # The tier that runs the AWS VPN (owner, 2026-10-04: production now, R8 pulled forward; ADR 0070): its Platform gets
+  # the triggers, forms and the hourly schedule, its Gateway the edge services and aliases, its Vault the keys; the
+  # other tier's converge removes its AWS VPN triggers and automations. One tier at a time: one Terraform state.
+  tier: prod
   # R2b (owner decisions 2026-10-04): how long a deployment stays up, chosen at Deploy and shown on its card as the end
   # time; Tear Down Expired AWS VPN ends it then. none: up until Tear Down. One list for the workflow, the form, the
   # endpoint trigger's schema and the branded page (tests hold them to it); at most 31 days (terraform-run's bound).
   lifetime_hours: {choices: ["none", "2", "4", "8", "24", "72"], default: "8"}
   targets:
     clab-rtr1:
-      window: open
+      # closed 2026-10-04 with the dev tier's AWS access (ADR 0070): the twin lives on the dev host, which no longer
+      # runs the AWS VPN. Kept for its render and twin tests.
+      window: closed
       username: automation
       monitor: none # the twin has no AWS monitor: Verify's AWS signal is "not applicable" (spec, Verify)
       psk_path: devices/aws-vpn-clab-rtr1 # the twin's dev-only key: make twin-key (dev Vault only)
@@ -561,18 +564,17 @@ vault:
     # aws-vpn-psk (ADR 0068 d5): the write-only writer's own credentials, which the vault config play keeps here
     aws-psk-writer-role-id: {path: aws/psk-writer, key: role_id}
     aws-psk-writer-secret-id: {path: aws/psk-writer, key: secret_id}
-  # Step 6, DEV TIER ONLY (imported where dev_overlay is set, tasks/gateway-vault.yml): the clab twin's key, which
-  # lab-edge-push alone binds. Under devices/*, so the Gateway reads it and the Platform cannot (approles above).
-  dev_gateway_aliases:
-    # dc1-wan01's time-boxed account (make edge-account): the entry must exist BEFORE the dev converge binds it - the
-    # Gateway resolves every bound alias on every run, so a missing one fails every config-push-revert run, clab's too
+  # The edge aliases, bound on the tier that runs the AWS VPN (aws_vpn.tier, tasks/gateway-vault.yml), from that tier's
+  # Vault. Under devices/* or aws/*, so the Gateway reads them and the Platform cannot (approles above). The Gateway
+  # resolves every bound alias on every run, so each entry must exist before its alias is bound: the guard refuses the
+  # converge otherwise - except an after_deploy alias, which is left unbound (and out of its services) until the first
+  # Deploy AWS VPN has written its entry; a Gateway converge after that Deploy binds it, before Hand Off.
+  edge_gateway_aliases:
+    # dc1-wan01's account (make edge-account TIER=<tier>), before the converge that binds it
     dc1-wan01-aws-vpn-password: {path: devices/dc1-wan01-aws-vpn, key: password}
-    aws-vpn-psk-clab-rtr1: {path: devices/aws-vpn-clab-rtr1, key: psk}
-    aws-vpn-psk-version-clab-rtr1: {path: devices/aws-vpn-clab-rtr1, key: version}
-    # the deployment's own key (Deploy AWS VPN's aws-vpn-psk ensure wrote it to the dev Vault, the dev runner's Vault):
-    # only lab-edge-push binds it, from step 11; the gateway-vault guard refuses the converge while it is missing
-    aws-vpn-psk-dc1-wan01: {path: aws/vpn-psk, key: psk}
-    aws-vpn-psk-version-dc1-wan01: {path: aws/vpn-psk, key: version}
+    # the deployment's own key (Deploy AWS VPN's aws-vpn-psk ensure writes it): only lab-edge-push binds it
+    aws-vpn-psk-dc1-wan01: {path: aws/vpn-psk, key: psk, after_deploy: true}
+    aws-vpn-psk-version-dc1-wan01: {path: aws/vpn-psk, key: version, after_deploy: true}
   dev:
     dir: /opt/vault-dev # on itential-dev: config, tls (the VM's lab-CA certificate), raft data, init output
     # The address, not the name: on itential-dev the name resolves to 127.0.1.1 (Ubuntu's /etc/hosts entry), for the
