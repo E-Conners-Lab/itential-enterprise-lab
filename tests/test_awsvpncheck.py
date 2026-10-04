@@ -94,7 +94,7 @@ def test_a_path_vault_does_not_have_is_an_error_not_a_silent_skip(monkeypatch) -
 
 
 def test_the_secret_paths_are_the_aws_vpn_ones_the_gateway_binds() -> None:
-    bound = {a["path"] for a in {**V["vault"]["gateway_aliases"], **V["vault"]["dev_gateway_aliases"]}.values()}
+    bound = {a["path"] for a in {**V["vault"]["gateway_aliases"], **V["vault"]["edge_gateway_aliases"]}.values()}
     assert set(ac.SECRET_FIELDS) <= bound
     assert {"aws/vpn-psk", "aws/terraform", "aws/psk-writer", "devices/dc1-wan01-aws-vpn"} <= set(ac.SECRET_FIELDS)
 

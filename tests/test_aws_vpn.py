@@ -96,9 +96,10 @@ def test_the_config_play_keeps_the_writers_credentials_in_vault_and_proves_p6_on
     assert "itential-aws-psk-writer: [create, update]" in prod and "itential-gateway: [read]" in prod
 
 
-def test_both_vault_verifies_check_the_psk_path() -> None:
-    for name in ("test-09a-vault.sh", "test-09a-vault-dev.sh"):
-        assert '" vc aws-psk' in (ROOT / "verify" / name).read_text(), name
+def test_the_aws_vpn_tiers_vault_verify_checks_the_psk_path() -> None:
+    own, other = ("test-09a-vault.sh", "test-09a-vault-dev.sh")[:: 1 if VERSIONS["aws_vpn"]["tier"] == "prod" else -1]
+    assert '" vc aws-psk' in (ROOT / "verify" / own).read_text()
+    assert '" vc aws-psk' not in (ROOT / "verify" / other).read_text()  # ADR 0070: the other tier has no AWS access
 
 
 def test_the_key_script_never_shows_or_saves_the_secret_key() -> None:
@@ -358,7 +359,7 @@ OPEN_TARGETS = sorted(n for n, t in VERSIONS["aws_vpn"]["targets"].items() if t[
 def test_the_trigger_refuses_what_the_workflow_refuses() -> None:
     specs, task = _trigger_specs()
     assert set(specs) == {"deploy_aws_vpn", "hand_off_aws_vpn", "verify_aws_vpn", "tear_down_aws_vpn"}
-    assert task["when"] == "dev_overlay | default(false) | bool" and task["loop_control"]["loop_var"] == "wt"
+    assert task["when"] == "(aws_vpn.tier == 'dev') == (dev_overlay | default(false) | bool)" and task["loop_control"]["loop_var"] == "wt"  # ADR 0070
     schema = specs["deploy_aws_vpn"]["schema"]
     want = build.PLAN_INPUTS_SCHEMA["properties"]
     assert schema["additionalProperties"] is False

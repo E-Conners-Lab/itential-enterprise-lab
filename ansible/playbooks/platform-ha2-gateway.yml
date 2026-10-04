@@ -269,4 +269,5 @@
 
     - name: The terraform-run service - repository, Python object, service with its Vault secrets (ADR 0068)
       ansible.builtin.include_tasks: tasks/gateway-terraform-run.yml
-      when: vault_enabled | default(false) | bool # its deploy key and IAM key are Vault aliases
+      # its deploy key and IAM key are Vault aliases; only on the tier that runs the AWS VPN (aws_vpn.tier, ADR 0070)
+      when: vault_enabled | default(false) | bool and aws_vpn.tier == 'prod'

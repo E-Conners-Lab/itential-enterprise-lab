@@ -50,6 +50,15 @@ http {
         proxy_read_timeout   600s;
         proxy_send_timeout   600s;
 
+        # the branded pages (ADR 0068 step 5, on production since ADR 0070): static files on the Platform's own origin,
+        # so the engineer's own session starts the jobs; the same headers as the dev tier's portal (nginx.dev.conf)
+        location /portal/ {
+            alias /usr/share/nginx/portal/;
+            index index.html;
+            add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'" always;
+            add_header X-Content-Type-Options nosniff always;
+        }
+
         location / {
             proxy_pass http://platform_http;
             proxy_http_version 1.1;

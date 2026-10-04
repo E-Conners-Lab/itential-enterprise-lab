@@ -1,5 +1,5 @@
 """The AWS VPN lab edge targets and the step-6 services on the dev Gateway (itential/versions.yaml aws_vpn,
-terraform_run.dev_services, vault.dev_gateway_aliases). Every pinned value a target carries is held to the place it
+terraform_run.edge_services, vault.edge_gateway_aliases). Every pinned value a target carries is held to the place it
 comes from - the clab oracle for clab-rtr1, dc1-wan01's generated configuration and the deployed outputs for
 dc1-wan01 - so Hand Off can never render against values that drifted from the router they describe."""
 
@@ -21,7 +21,7 @@ ROOT = Path(__file__).resolve().parent.parent
 V = yaml.safe_load((ROOT / "itential" / "versions.yaml").read_text())
 CLAB = yaml.safe_load((ROOT / "clab" / "versions.yaml").read_text())
 TARGETS = V["aws_vpn"]["targets"]
-DEV_SERVICES = {s["name"]: s for s in V["terraform_run"]["dev_services"]}
+DEV_SERVICES = {s["name"]: s for s in V["terraform_run"]["edge_services"]}
 DC1_CFG = (ROOT / "topology" / "generated" / "configs" / "dc1-wan01.cfg").read_text()
 TASKS = ROOT / "ansible" / "playbooks" / "tasks"
 
@@ -84,7 +84,8 @@ def test_clab_rtr1_is_the_twins_router_as_the_clab_oracle_has_it() -> None:
     twin, entry = CLAB["aws_twin"], TARGETS["clab-rtr1"]
     t, out = entry["target"], entry["outputs"]
     rtr1 = next(n for n in CLAB["nodes"] if n["name"] == "clab-rtr1")
-    assert twin["router"] == "clab-rtr1" and entry["window"] == "open" and entry["monitor"] == "none"
+    # closed with the dev tier's AWS access (ADR 0070, 2026-10-04); kept, and still held to the oracle
+    assert twin["router"] == "clab-rtr1" and entry["window"] == "closed" and entry["monitor"] == "none"
     assert t["tunnel_source"] == twin["front_door"]["ifname"] and t["front_door_ip"] == twin["front_door"]["ip"].split("/")[0]
     assert t["fvrf"] == twin["front_door"]["vrf"] and t["vpc_cidr"] == twin["vpc_cidr"]
     assert t["peer_pinned"] == out["strongswan_eip"] == twin["nat"]["outside"]["ip"].split("/")[0]
@@ -151,21 +152,19 @@ def test_the_key_is_bound_to_lab_edge_push_alone() -> None:
 
 
 def test_every_bound_alias_exists_and_the_key_reads_from_the_targets_path() -> None:
-    aliases = {**V["vault"]["gateway_aliases"], **V["vault"]["dev_gateway_aliases"]}
+    aliases = {**V["vault"]["gateway_aliases"], **V["vault"]["edge_gateway_aliases"]}
     for svc in DEV_SERVICES.values():
         for s in svc["secrets"]:
             assert s["name"] in aliases, s["name"]
-    dev = V["vault"]["dev_gateway_aliases"]
+    edge = V["vault"]["edge_gateway_aliases"]
     psk_path = TARGETS["clab-rtr1"]["psk_path"]
-    # each open target's key reads from that target's own psk_path (dc1-wan01's: the deployment's, aws/vpn-psk)
+    # each open target's key reads from that target's own psk_path (dc1-wan01's: the deployment's, aws/vpn-psk), and
+    # waits for the first Deploy that writes it (after_deploy); the twin's are gone with its window (ADR 0070)
     deployed = TARGETS["dc1-wan01"]["psk_path"]
-    assert dev == {"aws-vpn-psk-clab-rtr1": {"path": psk_path, "key": "psk"},
-                   "aws-vpn-psk-version-clab-rtr1": {"path": psk_path, "key": "version"},
-                   "aws-vpn-psk-dc1-wan01": {"path": deployed, "key": "psk"},
-                   "aws-vpn-psk-version-dc1-wan01": {"path": deployed, "key": "version"},
-                   # dc1-wan01's time-boxed account (make edge-account), bound by config-push-revert and the step-6
-                   # services
-                   "dc1-wan01-aws-vpn-password": {"path": "devices/dc1-wan01-aws-vpn", "key": "password"}}
+    assert edge == {"aws-vpn-psk-dc1-wan01": {"path": deployed, "key": "psk", "after_deploy": True},
+                    "aws-vpn-psk-version-dc1-wan01": {"path": deployed, "key": "version", "after_deploy": True},
+                    # dc1-wan01's account (make edge-account TIER=...), bound by config-push-revert and the edge services
+                    "dc1-wan01-aws-vpn-password": {"path": "devices/dc1-wan01-aws-vpn", "key": "password"}}
     readers = {r: c["policy_paths"] for r, c in V["vault"]["approles"].items()}
     assert deployed in readers["itential-gateway"] and deployed not in readers["itential-platform"]
     # under devices/*: the Gateway reads it, the Platform cannot
@@ -176,37 +175,61 @@ def test_every_bound_alias_exists_and_the_key_reads_from_the_targets_path() -> N
     assert aliases["lab-automation-password"] == {"path": "devices/automation", "key": "password"}
 
 
-def _expr(path: Path, var: str) -> str:
-    """The Jinja expression a task file sets `var` to, as written."""
-    line = next(x for x in path.read_text().splitlines() if x.strip().startswith(f"{var}:"))
-    return line.split(":", 1)[1].strip().strip('"')
+def _task_var(path: Path, task_name: str, var: str) -> str:
+    """The Jinja expression a task file's task sets `var` to, as written (folded scalars included)."""
+    task = next(t for t in yaml.safe_load(path.read_text()) if t.get("name", "").startswith(task_name))
+    return (task.get("vars") or task.get("ansible.builtin.set_fact"))[var].strip()
+
+
+def _render(expr: str, extra: dict) -> object:
+    """`expr` (a whole "{{ ... }}" or {%- -%} template) rendered by Ansible itself, with versions.yaml and `extra`."""
+    msg = "{{ (%s) | to_json }}" % expr[2:-2] if expr.startswith("{{") else expr
+    # the module args as JSON: key=value parsing would split a template at its own `=`
+    cmd = ["ansible", "localhost", "-i", "localhost,", "-c", "local", "-o", "-m", "ansible.builtin.debug", "-a",
+           json.dumps({"msg": msg}), "-e", f"@{ROOT / 'itential' / 'versions.yaml'}", "-e", json.dumps(extra)]
+    run = subprocess.run(cmd, capture_output=True, text=True, timeout=120, cwd=ROOT,
+                         env={**os.environ, "ANSIBLE_NOCOLOR": "1"})
+    assert run.returncode == 0, (run.stdout + run.stderr)[-500:]
+    got = json.loads(run.stdout.split("localhost | SUCCESS => ", 1)[1])["msg"]  # -o: one line per host
+    return json.loads(got) if isinstance(got, str) else got
+
+
+GATE = "(aws_vpn.tier == 'dev') == (dev_overlay | default(false) | bool)"
 
 
 @pytest.mark.skipif(not shutil.which("ansible"), reason="needs ansible on PATH")
 @pytest.mark.parametrize("overlay", [None, "false", "False", "no", "true"])
-def test_the_dev_only_items_are_imported_only_where_dev_overlay_is_set(overlay: str | None) -> None:
-    # rendered by Ansible itself: `-e dev_overlay=false` arrives as the string 'false', which is truthy without | bool
-    services = _expr(TASKS / "gateway-terraform-run.yml", "gw_tr_services")
-    aliases = _expr(TASKS / "gateway-vault.yml", "gw_alias_map")
-    msg = "{{ {'services': (%s) | map(attribute='name') | list, 'aliases': (%s) | list} | to_json }}" % (
-        services[2:-2], aliases[2:-2])
-    cmd = ["ansible", "localhost", "-i", "localhost,", "-c", "local", "-o", "-m", "ansible.builtin.debug", "-a",
-           f"msg={msg}", "-e", f"@{ROOT / 'itential' / 'versions.yaml'}"]
-    if overlay is not None:
-        cmd += ["-e", f"dev_overlay={overlay}"]
-    run = subprocess.run(cmd, capture_output=True, text=True, timeout=120, cwd=ROOT,
-                         env={**os.environ, "ANSIBLE_NOCOLOR": "1"})
-    assert run.returncode == 0, (run.stdout + run.stderr)[-500:]
-    result = json.loads(run.stdout.split("localhost | SUCCESS => ", 1)[1])  # -o: one line per host
-    got = result["msg"] if isinstance(result["msg"], dict) else json.loads(result["msg"])
-    prod_services = [s["name"] for s in V["terraform_run"]["services"]]
-    if overlay == "true":
-        assert got["services"] == prod_services + list(DEV_SERVICES)
-        assert set(got["aliases"]) == set(V["vault"]["gateway_aliases"]) | set(V["vault"]["dev_gateway_aliases"])
-    else:
-        assert got["services"] == prod_services and set(got["aliases"]) == set(V["vault"]["gateway_aliases"])
-    dev_vars = yaml.safe_load((ROOT / "ansible" / "playbooks" / "vars" / "itential-dev.yml").read_text())
-    assert dev_vars["dev_overlay"] is True
+def test_the_aws_vpn_runs_only_on_its_tier_whatever_form_dev_overlay_takes(overlay: str | None) -> None:
+    # `-e dev_overlay=false` arrives as the string 'false', which is truthy without | bool
+    extra = {} if overlay is None else {"dev_overlay": overlay}
+    here = _render("{{ %s }}" % GATE, extra)
+    assert here is ((V["aws_vpn"]["tier"] == "dev") == (overlay == "true"))
+    play = (ROOT / "ansible" / "playbooks" / "platform.yml").read_text()
+    assert play.count(f"when: {GATE}") == 2  # the triggers and the hourly schedule
+    assert play.count(f"when: {GATE.replace(') == (', ') != (')}") == 1  # the other tier's retired
+    assert (TASKS / "gateway-vault.yml").read_text().count(f"when: {GATE}") == 3
+    assert f"and {GATE}" in (ROOT / "ansible" / "playbooks" / "itential.yml").read_text()
+    assert "and aws_vpn.tier == 'prod'" in (ROOT / "ansible" / "playbooks" / "platform-ha2-gateway.yml").read_text()
+
+
+@pytest.mark.skipif(not shutil.which("ansible"), reason="needs ansible on PATH")
+def test_the_edge_secrets_are_bound_only_once_their_entries_exist() -> None:
+    base, edge = V["vault"]["gateway_aliases"], V["vault"]["edge_gateway_aliases"]
+    services = _task_var(TASKS / "gateway-terraform-run.yml", "The terraform-run items wanted", "gw_tr_services")
+    aliases = _task_var(TASKS / "gateway-vault.yml", "Provider and aliases wanted", "gw_alias_map")
+    want = [s["name"] for s in V["terraform_run"]["services"] + V["terraform_run"]["edge_services"]]
+    # after the first Deploy: everything bound, every service keeps every secret
+    every = list(base) + list(edge)
+    got = _render(services, {"gw_bound_aliases": every})
+    assert [s["name"] for s in got] == want
+    assert all(len(g["secrets"]) == len(s["secrets"]) for g, s in
+               zip(got, V["terraform_run"]["services"] + V["terraform_run"]["edge_services"]))
+    assert set(_render(aliases, {"gw_bound_aliases": every})) == set(every)
+    # before it: the after_deploy aliases are not bound, and lab-edge-push leaves their secrets out until they are
+    before = list(base) + [k for k, v in edge.items() if not v.get("after_deploy")]
+    got = {s["name"]: {x["name"] for x in s["secrets"]} for s in _render(services, {"gw_bound_aliases": before})}
+    assert got["lab-edge-push"] == {"dc1-wan01-aws-vpn-password"}
+    assert set(_render(aliases, {"gw_bound_aliases": before})) == set(before)
 
 
 # ── S13.2d (verify/vaultcheck.py lab-edge): the probes never reach a device or AWS, and each failure is caught ──
@@ -227,7 +250,7 @@ def lab_edge(monkeypatch):
     if not CDP_RENDER.exists():
         pytest.skip("needs the cloud-devops-pipeline clone for the render module")
     vc, render = _load("vaultcheck", ROOT / "verify" / "vaultcheck.py"), _load("lab_edge_render_local", CDP_RENDER)
-    monkeypatch.delenv("VAULT_TIER", raising=False)
+    monkeypatch.setenv("VAULT_TIER", V["aws_vpn"]["tier"])  # S13.2d runs where the AWS VPN runs (ADR 0070)
     entry = TARGETS["clab-rtr1"]
     checked = render.check_target(entry["target"])
     sha = render.sha256(render.render(checked, render.check_outputs(checked, entry["outputs"])))
@@ -337,12 +360,15 @@ def test_s13_2d_renders_the_fetched_module_away_from_the_tokens(lab_edge, monkey
         vc._pinned_sha(entry["target"], entry["outputs"])
 
 
-def test_s13_2d_is_dev_only_and_wired_into_the_dev_verify(lab_edge, monkeypatch) -> None:
+def test_s13_2d_runs_only_on_the_aws_vpn_tier_and_is_wired_into_its_verify(lab_edge, monkeypatch) -> None:
     vc, _ = lab_edge
-    monkeypatch.setenv("VAULT_TIER", "prod")
+    other = "dev" if V["aws_vpn"]["tier"] == "prod" else "prod"
+    monkeypatch.setenv("VAULT_TIER", other)
     assert vc.c_lab_edge() is False
-    assert 'check "S13.2d ' in (ROOT / "verify" / "test-09a-vault-dev.sh").read_text()
-    assert '" vc lab-edge' in (ROOT / "verify" / "test-09a-vault-dev.sh").read_text()
+    own = ROOT / "verify" / ("test-09a-vault.sh" if V["aws_vpn"]["tier"] == "prod" else "test-09a-vault-dev.sh")
+    gone = ROOT / "verify" / ("test-09a-vault-dev.sh" if V["aws_vpn"]["tier"] == "prod" else "test-09a-vault.sh")
+    assert '"S13.2d ' in own.read_text() and '" vc lab-edge' in own.read_text()
+    assert 'check "S13.2' not in gone.read_text()
 
 
 @pytest.mark.parametrize("name", sorted(TARGETS))
@@ -377,15 +403,35 @@ def gateway(monkeypatch):
     monkeypatch.setattr(vc, "Platform", FakePlatform)
     monkeypatch.setenv("VAULT_ADDR", "https://vault.test")
     monkeypatch.delenv("VAULT_ADMIN_TOKEN", raising=False)
+    # the edge entries in this tier's Vault (the after_deploy ones exist once a Deploy wrote them)
+    world["entries"] = {ref["path"]: {ref2["key"]: "x" for ref2 in vc.VAULT["edge_gateway_aliases"].values()
+                                      if ref2["path"] == ref["path"]}
+                        for ref in vc.VAULT["edge_gateway_aliases"].values()}
+    monkeypatch.setattr(vc, "admin", lambda: "admin-token")
+    monkeypatch.setattr(vc, "vault", lambda m, path, tok=None, body=None: (
+        (200, {"data": {"data": world["entries"][p]}}) if (p := path.split("/data/", 1)[1]) in world["entries"]
+        else (404, None)))
     return vc, world
+
+
+def test_s8_3b_before_the_first_deploy_expects_no_after_deploy_alias(gateway, monkeypatch) -> None:
+    vc, world = gateway
+    monkeypatch.setenv("VAULT_TIER", V["aws_vpn"]["tier"])
+    del world["entries"]["aws/vpn-psk"]  # no Deploy yet on this tier
+    base, edge, name = vc.VAULT["gateway_aliases"], vc.VAULT["edge_gateway_aliases"], vc.VAULT["gateway_provider"]
+    world["secrets"] = _export({**base, **{k: v for k, v in edge.items() if not v.get("after_deploy")}}, name)
+    assert vc.c_gateway() is True
+    world["secrets"] = _export({**base, **edge}, name)
+    assert vc.c_gateway() is False
 
 
 @pytest.mark.parametrize("tier", ["dev", "prod"])
 def test_s8_3b_passes_only_on_the_tiers_own_alias_set(gateway, monkeypatch, tier) -> None:
     vc, world = gateway
     monkeypatch.setenv("VAULT_TIER", tier) if tier == "prod" else monkeypatch.delenv("VAULT_TIER", raising=False)
-    base, dev, name = vc.VAULT["gateway_aliases"], vc.VAULT["dev_gateway_aliases"], vc.VAULT["gateway_provider"]
-    own = {**base, **dev} if tier == "dev" else base
+    base, dev, name = vc.VAULT["gateway_aliases"], vc.VAULT["edge_gateway_aliases"], vc.VAULT["gateway_provider"]
+    # the edge aliases belong to the tier that runs the AWS VPN (ADR 0070)
+    own = {**base, **dev} if tier == V["aws_vpn"]["tier"] else base
     world["secrets"] = _export(own, name)
     assert vc.c_gateway() is True
     world["secrets"] = _export(own, name)[1:]  # one alias missing
@@ -395,7 +441,7 @@ def test_s8_3b_passes_only_on_the_tiers_own_alias_set(gateway, monkeypatch, tier
     first = next(iter(own))
     world["secrets"] = _export({**own, first: {"path": own[first]["path"], "key": "other"}}, name)  # same name, wrong key
     assert vc.c_gateway() is False
-    other = {**base, **dev} if tier == "prod" else base  # the other tier's set: prod must never hold the dev aliases
+    other = base if tier == V["aws_vpn"]["tier"] else {**base, **dev}  # the other tier's set
     world["secrets"] = _export(other, name)
     assert vc.c_gateway() is False
 

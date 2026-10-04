@@ -23,7 +23,7 @@ SPEC.loader.exec_module(build)
 NAME = VERSIONS["workflows"]["config_push_revert"]
 WF = json.loads((ROOT / "itential" / "workflows" / "push-configuration-with-revert-timer.json").read_text())
 TARGETS = VERSIONS["revert_push"]["targets"]
-SERVICE = next(s for s in VERSIONS["terraform_run"]["dev_services"] if s["name"] == "config-push-revert")
+SERVICE = next(s for s in VERSIONS["terraform_run"]["edge_services"] if s["name"] == "config-push-revert")
 INPUTS = {
     "device": "clab-rtr1",
     "config": "ip access-list standard REVERT-PROBE\n remark probe\n\n",
@@ -159,7 +159,7 @@ def test_the_service_binds_exactly_its_routers_passwords() -> None:
     assert TARGETS["clab-rtr1"]["password_alias"] == "lab-automation-password"
     assert TARGETS["dc1-wan01"]["username"] == VERSIONS["aws_vpn"]["targets"]["dc1-wan01"]["username"]
     assert TARGETS["dc1-wan01"]["mgmt_host"] == VERSIONS["aws_vpn"]["targets"]["dc1-wan01"]["target"]["mgmt_host"]
-    path = VERSIONS["vault"]["dev_gateway_aliases"][TARGETS["dc1-wan01"]["password_alias"]]["path"]
+    path = VERSIONS["vault"]["edge_gateway_aliases"][TARGETS["dc1-wan01"]["password_alias"]]["path"]
     assert path.startswith("devices/")  # the Gateway reads it, the Platform cannot
     assert SERVICE["filename"] == "itential/config-push-revert.py"
 

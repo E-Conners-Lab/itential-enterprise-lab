@@ -1,0 +1,52 @@
+---
+# ADR 0070 (owner, 2026-10-04): the AWS VPN runs on one tier only (versions.yaml aws_vpn.tier). On the other, the
+# converge removes every Operations Manager automation that starts an AWS VPN workflow, and their triggers (the branded
+# page's endpoint, the form's manual trigger, the hourly schedule), so nothing there can start a Deploy or a Tear Down
+# against the one Terraform state. The workflows and forms stay (inert without a trigger); the hard cut-off is the
+# tier's IAM key, deleted by the owner (make aws-key's inverse, by hand). Probe P2 (2026-10-04) used these deletes.
+# Needs: login, platform_local, operations_manager.
+- name: Automations now (AWS VPN retired)
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/operations-manager/automations?equalsField=componentType&equals=workflows&limit=200"
+    headers: {Cookie: "{{ login.cookies_string }}"}
+  register: avr_autos
+
+- name: The AWS VPN automations on this tier
+  ansible.builtin.set_fact:
+    avr_gone: >-
+      {{ avr_autos.json.data | selectattr('name', 'in', avr_names) | list }}
+  vars:
+    avr_names: >-
+      {{ ['deploy_aws_vpn', 'hand_off_aws_vpn', 'verify_aws_vpn', 'tear_down_aws_vpn', 'tear_down_expired_aws_vpn']
+         | map('extract', operations_manager) | map(attribute='automation') | list }}
+
+- name: Their triggers
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/operations-manager/triggers?equalsField=actionId&equals={{ item._id }}&limit=100"
+    headers: {Cookie: "{{ login.cookies_string }}"}
+  loop: "{{ avr_gone }}"
+  loop_control:
+    label: "{{ item.name }}"
+  register: avr_triggers
+
+- name: Each trigger removed (endpoint, manual, schedule)
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/operations-manager/triggers/{{ item._id }}"
+    method: DELETE
+    headers: {Cookie: "{{ login.cookies_string }}"}
+    status_code: [200, 204]
+  loop: "{{ avr_triggers.results | map(attribute='json') | map(attribute='data') | flatten }}"
+  loop_control:
+    label: "{{ item.name }}"
+  changed_when: true
+
+- name: Each automation removed
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/operations-manager/automations/{{ item._id }}"
+    method: DELETE
+    headers: {Cookie: "{{ login.cookies_string }}"}
+    status_code: [200, 204]
+  loop: "{{ avr_gone }}"
+  loop_control:
+    label: "{{ item.name }}"
+  changed_when: true

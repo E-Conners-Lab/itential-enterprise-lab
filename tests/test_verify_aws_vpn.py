@@ -20,6 +20,13 @@ TARGETS = build.VERSIONS["aws_vpn"]["targets"]
 CDP = Path.home() / "PycharmProjects" / "cloud-devops-pipeline" / "itential"
 
 
+
+# The twin's window is closed since ADR 0070 (2026-10-04), so the generated tables leave it out; its plan path (a target
+# with no AWS deployment) is still the code a twin would take, so these tests hand the plan a table that includes it.
+def _with_twin(table: dict, keys: tuple) -> dict:
+    entry = build.VERSIONS["aws_vpn"]["targets"]["clab-rtr1"]
+    return {**table, "clab-rtr1": {k: entry[k] for k in keys if k in entry}}
+
 def envelope(rc: int | None, out: dict | None = None) -> dict:
     """What runService publishes: {id, jsonrpc, result: {return_code, stdout_json}}."""
     return {"id": 1, "jsonrpc": "2.0", "result": {"return_code": rc, "stdout_json": out or {}}}
@@ -101,7 +108,7 @@ def test_the_code_the_gateway_runs_is_the_judge_tested_here(d: dict) -> None:
 
 def test_the_twin_reads_its_pinned_outputs_and_needs_no_terraform() -> None:
     entry = TARGETS["clab-rtr1"]
-    plan = _run(build.LAB_EDGE_PLAN_CODE, {"targets": build.VERIFY_TARGETS, "target": "clab-rtr1"})
+    plan = _run(build.LAB_EDGE_PLAN_CODE, {"targets": _with_twin(build.VERIFY_TARGETS, ("target", "outputs", "username", "monitor", "netbox")), "target": "clab-rtr1"})
     assert plan["need_outputs"] is False and plan["monitor"] == "none" and plan["monitor_params"] is None
     assert plan["ready"] is True and plan["reason"] == ""
     edge = plan["lab_edge"]
@@ -153,7 +160,7 @@ def _pin_present() -> bool:
 
 @pytest.mark.skipif(not _pin_present(), reason="needs the cloud-devops-pipeline clone with the pinned commit")
 def test_the_params_are_exactly_what_each_service_takes() -> None:
-    plan = _run(build.LAB_EDGE_PLAN_CODE, {"targets": build.VERIFY_TARGETS, "target": "clab-rtr1"})
+    plan = _run(build.LAB_EDGE_PLAN_CODE, {"targets": _with_twin(build.VERIFY_TARGETS, ("target", "outputs", "username", "monitor", "netbox")), "target": "clab-rtr1"})
     assert set(plan["lab_edge"]) == _action_args("lab-edge.py", "verify")
     aws = {"dc1-wan01": {k: TARGETS["dc1-wan01"][k] for k in ("target", "username", "monitor")}}
     plan = _run(build.LAB_EDGE_PLAN_CODE, {"targets": aws, "target": "dc1-wan01",
@@ -177,7 +184,7 @@ def test_verify_only_reads() -> None:
     handed = {t["variables"]["incoming"]["query"] for t in tasks.values()
               if t["name"] == "query" and t["variables"]["incoming"]["obj"] == "$var.job.verify_plan"}
     assert handed == {"stdout_json.lab_edge", "stdout_json.monitor_params", "stdout_json.reason"}
-    plan = _run(build.LAB_EDGE_PLAN_CODE, {"targets": build.VERIFY_TARGETS, "target": "clab-rtr1"})
+    plan = _run(build.LAB_EDGE_PLAN_CODE, {"targets": _with_twin(build.VERIFY_TARGETS, ("target", "outputs", "username", "monitor", "netbox")), "target": "clab-rtr1"})
     assert plan["lab_edge"]["action"] == "verify"
 
 
@@ -218,3 +225,9 @@ def test_every_committed_workflow_is_what_the_generator_makes(builder) -> None:
     wf = builder()
     committed = json.loads((ROOT / "itential" / "workflows" / build.file_name(wf["name"])).read_text())
     assert committed == json.loads(json.dumps(wf)), f"run .venv/bin/python itential/workflows/build.py ({wf['name']})"
+
+
+def test_the_closed_twin_is_no_target_any_more() -> None:
+    plan = _run(build.LAB_EDGE_PLAN_CODE, {"targets": build.VERIFY_TARGETS, "target": "clab-rtr1"})
+    assert "clab-rtr1" not in build.VERIFY_TARGETS
+    assert plan["ready"] is False and plan["reason"] == "clab-rtr1 is not an open target"

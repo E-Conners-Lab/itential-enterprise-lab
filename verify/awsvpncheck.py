@@ -41,7 +41,6 @@ SECRET_FIELDS = {
     "aws/terraform": ["access_key_id", "secret_access_key"],
     "aws/psk-writer": ["role_id", "secret_id"],
     "devices/dc1-wan01-aws-vpn": ["password"],
-    "devices/aws-vpn-clab-rtr1": ["psk"],
 }
 # The AWS VPN workflows, and the two hand paths to the lab edge (the teardown by hand on 2026-10-02, the show reads
 # of the windows)

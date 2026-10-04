@@ -27,16 +27,17 @@ def vault(monkeypatch):
 
     def fake(addr, tok, method, path, body=None):
         calls.append((method, path, body))
+        state.setdefault("seen", []).append((addr, tok))
         return state["get"] if method == "GET" else state["post"]
 
-    monkeypatch.setattr(ea.dk, "token", lambda tier: "dev-root-token")
+    monkeypatch.setattr(ea.dk, "token", lambda tier: f"{tier}-token")
     monkeypatch.setattr(ea.dk, "vault", fake)
     return calls, state
 
 
 def test_the_password_goes_to_the_dev_vault_once_and_is_never_printed(vault, capsys) -> None:
     calls, _ = vault
-    assert ea.main([]) == 0
+    assert ea.main(["dev"]) == 0
     method, path, body = calls[1]
     assert method == "POST" and path == "lab/data/devices/dc1-wan01-aws-vpn" and body["options"] == {"cas": 0}
     password = body["data"]["password"]
@@ -47,7 +48,7 @@ def test_the_password_goes_to_the_dev_vault_once_and_is_never_printed(vault, cap
 def test_an_existing_entry_is_never_replaced(vault) -> None:
     calls, state = vault
     state["get"] = 200
-    assert ea.main([]) == 1 and [c[0] for c in calls] == ["GET"]
+    assert ea.main(["dev"]) == 1 and [c[0] for c in calls] == ["GET"]
 
 
 LINE = re.compile(r"^username itential-aws-vpn privilege 15 secret 9 \$9\$[./0-9A-Za-z]{14}\$[./0-9A-Za-z]{43}$")
@@ -58,7 +59,7 @@ def test_the_router_gets_a_type9_line_never_the_password(vault, monkeypatch, cap
     password = "TestOnly" * 4  # 32 characters, obviously not a real one
     monkeypatch.setattr(ea, "stored_value", lambda *a: (200, password))
     monkeypatch.setattr(ea.subprocess, "run", lambda argv, **kw: seen.update(argv=argv, input=kw.get("input")))
-    assert ea.main(["--line"]) == 0
+    assert ea.main(["dev", "--line"]) == 0
     assert seen["argv"] == ["pbcopy"] and LINE.match(seen["input"]) and password not in seen["input"]
     out = capsys.readouterr().out
     assert password not in out and "$9$" not in out  # neither the password nor the hash reaches the terminal
@@ -78,25 +79,25 @@ def test_type9_is_ciscos_scrypt_form() -> None:
 def test_line_refuses_without_a_readable_entry(vault, monkeypatch, capsys, status, said) -> None:
     monkeypatch.setattr(ea, "stored_value", lambda *a: (status, None))
     monkeypatch.setattr(ea.subprocess, "run", lambda *a, **k: pytest.fail("nothing may reach the clipboard"))
-    assert ea.main(["--line"]) == 1 and said in capsys.readouterr().out
+    assert ea.main(["dev", "--line"]) == 1 and said in capsys.readouterr().out
 
 
 def test_a_refused_write_says_why(vault, capsys) -> None:
     _, state = vault
     state["post"] = 400
-    assert ea.main([]) == 1 and "vault kv metadata delete" in capsys.readouterr().out
+    assert ea.main(["dev"]) == 1 and "vault kv metadata delete" in capsys.readouterr().out
 
 
 def test_an_unreadable_vault_refuses_before_writing(vault) -> None:
     calls, state = vault
     state["get"] = 403
-    assert ea.main([]) == 1 and [c[0] for c in calls] == ["GET"]
+    assert ea.main(["dev"]) == 1 and [c[0] for c in calls] == ["GET"]
 
 
 def test_only_a_devices_path_is_ever_written(vault, monkeypatch) -> None:
     calls, _ = vault
     monkeypatch.setattr(ea, "ALIAS", {"path": "services/elsewhere", "key": "password"})
-    assert ea.main([]) == 1 and calls == []
+    assert ea.main(["dev"]) == 1 and calls == []
 
 
 def test_stored_value_reads_kv_v2(monkeypatch) -> None:
@@ -117,14 +118,35 @@ def test_stored_value_reads_kv_v2(monkeypatch) -> None:
 def test_the_entry_is_the_one_config_push_revert_binds() -> None:
     v = ea.dk.V
     entry = v["revert_push"]["targets"]["dc1-wan01"]
-    alias = v["vault"]["dev_gateway_aliases"][entry["password_alias"]]
+    alias = v["vault"]["edge_gateway_aliases"][entry["password_alias"]]
     assert ea.ALIAS == alias and alias["path"].startswith("devices/")
-    svc = next(s for s in v["terraform_run"]["dev_services"] if s["name"] == "config-push-revert")
+    svc = next(s for s in v["terraform_run"]["edge_services"] if s["name"] == "config-push-revert")
     assert {"name": entry["password_alias"], "type": "env", "target": "LAB_EDGE_PASSWORD_DC1_WAN01"} in svc["secrets"]
 
 
 def test_the_entry_holds_the_keys_the_vault_tests_expect(vault) -> None:
     """tests/test_vault.py lists {password, username} for this path; this is where those keys come from."""
     calls, _ = vault
-    ea.main([])
+    ea.main(["dev"])
     assert set(calls[1][2]["data"]) == {ea.ALIAS["key"], "username"} == {"password", "username"}
+
+
+# ── each tier's Vault holds its own (ADR 0070: production runs the AWS VPN) ──
+
+
+def test_production_gets_its_own_entry_in_its_own_vault(vault) -> None:
+    calls, state = vault
+    assert ea.main(["prod"]) == 0
+    assert {a for a, _ in state["seen"]} == {ea.dk.VAULT["prod"]["url"]}
+    assert {t for _, t in state["seen"]} == {"prod-token"}
+
+
+@pytest.mark.parametrize("argv", [[], ["--line"], ["staging"], ["prod", "--other"], ["prod", "--line", "x"]])
+def test_the_tier_must_be_named(vault, argv) -> None:
+    calls, _ = vault
+    assert ea.main(argv) == 2 and calls == []
+
+
+def test_make_passes_the_tier() -> None:
+    make = (ROOT / "Makefile").read_text()
+    assert "scripts/edge-account-to-vault.py $(TIER)\n" in make and "scripts/edge-account-to-vault.py $(TIER) --line" in make

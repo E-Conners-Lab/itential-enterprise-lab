@@ -361,16 +361,19 @@ def test_the_converge_refuses_to_bind_a_dev_alias_before_its_entry_exists() -> N
     """The guard in tasks/gateway-vault.yml (step 10 review): a missing entry, or one without the alias's key, stops
     the dev converge before the import binds it."""
     tasks = yaml.safe_load((ROOT / "ansible" / "playbooks" / "tasks" / "gateway-vault.yml").read_text())
-    guard = next(t for t in tasks if t["name"] == "No dev alias is bound before its entry exists")
+    guard = next(t for t in tasks if t["name"] == "No edge alias is bound before its entry exists (an after_deploy one waits for the first Deploy)")
     names = [t["name"] for t in tasks]
-    assert names.index("No dev alias is bound before its entry exists") < names.index(
+    assert names.index("No edge alias is bound before its entry exists (an after_deploy one waits for the first Deploy)") < names.index(
         "Import the provider and aliases (replaces them by name)")
     missing = jinja2.Environment().from_string(guard["vars"]["missing"])
 
-    def result(alias, key, status, data=None):
-        return {"item": {"key": alias, "value": {"key": key}}, "status": status, "json": {"data": {"data": data or {}}}}
+    def result(alias, key, status, data=None, after_deploy=False):
+        value = {"key": key, **({"after_deploy": True} if after_deploy else {})}
+        return {"item": {"key": alias, "value": value}, "status": status, "json": {"data": {"data": data or {}}}}
 
-    out = missing.render(gw_dev_alias_entries={"results": [
+    out = missing.render(gw_edge_alias_entries={"results": [
+        # the deployment's key before the first Deploy: not bound, and not a refusal (ADR 0070)
+        result("g-after-deploy", "psk", 404, after_deploy=True),
         result("a-present", "password", 200, {"password": "x"}),
         result("b-absent", "password", 404),
         result("c-no-key", "psk", 200, {"version": "1"}),
@@ -381,5 +384,5 @@ def test_the_converge_refuses_to_bind_a_dev_alias_before_its_entry_exists() -> N
     ]})
     assert out.strip() == "['b-absent', 'c-no-key', 'e-404-body', 'f-null-data']"
     # first in the file: a refusal comes before a secret ID is issued or anything is imported
-    assert names.index("No dev alias is bound before its entry exists") < names.index("The Gateway's AppRole credentials")
+    assert names.index("No edge alias is bound before its entry exists (an after_deploy one waits for the first Deploy)") < names.index("The Gateway's AppRole credentials")
     assert guard["no_log"] is True

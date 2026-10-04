@@ -64,6 +64,7 @@ admin_check "S8.2e each AppRole is bound to its own hosts (iap-01/02, iag-01): a
 admin_check "S13.2a lab/aws/vpn-psk: the Gateway reads, the Platform cannot; the PSK writer's credentials are in Vault (writer policy: make vault-config on iag-01)" vc aws-psk
 check "S13.2b terraform-run on the Gateway: clones with the Vault deploy key, gets the IAM key from Vault, reaches AWS as itential-terraform (probe: no plan)" vc terraform-run
 check "S13.2c the Gateway's cloud-devops-pipeline pin is a commit on its protected main, every required check passed on it (GitHub read via gh)" vc cdp-pin
+admin_check "S13.2d each open lab edge target's key: in Vault, the Gateway reads it, the Platform cannot; lab-edge renders the pinned block, lab-edge-push and aws-vpn-monitor run with their aliases and refuse (no device, no AWS)" vc lab-edge
 admin_check "S8.2d the device password in Vault equals the .env seed (seeded one way)" vc seeded
 c_snapshot() {
   local newest; newest=$(ls -t "$SNAP_DIR"/vault-raft-*.snap 2>/dev/null | head -1)

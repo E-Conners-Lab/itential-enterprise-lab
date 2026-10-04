@@ -183,10 +183,10 @@
       ansible.builtin.include_tasks: tasks/lcm.yml
       when: "'lcm' in platform_elements | default(['golden_config', 'mop', 'lcm', 'integrations'])"
 
-    # Dev first (ADR 0063): production gets these once the AWS VPN workflows are proven on the dev tier
+    # Only on the tier that runs the AWS VPN (aws_vpn.tier, ADR 0070); the other tier's are removed below
     - name: AWS VPN workflows - form, automation, the branded page's API trigger and the form's trigger (ADR 0068)
       ansible.builtin.include_tasks: tasks/aws-vpn-triggers.yml
-      when: dev_overlay | default(false) | bool
+      when: (aws_vpn.tier == 'dev') == (dev_overlay | default(false) | bool)
       loop: "{{ aws_vpn_triggers }}"
       loop_control: {loop_var: wt, label: "{{ wt.key }}"}
       vars:
@@ -227,10 +227,15 @@
             description: "Tears the AWS VPN down (the router's block, then the AWS side); started by the branded page or the form (R2)"
             schema: "{{ aws_vpn_target_schema }}"
 
-    # R2b: after the AWS VPN automations, on the dev tier with them (the dev Platform owns the single AWS state)
+    # R2b: after the AWS VPN automations, on the tier that runs the AWS VPN with them (it owns the single AWS state)
     - name: AWS VPN timed teardown - Tear Down Expired AWS VPN's automation and hourly schedule
       ansible.builtin.include_tasks: tasks/aws-vpn-schedule.yml
-      when: dev_overlay | default(false) | bool
+      when: (aws_vpn.tier == 'dev') == (dev_overlay | default(false) | bool)
+
+    # ADR 0070: the tier that does not run the AWS VPN keeps no way to start it - no trigger, no automation, no schedule
+    - name: AWS VPN retired on this tier - its triggers and automations removed
+      ansible.builtin.include_tasks: tasks/aws-vpn-retire.yml
+      when: (aws_vpn.tier == 'dev') != (dev_overlay | default(false) | bool)
 
     - name: Element 4 - Integration Models, integrations and their tools (ADR 0045)
       ansible.builtin.include_tasks: tasks/integrations.yml

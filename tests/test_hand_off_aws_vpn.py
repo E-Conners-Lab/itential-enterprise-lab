@@ -24,6 +24,13 @@ CDP = Path.home() / "PycharmProjects" / "cloud-devops-pipeline"
 PIN = build.VERSIONS["terraform_run"]["repository"]["reference"]
 
 
+
+# The twin's window is closed since ADR 0070 (2026-10-04), so the generated tables leave it out; its plan path (a target
+# with no AWS deployment) is still the code a twin would take, so these tests hand the plan a table that includes it.
+def _with_twin(table: dict, keys: tuple) -> dict:
+    entry = build.VERSIONS["aws_vpn"]["targets"]["clab-rtr1"]
+    return {**table, "clab-rtr1": {k: entry[k] for k in keys if k in entry}}
+
 def _tasks(wf: dict) -> dict:
     return {tid: t for tid, t in wf["tasks"].items() if "variables" in t}
 
@@ -155,7 +162,7 @@ def test_after_the_push_every_outcome_says_what_the_router_went_through() -> Non
 
 def test_the_twins_plan_carries_every_param_and_no_aws_steps() -> None:
     entry = TARGETS["clab-rtr1"]
-    plan = _run(build.LAB_EDGE_PLAN_CODE, {"targets": build.VERIFY_TARGETS, "target": "clab-rtr1"})
+    plan = _run(build.LAB_EDGE_PLAN_CODE, {"targets": _with_twin(build.VERIFY_TARGETS, ("target", "outputs", "username", "monitor", "netbox")), "target": "clab-rtr1"})
     assert plan["ready"] is True and plan["monitor_ready"] is None and plan["monitor_params"] is None
     for key, action in (("precheck", "precheck"), ("render", "render"), ("push", "push"), ("lab_edge", "verify")):
         assert plan[key]["action"] == action
@@ -182,7 +189,7 @@ def _pin_present() -> bool:
 
 @pytest.mark.skipif(not _pin_present(), reason="needs the cloud-devops-pipeline clone with the pinned commit")
 def test_hand_offs_params_are_exactly_what_each_service_takes_at_the_pin() -> None:
-    plan = _run(build.LAB_EDGE_PLAN_CODE, {"targets": build.VERIFY_TARGETS, "target": "clab-rtr1"})
+    plan = _run(build.LAB_EDGE_PLAN_CODE, {"targets": _with_twin(build.VERIFY_TARGETS, ("target", "outputs", "username", "monitor", "netbox")), "target": "clab-rtr1"})
     assert set(plan["precheck"]) == _action_args("lab-edge.py", "precheck")
     assert set(plan["render"]) == _action_args("lab-edge.py", "render")
     assert set(plan["push"]) | {"sha256"} == _action_args("lab-edge-push.py", "push")
@@ -367,3 +374,9 @@ def test_the_push_summary_reads_every_answer_lab_edge_push_gives() -> None:
     for empty in ({}, {"push": {}}, _envelope(None, None), _envelope(1, "not an object"), _envelope(0, ["x"])):
         got = build.push_summary(empty)
         assert got["state"] == "failed" and got["changed"] is True and got["router"].startswith("unknown")
+
+
+def test_the_closed_twin_is_no_target_any_more() -> None:
+    plan = _run(build.LAB_EDGE_PLAN_CODE, {"targets": build.VERIFY_TARGETS, "target": "clab-rtr1"})
+    assert "clab-rtr1" not in build.VERIFY_TARGETS
+    assert plan["ready"] is False and plan["reason"] == "clab-rtr1 is not an open target"
