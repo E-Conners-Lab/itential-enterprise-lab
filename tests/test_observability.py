@@ -427,3 +427,16 @@ def test_the_retained_zabbix_db_volume_is_deleted_too() -> None:
     assert play.index("No zabbix-db volume left") < pv < lh
     assert "selectattr('spec.claimRef.name', 'equalto', 'zabbix-db-1')" in play  # only that PV, never another
     assert "kind: Volume" in play and "api_version: longhorn.io/v1beta2" in play
+
+
+def test_the_zabbix_app_files_are_removed_from_grafanas_volume() -> None:
+    """An empty plugin list stops new installs but loads what is already on the volume (measured 2026-10-04: the app
+    still loaded). The image has no shell, so Grafana's own CLI removes it - only when it is listed - and the pod
+    is replaced to unload it."""
+    play = (ROOT / "ansible" / "playbooks" / "observability.yml").read_text()
+    listed = play.index("The Zabbix app on Grafana's volume")
+    removed = play.index("The Zabbix app removed from Grafana's volume")
+    restart = play.index("Grafana restarted without it")
+    assert listed < removed < restart
+    assert "plugins remove alexanderzobnin-zabbix-app" in play and "plugins ls" in play
+    assert "'alexanderzobnin-zabbix-app' in zbx_app.stdout" in play

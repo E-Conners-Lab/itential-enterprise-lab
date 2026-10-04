@@ -61,3 +61,9 @@ def test_the_committed_manifest_is_what_the_list_renders() -> None:
 def test_the_play_applies_the_manifest() -> None:
     play = (ROOT / "ansible" / "playbooks" / "observability.yml").read_text()
     assert 'src: "{{ k8s_dir }}/manifests/expiry-rules.yaml"' in play
+
+
+def test_the_group_evaluates_at_prometheus_own_interval() -> None:
+    """2026-10-04: an hourly group leaves the series empty for ~55 minutes of every hour - an instant query looks back
+    only 5 minutes - so the dashboard and S7.1 read nothing. The arithmetic is cheap: the global interval it is."""
+    assert "interval" not in er.build(EXPIRIES)["spec"]["groups"][0]

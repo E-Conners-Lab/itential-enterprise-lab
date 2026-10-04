@@ -63,8 +63,8 @@ thing.
   endpoints, the MongoDB, Redis, Gateway, load-balancer and tools VMs (CPU, memory and disk through the agent). Adding node-exporter there is a
   separate decision. The PID's "Zabbix monitors `local-lvm` usage at 80 %" risk control goes with it, and the
   thin-pool risk is open again until that exporter exists.
-- Grafana keeps the Zabbix app's files on its 1 GiB volume until a pod is rebuilt. They are not loaded: the plugin
-  list is empty.
+- Grafana kept the Zabbix app's files on its 1 GiB volume, and it still loaded them: an empty plugin list only stops new
+  installs (corrected in the amendment below).
 - The deletes cannot be undone: the Zabbix configuration, its 18 days of failed state and its metric history are gone.
   Nothing in the repo depended on them. ADR 0064 already called the database rebuildable.
 - `.env` keeps the two `ZABBIX_*` lines until the owner removes them. Nothing reads them any more.
@@ -80,3 +80,10 @@ corrections followed, both in the same play:
 - **Grafana's rolling update deadlocked.** Its Longhorn volume attaches to one node at a time: the new pod waited for
   the volume and the old pod kept it, so the upgrade timed out at 15 minutes. Grafana now uses
   `deploymentStrategy: Recreate`, which costs about a minute of Grafana whenever its pod changes.
+
+A second run found two more things:
+
+- **The Zabbix app was still loaded.** The play now has Grafana's own CLI remove it (the image has no shell), and only
+  when it is listed. It then replaces the pod.
+- **The expiry series were empty most of the time.** The group was evaluated hourly, and an instant query looks back
+  only 5 minutes. The group now runs at Prometheus's own interval.

@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Generate the expiry rules (ADR 0071) from observability/expiries.yaml: one PrometheusRule with a days-left series
 per entry (`lab:expiry_days_left`, the date taken as 00:00 UTC) and one alert, LabExpirySoon, under warn_days. Plain
-arithmetic on time(), so no exporter runs; the Expiries dashboard reads the series.
+arithmetic on time(), so no exporter runs; the Expiries dashboard reads the series. The group runs at Prometheus's own
+evaluation interval: an hourly one left the series empty between evaluations (an instant query looks back 5 minutes).
 
   python observability/expiry_rules.py           write k8s/observability/manifests/expiry-rules.yaml
   python observability/expiry_rules.py --check   exit 1 when the committed file differs (tests/test_expiry_rules.py)
@@ -55,7 +56,7 @@ def build(doc: dict) -> dict:
         "apiVersion": "monitoring.coreos.com/v1",
         "kind": "PrometheusRule",
         "metadata": {"name": "lab-expiries", "namespace": "observability", "labels": {"role": "lab-alert-rules"}},
-        "spec": {"groups": [{"name": "lab-expiries", "interval": "1h", "rules": rules}]},
+        "spec": {"groups": [{"name": "lab-expiries", "rules": rules}]},
     }
 
 
