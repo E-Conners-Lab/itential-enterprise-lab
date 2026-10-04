@@ -1,0 +1,386 @@
+{
+  "name": "Get AWS VPN Status",
+  "type": "automation",
+  "description": "Reports the AWS side of the lab's site-to-site VPN without changing anything: whether it is deployed, strongSwan's address, when it ends, the NAT gateway, when AWS last changed and an estimated cost from pinned list prices (A1, Cloud Status; ADR 0068)",
+  "tasks": {
+    "1a": {
+      "name": "parse",
+      "canvasName": "parse",
+      "summary": "terraform-run outputs' params",
+      "description": "terraform-run outputs' params",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 0,
+        "y": 150
+      },
+      "variables": {
+        "incoming": {
+          "text": "{\"action\": \"outputs\", \"timeout\": \"120\"}"
+        },
+        "outgoing": {
+          "textObject": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "1b": {
+      "name": "runService",
+      "canvasName": "runService",
+      "summary": "the deployment (terraform-run outputs, a state read)",
+      "description": "the deployment (terraform-run outputs, a state read)",
+      "location": "Application",
+      "locationType": null,
+      "app": "GatewayManager",
+      "type": "automatic",
+      "displayName": "GatewayManager",
+      "groups": [],
+      "nodeLocation": {
+        "x": 0,
+        "y": 300
+      },
+      "variables": {
+        "incoming": {
+          "serviceName": "terraform-run",
+          "clusterId": "lab",
+          "params": "$var.1a.textObject"
+        },
+        "outgoing": {
+          "result": "$var.job.outputs_result"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "1c": {
+      "name": "evaluation",
+      "canvasName": "evaluation",
+      "summary": "the state read answered?",
+      "description": "the state read answered?",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 0,
+        "y": 450
+      },
+      "variables": {
+        "incoming": {
+          "all_true_flag": true,
+          "evaluation_groups": [
+            {
+              "all_true_flag": true,
+              "evaluations": [
+                {
+                  "query": "result.return_code",
+                  "operand_1": {
+                    "variable": "result",
+                    "task": "1b"
+                  },
+                  "operator": "==",
+                  "operand_2": {
+                    "variable": 0,
+                    "task": "static"
+                  }
+                }
+              ]
+            }
+          ],
+          "options": {}
+        },
+        "outgoing": {
+          "return_value": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "1d": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "the outputs' answer",
+      "description": "the outputs' answer",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 0,
+        "y": 600
+      },
+      "variables": {
+        "incoming": {
+          "obj": {},
+          "path": [
+            "outputs"
+          ],
+          "value": "$var.job.outputs_result"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "1e": {
+      "name": "runCode",
+      "canvasName": "runCode",
+      "summary": "the status (Python on the runner)",
+      "description": "the status (Python on the runner)",
+      "location": "Application",
+      "locationType": null,
+      "app": "GatewayManager",
+      "type": "automatic",
+      "displayName": "GatewayManager",
+      "groups": [],
+      "nodeLocation": {
+        "x": 0,
+        "y": 750
+      },
+      "variables": {
+        "incoming": {
+          "clusterId": "lab",
+          "language": "python",
+          "code": "import json, sys\nfrom datetime import datetime, timezone\n\n\nPRICES = {'basis': \"an estimate from list prices (on-demand, us-east-1, pinned 2026-10-04, not read from AWS); excludes data transfer, NAT data processing and the state's fixed $1/month key\", 'instance_hour': {'t3.micro': 0.0104, 't3.small': 0.0208}, 'assumed_instance_type': 't3.micro', 'public_ipv4_hour': 0.005, 'nat_gateway_hour': 0.045, 'secret_month': 0.4, 'root_volume_month': 0.64}\n\n\ndef aws_vpn_status(d: dict, now: datetime, prices: dict) -> dict:\n    \"\"\"The deployment, as the Cloud Status agent reports it. `d` holds terraform-run outputs' answer under `outputs`.\n    Pure: runCode runs this source on the Gateway with the clock and the prices written in.\"\"\"\n    result = (d.get(\"outputs\") or {}).get(\"result\") or {}\n    answer = result.get(\"stdout_json\") or {}\n    outputs = answer.get(\"outputs\")\n    if result.get(\"return_code\") != 0 or not isinstance(outputs, dict):\n        return {\"ok\": False, \"summary\": \"The AWS side could not be read: terraform-run outputs did not answer \"\n                                        \"(see outputs_result). Nothing was changed.\"}\n    state = answer.get(\"state\") or {}\n    changed = state.get(\"last_modified\") if state.get(\"read\") else None\n    hours = None\n    if changed:\n        then = datetime.strptime(changed, \"%Y-%m-%dT%H:%M:%SZ\").replace(tzinfo=timezone.utc)\n        hours = round((now - then).total_seconds() / 3600, 1)\n    when = f\"last changed {changed} ({hours} h ago)\" if changed else \"when it last changed is not known\"\n    if not outputs:\n        return {\"ok\": True, \"deployed\": False, \"last_changed\": changed, \"hours_since_change\": hours,\n                \"estimate\": {\"per_day_usd\": 0, \"since_change_usd\": 0, \"basis\": prices[\"basis\"]},\n                \"summary\": f\"Nothing is deployed in AWS (the state is empty; {when}). Estimated cost: none.\"}\n    end = outputs.get(\"expires_at\")\n    ends = (\"stays up until torn down\" if end in (None, \"\", \"none\")\n            else f\"ends at {end} (Tear Down Expired AWS VPN removes it then)\")\n    nat = outputs.get(\"nat_gateway_enabled\")\n    nat_text = \"unknown (recorded by the next Deploy)\" if nat is None else (\"on\" if nat else \"off\")\n    itype = outputs.get(\"strongswan_instance_type\")\n    assumed = not itype\n    itype = itype or prices[\"assumed_instance_type\"]\n    itype_text = f\"{itype} (assumed: recorded by the next Deploy)\" if assumed else itype\n    rate = prices[\"instance_hour\"].get(itype)\n    if rate is None:\n        per_day, since = None, None\n        cost = f\"no pinned price for {itype}: add it to versions.yaml aws_vpn.prices\"\n    else:\n        hourly = (rate + prices[\"public_ipv4_hour\"] + (prices[\"nat_gateway_hour\"] if nat else 0)\n                  + (prices[\"secret_month\"] + prices[\"root_volume_month\"]) / 730)\n        per_day = round(hourly * 24, 2)\n        since = round(hourly * hours, 2) if hours is not None else None\n        cost = (f\"about ${per_day:.2f} a day\" + (f\", about ${since:.2f} since the last change\" if since is not None\n                                                 else \"\") + f\" ({prices['basis']})\")\n    summary = (f\"Deployed: strongSwan at {outputs.get('strongswan_eip')} (instance {outputs.get('strongswan_instance_id')}, \"\n               f\"{itype_text}); it {ends}; NAT gateway {nat_text}; {when}. Estimated cost: {cost}.\")\n    return {\"ok\": True, \"deployed\": True, \"strongswan_eip\": outputs.get(\"strongswan_eip\"),\n            \"instance_id\": outputs.get(\"strongswan_instance_id\"), \"instance_type\": itype_text,\n            \"private_ip\": outputs.get(\"strongswan_private_ip\"), \"vpc_private_prefixes\": outputs.get(\"vpc_private_prefixes\"),\n            \"ends\": ends, \"nat_gateway\": nat_text, \"last_changed\": changed, \"hours_since_change\": hours,\n            \"estimate\": {\"per_day_usd\": per_day, \"since_change_usd\": since, \"basis\": prices[\"basis\"]},\n            \"summary\": summary}\n\n\nprint(json.dumps(aws_vpn_status(json.loads(sys.stdin.read() or \"{}\"), datetime.now(timezone.utc), PRICES)))\n",
+          "data": "$var.1d.object",
+          "safety": {
+            "timeout": 30
+          },
+          "packages": []
+        },
+        "outgoing": {
+          "result": "$var.job.status"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "1f": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "the summary",
+      "description": "the summary",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 0,
+        "y": 900
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "stdout_json.summary",
+          "obj": "$var.job.status"
+        },
+        "outgoing": {
+          "return_data": "$var.job.summary"
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "8a": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "the state could not be read",
+      "description": "the state could not be read",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": -300,
+        "y": 600
+      },
+      "variables": {
+        "incoming": {
+          "input": "the Gateway could not read the deployment (terraform-run outputs, see outputs_result): nothing was changed",
+          "outputType": "string",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.error"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "8b": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "the status could not be made",
+      "description": "the status could not be made",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 300,
+        "y": 1050
+      },
+      "variables": {
+        "incoming": {
+          "input": "the Gateway could not make the status (see status): nothing was changed",
+          "outputType": "string",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.error"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "workflow_start": {
+      "name": "workflow_start",
+      "summary": "workflow_start",
+      "groups": [],
+      "nodeLocation": {
+        "x": 0,
+        "y": 0
+      }
+    },
+    "workflow_end": {
+      "name": "workflow_end",
+      "summary": "workflow_end",
+      "groups": [],
+      "nodeLocation": {
+        "x": 0,
+        "y": 1200
+      }
+    }
+  },
+  "transitions": {
+    "workflow_start": {
+      "1a": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "1a": {
+      "1b": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "1b": {
+      "1c": {
+        "state": "success",
+        "type": "standard"
+      },
+      "8a": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "1c": {
+      "1d": {
+        "state": "success",
+        "type": "standard"
+      },
+      "8a": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "1d": {
+      "1e": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "1e": {
+      "1f": {
+        "state": "success",
+        "type": "standard"
+      },
+      "8b": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "1f": {
+      "workflow_end": {
+        "state": "success",
+        "type": "standard"
+      },
+      "8b": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "8a": {
+      "workflow_end": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "8b": {
+      "workflow_end": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "workflow_end": {}
+  },
+  "groups": [],
+  "canvasVersion": 3,
+  "inputSchema": {
+    "type": "object",
+    "properties": {},
+    "required": []
+  },
+  "outputSchema": {
+    "type": "object",
+    "properties": {
+      "summary": {
+        "type": "string"
+      },
+      "status": {
+        "type": "object"
+      },
+      "error": {
+        "type": "string"
+      },
+      "outputs_result": {
+        "type": "object"
+      }
+    }
+  },
+  "tags": [],
+  "preAutomationTime": 300000,
+  "sla": 600000,
+  "font_size": 12,
+  "decorators": []
+}

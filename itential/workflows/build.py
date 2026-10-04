@@ -4466,6 +4466,108 @@ def tear_down_aws_vpn() -> dict:
     )
 
 
+# --- Get AWS VPN Status (A1, Cloud Status; owner decisions 2026-10-04) -------------------------------------------------
+# The Cloud Status agent's first tool, read-only: terraform-run outputs (a state read) and nothing else. It reports what
+# is deployed, until when, the NAT gateway, when AWS last changed (the state's own metadata, cloud-devops-pipeline #31)
+# and an ESTIMATED cost from the unit prices pinned in versions.yaml aws_vpn.prices - said to be an estimate every time.
+STATUS_PRICES = VERSIONS["aws_vpn"]["prices"]  # a month is 730 hours in AWS pricing (the function's own literal)
+
+
+def aws_vpn_status(d: dict, now: datetime, prices: dict) -> dict:
+    """The deployment, as the Cloud Status agent reports it. `d` holds terraform-run outputs' answer under `outputs`.
+    Pure: runCode runs this source on the Gateway with the clock and the prices written in."""
+    result = (d.get("outputs") or {}).get("result") or {}
+    answer = result.get("stdout_json") or {}
+    outputs = answer.get("outputs")
+    if result.get("return_code") != 0 or not isinstance(outputs, dict):
+        return {"ok": False, "summary": "The AWS side could not be read: terraform-run outputs did not answer "
+                                        "(see outputs_result). Nothing was changed."}
+    state = answer.get("state") or {}
+    changed = state.get("last_modified") if state.get("read") else None
+    hours = None
+    if changed:
+        then = datetime.strptime(changed, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+        hours = round((now - then).total_seconds() / 3600, 1)
+    when = f"last changed {changed} ({hours} h ago)" if changed else "when it last changed is not known"
+    if not outputs:
+        return {"ok": True, "deployed": False, "last_changed": changed, "hours_since_change": hours,
+                "estimate": {"per_day_usd": 0, "since_change_usd": 0, "basis": prices["basis"]},
+                "summary": f"Nothing is deployed in AWS (the state is empty; {when}). Estimated cost: none."}
+    end = outputs.get("expires_at")
+    ends = ("stays up until torn down" if end in (None, "", "none")
+            else f"ends at {end} (Tear Down Expired AWS VPN removes it then)")
+    nat = outputs.get("nat_gateway_enabled")
+    nat_text = "unknown (recorded by the next Deploy)" if nat is None else ("on" if nat else "off")
+    itype = outputs.get("strongswan_instance_type")
+    assumed = not itype
+    itype = itype or prices["assumed_instance_type"]
+    itype_text = f"{itype} (assumed: recorded by the next Deploy)" if assumed else itype
+    rate = prices["instance_hour"].get(itype)
+    if rate is None:
+        per_day, since = None, None
+        cost = f"no pinned price for {itype}: add it to versions.yaml aws_vpn.prices"
+    else:
+        hourly = (rate + prices["public_ipv4_hour"] + (prices["nat_gateway_hour"] if nat else 0)
+                  + (prices["secret_month"] + prices["root_volume_month"]) / 730)
+        per_day = round(hourly * 24, 2)
+        since = round(hourly * hours, 2) if hours is not None else None
+        cost = (f"about ${per_day:.2f} a day" + (f", about ${since:.2f} since the last change" if since is not None
+                                                 else "") + f" ({prices['basis']})")
+    summary = (f"Deployed: strongSwan at {outputs.get('strongswan_eip')} (instance {outputs.get('strongswan_instance_id')}, "
+               f"{itype_text}); it {ends}; NAT gateway {nat_text}; {when}. Estimated cost: {cost}.")
+    return {"ok": True, "deployed": True, "strongswan_eip": outputs.get("strongswan_eip"),
+            "instance_id": outputs.get("strongswan_instance_id"), "instance_type": itype_text,
+            "private_ip": outputs.get("strongswan_private_ip"), "vpc_private_prefixes": outputs.get("vpc_private_prefixes"),
+            "ends": ends, "nat_gateway": nat_text, "last_changed": changed, "hours_since_change": hours,
+            "estimate": {"per_day_usd": per_day, "since_change_usd": since, "basis": prices["basis"]},
+            "summary": summary}
+
+
+STATUS_CODE = ("import json, sys\nfrom datetime import datetime, timezone\n\n\nPRICES = " + repr(STATUS_PRICES)
+               + "\n\n\n" + inspect.getsource(aws_vpn_status)
+               + "\n\nprint(json.dumps(aws_vpn_status(json.loads(sys.stdin.read() or \"{}\"), datetime.now(timezone.utc), "
+               + "PRICES)))\n")
+
+
+def get_aws_vpn_status() -> dict:
+    ok, fail, err = "success", "failure", "error"
+    tasks = {
+        "1a": parse("terraform-run outputs' params", OUTPUTS_PARAMS, x=100),
+        "1b": run_service("the deployment (terraform-run outputs, a state read)", "terraform-run", "$var.1a.textObject",
+                          "outputs_result", x=200),
+        "1c": evaluate("the state read answered?", "1b", "result", "result.return_code", "==", 0, x=300),
+        "1d": set_key("the outputs' answer", {}, "outputs", "$var.job.outputs_result", x=400),
+        "1e": run_code("the status (Python on the runner)", STATUS_CODE, "$var.1d.object", "status", x=500),
+        "1f": jq("the summary", "$var.job.status", "stdout_json.summary", x=600, to_job="summary"),
+        "8a": note("the state could not be read", "the Gateway could not read the deployment (terraform-run outputs, "
+                   "see outputs_result): nothing was changed", "error", x=250, y=-300),
+        "8b": note("the status could not be made", "the Gateway could not make the status (see status): nothing was "
+                   "changed", "error", x=450, y=300),
+    }
+    tr = {
+        "workflow_start": _edge(**{"1a": ok}),
+        "1a": _edge(**{"1b": ok}),
+        "1b": _edge(**{"1c": ok, "8a": err}),
+        "1c": _edge(**{"1d": ok, "8a": fail}),
+        "1d": _edge(**{"1e": ok}),
+        "1e": _edge(**{"1f": ok, "8b": err}),
+        "1f": _edge(**{"workflow_end": ok, "8b": err}),
+        "8a": _edge(**{"workflow_end": ok}),
+        "8b": _edge(**{"workflow_end": ok}),
+    }
+    return workflow(
+        WF["get_aws_vpn_status"],
+        "Reports the AWS side of the lab's site-to-site VPN without changing anything: whether it is deployed, "
+        "strongSwan's address, when it ends, the NAT gateway, when AWS last changed and an estimated cost from pinned "
+        "list prices (A1, Cloud Status; ADR 0068)",
+        {},
+        tasks,
+        tr,
+        {"summary": {"type": "string"}, "status": {"type": "object"}, "error": {"type": "string"},
+         "outputs_result": {"type": "object"}},
+    )
+
+
 # --- Tear Down Expired AWS VPN (R2b, owner decisions 2026-10-04) ------------------------------------------------------
 # An hourly Operations Manager schedule (platform.yml, tasks/aws-vpn-schedule.yml) runs it. It reads the deployment's
 # end time from the Terraform state (`expires_at`, set by Deploy AWS VPN and shown on its approval card - that card is
@@ -4593,7 +4695,7 @@ def tear_down_expired_aws_vpn() -> dict:
 
 BUILDERS = (device_count, show_version, show_command, show_all, branch_vlan, branch_vlan_delete, config_push,
             compliance_run, compliance_report, netbox_devices, backup_all, deploy_aws_vpn, verify_aws_vpn,
-            hand_off_aws_vpn, config_push_revert, tear_down_aws_vpn, tear_down_expired_aws_vpn)
+            hand_off_aws_vpn, config_push_revert, tear_down_aws_vpn, tear_down_expired_aws_vpn, get_aws_vpn_status)
 
 
 if __name__ == "__main__":

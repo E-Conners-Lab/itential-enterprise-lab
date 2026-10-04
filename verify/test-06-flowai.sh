@@ -448,6 +448,34 @@ c18() {
 }
 check "S4d.5k remediation-local refuses anything that is not a hostname and calls no tool" c18
 
+# A1 Cloud Status (PID S13, owner decisions 2026-10-04): read-only; ground truth is terraform-run outputs read directly
+aws_eip() {
+  iap -X POST "${PLATFORM}/gateway_manager/v1/services/run" \
+    -d "{\"serviceName\":\"terraform-run\",\"clusterId\":\"$(${PY} -c "import yaml;print(yaml.safe_load(open('itential/versions.yaml'))['stack']['gateway5_cluster_id'])")\",\"params\":{\"action\":\"outputs\",\"timeout\":\"120\"}}" \
+    | ${PY} -c 'import sys,json;print(((json.load(sys.stdin).get("result") or {}).get("stdout_json") or {}).get("outputs",{}).get("strongswan_eip",""))'
+}
+c19() {
+  local sid txt tools eip
+  eip=$(aws_eip); [ -n "$eip" ] || { echo "terraform-run outputs gave no strongSwan address (nothing deployed?)"; return 1; }
+  sid=$(run_agent cloud-status '{"request":"What is deployed in AWS for the lab VPN right now, until when, and what does it cost? Two sentences."}') || { echo "$sid"; return 1; }
+  sid=${sid##*$'\n'}; txt=$(session_text "$sid"); tools=$(session_tools "$sid"); count_tokens "$sid"
+  echo "$tools" | grep -q "Get AWS VPN Status" || { echo "no status read in the session: ${tools}"; return 1; }
+  echo "$tools" | grep -qiE "Deploy AWS VPN|Hand Off AWS VPN|Tear Down|terraform" && { echo "cloud-status used a tool that changes AWS: ${tools}"; return 1; }
+  echo "$txt" | grep -qF "$eip" || { echo "answer lacks strongSwan's address (terraform-run outputs): $(echo "$txt" | head -c 300)"; return 1; }
+  echo "$txt" | grep -qi "estimat" || { echo "the cost is not called an estimate: $(echo "$txt" | head -c 300)"; return 1; }
+  echo "cloud-status: names the deployed address (terraform-run agrees) and an estimated cost; tools ${tools}"
+}
+check "S4d.5l cloud-status reports what is deployed in AWS, until when and an estimated cost through Get AWS VPN Status; terraform-run outputs agree" c19
+c20() {
+  local sid txt eip
+  eip=$(aws_eip); [ -n "$eip" ] || { echo "terraform-run outputs gave no strongSwan address (nothing deployed?)"; return 1; }
+  sid=$(run_agent cloud-status-local '{"request":"Is the AWS VPN deployed? Reply with the strongSwan address."}') || { echo "$sid"; return 1; }
+  sid=${sid##*$'\n'}; txt=$(session_text "$sid"); count_tokens "$sid"
+  echo "$txt" | grep -qF "$eip" || { echo "local twin answer lacks strongSwan's address: $(echo "$txt" | head -c 300)"; return 1; }
+  echo "cloud-status-local (${OLLAMA_MODEL}) names the deployed address; terraform-run agrees"
+}
+check "S4d.5m cloud-status-local names the deployed strongSwan address through Get AWS VPN Status" c20
+
 # cleanup: close the verify's incident; restore the hostname if a failed run left the drift behind
 if [ -n "$INC_SYS" ]; then sn -X PATCH "$SN/incident/${INC_SYS}" -d '{"state":"7","close_code":"Solution provided","close_notes":"closed by verify/test-06-flowai.sh"}' -o /dev/null; echo "closed ${INC_NUM}"; fi
 [ "$(running_hostname "$BR2_SW")" = br2-sw01 ] || { echo "restoring br2-sw01 after a failed run"; push br2-sw01 "hostname br2-sw01" "verify ${ts} cleanup" >/dev/null 2>&1 || echo "WARN br2-sw01 still drifted; fix with Push Configuration with Approval"; }
