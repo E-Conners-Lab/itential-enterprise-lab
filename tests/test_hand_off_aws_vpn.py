@@ -4,6 +4,7 @@ the push are Verify AWS VPN's own - written into the workflow, not called as a c
 
 from __future__ import annotations
 
+import os
 import importlib.util
 import json
 import subprocess
@@ -20,7 +21,7 @@ WFS = ROOT / "itential" / "workflows"
 HAND = json.loads((WFS / "hand-off-aws-vpn.json").read_text())
 VERIFY = json.loads((WFS / "verify-aws-vpn.json").read_text())
 TARGETS = build.VERSIONS["aws_vpn"]["targets"]
-CDP = Path.home() / "PycharmProjects" / "cloud-devops-pipeline"
+CDP = Path(os.environ.get("CDP_DIR") or Path.home() / "PycharmProjects" / "cloud-devops-pipeline")  # a checkout at the pin
 PIN = build.VERSIONS["terraform_run"]["repository"]["reference"]
 
 

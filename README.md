@@ -45,7 +45,7 @@ network source of truth.
 | Hypervisor | Dell R640, Proxmox VE 9.2 | 72 threads (2x Xeon Gold 6154), 314 GB usable RAM, `local-lvm` thin pool 1.6 TB; ceilings and current allocation in `docs/resource-budget.md` |
 | Network devices | EVE-NG Pro VM | C8000v WAN edges, vEOS spine/leaf/access, Linux/Windows endpoints; PA-VM deferred behind `lab.firewalls` (ADR 0034) |
 | OOB management | `vmbr1` on its own NIC, EVE-NG `pnet1` | Every service gets a leg on it |
-| Services | Proxmox VMs + k3s | Itential Platform in the HA2 shape (11 VMs: nginx, 2 Platform, 3 MongoDB, 3 Redis, Gateway 5, tools), Vault, Zabbix, Prometheus/Grafana, gNMIc, Loki, OpenLDAP; planned: Oxidized, Gitea, Keycloak, TACACS+, DDI (BIND9/Kea, Infoblox NIOS), Panorama |
+| Services | Proxmox VMs + k3s | Itential Platform in the HA2 shape (11 VMs: nginx, 2 Platform, 3 MongoDB, 3 Redis, Gateway 5, tools), Vault, Prometheus/Grafana, gNMIc, Loki, OpenLDAP; planned: Oxidized, Gitea, Keycloak, TACACS+, DDI (BIND9/Kea, Infoblox NIOS), Panorama |
 | Prototyping | Proxmox VMs | The Copilot dev stack (`itential-dev`) and a Containerlab host (`clab`), never production (ADR 0063) |
 | Local inference | Off-lab host | Ollama for the local agent twins (ADR 0060, 0061) |
 | Sources of truth | NetBox (network), this repo (project), Vault (credentials) | See ADR 0002 and ADR 0065 |
@@ -97,7 +97,7 @@ Phases are delivered one PR each in the order fixed by ADR 0008. Service specs a
 | 4 | `phase-4/network-topology` | EVE-NG DC + 2 branches (C8000v, vEOS, endpoints; PA-VM deferred behind `lab.firewalls`) from `topology/` | merged (PR #16) |
 | 5 | `phase-5/itential` | Itential Platform 6.5.2 + Gateway 5.5.2, Inventory Manager from NetBox, generated workflows, MCP for Claude Code, ServiceNow PDI | merged (PR #17) |
 | 6 | `phase-6/flowai` | FlowAI agents (Anthropic and local profiles, `lab-netops`, Genie/TextFSM on a Gateway 5 runner) and Platform coverage of the lab: Configuration Manager, Golden Config + nightly compliance, MOP + nightly backups, Lifecycle Manager `branch-vlan` + JSON form approval, NetBox/ServiceNow Integration Models, the five-agent fleet with local twins | merged (PR #19, #20, #27) |
-| 7 | `phase-7/observability` | Zabbix, kube-prometheus-stack + SNMP/blackbox exporters, gNMIc (vEOS), Loki + Alloy syslog, the official Itential dashboard (ADR 0051, 0052) | merged (PR #22, #23, #29) |
+| 7 | `phase-7/observability` | kube-prometheus-stack + SNMP/blackbox exporters (Zabbix until ADR 0071), gNMIc (vEOS), Loki + Alloy syslog, the official Itential dashboard (ADR 0051, 0052) | merged (PR #22, #23, #29) |
 | 8 | `phase-8/platform-ha2` | Production Itential environment in Itential's HA2 shape (ADR 0053): 11 VMs with TLS and auth between every component and OpenLDAP as the directory; phases 5-7 replayed onto it (ADR 0055); nightly MongoDB backups (ADR 0058) | merged (PR #24, #30) |
 | 9a | `phase-9a/vault` | Vault on k3s; the Platform and Gateway 5 read the device, NetBox and ServiceNow credentials through their built-in clients (ADR 0065) | done (PR #64, #65 and the cut-over) |
 | 9b | - | Vault as the source of the credentials, `.env` reduced, certificates from Vault PKI | deferred (ADR 0065 amendment) |
@@ -123,7 +123,6 @@ Every name resolves through the lab's own resolver on `10.100.0.1`; run
 | Dev stack (Copilot) | `https://itential-dev.lab.internal`, `http://mcp-dev.lab.internal:8000/mcp` | the sandbox of ADR 0063; nothing here is production |
 | NetBox | `http://netbox.lab.internal:8080` | the network source of truth |
 | Grafana | `https://grafana.lab.internal` | lab dashboards and the official Itential Platform Monitoring dashboard |
-| Zabbix | `https://zabbix.lab.internal` | availability: SNMPv3 devices, agent 2 on every Ubuntu machine, HTTP checks |
 | Prometheus / Alertmanager | `https://prometheus.lab.internal`, `https://alertmanager.lab.internal` | metrics and the lab alert rules |
 | Loki | `https://loki.lab.internal` | device and VM syslog through Alloy |
 | gNMIc | `https://gnmic.lab.internal/metrics` | streaming telemetry from the vEOS fabric |
@@ -144,7 +143,7 @@ clab/        the dev tier's Containerlab topology and device templates
 itential/    the platform as documents: versions.yaml (oracle), workflows/ (build.py -> one <name>.json per workflow), golden-config/,
              command-templates/, lcm/, forms/, integrations/, agents/, vault/ (the dev tier's Vault), the vendored dev-stack Compose
              files, ha2/ (the production environment's own oracle and its Compose templates)
-observability/  Zabbix templates and expiries, Grafana dashboards, gNMIc and the Platform exporter
+observability/  expiries (and their Prometheus rules), Grafana dashboards, gNMIc and the Platform exporter
 scripts/     workstation helpers, including scripts/vault-prod.sh for the owner's Vault operations
 verify/      one integration test per service; results/ holds committed evidence
 docs/runbooks/  how to build the lab, one chapter per track, parameterised so no real address is transcribed

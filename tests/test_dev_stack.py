@@ -461,7 +461,7 @@ def test_the_dev_vms_stay_active_because_the_inventory_only_returns_active_vms()
     assert register["netbox.netbox.netbox_virtual_machine"]["data"]["status"] == "active"
 
 
-OBS_ZABBIX = yaml.safe_load((ROOT / "observability" / "observability.yaml").read_text())["zabbix"]
+OBS_SYSLOG = yaml.safe_load((ROOT / "observability" / "observability.yaml").read_text())["syslog"]
 SAMPLE_VMS = [
     {"name": "tools-01", "role": {"slug": "ha2-tools"}, "platform": {"slug": "ubuntu-24-04"},
      "primary_ip4": {"address": "10.100.0.81/24"}},
@@ -476,46 +476,32 @@ SAMPLE_VMS = [
 def test_the_sandbox_is_excluded_from_monitoring_by_exactly_its_netbox_roles() -> None:
     """Owner decision (review M6): the sandbox VMs stay active for the inventory, and are kept out of monitoring by
     NetBox role. The roles must be exactly the ones netbox-vms.yml gives itential-dev and clab - a renamed role would
-    otherwise put a stopped sandbox back into Zabbix and turn production's S7.1 red."""
+    otherwise put a stopped sandbox back under the host play and turn production's S7.1 red (Zabbix, until ADR 0071;
+    now the syslog and no-agent check)."""
     play = yaml.safe_load((PLAYS / "netbox-vms.yml").read_text())[0]
     roles = {v["name"]: v["role"] for v in play["vars"]["vms"]}
-    assert set(OBS_ZABBIX["excluded_vm_roles"]) == {roles["itential-dev"], roles["clab"]}
+    assert set(OBS_SYSLOG["excluded_vm_roles"]) == {roles["itential-dev"], roles["clab"]}
     ha2_roles = {"ha2-" + v["role"] for v in yaml.safe_load((ROOT / "itential" / "ha2" / "versions.yaml").read_text())["vms"]}
-    assert not ha2_roles & set(OBS_ZABBIX["excluded_vm_roles"]), "no production VM role may ever be excluded"
-
-
-def test_zabbix_hosts_from_netbox_leave_out_the_sandbox() -> None:
-    """Runs observability.yml's own linux_hosts loop over sample VMs: production VMs stay, the sandbox goes."""
-    play = yaml.safe_load((PLAYS / "observability.yml").read_text())
-    task = next(t for p in play for t in p.get("tasks", []) if t.get("name", "").startswith("Monitored hosts derived"))
-    template = task["ansible.builtin.set_fact"]["linux_hosts"]
-    env = jinja2.Environment(extensions=["jinja2.ext.do"])
-    env.filters["ansible.utils.ipaddr"] = lambda value, _query: value.split("/")[0]
-    out = env.from_string(template).render(
-        nb_devices={"json": {"results": []}}, nb_vms={"json": {"results": SAMPLE_VMS}},
-        zabbix={**OBS_ZABBIX, "extra_hosts": []},
-    )
-    names = {h["name"] for h in yaml.safe_load(out)}
-    assert names == {"tools-01", "no-role"}, names
+    assert not ha2_roles & set(OBS_SYSLOG["excluded_vm_roles"]), "no production VM role may ever be excluded"
 
 
 def test_s7_1_expects_no_sandbox_host() -> None:
-    """Runs test-07's own expected_hosts VM filter over sample VMs, with NetBox replaced by the sample list."""
+    """Runs test-07's own expected_ubuntu VM filter over sample VMs, with NetBox replaced by the sample list."""
     text = (ROOT / "verify" / "test-07-observability.sh").read_text()
-    body = text.split("expected_hosts() {", 1)[1].split("PY\n}", 1)[0].split("<<'PY'\n", 1)[1]
-    vm_loop = body[body.index('for v in get("virtualization'):body.index("for e in obs")]
+    body = text.split("expected_ubuntu() {", 1)[1].split("PY\n}", 1)[0].split("<<'PY'\n", 1)[1]
+    vm_loop = body[body.index('for v in get("virtualization'):body.index('for e in syslog["extra_hosts"]')]
     rows: list = []
     exec(  # noqa: S102 - the script's own loop, run against fixed sample data
         vm_loop,
-        {"get": lambda _path: SAMPLE_VMS, "obs": {**OBS_ZABBIX}, "rows": rows},
+        {"get": lambda _path: SAMPLE_VMS, "syslog": {**OBS_SYSLOG}, "rows": rows},
     )
     assert {r[0] for r in rows} == {"tools-01", "no-role"}, rows
 
 
 def test_the_agent_play_skips_the_sandbox_groups() -> None:
     hosts = yaml.safe_load((PLAYS / "observability-hosts.yml").read_text())[0]["hosts"]
-    for role in OBS_ZABBIX["excluded_vm_roles"]:
-        assert f":!{role}" in hosts, f"observability-hosts.yml would install an agent on the unmonitored {role}"
+    for role in OBS_SYSLOG["excluded_vm_roles"]:
+        assert f":!{role}" in hosts, f"observability-hosts.yml would manage the unmonitored {role}"
 
 
 def test_tofu_names_the_vm_from_the_variable() -> None:

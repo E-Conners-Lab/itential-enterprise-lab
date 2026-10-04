@@ -20,6 +20,7 @@ import yaml
 ROOT = Path(__file__).resolve().parent.parent
 V = yaml.safe_load((ROOT / "itential" / "versions.yaml").read_text())
 CLAB = yaml.safe_load((ROOT / "clab" / "versions.yaml").read_text())
+TOPO = yaml.safe_load((ROOT / "topology" / "enterprise.yaml").read_text())
 TARGETS = V["aws_vpn"]["targets"]
 DEV_SERVICES = {s["name"]: s for s in V["terraform_run"]["edge_services"]}
 DC1_CFG = (ROOT / "topology" / "generated" / "configs" / "dc1-wan01.cfg").read_text()
@@ -29,7 +30,7 @@ TASKS = ROOT / "ansible" / "playbooks" / "tasks"
 TARGET_KEYS = {
     "name", "fvrf", "tunnel_source", "front_door_ip", "loopback_ip", "router_inner", "aws_inner", "vpc_cidr",
     "vpc_private_prefixes", "lab_prefixes", "local_id", "remote_id", "peer_rule", "peer_pinned", "bgp_asn",
-    "inside_interfaces", "unzoned_interfaces", "mgmt_host",
+    "inside_interfaces", "unzoned_interfaces", "mgmt_host", "tunnel_description",
 }
 OUTPUT_KEYS = {"strongswan_eip", "strongswan_private_ip", "tunnel_local_inner", "tunnel_remote_inner",
                "vpc_private_prefixes"}
@@ -69,6 +70,12 @@ def test_each_target_is_exactly_what_lab_edge_takes(name: str) -> None:
     assert t["tunnel_source"] in t["unzoned_interfaces"] and not set(t["inside_interfaces"]) & set(t["unzoned_interfaces"])
     if "outputs" in entry:
         assert set(entry["outputs"]) == OUTPUT_KEYS
+
+
+def test_the_tunnel_description_is_the_one_netbox_holds() -> None:
+    """Owner, 2026-10-04: the router says what NetBox says (S4e.1 had found 'AWS VPN (strongSwan)' on dc1-wan01)."""
+    want = TOPO["lab_edge"]["dc1-wan01"]["tunnel"]["description"]
+    assert {e["target"]["tunnel_description"] for e in TARGETS.values()} == {want}
 
 
 def test_both_targets_pin_the_deployed_vpc() -> None:
@@ -234,7 +241,8 @@ def test_the_edge_secrets_are_bound_only_once_their_entries_exist() -> None:
 
 # ── S13.2d (verify/vaultcheck.py lab-edge): the probes never reach a device or AWS, and each failure is caught ──
 
-CDP_RENDER = Path.home() / "PycharmProjects" / "cloud-devops-pipeline" / "itential" / "lab_edge_render.py"
+# CDP_DIR: a cloud-devops-pipeline checkout at the pinned commit (default: the owner's clone)
+CDP_RENDER = Path(os.environ.get("CDP_DIR") or Path.home() / "PycharmProjects" / "cloud-devops-pipeline") / "itential" / "lab_edge_render.py"
 KEY = "K" * 40
 
 

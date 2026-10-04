@@ -2,8 +2,9 @@
 
 WAL archiving and nightly base backups to Garage filled Garage, the unarchived WAL then filled zabbix-db's volume
 and Zabbix was down ~15 h (2026-09-16). These tests keep the backups from coming back in the manifests, and keep
-the plays deleting the live objects - because dropping a document from a manifest does not delete what it made.
-Runs in CI with no lab access.
+the play deleting the live objects - because dropping a document from a manifest does not delete what it made.
+zabbix-db itself went with Zabbix (ADR 0071, 2026-10-04): observability.yml deletes the Cluster, so platform-db is
+the lab's only CloudNativePG database. Runs in CI with no lab access.
 """
 
 from __future__ import annotations
@@ -15,22 +16,15 @@ import pytest
 import yaml
 
 ROOT = Path(__file__).resolve().parent.parent
-MANIFESTS = {
-    "platform-db": ROOT / "k8s" / "platform" / "manifests" / "cnpg-platform-db.yaml",
-    "zabbix-db": ROOT / "k8s" / "observability" / "manifests" / "zabbix-db.yaml",
-}
-PLAYS = {
-    "platform-db": ROOT / "ansible" / "playbooks" / "k8s-platform.yml",
-    "zabbix-db": ROOT / "ansible" / "playbooks" / "observability.yml",
-}
-OBS_VERSIONS = yaml.safe_load((ROOT / "k8s" / "observability" / "versions.yaml").read_text())
-NAMESPACE = {"platform-db": "cnpg-system", "zabbix-db": OBS_VERSIONS["obs_namespace"]}
-# exactly the four live objects the backups left behind
+MANIFESTS = {"platform-db": ROOT / "k8s" / "platform" / "manifests" / "cnpg-platform-db.yaml"}
+PLAYS = {"platform-db": ROOT / "ansible" / "playbooks" / "k8s-platform.yml"}
+NAMESPACE = {"platform-db": "cnpg-system"}
+OBS_PLAY = ROOT / "ansible" / "playbooks" / "observability.yml"
+# exactly the live objects the backups left behind on platform-db (zabbix-db's two were deleted on 2026-09-16, and
+# the Cluster itself goes with ADR 0071)
 CLEANUP = {
     ("ScheduledBackup", "cnpg-system", "platform-db-nightly"),
     ("ObjectStore", "cnpg-system", "garage"),
-    ("ScheduledBackup", "observability", "zabbix-db-nightly"),
-    ("ObjectStore", "observability", "garage"),
 }
 BACKUP_KINDS = {"ObjectStore", "ScheduledBackup", "Backup"}
 K8S = ("kubernetes.core.k8s", "k8s")
@@ -84,9 +78,7 @@ def _module(task: dict[str, Any], names: tuple[str, ...]) -> dict[str, Any] | No
 
 
 def _resolve(value: str) -> str:
-    return value.replace("{{ obs_namespace }}", NAMESPACE["zabbix-db"]).replace(
-        "{{ zabbix_db.name }}", OBS_VERSIONS["zabbix_db"]["name"]
-    )
+    return value
 
 
 def _absent_targets(play_file: Path) -> list[tuple[int, tuple[str, str, str]]]:
@@ -119,10 +111,14 @@ def test_no_cluster_archives_wal_or_names_a_plugin(cluster: str) -> None:
         assert not barman, f"{cluster}: Barman is referenced: {barman}"
 
 
-def test_zabbix_db_is_12gi_and_agrees_with_versions_yaml() -> None:
-    (cl,) = [d for d in _docs(MANIFESTS["zabbix-db"]) if d["kind"] == "Cluster"]
-    assert cl["spec"]["storage"]["size"] == "12Gi", "zabbix-db grew to 12Gi so a full volume lets postgres start"
-    assert OBS_VERSIONS["zabbix_db"]["storage_gb"] == 12, "k8s/observability/versions.yaml zabbix_db.storage_gb"
+def test_zabbix_db_is_deleted_with_zabbix_and_nothing_backs_it_up() -> None:
+    """ADR 0071: the Cluster is deleted outright (CloudNativePG removes its PVC and secrets with it)."""
+    tasks = _tasks(OBS_PLAY)
+    deletes = [m for t in tasks if (m := _module(t, K8S)) and m.get("state") == "absent" and m.get("kind") == "Cluster"]
+    assert [d["name"] for d in deletes] == ["zabbix-db"]
+    assert not (ROOT / "k8s" / "observability" / "manifests" / "zabbix-db.yaml").exists()
+    assert not [t for t in tasks if (m := _module(t, K8S)) and m.get("state") == "absent"
+                and m.get("kind") in BACKUP_KINDS], "nothing of zabbix-db's backups is left to delete"
 
 
 # --- the plays delete the live objects ------------------------------------------------------------------

@@ -214,6 +214,7 @@ aws_vpn:
         inside_interfaces: [GigabitEthernet2, GigabitEthernet3]
         unzoned_interfaces: [GigabitEthernet1, GigabitEthernet4]
         mgmt_host: 10.100.2.11
+        tunnel_description: IPsec VTI to AWS (Hand Off AWS VPN) # the twin mirrors dc1-wan01
       outputs:
         strongswan_eip: 198.51.100.20
         strongswan_private_ip: 10.0.1.10
@@ -254,6 +255,8 @@ aws_vpn:
         inside_interfaces: [GigabitEthernet5, GigabitEthernet6, Tunnel1, Tunnel2]
         unzoned_interfaces: [GigabitEthernet1, GigabitEthernet2, GigabitEthernet7]
         mgmt_host: 10.100.0.144
+        # = topology/enterprise.yaml lab_edge.dc1-wan01.tunnel.description, which NetBox holds (owner 2026-10-04: NetBox wins)
+        tunnel_description: IPsec VTI to AWS (Hand Off AWS VPN)
 
 # Operations Manager (ADR 0068 steps 5 and 9): how the AWS VPN workflows are started - tasks/aws-vpn-triggers.yml
 operations_manager:

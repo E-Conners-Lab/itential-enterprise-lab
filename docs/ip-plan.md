@@ -88,7 +88,7 @@ topology; "k3s VIP" means a MetalLB address.
 | 10.100.0.32 | ingress | k3s VIP | cluster ingress controller (phase 3) |
 | 10.100.0.33 | keycloak | k3s VIP | identity (phase 10) |
 | 10.100.0.34 | tacacs | k3s VIP | tac_plus (phase 10) |
-| 10.100.0.35 | zabbix | k3s VIP | Zabbix server + web (phase 7) |
+| 10.100.0.35 | *(released)* | | was `zabbix` until ADR 0071 removed Zabbix (2026-10-04) |
 | 10.100.0.36 | grafana | k3s VIP | Grafana (phase 7) |
 | 10.100.0.37 | prometheus | k3s VIP | Prometheus, alias `alertmanager` (phase 7, ADR 0051) |
 | 10.100.0.38 | loki | k3s VIP | Loki API + Alloy syslog receiver (phase 7) |

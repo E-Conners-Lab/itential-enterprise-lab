@@ -1,7 +1,8 @@
 # 07 — Observability
 
-Zabbix for availability, Prometheus for metrics, Loki for logs, gNMIc for streaming telemetry from the
-fabric, and Grafana over all four — including Itential's own published Platform Monitoring dashboard.
+Prometheus for availability and metrics, Loki for logs, gNMIc for streaming telemetry from the fabric, and
+Grafana over all three — including Itential's own published Platform Monitoring dashboard. (Zabbix was part of
+this chapter until [ADR 0071](../adr/0071-zabbix-is-removed-and-expiries-move-to-prometheus.md) removed it.)
 
 Everything runs on the k3s cluster from chapter 02, is configured from documents in the repo, and takes its
 list of hosts and targets from NetBox. The device-side lines are pushed through the governed workflow from
@@ -15,8 +16,8 @@ This chapter needs no commercial licence except for the Platform metrics at the 
 
 ### What must already be true
 
-- Chapter 02 green: MetalLB, Longhorn, cert-manager and CloudNativePG. Zabbix's database is a CNPG cluster,
-  and every UI is served by the chapter 02 Traefik under the wildcard lab-CA certificate.
+- Chapter 02 green: MetalLB, Longhorn and cert-manager. Every UI is served by the chapter 02 Traefik under the
+  wildcard lab-CA certificate.
 - Chapter 04 green: the devices exist, and their startup configurations carry the observability snippet.
 - Chapter 06 green if you want the Platform metrics — S7.7 and S7.8 read the Platform's own routes.
 - `.env` carries `SNMPV3_AUTH_PASSWORD` and `SNMPV3_PRIV_PASSWORD`. They are used by the exporter from a
@@ -29,12 +30,11 @@ Nothing is monitored twice for the same purpose. That rule is the whole design
 
 | | Owns | How |
 |---|---|---|
-| **Zabbix** | Availability, and what a NOC looks at | SNMPv3 for the network devices, agent 2 on every Ubuntu machine, HTTP checks for every UI, an "Expiries" host, and the failure-drill trigger |
-| **Prometheus** | Metrics | The cluster via kube-prometheus-stack; device interface counters via the SNMP exporter; the vEOS fabric via gNMIc; VIPs and UIs via the blackbox exporter; the Platform's job and task metrics via a small exporter |
+| **Prometheus** | Availability and metrics | The cluster via kube-prometheus-stack; device health and interface counters via the SNMP exporter; the vEOS fabric via gNMIc; device ICMP, VIPs and UIs via the blackbox exporter; the Platform's job and task metrics via a small exporter; every licence, evaluation, token and certificate expiry as a rule generated from `observability/expiries.yaml` |
 | **Loki** | Logs | Device syslog and VM syslog through **one** Alloy receiver; k3s pod logs through an Alloy DaemonSet |
 
-Zabbix polls the devices for availability and a few health OIDs. Prometheus polls them for counters. They
-do not overlap.
+Until ADR 0071, Zabbix owned availability and the expiries. Prometheus already covered everything else Zabbix
+did, so the expiries moved into Prometheus rules and Zabbix went.
 
 ### Two things that are simply not possible on these images
 
@@ -45,10 +45,9 @@ do not overlap.
 
 ### The addresses
 
-Five MetalLB VIPs from the chapter 01 plan, resolved by name through the gateway's resolver: Zabbix
-`10.100.0.35`, Grafana `.36`, Prometheus `.37` (with an `alertmanager` alias), Loki `.38`, gNMIc `.39`.
-Two of them are **shared IPs**: Zabbix's VIP also carries the server's own port 10051, and Loki's also
-carries Alloy's syslog receiver on 514.
+Four MetalLB VIPs from the chapter 01 plan, resolved by name through the gateway's resolver: Grafana
+`10.100.0.36`, Prometheus `.37` (with an `alertmanager` alias), Loki `.38`, gNMIc `.39`. Loki's is a **shared
+IP**: it also carries Alloy's syslog receiver on 514. (`.35` was Zabbix's and is released.)
 
 ---
 
@@ -61,9 +60,9 @@ make phase-observability
 | | Step | What it does |
 |---|---|---|
 | 1 | `ansible/playbooks/netbox-seed.yml` | Re-seeds, which also **deletes** reservations the plan has released |
-| 2 | `ansible/playbooks/oob-gw.yml --tags dns` | Re-renders the resolver so the five new names answer |
-| 3 | `ansible/playbooks/observability.yml` | Secrets persisted first, then the Traefik VIP Services, then the charts, then the scrape objects generated from NetBox, then Zabbix's own configuration through its API |
-| 4 | `ansible/playbooks/observability-hosts.yml` | Zabbix agent 2 and `rsyslog` on every Ubuntu machine — the NetBox inventory for the VMs and EVE-NG endpoints, plus a static inventory for the two pre-existing machines |
+| 2 | `ansible/playbooks/oob-gw.yml --tags dns` | Re-renders the resolver so the four names answer |
+| 3 | `ansible/playbooks/observability.yml` | Secrets persisted first, then the Traefik VIP Services, then the charts, then the scrape objects generated from NetBox, the lab rules and the expiry rules, then the dashboards |
+| 4 | `ansible/playbooks/observability-hosts.yml` | `rsyslog` forwarding on every Ubuntu machine — the NetBox inventory for the VMs and EVE-NG endpoints, plus a static inventory for the two pre-existing machines |
 | 5 | `ansible/playbooks/observability-devices.yml` | One `Push Configuration with Approval` job per router and switch for the device-side lines. **The owner approves each card in Work Center** |
 
 Step 5 is the one that needs a person. Each device gets its own approval card, and the play skips a device
@@ -80,13 +79,13 @@ that loses them is flagged as drift.
 The charts take a while — kube-prometheus-stack is large and Loki plus Alloy add several more workloads.
 Budget most of an hour for a first run, plus however long the approvals take.
 
-- Zabbix monitors every NetBox-active host and is green, using the lab templates, with SNMPv3 and the
-  agents confirmed from the workstation.
-- The **Expiries** host has one item per expiry in the manifest — days left computed from the date, with
-  the NetBox token and the lab CA read back live — and a trigger at 14 days.
+- Prometheus has one `lab:expiry_days_left` series per expiry in `observability/expiries.yaml` — days left
+  computed from the date, with the NetBox token and the lab CA read back live — and `LabExpirySoon` fires
+  under 14 days.
+- SNMPv3 answers from the workstation, and every managed Ubuntu machine forwards syslog.
 - Prometheus's target count per job equals the declared numbers, no target is down, and the lab rules are
   loaded.
-- Grafana has the Prometheus, Alertmanager, Loki and Zabbix datasources and the lab dashboards.
+- Grafana has the Prometheus, Alertmanager and Loki datasources and the lab dashboards, Expiries included.
 - gNMIc's BGP session count for a spine equals what the switch says, and Prometheus agrees.
 - Loki returns a syslog line **from each vendor** within 60 seconds of a governed no-op push, labelled with
   the device's own hostname.
@@ -105,12 +104,12 @@ verify/test-07-observability.sh
 
 | Criterion | What a PASS means |
 |---|---|
-| S7.1 | Zabbix monitors every NetBox-active host, green, with the lab templates; SNMPv3 and the agents confirmed from the workstation. Plus the Expiries host and its 14-day trigger |
+| S7.1 | Every expiry series in Prometheus agrees with its date (and the NetBox token and lab CA with their live sources); SNMPv3 answers from the workstation; every managed Ubuntu machine forwards syslog and runs no Zabbix agent |
 | S7.2 | Prometheus's target count per job equals the declared configuration; no target down; lab rules loaded |
 | S7.3 | gNMIc's BGP session count for a spine equals `show bgp summary` — and Prometheus agrees |
 | S7.4 | Loki returns a syslog line from **each vendor** within 60 s of a governed no-op push, and the device's own log agrees |
 | S7.5 | Grafana login through Keycloak — **deferred to the identity phase**. `S7.5-prep` proves the dashboards and datasources are provisioned |
-| S7.6 | The drill: stopping a router raises a Zabbix trigger *and* an Alertmanager alert within 3 minutes, and starting it clears both |
+| S7.6 | The drill: stopping a router raises an Alertmanager alert within 3 minutes *and* the workstation's ping to it fails; starting it clears both |
 | S7.7 | Prometheus holds the Platform job metrics (per-workflow completions equal to the API) and every application and adapter is up |
 | S7.8 | The official Itential dashboard is provisioned and **every metric family it queries has data** |
 
@@ -120,8 +119,8 @@ The drill is worth running once:
 VERIFY_DRILLS=1 verify/test-07-observability.sh
 ```
 
-It stops a branch router for a few minutes. Measured here: the Zabbix trigger and the Alertmanager alert
-both fired **68 seconds** after the stop, and both cleared 257 seconds after it.
+It stops a branch router for a few minutes. Measured here with Zabbix as the second signal (before ADR 0071):
+the alert fired **68 seconds** after the stop and cleared 257 seconds after it.
 
 ---
 
@@ -134,9 +133,6 @@ rendering in ways that produce empty output rather than an error. Rename them.
 **A rendered manifest does not take effect.** Use `apply: true` on rendered manifests. A patch merges,
 which is not what you want when a key has been *removed* — a stale Loki selector key survived a patch here
 and the Service kept selecting nothing.
-
-**A Grafana plugin will not install.** Plugins are `id@version`, not a bare id. The Zabbix plugin needs
-Grafana 11.6 or newer.
 
 **Alloy's syslog receiver accepts nothing.** IOS XE emits a BSD-like format — a sequence number, *then* the
 timestamp — that no strict parser accepts, so the receiver must take lines `raw`. On current Alloy, `raw`
@@ -152,59 +148,9 @@ requires the experimental stability level to be enabled explicitly.
 - EOS prints its hostname in the line; IOS XE does not until you add `logging origin-id hostname`, which is
   in the snippet, in the Golden Config baseline and in the reference configurations.
 
-**A Zabbix HTTP agent item cannot verify a lab certificate, and `ZBX_SSLCALOCATION` changes nothing.**
-The environment variable is the first thing anyone reaches for and it is **ignored** (measured). The image
-pins `SSLCALocation` to `/var/lib/zabbix/ssl/ssl_ca`, so the only thing that works is mounting the lab CA
-*there* — as a ConfigMap whose file is named by the subject hash (`<subject_hash>.0`), because that is what
-OpenSSL's directory lookup expects. Setting the variable and watching nothing change is the expensive half
-of this one.
-
-**Zabbix cannot reach its database.** The chart takes an external PostgreSQL through
-`postgresAccess.existingSecretName`, which lines up with CloudNativePG's `<cluster>-app` secret; the
-chart's own PostgreSQL is a plain StatefulSet outside the operator, which is why it is not used. Neither is backed
-up: the Zabbix configuration is rebuilt from the repo, and only metric history is lost with the database
-([ADR 0064](../adr/0064-lab-databases-are-rebuildable-not-backed-up.md)).
-
-**Zabbix is down and `zabbix-db` says "Not enough disk space", its postgres crash-looping.** The database
-volume is full. When this lab archived WAL to Garage, a full Garage stopped the archiver and the unarchived WAL
-filled the volume; that is why nothing archives any more. A full volume still has to grow before postgres will
-start: raise `storage.size` in the manifest (CNPG resizes the PVC through Longhorn) rather than deleting WAL by
-hand. Check `kubectl -n observability get cluster zabbix-db` for the phase and the PVC's capacity.
-
-**Rotating the stock Zabbix password fails and the API will not say why.** `user.update` requires
-`current_passwd` alongside the new `passwd` when changing your own user's password. Omit it and the call is
-rejected with an error that does not name the missing parameter.
-
-**Every Zabbix page says "Zabbix server is not running" and the server is perfectly healthy.** The
-frontend defaults to looking for a host called `zabbix-server`; the chart names the Service
-`<release>-zabbix-server`, so there is no such DNS record and the frontend's socket to the server never
-connects. Set `ZBX_SERVER_HOST` (and `ZBX_SERVER_PORT`) on the web component to the real Service name.
-
-This one is worth dwelling on: **the data is unaffected**. Hosts are polled, items populate, the API
-answers, and S7.1 passes — because the criterion reads the API and the collected data, never the
-frontend's connection to the server. So the one signal a person actually looks at was wrong for weeks
-while every automated check was green. Confirm the fix from inside the web pod:
-`getent hosts $ZBX_SERVER_HOST` must resolve.
-
-**The Zabbix server restarts every few hours and the UI flickers between working and "not running".**
-That is a different fault with the same banner: the server container being OOMKilled (exit 137). Check
-`kubectl -n observability get pod -l app.kubernetes.io/name=zabbix-server` for a climbing restart count
-and `lastState.terminated.reason`. At 1Gi this lab was killed twelve times in 35 hours, sitting at
-1000Mi; 2Gi holds it. Adding hosts to monitor makes a marginal limit insufficient, so re-check it after
-any phase that adds VMs.
-
-**The Zabbix agent package will not install at the pinned version.** Two separate causes that look
-identical. Zabbix `.deb` packages carry **epoch 1**, so a version string without it does not match. And the
-release package adds the repository *without refreshing the index*, so the pinned version is not there yet
-— the install task needs `update_cache: true` unconditionally. Fix the epoch first and it still fails, which
-makes the epoch fix look wrong.
-
 **The SNMP exporter's ConfigMap is unusable.** The chart takes `snmp.yml` as **one string block**
 (`config: |`), indented verbatim into its ConfigMap. Passing a mapping renders something that looks
 plausible and the exporter cannot read.
-
-**A Zabbix agent on a k3s node is unreachable.** A server pod polling its own node arrives with its **pod**
-address, not the node's. The agent's `Server=` list has to include the pod CIDR as well.
 
 **Prometheus reports duplicate timestamps and drops samples.** `/workflow_engine/tasks/metrics` returns one
 row **per workflow task** alongside the global rows with the same app and name — 448 duplicate samples per
@@ -235,8 +181,12 @@ already allocated under a different policy just stays pending.
 seconds before the comparison. The verify waits for the next refresh. If you are comparing Platform
 metrics by hand, give the exporter a cycle.
 
-**The verification's Zabbix session breaks partway through the drill.** The drill re-logs in, so the login
-helper has to clear the bearer token first.
+**An older build still has Zabbix.** The plays remove it ([ADR 0071](../adr/0071-zabbix-is-removed-and-expiries-move-to-prometheus.md)):
+`observability.yml` uninstalls the release and deletes the `zabbix-db` Cluster, then its leftover Ingress, Traefik VIP
+and Grafana secret. `observability-hosts.yml` purges the agent and its repository. The resolver play stops answering
+for `zabbix.lab.internal` once `netbox-seed.yml` has deleted the `.35` reservation. Grafana is told to delete the Zabbix
+datasource it once provisioned. The devices' SNMPv3 user keeps the name `zabbix`: renaming it would be a governed push
+to every router and switch for nothing.
 
 ---
 
@@ -244,10 +194,7 @@ helper has to clear the bearer token first.
 
 | Component | Version |
 |---|---|
-| Zabbix | chart 7.1.0, images `alpine-7.0.30`, agent 2 `7.0.30-1` (Ubuntu 24.04 and 22.04). Server memory **2Gi** — at 1Gi it was OOMKilled twelve times in 35 h |
-| Zabbix database | CloudNativePG, PostgreSQL 18.6, 12 Gi, not backed up (ADR 0064) |
 | kube-prometheus-stack | chart 89.2.3 — operator `v0.93.1`, Prometheus `v3.14.0`, Alertmanager `v0.34.0`, Grafana 13.2.1 |
-| Grafana Zabbix plugin | `alexanderzobnin-zabbix-app@6.6.0` |
 | SNMP exporter | chart 9.17.1, `v0.30.1` (expands `${VAR}` so passphrases stay in a Secret) |
 | Blackbox exporter | chart 11.18.0, `v0.28.0` |
 | Loki | chart 7.3.0, 3.6.12, single binary, 168 h retention |
@@ -264,7 +211,8 @@ from the image manifest or the IP plan. Nothing is `latest`.
 ## When the estate changes
 
 Monitoring is built here, in phase 7, and **sizes itself from NetBox** — so anything registered afterwards is
-invisible to it until the plays re-run. That is not hypothetical: chapter 08 adds eleven VMs, and S7.1 and
+invisible to it until the plays re-run. (The two paragraphs below were written when Zabbix still sized itself from
+NetBox too; Prometheus's device targets and the host play still do.) That is not hypothetical: chapter 08 adds eleven VMs, and S7.1 and
 S7.2 were red from the moment that phase merged until somebody noticed, because a clean `make up` builds
 monitoring and *then* builds hosts it has never heard of.
 

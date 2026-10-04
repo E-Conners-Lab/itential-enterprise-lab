@@ -1,6 +1,6 @@
 # 0064 — The lab's CloudNativePG databases are rebuildable and are not backed up
 
-- **Status:** accepted (owner decision, 2026-09-16)
+- **Status:** accepted (owner decision, 2026-09-16); `zabbix-db` deleted with Zabbix by ADR 0071 (2026-10-04)
 - **Date:** 2026-09-16
 - **Amends:** ADR 0031 (its "every CNPG `Cluster` archives WAL and takes scheduled base backups to Garage" is withdrawn; Garage and the plugin stay), ADR 0051 decision 3 (`zabbix-db` has no WAL archiving, no nightly base backup and no Garage credentials, and is 12 Gi), PID S2.5 (amendment 1.31)
 - **Related:** ADR 0058 (the production MongoDB backup is VM-local and is not affected), ADR 0057 (monitoring follows the estate), PID S7

@@ -178,13 +178,15 @@ c8() {
   python3 - "$nets" "$nodes" <<'PY' > /tmp/verify04-inet.$$ || { cat /tmp/verify04-inet.$$; rm -f /tmp/verify04-inet.$$; return 1; }
 import json, sys, yaml
 t = yaml.safe_load(open("topology/enterprise.yaml"))
-nets = {n["name"]: {**n, "id": int(k)} for k, n in json.loads(sys.argv[1])["data"].items()}
+nets = [{**n, "id": int(k)} for k, n in json.loads(sys.argv[1])["data"].items()]
 nodes = {n["name"]: int(k) for k, n in json.loads(sys.argv[2])["data"].items()}
 for p in t.get("internet_ports", []):
     node, iface = p["port"].split(":")
-    net = nets.get(p["network"])
-    if not net or net.get("type") != p["network"]:
-        print(f"EVE-NG has no {p['network']} network"); sys.exit(1)
+    # by type: the network's display name is free text in the EVE-NG UI (renamed "AWS" by 2026-10-04)
+    clouds = [n for n in nets if n.get("type") == p["network"]]
+    if len(clouds) != 1:
+        print(f"EVE-NG has {len(clouds)} {p['network']} networks, want exactly one"); sys.exit(1)
+    net = clouds[0]
     idx = int(iface.removeprefix("Gi")) - 1
     ip = t["nodes"][node]["mgmt_ip"]
     print(node, ip, p["vrf"], p["address"].split("/")[0], p["gateway"], nodes[node], idx, net["id"])

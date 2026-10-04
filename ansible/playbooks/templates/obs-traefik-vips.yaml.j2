@@ -1,6 +1,6 @@
 # One LoadBalancer Service per observability VIP selecting the k3s Traefik pods (ADR 0051 decision 4): the
 # UIs keep the IP plan's addresses and the phase-3 wildcard lab-CA certificate. The sharing key equals the
-# VIP name, so zabbix-server (10051 on .35) and alloy-syslog (514 on .38) can share their address.
+# VIP name, so alloy-syslog (514 on .38) can share its address.
 {% for name, ip in vips.items() %}
 ---
 apiVersion: v1
