@@ -248,6 +248,18 @@
             <span>Change note</span>
             <textarea id="note" name="change_note" maxlength="280" placeholder="Why this deployment, for the approver"></textarea>
           </label>
+          <label class="field">
+            <span>Tear it down after</span>
+            <select id="lifetime" name="lifetime_hours" aria-describedby="lifetime-help">
+              <option value="2">2 hours</option>
+              <option value="4">4 hours</option>
+              <option value="8" selected>8 hours</option>
+              <option value="24">24 hours</option>
+              <option value="72">72 hours</option>
+              <option value="none">Keep it up until I tear it down</option>
+            </select>
+            <small id="lifetime-help">The approval card shows the end time. Approving it also approves the automatic teardown then.</small>
+          </label>
           <button class="go" type="submit" id="go-deploy">Plan the deployment</button>
           <p class="fineprint">Runs as you. You need a Platform role that can start automations.</p>
         </form>
@@ -787,6 +799,7 @@
       onprem_public_ip: ipInput.value.trim(),
       enable_nat_gateway: $("nat").checked ? "true" : "false",
       change_note: $("note").value.trim(),
+      lifetime_hours: $("lifetime").value,
     };
     setMaskable(document.querySelector('[data-ip="onprem"]'), formData.onprem_public_ip);
     status("Planning.", "Terraform works out what would change in AWS.");
@@ -931,7 +944,7 @@
   if (demo) {
     setMode("deploy");
     ipInput.value = "203.0.113.10"; $("note").value = "Lab demo: AWS side of the site-to-site VPN";
-    const fd = { onprem_public_ip: ipInput.value, enable_nat_gateway: "false", change_note: $("note").value };
+    const fd = { onprem_public_ip: ipInput.value, enable_nat_gateway: "false", change_note: $("note").value, lifetime_hours: "8" };
     setMaskable(document.querySelector('[data-ip="onprem"]'), fd.onprem_public_ip);
     $("go-deploy").disabled = true; legState.deploy = { plan: "active" }; simulate("deploy", fd);
     if (demo === "done") later(2600, () => document.querySelector('[data-sim="approve"]').click());

@@ -20,6 +20,7 @@ import ipaddress
 import itertools
 import json
 import statistics
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import yaml
@@ -3054,8 +3055,30 @@ PLAN_INPUTS_SCHEMA = {
         "onprem_public_ip": {"type": "string", "maxLength": 15, "pattern": IPV4},
         "enable_nat_gateway": {"enum": ["false", "true"]},
         "change_note": {"type": "string", "maxLength": 280},
+        # R2b: when the deployment ends (expires_from), or none; terraform-run checks it again (future, <= 31 days)
+        "expires_at": {"type": "string", "pattern": r"^(none|[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:00Z)$"},
     },
 }
+LIFETIMES = VERSIONS["aws_vpn"]["lifetime_hours"]
+
+
+def expires_from(d: dict, now: datetime, choices: list) -> dict:
+    """The deployment's end time from the chosen lifetime (R2b): now, to the minute, plus that many hours, as UTC
+    YYYY-MM-DDTHH:MM:00Z; `none` keeps it up until Tear Down. Anything not in `choices` gives `invalid`, which the
+    input check refuses. Pure: runCode runs this source on the Gateway with the clock and the choices written in."""
+    hours = d.get("lifetime_hours")
+    if not isinstance(hours, str) or hours not in choices:
+        return {"expires_at": "invalid", "lifetime_hours": str(hours)[:10]}
+    if hours == "none":
+        return {"expires_at": "none", "lifetime_hours": hours, "ends": "none: it stays up until Tear Down"}
+    end = (now.replace(second=0, microsecond=0) + timedelta(hours=int(hours))).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return {"expires_at": end, "lifetime_hours": hours, "ends": f"{end} ({hours} hours)"}
+
+
+EXPIRES_CODE = ("import json, sys\nfrom datetime import datetime, timedelta, timezone\n\n\nCHOICES = "
+                + repr(LIFETIMES["choices"]) + "\n\n\n" + inspect.getsource(expires_from)
+                + "\n\nprint(json.dumps(expires_from(json.loads(sys.stdin.read() or \"{}\"), datetime.now(timezone.utc), "
+                + "CHOICES)))\n")
 APPLY_TPL = '{"action": "apply", "job": "__ID__", "plan_sha256": "__SHA__", "timeout": "1800"}'
 DISCARD_TPL = '{"action": "discard", "job": "__ID__", "timeout": "120"}'
 # ensure, not write: strongSwan reads the key only at boot, so a redeploy keeps the key it has (step 6 feasibility C7)
@@ -3092,12 +3115,17 @@ def deploy_aws_vpn() -> dict:
         "1a": parse("plan params: the fixed part", PLAN_FIXED, x=100),
         "1b": set_key("plan params: public IP", "$var.1a.textObject", "onprem_public_ip", "$var.job.onprem_public_ip", x=150),
         "1c": set_key("plan params: NAT gateway", "$var.1b.object", "enable_nat_gateway", "$var.job.enable_nat_gateway", x=200),
-        "11": set_key("the inputs to check (params + change note)", "$var.1c.object", "change_note", "$var.job.change_note", x=250),
+        # R2b: the end time, from the chosen lifetime, worked out on the runner and planned as expires_at
+        "14": set_key("the lifetime, as data", {}, "lifetime_hours", "$var.job.lifetime_hours", x=210),
+        "15": run_code("the end time (Python on the runner)", EXPIRES_CODE, "$var.14.object", "lifetime", x=220),
+        "16": jq("the end time", "$var.job.lifetime", "stdout_json.expires_at", x=230, to_job="expires_at"),
+        "17": set_key("plan params: end time", "$var.1c.object", "expires_at", "$var.16.return_data", x=240),
+        "11": set_key("the inputs to check (params + change note)", "$var.17.object", "change_note", "$var.job.change_note", x=250),
         "12": task("validateJsonSchema", "WorkFlowEngine", "check the inputs",
                    {"jsonData": "$var.11.object", "schema": PLAN_INPUTS_SCHEMA}, {"result": "$var.job.input_check"},
                    display="WorkFlowEngine", x=300),
         "13": evaluate("inputs valid?", "12", "result", "valid", "==", True, x=350),
-        "1d": run_service("terraform plan", "terraform-run", "$var.1c.object", "plan_result", x=400),
+        "1d": run_service("terraform plan", "terraform-run", "$var.17.object", "plan_result", x=400),
         "1e": evaluate("plan made?", "1d", "result", "result.return_code", "==", 0, x=500),
         "1f": jq("the plan summary", "$var.1d.result", "result.stdout_json", x=600, to_job="plan"),
         "10": jq("the plan ID", "$var.1d.result", "result.stdout_json.job", x=700),
@@ -3105,10 +3133,13 @@ def deploy_aws_vpn() -> dict:
         "2a": replace(
             "the card's message",
             "Deploy the AWS side of the site-to-site VPN (costs about $1 a day while it is up). "
+            "It ends at __END__: approving this also approves Tear Down Expired AWS VPN removing it then, router "
+            "first, with no further card (none: it stays up until Tear Down). "
             "The requester's note (their own words, not checked): __NOTE__",
             "__NOTE__", "$var.job.change_note", x=800,
         ),
-        "2b": view("approval", "Approve the AWS change", "$var.2a.replacedString", "$var.job.plan", "Approve", "Reject", x=900),
+        "2c": replace("the card's message: end time", "$var.2a.replacedString", "__END__", "$var.job.expires_at", x=850),
+        "2b": view("approval", "Approve the AWS change", "$var.2c.replacedString", "$var.job.plan", "Approve", "Reject", x=900),
         # apply
         "3a": jq("the approved plan's SHA-256", "$var.1d.result", "result.stdout_json.plan_sha256", x=1000),
         "3b": replace("apply params: plan ID", APPLY_TPL, "__ID__", "$var.10.return_data", x=1100),
@@ -3147,20 +3178,26 @@ def deploy_aws_vpn() -> dict:
         "8f": note(
             "the inputs were refused",
             "the inputs were refused before anything ran (see input_check): the on-prem IP must be an IPv4 address "
-            "a.b.c.d, the NAT gateway true or false, the change note at most 280 characters; nothing changed in AWS",
+            "a.b.c.d, the NAT gateway true or false, the change note at most 280 characters, the lifetime one of "
+            + ", ".join(LIFETIMES["choices"]) + " hours; nothing changed in AWS",
             "error", x=400, y=-300,
         ),
         "8d": note("the apply did not run", "the Gateway could not run terraform-run for the apply; check apply_result and AWS", "error", x=1500, y=-700),
         "8e": jq("why the apply stopped", "$var.3e.result", "result.stdout_json.error", x=1600, y=-700, to_job="error", optional=True),
         "9a": note("the key step did not run", "applied, but the Gateway could not run aws-vpn-psk; the key may not be in place", "error", x=2200, y=-1100),
         "9b": jq("why the PSK step stopped", "$var.4d.result", "result.stdout_json.error", x=2300, y=-1100, to_job="error", optional=True),
+        "80": note("the end time could not be worked out", "the Gateway could not work out the end time from the "
+                   "lifetime (see lifetime): nothing changed in AWS", "error", x=220, y=-300),
     }
     tasks["5e"]["variables"]["outgoing"]["replacedString"] = "$var.job.outcome"
-    tr = chain("1a", "1b", "1c", "11", "12", "13", "1d", "1e", "1f", "10", "2a", "2b", "3a", "3b", "3c", "3d", "3e", "3f", "30", "31",
+    tr = chain("1a", "1b", "1c", "14", "15", "16", "17", "11", "12", "13", "1d", "1e", "1f", "10", "2a", "2c", "2b", "3a", "3b", "3c", "3d", "3e", "3f", "30", "31",
                "4a", "4b", "4c", "4d", "4e", "4f", "5a", "5b", "5d", "5e")
     tr["12"] = {"13": {"state": ok, "type": "standard"}, "8f": {"state": err, "type": "standard"}}
     tr["13"] = {"1d": {"state": ok, "type": "standard"}, "8f": {"state": fail, "type": "standard"}}
     tr["8f"] = t("", "8c")
+    tr["15"] = {"16": {"state": ok, "type": "standard"}, "80": {"state": err, "type": "standard"}}
+    tr["16"] = {"17": {"state": ok, "type": "standard"}, "80": {"state": err, "type": "standard"}}
+    tr["80"] = t("", "8c")
     tr["1d"] = {"1e": {"state": ok, "type": "standard"}, "8a": {"state": err, "type": "standard"}}
     tr["1e"] = {"1f": {"state": ok, "type": "standard"}, "8b": {"state": fail, "type": "standard"}}
     tr["2b"] = {"3a": {"state": ok, "type": "standard"}, "7a": {"state": fail, "type": "standard"}}
@@ -3198,11 +3235,16 @@ def deploy_aws_vpn() -> dict:
             # required in fact: the Platform refuses a start without it (500, metadata.error ["change_note"], measured)
             "change_note": {"type": "string", "required": True, "maxLength": 280,
                             "description": "Why, shown to the approver (may be empty)"},
+            "lifetime_hours": {"type": "string", "required": True, "enum": LIFETIMES["choices"],
+                               "description": "Hours until Tear Down Expired AWS VPN removes it (R2b); none keeps it "
+                                              "up until Tear Down"},
         },
         tasks,
         tr,
         {
             "plan": {"type": "object"},
+            "expires_at": {"type": "string"},
+            "lifetime": {"type": "object"},
             "outputs": {"type": "object"},
             "psk": {"type": "object"},
             "aws_changed": {"type": "boolean"},
@@ -4170,7 +4212,16 @@ DESTROY_LEFT_CODE = ("import json, sys\n\n\n" + inspect.getsource(destroy_left)
                      + "\n\nprint(json.dumps(destroy_left(json.loads(sys.stdin.read() or \"{}\"))))\n")
 
 
-def tear_down_aws_vpn() -> dict:
+# The cards and the rejection path: a timed teardown (R2b) has neither - its approval was the Deploy card's end time
+TEARDOWN_CARDS = ("2a", "2b", "2c", "5f", "a0", "a1", "a2", "a3", "a4", "a5", "a6", "a7", "a8")
+# where a teardown that failed ends: a timed one opens a Work Center task there first
+TEARDOWN_FAILED = ("bf", "c1", "c2", "c3", "c4", "c5", "c6", "c7")
+
+
+def teardown_section(timed: bool, failed_end: str = "workflow_end") -> tuple[dict, dict]:
+    """Tear Down's tasks from "10" on, written identically into Tear Down AWS VPN and Tear Down Expired AWS VPN (no
+    child jobs). `timed` leaves out the two cards and the rejection path (approved on the Deploy card, R2b) and sends
+    every failure to `failed_end`; everything else is the same task. Reads the job variable `target`."""
     ok, fail, err = "success", "failure", "error"
     tasks = {
         "10": flag("router_changed = false", "false", "router_changed", x=40),
@@ -4303,7 +4354,6 @@ def tear_down_aws_vpn() -> dict:
                    "(outputs_result): check AWS", "error", x=2300, y=-600),
     }
     tr = {
-        "workflow_start": _edge(**{"10": ok}),
         "10": _edge(**{"11": ok}), "11": _edge(**{"1a": ok}), "1a": _edge(**{"1b": ok}),
         "1b": _edge(**{"1c": ok, "b0": err}),
         "1c": _edge(**{"1d": ok, "b1": fail}),
@@ -4369,6 +4419,19 @@ def tear_down_aws_vpn() -> dict:
         "c3": _edge(**{"workflow_end": ok}), "c4": _edge(**{"workflow_end": ok}), "c5": _edge(**{"workflow_end": ok}),
         "c6": _edge(**{"workflow_end": ok}), "c7": _edge(**{"workflow_end": ok}),
     }
+    if not timed:
+        return tasks, tr
+    tasks = {k: v for k, v in tasks.items() if k not in TEARDOWN_CARDS}
+    tr = {k: v for k, v in tr.items() if k not in TEARDOWN_CARDS}
+    tr["14"] = _edge(**{"15": ok, "b4": fail})  # no router card
+    tr["5e"] = _edge(**{"6a": ok, "c5": err})  # no AWS card
+    for k in TEARDOWN_FAILED:
+        tr[k] = _edge(**{failed_end: ok})
+    return tasks, tr
+
+
+def tear_down_aws_vpn() -> dict:
+    tasks, tr = teardown_section(timed=False)
     return workflow(
         WF["tear_down_aws_vpn"],
         "Tears the AWS VPN down: removes the router's AWS block under a revert timer after a Work Center approval, "
@@ -4377,7 +4440,7 @@ def tear_down_aws_vpn() -> dict:
         {"target": {"type": "string", "required": True, "enum": INPUT_GATES[WF["tear_down_aws_vpn"]]["target"]["enum"],
                     "description": "The lab edge router whose AWS VPN to tear down"}},
         tasks,
-        tr,
+        {"workflow_start": _edge(**{"10": "success"}), **tr},
         {
             "outcome": {"type": "string"},
             "error": {"type": "string"},
@@ -4403,9 +4466,134 @@ def tear_down_aws_vpn() -> dict:
     )
 
 
+# --- Tear Down Expired AWS VPN (R2b, owner decisions 2026-10-04) ------------------------------------------------------
+# An hourly Operations Manager schedule (platform.yml, tasks/aws-vpn-schedule.yml) runs it. It reads the deployment's
+# end time from the Terraform state (`expires_at`, set by Deploy AWS VPN and shown on its approval card - that card is
+# the approval) and ends there unless the time is up. When it is, Tear Down's own tasks run without their two cards
+# (teardown_section(timed=True)): router first, the AWS destroy only after the block is proved gone. A teardown that
+# fails opens a Work Center task (f0); a run that cannot read the end time ends with the reason and opens none, so a
+# lasting outage does not leave a task every hour.
+EXPIRY_TARGETS = {name: {"monitor": entry["monitor"]} for name, entry in TEARDOWN_TARGETS.items()}
+
+
+def expiry_due(d: dict, now: datetime, targets: dict) -> dict:
+    """Is the deployment's time up? `d` holds terraform-run outputs' answer under `outputs`. Due only for a deployment
+    whose `expires_at` is a time not after `now`; then `target` names the one Tear Down target deployed in AWS. `ok`
+    is false when the answer cannot be read. Pure: runCode runs this source on the Gateway with the clock and the
+    targets written in."""
+    result = (d.get("outputs") or {}).get("result") or {}
+    if result.get("return_code") != 0:
+        return {"ok": False, "message": "terraform-run outputs did not answer (expiry_outputs): the end time could "
+                                        "not be read; nothing was changed"}
+    outputs = (result.get("stdout_json") or {}).get("outputs")
+    if not isinstance(outputs, dict):
+        return {"ok": False, "message": "terraform-run outputs gave no outputs (expiry_outputs); nothing was changed"}
+    if not outputs:
+        return {"ok": True, "due": False, "message": "nothing is deployed in AWS"}
+    end = outputs.get("expires_at")
+    if end in (None, "", "none"):
+        return {"ok": True, "due": False, "expires_at": end,
+                "message": "the deployment has no end time (lifetime none, or deployed before R2b): it stays up"}
+    try:
+        when = datetime.strptime(str(end), "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+    except ValueError:
+        return {"ok": False, "message": f"the deployment's expires_at {str(end)[:40]!r} is not a time; nothing was "
+                                        "changed"}
+    if now < when:
+        return {"ok": True, "due": False, "expires_at": end, "message": f"the deployment ends at {end}"}
+    aws = sorted(name for name, t in targets.items() if t.get("monitor") == "aws")
+    if len(aws) != 1:
+        return {"ok": False, "message": f"exactly one Tear Down target must be deployed in AWS, found {aws}; "
+                                        "nothing was changed"}
+    return {"ok": True, "due": True, "expires_at": end, "target": aws[0],
+            "message": f"the deployment's time was up at {end}: tearing down {aws[0]} and the AWS side"}
+
+
+EXPIRY_CODE = ("import json, sys\nfrom datetime import datetime, timezone\n\n\nTARGETS = " + repr(EXPIRY_TARGETS)
+               + "\n\n\n" + inspect.getsource(expiry_due)
+               + "\n\nprint(json.dumps(expiry_due(json.loads(sys.stdin.read() or \"{}\"), datetime.now(timezone.utc), "
+               + "TARGETS)))\n")
+
+
+def tear_down_expired_aws_vpn() -> dict:
+    ok, fail, err = "success", "failure", "error"
+    section, section_tr = teardown_section(timed=True, failed_end="f0")
+    tasks = {
+        # is the time up? (a state read; most runs end at t8)
+        "d1": parse("terraform-run outputs' params", OUTPUTS_PARAMS, x=-300),
+        "d2": run_service("the deployment and its end time (terraform-run outputs, a state read)", "terraform-run",
+                          "$var.d1.textObject", "expiry_outputs", x=-250),
+        "db": evaluate("the state read answered?", "d2", "result", "result.return_code", "==", 0, x=-225),
+        "d3": set_key("the outputs' answer", {}, "outputs", "$var.job.expiry_outputs", x=-200),
+        "d4": run_code("the time up? (Python on the runner)", EXPIRY_CODE, "$var.d3.object", "expiry", x=-150),
+        "d5": evaluate("the end time read?", "d4", "result", "stdout_json.ok", "==", True, x=-100),
+        "d6": evaluate("the time up?", "d4", "result", "stdout_json.due", "==", True, x=-50),
+        "d7": jq("the router", "$var.d4.result", "stdout_json.target", x=-25, to_job="target"),
+        "d8": jq("nothing to do", "$var.d4.result", "stdout_json.message", x=0, y=600, to_job="outcome"),
+        "d9": jq("why the end time could not be read", "$var.d4.result", "stdout_json.message", x=-50, y=-600,
+                 to_job="error"),
+        "da": note("the check could not run", "the Gateway could not read or check the end time (expiry_outputs / "
+                   "expiry): nothing was changed", "error", x=-150, y=-600),
+        **section,
+        # a teardown that failed: a Work Center task says so (the job's error says where)
+        "f0": view("Work Center task", "The timed teardown of the AWS VPN stopped: check the job, then run Tear Down "
+                   "AWS VPN by hand", "$var.job.error", "$var.job.expiry", "Seen", "Seen", x=2400, y=-600),
+    }
+    tr = {
+        "workflow_start": _edge(d1=ok),
+        "d1": _edge(d2=ok),
+        "d2": _edge(db=ok, da=err),
+        "db": _edge(d3=ok, da=fail),
+        "d3": _edge(d4=ok),
+        "d4": _edge(d5=ok, da=err),
+        "d5": _edge(d6=ok, d9=fail),
+        "d6": _edge(d7=ok, d8=fail),
+        "d7": _edge(**{"10": ok, "da": err}),
+        "d8": _edge(workflow_end=ok),
+        "d9": _edge(workflow_end=ok),
+        "da": _edge(workflow_end=ok),
+        **section_tr,
+        "f0": _edge(workflow_end=ok),
+    }
+    return workflow(
+        WF["tear_down_expired_aws_vpn"],
+        "Ends an AWS VPN deployment whose time is up (R2b): run every hour by a schedule, it reads the end time from the "
+        "Terraform state and - only when it has passed - removes the router's AWS block under a revert timer, proves "
+        "it gone and destroys the AWS side with exactly the planned destroy. The approval was the Deploy card's end "
+        "time; a teardown that fails opens a Work Center task (ADR 0068, PID S13 R2b)",
+        {},
+        tasks,
+        tr,
+        {
+            "outcome": {"type": "string"},
+            "error": {"type": "string"},
+            "target": {"type": "string"},
+            "expiry_outputs": {"type": "object"},
+            "expiry": {"type": "object"},
+            "router_changed": {"type": "boolean"},
+            "aws_changed": {"type": "boolean"},
+            "rejected": {"type": "boolean"},
+            "router_state": {"type": "string"},
+            "teardown_in": {"type": "object"},
+            "teardown_plan": {"type": "object"},
+            "push_plan": {"type": "object"},
+            "removal_result": {"type": "object"},
+            "check_result": {"type": "object"},
+            "push_result": {"type": "object"},
+            "push_summary": {"type": "object"},
+            "absent_result": {"type": "object"},
+            "destroy_plan_result": {"type": "object"},
+            "destroy_plan": {"type": "object"},
+            "apply_result": {"type": "object"},
+            "outputs_result": {"type": "object"},
+            "left": {"type": "object"},
+        },
+    )
+
+
 BUILDERS = (device_count, show_version, show_command, show_all, branch_vlan, branch_vlan_delete, config_push,
             compliance_run, compliance_report, netbox_devices, backup_all, deploy_aws_vpn, verify_aws_vpn,
-            hand_off_aws_vpn, config_push_revert, tear_down_aws_vpn)
+            hand_off_aws_vpn, config_push_revert, tear_down_aws_vpn, tear_down_expired_aws_vpn)
 
 
 if __name__ == "__main__":

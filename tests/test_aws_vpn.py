@@ -292,8 +292,9 @@ def test_the_nat_gateway_is_off_unless_asked() -> None:
     wf, _ = _deploy()
     inputs = wf["inputSchema"]
     assert inputs["properties"]["enable_nat_gateway"]["enum"] == ["false", "true"]
-    # change_note too: the Platform refuses a start without it (measured on dev 2026-09-29)
-    assert set(inputs["required"]) == {"onprem_public_ip", "enable_nat_gateway", "change_note"}
+    # change_note too: the Platform refuses a start without it (measured on dev 2026-09-29); lifetime_hours since R2b
+    assert set(inputs["required"]) == {"onprem_public_ip", "enable_nat_gateway", "change_note", "lifetime_hours"}
+    assert inputs["properties"]["lifetime_hours"]["enum"] == VERSIONS["aws_vpn"]["lifetime_hours"]["choices"]
 
 
 # --- WEB-01 (security review 2026-09-29): no input reaches the plan's parameters as text ------------------------------
@@ -320,9 +321,13 @@ def test_no_job_input_is_templated_into_json() -> None:
 def test_the_inputs_are_checked_before_anything_runs() -> None:
     wf, tasks = _deploy()
     tr = wf["transitions"]
-    assert tasks["1d"]["variables"]["incoming"]["params"] == "$var.1c.object"  # data, not parsed text
-    for tid, key in (("1b", "onprem_public_ip"), ("1c", "enable_nat_gateway")):
+    assert tasks["1d"]["variables"]["incoming"]["params"] == "$var.17.object"  # data, not parsed text
+    for tid, key in (("1b", "onprem_public_ip"), ("1c", "enable_nat_gateway"), ("17", "expires_at")):
         assert tasks[tid]["name"] == "setObjectKey" and tasks[tid]["variables"]["incoming"]["path"] == [key]
+    # the end time comes from the runner's own clock and the lifetime, never from a caller (R2b)
+    assert tasks["17"]["variables"]["incoming"]["obj"] == "$var.1c.object"
+    assert tasks["17"]["variables"]["incoming"]["value"] == "$var.16.return_data"
+    assert tasks["11"]["variables"]["incoming"]["obj"] == "$var.17.object"
     assert tasks["12"]["name"] == "validateJsonSchema"
     assert tasks["12"]["variables"]["incoming"]["schema"] == build.PLAN_INPUTS_SCHEMA
     # validateJsonSchema completes even for invalid data (measured): only the evaluate after it can refuse
@@ -357,7 +362,8 @@ def test_the_trigger_refuses_what_the_workflow_refuses() -> None:
     schema = specs["deploy_aws_vpn"]["schema"]
     want = build.PLAN_INPUTS_SCHEMA["properties"]
     assert schema["additionalProperties"] is False
-    assert set(schema["required"]) == {"onprem_public_ip", "enable_nat_gateway", "change_note"}
+    assert set(schema["required"]) == {"onprem_public_ip", "enable_nat_gateway", "change_note", "lifetime_hours"}
+    assert schema["properties"]["lifetime_hours"]["enum"] == "{{ aws_vpn.lifetime_hours.choices }}"  # R2b
     for key in ("onprem_public_ip", "enable_nat_gateway", "change_note"):
         got = {k: v for k, v in schema["properties"][key].items() if k != "type"}
         assert got == {k: v for k, v in want[key].items() if k != "type"}, key
@@ -562,7 +568,10 @@ def test_the_manual_form_asks_for_what_the_workflow_accepts() -> None:
     import json
     form = json.loads((ROOT / "itential" / "forms" / "lab-deploy-aws-vpn.json").read_text())["schema"]
     want = build.PLAN_INPUTS_SCHEMA["properties"]
-    assert set(form["required"]) == {"onprem_public_ip", "enable_nat_gateway", "change_note"}
+    assert set(form["required"]) == {"onprem_public_ip", "enable_nat_gateway", "change_note", "lifetime_hours"}
+    lifetimes = VERSIONS["aws_vpn"]["lifetime_hours"]
+    assert form["properties"]["lifetime_hours"]["enum"] == lifetimes["choices"]
+    assert form["properties"]["lifetime_hours"]["default"] == lifetimes["default"] == "8"  # owner, 2026-10-04
     assert form["properties"]["onprem_public_ip"]["pattern"] == want["onprem_public_ip"]["pattern"]
     assert form["properties"]["onprem_public_ip"]["maxLength"] == want["onprem_public_ip"]["maxLength"]
     assert form["properties"]["change_note"]["maxLength"] == want["change_note"]["maxLength"]
@@ -931,3 +940,54 @@ def test_the_target_schema_renders_to_the_open_targets() -> None:
     result = json.loads(run.stdout.split("localhost | SUCCESS => ", 1)[1])
     got = result["msg"] if isinstance(result["msg"], dict) else json.loads(result["msg"])
     assert got["targets"] == OPEN_TARGETS
+
+
+# --- R2b: a deployment's end time, chosen at Deploy and approved on its card ------------------------------------------
+
+NOW = __import__("datetime").datetime(2026, 10, 4, 12, 34, 56, tzinfo=__import__("datetime").timezone.utc)
+CHOICES = VERSIONS["aws_vpn"]["lifetime_hours"]["choices"]
+
+
+@pytest.mark.parametrize("hours, end", [("8", "2026-10-04T20:34:00Z"), ("72", "2026-10-07T12:34:00Z"),
+                                        ("none", "none")])
+def test_the_end_time_is_now_to_the_minute_plus_the_lifetime(hours: str, end: str) -> None:
+    out = build.expires_from({"lifetime_hours": hours}, NOW, CHOICES)
+    assert out["expires_at"] == end
+    assert re.fullmatch(build.PLAN_INPUTS_SCHEMA["properties"]["expires_at"]["pattern"], end)
+
+
+@pytest.mark.parametrize("hours", ["9", "", "-1", "8; x", None, 8])
+def test_a_lifetime_not_offered_is_refused_by_the_input_check(hours) -> None:
+    out = build.expires_from({"lifetime_hours": hours}, NOW, CHOICES)
+    assert out["expires_at"] == "invalid"
+    assert not re.fullmatch(build.PLAN_INPUTS_SCHEMA["properties"]["expires_at"]["pattern"], out["expires_at"])
+
+
+def test_the_end_time_step_runs_as_the_gateway_runs_it() -> None:
+    import json
+    import subprocess
+    import sys
+    run = subprocess.run([sys.executable, "-I", "-c", build.EXPIRES_CODE], input=json.dumps({"lifetime_hours": "2"}),
+                         capture_output=True, text=True, timeout=30, env={}, check=True)
+    assert re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:00Z", json.loads(run.stdout)["expires_at"])
+
+
+def test_every_lifetime_fits_terraform_runs_bound() -> None:
+    assert all(h == "none" or 0 < int(h) <= 31 * 24 for h in CHOICES) and "none" in CHOICES
+
+
+def test_the_card_shows_the_end_time_and_what_approving_it_means() -> None:
+    _, tasks = _deploy()
+    end = tasks["2c"]["variables"]["incoming"]
+    assert end["substr"] == "__END__" and end["newSubstr"] == "$var.job.expires_at" and end["str"] == "$var.2a.replacedString"
+    assert tasks["2b"]["variables"]["incoming"]["message"] == "$var.2c.replacedString"
+    message = tasks["2a"]["variables"]["incoming"]["str"]
+    assert "__END__" in message and "Tear Down Expired AWS VPN" in message and "no further card" in message
+
+
+def test_the_page_offers_the_same_lifetimes_with_the_same_default() -> None:
+    page = PAGE.read_text()
+    select = page.split('<select id="lifetime" name="lifetime_hours"')[1].split("</select>")[0]
+    assert re.findall(r'<option value="([^"]+)"', select) and sorted(re.findall(r'<option value="([^"]+)"', select)) == sorted(CHOICES)
+    assert re.findall(r'<option value="([^"]+)" selected', select) == [VERSIONS["aws_vpn"]["lifetime_hours"]["default"]]
+    assert 'lifetime_hours: $("lifetime").value' in page

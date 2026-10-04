@@ -373,3 +373,27 @@ choice:
 Since R2 the same rotation is `Tear Down AWS VPN`, then `Deploy`, `Hand Off` and `Verify` (the recorded cycle of
 2026-10-02). It costs a rebuild and a few minutes without the tunnel. R4 (`Rotate AWS VPN Key`) replaces it with a
 rotation in place.
+
+## Amendment 2026-10-04: the timed teardown (R2b) is approved at deploy time
+
+R2's cost governance needs a deployment to end when nobody is around, so the owner moved that approval to the Deploy
+card (2026-10-04). Decision 2 still holds for every plan: the destroy that runs is exactly the planned one.
+
+- **Approval.** Deploy takes a lifetime: none, 2, 4, 8, 24 or 72 hours, default 8. A step on the runner turns it into
+  `expires_at` (UTC, to the minute), and the approval card shows it. Approving that card also approves the teardown at
+  that time, with no further card. With none, the deployment stays up until `Tear Down AWS VPN`.
+- **Where the end time lives.** In the Terraform state, so it travels with the deployment:
+  - `expires_at` is a variable (validated) and an output, and an `ExpiresAt` tag on the strongSwan instance and its EIP
+    only, so changing it means two in-place tag changes;
+  - `terraform-run` refuses a time that is not in the future or is more than 31 days away;
+  - a deployment from before R2b reads as having no end time, and stays up.
+- **The run.** An Operations Manager schedule starts `Tear Down Expired AWS VPN` every hour. Probes P1 and P2 (dev,
+  2026-10-04) showed that an hourly repeat is kept, and that a schedule-started job can run Gateway services and open
+  a Work Center task. The run:
+  - reads the end time with `terraform-run outputs` (P3: a deployment with no `expires_at` is the no-op path) and ends
+    there unless the time is up;
+  - when it is up, runs Tear Down's own tasks without the two cards (`teardown_section(timed=True)`, held identical by a
+    test): the router's block is removed under the revert timer with its checks and proved gone, then the destroy is
+    planned and exactly that plan applied.
+- **Failure.** Any teardown failure opens a Work Center task, and a failure on the router never reaches AWS. A run that
+  cannot read the end time ends with the reason and opens no task, so a lasting outage does not leave a task every hour.

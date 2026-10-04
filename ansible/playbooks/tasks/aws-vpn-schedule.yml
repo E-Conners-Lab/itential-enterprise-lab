@@ -1,0 +1,99 @@
+---
+# R2b (owner decisions 2026-10-04): Tear Down Expired AWS VPN, run every hour by an Operations Manager schedule. An
+# automation wraps the workflow (it follows the workflow's id, which every itential.yml import changes) and a schedule
+# trigger starts it at the top of each hour. No form and no endpoint: a schedule passes no input (6.5.2 does not keep
+# formData on schedule triggers, golden-config.yml), and the workflow reads the end time from the Terraform state.
+# Missed runs are not replayed: the next hour's run finds a deployment that came due meanwhile. Probes P1 and P2
+# (2026-10-04, dev): an hourly repeat is kept, and a schedule-started job runs Gateway services and opens a Work Center
+# task. Needs: login, platform_local, workflows, operations_manager.
+- name: Workflows and automations now (Tear Down Expired AWS VPN)
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/{{ item }}"
+    headers: {Cookie: "{{ login.cookies_string }}"}
+  loop:
+    - automation-studio/workflows?limit=500
+    - operations-manager/automations?equalsField=componentType&equals=workflows&limit=100
+  register: tde_now
+
+- name: Ids (Tear Down Expired AWS VPN)
+  ansible.builtin.set_fact:
+    tde: "{{ operations_manager.tear_down_expired_aws_vpn }}"
+    tde_wf_id: >-
+      {{ (tde_now.results[0].json['items'] | selectattr('name', 'equalto', workflows.tear_down_expired_aws_vpn)
+          | first)._id }}
+    tde_auto: >-
+      {{ (tde_now.results[1].json.data | selectattr('name', 'equalto', operations_manager.tear_down_expired_aws_vpn.automation)
+          | first) | default({}) }}
+
+- name: The automation wrapping it (Tear Down Expired AWS VPN)
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/operations-manager/automations"
+    method: POST
+    headers: {Cookie: "{{ login.cookies_string }}"}
+    body_format: json
+    body:
+      name: "{{ tde.automation }}"
+      description: "Ends an AWS VPN deployment whose time is up, every hour (R2b, ADR 0068)"
+      componentType: workflows
+      componentId: "{{ tde_wf_id }}"
+      componentName: "{{ workflows.tear_down_expired_aws_vpn }}"
+    status_code: [200, 201]
+  register: tde_created
+  when: tde_auto | length == 0
+  changed_when: true
+
+- name: The automation follows the re-imported workflow (Tear Down Expired AWS VPN)
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/operations-manager/automations/{{ tde_auto._id }}"
+    method: PATCH
+    headers: {Cookie: "{{ login.cookies_string }}"}
+    body_format: json
+    body: {componentId: "{{ tde_wf_id }}", componentName: "{{ workflows.tear_down_expired_aws_vpn }}"}
+    status_code: 200
+  when: tde_auto | length > 0 and tde_auto.componentId != tde_wf_id
+  changed_when: true
+
+- name: Automation id (Tear Down Expired AWS VPN)
+  ansible.builtin.set_fact:
+    tde_auto_id: "{{ tde_auto._id if tde_auto | length > 0 else (tde_created.json.data._id | default(tde_created.json._id)) }}"
+
+- name: Its schedule, if it exists (Tear Down Expired AWS VPN)
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/operations-manager/triggers?equalsField=type&equals=schedule&limit=100"
+    headers: {Cookie: "{{ login.cookies_string }}"}
+  register: tde_sched
+
+# the first run at the top of the next hour, then every hour
+- name: The hourly schedule (Tear Down Expired AWS VPN)
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/operations-manager/triggers"
+    method: POST
+    headers: {Cookie: "{{ login.cookies_string }}"}
+    body_format: json
+    body:
+      name: "{{ tde.schedule.name }}"
+      description: "Ends an AWS VPN deployment whose expires_at has passed (R2b); most runs find nothing due"
+      type: schedule
+      actionType: automations
+      actionId: "{{ tde_auto_id }}"
+      enabled: true
+      firstRunAt: "{{ (((lookup('ansible.builtin.pipe', 'date -u +%s') | int) // 3600 + 1) * 3600 * 1000) | int }}"
+      repeatUnit: "{{ tde.schedule.repeat_unit }}"
+      repeatFrequency: "{{ tde.schedule.repeat_frequency | int }}"
+      processMissedRuns: none
+    status_code: [200, 201]
+  when: tde.schedule.name not in (tde_sched.json.data | map(attribute='name') | list)
+  changed_when: true
+
+- name: The schedule runs this automation and is enabled (Tear Down Expired AWS VPN)
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/operations-manager/triggers/{{ have._id }}"
+    method: PATCH
+    headers: {Cookie: "{{ login.cookies_string }}"}
+    body_format: json
+    body: {actionId: "{{ tde_auto_id }}", enabled: true}
+    status_code: 200
+  vars:
+    have: "{{ (tde_sched.json.data | selectattr('name', 'equalto', tde.schedule.name) | first) | default({}) }}"
+  when: have | length > 0 and (have.actionId != tde_auto_id or not have.enabled)
+  changed_when: true
