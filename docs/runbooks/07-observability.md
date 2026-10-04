@@ -181,9 +181,16 @@ already allocated under a different policy just stays pending.
 seconds before the comparison. The verify waits for the next refresh. If you are comparing Platform
 metrics by hand, give the exporter a cycle.
 
+**The kube-prometheus-stack upgrade times out at 15 minutes and a new Grafana pod sits in `Init`.** Its events say
+`Volume is already used by pod(s)` — the old Grafana pod. Grafana's Longhorn volume attaches to one node at a time, so
+a rolling update deadlocks: the new pod waits for the volume, and the old pod keeps it until the new one is ready. The
+values set `deploymentStrategy: Recreate` (2026-10-04), which stops the old pod first; Grafana is down for about a
+minute whenever its pod changes.
+
 **An older build still has Zabbix.** The plays remove it ([ADR 0071](../adr/0071-zabbix-is-removed-and-expiries-move-to-prometheus.md)):
-`observability.yml` uninstalls the release and deletes the `zabbix-db` Cluster, then its leftover Ingress, Traefik VIP
-and Grafana secret. `observability-hosts.yml` purges the agent and its repository. The resolver play stops answering
+`observability.yml` uninstalls the release and deletes the `zabbix-db` Cluster, then the PersistentVolume and Longhorn
+volume the `longhorn` StorageClass retains (`Retain`: deleting a claim leaves the data on disk), then its leftover
+Ingress, Traefik VIP and Grafana secret. `observability-hosts.yml` purges the agent and its repository. The resolver play stops answering
 for `zabbix.lab.internal` once `netbox-seed.yml` has deleted the `.35` reservation. Grafana is told to delete the Zabbix
 datasource it once provisioned. The devices' SNMPv3 user keeps the name `zabbix`: renaming it would be a governed push
 to every router and switch for nothing.

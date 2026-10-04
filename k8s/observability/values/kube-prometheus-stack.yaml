@@ -65,6 +65,10 @@ grafana:
     type: pvc
     storageClassName: longhorn
     size: 1Gi
+  # the Longhorn volume attaches to one node at a time: a rolling update deadlocks (the new pod waits for the volume
+  # the old pod keeps until the new one is ready) and the kps upgrade times out; Recreate stops the old pod first
+  deploymentStrategy:
+    type: Recreate
   resources:
     requests: {cpu: 50m, memory: 192Mi}
     limits: {memory: 512Mi}

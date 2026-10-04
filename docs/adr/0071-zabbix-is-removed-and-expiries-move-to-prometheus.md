@@ -68,3 +68,15 @@ thing.
 - The deletes cannot be undone: the Zabbix configuration, its 18 days of failed state and its metric history are gone.
   Nothing in the repo depended on them. ADR 0064 already called the database rebuildable.
 - `.env` keeps the two `ZABBIX_*` lines until the owner removes them. Nothing reads them any more.
+
+## Amendment 2026-10-04: what the first run found
+
+The first run of `observability.yml` removed Zabbix and then stopped at the kube-prometheus-stack upgrade. Two
+corrections followed, both in the same play:
+
+- **The database volume was still on disk.** The `longhorn` StorageClass reclaims with `Retain`, so deleting the claim
+  left `zabbix-db`'s PersistentVolume `Released` and its Longhorn volume holding about 21 GB. The play now deletes the
+  PV that was bound to `zabbix-db-1`, then its Longhorn volume, and nothing else.
+- **Grafana's rolling update deadlocked.** Its Longhorn volume attaches to one node at a time: the new pod waited for
+  the volume and the old pod kept it, so the upgrade timed out at 15 minutes. Grafana now uses
+  `deploymentStrategy: Recreate`, which costs about a minute of Grafana whenever its pod changes.
