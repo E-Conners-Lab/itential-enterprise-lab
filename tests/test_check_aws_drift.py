@@ -124,10 +124,10 @@ def test_the_schedule_runs_it_daily_at_seven_utc() -> None:
     assert om["schedule"]["at_utc"] == "07:00"  # owner, 2026-10-04
 
 
-def test_platform_yml_loops_the_schedule_task_over_both_schedules() -> None:
+def test_platform_yml_loops_the_schedule_task_over_the_drift_check_too() -> None:
     play = yaml.safe_load((ROOT / "ansible" / "playbooks" / "platform.yml").read_text())[0]
     task = next(t for t in play["tasks"] if t.get("ansible.builtin.include_tasks") == "tasks/aws-vpn-schedule.yml")
-    assert task["loop"] == ["tear_down_expired_aws_vpn", "check_aws_drift"]
+    assert "check_aws_drift" in task["loop"]
     assert task["loop_control"]["loop_var"] == "sk"
 
 

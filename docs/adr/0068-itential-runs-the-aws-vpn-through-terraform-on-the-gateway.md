@@ -397,3 +397,66 @@ card (2026-10-04). Decision 2 still holds for every plan: the destroy that runs 
     planned and exactly that plan applied.
 - **Failure.** Any teardown failure opens a Work Center task, and a failure on the router never reaches AWS. A run that
   cannot read the end time ends with the reason and opens no task, so a lasting outage does not leave a task every hour.
+
+## Amendment 2026-10-04: the key is rotated in place (R4)
+
+R4 replaces teardown and rebuild with `Rotate AWS VPN Key`. The owner decided four things on 2026-10-04:
+
+- the rotation runs monthly with no card;
+- when the router does not take the new key, the AWS side goes back to the previous key by itself;
+- Vault keeps the current version and one previous version;
+- strongSwan reloads through the monitor Lambda (option A).
+
+**Decision 5, widened.** The PSK writer (`itential-aws-psk-writer`) was write-only. It now has three grants, all on
+its own path:
+
+- it may **read** `lab/aws/vpn-psk`, which the rollback needs;
+- it may read the path's **metadata**, to see which versions are live;
+- it may **destroy** the path's older versions (`kv_endpoints` in `versions.yaml`).
+
+No other role gains anything. `make vault-config` proves each grant with the role's own token on production, and the
+Gateway's token still reads only. In cloud-devops-pipeline #33, `aws-vpn-psk` gains two actions, and its result
+still carries version numbers only:
+
+- `restore-previous` writes the previous Vault document verbatim as a new current version (`cas`). It then moves
+  Secrets Manager's `AWSCURRENT` label back to that version, and writes no value there. It first checks that both
+  stores still hold the previous key.
+- `prune` keeps the two newest live versions and destroys the rest.
+
+**Reload path (option A).** strongSwan reads the key only when `vpn-bootstrap.service` runs. The monitor Lambda gains
+`{"action": "reload"}`, which runs one fixed SSM document (`cloud-devops-vpn-reload-psk`): restart
+`vpn-bootstrap.service`, then `swanctl --load-creds`. The key never passes through the Lambda or the Gateway.
+`aws-vpn-monitor --action reload` reports the reload done only for the instance asked for. The bootstrap IAM gained
+two grants:
+
+- the role boundary allows SendCommand on that document only;
+- `itential-terraform` gains `secretsmanager:UpdateSecretVersionStage` on `vpn/onprem-psk-*`.
+
+The owner applied this bootstrap change on 2026-10-04: 0 to add, 2 to change.
+
+**The rotation.** The steps run in this order:
+
+1. The tunnel must be up (`lab-edge verify`: router and data plane).
+2. A new key goes to Vault, then to Secrets Manager.
+3. strongSwan reloads it.
+4. The router takes it through Hand Off's own push: the same rendered block, the new key from Vault, a revert timer,
+   a fresh SA, then saved.
+5. Prune.
+6. Verify's checks run (`verify_section`).
+
+The tunnel is down from step 3 until step 4 completes.
+
+Some failures roll the AWS side back with `restore-previous`, then a reload:
+
+- a key that reached Vault but not Secrets Manager;
+- a reload that did not happen;
+- a push that never reached `configure confirm`, where the router's own revert timer restores the old key.
+
+A router that confirmed the new key but could not save it keeps the new key on both sides, and the task says to save
+it by hand. Every failure opens a Work Center task with the reason and what the rollback did. A failed prune does not
+open one, because the next rotation prunes.
+
+**Schedule.** Operations Manager repeats only by minute, hour, day or week. So `Rotate AWS VPN Key Monthly` runs every
+day at 08:30 UTC and rotates only on the 1st of the month (UTC). A clock that cannot be read opens no task.
+`Rotate AWS VPN Key` is the same section run on demand. The section is generated into both workflows (no child jobs),
+and a test holds the two copies identical.

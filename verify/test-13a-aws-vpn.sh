@@ -39,6 +39,8 @@ echo "# test-13a-aws-vpn ${ts}"
 
 ADMIN_FILE=${VAULT_ADMIN_FILE:-$HOME/.config/itential-enterprise-lab/vault-admin-token}
 if [ -z "${VAULT_ADMIN_TOKEN:-}" ] && [ -s "$ADMIN_FILE" ]; then
+  # the login's token, renewed first (option 3, 2026-10-04): a run never stops half-way on an expired token
+  VAULT_ADMIN_FILE="$ADMIN_FILE" scripts/vault-prod.sh renew || true
   VAULT_ADMIN_TOKEN=$(tr -d '\n' < "$ADMIN_FILE")
 fi
 [ -n "${VAULT_ADMIN_TOKEN:-}" ] || { bad "no Vault administrator token (make vault-login first)"; echo; echo "passed=${pass} failed=${fail}"; exit 1; }

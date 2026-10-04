@@ -88,11 +88,16 @@
     # Vault stores the text as sent, so the comparison above is exact. The separator is a real newline from a
     # double-quoted scalar: '\n' inside a folded block reaches Vault as a backslash and an n, which HCL rejects (400).
     newline: "\n"
-    # `capabilities` defaults to [read]; to_json writes ["read"] exactly as before, so a reader's policy is unchanged
+    # `capabilities` defaults to [read]; to_json writes ["read"] exactly as before, so a reader's policy is unchanged.
+    # `kv_endpoints` (the PSK writer's metadata/ and destroy/, R4) follow, one line each; no other role has any.
     policy: >-
-      {{ item.item.value.policy_paths
-         | map('regex_replace', '^(.+)$', 'path "' ~ vault.kv_mount ~ '/data/\1" { capabilities = '
-               ~ (item.item.value.capabilities | default(['read']) | to_json) ~ ' }')
+      {{ ((item.item.value.policy_paths
+          | map('regex_replace', '^(.+)$', 'path "' ~ vault.kv_mount ~ '/data/\1" { capabilities = '
+                ~ (item.item.value.capabilities | default(['read']) | to_json) ~ ' }') | list)
+         + (item.item.value.kv_endpoints | default({}) | dict2items
+            | map(attribute='key') | map('regex_replace', '^(.+)$', 'path "' ~ vault.kv_mount ~ '/\1"') | list
+            | zip(item.item.value.kv_endpoints | default({}) | dict2items | map(attribute='value') | map('to_json'))
+            | map('join', ' { capabilities = ') | map('regex_replace', '$', ' }') | list))
          | join(newline) }}
   loop: "{{ vault_policies.results }}"
   loop_control:

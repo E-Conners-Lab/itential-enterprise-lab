@@ -168,6 +168,7 @@ vault-unseal: ## Production Vault: asks for the unseal key without echoing it (F
 # to the init file's root token (first configuration only; the root token is revoked since ADR 0065 step 5).
 VAULT_ADMIN_FILE ?= $(HOME)/.config/itential-enterprise-lab/vault-admin-token
 vault-config: ## Production Vault: KV, AppRoles bound to their hosts (read-only readers, the PSK writer), seeds from .env; proves each host can log in and this Mac cannot
+	@if [ -z "$${VAULT_TOKEN:-}" ] && [ -s $(VAULT_ADMIN_FILE) ]; then scripts/vault-prod.sh renew; fi
 	$(load_env) if [ -z "$${VAULT_TOKEN:-}" ] && [ -s $(VAULT_ADMIN_FILE) ]; then export VAULT_TOKEN=$$(tr -d '\n' < $(VAULT_ADMIN_FILE)); fi; \
 	  cd ansible && ansible-playbook -i inventory/netbox.yml playbooks/vault-prod-config.yml
 	scripts/vault-prod.sh snapshot
@@ -180,6 +181,9 @@ vault-admin-user: ## Production Vault, once, in YOUR terminal: set the administr
 
 vault-login: ## Production Vault, in YOUR terminal: log in as the administrator; a short-lived token to a mode-600 file outside the repo
 	scripts/vault-prod.sh login
+
+vault-renew: ## Production Vault: renew the administrator token (another hour, up to its maximum lifetime); says how long it has left
+	scripts/vault-prod.sh renew
 
 vault-logout: ## Production Vault: revoke the administrator token and delete its file
 	scripts/vault-prod.sh logout
@@ -215,6 +219,7 @@ vault-revoke-root: ## Production Vault: revoke the root token - refuses unless t
 # Roll back: the same three plays with -e vault_enabled=false (.env stays the source of the credentials, ADR 0065).
 vault-cutover: ## Phase 9a step 5: the Platform and the Gateway read their credentials from Vault (needs make vault-login)
 	@test -s $(VAULT_ADMIN_FILE) || { echo "log in as the administrator first: make vault-login (in your own terminal)"; exit 1; }
+	scripts/vault-prod.sh renew
 	$(MAKE) prod-snapshot MODE=save
 	$(load_env) export VAULT_TOKEN=$$(tr -d '\n' < $(VAULT_ADMIN_FILE)); cd ansible \
 	  && ansible-playbook -i inventory/netbox.yml playbooks/platform-ha2-platform.yml \

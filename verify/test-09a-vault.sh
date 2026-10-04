@@ -40,6 +40,8 @@ v = yaml.safe_load(open('$V'))['vault']; ip = {a['hostname']: a['address'] for a
 print(json.dumps({r: [ip[h] + '/32' for h in c['bound_hosts']] for r, c in v['approles'].items()}))")
 ADMIN_FILE=${VAULT_ADMIN_FILE:-$HOME/.config/itential-enterprise-lab/vault-admin-token}
 if [ -z "${VAULT_ADMIN_TOKEN:-}" ] && [ -s "$ADMIN_FILE" ]; then
+  # the login's token, renewed first (option 3, 2026-10-04): a run never stops half-way on an expired token
+  VAULT_ADMIN_FILE="$ADMIN_FILE" scripts/vault-prod.sh renew || true
   VAULT_ADMIN_TOKEN=$(tr -d '\n' < "$ADMIN_FILE")
 fi
 if [ -z "${VAULT_ADMIN_TOKEN:-}" ] && [ -s "$INIT_FILE" ]; then

@@ -4775,10 +4775,426 @@ def tear_down_expired_aws_vpn() -> dict:
     )
 
 
+# --- Rotate AWS VPN Key (R4, owner decisions 2026-10-04) --------------------------------------------------------------
+# The key between AWS and the one AWS-monitored router is changed in place, only with the tunnel up: aws-vpn-psk write
+# (a new version in Vault, then Secrets Manager), aws-vpn-monitor reload (the monitor Lambda's fixed SSM document
+# restarts vpn-bootstrap, so strongSwan re-reads Secrets Manager), lab-edge-push (the same push as Hand Off: the new key
+# from Vault under a revert timer, a fresh SA, saved), prune (Vault keeps the current and one previous version), then
+# Verify's own checks (verify_section). The tunnel is down from the reload until the router takes the key. When the
+# router does not take it, or the AWS side fails part-way, the AWS side goes back to the previous key by itself
+# (restore-previous, reload) and a Work Center task says what happened. Operations Manager has no monthly repeat
+# (minute/hour/day/week), so Rotate AWS VPN Key Monthly runs every day and rotates only on the 1st (UTC); Rotate AWS
+# VPN Key is the same section, run on demand (no child jobs: the section is written into both).
+PSK_TIMEOUT = "120"
+RELOAD_TIMEOUT = "300"  # the Lambda waits on the SSM command: vpn-bootstrap's restart and swanctl --load-creds
+
+
+def rotation_plan(d: dict, targets: dict) -> dict:
+    """What a rotation changes, from terraform-run outputs' answer under `outputs`: the one target the AWS monitor
+    watches, each service's params, and `edge_in` for LAB_EDGE_PLAN_CODE (Hand Off's plan: precheck, render, push).
+    Pure: runCode runs this source on the Gateway with the targets written in."""
+    result = (d.get("outputs") or {}).get("result") or {}
+    outputs = (result.get("stdout_json") or {}).get("outputs")
+    if result.get("return_code") != 0 or not isinstance(outputs, dict):
+        return {"ok": False, "message": "terraform-run outputs did not answer (rotate_outputs): nothing was changed"}
+    if not outputs:
+        return {"ok": True, "deployed": False, "message": "nothing is deployed in AWS: no key to rotate"}
+    aws = sorted(name for name, t in targets.items() if t.get("monitor") == "aws")
+    if len(aws) != 1:
+        return {"ok": False, "message": f"exactly one open target must be monitored by AWS, found {aws}: nothing was "
+                                        "changed"}
+    arn, instance = outputs.get("psk_secret_arn"), outputs.get("strongswan_instance_id")
+    if not arn or not instance:
+        return {"ok": False, "message": "the outputs name no key secret or no strongSwan instance (rotate_outputs): "
+                                        "nothing was changed"}
+    return {"ok": True, "deployed": True, "target": aws[0],
+            "message": f"rotating the pre-shared key between AWS and {aws[0]}",
+            "edge_in": {"target": aws[0], "targets": targets, "deployed": outputs},
+            "write": {"action": "write", "secret_arn": arn, "timeout": PSK_TIMEOUT},
+            "restore": {"action": "restore-previous", "secret_arn": arn, "timeout": PSK_TIMEOUT},
+            "prune": {"action": "prune", "timeout": PSK_TIMEOUT},
+            "reload": {"action": "reload", "instance_id": instance, "timeout": RELOAD_TIMEOUT}}
+
+
+def rotation_step(d: dict) -> dict:
+    """One step's verdict from its service's answer (`stage`, `answer`): go on (`ok`), roll the AWS side back
+    (`rollback`), or stop where it is. The push is read through push_summary, as Hand Off reads it. A push that never
+    reached `configure confirm` leaves the router on the old key (its revert timer), so AWS goes back too; a confirmed
+    but unsaved one runs the new key, so AWS keeps it. Pure: runCode runs this source (and push_summary's) on the
+    Gateway."""
+    stage = d.get("stage")
+    result = (d.get("answer") or {}).get("result") or {}
+    rc, out = result.get("return_code"), result.get("stdout_json")
+    out = out if isinstance(out, dict) else {}
+    error = out.get("error") or ("no answer" if not out else f"exit code {rc}")
+
+    def verdict(ok: bool, rollback: bool, message: str) -> dict:
+        return {"stage": stage, "ok": ok, "rollback": rollback, "message": message}
+
+    if stage == "write":
+        if rc == 0 and out.get("written") is True:
+            return verdict(True, False, f"a new key (Vault version {out.get('vault_version')}) is in Vault and "
+                                        "Secrets Manager")
+        if out.get("vault_version"):
+            return verdict(False, True, f"the new key reached Vault but not Secrets Manager ({error})")
+        return verdict(False, False, f"the new key could not be written ({error}): nothing was changed")
+    if stage in ("reload", "reload_back"):
+        done = rc == 0 and out.get("reloaded") is True and out.get("instance_matches") is not False
+        if stage == "reload":
+            return verdict(done, not done, "strongSwan reloaded the new key" if done
+                           else f"strongSwan did not reload the new key ({error})")
+        return verdict(done, False, "strongSwan reloaded the previous key: the tunnel runs on the previous key again "
+                                    "(run Verify AWS VPN)" if done
+                       else f"strongSwan did not reload the previous key ({error}): check the strongSwan box "
+                            "(vpn-bootstrap.service) by hand")
+    if stage == "push":
+        s = push_summary({"push": d.get("answer")})
+        router = out.get("target") or "the router"
+        if s["state"] == "saved" and out.get("key_sent") is True:
+            return verdict(True, False, f"{router} holds the new key, proved on a fresh SA and saved")
+        if s["state"] == "saved":
+            # its recorded version already matched: it was handed the old key, so it kept it
+            return verdict(False, True, f"{router} was sent no key (it already records the version it was handed): "
+                                        "the router keeps the previous key")
+        if s["state"] == "failed" and out.get("confirmed") is True:
+            return verdict(False, False, f"{router} runs the new key but did not save it ({error}): AWS keeps the new "
+                                         "key; run `write memory` on the router by hand")
+        return verdict(False, True, f"{router} did not take the new key: {s['message'] or s['router']}")
+    if stage == "restore":
+        if rc == 0 and out.get("restored") is True:
+            return verdict(True, False, "the previous key is current again in Vault and Secrets Manager")
+        return verdict(False, False, f"the previous key could not be restored ({error}): restore it by hand")
+    return verdict(False, False, f"unknown step {stage!r}: nothing more was done")
+
+
+def rotation_due(now: datetime) -> dict:
+    """The monthly run rotates on the 1st of the month (UTC) and on no other day."""
+    if now.day == 1:
+        return {"due": True, "message": "the 1st of the month: rotating the key"}
+    return {"due": False, "message": f"the key is rotated on the 1st of each month (UTC); today is day {now.day}: "
+                                      "nothing to do"}
+
+
+ROTATE_PLAN_CODE = ("import json, sys\n\n\nTARGETS = " + repr(VERIFY_TARGETS) + "\nPSK_TIMEOUT = " + repr(PSK_TIMEOUT)
+                    + "\nRELOAD_TIMEOUT = " + repr(RELOAD_TIMEOUT) + "\n\n\n" + inspect.getsource(rotation_plan)
+                    + "\n\nprint(json.dumps(rotation_plan(json.loads(sys.stdin.read() or \"{}\"), TARGETS)))\n")
+ROTATE_STEP_CODE = ("import json, sys\n\n\n" + inspect.getsource(push_summary) + "\n\n"
+                    + inspect.getsource(rotation_step)
+                    + "\n\nprint(json.dumps(rotation_step(json.loads(sys.stdin.read() or \"{}\"))))\n")
+ROTATE_DUE_CODE = ("import json\nfrom datetime import datetime, timezone\n\n\n" + inspect.getsource(rotation_due)
+                   + "\n\nprint(json.dumps(rotation_due(datetime.now(timezone.utc))))\n")
+ROTATED_TPL = "Rotated: __S__. Verify: __V__"
+UNVERIFIED_TPL = ("Rotated (AWS and the router hold the new key, saved), but Verify did not pass: __V__. Run Verify AWS "
+                  "VPN")
+ROLLBACK_TPL = "__E__. Rolled back: __R__"
+
+
+def rotation_section() -> tuple[dict, dict, str]:
+    """The rotation, written identically into Rotate AWS VPN Key and Rotate AWS VPN Key Monthly. Every failure ends at
+    the Work Center task f0, with the reason in `error`. Returns (tasks, transitions, the first task id)."""
+    ok, fail, err = "success", "failure", "error"
+    nothing = "nothing was changed"
+    tasks = {
+        # a service that does not run leaves {} behind: its step reads it as no answer
+        "01": empty("no write answer yet", "write_result", x=0),
+        "02": empty("no reload answer yet", "reload_result", x=20),
+        "03": empty("no push answer yet", "push_result", x=40),
+        "04": empty("no restore answer yet", "restore_result", x=60),
+        "05": empty("no reload-back answer yet", "reload_back_result", x=80),
+        "06": empty("no step yet", "step", x=90),
+        # the plan: the deployment, its target and every service's params
+        "1a": parse("terraform-run outputs' params", OUTPUTS_PARAMS, x=100),
+        "1b": run_service("the deployment (terraform-run outputs, a state read)", "terraform-run", "$var.1a.textObject",
+                          "rotate_outputs", x=150),
+        "1c": evaluate("the state read answered?", "1b", "result", "result.return_code", "==", 0, x=200),
+        "1d": set_key("the outputs' answer", {}, "outputs", "$var.job.rotate_outputs", x=250),
+        "1e": run_code("what the rotation changes (Python on the runner)", ROTATE_PLAN_CODE, "$var.1d.object",
+                       "rotate_plan", x=300),
+        "1f": evaluate("the plan made?", "1e", "result", "stdout_json.ok", "==", True, x=350),
+        "19": jq("why there is no plan", "$var.1e.result", "stdout_json.message", x=400, y=-600, to_job="error"),
+        "10": evaluate("anything deployed?", "1e", "result", "stdout_json.deployed", "==", True, x=400),
+        "11": jq("nothing to rotate", "$var.1e.result", "stdout_json.message", x=450, y=600, to_job="outcome"),
+        "12": jq("the router's plan input", "$var.1e.result", "stdout_json.edge_in", x=450),
+        "13": run_code("what to read and push on the router (Hand Off's plan)", LAB_EDGE_PLAN_CODE,
+                       "$var.12.return_data", "rotate_edge", x=500),
+        "14": evaluate("the router's plan ready?", "job", "rotate_edge", "stdout_json.ready", "==", True, x=550),
+        # the tunnel must be up before anything changes
+        "2a": jq("lab-edge verify's params", "$var.job.rotate_edge", "stdout_json.lab_edge", x=600),
+        "2b": run_service("the tunnel up now? (lab-edge verify: show commands, one ping)", "lab-edge",
+                          "$var.2a.return_data", "precheck_result", x=650),
+        "2c": evaluate("lab-edge read the router?", "2b", "result", "result.return_code", "==", 0, x=700),
+        "2d": evaluate("the router says up?", "2b", "result", "result.stdout_json.router", "==", "up", x=750),
+        "2e": evaluate("the data plane says up?", "2b", "result", "result.stdout_json.data_plane", "==", "up", x=800),
+        # the block the push sends (the key is a marker in it, so its SHA-256 does not change with the key)
+        "3a": jq("lab-edge render's params", "$var.job.rotate_edge", "stdout_json.render", x=850),
+        "3b": run_service("render the block (lab-edge render: no device)", "lab-edge", "$var.3a.return_data",
+                          "render_result", x=900),
+        "3c": evaluate("rendered?", "3b", "result", "result.return_code", "==", 0, x=950),
+        "3d": jq("the block's SHA-256", "$var.3b.result", "result.stdout_json.sha256", x=1000, to_job="sha256"),
+        # 1. a new key in Vault, then Secrets Manager
+        "4a": jq("aws-vpn-psk write's params", "$var.job.rotate_plan", "stdout_json.write", x=1050),
+        "4b": run_service("a new key: Vault, then Secrets Manager (aws-vpn-psk write)", "aws-vpn-psk",
+                          "$var.4a.return_data", "write_result", x=1100),
+        "47": evaluate("aws-vpn-psk write exited 0?", "4b", "result", "result.return_code", "==", 0, x=1120, y=0),
+        "48": note("aws-vpn-psk write exited non-zero", "aws-vpn-psk write exited non-zero: its step says what that means", "write_note",
+                   x=1130, y=-300),
+        "4c": set_key("the write's answer", {"stage": "write"}, "answer", "$var.job.write_result", x=1150),
+        "4d": run_code("go on, roll back or stop?", ROTATE_STEP_CODE, "$var.4c.object", "step", x=1200),
+        "4e": evaluate("written to both stores?", "4d", "result", "stdout_json.ok", "==", True, x=1250),
+        "4f": evaluate("roll back?", "4d", "result", "stdout_json.rollback", "==", True, x=1300, y=-300),
+        "40": jq("why the write stopped", "$var.4d.result", "stdout_json.message", x=1350, y=-600, to_job="error"),
+        # 2. strongSwan re-reads Secrets Manager (the tunnel is down from here until the router takes the key)
+        "5a": jq("aws-vpn-monitor reload's params", "$var.job.rotate_plan", "stdout_json.reload", x=1350),
+        "5b": run_service("strongSwan reloads the key (aws-vpn-monitor reload: the Lambda's SSM document)",
+                          "aws-vpn-monitor", "$var.5a.return_data", "reload_result", x=1400),
+        "57": evaluate("aws-vpn-monitor reload exited 0?", "5b", "result", "result.return_code", "==", 0, x=1420, y=0),
+        "58": note("aws-vpn-monitor reload exited non-zero", "aws-vpn-monitor reload exited non-zero: its step says what that means", "reload_note",
+                   x=1430, y=-300),
+        "5c": set_key("the reload's answer", {"stage": "reload"}, "answer", "$var.job.reload_result", x=1450),
+        "5d": run_code("go on or roll back?", ROTATE_STEP_CODE, "$var.5c.object", "step", x=1500),
+        "5e": evaluate("reloaded?", "5d", "result", "stdout_json.ok", "==", True, x=1550),
+        "5f": evaluate("roll back?", "5d", "result", "stdout_json.rollback", "==", True, x=1600, y=-300),
+        "50": jq("why the reload stopped", "$var.5d.result", "stdout_json.message", x=1650, y=-600, to_job="error"),
+        # 3. the router takes the key: Hand Off's push, the same block, the new key from Vault
+        "6a": jq("lab-edge-push's params", "$var.job.rotate_edge", "stdout_json.push", x=1650),
+        "6b": set_key("push params: the block's SHA-256", "$var.6a.return_data", "sha256", "$var.job.sha256", x=1700),
+        "6c": run_service("the router takes the new key (lab-edge-push: revert timer, a fresh SA, save)",
+                          "lab-edge-push", "$var.6b.object", "push_result", x=1750),
+        "67": evaluate("lab-edge-push exited 0?", "6c", "result", "result.return_code", "==", 0, x=1770, y=0),
+        "68": note("lab-edge-push exited non-zero", "lab-edge-push exited non-zero: its step says what that means", "push_note",
+                   x=1780, y=-300),
+        "6d": set_key("the push's answer", {"stage": "push"}, "answer", "$var.job.push_result", x=1800),
+        "6e": run_code("go on, roll back or stop?", ROTATE_STEP_CODE, "$var.6d.object", "step", x=1850),
+        "6f": evaluate("saved on the router?", "6e", "result", "stdout_json.ok", "==", True, x=1900),
+        "60": evaluate("roll back?", "6e", "result", "stdout_json.rollback", "==", True, x=1950, y=-300),
+        "61": jq("why the push stopped", "$var.6e.result", "stdout_json.message", x=2000, y=-600, to_job="error"),
+        # 4. Vault keeps the current and the one previous version; a failed prune is caught up by the next rotation
+        "7a": jq("aws-vpn-psk prune's params", "$var.job.rotate_plan", "stdout_json.prune", x=2000),
+        "7b": run_service("keep two key versions in Vault (aws-vpn-psk prune)", "aws-vpn-psk", "$var.7a.return_data",
+                          "prune_result", x=2050),
+        "7c": evaluate("pruned?", "7b", "result", "result.return_code", "==", 0, x=2100),
+        "70": note("the prune did not run", "older key versions were not pruned (prune_result): the next rotation "
+                   "prunes them", "prune_note", x=2150, y=300),
+        # the outcome: the rotation and Verify's verdict
+        "90": jq("the verdict", "$var.ee.result", "stdout_json.verdict", x=2950),
+        "91": jq("what the push said", "$var.job.step", "stdout_json.message", x=3000),
+        "92": replace("the outcome: the rotation", ROTATED_TPL, "__S__", "$var.91.return_data", x=3050),
+        "93": replace("the outcome", "$var.92.replacedString", "__V__", "$var.90.return_data", x=3100),
+        "94": jq("the verdict (not passed)", "$var.ee.result", "stdout_json.verdict", x=2950, y=-300),
+        "95": replace("why the rotation needs a look", UNVERIFIED_TPL, "__V__", "$var.94.return_data", x=3000, y=-300),
+        # the rollback: the previous key current again, then strongSwan reloads it
+        "b0": jq("why it is rolled back", "$var.job.step", "stdout_json.message", x=2000, y=-900, to_job="error"),
+        "b1": jq("aws-vpn-psk restore-previous's params", "$var.job.rotate_plan", "stdout_json.restore", x=2050,
+                 y=-900),
+        "b2": run_service("the previous key current again (aws-vpn-psk restore-previous)", "aws-vpn-psk",
+                          "$var.b1.return_data", "restore_result", x=2100, y=-900),
+        "bd": evaluate("aws-vpn-psk restore-previous exited 0?", "b2", "result", "result.return_code", "==", 0, x=2120, y=-900),
+        "be": note("aws-vpn-psk restore-previous exited non-zero", "aws-vpn-psk restore-previous exited non-zero: its step says what that means", "restore_note",
+                   x=2130, y=-1200),
+        "b3": set_key("the restore's answer", {"stage": "restore"}, "answer", "$var.job.restore_result", x=2150,
+                      y=-900),
+        "b4": run_code("restored?", ROTATE_STEP_CODE, "$var.b3.object", "rollback_step", x=2200, y=-900),
+        "b5": evaluate("the previous key current again?", "b4", "result", "stdout_json.ok", "==", True, x=2250, y=-900),
+        "b6": jq("aws-vpn-monitor reload's params", "$var.job.rotate_plan", "stdout_json.reload", x=2300, y=-900),
+        "b7": run_service("strongSwan reloads the previous key (aws-vpn-monitor reload)", "aws-vpn-monitor",
+                          "$var.b6.return_data", "reload_back_result", x=2350, y=-900),
+        "c0": evaluate("aws-vpn-monitor reload (back) exited 0?", "b7", "result", "result.return_code", "==", 0, x=2370, y=-900),
+        "c1": note("aws-vpn-monitor reload (back) exited non-zero", "aws-vpn-monitor reload (back) exited non-zero: its step says what that means", "reload_back_note",
+                   x=2380, y=-1200),
+        "b8": set_key("the reload's answer", {"stage": "reload_back"}, "answer", "$var.job.reload_back_result",
+                      x=2400, y=-900),
+        "b9": run_code("reloaded?", ROTATE_STEP_CODE, "$var.b8.object", "rollback_step", x=2450, y=-900),
+        "ba": jq("what the rollback did", "$var.job.rollback_step", "stdout_json.message", x=2500, y=-900),
+        "bb": replace("the reason and the rollback", ROLLBACK_TPL, "__E__", "$var.job.error", x=2550, y=-900),
+        "bc": replace("the reason and the rollback, in full", "$var.bb.replacedString", "__R__", "$var.ba.return_data",
+                      x=2600, y=-900),
+        # failures before the write change nothing; after it, the job says where it stopped
+        "8a": note("the deployment could not be read", f"terraform-run outputs could not be read (rotate_outputs): "
+                   f"{nothing}", "error", x=200, y=-600),
+        "8b": note("a step could not run", f"the Gateway could not run a step before the new key (see rotate_plan, "
+                   f"rotate_edge): {nothing}", "error", x=500, y=-600),
+        "8c": note("the tunnel could not be read", f"lab-edge could not read the router before the rotation "
+                   f"(precheck_result): {nothing}", "error", x=700, y=-600),
+        "8d": note("the tunnel is not up", f"the tunnel was not up before the rotation (precheck_result: router, "
+                   f"data_plane): {nothing}; run Verify AWS VPN", "error", x=800, y=-600),
+        "8e": note("the render failed", f"lab-edge could not render the block (render_result): {nothing}", "error",
+                   x=950, y=-600),
+        "8f": note("a step after the write could not run", "the Gateway could not run a step after the new key was "
+                   "written (see step, rollback_step and each *_result): Vault, Secrets Manager, strongSwan and the "
+                   "router may hold different keys - run Verify AWS VPN and check by hand", "error", x=1800, y=-1200),
+        "c3": note("the verify steps could not run", "the key was rotated (see step), but the verify steps could not "
+                   "run or gave no verdict: run Verify AWS VPN", "error", x=3000, y=-600),
+        "f0": view("Work Center task", "Rotate AWS VPN Key did not finish: check the job", "$var.job.error",
+                   "$var.job.step", "Seen", "Seen", x=3200, y=0),
+    }
+    tasks["93"]["variables"]["outgoing"]["replacedString"] = "$var.job.outcome"
+    tasks["95"]["variables"]["outgoing"]["replacedString"] = "$var.job.error"
+    tasks["bc"]["variables"]["outgoing"]["replacedString"] = "$var.job.error"
+    vtasks, vtr, first = verify_section("rotate_edge", passed="90", failed="94", broken="c3", judge_broken="c3",
+                                        x=2200)
+    tasks.update(vtasks)
+    tr = {
+        "01": _edge(**{"02": ok}),
+        "02": _edge(**{"03": ok}),
+        "03": _edge(**{"04": ok}),
+        "04": _edge(**{"05": ok}),
+        "05": _edge(**{"06": ok}),
+        "06": _edge(**{"1a": ok}),
+        "1a": _edge(**{"1b": ok}),
+        "1b": _edge(**{"1c": ok, "8a": err}),
+        "1c": _edge(**{"1d": ok, "8a": fail}),
+        "1d": _edge(**{"1e": ok}),
+        "1e": _edge(**{"1f": ok, "8b": err}),
+        "1f": _edge(**{"10": ok, "19": fail}),
+        "19": _edge(**{"f0": ok, "8b": err}),
+        "10": _edge(**{"12": ok, "11": fail}),
+        "11": _edge(**{"workflow_end": ok, "8b": err}),
+        "12": _edge(**{"13": ok, "8b": err}),
+        "13": _edge(**{"14": ok, "8b": err}),
+        "14": _edge(**{"2a": ok, "8b": fail}),
+        "2a": _edge(**{"2b": ok, "8b": err}),
+        "2b": _edge(**{"2c": ok, "8c": err}),
+        "2c": _edge(**{"2d": ok, "8c": fail}),
+        "2d": _edge(**{"2e": ok, "8d": fail}),
+        "2e": _edge(**{"3a": ok, "8d": fail}),
+        "3a": _edge(**{"3b": ok, "8b": err}),
+        "3b": _edge(**{"3c": ok, "8e": err}),
+        "3c": _edge(**{"3d": ok, "8e": fail}),
+        "3d": _edge(**{"4a": ok, "8e": err}),
+        "4a": _edge(**{"4b": ok, "8b": err}),
+        # a service that exits non-zero, or that the Gateway could not run, is an answer too: its step judges it
+        "4b": _edge(**{"47": ok, "4c": err}),
+        "47": _edge(**{"4c": ok, "48": fail}),
+        "48": _edge(**{"4c": ok}),
+        "4c": _edge(**{"4d": ok}),
+        "4d": _edge(**{"4e": ok, "8f": err}),
+        "4e": _edge(**{"5a": ok, "4f": fail}),
+        "4f": _edge(**{"b0": ok, "40": fail}),
+        "40": _edge(**{"f0": ok, "8f": err}),
+        "5a": _edge(**{"5b": ok, "8f": err}),
+        "5b": _edge(**{"57": ok, "5c": err}),
+        "57": _edge(**{"5c": ok, "58": fail}),
+        "58": _edge(**{"5c": ok}),
+        "5c": _edge(**{"5d": ok}),
+        "5d": _edge(**{"5e": ok, "8f": err}),
+        "5e": _edge(**{"6a": ok, "5f": fail}),
+        "5f": _edge(**{"b0": ok, "50": fail}),
+        "50": _edge(**{"f0": ok, "8f": err}),
+        "6a": _edge(**{"6b": ok, "8f": err}),
+        "6b": _edge(**{"6c": ok}),
+        "6c": _edge(**{"67": ok, "6d": err}),
+        "67": _edge(**{"6d": ok, "68": fail}),
+        "68": _edge(**{"6d": ok}),
+        "6d": _edge(**{"6e": ok}),
+        "6e": _edge(**{"6f": ok, "8f": err}),
+        "6f": _edge(**{"7a": ok, "60": fail}),
+        "60": _edge(**{"b0": ok, "61": fail}),
+        "61": _edge(**{"f0": ok, "8f": err}),
+        "7a": _edge(**{"7b": ok, "70": err}),
+        "7b": _edge(**{"7c": ok, "70": err}),
+        "7c": _edge(**{first: ok, "70": fail}),
+        "70": _edge(**{first: ok}),
+        **vtr,
+        "90": _edge(**{"91": ok, "c3": err}),
+        "91": _edge(**{"92": ok, "c3": err}),
+        "92": _edge(**{"93": ok}),
+        "93": _edge(**{"workflow_end": ok}),
+        "94": _edge(**{"95": ok, "c3": err}),
+        "95": _edge(**{"f0": ok}),
+        "b0": _edge(**{"b1": ok, "8f": err}),
+        "b1": _edge(**{"b2": ok, "8f": err}),
+        "b2": _edge(**{"bd": ok, "b3": err}),
+        "bd": _edge(**{"b3": ok, "be": fail}),
+        "be": _edge(**{"b3": ok}),
+        "b3": _edge(**{"b4": ok}),
+        "b4": _edge(**{"b5": ok, "8f": err}),
+        "b5": _edge(**{"b6": ok, "ba": fail}),
+        "b6": _edge(**{"b7": ok, "8f": err}),
+        "b7": _edge(**{"c0": ok, "b8": err}),
+        "c0": _edge(**{"b8": ok, "c1": fail}),
+        "c1": _edge(**{"b8": ok}),
+        "b8": _edge(**{"b9": ok}),
+        "b9": _edge(**{"ba": ok, "8f": err}),
+        "ba": _edge(**{"bb": ok, "8f": err}),
+        "bb": _edge(**{"bc": ok}),
+        "bc": _edge(**{"f0": ok}),
+        **{n: _edge(**{"f0": ok}) for n in ("8a", "8b", "8c", "8d", "8e", "8f", "c3")},
+        "f0": _edge(**{"workflow_end": ok}),
+    }
+    return tasks, tr, "01"
+
+
+ROTATE_OUTPUTS = {
+    "outcome": {"type": "string"},
+    "error": {"type": "string"},
+    "sha256": {"type": "string"},
+    "prune_note": {"type": "string"},
+    "rotate_outputs": {"type": "object"},
+    "rotate_plan": {"type": "object"},
+    "rotate_edge": {"type": "object"},
+    "precheck_result": {"type": "object"},
+    "render_result": {"type": "object"},
+    "write_result": {"type": "object"},
+    "reload_result": {"type": "object"},
+    "push_result": {"type": "object"},
+    "prune_result": {"type": "object"},
+    "restore_result": {"type": "object"},
+    "reload_back_result": {"type": "object"},
+    "write_note": {"type": "string"},
+    "reload_note": {"type": "string"},
+    "push_note": {"type": "string"},
+    "restore_note": {"type": "string"},
+    "reload_back_note": {"type": "string"},
+    "step": {"type": "object"},
+    "rollback_step": {"type": "object"},
+    "judgement": {"type": "object"},
+    "lab_edge_result": {"type": "object"},
+    "monitor_result": {"type": "object"},
+    "router_note": {"type": "string"},
+    "monitor_note": {"type": "string"},
+}
+ROTATE_DESCRIPTION = (
+    "Changes the pre-shared key between AWS and the lab edge router in place, only with the tunnel up: a new key in "
+    "Vault and Secrets Manager, strongSwan reloads it, the router takes it under a revert timer and saves it, Vault "
+    "keeps two versions, then Verify's checks. When the router does not take it the AWS side goes back to the previous "
+    "key by itself; a failure opens a Work Center task (R4, ADR 0068)"
+)
+
+
+def rotate_aws_vpn_key() -> dict:
+    tasks, tr, first = rotation_section()
+    return workflow(WF["rotate_aws_vpn_key"], ROTATE_DESCRIPTION + ". Run on demand", {}, tasks,
+                    {"workflow_start": _edge(**{first: "success"}), **tr}, ROTATE_OUTPUTS)
+
+
+def rotate_aws_vpn_key_monthly() -> dict:
+    ok, fail, err = "success", "failure", "error"
+    section, section_tr, first = rotation_section()
+    tasks = {
+        "d1": run_code("the 1st of the month? (the runner's UTC clock)", ROTATE_DUE_CODE, "{}", "due", x=-150),
+        "d2": evaluate("due?", "d1", "result", "stdout_json.due", "==", True, x=-100),
+        "d3": jq("nothing to do", "$var.d1.result", "stdout_json.message", x=-50, y=600, to_job="outcome"),
+        # a clock that cannot be read opens no task: the next day's run tries again
+        "d4": note("the due check could not run", "the Gateway could not run the due check (due): nothing was changed",
+                   "error", x=-100, y=-600),
+        **section,
+    }
+    tr = {
+        "workflow_start": _edge(d1=ok),
+        "d1": _edge(d2=ok, d4=err),
+        "d2": _edge(**{first: ok, "d3": fail}),
+        "d3": _edge(workflow_end=ok),
+        "d4": _edge(workflow_end=ok),
+        **section_tr,
+    }
+    return workflow(WF["rotate_aws_vpn_key_monthly"], ROTATE_DESCRIPTION + ". Run every day by a schedule; it rotates "
+                    "on the 1st of the month (UTC) only", {}, tasks, tr, {**ROTATE_OUTPUTS, "due": {"type": "object"}})
+
+
 BUILDERS = (device_count, show_version, show_command, show_all, branch_vlan, branch_vlan_delete, config_push,
             compliance_run, compliance_report, netbox_devices, backup_all, deploy_aws_vpn, verify_aws_vpn,
             hand_off_aws_vpn, config_push_revert, tear_down_aws_vpn, tear_down_expired_aws_vpn, get_aws_vpn_status,
-            check_aws_drift)
+            check_aws_drift, rotate_aws_vpn_key, rotate_aws_vpn_key_monthly)
 
 
 if __name__ == "__main__":
