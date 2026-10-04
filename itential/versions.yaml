@@ -569,6 +569,11 @@ vault:
   # resolves every bound alias on every run, so each entry must exist before its alias is bound: the guard refuses the
   # converge otherwise - except an after_deploy alias, which is left unbound (and out of its services) until the first
   # Deploy AWS VPN has written its entry; a Gateway converge after that Deploy binds it, before Hand Off.
+  # Aliases a Gateway may still hold although nothing binds them any more: the retired twin's (ADR 0070). Gateway 5.5
+  # removes an alias only through iagctl in client mode (owner, 2026-10-04: accept and name them); their Vault entries
+  # are deleted, so they resolve to nothing. tasks/gateway-vault.yml and vaultcheck S8.3b leave exactly these (and,
+  # on the tier that does not run the AWS VPN, the edge aliases) out of the comparison.
+  retired_gateway_aliases: [aws-vpn-psk-clab-rtr1, aws-vpn-psk-version-clab-rtr1]
   edge_gateway_aliases:
     # dc1-wan01's account (make edge-account TIER=<tier>), before the converge that binds it
     dc1-wan01-aws-vpn-password: {path: devices/dc1-wan01-aws-vpn, key: password}

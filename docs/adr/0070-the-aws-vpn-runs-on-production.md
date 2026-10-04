@@ -63,3 +63,25 @@ tunnel was deployed by the dev tier, and its key is in the dev Vault only.
 - The hourly schedule runs on production. Each run is one Terraform state read.
 - R8 is done in substance with the cutover. What remains of it is production's test-13a.
 - Going back to dev is the same switch, `aws_vpn.tier: dev`, and the same cutover in reverse, with fresh dev keys.
+
+## Amendment 2026-10-04: what the cutover taught
+
+- **A retired tier keeps its aliases.** The Gateway's configuration import replaces aliases by name but never removes
+  one it is not sent. Gateway 5.5 deletes an alias only through `iagctl` in client mode, which needs the Gateway's
+  own admin login (server mode refuses: measured on dev). The owner chose to accept and name them:
+  - `vault.retired_gateway_aliases` (the twin's), and, on the tier that does not run the AWS VPN, its edge aliases,
+    are left out of the converge's check and of S8.3b, and listed by name;
+  - any other unexpected alias still fails;
+  - their Vault entries are deleted, so they resolve to nothing.
+- **Every export read now waits out a Gateway restart.** Production's converge failed twice on a 503 right after the
+  Gateway server restarted: the first run generated the Gateway's secrets key, and the run that bound the
+  deployment's key. All four export reads in `gateway-vault.yml` and `gateway-terraform-run.yml` now retry for a
+  minute.
+- **Production's Vault policy had to catch up.** It predated the deploy key's path, and S13.2b's 403 found it.
+  `make vault-config` re-applies the policies from versions.yaml. It belongs in any first promotion of a Gateway
+  service that reads a new path.
+- **test-13a runs on production:** `verify/test-13a-aws-vpn.sh`. It reads the Platform nodes' and the Gateway VM's
+  logs, and production's Vault with the owner's administrator token. The dev script is gone.
+- **The cutover took about 27 minutes of tunnel downtime** (06:10-06:37Z):
+  - Tear Down `4543f328` (dev);
+  - Deploy `d5430afb`, Hand Off `04ca2dfd` and Verify `1a5ca206` (production).

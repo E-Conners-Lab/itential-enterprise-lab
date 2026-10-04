@@ -83,7 +83,22 @@
     url: "{{ platform_local }}/gateway_manager/v1/gateways/{{ stack.gateway5_cluster_id }}/configuration/export"
     headers: {Cookie: "{{ login.cookies_string }}"}
   register: gw_export
+  # right after a Gateway server restart the Platform's export can answer 503 for a while (production, 2026-10-04:
+  # the first run after the secrets key was generated, and the run that bound the deployment's key)
+  until: gw_export.status | default(0) == 200
+  retries: 12
+  delay: 5
   no_log: true
+
+# Aliases the import cannot remove (Gateway 5.5 deletes an alias only through iagctl in client mode; owner decision
+# 2026-10-04, ADR 0070): on a tier that no longer runs the AWS VPN, its edge aliases, and the retired twin's anywhere.
+# Their Vault entries are deleted, so they resolve to nothing; they are named here and left out of the comparison.
+- name: The aliases this tier may hold as inert leftovers
+  ansible.builtin.set_fact:
+    gw_leftover_names: >-
+      {{ vault.retired_gateway_aliases
+         + ([] if (aws_vpn.tier == 'dev') == (dev_overlay | default(false) | bool)
+            else vault.edge_gateway_aliases | list) }}
 
 - name: What the Gateway holds for this provider
   ansible.builtin.set_fact:
@@ -93,7 +108,14 @@
            | selectattr('name', 'equalto', vault.gateway_provider) | list }}
       secrets: >-
         {{ gw_export.json.secrets | default([], true)
-           | selectattr('provider', 'equalto', vault.gateway_provider) | sort(attribute='name') | list }}
+           | selectattr('provider', 'equalto', vault.gateway_provider)
+           | rejectattr('name', 'in', gw_leftover_names) | sort(attribute='name') | list }}
+
+- name: Inert leftover aliases on this Gateway (named, not compared)
+  ansible.builtin.debug:
+    msg: >-
+      {{ gw_export.json.secrets | default([], true) | selectattr('provider', 'equalto', vault.gateway_provider)
+         | selectattr('name', 'in', gw_leftover_names) | map(attribute='name') | sort | list }}
 
 - name: The Gateway's AppRole credentials
   ansible.builtin.include_tasks: vault-secret-id.yml
@@ -155,6 +177,11 @@
     headers: {Cookie: "{{ login.cookies_string }}"}
   register: gw_export_after
   when: gw_import is changed
+  # right after a Gateway server restart the Platform's export can answer 503 for a while (production, 2026-10-04:
+  # the first run after the secrets key was generated, and the run that bound the deployment's key)
+  until: gw_export_after.status | default(0) == 200
+  retries: 12
+  delay: 5
   no_log: true
 
 - name: The export matches what was sent (the import drops unknown fields without a word)
@@ -165,7 +192,8 @@
          | selectattr('name', 'equalto', vault.gateway_provider) | list) == gw_vault_wanted['secret-providers']
       - >-
         (gw_export_after.json.secrets | default([], true)
-         | selectattr('provider', 'equalto', vault.gateway_provider) | sort(attribute='name') | list)
+         | selectattr('provider', 'equalto', vault.gateway_provider)
+         | rejectattr('name', 'in', gw_leftover_names) | sort(attribute='name') | list)
         == gw_vault_wanted.secrets
     fail_msg: "the Gateway stored something other than the provider and aliases sent: compare the export by hand"
     quiet: true
