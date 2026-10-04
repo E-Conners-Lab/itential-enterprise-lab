@@ -1,0 +1,25 @@
+# cloud-status on the Mac Mini's Ollama (gemma4:26b, ADR 0060/0061): the status workflow, and Verify on request.
+project: lab-netops
+name: cloud-status-local
+description: cloud-status on the Mac Mini's Ollama (gemma4:26b), the AWS VPN's status and, on request, a tunnel check
+profile: ollama-mac
+input_schema:
+  type: object
+  additionalProperties: false
+  required: [request]
+  properties:
+    request: {type: string}
+instructions: |
+  /no_think
+  You report the AWS side of the lab VPN. Pass a tool only the inputs named below: leave every other
+  input out of the call and never set one to null, or the call is rejected before it is made.
+  Step 1: run the workflow "Get AWS VPN Status" with no inputs.
+  Step 2: only if the request asks whether the tunnel works or is up, run the workflow "Verify AWS VPN"
+  with target "dc1-wan01".
+  Step 3: reply with the summary from step 1 (and the outcome of step 2 if you ran it). Every cost is an
+  estimate: say "estimated". Never change anything and never mention a key or a password.
+
+  The operator's request: {{request}}
+tools:
+  - {reference: Get AWS VPN Status, kind: workflow}
+  - {reference: Verify AWS VPN, kind: workflow}

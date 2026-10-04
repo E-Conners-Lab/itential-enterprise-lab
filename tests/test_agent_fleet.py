@@ -18,7 +18,7 @@ VERIFY = ROOT / "verify" / "test-06-flowai.sh"
 PID = ROOT / "docs" / "PID.md"
 ADR = ROOT / "docs" / "adr" / "0046-agent-fleet-tiered-autonomy.md"
 
-FLEET = ("netbox-sot", "device-ops", "compliance", "diagnostics", "remediation")
+FLEET = ("netbox-sot", "device-ops", "compliance", "diagnostics", "remediation", "cloud-status")
 DEVICE_WRITE_TOOLS = {
     "send-config",
     "Push Configuration with Approval",
@@ -76,7 +76,7 @@ def test_every_fleet_agent_exists_on_claude_with_a_local_twin(
 
 def test_tiered_autonomy_by_tool_kind(docs: dict) -> None:
     # read-only tiers hold no device-writing tool at all; remediation's only write is the governed push
-    for name in ("netbox-sot", "device-ops", "compliance", "diagnostics"):
+    for name in ("netbox-sot", "device-ops", "compliance", "diagnostics", "cloud-status"):
         for variant in (name, f"{name}-local"):
             assert not (tool_names(docs[variant]) & DEVICE_WRITE_TOOLS), (
                 f"{variant} must not write to devices"
@@ -516,3 +516,36 @@ def test_the_mac_script_does_not_hardcode_the_model() -> None:
         f"{model} is hardcoded in the MODEL= assignment; read it from versions.yaml instead"
     )
     assert "versions.yaml" in block, "the MODEL default must come from versions.yaml"
+
+
+# ── A1, Cloud Status (PID S13 "Agents on the roadmap", owner decisions 2026-10-04) ──
+
+# the AWS VPN workflows that change something: no fleet agent holds one (A4 Cloud Concierge will, behind Work Center)
+AWS_WRITE_TOOLS = {"Deploy AWS VPN", "Hand Off AWS VPN", "Tear Down AWS VPN", "Tear Down Expired AWS VPN",
+                   "Push Configuration with Revert Timer"}
+
+
+@pytest.mark.parametrize("name", ["cloud-status", "cloud-status-local"])
+def test_cloud_status_reads_only_through_its_two_workflows(docs: dict, name: str) -> None:
+    doc = docs[name]
+    assert tool_names(doc) == {"Get AWS VPN Status", "Verify AWS VPN"}
+    assert all(t["kind"] == "workflow" for t in doc["tools"])  # never terraform-run, the AWS key or a Vault read
+    text = doc["instructions"]
+    assert text.index('"Get AWS VPN Status"') < text.index('"Verify AWS VPN"')
+    assert 'target "dc1-wan01"' in text and "estimated" in text.lower()
+    assert "never change anything" in text.lower() or "never deploy" in text.lower()
+
+
+def test_no_fleet_agent_changes_aws(docs: dict) -> None:
+    for name in FLEET:
+        for variant in (name, f"{name}-local"):
+            assert not (tool_names(docs[variant]) & AWS_WRITE_TOOLS), f"{variant} must not change AWS"
+            assert not [t for t in docs[variant]["tools"] if t["kind"] == "gateway-service"
+                        and "terraform" in t["reference"]], f"{variant} must not call terraform-run"
+
+
+def test_cloud_status_tools_are_current_workflows() -> None:
+    names = yaml.safe_load(VERSIONS.read_text())["workflows"]
+    assert {"Get AWS VPN Status", "Verify AWS VPN"} <= set(names.values())
+    for wf in ("Get AWS VPN Status", "Verify AWS VPN"):
+        assert (ROOT / "itential" / "workflows" / _file(wf)).exists()

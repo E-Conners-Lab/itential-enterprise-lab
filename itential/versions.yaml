@@ -68,10 +68,10 @@ terraform_run:
     # A full commit SHA, never a branch or tag (security review 2026-09-29, ITL-01): the Gateway runs this code with the
     # AWS key, so new cloud-devops-pipeline code runs only after a lab PR moves the pin, to a commit on its protected
     # main whose required checks passed (verify S13.2c). Measured on dev 2026-09-29: an older SHA is checked out as
-    # given, an unknown one fails the service ("reference not found"). e269ac7 = main after cdp #30: the step-6
+    # given, an unknown one fails the service ("reference not found"). 8302b66 = main after cdp #31: the step-6
     # services (#15-#23), config-push-revert (#25, #26), Tear Down's lab-edge removal / absent (#27), lab-edge-push's
-    # leak sweep (#28, #29) and expires_at for the timed teardown (#30, R2b).
-    reference: "e269ac79e9552295e46d9864a1e98b7562031776"
+    # leak sweep (#28, #29), expires_at (#30, R2b) and outputs' state metadata + cost inputs (#31, A1).
+    reference: "8302b660522fb7c6610298d2b3799a318ff9fa73"
   executable_object:
     name: python-3-12
     description: "the runner image's Python 3.12 (ADR 0038)"
@@ -173,6 +173,19 @@ aws_vpn:
   # time; Tear Down Expired AWS VPN ends it then. none: up until Tear Down. One list for the workflow, the form, the
   # endpoint trigger's schema and the branded page (tests hold them to it); at most 31 days (terraform-run's bound).
   lifetime_hours: {choices: ["none", "2", "4", "8", "24", "72"], default: "8"}
+  # A1 (Cloud Status, owner decision 2026-10-04: an estimate, not real spend): what Get AWS VPN Status prices a
+  # deployment with. On-demand list prices for us-east-1 as Claude knew them on 2026-10-04 - NOT read from AWS; check
+  # them against the bill and correct them here. Real spend (Cost Explorer) needs an IAM grant (R9's), later.
+  prices:
+    basis: >-
+      an estimate from list prices (on-demand, us-east-1, pinned 2026-10-04, not read from AWS); excludes data
+      transfer, NAT data processing and the state's fixed $1/month key
+    instance_hour: {t3.micro: 0.0104, t3.small: 0.0208}
+    assumed_instance_type: t3.micro # the vpn module's default, until the next apply records the real one
+    public_ipv4_hour: 0.005 # the strongSwan EIP
+    nat_gateway_hour: 0.045 # only when enable_nat_gateway
+    secret_month: 0.40 # the key's Secrets Manager secret
+    root_volume_month: 0.64 # the instance's 8 GB gp3 root volume
   targets:
     clab-rtr1:
       # closed 2026-10-04 with the dev tier's AWS access (ADR 0070): the twin lives on the dev host, which no longer
@@ -339,6 +352,7 @@ workflows:
   verify_aws_vpn: Verify AWS VPN # S13 criterion 4: router, AWS monitor and data plane must agree; reads only (build step 7)
   hand_off_aws_vpn: Hand Off AWS VPN # S13 criterion 3: readiness, render, approval, push with the Vault key, verify (step 8)
   tear_down_aws_vpn: Tear Down AWS VPN # S13 criterion 5 (R2): the router's block removed and proved gone, then the AWS destroy
+  get_aws_vpn_status: Get AWS VPN Status # A1: what is deployed, until when, last change, an estimated cost; reads only
   tear_down_expired_aws_vpn: Tear Down Expired AWS VPN # R2b: hourly schedule; Tear Down without cards once expires_at passed
   compliance_run: Run Nightly Compliance Check # S4d.1: target of the nightly schedule trigger
   backup_all: Back Up All Device Configs # S4d.2: every Configuration Manager device backed up (forEach), nightly
