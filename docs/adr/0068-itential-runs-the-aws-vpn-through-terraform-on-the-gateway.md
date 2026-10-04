@@ -347,7 +347,8 @@ So:
   `show logging`, `show archive log config all` and `show running-config` whole inside the service and counts the key
   and the router's password in them, whole and in every 16-character piece, plus the key lines that are not type 6.
   Only numbers leave it. A router-side `| count` alone was rejected: it matches a keyword, and a `%` echo of the key
-  carries none.
+  carries none. A router that keeps no change log refuses that read with one `%` line (measured 2026-10-03); the
+  sweep accepts the refusal only when the running config's archive has no `log config` (the precheck's rule).
 - `verify/test-13a-aws-vpn-dev.sh` is the test decision 5 asks for (S13.2e-i, opt-in `AWS_VPN=1`). It counts every
   live Vault version of every AWS VPN secret (the key, the IAM key, the PSK writer's AppRole, the edge account's
   password, the twin's key) in:

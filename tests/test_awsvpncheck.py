@@ -151,10 +151,13 @@ def test_the_swept_workflows_are_the_aws_vpn_ones_and_the_hand_paths_to_the_edge
 
 # ── the router: lab-edge-push sweep, counts only ──
 
+# as the lab edges answered on 2026-10-03 (the first run): no change log kept (#106), so its read is refused with one
+# `%` line and reported unread, `change_log` false (cloud-devops-pipeline lab-edge-push sweep)
 CLEAN_SWEEP = {
-    "action": "sweep", "target": "dc1-wan01", "clean": True, "hits": 0,
-    "sources": {n: {"read": True, "lines": 40, "key": {"whole": 0, "pieces": 0},
-                    "password": {"whole": 0, "pieces": 0}} for n in ("logging", "archive_log", "running_config")},
+    "action": "sweep", "target": "dc1-wan01", "clean": True, "hits": 0, "change_log": False,
+    "sources": {n: {"read": n != "archive_log", "lines": 1 if n == "archive_log" else 900,
+                    "key": {"whole": 0, "pieces": 0}, "password": {"whole": 0, "pieces": 0}}
+                for n in ("logging", "archive_log", "running_config")},
     "pre_shared_key_lines": {"total": 3, "type6": 3},
 }
 
@@ -184,7 +187,9 @@ def test_a_clean_router_passes_and_the_sweep_is_asked_for_exactly(router) -> Non
     "change",
     [
         lambda o: o.update(clean=False, hits=2),
-        lambda o: o["sources"]["archive_log"].update(read=False),
+        lambda o: o["sources"]["running_config"].update(read=False),
+        lambda o: o.update(change_log=True),  # a change log kept but not read: exactly what is swept for
+        lambda o: o.pop("change_log"),  # a sweep that does not say: an older lab-edge-push
         lambda o: o["sources"]["logging"].update(lines=0),
         lambda o: o.update(pre_shared_key_lines={"total": 0, "type6": 0}),  # a deployment's key must be there, type 6
     ],
@@ -192,6 +197,12 @@ def test_a_clean_router_passes_and_the_sweep_is_asked_for_exactly(router) -> Non
 def test_anything_short_of_clean_fails(router, change) -> None:
     change(router["answer"][1])
     assert not ac.c_router()
+
+
+def test_a_change_log_that_is_kept_and_read_clean_passes(router) -> None:
+    router["answer"][1].update(change_log=True)
+    router["answer"][1]["sources"]["archive_log"].update(read=True, lines=12)
+    assert ac.c_router()
 
 
 def test_a_sweep_that_fails_on_the_gateway_fails(router) -> None:
