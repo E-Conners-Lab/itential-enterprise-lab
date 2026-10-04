@@ -418,6 +418,13 @@ Conventions: **Placement** is Proxmox VM (OpenTofu + Ansible), k3s (Helm/Kustomi
 - **Roadmap after acceptance** *(1.37, owner decision 2026-09-29; direction only: each item gets its criteria, and its eval cases, in the PR that builds it, dev tier first)*. The step 5 build (`Deploy AWS VPN`, the branded page, the plan-time secret policy check) is done on dev; the order below builds on it:
   - **R1** `Hand Off AWS VPN` and `Verify AWS VPN` (criteria 3 and 4 above): Tunnel10 on dc1-wan01 in its own VRF with an ACL, the PSK read from Vault on the Gateway and never in a job; both ends checked (device SAs and the strongSwan SAs through the SSM document).
   - **R2** `Tear Down AWS VPN` (criterion 5) plus a timed teardown: an Operations Manager schedule ends a lab deployment when its time is up (cost governance).
+    - **R2b** *(owner decisions 2026-10-04, ADR 0068 amendment)* `Tear Down Expired AWS VPN`, run every hour by an Operations Manager schedule. Criteria:
+      1. Deploy asks for a lifetime (none, 2, 4, 8, 24 or 72 hours, default 8). Its approval card shows the end time and says that approving it also approves the timed teardown.
+      2. The end time travels with the deployment: Terraform `expires_at` (variable, output, and an `ExpiresAt` tag on the strongSwan instance and its EIP).
+      3. An hourly run changes nothing unless `expires_at` has passed. A deployment with no end time (none, or deployed before R2b) stays up. A run that cannot read the end time changes nothing and opens no task.
+      4. A due run is Tear Down without its cards: the same tasks (an identical-copies test, no child jobs). The router's block is removed and proved gone before exactly the planned destroy is applied.
+      5. Any teardown failure opens a Work Center task, and a failure on the router never reaches AWS.
+      6. Proven on dev with a short lifetime: the schedule tears the deployment down, then Deploy, Hand Off and Verify bring it back.
   - **R3** `Check AWS Drift`: a scheduled plan-only run that should find nothing; drift raises a Work Center task showing what changed. Optionally the security-group golden configuration adapted from `itential/assets` `AWS/EC2`, as a Configuration Manager report.
   - **R4** `Rotate AWS VPN Key`: a scheduled PSK rotation (Vault and Secrets Manager, strongSwan re-render, the router), proven by the tunnel re-establishing; no person sees the key.
   - **R5** Change management: the branded page opens a ServiceNow change request, the approval is tied to it, and the change closes with the outputs and the job link (depends on the ServiceNow PDI still being available).

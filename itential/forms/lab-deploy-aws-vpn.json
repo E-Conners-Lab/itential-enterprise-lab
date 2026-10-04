@@ -67,6 +67,84 @@
         "rel": "item",
         "targetPointer": "/default",
         "customKey": "change_note"
+      },
+      {
+        "nodeId": "node-lifetime_hours",
+        "type": "string",
+        "title": "Lifetime (hours)",
+        "description": "Hours until it is torn down automatically; none keeps it up until Tear Down",
+        "placeholder": "Select",
+        "required": true,
+        "readOnly": false,
+        "binding": false,
+        "rel": "collection",
+        "targetPointer": "/enum",
+        "customKey": "lifetime_hours",
+        "enum": [
+          {
+            "id": "enum-lifetime_hours-none",
+            "label": "none",
+            "value": "none"
+          },
+          {
+            "id": "enum-lifetime_hours-2",
+            "label": "2",
+            "value": "2"
+          },
+          {
+            "id": "enum-lifetime_hours-4",
+            "label": "4",
+            "value": "4"
+          },
+          {
+            "id": "enum-lifetime_hours-8",
+            "label": "8",
+            "value": "8"
+          },
+          {
+            "id": "enum-lifetime_hours-24",
+            "label": "24",
+            "value": "24"
+          },
+          {
+            "id": "enum-lifetime_hours-72",
+            "label": "72",
+            "value": "72"
+          }
+        ],
+        "enumNames": [
+          {
+            "id": "name-lifetime_hours-none",
+            "label": "none",
+            "value": "none"
+          },
+          {
+            "id": "name-lifetime_hours-2",
+            "label": "2",
+            "value": "2"
+          },
+          {
+            "id": "name-lifetime_hours-4",
+            "label": "4",
+            "value": "4"
+          },
+          {
+            "id": "name-lifetime_hours-8",
+            "label": "8",
+            "value": "8"
+          },
+          {
+            "id": "name-lifetime_hours-24",
+            "label": "24",
+            "value": "24"
+          },
+          {
+            "id": "name-lifetime_hours-72",
+            "label": "72",
+            "value": "72"
+          }
+        ],
+        "default": "8"
       }
     ]
   },
@@ -77,7 +155,8 @@
     "required": [
       "onprem_public_ip",
       "enable_nat_gateway",
-      "change_note"
+      "change_note",
+      "lifetime_hours"
     ],
     "properties": {
       "onprem_public_ip": {
@@ -109,6 +188,29 @@
         "_id": "/properties/change_note",
         "description": "Why, shown to the approver",
         "maxLength": 280
+      },
+      "lifetime_hours": {
+        "type": "string",
+        "title": "Lifetime (hours)",
+        "_id": "/properties/lifetime_hours",
+        "description": "Hours until it is torn down automatically; none keeps it up until Tear Down",
+        "enum": [
+          "none",
+          "2",
+          "4",
+          "8",
+          "24",
+          "72"
+        ],
+        "enumNames": [
+          "none",
+          "2",
+          "4",
+          "8",
+          "24",
+          "72"
+        ],
+        "default": "8"
       }
     }
   },
@@ -122,10 +224,14 @@
     "change_note": {
       "ui:placeholder": "Enter a value"
     },
+    "lifetime_hours": {
+      "ui:placeholder": "Select"
+    },
     "ui:order": [
       "onprem_public_ip",
       "enable_nat_gateway",
       "change_note",
+      "lifetime_hours",
       "*"
     ]
   },

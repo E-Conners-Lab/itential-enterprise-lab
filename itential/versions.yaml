@@ -68,10 +68,10 @@ terraform_run:
     # A full commit SHA, never a branch or tag (security review 2026-09-29, ITL-01): the Gateway runs this code with the
     # AWS key, so new cloud-devops-pipeline code runs only after a lab PR moves the pin, to a commit on its protected
     # main whose required checks passed (verify S13.2c). Measured on dev 2026-09-29: an older SHA is checked out as
-    # given, an unknown one fails the service ("reference not found"). 0dc7fe9 = main after cdp #29: the step-6
-    # services (#15-#23), config-push-revert (#25, #26), Tear Down's lab-edge removal / absent (#27) and
-    # lab-edge-push's leak sweep (#28, build step 12; #29: a router with no change log sweeps clean).
-    reference: "0dc7fe9733b3859fb600a26bf30b047deac2dc37"
+    # given, an unknown one fails the service ("reference not found"). e269ac7 = main after cdp #30: the step-6
+    # services (#15-#23), config-push-revert (#25, #26), Tear Down's lab-edge removal / absent (#27), lab-edge-push's
+    # leak sweep (#28, #29) and expires_at for the timed teardown (#30, R2b).
+    reference: "e269ac79e9552295e46d9864a1e98b7562031776"
   executable_object:
     name: python-3-12
     description: "the runner image's Python 3.12 (ADR 0038)"
@@ -168,6 +168,10 @@ revert_push:
 # waits for the owner's window (build steps 10-11), with its own aliases bound then. The router login is the device
 # account (`username`, its password the Gateway alias the services bind); `psk_path` holds that target's {psk, version}.
 aws_vpn:
+  # R2b (owner decisions 2026-10-04): how long a deployment stays up, chosen at Deploy and shown on its card as the end
+  # time; Tear Down Expired AWS VPN ends it then. none: up until Tear Down. One list for the workflow, the form, the
+  # endpoint trigger's schema and the branded page (tests hold them to it); at most 31 days (terraform-run's bound).
+  lifetime_hours: {choices: ["none", "2", "4", "8", "24", "72"], default: "8"}
   targets:
     clab-rtr1:
       window: open
@@ -252,6 +256,11 @@ operations_manager:
     automation: Tear Down AWS VPN
     endpoint: {name: Tear Down AWS VPN from the branded page, route: tear-down-aws-vpn}
     manual: {name: Tear Down AWS VPN from the form}
+  # R2b: no endpoint or form - only the schedule starts it (probe P1 2026-10-04: an hourly repeat is kept); missed runs
+  # are not replayed, the next hour's run catches a deployment that came due meanwhile
+  tear_down_expired_aws_vpn:
+    automation: Tear Down Expired AWS VPN
+    schedule: {name: Tear Down Expired AWS VPN every hour, repeat_unit: hour, repeat_frequency: 1}
 
 vm:
   # itential-dev, never `itential` or `mcp`: since the S11 cut-over those names belong to production's load
@@ -327,6 +336,7 @@ workflows:
   verify_aws_vpn: Verify AWS VPN # S13 criterion 4: router, AWS monitor and data plane must agree; reads only (build step 7)
   hand_off_aws_vpn: Hand Off AWS VPN # S13 criterion 3: readiness, render, approval, push with the Vault key, verify (step 8)
   tear_down_aws_vpn: Tear Down AWS VPN # S13 criterion 5 (R2): the router's block removed and proved gone, then the AWS destroy
+  tear_down_expired_aws_vpn: Tear Down Expired AWS VPN # R2b: hourly schedule; Tear Down without cards once expires_at passed
   compliance_run: Run Nightly Compliance Check # S4d.1: target of the nightly schedule trigger
   backup_all: Back Up All Device Configs # S4d.2: every Configuration Manager device backed up (forEach), nightly
   branch_vlan_delete: Remove Branch VLAN # S4d.3: the LCM delete action; switch write through Push Configuration with Approval (ADR 0043)

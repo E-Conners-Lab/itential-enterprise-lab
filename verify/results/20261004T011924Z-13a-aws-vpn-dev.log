@@ -1,0 +1,40 @@
+# test-13a-aws-vpn-dev 20261004T011924Z
+PASS  S13.2e the sweep holds every AWS VPN secret in Vault (each live version) and counts a planted copy, whole and cut
+        8 secrets from 5 of 5 Vault paths: aws/psk-writer role_id v1, aws/psk-writer secret_id v1, aws/terraform access_key_id v1, aws/terraform secret_access_key v1, aws/vpn-psk psk v3, aws/vpn-psk psk v4, devices/aws-vpn-clab-rtr1 psk v1, devices/dc1-wan01-aws-vpn password v1
+        ok   aws/vpn-psk psk v3 (64 characters): a planted copy counted 1 whole, 49 pieces; a 20-character cut 5 pieces
+        ok   aws/vpn-psk psk v4 (64 characters): a planted copy counted 1 whole, 49 pieces; a 20-character cut 5 pieces
+        ok   aws/terraform access_key_id v1 (20 characters): a planted copy counted 1 whole, 5 pieces; a 20-character cut 3 pieces
+        ok   aws/terraform secret_access_key v1 (40 characters): a planted copy counted 1 whole, 25 pieces; a 20-character cut 5 pieces
+        ok   aws/psk-writer role_id v1 (36 characters): a planted copy counted 1 whole, 21 pieces; a 20-character cut 5 pieces
+        ok   aws/psk-writer secret_id v1 (36 characters): a planted copy counted 1 whole, 21 pieces; a 20-character cut 5 pieces
+        ok   devices/dc1-wan01-aws-vpn password v1 (32 characters): a planted copy counted 1 whole, 17 pieces; a 20-character cut 5 pieces
+        ok   devices/aws-vpn-clab-rtr1 psk v1 (40 characters): a planted copy counted 1 whole, 25 pieces; a 20-character cut 5 pieces
+PASS  S13.4a Verify AWS VPN through its endpoint trigger: router, AWS monitor and data plane all say up
+        Verify AWS VPN on dc1-wan01: job fc8bd36015594356aa1e9487, status complete, outcome: tunnel up: router up, data plane up, AWS monitor up
+PASS  S13.2f no secret in any job document or task record of the AWS VPN and lab-edge workflows
+        clean Deploy AWS VPN: 13 jobs (documents and task records), 0 hits
+        clean Hand Off AWS VPN: 8 jobs (documents and task records), 0 hits
+        clean Verify AWS VPN: 10 jobs (documents and task records), 0 hits
+        clean Tear Down AWS VPN: 2 jobs (documents and task records), 0 hits
+        clean Push Configuration with Revert Timer: 8 jobs (documents and task records), 0 hits
+        clean Run Show Command on a Device: 30 jobs (documents and task records), 0 hits
+        71 jobs swept, 0 hits
+PASS  S13.2g no secret in the dev gateway5, gateway5-runner or platform logs
+        ok   gateway5: 2756 lines since the container started, 0 hits
+        ok   gateway5-runner: 1417 lines since the container started, 0 hits
+        ok   platform: 81429 lines since the container started, 0 hits
+PASS  S13.2h no secret in a tracked file of this repository or of cloud-devops-pipeline main
+        ok   itential-enterprise-lab HEAD: 798 files, 0 hits
+        ok   cloud-devops-pipeline origin/main: 111 files, 0 hits
+PASS  S13.2i no secret in the router's log, change log or running config, counted on the Gateway; the key is type 6
+        clab-rtr1: logging read 875 lines, key {'whole': 0, 'pieces': 0}, password {'whole': 0, 'pieces': 0}; archive_log refused 1 lines, key {'whole': 0, 'pieces': 0}, password {'whole': 0, 'pieces': 0}; running_config read 344 lines, key {'whole': 0, 'pieces': 0}, password {'whole': 0, 'pieces': 0}; pre-shared-key lines {'total': 1, 'type6': 1}; change log kept: False
+          ok   the sweep ran on the Gateway (exit 0)
+          ok   every record read (the change log only if one is kept) and not empty
+          ok   no copy of the key or the password
+        dc1-wan01: logging read 907 lines, key {'whole': 0, 'pieces': 0}, password {'whole': 0, 'pieces': 0}; archive_log refused 1 lines, key {'whole': 0, 'pieces': 0}, password {'whole': 0, 'pieces': 0}; running_config read 527 lines, key {'whole': 0, 'pieces': 0}, password {'whole': 0, 'pieces': 0}; pre-shared-key lines {'total': 3, 'type6': 3}; change log kept: False
+          ok   the sweep ran on the Gateway (exit 0)
+          ok   every record read (the change log only if one is kept) and not empty
+          ok   no copy of the key or the password
+          ok   the deployment's key is on the router as type 6
+
+passed=6 failed=0

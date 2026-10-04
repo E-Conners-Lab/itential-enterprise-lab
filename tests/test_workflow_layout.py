@@ -68,4 +68,7 @@ def test_arrows_stay_clear_of_the_tasks(file: str) -> None:
 # Owner decision 2026-10-01 (option C): Hand Off's NetBox read-back added ~14 rows to its main path, and no placement
 # of the notes gets back under 2 (best measured: 3, at more crossings). Canvas only - the job runs the same. The
 # follow-up shortens the read-back (one merge task for its data, proved on dev) and removes this allowance.
-THROUGH_ALLOWED = {"hand-off-aws-vpn.json": 5}
+# Owner decision 2026-10-03: arrow overlaps are fine as long as the workflow runs the same. Tear Down Expired AWS VPN
+# (R2b) sends eight teardown failures to one Work Center task; a sweep of its placements (2026-10-04) found none under 3,
+# and the state read's own check (ADR 0066) adds one more.
+THROUGH_ALLOWED = {"hand-off-aws-vpn.json": 5, "tear-down-expired-aws-vpn.json": 4}

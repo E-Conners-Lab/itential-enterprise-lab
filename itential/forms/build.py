@@ -109,7 +109,12 @@ def deploy_aws_vpn() -> dict:
                        default="false", description="true also builds the NAT gateway (about $1 a day more); the VPN does not need it"),
                  # required: the Platform refuses a start without it; the same bounds as the workflow's check (WEB-01)
                  field("change_note", "Change note", read_only=False, required=True, max_length=280,
-                       description="Why, shown to the approver")])
+                       description="Why, shown to the approver"),
+                 # R2b: the approval card shows the end time it gives; Tear Down Expired AWS VPN ends it then
+                 field("lifetime_hours", "Lifetime (hours)", read_only=False, required=True,
+                       enum=VERSIONS["aws_vpn"]["lifetime_hours"]["choices"],
+                       default=VERSIONS["aws_vpn"]["lifetime_hours"]["default"],
+                       description="Hours until it is torn down automatically; none keeps it up until Tear Down")])
 
 
 # --- lab-hand-off-aws-vpn / lab-verify-aws-vpn: the manual triggers of Hand Off and Verify AWS VPN (step 9) -----------

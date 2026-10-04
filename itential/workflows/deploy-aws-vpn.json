@@ -95,11 +95,11 @@
       "actor": "Pronghorn",
       "scheduled": false
     },
-    "11": {
+    "14": {
       "name": "setObjectKey",
       "canvasName": "setObjectKey",
-      "summary": "the inputs to check (params + change note)",
-      "description": "the inputs to check (params + change note)",
+      "summary": "the lifetime, as data",
+      "description": "the lifetime, as data",
       "location": "Application",
       "locationType": null,
       "app": "WorkFlowEngine",
@@ -112,7 +112,134 @@
       },
       "variables": {
         "incoming": {
+          "obj": {},
+          "path": [
+            "lifetime_hours"
+          ],
+          "value": "$var.job.lifetime_hours"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "15": {
+      "name": "runCode",
+      "canvasName": "runCode",
+      "summary": "the end time (Python on the runner)",
+      "description": "the end time (Python on the runner)",
+      "location": "Application",
+      "locationType": null,
+      "app": "GatewayManager",
+      "type": "automatic",
+      "displayName": "GatewayManager",
+      "groups": [],
+      "nodeLocation": {
+        "x": 0,
+        "y": 750
+      },
+      "variables": {
+        "incoming": {
+          "clusterId": "lab",
+          "language": "python",
+          "code": "import json, sys\nfrom datetime import datetime, timedelta, timezone\n\n\nCHOICES = ['none', '2', '4', '8', '24', '72']\n\n\ndef expires_from(d: dict, now: datetime, choices: list) -> dict:\n    \"\"\"The deployment's end time from the chosen lifetime (R2b): now, to the minute, plus that many hours, as UTC\n    YYYY-MM-DDTHH:MM:00Z; `none` keeps it up until Tear Down. Anything not in `choices` gives `invalid`, which the\n    input check refuses. Pure: runCode runs this source on the Gateway with the clock and the choices written in.\"\"\"\n    hours = d.get(\"lifetime_hours\")\n    if not isinstance(hours, str) or hours not in choices:\n        return {\"expires_at\": \"invalid\", \"lifetime_hours\": str(hours)[:10]}\n    if hours == \"none\":\n        return {\"expires_at\": \"none\", \"lifetime_hours\": hours, \"ends\": \"none: it stays up until Tear Down\"}\n    end = (now.replace(second=0, microsecond=0) + timedelta(hours=int(hours))).strftime(\"%Y-%m-%dT%H:%M:%SZ\")\n    return {\"expires_at\": end, \"lifetime_hours\": hours, \"ends\": f\"{end} ({hours} hours)\"}\n\n\nprint(json.dumps(expires_from(json.loads(sys.stdin.read() or \"{}\"), datetime.now(timezone.utc), CHOICES)))\n",
+          "data": "$var.14.object",
+          "safety": {
+            "timeout": 30
+          },
+          "packages": []
+        },
+        "outgoing": {
+          "result": "$var.job.lifetime"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "16": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "the end time",
+      "description": "the end time",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 100,
+        "y": 900
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "stdout_json.expires_at",
+          "obj": "$var.job.lifetime"
+        },
+        "outgoing": {
+          "return_data": "$var.job.expires_at"
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "17": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "plan params: end time",
+      "description": "plan params: end time",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 100,
+        "y": 1050
+      },
+      "variables": {
+        "incoming": {
           "obj": "$var.1c.object",
+          "path": [
+            "expires_at"
+          ],
+          "value": "$var.16.return_data"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "11": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "the inputs to check (params + change note)",
+      "description": "the inputs to check (params + change note)",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 90,
+        "y": 1200
+      },
+      "variables": {
+        "incoming": {
+          "obj": "$var.17.object",
           "path": [
             "change_note"
           ],
@@ -139,8 +266,8 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 0,
-        "y": 750
+        "x": 80,
+        "y": 1350
       },
       "variables": {
         "incoming": {
@@ -184,6 +311,10 @@
               "change_note": {
                 "type": "string",
                 "maxLength": 280
+              },
+              "expires_at": {
+                "type": "string",
+                "pattern": "^(none|[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:00Z)$"
               }
             }
           }
@@ -209,8 +340,8 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 100,
-        "y": 900
+        "x": 180,
+        "y": 1500
       },
       "variables": {
         "incoming": {
@@ -255,14 +386,14 @@
       "displayName": "GatewayManager",
       "groups": [],
       "nodeLocation": {
-        "x": 100,
-        "y": 1050
+        "x": 180,
+        "y": 1650
       },
       "variables": {
         "incoming": {
           "serviceName": "terraform-run",
           "clusterId": "lab",
-          "params": "$var.1c.object"
+          "params": "$var.17.object"
         },
         "outgoing": {
           "result": "$var.job.plan_result"
@@ -285,8 +416,8 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 180,
-        "y": 1200
+        "x": 250,
+        "y": 1800
       },
       "variables": {
         "incoming": {
@@ -331,8 +462,8 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 400,
-        "y": 1350
+        "x": 500,
+        "y": 1950
       },
       "variables": {
         "incoming": {
@@ -359,8 +490,8 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 340,
-        "y": 1500
+        "x": 400,
+        "y": 2100
       },
       "variables": {
         "incoming": {
@@ -387,14 +518,44 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 280,
-        "y": 1650
+        "x": 310,
+        "y": 2250
       },
       "variables": {
         "incoming": {
-          "str": "Deploy the AWS side of the site-to-site VPN (costs about $1 a day while it is up). The requester's note (their own words, not checked): __NOTE__",
+          "str": "Deploy the AWS side of the site-to-site VPN (costs about $1 a day while it is up). It ends at __END__: approving this also approves Tear Down Expired AWS VPN removing it then, router first, with no further card (none: it stays up until Tear Down). The requester's note (their own words, not checked): __NOTE__",
           "substr": "__NOTE__",
           "newSubstr": "$var.job.change_note"
+        },
+        "outgoing": {
+          "replacedString": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "2c": {
+      "name": "replace",
+      "canvasName": "replace",
+      "summary": "the card's message: end time",
+      "description": "the card's message: end time",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 250,
+        "y": 2400
+      },
+      "variables": {
+        "incoming": {
+          "str": "$var.2a.replacedString",
+          "substr": "__END__",
+          "newSubstr": "$var.job.expires_at"
         },
         "outgoing": {
           "replacedString": null
@@ -417,13 +578,13 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 250,
-        "y": 1800
+        "x": 220,
+        "y": 2550
       },
       "variables": {
         "incoming": {
           "header": "Approve the AWS change",
-          "message": "$var.2a.replacedString",
+          "message": "$var.2c.replacedString",
           "body": "$var.job.plan",
           "variables": {},
           "btn_success": "Approve",
@@ -447,8 +608,8 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 50,
-        "y": 1950
+        "x": 30,
+        "y": 2700
       },
       "variables": {
         "incoming": {
@@ -475,8 +636,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": -20,
-        "y": 2100
+        "x": -340,
+        "y": 2850
       },
       "variables": {
         "incoming": {
@@ -505,8 +666,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": -370,
-        "y": 2250
+        "x": -240,
+        "y": 3000
       },
       "variables": {
         "incoming": {
@@ -535,8 +696,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": -270,
-        "y": 2400
+        "x": -140,
+        "y": 3150
       },
       "variables": {
         "incoming": {
@@ -563,8 +724,8 @@
       "displayName": "GatewayManager",
       "groups": [],
       "nodeLocation": {
-        "x": -130,
-        "y": 2550
+        "x": -150,
+        "y": 3300
       },
       "variables": {
         "incoming": {
@@ -593,8 +754,8 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 160,
-        "y": 2700
+        "x": 70,
+        "y": 3450
       },
       "variables": {
         "incoming": {
@@ -639,8 +800,8 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 250,
-        "y": 2850
+        "x": 340,
+        "y": 3600
       },
       "variables": {
         "incoming": {
@@ -667,8 +828,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 350,
-        "y": 3000
+        "x": 460,
+        "y": 3750
       },
       "variables": {
         "incoming": {
@@ -697,8 +858,8 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 450,
-        "y": 3150
+        "x": 560,
+        "y": 3900
       },
       "variables": {
         "incoming": {
@@ -725,8 +886,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 540,
-        "y": 3300
+        "x": 640,
+        "y": 4050
       },
       "variables": {
         "incoming": {
@@ -755,8 +916,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 600,
-        "y": 3450
+        "x": 690,
+        "y": 4200
       },
       "variables": {
         "incoming": {
@@ -783,8 +944,8 @@
       "displayName": "GatewayManager",
       "groups": [],
       "nodeLocation": {
-        "x": 630,
-        "y": 3600
+        "x": 720,
+        "y": 4350
       },
       "variables": {
         "incoming": {
@@ -813,8 +974,8 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 920,
-        "y": 3750
+        "x": 1090,
+        "y": 4500
       },
       "variables": {
         "incoming": {
@@ -859,8 +1020,8 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 1200,
-        "y": 3900
+        "x": 1210,
+        "y": 4650
       },
       "variables": {
         "incoming": {
@@ -888,7 +1049,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 1290,
-        "y": 4050
+        "y": 4800
       },
       "variables": {
         "incoming": {
@@ -916,7 +1077,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 1350,
-        "y": 4200
+        "y": 4950
       },
       "variables": {
         "incoming": {
@@ -944,7 +1105,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 1390,
-        "y": 4350
+        "y": 5100
       },
       "variables": {
         "incoming": {
@@ -973,8 +1134,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 1400,
-        "y": 4500
+        "x": 1410,
+        "y": 5250
       },
       "variables": {
         "incoming": {
@@ -1003,8 +1164,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 350,
-        "y": 1950
+        "x": 330,
+        "y": 2700
       },
       "variables": {
         "incoming": {
@@ -1033,8 +1194,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 320,
-        "y": 2100
+        "x": 300,
+        "y": 2850
       },
       "variables": {
         "incoming": {
@@ -1061,8 +1222,8 @@
       "displayName": "GatewayManager",
       "groups": [],
       "nodeLocation": {
-        "x": 310,
-        "y": 2250
+        "x": 290,
+        "y": 3000
       },
       "variables": {
         "incoming": {
@@ -1091,8 +1252,8 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 250,
-        "y": 2400
+        "x": 230,
+        "y": 3150
       },
       "variables": {
         "incoming": {
@@ -1137,8 +1298,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 620,
-        "y": 2700
+        "x": 600,
+        "y": 3450
       },
       "variables": {
         "incoming": {
@@ -1167,8 +1328,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 720,
-        "y": 2850
+        "x": 740,
+        "y": 3600
       },
       "variables": {
         "incoming": {
@@ -1197,8 +1358,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 830,
-        "y": 3000
+        "x": 870,
+        "y": 3750
       },
       "variables": {
         "incoming": {
@@ -1227,8 +1388,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 630,
-        "y": 2550
+        "x": 610,
+        "y": 3300
       },
       "variables": {
         "incoming": {
@@ -1257,8 +1418,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": -120,
-        "y": 1200
+        "x": -50,
+        "y": 1800
       },
       "variables": {
         "incoming": {
@@ -1287,8 +1448,8 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 100,
-        "y": 1350
+        "x": 160,
+        "y": 1950
       },
       "variables": {
         "incoming": {
@@ -1315,8 +1476,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": -410,
-        "y": 1500
+        "x": -360,
+        "y": 2100
       },
       "variables": {
         "incoming": {
@@ -1345,12 +1506,12 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": -350,
-        "y": 1050
+        "x": -120,
+        "y": 1650
       },
       "variables": {
         "incoming": {
-          "input": "the inputs were refused before anything ran (see input_check): the on-prem IP must be an IPv4 address a.b.c.d, the NAT gateway true or false, the change note at most 280 characters; nothing changed in AWS",
+          "input": "the inputs were refused before anything ran (see input_check): the on-prem IP must be an IPv4 address a.b.c.d, the NAT gateway true or false, the change note at most 280 characters, the lifetime one of none, 2, 4, 8, 24, 72 hours; nothing changed in AWS",
           "outputType": "string",
           "variables": ""
         },
@@ -1375,8 +1536,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": -290,
-        "y": 2700
+        "x": -230,
+        "y": 3450
       },
       "variables": {
         "incoming": {
@@ -1405,8 +1566,8 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": -50,
-        "y": 2850
+        "x": 40,
+        "y": 3600
       },
       "variables": {
         "incoming": {
@@ -1433,8 +1594,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 620,
-        "y": 3750
+        "x": 640,
+        "y": 4500
       },
       "variables": {
         "incoming": {
@@ -1463,8 +1624,8 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 900,
-        "y": 3900
+        "x": 910,
+        "y": 4650
       },
       "variables": {
         "incoming": {
@@ -1478,6 +1639,36 @@
         "error": "",
         "decorators": []
       }
+    },
+    "80": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "the end time could not be worked out",
+      "description": "the end time could not be worked out",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": -200,
+        "y": 1050
+      },
+      "variables": {
+        "incoming": {
+          "input": "the Gateway could not work out the end time from the lifetime (see lifetime): nothing changed in AWS",
+          "outputType": "string",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.error"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
     },
     "workflow_start": {
       "name": "workflow_start",
@@ -1493,8 +1684,8 @@
       "summary": "workflow_end",
       "groups": [],
       "nodeLocation": {
-        "x": 800,
-        "y": 4650
+        "x": 810,
+        "y": 5400
       }
     }
   },
@@ -1518,6 +1709,38 @@
       }
     },
     "1c": {
+      "14": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "14": {
+      "15": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "15": {
+      "16": {
+        "state": "success",
+        "type": "standard"
+      },
+      "80": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "16": {
+      "17": {
+        "state": "success",
+        "type": "standard"
+      },
+      "80": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "17": {
       "11": {
         "state": "success",
         "type": "standard"
@@ -1582,6 +1805,12 @@
       }
     },
     "2a": {
+      "2c": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "2c": {
       "2b": {
         "state": "success",
         "type": "standard"
@@ -1727,6 +1956,12 @@
         "type": "standard"
       }
     },
+    "80": {
+      "8c": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
     "7a": {
       "7b": {
         "state": "success",
@@ -1851,18 +2086,38 @@
         "required": true,
         "maxLength": 280,
         "description": "Why, shown to the approver (may be empty)"
+      },
+      "lifetime_hours": {
+        "type": "string",
+        "required": true,
+        "enum": [
+          "none",
+          "2",
+          "4",
+          "8",
+          "24",
+          "72"
+        ],
+        "description": "Hours until Tear Down Expired AWS VPN removes it (R2b); none keeps it up until Tear Down"
       }
     },
     "required": [
       "onprem_public_ip",
       "enable_nat_gateway",
-      "change_note"
+      "change_note",
+      "lifetime_hours"
     ]
   },
   "outputSchema": {
     "type": "object",
     "properties": {
       "plan": {
+        "type": "object"
+      },
+      "expires_at": {
+        "type": "string"
+      },
+      "lifetime": {
         "type": "object"
       },
       "outputs": {
