@@ -296,5 +296,6 @@ def test_the_retired_tier_also_loses_the_rotation() -> None:
     assert "'rotate_aws_vpn_key_monthly'" in text
 
 
-def test_the_gateway_runs_the_commit_with_reload_restore_and_prune() -> None:
-    assert VERSIONS["terraform_run"]["repository"]["reference"] == "3e3f032a6f4b4a0678111f45dd60968c00f7deed"
+def test_the_gateway_runs_a_commit_with_reload_restore_and_prune() -> None:
+    # 3e3f032 (cdp #33) brought them; 691531d (cdp #34, the tunnel description) is its descendant
+    assert VERSIONS["terraform_run"]["repository"]["reference"] == "691531d853e9719e92399fae3acd9266c1148630"

@@ -71,8 +71,9 @@ terraform_run:
     # given, an unknown one fails the service ("reference not found"). f734b4a = main after cdp #32: the step-6
     # services (#15-#23), config-push-revert (#25, #26), Tear Down's lab-edge removal / absent (#27), lab-edge-push's
     # leak sweep (#28, #29), expires_at (#30, R2b), outputs' state metadata + cost inputs (#31, A1), drift (#32, R3).
-    # 3e3f032 = main after cdp #33 (R4): aws-vpn-monitor reload, aws-vpn-psk restore-previous and prune.
-    reference: "3e3f032a6f4b4a0678111f45dd60968c00f7deed"
+    # 3e3f032 = main after cdp #33 (R4): aws-vpn-monitor reload, aws-vpn-psk restore-previous and prune. 691531d = main
+    # after cdp #34: lab-edge takes Tunnel10's description from the target (tunnel_description, ADR 0071).
+    reference: "691531d853e9719e92399fae3acd9266c1148630"
   executable_object:
     name: python-3-12
     description: "the runner image's Python 3.12 (ADR 0038)"
