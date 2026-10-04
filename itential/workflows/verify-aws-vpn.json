@@ -56,7 +56,8 @@
                     "GigabitEthernet2",
                     "GigabitEthernet7"
                   ],
-                  "mgmt_host": "10.100.0.144"
+                  "mgmt_host": "10.100.0.144",
+                  "tunnel_description": "IPsec VTI to AWS (Hand Off AWS VPN)"
                 },
                 "username": "itential-aws-vpn",
                 "monitor": "aws",

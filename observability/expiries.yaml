@@ -1,6 +1,6 @@
 # Every evaluation, licence, token and certificate the lab depends on, with the date it stops working
-# (PID S7 criterion 1, ADR 0051). observability/zabbix/build.py turns this into the Zabbix template
-# lab-expiries (one Script item per entry: days left; trigger when under `warn_days`). tests/test_observability.py
+# (PID S7 criterion 1, ADR 0051). observability/expiry_rules.py turns this into the PrometheusRule lab-expiries
+# (ADR 0071: a days-left series per entry; LabExpirySoon under `warn_days`). tests/test_observability.py
 # holds the dates to their sources where the repo can read them; verify/test-07 cross-checks the live ones.
 warn_days: 14
 expiries:

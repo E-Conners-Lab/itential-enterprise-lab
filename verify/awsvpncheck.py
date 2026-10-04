@@ -62,7 +62,7 @@ LOG_SOURCES = {
     "prod": [(_IP["iap-01"], ("platform",)), (_IP["iap-02"], ("platform",)),
              (_IP["iag-01"], ("gateway5", "gateway5-runner"))],
 }
-CDP = Path.home() / "PycharmProjects" / "cloud-devops-pipeline"
+CDP = Path(os.environ.get("CDP_DIR") or Path.home() / "PycharmProjects" / "cloud-devops-pipeline")  # a checkout at the pin
 VERIFY_TARGET = "dc1-wan01"  # the target with a deployment of its own (monitor: aws)
 VERIFY_POLLS, VERIFY_POLL_SECONDS = 60, 10  # Verify takes ~1 min (job 0fe8ee24: 46 s); 10 min is the ceiling
 TERMINAL = {"complete", "error", "canceled"}

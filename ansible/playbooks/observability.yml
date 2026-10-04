@@ -1,18 +1,17 @@
 ---
 # Phase 7 (PID S7, ADR 0051): the observability stack on k3s and its configuration, all from documents in
 # the repo. Runs on the workstation with helm + kubectl against ~/.kube/lab-k3s.yaml. Idempotent.
-# Order: secrets (generated once, persisted to .env before use) -> namespace, CA, secrets -> zabbix-db on
-# CloudNativePG -> charts (kube-prometheus-stack first: its CRDs carry the scrape objects) -> Traefik VIPs,
-# Ingresses, gNMIc, the Platform exporter, scrape objects, rules, dashboards -> Zabbix configuration through
-# its API (templates, macros, hosts from NetBox, the read-only Grafana user).
-# Hosts (agents) and devices (governed pushes) are observability-hosts.yml and observability-devices.yml.
+# Order: secrets (generated once, persisted to .env before use) -> namespace, CA, secrets -> Zabbix removed (ADR
+# 0071) -> charts (kube-prometheus-stack first: its CRDs carry the scrape objects) -> Traefik VIPs, Ingresses,
+# gNMIc, the Platform exporter, scrape objects, rules (the lab's and the generated expiry rules), dashboards.
+# Hosts (syslog forwarding) and devices (governed pushes) are observability-hosts.yml and observability-devices.yml.
 - name: Phase 7 secrets, persisted before use
   hosts: localhost
   connection: local
   gather_facts: false
   vars:
     env_file: "{{ playbook_dir }}/../../.env"
-    secret_keys: [ZABBIX_ADMIN_PASSWORD, ZABBIX_GRAFANA_PASSWORD, GRAFANA_ADMIN_PASSWORD, SNMPV3_AUTH_PASSWORD, SNMPV3_PRIV_PASSWORD]
+    secret_keys: [GRAFANA_ADMIN_PASSWORD, SNMPV3_AUTH_PASSWORD, SNMPV3_PRIV_PASSWORD]
   tasks:
     - name: Current values from .env
       ansible.builtin.set_fact:
@@ -77,13 +76,7 @@
     # release name -> chart key in versions.yaml, values file, and the image tags the oracle sets (`overrides`:
     # a key named `values` is the dict method in Jinja)
     charts:
-      - key: kube_prometheus_stack
-        release: kps
-        values_file: kube-prometheus-stack.yaml
-        overrides:
-          grafana:
-            plugins: ["{{ components.kube_prometheus_stack.grafana_zabbix_plugin }}"]
-      - {key: zabbix, release: zabbix, values_file: zabbix.yaml, overrides: {zabbixImageTag: "{{ components.zabbix.image_tag }}"}}
+      - {key: kube_prometheus_stack, release: kps, values_file: kube-prometheus-stack.yaml, overrides: {}}
       - key: snmp_exporter
         release: snmp-exporter
         values_file: snmp-exporter.yaml
@@ -96,7 +89,6 @@
       - {key: alloy, release: alloy-logs, values_file: alloy-logs.yaml, overrides: {image: {tag: "{{ components.alloy.app_version }}"}}}
       - {key: alloy, release: alloy-syslog, values_file: alloy-syslog.yaml, overrides: {image: {tag: "{{ components.alloy.app_version }}"}}}
     ingresses:
-      - {name: zabbix, service: zabbix-zabbix-web, port: 80}
       - {name: grafana, service: kps-grafana, port: 80}
       - {name: prometheus, service: kps-prometheus, port: 9090}
       - {name: alertmanager, service: kps-alertmanager, port: 9093}
@@ -130,35 +122,13 @@
         headers: "{{ netbox_headers }}"
       register: nb_devices
 
-    - name: NetBox active virtual machines
-      ansible.builtin.uri:
-        url: "{{ netbox_url }}/api/virtualization/virtual-machines/?status=active&limit=200"
-        headers: "{{ netbox_headers }}"
-      register: nb_vms
-
-    - name: Monitored hosts derived from NetBox (+ the two pre-existing machines)
+    - name: Monitored devices derived from NetBox
       ansible.builtin.set_fact:
         devices: >-
           {%- set out = [] -%}
           {%- for d in nb_devices.json.results if d.platform and d.platform.slug in ['ios-xe', 'eos'] -%}
             {%- set _ = out.append({'name': d.name, 'ip': d.primary_ip4.address | ansible.utils.ipaddr('address'),
                                     'platform': d.platform.slug, 'site': d.site.slug, 'role': d.role.slug}) -%}
-          {%- endfor -%}
-          {{ out }}
-        linux_hosts: >-
-          {%- set out = [] -%}
-          {%- for d in nb_devices.json.results if d.platform and d.platform.slug in zabbix.templates
-                                                  and d.platform.slug not in ['ios-xe', 'eos'] -%}
-            {%- set _ = out.append({'name': d.name, 'ip': d.primary_ip4.address | ansible.utils.ipaddr('address'),
-                                    'platform': d.platform.slug, 'group': zabbix.host_groups.devices | replace('{site}', d.site.slug)}) -%}
-          {%- endfor -%}
-          {%- for v in nb_vms.json.results if v.platform and v.platform.slug in zabbix.templates
-                                            and not (v.role and v.role.slug in zabbix.excluded_vm_roles | default([])) -%}
-            {%- set _ = out.append({'name': v.name, 'ip': v.primary_ip4.address | ansible.utils.ipaddr('address'),
-                                    'platform': v.platform.slug, 'group': zabbix.host_groups.vms}) -%}
-          {%- endfor -%}
-          {%- for e in zabbix.extra_hosts -%}
-            {%- set _ = out.append({'name': e.name, 'ip': e.address, 'platform': e.platform, 'group': e.group}) -%}
           {%- endfor -%}
           {{ out }}
 
@@ -179,20 +149,17 @@
           kind: Namespace
           metadata: {name: "{{ obs_namespace }}"}
 
-    - name: Lab CA subject hash (OpenSSL CApath layout for Zabbix's SSLCALocation)
-      ansible.builtin.command: openssl x509 -in {{ ca_file }} -noout -subject_hash
-      register: ca_hash
-      changed_when: false
-
+    # force: replaced whole, so the hashed CApath copy only Zabbix read goes with it (ADR 0071)
     - name: Lab CA ConfigMap (public material)
       kubernetes.core.k8s:
         kubeconfig: "{{ kubeconfig }}"
         state: present
+        force: true
         definition:
           apiVersion: v1
           kind: ConfigMap
           metadata: {name: lab-ca, namespace: "{{ obs_namespace }}"}
-          data: "{{ {'ca.crt': ca_pem, ca_hash.stdout ~ '.0': ca_pem} }}"
+          data: {ca.crt: "{{ ca_pem }}"}
       vars:
         ca_pem: "{{ lookup('ansible.builtin.file', ca_file) }}"
 
@@ -208,7 +175,6 @@
           stringData: "{{ item.data }}"
       loop:
         - {name: grafana-admin, data: {admin-user: admin, admin-password: "{{ secrets.GRAFANA_ADMIN_PASSWORD }}"}}
-        - {name: grafana-env, data: {ZABBIX_GRAFANA_PASSWORD: "{{ secrets.ZABBIX_GRAFANA_PASSWORD }}"}}
         - name: snmpv3
           data: {SNMPV3_AUTH_PASSWORD: "{{ secrets.SNMPV3_AUTH_PASSWORD }}", SNMPV3_PRIV_PASSWORD: "{{ secrets.SNMPV3_PRIV_PASSWORD }}"}
         - name: gnmic
@@ -221,82 +187,57 @@
         label: "{{ item.name }}"
       no_log: true
 
-    # --- zabbix-db on CloudNativePG, not backed up (ADR 0064) -------------------------------------------------
-    # Dropping a document from the manifest does not delete the live object, so each is removed explicitly;
-    # every task is a no-op once done. Order: no further scheduled backup, then the Cluster stops naming the
-    # plugin, then the ObjectStore it named goes, then the credentials copy that only the ObjectStore read.
-    - name: No nightly backup of zabbix-db (ADR 0064)
+    # --- Zabbix removed (ADR 0071) ------------------------------------------------------------------------
+    # Dropping a chart, a manifest or a template entry deletes nothing live, so every Zabbix object is named here;
+    # each task is a no-op once done. The release first (server, web and its zabbix-server LoadBalancer on .35),
+    # then the database: CloudNativePG deletes the instance PVC and its secrets with the Cluster.
+    - name: The Zabbix release uninstalled
+      kubernetes.core.helm:
+        binary_path: "{{ helm_bin }}"
+        kubeconfig: "{{ kubeconfig }}"
+        name: zabbix
+        release_namespace: "{{ obs_namespace }}"
+        state: absent
+        wait: true
+
+    - name: The zabbix-db Cluster deleted (CloudNativePG removes its PVC and secrets)
       kubernetes.core.k8s:
         kubeconfig: "{{ kubeconfig }}"
         state: absent
         api_version: postgresql.cnpg.io/v1
-        kind: ScheduledBackup
+        kind: Cluster
         namespace: "{{ obs_namespace }}"
-        name: zabbix-db-nightly
+        name: zabbix-db
+        wait: true
 
-    - name: The live zabbix-db Cluster
+    - name: No zabbix-db volume left
       kubernetes.core.k8s_info:
         kubeconfig: "{{ kubeconfig }}"
-        api_version: postgresql.cnpg.io/v1
-        kind: Cluster
+        kind: PersistentVolumeClaim
         namespace: "{{ obs_namespace }}"
-        name: "{{ zabbix_db.name }}"
-      register: zdb_live
-
-    # Applying the manifest cannot do this. `state: present` sends a JSON merge patch for a custom resource,
-    # and a merge patch leaves every key it omits untouched; `apply: true` would only drop keys recorded in a
-    # last-applied annotation, which a Cluster created by `state: present` does not carry. So remove the key.
-    - name: Zabbix-db stops archiving WAL through the Barman Cloud plugin (ADR 0064)
-      kubernetes.core.k8s_json_patch:
-        kubeconfig: "{{ kubeconfig }}"
-        api_version: postgresql.cnpg.io/v1
-        kind: Cluster
-        namespace: "{{ obs_namespace }}"
-        name: "{{ zabbix_db.name }}"
-        patch:
-          - {op: remove, path: /spec/plugins}
-      when: zdb_live.resources | length == 1 and 'plugins' in zdb_live.resources[0].spec
-
-    - name: No object store for zabbix-db (ADR 0064)
-      kubernetes.core.k8s:
-        kubeconfig: "{{ kubeconfig }}"
-        state: absent
-        api_version: barmancloud.cnpg.io/v1
-        kind: ObjectStore
-        namespace: "{{ obs_namespace }}"
-        name: garage
-
-    # Least privilege: only the ObjectStore read this copy. Garage's own secret in namespace garage stays.
-    - name: No copy of the Garage credentials in this namespace (ADR 0064)
-      kubernetes.core.k8s:
-        kubeconfig: "{{ kubeconfig }}"
-        state: absent
-        api_version: v1
-        kind: Secret
-        namespace: "{{ obs_namespace }}"
-        name: garage-s3
-
-    # The merge patch carries storage.size, so a smaller live volume grows to the manifest's (CNPG resizes the PVC).
-    - name: Zabbix database cluster (not backed up, ADR 0064)
-      kubernetes.core.k8s:
-        kubeconfig: "{{ kubeconfig }}"
-        state: present
-        src: "{{ k8s_dir }}/manifests/zabbix-db.yaml"
-
-    - name: Zabbix database healthy
-      kubernetes.core.k8s_info:
-        kubeconfig: "{{ kubeconfig }}"
-        api_version: postgresql.cnpg.io/v1
-        kind: Cluster
-        namespace: "{{ obs_namespace }}"
-        name: "{{ zabbix_db.name }}"
-      register: zdb
-      retries: 60
+        label_selectors: [cnpg.io/cluster=zabbix-db]
+      register: zdb_pvcs
+      retries: 30
       delay: 10
-      until: zdb.resources | length == 1 and (zdb.resources[0].status.phase | default('')) == 'Cluster in healthy state'
+      until: zdb_pvcs.resources | length == 0
 
-    # --- Traefik VIPs first: the zabbix-server and alloy-syslog Services share .35/.38 with them and MetalLB
-    # assigns a shared address only when every sharer carries the same externalTrafficPolicy ----------------
+    - name: The Zabbix web Ingress, its Traefik VIP and Grafana's Zabbix password gone
+      kubernetes.core.k8s:
+        kubeconfig: "{{ kubeconfig }}"
+        state: absent
+        api_version: "{{ item.api }}"
+        kind: "{{ item.kind }}"
+        namespace: "{{ item.namespace }}"
+        name: "{{ item.name }}"
+      loop:
+        - {api: networking.k8s.io/v1, kind: Ingress, namespace: "{{ obs_namespace }}", name: zabbix}
+        - {api: v1, kind: Service, namespace: "{{ traefik.namespace }}", name: traefik-vip-zabbix}
+        - {api: v1, kind: Secret, namespace: "{{ obs_namespace }}", name: grafana-env}
+      loop_control:
+        label: "{{ item.kind }} {{ item.name }}"
+
+    # --- Traefik VIPs first: the alloy-syslog Service shares .38 with them and MetalLB assigns a shared address
+    # only when every sharer carries the same externalTrafficPolicy ------------------------------------------
     - name: Traefik VIP Services (kube-system)
       kubernetes.core.k8s:
         kubeconfig: "{{ kubeconfig }}"
@@ -396,6 +337,14 @@
         src: "{{ k8s_dir }}/manifests/prometheus-rules.yaml"
         apply: true
 
+    # one days-left series per observability/expiries.yaml entry and LabExpirySoon (ADR 0071; generated, tested)
+    - name: Expiry rules
+      kubernetes.core.k8s:
+        kubeconfig: "{{ kubeconfig }}"
+        state: present
+        src: "{{ k8s_dir }}/manifests/expiry-rules.yaml"
+        apply: true
+
     - name: Grafana dashboards from observability/grafana/dashboards (sidecar ConfigMaps)
       kubernetes.core.k8s:
         kubeconfig: "{{ kubeconfig }}"
@@ -412,240 +361,3 @@
       with_fileglob: "{{ obs_dir }}/grafana/dashboards/*.json"
       loop_control:
         label: "{{ item | basename }}"
-
-    # --- Zabbix API: bootstrap the Admin password, then hand over to the community.zabbix play ---------
-    - name: Zabbix API answers through Traefik
-      ansible.builtin.uri:
-        url: "https://zabbix.{{ domain }}/api_jsonrpc.php"
-        method: POST
-        body_format: json
-        headers: {Content-Type: application/json-rpc}
-        body: {jsonrpc: "2.0", method: apiinfo.version, params: {}, id: 1}
-        ca_path: "{{ ca_file }}"
-      register: zapi
-      retries: 30
-      delay: 10
-      until: zapi.status == 200 and zapi.json.result is defined
-
-    - name: Login with the persisted Admin password
-      ansible.builtin.uri:
-        url: "https://zabbix.{{ domain }}/api_jsonrpc.php"
-        method: POST
-        body_format: json
-        headers: {Content-Type: application/json-rpc}
-        body: {jsonrpc: "2.0", method: user.login, params: {username: Admin, password: "{{ secrets.ZABBIX_ADMIN_PASSWORD }}"}, id: 1}
-        ca_path: "{{ ca_file }}"
-      register: zlogin
-      no_log: true
-
-    - name: First run, rotate the stock Admin password (login as Admin/zabbix, user.update)
-      when: zlogin.json.error is defined
-      no_log: true
-      block:
-        - name: Login with the stock password
-          ansible.builtin.uri:
-            url: "https://zabbix.{{ domain }}/api_jsonrpc.php"
-            method: POST
-            body_format: json
-            headers: {Content-Type: application/json-rpc}
-            body: {jsonrpc: "2.0", method: user.login, params: {username: Admin, password: zabbix}, id: 1}
-            ca_path: "{{ ca_file }}"
-          register: zstock
-          failed_when: zstock.json.error is defined
-
-        - name: Set the persisted password
-          ansible.builtin.uri:
-            url: "https://zabbix.{{ domain }}/api_jsonrpc.php"
-            method: POST
-            body_format: json
-            headers: {Content-Type: application/json-rpc, Authorization: "Bearer {{ zstock.json.result }}"}
-            body:
-              jsonrpc: "2.0"
-              method: user.update
-              params: {userid: "1", passwd: "{{ secrets.ZABBIX_ADMIN_PASSWORD }}", current_passwd: zabbix}
-              id: 1
-            ca_path: "{{ ca_file }}"
-          register: zrotate
-          failed_when: zrotate.json.error is defined
-
-    - name: Zabbix API host for the community.zabbix modules (httpapi over TLS with the lab CA)
-      ansible.builtin.add_host:
-        name: zabbix
-        groups: zabbix_api
-        ansible_connection: ansible.netcommon.httpapi
-        ansible_network_os: community.zabbix.zabbix
-        ansible_host: "zabbix.{{ domain }}"
-        ansible_httpapi_port: 443
-        ansible_httpapi_use_ssl: true
-        ansible_httpapi_validate_certs: true
-        ansible_httpapi_ca_path: "{{ ca_file }}"
-        ansible_zabbix_url_path: ""
-        ansible_user: Admin
-        ansible_httpapi_pass: "{{ secrets.ZABBIX_ADMIN_PASSWORD }}"
-        ansible_python_interpreter: "{{ ansible_python_interpreter }}"
-        devices: "{{ devices }}"
-        linux_hosts: "{{ linux_hosts }}"
-        obs_secrets: "{{ secrets }}"
-      changed_when: false
-      no_log: true
-
-- name: Zabbix configuration from the documents
-  hosts: zabbix_api
-  gather_facts: false
-  vars_files:
-    - ../../observability/observability.yaml
-  vars:
-    tdir: "{{ playbook_dir }}/../../observability/zabbix/templates"
-    host_groups: >-
-      {{ (linux_hosts | map(attribute='group') | list
-          + devices | map(attribute='site') | map('regex_replace', '^(.*)$', zabbix.host_groups.devices | replace('{site}', '\1')) | list
-          + [zabbix.host_groups.synthetic]) | unique | sort }}
-  tasks:
-    - name: Lab templates (the network-device base before the ones that link it; generated ones last)
-      community.zabbix.zabbix_template:
-        template_yaml: "{{ lookup('ansible.builtin.file', tdir ~ '/' ~ item ~ '.yaml') }}"
-        state: present
-      loop: [lab-network-device, lab-ios-xe, lab-eos, lab-linux, lab-web-ui, lab-expiries]
-
-    - name: Stock templates the lab templates link must exist
-      community.zabbix.zabbix_template_info:
-        template_name: "{{ item }}"
-        format: json
-      loop: "{{ zabbix.templates.values() | map(attribute='stock') | flatten | unique }}"
-
-    - name: SNMPv3 credentials as secret global macros (the hosts' interfaces reference them)
-      community.zabbix.zabbix_globalmacro:
-        macro_name: "{{ item.name }}"
-        macro_value: "{{ item.value }}"
-        macro_type: "{{ item.type }}"
-        macro_description: "{{ item.description }}"
-        state: present
-      loop:
-        - {name: "{$SNMPV3_USER}", value: "{{ zabbix.snmpv3.user }}", type: text, description: "SNMPv3 user on every device (ADR 0051)"}
-        - {name: "{$SNMPV3_AUTHPASS}", value: "{{ obs_secrets.SNMPV3_AUTH_PASSWORD }}", type: secret, description: "SNMPv3 SHA auth"}
-        - {name: "{$SNMPV3_PRIVPASS}", value: "{{ obs_secrets.SNMPV3_PRIV_PASSWORD }}", type: secret, description: "SNMPv3 AES-128 privacy"}
-      loop_control:
-        label: "{{ item.name }}"
-      no_log: true
-
-    - name: Host groups
-      community.zabbix.zabbix_group:
-        host_groups: "{{ host_groups }}"
-        state: present
-
-    - name: Routers and switches over SNMPv3 (interface details reference the global macros)
-      community.zabbix.zabbix_host:
-        host_name: "{{ item.name }}"
-        visible_name: "{{ item.name }}"
-        description: "NetBox {{ item.platform }} {{ item.role }} at {{ item.site }} (ansible/playbooks/observability.yml)"
-        host_groups: ["{{ zabbix.host_groups.devices | replace('{site}', item.site) }}"]
-        link_templates: ["{{ zabbix.templates[item.platform].lab }}"]
-        status: enabled
-        tags:
-          - {tag: platform, value: "{{ item.platform }}"}
-          - {tag: site, value: "{{ item.site }}"}
-          - {tag: role, value: "{{ item.role }}"}
-        interfaces:
-          - type: snmp
-            main: 1
-            useip: 1
-            ip: "{{ item.ip }}"
-            dns: ""
-            port: "161"
-            details:
-              version: 3
-              bulk: 1
-              securityname: "{$SNMPV3_USER}"
-              securitylevel: 2
-              authprotocol: 1
-              authpassphrase: "{$SNMPV3_AUTHPASS}"
-              privprotocol: 1
-              privpassphrase: "{$SNMPV3_PRIVPASS}"
-        state: present
-      loop: "{{ devices }}"
-      loop_control:
-        label: "{{ item.name }}"
-
-    - name: Ubuntu machines over the passive agent
-      community.zabbix.zabbix_host:
-        host_name: "{{ item.name }}"
-        visible_name: "{{ item.name }}"
-        description: "{{ item.platform }} (ansible/playbooks/observability.yml)"
-        host_groups: ["{{ item.group }}"]
-        link_templates: ["{{ zabbix.templates[item.platform].lab }}"]
-        status: enabled
-        tags:
-          - {tag: platform, value: "{{ item.platform }}"}
-        interfaces:
-          - type: agent
-            main: 1
-            useip: 1
-            ip: "{{ item.ip }}"
-            dns: ""
-            port: "10050"
-        state: present
-      loop: "{{ linux_hosts }}"
-      loop_control:
-        label: "{{ item.name }}"
-
-    - name: Synthetic hosts (HTTP checks, expiries) with no interface, template items only
-      community.zabbix.zabbix_host:
-        host_name: "{{ item.name }}"
-        visible_name: "{{ item.name }}"
-        host_groups: ["{{ zabbix.host_groups.synthetic }}"]
-        link_templates: ["{{ item.template }}"]
-        status: enabled
-        interfaces: []
-        state: present
-      loop: "{{ zabbix.synthetic_hosts }}"
-      loop_control:
-        label: "{{ item.name }}"
-
-    # The play creates a host per NetBox record and never removed one, so a retired machine kept alarming:
-    # VM 205 was still a Zabbix host after S11.8 deleted it. The lab's host groups are this play's own, so a
-    # host in them that the documents no longer name is deleted - the contract netbox-seed.yml and
-    # netbox-vms.yml already have for a released address and a retired VM (ADR 0051 criterion 1).
-    - name: Every Zabbix host
-      community.zabbix.zabbix_host_info:
-      register: zbx_hosts_now
-
-    # Only hosts this play stamped with its own path are candidates, so Zabbix's built-ins and anything added
-    # by hand are never touched: the filter fails safe. A stamped host the documents no longer name is one
-    # this play created for a machine that has since been retired.
-    - name: Retired hosts deleted
-      community.zabbix.zabbix_host:
-        host_name: "{{ item }}"
-        state: absent
-      loop: >-
-        {{ zbx_hosts_now.hosts | default([])
-           | selectattr('description', 'defined')
-           | selectattr('description', 'search', 'ansible/playbooks/observability.yml')
-           | map(attribute='host') | list
-           | difference(devices | map(attribute='name') | list
-                        + linux_hosts | map(attribute='name') | list
-                        + zabbix.synthetic_hosts | map(attribute='name') | list) }}
-      loop_control:
-        label: "{{ item }} (retired)"
-
-    - name: Read-only user group for Grafana
-      community.zabbix.zabbix_usergroup:
-        name: lab-readonly
-        gui_access: default
-        debug_mode: disabled
-        status: enabled
-        hostgroup_rights: >-
-          {{ host_groups | map('regex_replace', '^(.*)$', '\1') | map('community.general.dict_kv', 'host_group')
-             | map('combine', {'permission': 'read-only'}) | list }}
-        state: present
-
-    - name: Grafana datasource user
-      community.zabbix.zabbix_user:
-        username: "{{ zabbix.grafana_user }}"
-        name: Grafana
-        surname: datasource
-        passwd: "{{ obs_secrets.ZABBIX_GRAFANA_PASSWORD }}"
-        override_passwd: true
-        usrgrps: [lab-readonly]
-        role_name: User role
-        state: present
-      no_log: true

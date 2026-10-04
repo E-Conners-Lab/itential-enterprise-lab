@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Phase 7 verification: observability (PID S7 criteria 1-4, 6, 7; S7.5 is asserted in phase 9, ADR 0050).
 # Intent: k8s/observability/versions.yaml, observability/observability.yaml, observability/expiries.yaml, NetBox.
-# State: the Zabbix API, the Prometheus/Alertmanager/Loki APIs and gNMIc's metrics through the VIPs (lab CA),
+# State: the Prometheus/Alertmanager/Loki APIs and gNMIc's metrics through the VIPs (lab CA; no Zabbix, ADR 0071),
 # kubectl, and independent second sources: snmpget from the workstation, systemctl over SSH, verify/devcmd.py,
 # the NetBox token and the lab CA file, the Platform's own metrics API. Writes: two no-op Push Configuration with Approval jobs
 # (S7.4, approved here as test-06b does) and, only with VERIFY_DRILLS=1, the br1-wan01 stop/start drill (S7.6).
@@ -10,14 +10,13 @@ set -uo pipefail
 cd "$(dirname "$0")/.."
 [ -f .env ] || { echo "missing .env"; exit 1; }
 set -a; . ./.env; set +a
-: "${NETBOX_URL:?}" "${NETBOX_TOKEN:?}" "${AUTOMATION_PASSWORD:?}" "${ITENTIAL_ADMIN_PASSWORD:?}" "${ZABBIX_ADMIN_PASSWORD:?}" "${SNMPV3_AUTH_PASSWORD:?}" "${SNMPV3_PRIV_PASSWORD:?}"
+: "${NETBOX_URL:?}" "${NETBOX_TOKEN:?}" "${AUTOMATION_PASSWORD:?}" "${ITENTIAL_ADMIN_PASSWORD:?}" "${SNMPV3_AUTH_PASSWORD:?}" "${SNMPV3_PRIV_PASSWORD:?}"
 export KUBECONFIG="${KUBECONFIG_PATH:-$HOME/.kube/lab-k3s.yaml}"
 PY=.venv/bin/python
 CA=docs/lab-root-ca.crt
 V=k8s/observability/versions.yaml
 OBS=observability/observability.yaml
 NS=$(${PY} -c "import yaml;print(yaml.safe_load(open('$V'))['obs_namespace'])")
-ZBX=https://zabbix.lab.internal/api_jsonrpc.php
 PROM=https://prometheus.lab.internal
 AM=https://alertmanager.lab.internal
 LOKI=https://loki.lab.internal
@@ -44,127 +43,95 @@ mkdir -p verify/results; exec > >(tee "verify/results/${ts}-07-observability.log
 echo "# test-07-observability ${ts}"
 [ -s "$CA" ] || { bad "$CA missing"; echo; echo "passed=0 failed=1"; exit 1; }
 
-# --- Zabbix JSON-RPC ---------------------------------------------------------------------------------
-ZTOKEN=""
-zbx() { # zbx <method> <params json> -> result json (stdout); exit 1 on an API error
-  local auth=""; [ -n "$ZTOKEN" ] && auth="-H \"Authorization: Bearer ${ZTOKEN}\""
-  local body; body=$(eval curl -s -m 60 --cacert "$CA" "$auth" -H '"Content-Type: application/json-rpc"' "$ZBX" -d "'{\"jsonrpc\":\"2.0\",\"method\":\"$1\",\"params\":$2,\"id\":1}'")
-  echo "$body" | ${PY} -c 'import sys,json;d=json.load(sys.stdin);
-if "error" in d: print(json.dumps(d["error"]), file=sys.stderr); sys.exit(1)
-print(json.dumps(d["result"]))'
+# the routers and switches Prometheus watches (ios-xe, eos), from NetBox: "name platform ip site"; a device without a
+# primary IPv4 cannot be a target and is named on stderr instead of breaking the list (dc1-asa01, 2026-10-04)
+expected_devices() {
+  ${PY} - <<'PY'
+import os, json, sys, urllib.request
+h = {"Authorization": f"Token {os.environ['NETBOX_TOKEN']}"}
+url = os.environ["NETBOX_URL"] + "/api/dcim/devices/?status=active&limit=200"
+for d in json.load(urllib.request.urlopen(urllib.request.Request(url, headers=h)))["results"]:
+    plat = (d.get("platform") or {}).get("slug")
+    if plat not in ("ios-xe", "eos"):
+        continue
+    if not d.get("primary_ip4"):
+        print(f"{d['name']}: active {plat} device with no primary IPv4 (not counted)", file=sys.stderr)
+        continue
+    print(d["name"], plat, d["primary_ip4"]["address"].split("/")[0], d["site"]["slug"])
+PY
 }
-zbx_login() { ZTOKEN=""; ZTOKEN=$(zbx user.login "{\"username\":\"Admin\",\"password\":\"${ZABBIX_ADMIN_PASSWORD}\"}" | tr -d '"'); [ -n "$ZTOKEN" ]; }
-zbx_login || { bad "Zabbix API login at ${ZBX} (ZABBIX_ADMIN_PASSWORD)"; }
 
-# expected monitored hosts from NetBox (ADR 0051 decision 12) + the two pre-existing machines
-expected_hosts() {
+# the Ubuntu machines observability-hosts.yml manages: "name ip user" (observability.yaml syslog)
+expected_ubuntu() {
   ${PY} - <<'PY'
 import os, json, urllib.request, yaml
-obs = yaml.safe_load(open("observability/observability.yaml"))["zabbix"]
+syslog = yaml.safe_load(open("observability/observability.yaml"))["syslog"]
 h = {"Authorization": f"Token {os.environ['NETBOX_TOKEN']}"}
 def get(p):
     return json.load(urllib.request.urlopen(urllib.request.Request(os.environ["NETBOX_URL"] + "/api/" + p, headers=h)))["results"]
 rows = []
 for d in get("dcim/devices/?status=active&limit=200"):
-    plat = (d.get("platform") or {}).get("slug")
-    if plat and plat not in obs["excluded_platforms"]:
-        rows.append((d["name"], plat, d["primary_ip4"]["address"].split("/")[0], d["site"]["slug"]))
+    if ((d.get("platform") or {}).get("slug") or "").startswith("ubuntu-") and d.get("primary_ip4"):
+        rows.append((d["name"], d["primary_ip4"]["address"].split("/")[0]))
 for v in get("virtualization/virtual-machines/?status=active&limit=200"):
-    # ADR 0063: the Copilot sandbox's VMs are active (the inventory needs that) but deliberately unmonitored
-    if (v.get("role") or {}).get("slug") in obs.get("excluded_vm_roles", []):
+    if not ((v.get("platform") or {}).get("slug") or "").startswith("ubuntu-") or not v.get("primary_ip4"):
         continue
-    rows.append((v["name"], (v.get("platform") or {}).get("slug"), v["primary_ip4"]["address"].split("/")[0], "vms"))
-for e in obs["extra_hosts"]:
-    rows.append((e["name"], e["platform"], e["address"], "vms"))
-for r in sorted(rows): print(*r)
+    if (v.get("role") or {}).get("slug") in syslog["excluded_vm_roles"]:
+        continue
+    rows.append((v["name"], v["primary_ip4"]["address"].split("/")[0]))
+for e in syslog["extra_hosts"]:
+    rows.append((e["name"], e["address"]))
+def user(name):  # the login each machine takes (as before ADR 0071)
+    if name in ("eve", "netbox"):
+        return "root"
+    return "ubuntu" if name.startswith("k3s-") or name in ("oob-gw", "itential") else "automation"
+for name, ip in sorted(rows): print(name, ip, user(name))
 PY
 }
 
-# --- S7.1 Zabbix: every managed host monitored and green; the Expiries host ---------------------------
+# --- S7.1 expiries in Prometheus, SNMPv3 from the workstation, syslog forwarding and no Zabbix agent ---------
 c1() {
-  [ -n "$ZTOKEN" ] || return 1
-  expected_hosts > /tmp/verify07.hosts.$$ || return 1
-  local n_exp; n_exp=$(wc -l < /tmp/verify07.hosts.$$ | tr -d ' ')
-  zbx host.get '{"output":["host","status"],"selectInterfaces":["ip","type","available","error"],"selectParentTemplates":["name"]}' > /tmp/verify07.zh.$$ || return 1
-  ${PY} - /tmp/verify07.hosts.$$ /tmp/verify07.zh.$$ <<'PY' || return 1
-import json, sys, yaml
-obs = yaml.safe_load(open("observability/observability.yaml"))["zabbix"]
-exp = {l.split()[0]: l.split() for l in open(sys.argv[1]) if l.strip()}
-hosts = {h["host"]: h for h in json.load(open(sys.argv[2]))}
-errs = []
-for name, (_, plat, ip, site) in exp.items():
-    h = hosts.get(name)
-    if not h: errs.append(f"{name}: not in Zabbix"); continue
-    if h["status"] != "0": errs.append(f"{name}: disabled")
-    tpl = obs["templates"][plat]["lab"]
-    if tpl not in {t["name"] for t in h["parentTemplates"]}: errs.append(f"{name}: template {tpl} not linked")
-    for i in h["interfaces"]:
-        if i["ip"] != ip: errs.append(f"{name}: interface {i['ip']} != NetBox {ip}")
-        if i["available"] != "1": errs.append(f"{name}: interface type {i['type']} available={i['available']} {i.get('error','')}")
-for s in obs["synthetic_hosts"]:
-    if s["name"] not in hosts: errs.append(f"{s['name']}: synthetic host missing")
-extra = set(hosts) - set(exp) - {s["name"] for s in obs["synthetic_hosts"]} - {"Zabbix server"}
-if extra: errs.append(f"unexpected Zabbix hosts: {sorted(extra)}")
+  expected_devices > /tmp/verify07.hosts.$$ || return 1
+  # the expiry series (ADR 0071): one per YAML entry, its value the YAML date recomputed here; the NetBox token and
+  # the lab CA read back from their live sources
+  web "${PROM}/api/v1/query" --data-urlencode "query=lab:expiry_days_left" > /tmp/verify07.exp.$$ || return 1
+  local tok; tok=$(nb "${NETBOX_URL}/api/users/tokens/?limit=50" | ${PY} -c 'import sys,json;print(max((t.get("expires") or "") for t in json.load(sys.stdin)["results"] if "phase 2" in (t.get("description") or ""))[:10])')
+  local ca; ca=$(openssl x509 -in "$CA" -noout -enddate | sed 's/notAfter=//'); ca=$(${PY} -c "import datetime,sys;print(datetime.datetime.strptime(sys.argv[1].strip(),'%b %d %H:%M:%S %Y %Z').date())" "$ca")
+  ${PY} - /tmp/verify07.exp.$$ "$tok" "$ca" <<'PY' || return 1
+import datetime, json, sys, yaml
+doc = yaml.safe_load(open("observability/expiries.yaml"))
+res = json.load(open(sys.argv[1]))["data"]["result"]
+got = {r["metric"]["key"]: float(r["value"][1]) for r in res}
+now = datetime.datetime.now(datetime.UTC); errs = []
+by_key = {e["key"]: e for e in doc["expiries"]}
+if by_key["netbox-api-token"]["expires"] != sys.argv[2]: errs.append(f"NetBox token expires {sys.argv[2]}, YAML says {by_key['netbox-api-token']['expires']}")
+if by_key["lab-root-ca"]["expires"] != sys.argv[3]: errs.append(f"lab CA notAfter {sys.argv[3]}, YAML says {by_key['lab-root-ca']['expires']}")
+for e in doc["expiries"]:
+    want = (datetime.datetime.fromisoformat(e["expires"] + "T00:00:00+00:00") - now).total_seconds() / 86400
+    have = got.pop(e["key"], None)
+    # the recording rule is evaluated hourly: allow an hour and a little
+    if have is None or abs(have - want) > 0.05: errs.append(f"{e['key']}: days left {have} vs {want:.2f}")
+if got: errs.append(f"series without a YAML entry: {sorted(got)}")
 if errs: print("\n".join(errs)); sys.exit(1)
-print(f"{len(exp)} NetBox-derived hosts monitored and available; synthetic: {[s['name'] for s in obs['synthetic_hosts']]}")
+print(f"{len(doc['expiries'])} expiry series agree with the YAML dates; NetBox token and lab CA dates match the live sources")
 PY
-  # no open problem from a lab trigger (LAB: prefix) on any host
-  local probs; probs=$(zbx problem.get '{"output":["name"],"search":{"name":"LAB:"},"recent":false}') || return 1
-  [ "$(echo "$probs" | ${PY} -c 'import sys,json;print(len(json.load(sys.stdin)))')" = 0 ] || { echo "open LAB problems: $probs"; return 1; }
-  # second source 1: SNMPv3 from the workstation with the same credentials, one device per vendor
-  local ip name
+  # SNMPv3 from the workstation with the credentials snmp-exporter uses, one device per vendor
+  local ip name user
   for name in br1-wan01 dc1-spine01; do
     ip=$(awk -v n="$name" '$1==n{print $3}' /tmp/verify07.hosts.$$)
     snmpget -v3 -u zabbix -l authPriv -a SHA -A "$SNMPV3_AUTH_PASSWORD" -x AES -X "$SNMPV3_PRIV_PASSWORD" -t 5 -r 1 "$ip" 1.3.6.1.2.1.1.5.0 2>&1 | grep -q "$name" || { echo "snmpget sysName from $name ($ip) failed"; return 1; }
   done
   echo "snmpget sysName over SNMPv3 from the workstation: br1-wan01, dc1-spine01"
-  # second source 2: the agent runs on every Ubuntu machine
-  local plat user
-  while read -r name plat ip site; do
-    case "$plat" in ubuntu-*) ;; *) continue;; esac
-    case "$name" in eve|netbox) user=root;; k3s-*|oob-gw|itential) user=ubuntu;; *) user=automation;; esac
-    $SSH "${user}@${ip}" "systemctl is-active zabbix-agent2 && systemctl is-active rsyslog" 2>/dev/null | grep -cx active | grep -qx 2 || { echo "$name: zabbix-agent2 / rsyslog not active"; return 1; }
-  done < /tmp/verify07.hosts.$$
-  echo "zabbix-agent2 + rsyslog active on every Ubuntu machine (systemctl over SSH)"
+  # every managed Ubuntu machine forwards syslog and runs no Zabbix agent (systemctl and dpkg over SSH)
+  expected_ubuntu > /tmp/verify07.ubuntu.$$ || return 1
+  local n=0
+  while read -r name ip user; do
+    $SSH "${user}@${ip}" "systemctl is-active rsyslog && ! dpkg -s zabbix-agent2 >/dev/null 2>&1 && echo no-agent" 2>/dev/null | tr '\n' ' ' | grep -q "^active no-agent" || { echo "$name: rsyslog not active, or zabbix-agent2 still installed"; return 1; }
+    n=$((n+1))
+  done < /tmp/verify07.ubuntu.$$
+  echo "rsyslog active and no zabbix-agent2 on all ${n} managed Ubuntu machines (systemctl, dpkg over SSH)"
 }
-check "S7.1 Zabbix monitors every NetBox-active host (+eve, netbox) green with the lab templates; SNMPv3 and the agents confirmed from the workstation" c1
-
-c1b() {
-  [ -n "$ZTOKEN" ] || return 1
-  local hid; hid=$(zbx host.get '{"output":["hostid"],"filter":{"host":"expiries"}}' | ${PY} -c 'import sys,json;d=json.load(sys.stdin);print(d[0]["hostid"] if d else "")'); [ -n "$hid" ] || { echo "host expiries missing"; return 1; }
-  zbx item.get "{\"output\":[\"key_\",\"lastvalue\",\"lastclock\",\"state\",\"error\"],\"hostids\":\"$hid\"}" > /tmp/verify07.items.$$ || return 1
-  zbx trigger.get "{\"output\":[\"description\",\"expression\"],\"hostids\":\"$hid\",\"expandExpression\":true}" > /tmp/verify07.trig.$$ || return 1
-  local tok; tok=$(nb "${NETBOX_URL}/api/users/tokens/?limit=50" | ${PY} -c 'import sys,json;print(max((t.get("expires") or "") for t in json.load(sys.stdin)["results"] if "phase 2" in (t.get("description") or ""))[:10])')
-  local ca; ca=$(openssl x509 -in "$CA" -noout -enddate | sed 's/notAfter=//'); ca=$(${PY} -c "import datetime,sys;print(datetime.datetime.strptime(sys.argv[1].strip(),'%b %d %H:%M:%S %Y %Z').date())" "$ca")
-  ${PY} - /tmp/verify07.items.$$ /tmp/verify07.trig.$$ "$tok" "$ca" <<'PY' || return 1
-import datetime, json, sys, yaml
-doc = yaml.safe_load(open("observability/expiries.yaml"))
-items = {i["key_"]: i for i in json.load(open(sys.argv[1]))}
-trig = json.load(open(sys.argv[2]))
-now = datetime.datetime.now(datetime.UTC); errs = []
-by_key = {e["key"]: e for e in doc["expiries"]}
-if by_key["netbox-api-token"]["expires"] != sys.argv[3]: errs.append(f"NetBox token expires {sys.argv[3]}, YAML says {by_key['netbox-api-token']['expires']}")
-if by_key["lab-root-ca"]["expires"] != sys.argv[4]: errs.append(f"lab CA notAfter {sys.argv[4]}, YAML says {by_key['lab-root-ca']['expires']}")
-for e in doc["expiries"]:
-    it = items.pop(f"expiry.days[{e['key']}]", None)
-    if not it: errs.append(f"{e['key']}: no item"); continue
-    if it["state"] != "0": errs.append(f"{e['key']}: item unsupported: {it['error']}"); continue
-    # the item computes (expiry midnight UTC - now) once an hour; the verify recomputes it the same way
-    want = (datetime.datetime.fromisoformat(e["expires"] + "T00:00:00+00:00") - now).total_seconds() / 86400
-    got = float(it["lastvalue"]) if it["lastclock"] != "0" else None
-    if got is None or abs(got - want) > 0.1: errs.append(f"{e['key']}: days left {got} vs {want:.2f}")
-if items: errs.append(f"items without a YAML entry: {sorted(items)}")
-want_t = {f"expiry.days[{e['key']}]" for e in doc["expiries"]}
-import re
-have_t = {m.group(1) for t in trig for m in [re.search(r"\(/[^/]+/([^)]+\])\)", t["expression"])] if m}
-for t in trig:
-    if f"<{doc['warn_days']}" not in t["expression"].replace(" ", ""): errs.append(f"trigger without <{doc['warn_days']}: {t['expression']}")
-if want_t - have_t: errs.append(f"no trigger for {sorted(want_t - have_t)}")
-if errs: print("\n".join(errs)); sys.exit(1)
-print(f"{len(doc['expiries'])} expiry items agree with the YAML dates (within 0.1 d); {len(trig)} triggers at {doc['warn_days']} days; NetBox token and lab CA dates match the live sources")
-PY
-}
-check "S7.1 Expiries host: one item per manifest expiry (days left agrees with the date, NetBox token and lab CA read back), trigger at 14 days" c1b
+check "S7.1 expiries in Prometheus agree with the YAML and the live sources; SNMPv3 answers from the workstation; every Ubuntu machine forwards syslog and runs no Zabbix agent" c1
 
 # --- S7.2 Prometheus: targets equal the declared jobs, none down ------------------------------------------
 c2() {
@@ -172,7 +139,7 @@ c2() {
   local n_nodes n_dev n_eos n_ios
   n_nodes=$(kubectl get nodes --no-headers | wc -l | tr -d ' ')
   n_dev=$(awk '$2=="ios-xe"||$2=="eos"' /tmp/verify07.hosts.$$ 2>/dev/null | wc -l | tr -d ' ')
-  [ "$n_dev" -gt 0 ] || { expected_hosts > /tmp/verify07.hosts.$$; n_dev=$(awk '$2=="ios-xe"||$2=="eos"' /tmp/verify07.hosts.$$ | wc -l | tr -d ' '); }
+  [ "$n_dev" -gt 0 ] || { expected_devices > /tmp/verify07.hosts.$$; n_dev=$(awk '$2=="ios-xe"||$2=="eos"' /tmp/verify07.hosts.$$ | wc -l | tr -d ' '); }
   n_eos=$(awk '$2=="eos"' /tmp/verify07.hosts.$$ | wc -l | tr -d ' '); n_ios=$(awk '$2=="ios-xe"' /tmp/verify07.hosts.$$ | wc -l | tr -d ' ')
   ${PY} - /tmp/verify07.targets.$$ "$n_nodes" "$n_dev" "$n_eos" "$n_ios" <<'PY' || return 1
 import collections, json, sys, yaml
@@ -213,10 +180,11 @@ c2b() {
   local dash; dash=$(web -u "admin:${GRAFANA_ADMIN_PASSWORD:?}" "${GRAFANA}/api/search?type=dash-db&tag=lab" | ${PY} -c 'import sys,json;print(sorted(d["title"] for d in json.load(sys.stdin)))')
   for d in $(${PY} -c "import yaml;print(' '.join(yaml.safe_load(open('$OBS'))['grafana']['dashboards']))"); do echo "$dash" | grep -qi "$(echo "$d" | tr '-' ' ')" || { echo "dashboard $d missing: $dash"; return 1; }; done
   local ds; ds=$(web -u "admin:${GRAFANA_ADMIN_PASSWORD}" "${GRAFANA}/api/datasources" | ${PY} -c 'import sys,json;print(sorted(d["type"] for d in json.load(sys.stdin)))')
-  for t in prometheus alertmanager loki alexanderzobnin-zabbix-datasource; do echo "$ds" | grep -q "$t" || { echo "datasource $t missing: $ds"; return 1; }; done
+  for t in prometheus alertmanager loki; do echo "$ds" | grep -q "$t" || { echo "datasource $t missing: $ds"; return 1; }; done
+  echo "$ds" | grep -qi zabbix && { echo "a Zabbix datasource is still provisioned (ADR 0071): $ds"; return 1; }
   echo "dashboards $dash; datasources $ds"
 }
-check "S7.5-prep Grafana provisions the lab dashboards and the Prometheus/Alertmanager/Loki/Zabbix datasources (login via Keycloak: phase 9)" c2b
+check "S7.5-prep Grafana provisions the lab dashboards and the Prometheus/Alertmanager/Loki datasources, and no Zabbix one (login via Keycloak: phase 9)" c2b
 
 # --- S7.3 gNMIc BGP session count for dc1-spine01 equals show bgp summary ---------------------------------
 c3() {
@@ -320,12 +288,13 @@ check "S7.8 the official Itential Platform Monitoring dashboard (grafana.com 255
 
 defer "S7.5 Grafana login via Keycloak and every dashboard renders with data: identity phase (ADR 0050)"
 
-# --- S7.6 drill: stop br1-wan01 -> Zabbix problem + Alertmanager alert within 3 min; start -> both clear ----
+# --- S7.6 drill: stop br1-wan01 -> Alertmanager alert within 3 min and the workstation's ping fails; start -> both
+# clear (the ping is the independent second source since ADR 0071 removed Zabbix) ------------------------------
 if [ "${VERIFY_DRILLS:-0}" = 1 ]; then
   c6() {
     : "${EVE_HOST:?}" "${EVE_USERNAME:?}" "${EVE_PASSWORD:?}"
     local node; node=br1-wan01
-    zbx_login || return 1
+    local ip; ip=$(expected_devices | awk -v n="$node" '$1==n{print $3}'); [ -n "$ip" ] || return 1
     local t0 zp am i
     ${PY} - <<'PY' || return 1
 import sys; sys.path.insert(0, ".")
@@ -335,7 +304,7 @@ PY
     t0=$(date +%s); zp=""; am=""
     for i in $(seq 1 36); do
       sleep 5
-      [ -z "$zp" ] && zp=$(zbx problem.get '{"output":["name","clock"],"search":{"name":"LAB: br1-wan01"},"recent":false}' | ${PY} -c 'import sys,json;d=json.load(sys.stdin);print(d[0]["name"] if d else "")')
+      [ -z "$zp" ] && { ping -c 2 -t 3 "$ip" >/dev/null 2>&1 || zp="no ping from the workstation"; }
       [ -z "$am" ] && am=$(web "${AM}/api/v2/alerts?filter=alertname%3DLabDeviceDown&filter=device%3Dbr1-wan01&active=true" | ${PY} -c 'import sys,json;d=json.load(sys.stdin);print(d[0]["labels"]["alertname"] if d else "")')
       [ -n "$zp" ] && [ -n "$am" ] && break
     done
@@ -345,17 +314,17 @@ import sys; sys.path.insert(0, ".")
 from eve.build import eve_from_env
 eve = eve_from_env(); eve.start(eve.nodes()["br1-wan01"]["id"]); print("started br1-wan01")
 PY
-    [ -n "$zp" ] && [ -n "$am" ] && [ "$dt" -le 180 ] || { echo "after ${dt}s: zabbix='${zp}' alertmanager='${am}' (need both within 180 s)"; return 1; }
-    echo "both raised after ${dt}s: Zabbix '${zp}', Alertmanager '${am}'"
+    [ -n "$zp" ] && [ -n "$am" ] && [ "$dt" -le 180 ] || { echo "after ${dt}s: ping='${zp}' alertmanager='${am}' (need both within 180 s)"; return 1; }
+    echo "both seen after ${dt}s: ${zp}, Alertmanager '${am}'"
     for i in $(seq 1 72); do
       sleep 10
-      zp=$(zbx problem.get '{"output":["name"],"search":{"name":"LAB: br1-wan01"},"recent":false}' | ${PY} -c 'import sys,json;print(len(json.load(sys.stdin)))')
+      zp=$(ping -c 2 -t 3 "$ip" >/dev/null 2>&1 && echo 0 || echo 1)
       am=$(web "${AM}/api/v2/alerts?filter=alertname%3DLabDeviceDown&filter=device%3Dbr1-wan01&active=true" | ${PY} -c 'import sys,json;print(len(json.load(sys.stdin)))')
       [ "$zp" = 0 ] && [ "$am" = 0 ] && { echo "both cleared $(( $(date +%s) - t0 ))s after the stop (router rebooted)"; return 0; }
     done
-    echo "not cleared within 12 min of the stop: zabbix problems=$zp alerts=$am"; return 1
+    echo "not cleared within 12 min of the stop: ping failing=$zp alerts=$am"; return 1
   }
-  check "S7.6 drill: stopping br1-wan01 raises a Zabbix trigger and an Alertmanager alert within 3 min; starting it clears both" c6
+  check "S7.6 drill: stopping br1-wan01 raises an Alertmanager alert within 3 min and the workstation's ping fails; starting it clears both" c6
 else
   skip "S7.6 drill (set VERIFY_DRILLS=1 to run; stops br1-wan01 for a few minutes)"
 fi

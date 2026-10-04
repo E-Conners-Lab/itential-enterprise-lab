@@ -20,7 +20,7 @@ lab:
   # ansible/playbooks/observability-devices.yml, never rendered into a committed config.
   observability:
     syslog: 10.100.0.38
-    snmp: {user: zabbix, group: LAB, view: LAB}
+    snmp: {user: zabbix, group: LAB, view: LAB} # the user keeps its pre-ADR-0071 name: renaming it is a push to every device
     gnmi: {port: 6030}
 
 sites:

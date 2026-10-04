@@ -13,6 +13,6 @@ nothing unless `AWS_VPN=1`. That is the only skip, and it depends on the flag, n
 
 Rules (from the kickoff brief):
 - A test proves **integration**, not liveness. "NetBox returns the reserved IP",
-  "Zabbix discovered a device over OOB", "Oxidized pulled a config" — not "port open".
+  "Prometheus scrapes a device over SNMPv3", "Oxidized pulled a config" — not "port open".
 - Fail loud. A test that cannot reach its target exits non-zero; it never skips.
 - Discovery (`discover.sh`) is read-only and also records to `results/`.

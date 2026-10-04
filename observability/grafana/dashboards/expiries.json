@@ -1,7 +1,7 @@
 {
  "uid": "lab-expiries",
  "title": "Expiries",
- "description": "PID S7: every evaluation, licence, token and certificate expiry from observability/expiries.yaml, through the Zabbix datasource.",
+ "description": "PID S7: every evaluation, licence, token and certificate expiry from observability/expiries.yaml, through the lab:expiry_days_left series of the generated PrometheusRule lab-expiries (ADR 0071).",
  "tags": [
   "lab"
  ],
@@ -23,11 +23,11 @@
  "panels": [
   {
    "id": 1,
-   "title": "Days left per expiry (Zabbix)",
+   "title": "Days left per expiry",
    "type": "bargauge",
    "datasource": {
-    "type": "alexanderzobnin-zabbix-datasource",
-    "uid": "zabbix"
+    "type": "prometheus",
+    "uid": "prometheus"
    },
    "gridPos": {
     "x": 0,
@@ -38,24 +38,13 @@
    "targets": [
     {
      "datasource": {
-      "type": "alexanderzobnin-zabbix-datasource",
-      "uid": "zabbix"
+      "type": "prometheus",
+      "uid": "prometheus"
      },
      "refId": "A",
-     "queryType": "0",
-     "group": {
-      "filter": "lab/synthetic"
-     },
-     "host": {
-      "filter": "expiries"
-     },
-     "application": {
-      "filter": ""
-     },
-     "item": {
-      "filter": "/.*/"
-     },
-     "functions": []
+     "expr": "lab:expiry_days_left",
+     "instant": true,
+     "legendFormat": "{{name}} ({{expires}})"
     }
    ],
    "fieldConfig": {
@@ -98,8 +87,8 @@
    "title": "Days left over time",
    "type": "timeseries",
    "datasource": {
-    "type": "alexanderzobnin-zabbix-datasource",
-    "uid": "zabbix"
+    "type": "prometheus",
+    "uid": "prometheus"
    },
    "gridPos": {
     "x": 0,
@@ -110,24 +99,12 @@
    "targets": [
     {
      "datasource": {
-      "type": "alexanderzobnin-zabbix-datasource",
-      "uid": "zabbix"
+      "type": "prometheus",
+      "uid": "prometheus"
      },
      "refId": "B",
-     "queryType": "0",
-     "group": {
-      "filter": "lab/synthetic"
-     },
-     "host": {
-      "filter": "expiries"
-     },
-     "application": {
-      "filter": ""
-     },
-     "item": {
-      "filter": "/.*/"
-     },
-     "functions": []
+     "expr": "lab:expiry_days_left",
+     "legendFormat": "{{name}}"
     }
    ],
    "fieldConfig": {
@@ -140,42 +117,26 @@
   },
   {
    "id": 3,
-   "title": "Open expiry problems (Zabbix)",
-   "type": "alexanderzobnin-zabbix-triggers-panel",
-   "datasource": {
-    "type": "alexanderzobnin-zabbix-datasource",
-    "uid": "zabbix"
-   },
+   "title": "Expiry alerts (LabExpirySoon)",
+   "type": "alertlist",
    "gridPos": {
     "x": 0,
     "y": 17,
     "w": 24,
     "h": 7
    },
-   "targets": [
-    {
-     "datasource": {
-      "type": "alexanderzobnin-zabbix-datasource",
-      "uid": "zabbix"
-     },
-     "refId": "C",
-     "queryType": "5",
-     "group": {
-      "filter": "lab/synthetic"
-     },
-     "host": {
-      "filter": "expiries"
-     },
-     "trigger": {
-      "filter": "/.*/"
-     }
-    }
-   ],
-   "fieldConfig": {
-    "defaults": {},
-    "overrides": []
-   },
-   "options": {}
+   "options": {
+    "alertName": "LabExpirySoon",
+    "showOptions": "current",
+    "maxItems": 20,
+    "stateFilter": {
+     "firing": true,
+     "pending": true,
+     "normal": false
+    },
+    "alertInstanceLabelFilter": "",
+    "datasource": "prometheus"
+   }
   }
  ]
 }

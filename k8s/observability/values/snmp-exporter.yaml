@@ -15,7 +15,7 @@ config: |
     auths:
       lab_v3:
         version: 3
-        username: zabbix # the same SNMPv3 user Zabbix polls with (topology lab.observability.snmp.user)
+        username: zabbix # topology lab.observability.snmp.user (named for Zabbix, which ADR 0071 removed)
         security_level: authPriv
         password: ${SNMPV3_AUTH_PASSWORD}
         auth_protocol: SHA

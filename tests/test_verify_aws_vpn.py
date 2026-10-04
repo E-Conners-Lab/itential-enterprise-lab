@@ -3,6 +3,7 @@ tested here, the parameters are exactly what the services take, and the workflow
 
 from __future__ import annotations
 
+import os
 import importlib.util
 import json
 import subprocess
@@ -17,7 +18,7 @@ build = importlib.util.module_from_spec(_SPEC)
 _SPEC.loader.exec_module(build)
 WF = json.loads((ROOT / "itential" / "workflows" / "verify-aws-vpn.json").read_text())
 TARGETS = build.VERSIONS["aws_vpn"]["targets"]
-CDP = Path.home() / "PycharmProjects" / "cloud-devops-pipeline" / "itential"
+CDP = Path(os.environ.get("CDP_DIR") or Path.home() / "PycharmProjects" / "cloud-devops-pipeline") / "itential"  # a checkout at the pin
 
 
 

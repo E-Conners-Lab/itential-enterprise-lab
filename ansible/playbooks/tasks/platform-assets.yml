@@ -82,7 +82,7 @@
   when: item.status != 200
 
 # S4f (ADR 0054): an adapter the documents stop naming is removed, the same way netbox-vms.yml and
-# observability.yml prune a VM and a Zabbix host (ADR 0053 S11.8). Without this, dropping
+# observability.yml pruned a VM and a Zabbix host (ADR 0053 S11.8). Without this, dropping
 # adapter-servicenow from the oracle left it installed and RUNNING on every node - the instance is
 # created by this play but was never owned by it afterwards. The filter is deliberately narrow: only
 # an @itentialopensource adapter this play knows how to create is ever a candidate, so the

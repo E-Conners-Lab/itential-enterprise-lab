@@ -70,7 +70,7 @@ netbox-nxos: ## Mock Cisco NX-OS devices in NetBox only, for the Cisco NX-OS pro
 # Monitoring is built in phase 7 and sizes itself from NetBox, so anything registered after that is
 # invisible to it until this runs (ADR 0057). Idempotent. Deliberately NOT observability-devices.yml:
 # those are governed pushes that raise a Work Center card per device and need a person.
-observability-refresh: ## Make Zabbix and Prometheus catch up with the hosts NetBox now holds (ADR 0057)
+observability-refresh: ## Make Prometheus catch up with the devices NetBox now holds (ADR 0057)
 	$(load_env) cd ansible && ansible-playbook playbooks/observability.yml
 	$(load_env) cd ansible && ansible-playbook -i inventory/netbox.yml -i inventory/phase2.yml playbooks/observability-hosts.yml
 
@@ -273,10 +273,10 @@ copilot-prod: ## svc-copilot on production: LDAP user, 3 custom read roles, copi
 agents-push: ## Push itential/agents/*.yaml prompts to the Platform (CHECK=1 to diff only)
 	$(load_env) .venv/bin/python itential/agents/push.py $(if $(CHECK),--check,) $(AGENT)
 
-# Phase 7 (PID S7, ADR 0051). The stack and its Zabbix configuration on k3s, the agents on every Ubuntu machine
+# Phase 7 (PID S7, ADR 0051; no Zabbix since ADR 0071). The stack on k3s, syslog forwarding on every Ubuntu machine
 # (NetBox inventory for the VMs and EVE-NG endpoints, phase2.yml for the two pre-existing machines), then the
 # governed device pushes (one Push Configuration with Approval job per router/switch; the owner approves the Work Center cards).
-phase-observability: ## Phase 7: NetBox seed (phase labels, released addresses) -> resolver aliases -> stack + Zabbix config -> agents on every Ubuntu machine -> device pushes (approvals) -> verify
+phase-observability: ## Phase 7: NetBox seed (phase labels, released addresses) -> resolver aliases -> stack -> syslog forwarding on every Ubuntu machine -> device pushes (approvals) -> verify
 	$(load_env) cd ansible && ansible-playbook playbooks/netbox-seed.yml
 	$(load_env) cd ansible && ansible-playbook playbooks/oob-gw.yml --tags dns
 	$(load_env) cd ansible && ansible-playbook playbooks/observability.yml

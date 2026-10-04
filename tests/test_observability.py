@@ -1,7 +1,7 @@
 """Phase 7 (PID S7, ADR 0051): the observability documents never drift from their oracles.
 
-k8s/observability/versions.yaml is held to docs/image-manifest.md 4.3 and topology/ipam.yaml; the generated
-Zabbix templates equal what observability/zabbix/build.py renders from expiries.yaml / observability.yaml;
+k8s/observability/versions.yaml is held to docs/image-manifest.md 4.3 and topology/ipam.yaml; Zabbix stays removed
+(ADR 0071) and the plays delete what it left;
 the device telemetry lines in the topology templates and Golden Config read the same addresses; the
 Platform exporter parses the measured API shapes. Runs in CI with no lab access.
 """
@@ -55,7 +55,6 @@ def test_every_pin_is_explicit() -> None:
 @pytest.mark.parametrize(
     ("key", "label"),
     [
-        ("zabbix", "Zabbix"),
         ("kube_prometheus_stack", "kube-prometheus-stack"),
         ("snmp_exporter", "SNMP exporter"),
         ("blackbox_exporter", "Blackbox exporter"),
@@ -75,20 +74,17 @@ def test_images_match_manifest() -> None:
     rows = _manifest_rows("### 4.3 Observability", "### 4.4")
     c = VERSIONS["components"]
     assert f"{c['gnmic']['image']}:{c['gnmic']['image_tag']}" in rows["gNMIc"][3]
-    assert c["zabbix"]["image_tag"] in rows["Zabbix"][3] and c["zabbix"]["agent2_version"] in rows["Zabbix agent 2 (every Ubuntu machine)"][1]
     assert c["loki"]["app_version"] in rows["Loki"][3] and c["alloy"]["app_version"] in rows["Alloy"][3]
     assert c["kube_prometheus_stack"]["grafana_version"] in rows["kube-prometheus-stack"][3]
     assert c["snmp_exporter"]["app_version"] in rows["SNMP exporter"][3]
     assert c["blackbox_exporter"]["app_version"] in rows["Blackbox exporter"][3]
-    assert c["kube_prometheus_stack"]["grafana_zabbix_plugin"].split("@")[1] in rows["Grafana Zabbix plugin"][1]
+    assert not [r for r in rows if "zabbix" in r.lower()], "docs/image-manifest.md 4.3 still lists Zabbix (ADR 0071)"
 
 
-def test_exporter_image_is_the_runner_base_and_db_image_the_platform_one() -> None:
+def test_exporter_image_is_the_runner_base() -> None:
     it = yaml.safe_load((ROOT / "itential" / "versions.yaml").read_text())["images"]["runner_base"]
     ex = VERSIONS["components"]["itential_exporter"]
     assert (ex["image"], ex["image_tag"], ex["digest"]) == (it["repository"], it["tag"], it["digest"])
-    plat = yaml.safe_load((ROOT / "k8s" / "platform" / "versions.yaml").read_text())
-    assert VERSIONS["zabbix_db"]["postgres_image"] == plat["components"]["cnpg"]["postgres_image"]
 
 
 def test_vips_match_ipam() -> None:
@@ -112,7 +108,8 @@ def test_ip_plan_phases_follow_adr_0050() -> None:
         assert by_name[h] == 8, h
     assert "dc01" not in by_name and "iag" not in by_name
     plan = (ROOT / "docs" / "ip-plan.md").read_text()
-    assert "Zabbix server + web (phase 7)" in plan and "identity (phase 10)" in plan and "Oxidized (phase 9)" in plan
+    assert "identity (phase 10)" in plan and "Oxidized (phase 9)" in plan
+    assert "zabbix" not in by_name and "| 10.100.0.35 | *(released)* |" in plan  # ADR 0071
 
 
 # --- the documents -----------------------------------------------------------------------------------
@@ -150,43 +147,6 @@ def _not_after(pem: str) -> str:
     return out.strip().split("=", 1)[1]
 
 
-def test_generated_zabbix_templates_match_their_sources() -> None:
-    build = ROOT / "observability" / "zabbix" / "build.py"
-    assert build.exists()
-    out = subprocess.run([sys.executable, str(build), "--check"], capture_output=True, text=True, cwd=ROOT)
-    assert out.returncode == 0, out.stdout + out.stderr
-    exp = yaml.safe_load((ROOT / "observability" / "zabbix" / "templates" / "lab-expiries.yaml").read_text())
-    tpl = exp["zabbix_export"]["templates"][0]
-    assert tpl["template"] == "lab-expiries"
-    items = {i["key"] for i in tpl["items"]}
-    assert items == {f"expiry.days[{e['key']}]" for e in EXPIRIES["expiries"]}
-    for i in tpl["items"]:
-        assert i["type"] == "SCRIPT" and i["value_type"] == "FLOAT"
-        trig = i["triggers"][0]["expression"]
-        assert f"<{EXPIRIES['warn_days']}" in trig.replace(" ", "")
-    web = yaml.safe_load((ROOT / "observability" / "zabbix" / "templates" / "lab-web-ui.yaml").read_text())
-    wt = web["zabbix_export"]["templates"][0]
-    assert {i["key"] for i in wt["items"]} == {f"web.status[{w['name']}]" for w in OBS["web_checks"]}
-    for i in wt["items"]:
-        assert i["type"] == "HTTP_AGENT" and i["value_type"] == "UNSIGNED"
-
-
-def test_lab_templates_link_the_stock_ones_named_in_the_document() -> None:
-    tdir = ROOT / "observability" / "zabbix" / "templates"
-    for platform, spec in OBS["zabbix"]["templates"].items():
-        doc = yaml.safe_load((tdir / f"{spec['lab']}.yaml").read_text())
-        tpl = doc["zabbix_export"]["templates"][0]
-        assert tpl["template"] == spec["lab"], platform
-        linked = {t["name"] for t in tpl.get("templates", [])}
-        assert set(spec["stock"]) <= linked, f"{spec['lab']} must link {spec['stock']}"
-    net = yaml.safe_load((tdir / "lab-network-device.yaml").read_text())["zabbix_export"]["templates"][0]
-    ping = next(i for i in net["items"] if i["key"].startswith("icmpping"))
-    assert ping["delay"] == "15s" and "#4" in ping["triggers"][0]["expression"], "S7.6 needs detection well inside 3 minutes"
-    for lab in ("lab-ios-xe", "lab-eos"):
-        doc = yaml.safe_load((tdir / f"{lab}.yaml").read_text())["zabbix_export"]["templates"][0]
-        assert "lab-network-device" in {t["name"] for t in doc["templates"]}
-
-
 def test_prometheus_jobs_and_alerts_are_declared_once() -> None:
     jobs = [j["job"] for j in OBS["prometheus"]["jobs"]]
     assert len(jobs) == len(set(jobs))
@@ -196,7 +156,8 @@ def test_prometheus_jobs_and_alerts_are_declared_once() -> None:
     roles = {f"ha2-{v['role']}" for v in ha2["vms"]}
     for j in OBS["prometheus"]["jobs"]:
         assert isinstance(j["count"], int) or j["count"] in {"nodes", "devices", "eos", "ios-xe", "web_checks"} | roles, j
-    rules = list(yaml.safe_load_all((ROOT / "k8s" / "observability" / "manifests" / "prometheus-rules.yaml").read_text()))
+    rules = [doc for f in ("prometheus-rules.yaml", "expiry-rules.yaml")  # the lab's and the generated expiry rules
+             for doc in yaml.safe_load_all((ROOT / "k8s" / "observability" / "manifests" / f).read_text()) if doc]
     alerts = {r["alert"]: r for doc in rules for g in doc["spec"]["groups"] for r in g["rules"] if "alert" in r}
     for a in OBS["prometheus"]["alerts"]:
         assert a["name"] in alerts, a
@@ -211,7 +172,9 @@ def test_lab_observability_block_matches_ipam() -> None:
     o = TOPO["lab"]["observability"]
     loki = next(a for a in IPAM["addresses"] if a["hostname"] == "loki")
     assert o["syslog"] == loki["address"] == VERSIONS["vips"]["loki"]
-    assert o["snmp"]["user"] == OBS["zabbix"]["snmpv3"]["user"] == "zabbix"
+    # snmp-exporter polls as the device user, still named for Zabbix (renaming it is a push to every device, ADR 0071)
+    snmp = yaml.safe_load((ROOT / "k8s" / "observability" / "values" / "snmp-exporter.yaml").read_text())
+    assert o["snmp"]["user"] == "zabbix" and f"username: {o['snmp']['user']}" in yaml.safe_dump(snmp)
     assert o["snmp"]["group"] and o["snmp"]["view"]
     assert o["gnmi"]["port"] == OBS["gnmic"]["port"] == 6030  # EOS default: the snippet does not set it (not shown in a running config)
 
@@ -286,7 +249,7 @@ def test_plays_verify_and_make_are_wired() -> None:
         assert crit in text, crit
     assert "VERIFY_DRILLS" in text and "tokens.sh" not in text
     req = yaml.safe_load((ROOT / "requirements.yml").read_text())
-    assert {"name": "community.zabbix", "version": "4.2.0"} in req["collections"]
+    assert "community.zabbix" not in {c["name"] for c in req["collections"]}  # ADR 0071
 
 
 def test_versions_oracle_is_the_only_place_charts_are_pinned() -> None:
@@ -417,19 +380,29 @@ def test_every_later_phase_that_adds_a_host_refreshes_observability() -> None:
         if body is None or REGISTERS_A_HOST not in body:
             continue  # not implemented yet, or it adds no host
         assert REFRESH in body, (
-            f"phase-{phase} registers a host but never refreshes observability, so Zabbix and Prometheus "
-            f"- both sized from NetBox - will not know about it. Append `make {REFRESH}` (ADR 0057)."
+            f"phase-{phase} registers a host but never refreshes observability, so Prometheus - sized from "
+            f"NetBox - will not know about it. Append `make {REFRESH}` (ADR 0057)."
         )
 
 
-def test_the_zabbix_frontend_is_pointed_at_the_server_service() -> None:
-    """The frontend defaults to a host called `zabbix-server`, which does not exist - the chart names the
-    Service `<release>-zabbix-server`. Unset, every page reads "Zabbix server is not running" while the
-    server is healthy, and S7.1 passes throughout because it reads the API and the collected data, not the
-    frontend's socket to the server. Measured 2026-09-11; it had been wrong since phase 7."""
-    values = yaml.safe_load((ROOT / "k8s" / "observability" / "values" / "zabbix.yaml").read_text())
-    env = {e["name"]: e.get("value") for e in values["zabbixWeb"]["extraEnv"]}
-    assert env.get("ZBX_SERVER_HOST"), "zabbixWeb must set ZBX_SERVER_HOST or the frontend reports the server down"
-    assert env["ZBX_SERVER_HOST"].endswith("zabbix-server"), \
-        f"ZBX_SERVER_HOST={env['ZBX_SERVER_HOST']!r} must name the chart's server Service"
-    assert str(env.get("ZBX_SERVER_PORT")) == "10051"
+def test_zabbix_stays_removed_and_the_plays_delete_what_it_left() -> None:
+    """ADR 0071 (owner, 2026-10-04): Zabbix served no purpose and its database volume had filled. Nothing installs
+    it again, and because dropping a chart or a manifest deletes nothing live, the plays name every leftover."""
+    assert "zabbix" not in VERSIONS["components"] and "zabbix" not in VERSIONS["vips"] and "zabbix_db" not in VERSIONS
+    assert "zabbix" not in OBS and not (ROOT / "observability" / "zabbix").exists()
+    for f in ("values/zabbix.yaml", "manifests/zabbix-db.yaml"):
+        assert not (ROOT / "k8s" / "observability" / f).exists(), f
+    kps = (ROOT / "k8s" / "observability" / "values" / "kube-prometheus-stack.yaml").read_text()
+    values = yaml.safe_load(kps)["grafana"]
+    assert values["plugins"] == [] and "envFromSecret" not in values
+    assert {"name": "Zabbix", "orgId": 1} in values["deleteDatasources"]
+    assert not [d for d in values["additionalDataSources"] if "zabbix" in d["type"]]
+    play = (ROOT / "ansible" / "playbooks" / "observability.yml").read_text()
+    for removal in ("name: zabbix\n        release_namespace: \"{{ obs_namespace }}\"\n        state: absent",
+                    "kind: Cluster\n        namespace: \"{{ obs_namespace }}\"\n        name: zabbix-db",
+                    "label_selectors: [cnpg.io/cluster=zabbix-db]", "name: traefik-vip-zabbix", "name: grafana-env"):
+        assert removal in play, removal
+    assert "community.zabbix" not in play and "ZABBIX_" not in play
+    hosts = (ROOT / "ansible" / "playbooks" / "observability-hosts.yml").read_text()
+    assert "name: [zabbix-agent2, zabbix-release]" in hosts and "purge: true" in hosts
+    assert "zabbix_agent2.d" not in hosts and "rsyslog" in hosts

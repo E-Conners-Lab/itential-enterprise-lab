@@ -60,7 +60,6 @@ grafana:
     existingSecret: grafana-admin
     userKey: admin-user
     passwordKey: admin-password
-  envFromSecret: grafana-env # ZABBIX_GRAFANA_PASSWORD, expanded by Grafana's provisioning
   persistence:
     enabled: true
     type: pvc
@@ -69,8 +68,8 @@ grafana:
   resources:
     requests: {cpu: 50m, memory: 192Mi}
     limits: {memory: 512Mi}
-  plugins:
-    - alexanderzobnin-zabbix-app@6.6.0 # overridden by the play from versions.yaml grafana_zabbix_plugin (id@version)
+  # no plugins since ADR 0071 (the Zabbix app was the only one)
+  plugins: []
   grafana.ini:
     server:
       root_url: https://grafana.lab.internal/
@@ -80,7 +79,7 @@ grafana:
       reporting_enabled: false
       check_for_updates: false
     plugins:
-      # the Zabbix app is a signed plugin; nothing unsigned is loaded
+      # nothing unsigned is loaded
       allow_loading_unsigned_plugins: ""
   sidecar:
     dashboards:
@@ -95,7 +94,7 @@ grafana:
       defaultDatasourceEnabled: true
       alertmanager:
         enabled: true
-  # Loki and Zabbix datasources over the in-cluster HTTP services; the Zabbix password comes from grafana-env
+  # Loki over the in-cluster HTTP service
   additionalDataSources:
     - name: Loki
       type: loki
@@ -103,19 +102,9 @@ grafana:
       access: proxy
       url: http://loki:3100
       editable: false
-    - name: Zabbix
-      type: alexanderzobnin-zabbix-datasource
-      uid: zabbix
-      access: proxy
-      url: http://zabbix-zabbix-web/api_jsonrpc.php
-      editable: false
-      jsonData:
-        username: grafana
-        trends: false
-        cacheTTL: 1m
-        timeout: 30
-      secureJsonData:
-        password: $ZABBIX_GRAFANA_PASSWORD # from the Secret grafana-env (envFromSecret above)
+  # Grafana keeps a datasource it once provisioned until it is told to delete it (ADR 0071)
+  deleteDatasources:
+    - {name: Zabbix, orgId: 1}
   service:
     type: ClusterIP
   ingress:
