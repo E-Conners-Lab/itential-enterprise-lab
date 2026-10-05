@@ -72,20 +72,16 @@ def get(p):
 rows = []
 for d in get("dcim/devices/?status=active&limit=200"):
     if ((d.get("platform") or {}).get("slug") or "").startswith("ubuntu-") and d.get("primary_ip4"):
-        rows.append((d["name"], d["primary_ip4"]["address"].split("/")[0]))
+        rows.append((d["name"], d["primary_ip4"]["address"].split("/")[0], "automation"))  # EVE-NG endpoints
 for v in get("virtualization/virtual-machines/?status=active&limit=200"):
     if not ((v.get("platform") or {}).get("slug") or "").startswith("ubuntu-") or not v.get("primary_ip4"):
         continue
     if (v.get("role") or {}).get("slug") in syslog["excluded_vm_roles"]:
         continue
-    rows.append((v["name"], v["primary_ip4"]["address"].split("/")[0]))
+    rows.append((v["name"], v["primary_ip4"]["address"].split("/")[0], "ubuntu"))  # Proxmox VMs, as the inventory logs in
 for e in syslog["extra_hosts"]:
-    rows.append((e["name"], e["address"]))
-def user(name):  # the login each machine takes (as before ADR 0071)
-    if name in ("eve", "netbox"):
-        return "root"
-    return "ubuntu" if name.startswith("k3s-") or name in ("oob-gw", "itential") else "automation"
-for name, ip in sorted(rows): print(name, ip, user(name))
+    rows.append((e["name"], e["address"], "root"))  # the two pre-existing machines (inventory/phase2.yml)
+for r in sorted(rows): print(*r)
 PY
 }
 
@@ -126,9 +122,12 @@ PY
   expected_ubuntu > /tmp/verify07.ubuntu.$$ || return 1
   local n=0
   while read -r name ip user; do
-    $SSH "${user}@${ip}" "systemctl is-active rsyslog && ! dpkg -s zabbix-agent2 >/dev/null 2>&1 && echo no-agent" 2>/dev/null | tr '\n' ' ' | grep -q "^active no-agent" || { echo "$name: rsyslog not active, or zabbix-agent2 still installed"; return 1; }
+    # -n: ssh would otherwise read the rest of this loop's input, and the loop would stop after one machine
+    $SSH -n "${user}@${ip}" "systemctl is-active rsyslog && ! dpkg -s zabbix-agent2 >/dev/null 2>&1 && echo no-agent" 2>/dev/null | tr '\n' ' ' | grep -q "^active no-agent" || { echo "$name: rsyslog not active, or zabbix-agent2 still installed"; return 1; }
     n=$((n+1))
   done < /tmp/verify07.ubuntu.$$
+  local want; want=$(wc -l < /tmp/verify07.ubuntu.$$ | tr -d ' ')
+  [ "$n" = "$want" ] || { echo "checked ${n} of ${want} managed Ubuntu machines"; return 1; }
   echo "rsyslog active and no zabbix-agent2 on all ${n} managed Ubuntu machines (systemctl, dpkg over SSH)"
 }
 check "S7.1 expiries in Prometheus agree with the YAML and the live sources; SNMPv3 answers from the workstation; every Ubuntu machine forwards syslog and runs no Zabbix agent" c1
