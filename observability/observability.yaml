@@ -66,8 +66,12 @@ prometheus:
 # (observability/alert-relay/relay.py); Alertmanager routes them to it, everything else stays on lab-null.
 alert_relay:
   port: 9121
+  # per alert: the endpoint route, and which payload field each alert label fills (the relay checks every value
+  # against that field's pattern: device, interface, neighbor, vrf, peer)
   routes:
-    LabAwsTunnelDown: diagnose-aws-vpn-outage # = itential/versions.yaml operations_manager.diagnose_aws_vpn_outage
+    LabAwsTunnelDown:
+      route: diagnose-aws-vpn-outage # = itential/versions.yaml operations_manager.diagnose_aws_vpn_outage
+      labels: {device: device, interface: ifDescr}
 
 # gNMIc (vEOS only, ADR 0051 decision 8): port, subscriptions and the sample interval. Targets come from NetBox.
 gnmic:

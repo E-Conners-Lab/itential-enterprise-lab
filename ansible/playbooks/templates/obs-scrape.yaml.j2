@@ -87,7 +87,8 @@ spec:
   scrapeTimeout: 45s
   metricsPath: /snmp
   params:
-    module: [if_mib]
+    # R10: IOS-XE adds BGP4-MIB's peer table (snmp-exporter.yaml module bgp); vEOS's sessions come from gNMIc
+    module: [if_mib{% if platform == 'ios-xe' %}, bgp{% endif %}]
     auth: [lab_v3]
   staticConfigs:
 {% for d in devices if d.platform == platform %}

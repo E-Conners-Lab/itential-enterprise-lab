@@ -37,14 +37,7 @@ spec:
             description: "The HTTP probe of {{ $labels.instance }} has failed for 3 minutes."
     - name: lab-fabric
       rules:
-        - alert: LabBgpSessionDown
-          expr: max by (source, neighbor_address) ({__name__=~"gnmic_bgp.*session_state", session_state!="ESTABLISHED"}) == 1
-          for: 2m
-          labels:
-            severity: warning
-          annotations:
-            summary: "BGP neighbour {{ $labels.neighbor_address }} of {{ $labels.source }} is not Established"
-            description: "gNMIc reports the session in a state other than ESTABLISHED for 2 minutes."
+        # LabBgpSessionDown lives in the generated bgp-rules.yaml (R10, observability/bgp_rules.py)
         # R6 (ADR 0072): the AWS VPN's tunnel on the one AWS-monitored edge (itential/versions.yaml aws_vpn.targets).
         # Alertmanager routes this alert, and only this one, to the alert relay, which starts Diagnose AWS VPN Outage.
         # A router that cannot be scraped at all is LabDeviceDown's, not this one's: absent data never fires here.

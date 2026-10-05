@@ -156,7 +156,7 @@ def test_prometheus_jobs_and_alerts_are_declared_once() -> None:
     roles = {f"ha2-{v['role']}" for v in ha2["vms"]}
     for j in OBS["prometheus"]["jobs"]:
         assert isinstance(j["count"], int) or j["count"] in {"nodes", "devices", "eos", "ios-xe", "web_checks"} | roles, j
-    rules = [doc for f in ("prometheus-rules.yaml", "expiry-rules.yaml")  # the lab's and the generated expiry rules
+    rules = [doc for f in ("prometheus-rules.yaml", "expiry-rules.yaml", "bgp-rules.yaml")  # the lab's and the generated ones
              for doc in yaml.safe_load_all((ROOT / "k8s" / "observability" / "manifests" / f).read_text()) if doc]
     alerts = {r["alert"]: r for doc in rules for g in doc["spec"]["groups"] for r in g["rules"] if "alert" in r}
     for a in OBS["prometheus"]["alerts"]:
