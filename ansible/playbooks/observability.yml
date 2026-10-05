@@ -263,7 +263,9 @@
              | selectattr('spec.claimRef.namespace', 'equalto', obs_namespace)
              | selectattr('spec.claimRef.name', 'equalto', 'zabbix-db-1') | list }}
 
-    - name: The Zabbix web Ingress, its Traefik VIP and Grafana's Zabbix password gone
+    # the Probe too: the scrape template stopped rendering http-zabbix, and an apply never deletes a document it no
+    # longer renders (S7.2 counted 10 blackbox-http targets against 9 on 2026-10-05)
+    - name: The Zabbix web Ingress, its Traefik VIP, its HTTP probe and Grafana's Zabbix password gone
       kubernetes.core.k8s:
         kubeconfig: "{{ kubeconfig }}"
         state: absent
@@ -275,6 +277,7 @@
         - {api: networking.k8s.io/v1, kind: Ingress, namespace: "{{ obs_namespace }}", name: zabbix}
         - {api: v1, kind: Service, namespace: "{{ traefik.namespace }}", name: traefik-vip-zabbix}
         - {api: v1, kind: Secret, namespace: "{{ obs_namespace }}", name: grafana-env}
+        - {api: monitoring.coreos.com/v1, kind: Probe, namespace: "{{ obs_namespace }}", name: http-zabbix}
       loop_control:
         label: "{{ item.kind }} {{ item.name }}"
 
