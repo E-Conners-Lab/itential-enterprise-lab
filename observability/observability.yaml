@@ -60,6 +60,14 @@ prometheus:
     - {name: LabBgpSessionDown, for: 2m}
     - {name: VaultSealed, for: 1m}
     - {name: LabExpirySoon, for: 1h} # PrometheusRule lab-expiries, generated from expiries.yaml (ADR 0071)
+    - {name: LabAwsTunnelDown, for: 2m} # R6 (ADR 0072): dc1-wan01's Tunnel10 down; Alertmanager -> the alert relay
+
+# R6 (ADR 0072): the alert relay starts an Operations Manager endpoint trigger for these alerts, and only these
+# (observability/alert-relay/relay.py); Alertmanager routes them to it, everything else stays on lab-null.
+alert_relay:
+  port: 9121
+  routes:
+    LabAwsTunnelDown: diagnose-aws-vpn-outage # = itential/versions.yaml operations_manager.diagnose_aws_vpn_outage
 
 # gNMIc (vEOS only, ADR 0051 decision 8): port, subscriptions and the sample interval. Targets come from NetBox.
 gnmic:

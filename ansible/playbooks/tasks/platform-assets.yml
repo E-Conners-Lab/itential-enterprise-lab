@@ -524,9 +524,19 @@
   ansible.builtin.set_fact:
     wf_docs: "{{ lookup('ansible.builtin.fileglob', playbook_dir ~ '/../../itential/workflows/*.json', wantlist=True) | sort }}"
 
+- name: Agent UUIDs for the workflows that run an agent (R6)
+  ansible.builtin.include_tasks: workflow-agent-ids.yml
+
+# a marker `__AGENT_ID:<agent>__` becomes that agent's UUID; a marker whose agent does not exist yet stays as it is
 - name: Workflow documents parsed
   ansible.builtin.set_fact:
-    wf_bodies: "{{ wf_bodies | default([]) + [lookup('ansible.builtin.file', item) | from_json] }}"
+    wf_bodies: >-
+      {%- set raw = lookup('ansible.builtin.file', item) -%}
+      {%- set ns = namespace(t=raw) -%}
+      {%- for m in raw | regex_findall('__AGENT_ID:([a-z0-9-]+)__') | unique -%}
+      {%- if m in wai_ids -%}{%- set ns.t = ns.t | replace('__AGENT_ID:' ~ m ~ '__', wai_ids[m]) -%}{%- endif -%}
+      {%- endfor -%}
+      {{ wf_bodies | default([]) + [ns.t | from_json] }}
   loop: "{{ wf_docs }}"
   loop_control:
     label: "{{ item | basename }}"

@@ -212,7 +212,7 @@ def test_the_aws_vpn_runs_only_on_its_tier_whatever_form_dev_overlay_takes(overl
     here = _render(f"{{{{ {GATE} }}}}", extra)
     assert here is ((V["aws_vpn"]["tier"] == "dev") == (overlay == "true"))
     play = (ROOT / "ansible" / "playbooks" / "platform.yml").read_text()
-    assert play.count(f"when: {GATE}") == 2  # the triggers and the hourly schedule
+    assert play.count(f"when: {GATE}") == 3  # the triggers, the schedules and the outage loop's trigger (R6)
     assert play.count(f"when: {GATE.replace(') == (', ') != (')}") == 1  # the other tier's retired
     assert (TASKS / "gateway-vault.yml").read_text().count(f"when: {GATE}") == 3
     assert f"and {GATE}" in (ROOT / "ansible" / "playbooks" / "itential.yml").read_text()

@@ -1,0 +1,32 @@
+# tunnel-diagnostics on the Mac Mini's Ollama (gemma4:26b, ADR 0060/0061): the same three router reads, the same causes
+# and the same one-line JSON answer, with the work note.
+project: lab-netops
+name: tunnel-diagnostics-local
+description: tunnel-diagnostics on the Mac Mini's Ollama (gemma4:26b), three router reads, one work note, one fix from the menu
+profile: ollama-mac
+input_schema:
+  type: object
+  additionalProperties: false
+  required: [request]
+  properties:
+    request: {type: string}
+instructions: |
+  /no_think
+  You diagnose why the AWS VPN tunnel on dc1-wan01 is down. Pass a tool only the inputs named below: leave every
+  other input out of the call and never set one to null, or the call is rejected before it is made.
+  Step 1: run the workflow "Run Show Command on a Device" three times with device "dc1-wan01" and command
+  "show interfaces Tunnel10 | include line protocol", then "show ip access-list INET-IN", then "show crypto ikev2 sa".
+  Step 2: pick the first cause that matches:
+  - Tunnel10 "administratively down": cause tunnel-shut, fix repush-router-block
+  - INET-IN lacks the udp eq 500 (isakmp) or the 4500 (non500-isakmp) entry: cause ike-blocked, fix repush-router-block
+  - otherwise, if the request's AWS monitor signal is "could not check": cause strongswan-down, fix restart-strongswan
+  - otherwise, if no IKEv2 SA is READY: cause stale-ike, fix reset-ike
+  - otherwise: cause unknown, fix escalate
+  Step 3: run updateIncident once with sys_id from the request and body {"work_notes": "<what you saw>. Proposed fix: <fix>"}.
+  Step 4: end with one line of JSON and nothing after it: {"fix": "<fix>", "cause": "<cause>", "evidence": "<one sentence>"}
+  Never change anything yourself and never mention a key or a password.
+
+  The request: {{request}}
+tools:
+  - {reference: Run Show Command on a Device, kind: workflow}
+  - {reference: updateIncident, kind: integration, model: servicenow}

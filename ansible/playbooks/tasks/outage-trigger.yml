@@ -1,0 +1,110 @@
+---
+# Diagnose AWS VPN Outage's start (R6 + A3, ADR 0072): an Operations Manager automation wrapping the workflow and ONE
+# endpoint trigger, the route the alert relay posts to (observability/observability.yaml alert_relay.routes). No form
+# and no manual trigger: only the tunnel-down alert starts it. The trigger's schema is the workflow's own input gate
+# (itential/workflows/build.py INPUT_GATES), so a malformed call is refused with a 400 before it becomes a job; an
+# existing trigger's schema is PATCHed when it differs (Operations Manager updates are PATCH). The automation follows
+# the workflow's id, which every import changes. Needs: login, platform_local, workflows, operations_manager.
+- name: Outage loop - workflows and automations now
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/{{ item }}"
+    headers: {Cookie: "{{ login.cookies_string }}"}
+  loop:
+    - automation-studio/workflows?limit=500
+    - operations-manager/automations?equalsField=componentType&equals=workflows&limit=100
+  register: otr_now
+
+- name: Outage loop - ids and the endpoint's schema
+  ansible.builtin.set_fact:
+    otr: "{{ operations_manager.diagnose_aws_vpn_outage }}"
+    otr_wf_id: >-
+      {{ (otr_now.results[0].json['items'] | selectattr('name', 'equalto', workflows.diagnose_aws_vpn_outage)
+          | first)._id }}
+    otr_auto: >-
+      {{ (otr_now.results[1].json.data
+          | selectattr('name', 'equalto', operations_manager.diagnose_aws_vpn_outage.automation) | first) | default({}) }}
+    # the workflow's own input gate, from the generated document (one source: build.py INPUT_GATES)
+    otr_schema: >-
+      {{ (lookup('ansible.builtin.file', playbook_dir ~ '/../../itential/workflows/diagnose-aws-vpn-outage.json')
+          | from_json).tasks['9a0a'].variables.incoming.schema }}
+
+- name: Outage loop - the workflow names its agent by UUID
+  ansible.builtin.assert:
+    that: >-
+      not ((otr_now.results[0].json['items'] | selectattr('name', 'equalto', workflows.diagnose_aws_vpn_outage)
+            | first) | to_json | regex_search('__AGENT_ID:'))
+    fail_msg: >-
+      Diagnose AWS VPN Outage was imported before the tunnel-diagnostics agent existed (its runAgent task still holds
+      the __AGENT_ID marker): push the agents (flowai), then run this play again so the import fills in the UUID
+    quiet: true
+
+- name: Outage loop - the automation wrapping it
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/operations-manager/automations"
+    method: POST
+    headers: {Cookie: "{{ login.cookies_string }}"}
+    body_format: json
+    body:
+      name: "{{ otr.automation }}"
+      description: "{{ otr.description }}"
+      componentType: workflows
+      componentId: "{{ otr_wf_id }}"
+      componentName: "{{ workflows.diagnose_aws_vpn_outage }}"
+    status_code: [200, 201]
+  register: otr_created
+  when: otr_auto | length == 0
+  changed_when: true
+
+- name: Outage loop - the automation follows the re-imported workflow
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/operations-manager/automations/{{ otr_auto._id }}"
+    method: PATCH
+    headers: {Cookie: "{{ login.cookies_string }}"}
+    body_format: json
+    body: {componentId: "{{ otr_wf_id }}", componentName: "{{ workflows.diagnose_aws_vpn_outage }}"}
+    status_code: 200
+  when: otr_auto | length > 0 and otr_auto.componentId != otr_wf_id
+  changed_when: true
+
+- name: Outage loop - automation id and its triggers
+  ansible.builtin.set_fact:
+    otr_auto_id: "{{ otr_auto._id if otr_auto | length > 0 else (otr_created.json.data._id | default(otr_created.json._id)) }}"
+
+- name: Outage loop - triggers of the automation
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/operations-manager/triggers?equalsField=actionId&equals={{ otr_auto_id }}&limit=100"
+    headers: {Cookie: "{{ login.cookies_string }}"}
+  register: otr_triggers
+
+- name: Outage loop - the alert relay's endpoint trigger
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/operations-manager/triggers"
+    method: POST
+    headers: {Cookie: "{{ login.cookies_string }}"}
+    body_format: json
+    body:
+      name: "{{ otr.endpoint.name }}"
+      description: "The alert relay (observability/alert-relay) posts the tunnel-down alert's fields here"
+      type: endpoint
+      enabled: true
+      actionType: automations
+      actionId: "{{ otr_auto_id }}"
+      routeName: "{{ otr.endpoint.route }}"
+      verb: POST
+      schema: "{{ otr_schema }}"
+    status_code: [200, 201]
+  when: otr.endpoint.name not in (otr_triggers.json.data | map(attribute='name') | list)
+  changed_when: true
+
+- name: Outage loop - the endpoint trigger's schema is current
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/operations-manager/triggers/{{ have._id }}"
+    method: PATCH
+    headers: {Cookie: "{{ login.cookies_string }}"}
+    body_format: json
+    body: {schema: "{{ otr_schema }}"}
+    status_code: 200
+  vars:
+    have: "{{ (otr_triggers.json.data | selectattr('name', 'equalto', otr.endpoint.name) | first) | default({}) }}"
+  when: have | length > 0 and (have.schema | default({})) != otr_schema
+  changed_when: true

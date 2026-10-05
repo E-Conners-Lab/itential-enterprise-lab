@@ -1,0 +1,16 @@
+---
+# The agents' UUIDs by name (R6, ADR 0072). A runAgent task names its agent by UUID - a name is refused (P5, production
+# 2026-10-05) - and the UUID only exists once the agents play pushed the agent, so a generated workflow carries a marker
+# `__AGENT_ID:<agent name>__` that the workflow import fills in from this map. A marker whose agent does not exist yet
+# stays in the document; tasks/outage-trigger.yml refuses to wire such a workflow. Needs: login, platform_local.
+- name: Agents now (for the workflows that run one)
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/agent-project-service/operable-agents"
+    headers: {Cookie: "{{ login.cookies_string }}"}
+  register: wai_agents
+
+- name: Agent UUIDs by name
+  ansible.builtin.set_fact:
+    wai_ids: >-
+      {{ dict(wai_agents.json.data['items'] | map(attribute='name')
+              | zip(wai_agents.json.data['items'] | map(attribute='_id'))) }}

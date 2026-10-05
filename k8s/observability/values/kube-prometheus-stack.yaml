@@ -35,8 +35,20 @@ alertmanager:
       routes:
         - receiver: lab-null
           matchers: ["alertname = Watchdog"]
+        # R6 (ADR 0072): the AWS VPN tunnel-down alert starts Itential's outage loop through the in-cluster relay;
+        # every other alert stays on lab-null. Re-sent every 4 h while it fires; the workflow finds the open incident
+        - receiver: itential-outage-relay
+          matchers: ["alertname = LabAwsTunnelDown"]
+          group_wait: 30s
+          repeat_interval: 4h
     receivers:
       - name: lab-null # no notification channel in S7; Grafana and the API show the alerts
+      - name: itential-outage-relay
+        webhook_configs:
+          # resolutions start nothing (the workflow re-verifies itself); one alert per call
+          - url: http://itential-alert-relay.observability.svc:9121/alert
+            send_resolved: false
+            max_alerts: 1
   alertmanagerSpec:
     externalUrl: https://alertmanager.lab.internal
     retention: 120h

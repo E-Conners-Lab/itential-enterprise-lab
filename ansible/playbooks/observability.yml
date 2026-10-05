@@ -347,6 +347,16 @@
       vars:
         exporter_source: "{{ lookup('ansible.builtin.file', obs_dir ~ '/itential-exporter/exporter.py') }}"
 
+    # R6 (ADR 0072): Alertmanager's webhook to Operations Manager, with the exporter's login (owner decision 2026-10-05)
+    - name: Alert relay
+      kubernetes.core.k8s:
+        kubeconfig: "{{ kubeconfig }}"
+        state: present
+        template: templates/obs-alert-relay.yaml.j2
+        apply: true # keys the template drops are removed (a patch would keep them)
+      vars:
+        relay_source: "{{ lookup('ansible.builtin.file', obs_dir ~ '/alert-relay/relay.py') }}"
+
     - name: Scrape objects (ServiceMonitors, Probes per device and UI, SNMP ScrapeConfigs)
       kubernetes.core.k8s:
         kubeconfig: "{{ kubeconfig }}"

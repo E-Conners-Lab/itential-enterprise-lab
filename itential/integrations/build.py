@@ -397,6 +397,9 @@ def servicenow() -> dict:
             "comments": {"type": "string"},
             "state": {"type": "string"},
             "assignment_group": {"type": "string"},
+            # R6: resolving needs both (state 6 Resolved, close_code "Solution provided" on the PDI, measured)
+            "close_code": {"type": "string"},
+            "close_notes": {"type": "string"},
         },
     }
     paths = {
@@ -407,7 +410,30 @@ def servicenow() -> dict:
                 [SN_QUERY, SN_LIMIT, SN_FIELDS, SN_DISPLAY],
                 SNOW_RESULT,
                 a,
-            )
+            ),
+            # R6: the tunnel-down loop opens one incident per outage; correlation_id finds it again (a flapping
+            # tunnel adds notes instead of tickets)
+            "post": op(
+                "createIncident",
+                "Open an incident (Table API); correlation_id identifies the outage it belongs to",
+                [SN_FIELDS],
+                SNOW_ONE,
+                a,
+                body={
+                    "type": "object",
+                    "properties": {
+                        "short_description": {"type": "string"},
+                        "description": {"type": "string"},
+                        "correlation_id": {"type": "string"},
+                        "correlation_display": {"type": "string"},
+                        "urgency": {"type": "string", "description": "1 high, 2 medium, 3 low"},
+                        "impact": {"type": "string", "description": "1 high, 2 medium, 3 low"},
+                        "category": {"type": "string"},
+                        "assignment_group": {"type": "string", "description": "sys_id of the group"},
+                    },
+                },
+                success="201",
+            ),
         },
         "/api/now/table/incident/{sys_id}": {
             "get": op(

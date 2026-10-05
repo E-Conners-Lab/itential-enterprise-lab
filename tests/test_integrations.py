@@ -228,3 +228,19 @@ def test_no_task_reads_a_converted_task_the_adapter_way(generated: dict) -> None
                 if f"$var.{c}." in incoming:
                     assert '"response.' not in incoming, \
                         f"{name}.{tid} reads a `response.<x>` path from the integration task {c}; the payload is `body.<x>`"
+
+
+def test_servicenow_can_open_an_incident_with_a_correlation_id(docs: dict) -> None:
+    """R6 (owner decisions 2026-10-05): the tunnel-down loop opens one incident per outage and finds it again by
+    correlation_id, so a flapping tunnel adds notes instead of tickets."""
+    op = docs["servicenow"]["paths"]["/api/now/table/incident"]["post"]
+    assert op["operationId"] == "createIncident"
+    props = op["requestBody"]["content"]["application/json"]["schema"]["properties"]
+    assert {"short_description", "description", "correlation_id", "urgency", "impact", "category"} <= set(props)
+
+
+def test_servicenow_can_resolve_an_incident(docs: dict) -> None:
+    """R6: the loop resolves the incident once the approved fix brought the tunnel back."""
+    op = docs["servicenow"]["paths"]["/api/now/table/incident/{sys_id}"]["patch"]
+    props = op["requestBody"]["content"]["application/json"]["schema"]["properties"]
+    assert {"state", "close_code", "close_notes", "work_notes"} <= set(props)

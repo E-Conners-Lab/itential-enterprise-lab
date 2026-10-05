@@ -72,8 +72,9 @@ terraform_run:
     # services (#15-#23), config-push-revert (#25, #26), Tear Down's lab-edge removal / absent (#27), lab-edge-push's
     # leak sweep (#28, #29), expires_at (#30, R2b), outputs' state metadata + cost inputs (#31, A1), drift (#32, R3).
     # 3e3f032 = main after cdp #33 (R4): aws-vpn-monitor reload, aws-vpn-psk restore-previous and prune. 691531d = main
-    # after cdp #34: lab-edge takes Tunnel10's description from the target (tunnel_description, ADR 0071).
-    reference: "691531d853e9719e92399fae3acd9266c1148630"
+    # after cdp #34: lab-edge takes Tunnel10's description from the target (tunnel_description, ADR 0071). 9ab2290 =
+    # main after cdp #35 (R6): lab-edge-push reset-sa, aws-vpn-monitor restart / drill-stop / alarm.
+    reference: "9ab22901755edfb829d01a6b1228de08a156eb2b"
   executable_object:
     name: python-3-12
     description: "the runner image's Python 3.12 (ADR 0038)"
@@ -288,6 +289,12 @@ operations_manager:
     automation: Check AWS Drift
     description: "Reports what changed in AWS outside Terraform, every day; drift opens a Work Center task (R3)"
     schedule: {name: Check AWS Drift every day, repeat_unit: day, repeat_frequency: 1, at_utc: "07:00"}
+  # R6 + A3 (owner decisions 2026-10-05, ADR 0072): started only by the alert relay (observability.yaml alert_relay),
+  # never by a form; the endpoint's schema is the workflow's input gate
+  diagnose_aws_vpn_outage:
+    automation: Diagnose AWS VPN Outage
+    description: "The AWS VPN's outage loop: incident, agent diagnosis, approved fix (R6 + A3)"
+    endpoint: {name: Diagnose AWS VPN Outage from the alert relay, route: diagnose-aws-vpn-outage}
   # R4 (owner decisions 2026-10-04): monthly and unattended, no card. Operations Manager repeats by minute, hour, day or
   # week only (no month), so this runs every day and the workflow rotates on the 1st (UTC) only; off the hour, so it
   # never starts with Tear Down Expired AWS VPN (top of the hour) or Check AWS Drift (07:00)
@@ -372,6 +379,7 @@ workflows:
   tear_down_aws_vpn: Tear Down AWS VPN # S13 criterion 5 (R2): the router's block removed and proved gone, then the AWS destroy
   check_aws_drift: Check AWS Drift # R3: daily refresh-only plan; drift opens a Work Center task, names only; reads only
   get_aws_vpn_status: Get AWS VPN Status # A1: what is deployed, until when, last change, an estimated cost; reads only
+  diagnose_aws_vpn_outage: Diagnose AWS VPN Outage # R6 + A3: the tunnel-down alert -> incident, agent, approved fix
   rotate_aws_vpn_key: Rotate AWS VPN Key # R4: the key changed in place, AWS rolled back by itself when the router fails
   rotate_aws_vpn_key_monthly: Rotate AWS VPN Key Monthly # R4: the same, from a daily schedule, on the 1st (UTC) only
   tear_down_expired_aws_vpn: Tear Down Expired AWS VPN # R2b: hourly schedule; Tear Down without cards once expires_at passed

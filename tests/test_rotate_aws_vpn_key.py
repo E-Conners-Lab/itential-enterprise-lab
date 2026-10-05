@@ -297,5 +297,5 @@ def test_the_retired_tier_also_loses_the_rotation() -> None:
 
 
 def test_the_gateway_runs_a_commit_with_reload_restore_and_prune() -> None:
-    # 3e3f032 (cdp #33) brought them; 691531d (cdp #34, the tunnel description) is its descendant
-    assert VERSIONS["terraform_run"]["repository"]["reference"] == "691531d853e9719e92399fae3acd9266c1148630"
+    # 3e3f032 (cdp #33) brought them; 691531d (cdp #34) and 9ab2290 (cdp #35, R6) are its descendants
+    assert VERSIONS["terraform_run"]["repository"]["reference"] == "9ab22901755edfb829d01a6b1228de08a156eb2b"

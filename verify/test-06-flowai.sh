@@ -475,9 +475,47 @@ c20() {
   echo "cloud-status-local (${OLLAMA_MODEL}) names the deployed address; terraform-run agrees"
 }
 check "S4d.5m cloud-status-local names the deployed strongSwan address through Get AWS VPN Status" c20
+# n/o) tunnel-diagnostics (A3, ADR 0072) on a healthy tunnel: each reads the router three ways, notes its own verify
+# incident once and answers "escalate" (no known cause matches an up tunnel); neither may hold or call a write tool
+TD_INCS=""
+td_incident() { # td_incident <label> -> "sys_id number"
+  sn -X POST "$SN/incident" -d "{\"short_description\":\"AWS VPN check (verify ${ts} $1)\",\"description\":\"verify/test-06-flowai.sh: the tunnel is up; the agent should find no known cause.\",\"category\":\"network\",\"correlation_id\":\"verify-${ts}-$1\"}" \
+    | ${PY} -c 'import sys,json;d=json.load(sys.stdin)["result"];print(d["sys_id"],d["number"])'
+}
+td_setup() { # td_setup <label>: a fresh verify incident and the request naming it (TD_REQ)
+  local sys num
+  read -r sys num <<<"$(td_incident "$1")"; [ -n "$num" ] || { echo "the PDI did not create the incident"; return 1; }
+  TD_INCS="${TD_INCS} ${sys}"; TD_NUM=$num
+  TD_REQ="{\"request\":\"Incident ${num} (sys_id ${sys}). Evidence: Verify says tunnel up: router up, data plane up, AWS monitor up; the AWS tunnel-down alarm is OK.\"}"
+}
+td_judge() { # td_judge <agent> <session id>
+  local sid=${2##*$'\n'} txt tools fix
+  txt=$(session_text "$sid"); tools=$(session_tools "$sid"); count_tokens "$sid"
+  echo "$tools" | grep -q "Run Show Command on a Device" || { echo "$1 never read the router: ${tools}"; return 1; }
+  echo "$tools" | grep -q "updateIncident" || { echo "$1 wrote no work note: ${tools}"; return 1; }
+  echo "$tools" | grep -qiE "Push Configuration|Hand Off|Deploy AWS|Tear Down|Diagnose AWS|send.?config" && { echo "$1 touched a write tool: ${tools}"; return 1; }
+  fix=$(echo "$txt" | ${PY} -c 'import sys,json
+lines=[l for l in sys.stdin.read().strip().splitlines() if l.strip()]
+print(json.loads(lines[-1]).get("fix","") if lines else "")' 2>/dev/null)
+  [ "$fix" = escalate ] || { echo "$1 answered fix '${fix}' for a healthy tunnel (want escalate): $(echo "$txt" | tail -c 300)"; return 1; }
+  echo "$1: ${TD_NUM} noted, fix escalate on a healthy tunnel; tools ${tools}"
+}
+c21() {
+  local sid; td_setup claude || return 1
+  sid=$(run_agent tunnel-diagnostics "$TD_REQ") || { echo "$sid"; return 1; }
+  td_judge tunnel-diagnostics "$sid"
+}
+c22() {
+  local sid; td_setup local || return 1
+  sid=$(run_agent tunnel-diagnostics-local "$TD_REQ") || { echo "$sid"; return 1; }
+  td_judge tunnel-diagnostics-local "$sid"
+}
+check "S4d.5n tunnel-diagnostics reads dc1-wan01, notes its verify incident once and proposes escalate on a healthy tunnel" c21
+check "S4d.5o tunnel-diagnostics-local reads dc1-wan01, notes its verify incident and answers escalate on a healthy tunnel" c22
 
 # cleanup: close the verify's incident; restore the hostname if a failed run left the drift behind
 if [ -n "$INC_SYS" ]; then sn -X PATCH "$SN/incident/${INC_SYS}" -d '{"state":"7","close_code":"Solution provided","close_notes":"closed by verify/test-06-flowai.sh"}' -o /dev/null; echo "closed ${INC_NUM}"; fi
+for s in ${TD_INCS}; do sn -X PATCH "$SN/incident/${s}" -d '{"state":"7","close_code":"Solution provided","close_notes":"closed by verify/test-06-flowai.sh"}' -o /dev/null; done
 [ "$(running_hostname "$BR2_SW")" = br2-sw01 ] || { echo "restoring br2-sw01 after a failed run"; push br2-sw01 "hostname br2-sw01" "verify ${ts} cleanup" >/dev/null 2>&1 || echo "WARN br2-sw01 still drifted; fix with Push Configuration with Approval"; }
 
 

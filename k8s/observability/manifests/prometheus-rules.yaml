@@ -45,6 +45,17 @@ spec:
           annotations:
             summary: "BGP neighbour {{ $labels.neighbor_address }} of {{ $labels.source }} is not Established"
             description: "gNMIc reports the session in a state other than ESTABLISHED for 2 minutes."
+        # R6 (ADR 0072): the AWS VPN's tunnel on the one AWS-monitored edge (itential/versions.yaml aws_vpn.targets).
+        # Alertmanager routes this alert, and only this one, to the alert relay, which starts Diagnose AWS VPN Outage.
+        # A router that cannot be scraped at all is LabDeviceDown's, not this one's: absent data never fires here.
+        - alert: LabAwsTunnelDown
+          expr: ifOperStatus{device="dc1-wan01", ifDescr="Tunnel10"} != 1
+          for: 2m
+          labels:
+            severity: critical
+          annotations:
+            summary: "dc1-wan01's AWS VPN tunnel (Tunnel10) is down"
+            description: "SNMP ifOperStatus of Tunnel10 has not been up for 2 minutes; Itential's outage loop takes it."
     - name: lab-secrets
       rules:
         # ADR 0065 decision 7: it notifies nobody yet (Alertmanager's only receiver is lab-null, ADR 0051/0064); a sealed

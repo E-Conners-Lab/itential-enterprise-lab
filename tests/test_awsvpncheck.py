@@ -149,6 +149,7 @@ def test_the_swept_workflows_are_the_aws_vpn_ones_and_the_hand_paths_to_the_edge
     assert set(ac.JOB_WORKFLOWS) == {wf[k] for k in (
         "deploy_aws_vpn", "hand_off_aws_vpn", "verify_aws_vpn", "tear_down_aws_vpn", "tear_down_expired_aws_vpn",
         "get_aws_vpn_status", "check_aws_drift", "rotate_aws_vpn_key", "rotate_aws_vpn_key_monthly",
+        "diagnose_aws_vpn_outage",
         "config_push_revert", "show_command")}
 
 

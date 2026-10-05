@@ -1,0 +1,84 @@
+# The alert relay (R6, ADR 0072): observability/alert-relay/relay.py in a ConfigMap, run by the exporter's pinned Python
+# image (no image build). Alertmanager posts to it inside the cluster; it logs in to the Platform with the exporter's
+# Secret (owner decision 2026-10-05) and starts the endpoint trigger observability.yaml alert_relay.routes names.
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: itential-alert-relay
+  namespace: {{ obs_namespace }}
+data:
+  relay.py: |
+{{ relay_source | indent(4, true) }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: itential-alert-relay
+  namespace: {{ obs_namespace }}
+  labels:
+    app.kubernetes.io/name: itential-alert-relay
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: itential-alert-relay
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: itential-alert-relay
+      annotations:
+        checksum/script: "{{ relay_source | hash('sha256') }}"
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: relay
+          image: {{ components.itential_exporter.image }}:{{ components.itential_exporter.image_tag }}@{{ components.itential_exporter.digest }}
+          command: ["python3", "-u", "/app/relay.py"]
+          env:
+            - {name: ITENTIAL_URL, value: "https://{{ itential_host }}"}
+            - {name: ITENTIAL_CA, value: /etc/lab-ca/ca.crt}
+            - {name: PORT, value: "{{ alert_relay.port }}"}
+            - {name: RELAY_ROUTES, value: '{{ alert_relay.routes | to_json }}'}
+            - {name: PYTHONDONTWRITEBYTECODE, value: "1"}
+          envFrom:
+            - secretRef: {name: itential-exporter}
+          ports:
+            - {name: http, containerPort: {{ alert_relay.port }}}
+          volumeMounts:
+            - {name: script, mountPath: /app, readOnly: true}
+            - {name: lab-ca, mountPath: /etc/lab-ca, readOnly: true}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          resources:
+            requests: {cpu: 10m, memory: 32Mi}
+            limits: {memory: 96Mi}
+          readinessProbe:
+            httpGet: {path: /-/healthy, port: http}
+            initialDelaySeconds: 3
+            periodSeconds: 15
+      volumes:
+        - name: script
+          configMap: {name: itential-alert-relay}
+        - name: lab-ca
+          configMap: {name: lab-ca}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: itential-alert-relay
+  namespace: {{ obs_namespace }}
+  labels:
+    app.kubernetes.io/name: itential-alert-relay
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: itential-alert-relay
+  ports:
+    - {name: http, port: {{ alert_relay.port }}, targetPort: http}
