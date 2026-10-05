@@ -1,7 +1,7 @@
 {
  "uid": "lab-fabric",
  "title": "Fabric",
- "description": "PID S7: the vEOS fabric through gNMIc (BGP session state, interface counters).",
+ "description": "PID S7: the vEOS fabric through gNMIc (interface counters) and every declared BGP session, gNMIc on vEOS and SNMP on the C8000v routers (R10).",
  "tags": [
   "lab"
  ],
@@ -23,7 +23,7 @@
  "panels": [
   {
    "id": 1,
-   "title": "BGP sessions Established (gNMIc)",
+   "title": "BGP sessions Established per router (gNMIc + SNMP)",
    "type": "stat",
    "datasource": {
     "type": "prometheus",
@@ -41,8 +41,8 @@
       "type": "prometheus",
       "uid": "prometheus"
      },
-     "expr": "count by (source) ({__name__=~\"gnmic_bgp.*session_state\", session_state=\"ESTABLISHED\"})",
-     "legendFormat": "{{source}}",
+     "expr": "sum by (device) (lab:bgp_session_up)",
+     "legendFormat": "{{device}}",
      "refId": "A"
     }
    ],
@@ -62,7 +62,7 @@
   },
   {
    "id": 2,
-   "title": "BGP sessions not Established",
+   "title": "BGP sessions not Established (declared in the topology)",
    "type": "table",
    "datasource": {
     "type": "prometheus",
@@ -80,7 +80,7 @@
       "type": "prometheus",
       "uid": "prometheus"
      },
-     "expr": "{__name__=~\"gnmic_bgp.*session_state\", session_state!=\"ESTABLISHED\"}",
+     "expr": "lab:bgp_session_up == 0",
      "legendFormat": "",
      "refId": "A"
     }

@@ -200,6 +200,50 @@ c3() {
 }
 check "S7.3 gNMIc BGP session count for dc1-spine01 equals show bgp summary (and Prometheus agrees)" c3
 
+# --- S7.3b every declared BGP session is in lab:bgp_session_up and up; the C8000v ones agree with SNMP from here --
+# R10: the oracle is the topology (observability/bgp_rules.py intent); the second source for the SNMP half is a
+# BGP4-MIB walk from the workstation, the gNMIc half is S7.3's (device -> gNMIc -> Prometheus)
+c3b() {
+  web "${PROM}/api/v1/query" --data-urlencode "query=lab:bgp_session_up" > /tmp/verify07.bgp.$$ || return 1
+  BGP_JSON=/tmp/verify07.bgp.$$ ${PY} - <<'PY'
+import importlib.util, json, os, subprocess, sys, urllib.request
+spec = importlib.util.spec_from_file_location("bgp_rules", "observability/bgp_rules.py")
+br = importlib.util.module_from_spec(spec); spec.loader.exec_module(br)
+intent = {(e["device"], e["neighbor"]): e for e in br.intent()}
+got = {(r["metric"]["device"], r["metric"]["neighbor"]): r["metric"] | {"up": r["value"][1]}
+       for r in json.load(open(os.environ["BGP_JSON"]))["data"]["result"]}
+errs = []
+if set(got) != set(intent):
+    errs.append(f"lab:bgp_session_up sessions differ from the topology: missing {sorted(set(intent) - set(got))}, "
+                f"extra {sorted(set(got) - set(intent))}")
+errs += [f"{d} -> {n} ({got[d, n]['peer']}) is not up" for d, n in sorted(got) if got[d, n]["up"] != "1"]
+errs += [f"{k}: label {lab} {got[k][lab]} vs topology {intent[k][lab]}" for k in set(got) & set(intent)
+         for lab in ("vrf", "peer", "remote_as") if got[k][lab] != intent[k][lab]]
+h = {"Authorization": f"Token {os.environ['NETBOX_TOKEN']}"}
+url = os.environ["NETBOX_URL"] + "/api/dcim/devices/?platform=ios-xe&status=active&limit=100"
+walked = 0
+for d in json.load(urllib.request.urlopen(urllib.request.Request(url, headers=h)))["results"]:
+    if not d.get("primary_ip4") or d["name"] not in {k[0] for k in intent}:
+        continue
+    out = subprocess.run(["snmpwalk", "-v3", "-u", "zabbix", "-l", "authPriv", "-a", "SHA", "-A", os.environ["SNMPV3_AUTH_PASSWORD"],
+                          "-x", "AES", "-X", os.environ["SNMPV3_PRIV_PASSWORD"], "-t", "5", "-r", "1", "-On", "-Oq",
+                          d["primary_ip4"]["address"].split("/")[0], "1.3.6.1.2.1.15.3.1.2"], capture_output=True, text=True).stdout
+    for line in out.splitlines():
+        oid, _, state = line.partition(" ")
+        peer = ".".join(oid.split(".")[-4:])
+        if (d["name"], peer) in got:
+            walked += 1
+            if (state == "6") != (got[d["name"], peer]["up"] == "1"):
+                errs.append(f"{d['name']} -> {peer}: SNMP from the workstation says state {state}, Prometheus {got[d['name'], peer]['up']}")
+if walked == 0:
+    errs.append("the workstation's BGP4-MIB walk matched no session")
+if errs:
+    print("\n".join(errs)); sys.exit(1)
+print(f"{len(got)} declared BGP sessions up in lab:bgp_session_up (topology = Prometheus); {walked} C8000v sessions agree with BGP4-MIB walked from the workstation")
+PY
+}
+check "S7.3b every BGP session the topology declares is up in lab:bgp_session_up, and the C8000v ones agree with SNMP from the workstation" c3b
+
 # --- S7.4 Loki: a syslog line from each vendor within 60 s of a config change ----------------------------
 start_job() { iap -X POST "${PLATFORM}/operations-manager/jobs/start" -d "{\"workflow\":\"$1\",\"options\":{\"type\":\"automation\",\"description\":\"verify ${ts}\",\"variables\":$2}}" | ${PY} -c 'import sys,json;d=json.load(sys.stdin).get("data");print(d.get("_id","") if isinstance(d,dict) else "")'; }
 job_status() { iap "${PLATFORM}/operations-manager/jobs/$1" | ${PY} -c 'import sys,json;print(json.load(sys.stdin)["data"]["status"])'; }

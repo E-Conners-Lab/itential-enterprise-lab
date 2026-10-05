@@ -375,7 +375,7 @@ def test_the_alert_relays_route_is_this_workflows_trigger() -> None:
 
     obs = yaml.safe_load((ROOT / "observability" / "observability.yaml").read_text())
     om = VERSIONS["operations_manager"]["diagnose_aws_vpn_outage"]
-    assert om["automation"] == NAME and om["endpoint"]["route"] == obs["alert_relay"]["routes"]["LabAwsTunnelDown"]
+    assert om["automation"] == NAME and om["endpoint"]["route"] == obs["alert_relay"]["routes"]["LabAwsTunnelDown"]["route"]
 
 
 # ── the wiring: the trigger, the agent's UUID at import, the retired tier ──

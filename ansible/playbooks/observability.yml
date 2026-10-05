@@ -400,6 +400,14 @@
         src: "{{ k8s_dir }}/manifests/expiry-rules.yaml"
         apply: true
 
+    # R10: LabBgpSessionDown from gNMIc (vEOS) and SNMP (C8000v) for the sessions the topology declares (generated, tested)
+    - name: BGP session rules
+      kubernetes.core.k8s:
+        kubeconfig: "{{ kubeconfig }}"
+        state: present
+        src: "{{ k8s_dir }}/manifests/bgp-rules.yaml"
+        apply: true
+
     - name: Grafana dashboards from observability/grafana/dashboards (sidecar ConfigMaps)
       kubernetes.core.k8s:
         kubeconfig: "{{ kubeconfig }}"

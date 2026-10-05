@@ -21,7 +21,13 @@ _SPEC = importlib.util.spec_from_file_location("alert_relay", ROOT / "observabil
 relay = importlib.util.module_from_spec(_SPEC)
 sys.modules["alert_relay"] = relay  # @dataclass looks its module up here
 _SPEC.loader.exec_module(relay)
-ROUTES = {"LabAwsTunnelDown": "diagnose-aws-vpn-outage"}
+# observability.yaml alert_relay.routes: per alert, the trigger route and which payload field each alert label fills
+RAW_ROUTES = {"LabAwsTunnelDown": {"route": "diagnose-aws-vpn-outage",
+                                   "labels": {"device": "device", "interface": "ifDescr"}}}
+ROUTES = relay.parse_routes(RAW_ROUTES)
+BGP_ROUTES = relay.parse_routes({**RAW_ROUTES, "LabBgpSessionDown": {
+    "route": "diagnose-fabric-bgp-outage",
+    "labels": {"device": "device", "neighbor": "neighbor", "vrf": "vrf", "peer": "peer"}}})
 
 
 def _doc(status: str = "firing", **labels: str) -> dict:
@@ -54,6 +60,42 @@ def test_anything_else_starts_nothing(doc: dict) -> None:
 ])
 def test_a_label_value_outside_its_pattern_is_dropped_with_the_alert(labels: dict) -> None:
     assert relay.trigger_calls(_doc(**labels), ROUTES) == []
+
+
+def _bgp_doc(**labels: str) -> dict:
+    alert_labels = {"alertname": "LabBgpSessionDown", "device": "dc1-spine01", "neighbor": "10.101.254.11",
+                    "vrf": "default", "peer": "dc1-leaf01", "remote_as": "65102", "severity": "warning", **labels}
+    return {"version": "4", "status": "firing", "alerts": [{
+        "status": "firing", "labels": alert_labels, "startsAt": "2026-10-05T19:26:53.016Z", "fingerprint": "a1b2c3"}]}
+
+
+def test_each_route_forwards_only_the_labels_its_map_names() -> None:
+    """R10: a second alert with other labels - the map, not the code, says what reaches the workflow."""
+    assert relay.trigger_calls(_bgp_doc(), BGP_ROUTES) == [("diagnose-fabric-bgp-outage", {
+        "alertname": "LabBgpSessionDown", "device": "dc1-spine01", "neighbor": "10.101.254.11", "vrf": "default",
+        "peer": "dc1-leaf01", "starts_at": "2026-10-05T19:26:53Z", "fingerprint": "a1b2c3"})]
+    # the tunnel alert is unchanged by the second route
+    assert relay.trigger_calls(_doc(), BGP_ROUTES) == relay.trigger_calls(_doc(), ROUTES)
+
+
+@pytest.mark.parametrize("labels", [
+    {"neighbor": "10.101.254.11; reload"}, {"neighbor": "dc1-leaf01"}, {"neighbor": "10.101.254"},
+    {"vrf": "PROD\nshutdown"}, {"vrf": ""}, {"peer": "DC1 LEAF"}, {"device": "../etc"},
+])
+def test_a_bgp_label_outside_its_pattern_drops_the_alert(labels: dict) -> None:
+    assert relay.trigger_calls(_bgp_doc(**labels), BGP_ROUTES) == []
+
+
+@pytest.mark.parametrize("raw", [
+    {"LabX": "diagnose-x"},                                                   # the old flat form
+    {"LabX": {"route": "diagnose-x", "labels": {"command": "cmd"}}},           # a payload field with no pattern
+    {"LabX": {"route": "diagnose x?token=", "labels": {"device": "device"}}},  # not a route name
+    {"LabX": {"route": "diagnose-x", "labels": {}}},                           # nothing to identify the fault
+    {"Lab X": {"route": "diagnose-x", "labels": {"device": "device"}}},        # not an alert name
+])
+def test_a_route_table_the_relay_cannot_check_stops_it_at_start(raw: dict) -> None:
+    with pytest.raises(ValueError):
+        relay.parse_routes(raw)
 
 
 class _FakePlatform(BaseHTTPRequestHandler):
@@ -134,7 +176,8 @@ def test_nothing_to_forward_logs_nobody_in(platform) -> None:
 def test_the_route_table_is_the_oracle(platform) -> None:
     """The relay's routes come from observability.yaml, the same names the Prometheus rule and the trigger carry."""
     obs = yaml.safe_load((ROOT / "observability" / "observability.yaml").read_text())
-    assert obs["alert_relay"]["routes"] == ROUTES
+    assert obs["alert_relay"]["routes"] == RAW_ROUTES
+    assert relay.parse_routes(obs["alert_relay"]["routes"]) == ROUTES
     assert "LabAwsTunnelDown" in {a["name"] for a in obs["prometheus"]["alerts"]}
 
 
