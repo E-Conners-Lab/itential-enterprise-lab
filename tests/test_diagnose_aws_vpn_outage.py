@@ -145,6 +145,32 @@ def test_each_fix_names_itself_and_its_scope(fix: str, title: str) -> None:
     assert html.count('class="promise"') == 3
 
 
+@pytest.mark.parametrize("cause, headline", [
+    ("strongswan-down", "strongSwan is not answering in AWS"),
+    ("tunnel-shut", "Tunnel10 is shut on dc1-wan01"),
+    ("ike-blocked", "INET-IN no longer admits IKE from AWS"),
+    ("stale-ike", "The IKE session to AWS is stale"),
+])
+def test_the_agents_cause_tag_reads_as_a_sentence(cause: str, headline: str) -> None:
+    # the agent answers with a tag from its fixed list (itential/agents/tunnel-diagnostics.yaml): the first live card
+    # (2026-10-05) showed `strongswan-down` as its headline
+    html = _card(fix={"stdout_json": {"fix": "reset-ike", "cause": cause, "evidence": "e"}})
+    assert f'<p class="cause">{headline}</p>' in html
+
+
+def test_every_cause_the_agent_may_name_has_a_headline() -> None:
+    import re
+
+    agent = (ROOT / "itential" / "agents" / "tunnel-diagnostics.yaml").read_text()
+    tags = set(re.findall(r"-> cause ([a-z-]+), fix", agent)) - {"unknown"}  # unknown always escalates: no card
+    assert tags and tags <= set(build.OUTAGE_CAUSES)
+
+
+def test_a_cause_off_the_list_is_shown_as_the_agent_wrote_it() -> None:
+    html = _card(fix={"stdout_json": {"fix": "reset-ike", "cause": "something <odd>", "evidence": "e"}})
+    assert '<p class="cause">something &lt;odd&gt;</p>' in html
+
+
 def test_an_escalation_never_becomes_a_card() -> None:
     with pytest.raises(KeyError):
         _card(fix={"stdout_json": {"fix": "escalate"}})

@@ -73,8 +73,9 @@ terraform_run:
     # leak sweep (#28, #29), expires_at (#30, R2b), outputs' state metadata + cost inputs (#31, A1), drift (#32, R3).
     # 3e3f032 = main after cdp #33 (R4): aws-vpn-monitor reload, aws-vpn-psk restore-previous and prune. 691531d = main
     # after cdp #34: lab-edge takes Tunnel10's description from the target (tunnel_description, ADR 0071). 9ab2290 =
-    # main after cdp #35 (R6): lab-edge-push reset-sa, aws-vpn-monitor restart / drill-stop / alarm.
-    reference: "9ab22901755edfb829d01a6b1228de08a156eb2b"
+    # main after cdp #35 (R6): lab-edge-push reset-sa, aws-vpn-monitor restart / drill-stop / alarm. e7a6f67 = main
+    # after cdp #36: the restart document loads the connection only once charon answers (the first live drill's fix).
+    reference: "e7a6f6795cabef6e7de53367ad4b76a02de1b9bc"
   executable_object:
     name: python-3-12
     description: "the runner image's Python 3.12 (ADR 0038)"

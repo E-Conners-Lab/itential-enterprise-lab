@@ -5468,6 +5468,16 @@ OUTAGE_FIX_COPY = {
 }
 
 
+# the agent's cause tags (itential/agents/tunnel-diagnostics.yaml, its fixed list) as the card's headline. {d} is the
+# device; a tag off the list is shown as the agent wrote it. `unknown` always escalates, so it never reaches a card.
+OUTAGE_CAUSES = {
+    "tunnel-shut": "Tunnel10 is shut on {d}",
+    "ike-blocked": "INET-IN no longer admits IKE from AWS",
+    "strongswan-down": "strongSwan is not answering in AWS",
+    "stale-ike": "The IKE session to AWS is stale",
+}
+
+
 def outage_card_image(svg: str, alt: str, width: int, height: int) -> str:
     """An SVG drawing as an <img> (Work Center strips <svg>, P6): base64 in a data URI."""
     data = base64.b64encode(svg.encode()).decode()
@@ -5626,6 +5636,8 @@ def outage_card(d: dict) -> dict:
     term = "".join(f'<p class="h">{e(b)}</p>' if a == "h" else f'<p class="row"><span>{e(a)}</span>{b}</p>'
                    for a, b in rows)
 
+    tag = str(fix_out.get("cause") or "no cause given")
+    cause = OUTAGE_CAUSES[tag].format(d=device) if tag in OUTAGE_CAUSES else tag
     session = str(fix_out.get("session") or "")[:8]
     agent_by = "tunnel-diagnostics agent" + (f", session {session}" if session else "")
     evidence = str(fix_out.get("evidence") or "")
@@ -5655,7 +5667,7 @@ One fix is ready, and nothing runs until you approve it.</p></div>
 </ol></section>
 <section class="panel diag" aria-labelledby="t-found"><div>
 <h2 id="t-found">What the agent found</h2><span class="by"><i></i>{e(agent_by)}</span>
-<p class="cause">{e(str(fix_out.get("cause") or "no cause given"))}</p>
+<p class="cause">{e(cause)}</p>
 <p>{e(evidence) if evidence else "The agent's full diagnosis is in the incident's work notes."}</p></div>
 <div class="term" role="group" aria-label="What Verify read when the incident opened">{term}</div></section>
 <section class="panel action" aria-labelledby="t-fix"><div><p class="kicker">The proposed fix</p>
@@ -5694,7 +5706,7 @@ OUTAGE_CARD_CODE = _source(outage_card_image, outage_card_topology, outage_card,
                            call='outage_card(json.loads(sys.stdin.read() or "{}"))',
                            extra="import base64\nimport html\nimport re\nfrom datetime import datetime, timezone\n\n"
                                  "OUTAGE_CARD_CSS = " + repr(OUTAGE_CARD_CSS) + "\nOUTAGE_FIX_COPY = "
-                                 + repr(OUTAGE_FIX_COPY) + "\n\n\n")
+                                 + repr(OUTAGE_FIX_COPY) + "\nOUTAGE_CAUSES = " + repr(OUTAGE_CAUSES) + "\n\n\n")
 
 
 def run_agent(summary: str, agent_marker: str, request_ref: str, out_job: str, x: int, y: int = 0) -> dict:
