@@ -400,7 +400,8 @@ def test_zabbix_stays_removed_and_the_plays_delete_what_it_left() -> None:
     play = (ROOT / "ansible" / "playbooks" / "observability.yml").read_text()
     for removal in ("name: zabbix\n        release_namespace: \"{{ obs_namespace }}\"\n        state: absent",
                     "kind: Cluster\n        namespace: \"{{ obs_namespace }}\"\n        name: zabbix-db",
-                    "label_selectors: [cnpg.io/cluster=zabbix-db]", "name: traefik-vip-zabbix", "name: grafana-env"):
+                    "label_selectors: [cnpg.io/cluster=zabbix-db]", "name: traefik-vip-zabbix", "name: grafana-env",
+                    "kind: Probe, namespace: \"{{ obs_namespace }}\", name: http-zabbix"):
         assert removal in play, removal
     assert "community.zabbix" not in play and "ZABBIX_" not in play
     hosts = (ROOT / "ansible" / "playbooks" / "observability-hosts.yml").read_text()
