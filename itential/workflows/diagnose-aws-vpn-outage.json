@@ -302,7 +302,7 @@
         "incoming": {
           "clusterId": "lab",
           "language": "python",
-          "code": "import json, sys\n\n\nTARGETS = {'dc1-wan01': {'target': {'name': 'dc1-wan01', 'fvrf': 'INET', 'tunnel_source': 'GigabitEthernet7', 'front_door_ip': '172.29.129.250', 'loopback_ip': '10.103.255.11', 'router_inner': '169.254.10.1/30', 'aws_inner': '169.254.10.2/30', 'vpc_cidr': '10.0.0.0/16', 'vpc_private_prefixes': ['10.0.64.0/20', '10.0.80.0/20'], 'lab_prefixes': ['10.101.0.0/16', '10.103.255.0/24'], 'local_id': 'lab-edge.lab.internal', 'remote_id': 'aws-vpn.lab.internal', 'peer_rule': 'public', 'peer_pinned': None, 'bgp_asn': 65100, 'inside_interfaces': ['GigabitEthernet5', 'GigabitEthernet6', 'Tunnel1', 'Tunnel2'], 'unzoned_interfaces': ['GigabitEthernet1', 'GigabitEthernet2', 'GigabitEthernet7'], 'mgmt_host': '10.100.0.144', 'tunnel_description': 'IPsec VTI to AWS (Hand Off AWS VPN)'}, 'username': 'itential-aws-vpn', 'monitor': 'aws', 'netbox': {'site': 'cloud-aws', 'interface': 'Tunnel10', 'prefixes': {'10.0.0.0/16': 'cloud-aws', '10.0.64.0/20': 'cloud-aws', '10.0.80.0/20': 'cloud-aws', '169.254.10.0/30': 'wan'}}}}\nRELOAD_TIMEOUT = '300'\n\n\ndef outage_plan(d: dict, targets: dict) -> dict:\n    \"\"\"What the outage loop may act on: the deployment (terraform-run outputs' answer under `outputs`), the alerting\n    `device` (an open target the AWS monitor watches), each service's params and the incident's correlation_id.\n    Pure: runCode runs this source on the Gateway with the targets written in.\"\"\"\n    result = (d.get(\"outputs\") or {}).get(\"result\") or {}\n    outputs = (result.get(\"stdout_json\") or {}).get(\"outputs\")\n    if result.get(\"return_code\") != 0 or not isinstance(outputs, dict):\n        return {\"ok\": False, \"message\": \"terraform-run outputs did not answer (outage_outputs): nothing was changed\"}\n    if not outputs:\n        return {\"ok\": True, \"deployed\": False, \"message\": \"nothing is deployed in AWS: no AWS VPN to diagnose\"}\n    device = d.get(\"device\")\n    entry = (targets or {}).get(device) or {}\n    if entry.get(\"monitor\") != \"aws\":\n        return {\"ok\": False, \"message\": f\"{device} is not an open target the AWS monitor watches: nothing was changed\"}\n    instance = outputs.get(\"strongswan_instance_id\")\n    if not instance:\n        return {\"ok\": False, \"message\": \"the outputs name no strongSwan instance (outage_outputs): nothing was changed\"}\n    correlation = f\"aws-vpn-{device}\"\n    return {\"ok\": True, \"deployed\": True, \"target\": device, \"correlation_id\": correlation,\n            \"open_query\": f\"correlation_id={correlation}^active=true\",\n            \"edge_in\": {\"target\": device, \"targets\": targets, \"deployed\": outputs},\n            \"restart\": {\"action\": \"restart\", \"instance_id\": instance, \"timeout\": RELOAD_TIMEOUT}}\n\n\nprint(json.dumps(outage_plan(json.loads(sys.stdin.read() or \"{}\"), TARGETS)))\n",
+          "code": "import json, sys\n\n\nTARGETS = {'dc1-wan01': {'target': {'name': 'dc1-wan01', 'fvrf': 'INET', 'tunnel_source': 'GigabitEthernet7', 'front_door_ip': '172.29.129.250', 'loopback_ip': '10.103.255.11', 'router_inner': '169.254.10.1/30', 'aws_inner': '169.254.10.2/30', 'vpc_cidr': '10.0.0.0/16', 'vpc_private_prefixes': ['10.0.64.0/20', '10.0.80.0/20'], 'lab_prefixes': ['10.101.0.0/16', '10.103.255.0/24'], 'local_id': 'lab-edge.lab.internal', 'remote_id': 'aws-vpn.lab.internal', 'peer_rule': 'public', 'peer_pinned': None, 'bgp_asn': 65100, 'inside_interfaces': ['GigabitEthernet5', 'GigabitEthernet6', 'Tunnel1', 'Tunnel2'], 'unzoned_interfaces': ['GigabitEthernet1', 'GigabitEthernet2', 'GigabitEthernet7'], 'mgmt_host': '10.100.0.144', 'tunnel_description': 'IPsec VTI to AWS (Hand Off AWS VPN)'}, 'username': 'itential-aws-vpn', 'monitor': 'aws', 'netbox': {'site': 'cloud-aws', 'interface': 'Tunnel10', 'prefixes': {'10.0.0.0/16': 'cloud-aws', '10.0.64.0/20': 'cloud-aws', '10.0.80.0/20': 'cloud-aws', '169.254.10.0/30': 'wan'}}}}\nRELOAD_TIMEOUT = '300'\n\n\ndef outage_plan(d: dict, targets: dict) -> dict:\n    \"\"\"What the outage loop may act on: the deployment (terraform-run outputs' answer under `outputs`), the alerting\n    `device` (an open target the AWS monitor watches), each service's params and the incident's correlation_id.\n    Pure: runCode runs this source on the Gateway with the targets written in.\"\"\"\n    result = (d.get(\"outputs\") or {}).get(\"result\") or {}\n    outputs = (result.get(\"stdout_json\") or {}).get(\"outputs\")\n    if result.get(\"return_code\") != 0 or not isinstance(outputs, dict):\n        return {\"ok\": False, \"message\": \"terraform-run outputs did not answer (outage_outputs): nothing was changed\"}\n    if not outputs:\n        return {\"ok\": True, \"deployed\": False, \"message\": \"nothing is deployed in AWS: no AWS VPN to diagnose\"}\n    device = d.get(\"device\")\n    entry = (targets or {}).get(device) or {}\n    if entry.get(\"monitor\") != \"aws\":\n        return {\"ok\": False, \"message\": f\"{device} is not an open target the AWS monitor watches: nothing was changed\"}\n    instance = outputs.get(\"strongswan_instance_id\")\n    if not instance:\n        return {\"ok\": False, \"message\": \"the outputs name no strongSwan instance (outage_outputs): nothing was changed\"}\n    correlation = f\"aws-vpn-{device}\"\n    return {\"ok\": True, \"deployed\": True, \"target\": device, \"correlation_id\": correlation,\n            # open = New, In Progress or On Hold: a Resolved incident stays active=true until ServiceNow closes it\n            \"open_query\": f\"correlation_id={correlation}^stateIN1,2,3\",\n            \"edge_in\": {\"target\": device, \"targets\": targets, \"deployed\": outputs},\n            \"restart\": {\"action\": \"restart\", \"instance_id\": instance, \"timeout\": RELOAD_TIMEOUT}}\n\n\nprint(json.dumps(outage_plan(json.loads(sys.stdin.read() or \"{}\"), TARGETS)))\n",
           "data": "$var.1e.object",
           "safety": {
             "timeout": 30
@@ -450,7 +450,7 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 1350,
+        "x": 1200,
         "y": 3000
       },
       "variables": {
@@ -879,7 +879,7 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 1900,
+        "x": 2200,
         "y": 4800
       },
       "variables": {
@@ -1043,7 +1043,7 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": -50,
+        "x": 520,
         "y": 7350
       },
       "variables": {
@@ -1073,7 +1073,7 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 250,
+        "x": -80,
         "y": 7350
       },
       "variables": {
@@ -1105,7 +1105,7 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 20,
+        "x": -60,
         "y": 7500
       },
       "variables": {
@@ -1137,7 +1137,7 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": -40,
+        "x": -20,
         "y": 7650
       },
       "variables": {
@@ -1169,7 +1169,7 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 80,
+        "x": 20,
         "y": 7800
       },
       "variables": {
@@ -1201,7 +1201,7 @@
       "displayName": "GatewayManager",
       "groups": [],
       "nodeLocation": {
-        "x": 540,
+        "x": -80,
         "y": 7950
       },
       "variables": {
@@ -1236,7 +1236,7 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 740,
+        "x": 430,
         "y": 8100
       },
       "variables": {
@@ -1264,7 +1264,7 @@
       "displayName": "lab-servicenow:1.0.0",
       "groups": [],
       "nodeLocation": {
-        "x": 1540,
+        "x": 870,
         "y": 8250
       },
       "variables": {
@@ -1295,7 +1295,7 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 1450,
+        "x": 870,
         "y": 8400
       },
       "variables": {
@@ -1327,7 +1327,7 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 1780,
+        "x": 1140,
         "y": 8550
       },
       "variables": {
@@ -1359,7 +1359,7 @@
       "displayName": "GatewayManager",
       "groups": [],
       "nodeLocation": {
-        "x": 1570,
+        "x": 1330,
         "y": 8700
       },
       "variables": {
@@ -1394,7 +1394,7 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 2360,
+        "x": 1670,
         "y": 8850
       },
       "variables": {
@@ -1440,7 +1440,7 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 2730,
+        "x": 1590,
         "y": 9000
       },
       "variables": {
@@ -1468,7 +1468,7 @@
       "displayName": "Agent Sessions",
       "groups": [],
       "nodeLocation": {
-        "x": 2130,
+        "x": 1740,
         "y": 9150
       },
       "variables": {
@@ -1499,7 +1499,7 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 1810,
+        "x": 1990,
         "y": 9300
       },
       "variables": {
@@ -1529,7 +1529,7 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 2400,
+        "x": 1960,
         "y": 9450
       },
       "variables": {
@@ -1561,7 +1561,7 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 2400,
+        "x": 2340,
         "y": 9600
       },
       "variables": {
@@ -1589,7 +1589,7 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 2600,
+        "x": 2490,
         "y": 9750
       },
       "variables": {
@@ -1621,7 +1621,7 @@
       "displayName": "GatewayManager",
       "groups": [],
       "nodeLocation": {
-        "x": 2540,
+        "x": 2690,
         "y": 9900
       },
       "variables": {
@@ -1730,7 +1730,7 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 3300,
+        "x": 3000,
         "y": 10350
       },
       "variables": {
@@ -1758,7 +1758,7 @@
       "displayName": "lab-servicenow:1.0.0",
       "groups": [],
       "nodeLocation": {
-        "x": 3150,
+        "x": 3000,
         "y": 10500
       },
       "variables": {
@@ -1790,7 +1790,7 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 3000,
+        "x": 5130,
         "y": 10650
       },
       "variables": {
@@ -1820,7 +1820,7 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 3450,
+        "x": 3750,
         "y": 10200
       },
       "variables": {
@@ -1852,7 +1852,7 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 4260,
+        "x": 3940,
         "y": 10350
       },
       "variables": {
@@ -1884,7 +1884,7 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 4730,
+        "x": 4710,
         "y": 10500
       },
       "variables": {
@@ -1916,7 +1916,7 @@
       "displayName": "GatewayManager",
       "groups": [],
       "nodeLocation": {
-        "x": 4980,
+        "x": 3150,
         "y": 10650
       },
       "variables": {
@@ -2010,7 +2010,7 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 3450,
+        "x": 5980,
         "y": 11100
       },
       "variables": {
@@ -2038,7 +2038,7 @@
       "displayName": "GatewayManager",
       "groups": [],
       "nodeLocation": {
-        "x": 4290,
+        "x": 6380,
         "y": 11250
       },
       "variables": {
@@ -2073,7 +2073,7 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 7340,
+        "x": 7490,
         "y": 11400
       },
       "variables": {
@@ -2101,7 +2101,7 @@
       "displayName": "lab-servicenow:1.0.0",
       "groups": [],
       "nodeLocation": {
-        "x": 7880,
+        "x": 7580,
         "y": 11550
       },
       "variables": {
@@ -2163,7 +2163,7 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 5830,
+        "x": 3600,
         "y": 11100
       },
       "variables": {
@@ -2209,7 +2209,7 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 3600,
+        "x": 3450,
         "y": 11250
       },
       "variables": {
@@ -2237,7 +2237,7 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 3730,
+        "x": 4440,
         "y": 11400
       },
       "variables": {
@@ -2269,7 +2269,7 @@
       "displayName": "GatewayManager",
       "groups": [],
       "nodeLocation": {
-        "x": 3890,
+        "x": 4040,
         "y": 11550
       },
       "variables": {
@@ -2299,7 +2299,7 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 6380,
+        "x": 4290,
         "y": 11250
       },
       "variables": {
@@ -2345,7 +2345,7 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 4440,
+        "x": 3580,
         "y": 11400
       },
       "variables": {
@@ -2373,7 +2373,7 @@
       "displayName": "GatewayManager",
       "groups": [],
       "nodeLocation": {
-        "x": 4820,
+        "x": 4670,
         "y": 11550
       },
       "variables": {
@@ -2403,7 +2403,7 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 5380,
+        "x": 5980,
         "y": 11400
       },
       "variables": {
@@ -2449,7 +2449,7 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 5980,
+        "x": 6140,
         "y": 11550
       },
       "variables": {
@@ -2477,7 +2477,7 @@
       "displayName": "GatewayManager",
       "groups": [],
       "nodeLocation": {
-        "x": 6160,
+        "x": 6320,
         "y": 11700
       },
       "variables": {
@@ -2507,7 +2507,7 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 6870,
+        "x": 6580,
         "y": 11850
       },
       "variables": {
@@ -2553,7 +2553,7 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 7040,
+        "x": 6890,
         "y": 12000
       },
       "variables": {
@@ -2581,7 +2581,7 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 7000,
+        "x": 6550,
         "y": 12150
       },
       "variables": {
@@ -2609,7 +2609,7 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 6430,
+        "x": 6180,
         "y": 12300
       },
       "variables": {
@@ -2641,7 +2641,7 @@
       "displayName": "GatewayManager",
       "groups": [],
       "nodeLocation": {
-        "x": 5700,
+        "x": 6080,
         "y": 12450
       },
       "variables": {
@@ -2763,7 +2763,7 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 5400,
+        "x": 5480,
         "y": 12600
       },
       "variables": {
@@ -2809,7 +2809,7 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 4190,
+        "x": 4460,
         "y": 12750
       },
       "variables": {
@@ -2839,7 +2839,7 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 3930,
+        "x": 3970,
         "y": 12900
       },
       "variables": {
@@ -2850,82 +2850,6 @@
         },
         "outgoing": {
           "return_data": null
-        },
-        "error": "",
-        "decorators": []
-      }
-    },
-    "71": {
-      "name": "runService",
-      "canvasName": "runService",
-      "summary": "the tunnel now (lab-edge verify: show commands, one ping)",
-      "description": "the tunnel now (lab-edge verify: show commands, one ping)",
-      "location": "Application",
-      "locationType": null,
-      "app": "GatewayManager",
-      "type": "automatic",
-      "displayName": "GatewayManager",
-      "groups": [],
-      "nodeLocation": {
-        "x": 4240,
-        "y": 13050
-      },
-      "variables": {
-        "incoming": {
-          "serviceName": "lab-edge",
-          "clusterId": "lab",
-          "params": "$var.70.return_data"
-        },
-        "outgoing": {
-          "result": "$var.job.check_result"
-        },
-        "error": "",
-        "decorators": []
-      },
-      "actor": "Pronghorn",
-      "scheduled": false
-    },
-    "7f": {
-      "name": "evaluation",
-      "canvasName": "evaluation",
-      "summary": "the tunnel read?",
-      "description": "the tunnel read?",
-      "location": "Application",
-      "locationType": null,
-      "app": "WorkFlowEngine",
-      "type": "operation",
-      "displayName": "WorkFlowEngine",
-      "groups": [],
-      "nodeLocation": {
-        "x": 4650,
-        "y": 13200
-      },
-      "variables": {
-        "incoming": {
-          "all_true_flag": true,
-          "evaluation_groups": [
-            {
-              "all_true_flag": true,
-              "evaluations": [
-                {
-                  "query": "result.return_code",
-                  "operand_1": {
-                    "variable": "result",
-                    "task": "71"
-                  },
-                  "operator": "==",
-                  "operand_2": {
-                    "variable": 0,
-                    "task": "static"
-                  }
-                }
-              ]
-            }
-          ],
-          "options": {}
-        },
-        "outgoing": {
-          "return_value": null
         },
         "error": "",
         "decorators": []
@@ -2943,8 +2867,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 4380,
-        "y": 13350
+        "x": 4180,
+        "y": 14700
       },
       "variables": {
         "incoming": {
@@ -2973,8 +2897,8 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 4380,
-        "y": 13500
+        "x": 4300,
+        "y": 15000
       },
       "variables": {
         "incoming": {
@@ -3001,8 +2925,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 4820,
-        "y": 13650
+        "x": 4080,
+        "y": 15150
       },
       "variables": {
         "incoming": {
@@ -3033,8 +2957,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 4810,
-        "y": 13800
+        "x": 4760,
+        "y": 15300
       },
       "variables": {
         "incoming": {
@@ -3065,8 +2989,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 4630,
-        "y": 13950
+        "x": 4680,
+        "y": 15450
       },
       "variables": {
         "incoming": {
@@ -3098,7 +3022,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 4560,
-        "y": 14100
+        "y": 15600
       },
       "variables": {
         "incoming": {
@@ -3129,8 +3053,8 @@
       "displayName": "GatewayManager",
       "groups": [],
       "nodeLocation": {
-        "x": 4600,
-        "y": 14250
+        "x": 4410,
+        "y": 15750
       },
       "variables": {
         "incoming": {
@@ -3164,8 +3088,8 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 4600,
-        "y": 14400
+        "x": 4260,
+        "y": 15900
       },
       "variables": {
         "incoming": {
@@ -3192,8 +3116,8 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 4600,
-        "y": 14550
+        "x": 4260,
+        "y": 16050
       },
       "variables": {
         "incoming": {
@@ -3238,8 +3162,8 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 4300,
-        "y": 14700
+        "x": 4110,
+        "y": 16200
       },
       "variables": {
         "incoming": {
@@ -3266,8 +3190,8 @@
       "displayName": "lab-servicenow:1.0.0",
       "groups": [],
       "nodeLocation": {
-        "x": 4450,
-        "y": 14850
+        "x": 4110,
+        "y": 16350
       },
       "variables": {
         "incoming": {
@@ -3298,8 +3222,8 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 4380,
-        "y": 15000
+        "x": 4060,
+        "y": 16500
       },
       "variables": {
         "incoming": {
@@ -3326,8 +3250,8 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 3770,
-        "y": 14700
+        "x": 3420,
+        "y": 16200
       },
       "variables": {
         "incoming": {
@@ -3354,8 +3278,8 @@
       "displayName": "lab-servicenow:1.0.0",
       "groups": [],
       "nodeLocation": {
-        "x": 3700,
-        "y": 14850
+        "x": 3210,
+        "y": 16350
       },
       "variables": {
         "incoming": {
@@ -3386,8 +3310,8 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 3710,
-        "y": 15000
+        "x": 1980,
+        "y": 16500
       },
       "variables": {
         "incoming": {
@@ -3414,7 +3338,7 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": -380,
+        "x": -230,
         "y": 2250
       },
       "variables": {
@@ -3444,7 +3368,7 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": -730,
+        "x": -580,
         "y": 4200
       },
       "variables": {
@@ -3474,7 +3398,7 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": -390,
+        "x": -720,
         "y": 7200
       },
       "variables": {
@@ -3504,7 +3428,7 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 3060,
+        "x": 2230,
         "y": 9000
       },
       "variables": {
@@ -3534,8 +3458,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 2550,
-        "y": 15000
+        "x": 3660,
+        "y": 16500
       },
       "variables": {
         "incoming": {
@@ -3564,8 +3488,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 930,
-        "y": 15150
+        "x": 740,
+        "y": 16650
       },
       "variables": {
         "incoming": {
@@ -3622,7 +3546,7 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 450,
+        "x": 300,
         "y": 5100
       },
       "variables": {
@@ -3650,7 +3574,7 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 150,
+        "x": 300,
         "y": 5250
       },
       "variables": {
@@ -3784,7 +3708,7 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 480,
+        "x": 330,
         "y": 5850
       },
       "variables": {
@@ -3964,7 +3888,7 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 130,
+        "x": 280,
         "y": 6600
       },
       "variables": {
@@ -4060,7 +3984,7 @@
       "displayName": "GatewayManager",
       "groups": [],
       "nodeLocation": {
-        "x": 0,
+        "x": -150,
         "y": 7050
       },
       "variables": {
@@ -4128,6 +4052,540 @@
         "error": "",
         "decorators": []
       }
+    },
+    "a0": {
+      "name": "delay",
+      "canvasName": "delay",
+      "summary": "wait 30 s for the tunnel (read 1)",
+      "description": "wait 30 s for the tunnel (read 1)",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 4210,
+        "y": 13050
+      },
+      "variables": {
+        "incoming": {
+          "time": 30
+        },
+        "outgoing": {
+          "time_in_milliseconds": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "a1": {
+      "name": "runService",
+      "canvasName": "runService",
+      "summary": "the tunnel now, read 1 (lab-edge verify: show commands, one ping)",
+      "description": "the tunnel now, read 1 (lab-edge verify: show commands, one ping)",
+      "location": "Application",
+      "locationType": null,
+      "app": "GatewayManager",
+      "type": "automatic",
+      "displayName": "GatewayManager",
+      "groups": [],
+      "nodeLocation": {
+        "x": 4220,
+        "y": 13200
+      },
+      "variables": {
+        "incoming": {
+          "serviceName": "lab-edge",
+          "clusterId": "lab",
+          "params": "$var.70.return_data"
+        },
+        "outgoing": {
+          "result": "$var.job.check_result"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "a2": {
+      "name": "evaluation",
+      "canvasName": "evaluation",
+      "summary": "the tunnel up? (read 1)",
+      "description": "the tunnel up? (read 1)",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 4810,
+        "y": 13350
+      },
+      "variables": {
+        "incoming": {
+          "all_true_flag": true,
+          "evaluation_groups": [
+            {
+              "all_true_flag": true,
+              "evaluations": [
+                {
+                  "query": "result.return_code",
+                  "operand_1": {
+                    "variable": "result",
+                    "task": "a1"
+                  },
+                  "operator": "==",
+                  "operand_2": {
+                    "variable": 0,
+                    "task": "static"
+                  }
+                },
+                {
+                  "query": "result.stdout_json.router",
+                  "operand_1": {
+                    "variable": "result",
+                    "task": "a1"
+                  },
+                  "operator": "==",
+                  "operand_2": {
+                    "variable": "up",
+                    "task": "static"
+                  }
+                },
+                {
+                  "query": "result.stdout_json.data_plane",
+                  "operand_1": {
+                    "variable": "result",
+                    "task": "a1"
+                  },
+                  "operator": "==",
+                  "operand_2": {
+                    "variable": "up",
+                    "task": "static"
+                  }
+                }
+              ]
+            }
+          ],
+          "options": {}
+        },
+        "outgoing": {
+          "return_value": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "a3": {
+      "name": "delay",
+      "canvasName": "delay",
+      "summary": "wait 45 s for the tunnel (read 2)",
+      "description": "wait 45 s for the tunnel (read 2)",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 4160,
+        "y": 13500
+      },
+      "variables": {
+        "incoming": {
+          "time": 45
+        },
+        "outgoing": {
+          "time_in_milliseconds": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "a4": {
+      "name": "runService",
+      "canvasName": "runService",
+      "summary": "the tunnel now, read 2 (lab-edge verify: show commands, one ping)",
+      "description": "the tunnel now, read 2 (lab-edge verify: show commands, one ping)",
+      "location": "Application",
+      "locationType": null,
+      "app": "GatewayManager",
+      "type": "automatic",
+      "displayName": "GatewayManager",
+      "groups": [],
+      "nodeLocation": {
+        "x": 4160,
+        "y": 13650
+      },
+      "variables": {
+        "incoming": {
+          "serviceName": "lab-edge",
+          "clusterId": "lab",
+          "params": "$var.70.return_data"
+        },
+        "outgoing": {
+          "result": "$var.job.check_result"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "a5": {
+      "name": "evaluation",
+      "canvasName": "evaluation",
+      "summary": "the tunnel up? (read 2)",
+      "description": "the tunnel up? (read 2)",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 4460,
+        "y": 13800
+      },
+      "variables": {
+        "incoming": {
+          "all_true_flag": true,
+          "evaluation_groups": [
+            {
+              "all_true_flag": true,
+              "evaluations": [
+                {
+                  "query": "result.return_code",
+                  "operand_1": {
+                    "variable": "result",
+                    "task": "a4"
+                  },
+                  "operator": "==",
+                  "operand_2": {
+                    "variable": 0,
+                    "task": "static"
+                  }
+                },
+                {
+                  "query": "result.stdout_json.router",
+                  "operand_1": {
+                    "variable": "result",
+                    "task": "a4"
+                  },
+                  "operator": "==",
+                  "operand_2": {
+                    "variable": "up",
+                    "task": "static"
+                  }
+                },
+                {
+                  "query": "result.stdout_json.data_plane",
+                  "operand_1": {
+                    "variable": "result",
+                    "task": "a4"
+                  },
+                  "operator": "==",
+                  "operand_2": {
+                    "variable": "up",
+                    "task": "static"
+                  }
+                }
+              ]
+            }
+          ],
+          "options": {}
+        },
+        "outgoing": {
+          "return_value": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "a6": {
+      "name": "delay",
+      "canvasName": "delay",
+      "summary": "wait 45 s for the tunnel (read 3)",
+      "description": "wait 45 s for the tunnel (read 3)",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 4150,
+        "y": 13950
+      },
+      "variables": {
+        "incoming": {
+          "time": 45
+        },
+        "outgoing": {
+          "time_in_milliseconds": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "a7": {
+      "name": "runService",
+      "canvasName": "runService",
+      "summary": "the tunnel now, read 3 (lab-edge verify: show commands, one ping)",
+      "description": "the tunnel now, read 3 (lab-edge verify: show commands, one ping)",
+      "location": "Application",
+      "locationType": null,
+      "app": "GatewayManager",
+      "type": "automatic",
+      "displayName": "GatewayManager",
+      "groups": [],
+      "nodeLocation": {
+        "x": 4150,
+        "y": 14100
+      },
+      "variables": {
+        "incoming": {
+          "serviceName": "lab-edge",
+          "clusterId": "lab",
+          "params": "$var.70.return_data"
+        },
+        "outgoing": {
+          "result": "$var.job.check_result"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "a8": {
+      "name": "evaluation",
+      "canvasName": "evaluation",
+      "summary": "the tunnel up? (read 3)",
+      "description": "the tunnel up? (read 3)",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 4290,
+        "y": 14250
+      },
+      "variables": {
+        "incoming": {
+          "all_true_flag": true,
+          "evaluation_groups": [
+            {
+              "all_true_flag": true,
+              "evaluations": [
+                {
+                  "query": "result.return_code",
+                  "operand_1": {
+                    "variable": "result",
+                    "task": "a7"
+                  },
+                  "operator": "==",
+                  "operand_2": {
+                    "variable": 0,
+                    "task": "static"
+                  }
+                },
+                {
+                  "query": "result.stdout_json.router",
+                  "operand_1": {
+                    "variable": "result",
+                    "task": "a7"
+                  },
+                  "operator": "==",
+                  "operand_2": {
+                    "variable": "up",
+                    "task": "static"
+                  }
+                },
+                {
+                  "query": "result.stdout_json.data_plane",
+                  "operand_1": {
+                    "variable": "result",
+                    "task": "a7"
+                  },
+                  "operator": "==",
+                  "operand_2": {
+                    "variable": "up",
+                    "task": "static"
+                  }
+                }
+              ]
+            }
+          ],
+          "options": {}
+        },
+        "outgoing": {
+          "return_value": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "a9": {
+      "name": "delay",
+      "canvasName": "delay",
+      "summary": "wait 60 s for the tunnel (read 4)",
+      "description": "wait 60 s for the tunnel (read 4)",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 4110,
+        "y": 14400
+      },
+      "variables": {
+        "incoming": {
+          "time": 60
+        },
+        "outgoing": {
+          "time_in_milliseconds": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "aa": {
+      "name": "runService",
+      "canvasName": "runService",
+      "summary": "the tunnel now, read 4 (lab-edge verify: show commands, one ping)",
+      "description": "the tunnel now, read 4 (lab-edge verify: show commands, one ping)",
+      "location": "Application",
+      "locationType": null,
+      "app": "GatewayManager",
+      "type": "automatic",
+      "displayName": "GatewayManager",
+      "groups": [],
+      "nodeLocation": {
+        "x": 4130,
+        "y": 14550
+      },
+      "variables": {
+        "incoming": {
+          "serviceName": "lab-edge",
+          "clusterId": "lab",
+          "params": "$var.70.return_data"
+        },
+        "outgoing": {
+          "result": "$var.job.check_result"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "ab": {
+      "name": "evaluation",
+      "canvasName": "evaluation",
+      "summary": "the tunnel up? (read 4)",
+      "description": "the tunnel up? (read 4)",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 3880,
+        "y": 14700
+      },
+      "variables": {
+        "incoming": {
+          "all_true_flag": true,
+          "evaluation_groups": [
+            {
+              "all_true_flag": true,
+              "evaluations": [
+                {
+                  "query": "result.return_code",
+                  "operand_1": {
+                    "variable": "result",
+                    "task": "aa"
+                  },
+                  "operator": "==",
+                  "operand_2": {
+                    "variable": 0,
+                    "task": "static"
+                  }
+                },
+                {
+                  "query": "result.stdout_json.router",
+                  "operand_1": {
+                    "variable": "result",
+                    "task": "aa"
+                  },
+                  "operator": "==",
+                  "operand_2": {
+                    "variable": "up",
+                    "task": "static"
+                  }
+                },
+                {
+                  "query": "result.stdout_json.data_plane",
+                  "operand_1": {
+                    "variable": "result",
+                    "task": "aa"
+                  },
+                  "operator": "==",
+                  "operand_2": {
+                    "variable": "up",
+                    "task": "static"
+                  }
+                }
+              ]
+            }
+          ],
+          "options": {}
+        },
+        "outgoing": {
+          "return_value": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "ac": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "still not up after the last read",
+      "description": "still not up after the last read",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 4050,
+        "y": 14850
+      },
+      "variables": {
+        "incoming": {
+          "input": "the tunnel was still not up after the last read (about 180 s after the fix): the result says so",
+          "outputType": "string",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.check_note"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
     },
     "9a01": {
       "name": "setObjectKey",
@@ -4444,8 +4902,8 @@
       "summary": "workflow_end",
       "groups": [],
       "nodeLocation": {
-        "x": 10290,
-        "y": 15300
+        "x": 10250,
+        "y": 16800
       }
     }
   },
@@ -5319,7 +5777,7 @@
       }
     },
     "70": {
-      "71": {
+      "a0": {
         "state": "success",
         "type": "standard"
       },
@@ -5328,8 +5786,98 @@
         "type": "standard"
       }
     },
-    "71": {
-      "7f": {
+    "80": {
+      "72": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "a0": {
+      "a1": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "a1": {
+      "a2": {
+        "state": "success",
+        "type": "standard"
+      },
+      "a3": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "a2": {
+      "72": {
+        "state": "success",
+        "type": "standard"
+      },
+      "a3": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "a3": {
+      "a4": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "a4": {
+      "a5": {
+        "state": "success",
+        "type": "standard"
+      },
+      "a6": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "a5": {
+      "72": {
+        "state": "success",
+        "type": "standard"
+      },
+      "a6": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "a6": {
+      "a7": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "a7": {
+      "a8": {
+        "state": "success",
+        "type": "standard"
+      },
+      "a9": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "a8": {
+      "72": {
+        "state": "success",
+        "type": "standard"
+      },
+      "a9": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "a9": {
+      "aa": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "aa": {
+      "ab": {
         "state": "success",
         "type": "standard"
       },
@@ -5338,17 +5886,17 @@
         "type": "standard"
       }
     },
-    "7f": {
+    "ab": {
       "72": {
         "state": "success",
         "type": "standard"
       },
-      "80": {
+      "ac": {
         "state": "failure",
         "type": "standard"
       }
     },
-    "80": {
+    "ac": {
       "72": {
         "state": "success",
         "type": "standard"
