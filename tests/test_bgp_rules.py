@@ -235,3 +235,14 @@ def test_the_fabric_dashboard_shows_every_declared_session_from_both_sources() -
 def test_the_verify_checks_production_against_the_topology_and_snmp() -> None:
     text = (ROOT / "verify" / "test-07-observability.sh").read_text()
     assert 'check "S7.3b' in text and "lab:bgp_session_up" in text and "1.3.6.1.2.1.15.3.1.2" in text
+
+
+def test_the_snmp_exporter_restarts_when_its_modules_change() -> None:
+    """Production 2026-10-05: the R10 converge rewrote the exporter's ConfigMap, but the pod kept its 25-day-old
+    config (snmp_exporter does not watch the file), so every IOS-XE scrape asking for module bgp got 400 until a manual
+    rollout restart. A checksum of the config as a pod annotation makes Helm roll the pod exactly when it changes."""
+    play = yaml.safe_load((ROOT / "ansible" / "playbooks" / "observability.yml").read_text())
+    charts = next(p["vars"]["charts"] for p in play if "charts" in p.get("vars", {}))
+    (snmp,) = [c for c in charts if c["key"] == "snmp_exporter"]
+    annotation = snmp["overrides"]["podAnnotations"]["checksum/config"]
+    assert "values/snmp-exporter.yaml" in annotation and ".config" in annotation and "hash('sha256')" in annotation
