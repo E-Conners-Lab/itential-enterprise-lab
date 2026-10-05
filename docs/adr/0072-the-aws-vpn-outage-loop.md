@@ -40,7 +40,8 @@ Five probes (2026-10-05) shaped the design:
 3. **The workflow.** `Diagnose AWS VPN Outage` runs in this order:
    - its input gate holds the relay's fields;
    - it reads the deployment;
-   - it finds an open incident by `correlation_id` (`aws-vpn-<device>`) and only notes it;
+   - it finds an open incident by `correlation_id` (`aws-vpn-<device>`) and only notes it. Open means New, In Progress
+     or On Hold (`stateIN1,2,3`): a Resolved incident stays `active=true` in ServiceNow until it closes;
    - otherwise it gathers the evidence: the AWS alarm (`aws-vpn-monitor alarm`) and Verify's own checks, generated
      in as `verify_section`'s third copy;
    - a tunnel already up again ends quietly, with no incident;
@@ -60,7 +61,9 @@ Five probes (2026-10-05) shaped the design:
      swanctl.conf on the way up and heals a stopped daemon; R4's reload cannot;
    - the router block re-pushed through Hand Off's own render and push.
 
-   Then the tunnel is read again (`lab-edge verify`). Up resolves the incident (state 6, `Solution provided`).
+   Then the tunnel is read again (`lab-edge verify`), up to four times over about three minutes; the first read that
+   is up ends the wait. The first live drills (2026-10-05) showed the router needs about two minutes to rebuild IKE
+   after strongSwan restarts, so one immediate read said down. Up resolves the incident (state 6, `Solution provided`).
    Still down notes it, and a Work Center task asks for a person. A rejection runs nothing and leaves the incident
    open.
 6. **The drill.** `Break AWS VPN` injects named faults (Tunnel10 shut, IKE blocked in INET-IN, strongSwan stopped)

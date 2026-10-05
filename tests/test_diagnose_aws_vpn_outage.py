@@ -32,7 +32,9 @@ def _svc(out, rc: int = 0) -> dict:
 def test_the_plan_names_the_target_its_correlation_and_the_restart() -> None:
     p = build.outage_plan({"outputs": _svc({"outputs": OUTPUTS}), "device": "dc1-wan01"}, build.VERIFY_TARGETS)
     assert p["ok"] and p["deployed"] and p["correlation_id"] == "aws-vpn-dc1-wan01"
-    assert p["open_query"] == "correlation_id=aws-vpn-dc1-wan01^active=true"
+    # open = New, In Progress or On Hold: a Resolved incident stays active=true in ServiceNow until it closes, and the
+    # next outage must open its own (2026-10-05: the first drill's resolved incident had to be closed by hand)
+    assert p["open_query"] == "correlation_id=aws-vpn-dc1-wan01^stateIN1,2,3"
     assert p["restart"] == {"action": "restart", "instance_id": "i-0abc", "timeout": build.RELOAD_TIMEOUT}
     assert p["edge_in"]["deployed"] == OUTPUTS
 
@@ -319,6 +321,31 @@ def test_the_engineers_note_reaches_the_incident_either_way() -> None:
     assert TASKS["81"]["variables"]["incoming"]["value"] == "$var.job.card_decision"
     assert TASKS["76"]["variables"]["incoming"]["data"] == "$var.81.object"
     assert not {"58", "59"} & _reach("60") and "81" not in _reach("50")
+
+
+RECHECKS = [("a0", "a1", "a2"), ("a3", "a4", "a5"), ("a6", "a7", "a8"), ("a9", "aa", "ab")]
+
+
+def test_after_the_fix_the_tunnel_is_read_again_with_patience() -> None:
+    # 2026-10-05 run 2: the restart worked, but the router took ~2 minutes to rebuild IKE and the one immediate read
+    # said down. The loop now reads up to four times over about three minutes and stops at the first read that is up.
+    waits = [TASKS[d]["variables"]["incoming"]["time"] for d, _, _ in RECHECKS]
+    assert all(TASKS[d]["name"] == "delay" for d, _, _ in RECHECKS) and 150 <= sum(waits) <= 240
+    assert TR["70"]["a0"]["state"] == "success" and "71" not in TASKS and "7f" not in TASKS
+    for i, (delay, read, up) in enumerate(RECHECKS):
+        assert TASKS[read]["variables"]["incoming"]["serviceName"] == "lab-edge"
+        assert TASKS[read]["variables"]["incoming"]["params"] == "$var.70.return_data"
+        assert TASKS[read]["variables"]["outgoing"]["result"] == "$var.job.check_result"  # the last read is the result's
+        checks = {e["query"]: e["operand_2"]["variable"] for g in TASKS[up]["variables"]["incoming"]["evaluation_groups"]
+                  for e in g["evaluations"]}
+        assert checks == {"result.return_code": 0, "result.stdout_json.router": "up", "result.stdout_json.data_plane": "up"}
+        assert TR[delay] == {read: {"state": "success", "type": "standard"}}
+        assert TR[up]["72"]["state"] == "success"  # up: straight to the result
+        last = i + 1 == len(RECHECKS)
+        assert TR[up]["ac" if last else RECHECKS[i + 1][0]]["state"] == "failure"  # not up: the next read, or the note
+        assert TR[read]["80" if last else RECHECKS[i + 1][0]]["state"] == "error"  # unreadable: the next read retries
+    assert TR["ac"] == {"72": {"state": "success", "type": "standard"}} and "still not up" in json.dumps(TASKS["ac"])
+    assert all(node not in set().union(*(_reach(n) for n in TR.get(node, {}))) for node in TASKS)  # no cycle
 
 
 def test_an_escalation_notes_the_incident_and_shows_no_card() -> None:

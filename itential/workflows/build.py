@@ -5214,6 +5214,7 @@ def rotate_aws_vpn_key_monthly() -> dict:
 OUTAGE_FIXES = ("repush-router-block", "restart-strongswan", "reset-ike", "escalate")
 AGENT_MARKER = "__AGENT_ID:tunnel-diagnostics__"  # the agent's UUID, filled in at import (tasks/workflow-agent-ids.yml)
 ALARM_PARAMS = '{"action": "alarm", "timeout": "120"}'
+OUTAGE_RECHECKS = (("a0", "a1", "a2", 30), ("a3", "a4", "a5", 45), ("a6", "a7", "a8", 45), ("a9", "aa", "ab", 60))
 
 
 def outage_plan(d: dict, targets: dict) -> dict:
@@ -5235,7 +5236,8 @@ def outage_plan(d: dict, targets: dict) -> dict:
         return {"ok": False, "message": "the outputs name no strongSwan instance (outage_outputs): nothing was changed"}
     correlation = f"aws-vpn-{device}"
     return {"ok": True, "deployed": True, "target": device, "correlation_id": correlation,
-            "open_query": f"correlation_id={correlation}^active=true",
+            # open = New, In Progress or On Hold: a Resolved incident stays active=true until ServiceNow closes it
+            "open_query": f"correlation_id={correlation}^stateIN1,2,3",
             "edge_in": {"target": device, "targets": targets, "deployed": outputs},
             "restart": {"action": "restart", "instance_id": instance, "timeout": RELOAD_TIMEOUT}}
 
@@ -5853,9 +5855,6 @@ def diagnose_aws_vpn_outage() -> dict:
                    "tunnel is read again", "fix_note", x=2875),
         # the tunnel again, then the incident
         "70": jq("lab-edge verify's params", "$var.job.outage_edge", "stdout_json.lab_edge", x=2900),
-        "71": run_service("the tunnel now (lab-edge verify: show commands, one ping)", "lab-edge", "$var.70.return_data",
-                          "check_result", x=2925),
-        "7f": evaluate("the tunnel read?", "71", "result", "result.return_code", "==", 0, x=2935),
         "80": note("the tunnel could not be read", "lab-edge could not read the tunnel after the fix (check_result)",
                    "check_note", x=2940, y=-300),
         "72": jq("the fix that ran", "$var.job.outage_fix", "stdout_json.fix", x=2950),
@@ -5895,6 +5894,29 @@ def diagnose_aws_vpn_outage() -> dict:
     vtasks, vtr, first = verify_section("outage_edge", passed="30", failed="31", broken="8c", judge_broken="8c",
                                         x=1100)
     tasks.update(vtasks)
+    # the tunnel after the fix (2026-10-05 run 2: the router needs ~2 minutes to rebuild IKE after a strongSwan restart,
+    # and one immediate read said down): up to four reads over about three minutes, unrolled (no cycle), the first read
+    # that is up goes to the result; the last read, up or not, is check_result either way
+    recheck_tr = {}
+    for i, (delay, read, up, secs) in enumerate(OUTAGE_RECHECKS):
+        nxt = OUTAGE_RECHECKS[i + 1][0] if i + 1 < len(OUTAGE_RECHECKS) else "72"
+        x = 2900 + i * 30
+        tasks[delay] = task("delay", "WorkFlowEngine", f"wait {secs} s for the tunnel (read {i + 1})", {"time": secs},
+                            {"time_in_milliseconds": None}, kind="operation", display="WorkFlowEngine", x=x)
+        tasks[read] = run_service(f"the tunnel now, read {i + 1} (lab-edge verify: show commands, one ping)", "lab-edge",
+                                  "$var.70.return_data", "check_result", x=x + 10)
+        tasks[up] = evaluate(f"the tunnel up? (read {i + 1})", read, "result", "result.return_code", "==", 0, x=x + 20)
+        tasks[up]["variables"]["incoming"]["evaluation_groups"][0]["evaluations"] += [
+            {"query": f"result.stdout_json.{signal}", "operand_1": {"variable": "result", "task": read},
+             "operator": "==", "operand_2": {"variable": "up", "task": "static"}} for signal in ("router", "data_plane")]
+        recheck_tr[delay] = _edge(**{read: ok})
+        # a read that fails is the next attempt's to retry; after the last one, the result says not read
+        recheck_tr[read] = _edge(**{up: ok, (nxt if nxt != "72" else "80"): err})
+        recheck_tr[up] = _edge(**{"72": ok, (nxt if nxt != "72" else "ac"): fail})
+    tasks["ac"] = note("still not up after the last read", "the tunnel was still not up after the last read (about "
+                       f"{sum(r[3] for r in OUTAGE_RECHECKS)} s after the fix): the result says so", "check_note",
+                       x=3020, y=300)
+    recheck_tr["ac"] = _edge(**{"72": ok})
     tr = {
         "workflow_start": _edge(**{"01": ok}),
         "01": _edge(**{"02": ok}), "02": _edge(**{"03": ok}), "03": _edge(**{"04": ok}), "04": _edge(**{"1a": ok}),
@@ -5977,11 +5999,9 @@ def diagnose_aws_vpn_outage() -> dict:
         "6d": _edge(**{"6e": ok}),
         "6e": _edge(**{"57": ok, "54": err}),
         "57": _edge(**{"70": ok, "54": fail}),
-        "70": _edge(**{"71": ok, "8e": err}),
-        # a read that fails leaves {} behind: the result says not read, and the incident stays open
-        "71": _edge(**{"7f": ok, "80": err}),
-        "7f": _edge(**{"72": ok, "80": fail}),
+        "70": _edge(**{OUTAGE_RECHECKS[0][0]: ok, "8e": err}),
         "80": _edge(**{"72": ok}),
+        **recheck_tr,
         "72": _edge(**{"73": ok, "8e": err}),
         "73": _edge(**{"74": ok}), "74": _edge(**{"75": ok}),
         "75": _edge(**{"81": ok}), "81": _edge(**{"76": ok}),
