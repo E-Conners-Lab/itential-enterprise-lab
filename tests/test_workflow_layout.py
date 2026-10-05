@@ -72,4 +72,5 @@ def test_arrows_stay_clear_of_the_tasks(file: str) -> None:
 # (R2b) sends eight teardown failures to one Work Center task; a sweep of its placements (2026-10-04) found none under 3,
 # and the state read's own check (ADR 0066) adds one more.
 # Diagnose AWS VPN Outage (R6, 2026-10-05): five failure notes and the menu's three fixes meet at two tasks; same rule.
-THROUGH_ALLOWED = {"hand-off-aws-vpn.json": 5, "tear-down-expired-aws-vpn.json": 4, "diagnose-aws-vpn-outage.json": 4}
+# Its HTML card (2026-10-05) adds the card's own chain and the engineer's note on both branches: 10, same rule.
+THROUGH_ALLOWED = {"hand-off-aws-vpn.json": 5, "tear-down-expired-aws-vpn.json": 4, "diagnose-aws-vpn-outage.json": 10}

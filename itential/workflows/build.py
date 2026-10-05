@@ -15,10 +15,13 @@ the itentialopensource pre-built automations:
 
 from __future__ import annotations
 
+import base64
+import html
 import inspect
 import ipaddress
 import itertools
 import json
+import re
 import statistics
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -5211,9 +5214,6 @@ def rotate_aws_vpn_key_monthly() -> dict:
 OUTAGE_FIXES = ("repush-router-block", "restart-strongswan", "reset-ike", "escalate")
 AGENT_MARKER = "__AGENT_ID:tunnel-diagnostics__"  # the agent's UUID, filled in at import (tasks/workflow-agent-ids.yml)
 ALARM_PARAMS = '{"action": "alarm", "timeout": "120"}'
-OUTAGE_APPROVAL = ("The tunnel-diagnostics agent proposes the fix below for the AWS VPN outage on __T__ (the incident "
-                   "carries its work note). Approving runs exactly this fix and then reads the tunnel again; rejecting "
-                   "runs nothing and leaves the incident open.")
 
 
 def outage_plan(d: dict, targets: dict) -> dict:
@@ -5302,7 +5302,7 @@ def outage_fix(d: dict) -> dict:
            ("the agent did not finish" if agent.get("sessionStatus") != "COMPLETE" else "the agent's answer was not the JSON line"))
     evidence = str(answer.get("evidence") or "")[:400]
     return {"fix": fix, "cause": why, "evidence": evidence, "card": fix != "escalate",
-            "card_body": {"fix": fix, "cause": why, "evidence": evidence, "incident": d.get("number")},
+            "session": str(agent.get("sessionId") or "")[:64],
             "escalation": {"work_notes": f"Escalated to a person: no fix from the menu applies ({why}). {evidence}".strip()}}
 
 
@@ -5315,7 +5315,9 @@ def outage_result(d: dict) -> dict:
     up = check.get("router") == "up" and check.get("data_plane") == "up"
     ran = {"reset-ike": answer.get("cleared") is True, "restart-strongswan": answer.get("restarted") is True,
            "repush-router-block": answer.get("saved") is True}.get(fix, False)
-    said = f"Itential ran the approved fix {fix} ({'it ran' if ran else 'it did not complete: ' + str(answer.get('error') or 'no answer')})"
+    note = decision_note(d.get("decision"))
+    said = (f"Approved in Work Center ({'note: ' + note if note else 'no note'}). Itential ran the approved fix {fix} "
+            f"({'it ran' if ran else 'it did not complete: ' + str(answer.get('error') or 'no answer')})")
     if up:
         message = f"{said}; the tunnel is up again (router and data plane)."
         return {"fixed": True, "message": message,
@@ -5324,6 +5326,353 @@ def outage_result(d: dict) -> dict:
     message = (f"{said}; the tunnel is still not up (router {check.get('router', 'not read')}, data plane "
                f"{check.get('data_plane', 'not read')}). The incident stays open for a person.")
     return {"fixed": False, "message": message, "note": {"work_notes": message}}
+
+
+def decision_note(decision) -> str:
+    """The engineer's note from the card's export ({"decision": {"note": <the textarea>}}, P6), trimmed; "" if none."""
+    note = ((decision or {}).get("decision") or {}).get("note") if isinstance(decision, dict) else None
+    return " ".join(str(note or "").split())[:1000]
+
+
+def outage_rejected(d: dict) -> dict:
+    """The incident's work note when the card is rejected (`d` is the card's export)."""
+    note = decision_note(d)
+    return {"work_notes": "The proposed fix was rejected in Work Center: nothing was run. The incident stays open for "
+                          f"a person. The engineer's note: {note or 'no note'}."}
+
+
+# The outage card (ADR 0072 amendment, 2026-10-05): an HTML page in Work Center's InteractiveHTML task, in the lab's
+# portal design (itential/portal/deploy-aws-vpn). P6/P6b on production: the body renders in an iframe that keeps
+# <style>, @keyframes, the form and its textarea but strips <svg>, so each drawing is an <img> with an SVG data URI.
+OUTAGE_CARD_CSS = """
+body { margin: 0; padding: 4px; background: transparent; }
+.oc { --paper: #EEF3F7; --ink: #0E2A4A; --ink-soft: #4A6380; --cobalt: #1F4FD1; --kelp: #1E8C6A; --buoy: #D8433A;
+  --flare: #C7851A; --line: #D3DDE7;
+  --display: "Avenir Next Condensed", "Avenir Next", "Segoe UI Semibold", "Arial Narrow", sans-serif;
+  --mono: "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+  font-family: "Avenir Next", "Segoe UI", system-ui, -apple-system, sans-serif; color: var(--ink);
+  background: var(--paper); font-size: 15px; line-height: 1.5; max-width: 980px; margin: 0 auto;
+  border-radius: 14px; overflow: hidden; box-shadow: 0 18px 40px -24px rgba(14, 42, 74, .45); }
+.oc * { box-sizing: border-box; }
+.oc p { margin: 0; }
+.oc .band { background: var(--ink); color: #fff; padding: 22px 28px 24px; display: grid;
+  grid-template-columns: 1fr auto; gap: 18px 24px; align-items: start; }
+.oc .brand { display: flex; align-items: center; gap: 10px; font-size: 13px; color: #B9C8DB; grid-column: 1 / -1; }
+.oc .brand img { width: 26px; height: 26px; flex: none; display: block; }
+.oc .brand b { color: #fff; font-family: var(--display); font-weight: 700; font-size: 15px; }
+.oc h1 { font-family: var(--display); font-weight: 700; font-size: 34px; line-height: 1.05; margin: 0 0 8px; }
+.oc .lede { color: #C9D6E5; max-width: 58ch; }
+.oc .lede strong { color: #fff; font-weight: 600; }
+.oc .status { text-align: right; }
+.oc .pill { display: inline-flex; align-items: center; gap: 8px; background: rgba(199, 133, 26, .16); color: #F2C46D;
+  border: 1px solid rgba(242, 196, 109, .45); border-radius: 999px; padding: 5px 12px 5px 10px; font-size: 13px;
+  font-weight: 600; white-space: nowrap; }
+.oc .pill::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: #F2C46D;
+  animation: oc-blink 1.8s ease-in-out infinite; }
+@keyframes oc-blink { 0%, 100% { opacity: 1; } 50% { opacity: .3; } }
+.oc .elapsed { margin-top: 12px; font-family: var(--display); font-size: 40px; font-weight: 700; line-height: 1; }
+.oc .elapsed small { display: block; font-family: inherit; font-size: 12px; font-weight: 500; color: #9FB2C8;
+  margin-top: 4px; }
+.oc .body { padding: 22px 28px 28px; display: grid; gap: 18px; }
+.oc .panel { background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 18px 20px; }
+.oc h2 { font-family: var(--display); font-weight: 700; font-size: 19px; margin: 0 0 12px; }
+.oc .topo { padding: 16px 20px 6px; }
+.oc .topo img { display: block; width: 100%; height: auto; }
+.oc .ledger { display: grid; grid-template-columns: repeat(4, 1fr); border-top: 1px solid var(--line); margin-top: 6px; }
+.oc .reading { padding: 14px 16px 4px 14px; border-left: 3px solid var(--c); }
+.oc .src, .oc .why { font-size: 13px; color: var(--ink-soft); }
+.oc .val { font-family: var(--display); font-size: 21px; font-weight: 700; color: var(--c); line-height: 1.2;
+  margin: 2px 0; }
+.oc .steps { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(5, 1fr); }
+.oc .steps li { position: relative; padding: 26px 8px 0 0; font-size: 13px; color: var(--ink-soft); }
+.oc .steps li::before { content: ""; position: absolute; top: 6px; left: 0; width: 13px; height: 13px;
+  border-radius: 50%; background: var(--kelp); box-shadow: 0 0 0 3px #fff, 0 0 0 4px var(--kelp); }
+.oc .steps li::after { content: ""; position: absolute; top: 12px; left: 20px; right: 6px; height: 2px;
+  background: var(--kelp); }
+.oc .steps li:last-child::after { display: none; }
+.oc .steps .who { display: block; font-family: var(--display); font-weight: 700; font-size: 15px; color: var(--ink); }
+.oc .steps b { display: block; color: var(--ink); font-size: 14px; font-weight: 600; }
+.oc .steps .now::before { background: var(--flare); box-shadow: 0 0 0 3px #fff, 0 0 0 5px var(--flare); }
+.oc .steps .now::after, .oc .steps .next::after {
+  background: repeating-linear-gradient(90deg, #B8C6D4 0 6px, transparent 6px 11px); }
+.oc .steps .now b { color: #8A5A0C; }
+.oc .steps .next::before { background: #fff; box-shadow: 0 0 0 2px #B8C6D4; }
+.oc .diag { display: grid; grid-template-columns: 1fr 1.05fr; gap: 20px; align-items: start; }
+.oc .cause { font-family: var(--display); font-size: 25px; font-weight: 700; line-height: 1.15; margin: 2px 0 10px; }
+.oc .by { display: inline-flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--ink-soft);
+  background: var(--paper); border-radius: 999px; padding: 4px 10px 4px 6px; margin-bottom: 12px; }
+.oc .by i { width: 18px; height: 18px; border-radius: 50%; display: inline-block;
+  box-shadow: inset 0 0 0 4px #fff, inset 0 0 0 9px var(--cobalt); background: var(--cobalt); }
+.oc .term { background: var(--ink); color: #D6E2EF; border-radius: 10px; padding: 12px 16px 14px;
+  font-family: var(--mono); font-size: 12.3px; line-height: 1.6; }
+.oc .term .h { color: #7FA6D6; margin-top: 8px; }
+.oc .term .h:first-child { margin-top: 0; }
+.oc .term .row { display: flex; justify-content: space-between; gap: 12px; padding-left: 14px; }
+.oc .term .ok { color: #7FD1AE; }
+.oc .term .bad { color: #FF9A92; }
+.oc .term .unk { color: #9FB2C8; }
+.oc .action { background: var(--cobalt); color: #fff; border: 0; display: grid; grid-template-columns: 1fr auto;
+  gap: 6px 24px; padding: 22px 24px; }
+.oc .kicker { font-size: 13px; color: #C9D7FF; }
+.oc .action h2 { font-size: 28px; margin: 2px 0 8px; color: #fff; }
+.oc .what { color: #E4EBFF; max-width: 56ch; }
+.oc .scope { align-self: start; text-align: right; font-size: 12.5px; color: #C9D7FF; }
+.oc .scope b { display: block; font-family: var(--display); font-size: 20px; color: #fff; }
+.oc .promises { grid-column: 1 / -1; list-style: none; margin: 14px 0 0; padding: 14px 0 0;
+  border-top: 1px solid rgba(255, 255, 255, .22); display: grid; grid-template-columns: repeat(3, 1fr);
+  gap: 10px 18px; font-size: 13.5px; color: #F1F4FF; }
+.oc .promise { padding-left: 24px; position: relative; }
+.oc .promise::before { content: ""; position: absolute; left: 2px; top: 4px; width: 7px; height: 11px;
+  border: solid #fff; border-width: 0 2.5px 2.5px 0; transform: rotate(40deg); }
+.oc .decide { display: grid; grid-template-columns: 1fr 1.3fr; gap: 20px; align-items: start; }
+.oc .decide p { color: var(--ink-soft); font-size: 14px; }
+.oc .decide p + p { margin-top: 8px; }
+.oc label { display: block; font-weight: 600; font-size: 14px; margin-bottom: 6px; }
+.oc textarea { width: 100%; min-height: 88px; font: inherit; font-size: 14px; padding: 10px 12px; color: var(--ink);
+  border: 1px solid #B9C7D6; border-radius: 8px; background: #FBFCFE; resize: vertical; }
+.oc textarea:focus-visible { outline: 3px solid rgba(31, 79, 209, .35); border-color: var(--cobalt); }
+.oc .foot { padding: 0 28px 20px; font-size: 12px; color: var(--ink-soft); }
+@media (max-width: 760px) {
+  .oc .band, .oc .action, .oc .decide, .oc .diag { grid-template-columns: 1fr; }
+  .oc .status, .oc .scope { text-align: left; }
+  .oc .ledger { grid-template-columns: 1fr 1fr; }
+  .oc .steps, .oc .promises { grid-template-columns: 1fr; }
+  .oc .steps li::after { display: none; }
+}
+@media (prefers-reduced-motion: reduce) { .oc .pill::before { animation: none; } }
+"""
+
+# each menu fix as the card says it: title, what happens, scope (value, note), the three promises. {d} is the device.
+OUTAGE_FIX_COPY = {
+    "reset-ike": ("Reset the IKE session on {d}",
+                  "Itential clears the router's IKE session to the AWS peer so both ends build a fresh one, then reads "
+                  "the tunnel again.",
+                  ("1 router", "no configuration change"),
+                  ("Runs one clear command, nothing typed by the agent",
+                   "Changes no configuration on {d} and nothing in AWS",
+                   "Proven afterwards: up resolves the incident, down keeps it open")),
+    "restart-strongswan": ("Restart strongSwan in AWS",
+                           "Itential asks the VPN monitor to run its one fixed restart command on the strongSwan "
+                           "instance, then reads the tunnel again.",
+                           ("1 EC2 instance", "about 30 seconds"),
+                           ("Runs a single pre-approved command, nothing typed by the agent",
+                            "Touches nothing on {d} or anywhere else in AWS",
+                            "Proven afterwards: up resolves the incident, down keeps it open")),
+    "repush-router-block": ("Re-push the AWS VPN block to {d}",
+                            "Itential renders the router's AWS VPN block from the source of truth, as Hand Off does, "
+                            "and pushes it under a revert timer, then reads the tunnel again.",
+                            ("1 router", "configuration, with a revert timer"),
+                            ("Pushes only the block Hand Off renders, checked by its SHA-256",
+                             "Rolls back by itself unless a fresh IKE session comes up",
+                             "Proven afterwards: up resolves the incident, down keeps it open")),
+}
+
+
+def outage_card_image(svg: str, alt: str, width: int, height: int) -> str:
+    """An SVG drawing as an <img> (Work Center strips <svg>, P6): base64 in a data URI."""
+    data = base64.b64encode(svg.encode()).decode()
+    return (f'<img alt="{html.escape(alt)}" width="{width}" height="{height}" '
+            f'src="data:image/svg+xml;base64,{data}">')
+
+
+def outage_card_topology(device: str, vpc: str, tunnel: tuple, router: tuple, aws: tuple) -> str:
+    """The path as an engineer draws it: the router in DC1, Tunnel10, strongSwan in AWS. Each of tunnel, router and
+    aws is (colour, label); a tunnel that is not up is drawn broken, with a pulsing fracture."""
+    e = html.escape
+    (t_col, t_label), (r_col, r_label), (a_col, a_label) = tunnel, router, aws
+    broken = t_col != "#1E8C6A"
+    pipe = "#F3C2BE" if broken else "#CBE8DD"
+    fracture = ('<g class="f"><path d="M346 98l12 14-10 6 14 22" stroke="#D8433A" stroke-width="8" fill="none" '
+                'filter="url(#g)" opacity=".6"/><path d="M346 98l12 14-10 6 14 22" stroke="#D8433A" '
+                'stroke-width="3.2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></g>') if broken else ""
+    dash = ' stroke-dasharray="7 6"' if broken else ""
+    pipes = "M206 118H336M384 118H514" if broken else "M206 118H514"
+    return (
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 230" width="720" height="230">'
+        '<style>text{font-family:"Avenir Next","Segoe UI",system-ui,sans-serif}'
+        '.f{transform-origin:360px 118px;animation:p 1.8s ease-in-out infinite}'
+        '@keyframes p{0%,100%{opacity:1}50%{opacity:.35}}'
+        '@media (prefers-reduced-motion:reduce){.f{animation:none}}</style>'
+        '<defs><pattern id="d" width="16" height="16" patternUnits="userSpaceOnUse"><path d="M16 0H0V16" '
+        'fill="none" stroke="#E1E9F0"/></pattern><filter id="g" x="-50%" y="-50%" width="200%" height="200%">'
+        '<feGaussianBlur stdDeviation="5"/></filter></defs>'
+        '<rect x="10" y="22" width="240" height="190" rx="14" fill="url(#d)" stroke="#C9D5E2"/>'
+        '<text x="28" y="48" font-size="13" fill="#4A6380">DC1 on-prem</text>'
+        '<rect x="470" y="22" width="240" height="190" rx="14" fill="#FBF7EE" stroke="#D9C9A3" stroke-dasharray="6 5"/>'
+        f'<text x="488" y="48" font-size="13" fill="#8A6F3A">AWS, lab VPC {e(vpc)}</text>'
+        f'<path d="{pipes}" stroke="{pipe}" stroke-width="14" stroke-linecap="round"/>'
+        f'<path d="{pipes}" stroke="{t_col}" stroke-width="3"{dash} stroke-linecap="round"/>'
+        f'{fracture}'
+        '<text x="360" y="86" font-size="14" font-weight="700" fill="#0E2A4A" text-anchor="middle">Tunnel10, IKEv2</text>'
+        f'<text x="360" y="164" font-size="13" fill="{t_col}" text-anchor="middle">{e(t_label)}</text>'
+        f'<rect x="60" y="80" width="146" height="76" rx="12" fill="#fff" stroke="{r_col}" stroke-width="2.5"/>'
+        f'<circle cx="90" cy="118" r="15" fill="#fff" stroke="{r_col}" stroke-width="2"/>'
+        f'<path d="M82 114h16m-4-4 4 4-4 4M98 122H82m4-4-4 4 4 4" stroke="{r_col}" stroke-width="2" fill="none" '
+        'stroke-linecap="round" stroke-linejoin="round"/>'
+        f'<text x="114" y="113" font-size="15" font-weight="700" fill="#0E2A4A">{e(device)}</text>'
+        f'<text x="114" y="132" font-size="12.5" fill="{r_col}">{e(r_label)}</text>'
+        '<text x="60" y="182" font-size="12.5" fill="#4A6380">the edge router</text>'
+        f'<rect x="514" y="80" width="160" height="76" rx="12" fill="#fff" stroke="{a_col}" stroke-width="2.5"/>'
+        f'<rect x="531" y="103" width="30" height="30" rx="7" fill="#fff" stroke="{a_col}" stroke-width="2"/>'
+        f'<path d="M546 109l9 4v6c0 5-4 8-9 10-5-2-9-5-9-10v-6z" fill="none" stroke="{a_col}" stroke-width="1.8" '
+        'stroke-linejoin="round"/>'
+        '<text x="571" y="113" font-size="15" font-weight="700" fill="#0E2A4A">strongSwan</text>'
+        f'<text x="571" y="132" font-size="12.5" fill="{a_col}">{e(a_label)}</text>'
+        '<text x="514" y="182" font-size="12.5" fill="#8A6F3A">on EC2, watched by the monitor</text>'
+        '</svg>'
+    )
+
+
+def outage_card(d: dict) -> dict:
+    """The Work Center card as one HTML page: the outage (`device`, `starts_at`, `number`), the readings (`judgement`,
+    Verify's runCode result; `alarm`, aws-vpn-monitor alarm's envelope), the fix (`fix`, outage_fix's runCode result),
+    the VPC (`plan`, outage_plan's) and the time it is drawn (`now`, ISO; the runner's clock when absent). Every value
+    from outside is escaped. Pure: runCode runs this source on the Gateway."""
+    e = html.escape
+    kelp, buoy, flare, grey = "#1E8C6A", "#D8433A", "#C7851A", "#7A8CA0"
+    device = str(d.get("device") or "the router")
+    number = str(d.get("number") or "the incident")
+    fix_out = (d.get("fix") or {}).get("stdout_json") or {}
+    title, what, (scope, scope_note), promises = OUTAGE_FIX_COPY[fix_out.get("fix")]
+    judge = (d.get("judgement") or {}).get("stdout_json") or {}
+    signals = judge.get("signals") or {}
+    readings = judge.get("readings") or {}
+    edge = readings.get("router") or {}
+    mon = readings.get("aws_monitor") or {}
+    alarm = (((d.get("alarm") or {}).get("result")) or {}).get("stdout_json") or {}
+    deployed = ((((d.get("plan") or {}).get("stdout_json") or {}).get("edge_in")) or {}).get("deployed") or {}
+    prefixes = deployed.get("vpc_private_prefixes") or []
+    vpc = str(prefixes[0]) if prefixes and re.fullmatch(r"[0-9./]{7,18}", str(prefixes[0])) else ""
+
+    def when(value):
+        try:
+            return datetime.fromisoformat(str(value).replace("Z", "+00:00")).astimezone(timezone.utc)
+        except ValueError:
+            return None
+
+    start, now = when(d.get("starts_at")), when(d.get("now")) or datetime.now(timezone.utc)
+    minutes = int((now - start).total_seconds() // 60) if start and now >= start else None
+    elapsed = ("" if minutes is None else f"{minutes} min" if minutes < 60 else f"{minutes // 60} h {minutes % 60:02d} min")
+    since = f"Tunnel10 down since {start:%H:%M} UTC" if start else "Tunnel10 down: start time not read"
+
+    # the drawing
+    router_sig, data_sig, aws_sig = signals.get("router"), signals.get("data_plane"), signals.get("aws_monitor")
+    ping = edge.get("ping_success_percent")
+    if router_sig not in ("up", "down"):
+        tunnel = (flare, "not read")
+    elif not edge.get("ike_sa_ready"):
+        tunnel = (buoy, "no IKE session")
+    elif not edge.get("packets_rising"):
+        tunnel = (buoy, "IKE up, no packets")
+    elif data_sig != "up":
+        tunnel = (buoy, "pings fail")
+    else:
+        tunnel = (kelp, "up")
+    router = (kelp, "answers") if router_sig in ("up", "down") else (grey, "not read")
+    aws = {"up": (kelp, "reports the tunnel"), "down": (buoy, "reports no tunnel"),
+           "disagreement": (flare, "readings disagree")}.get(aws_sig, (flare, "no reading"))
+    drawing = outage_card_image(outage_card_topology(device, vpc, tunnel, router, aws),
+                                f"{device} in DC1, Tunnel10 {tunnel[1]}, strongSwan in AWS {aws[1]}", 720, 230)
+    mark = outage_card_image(
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40" width="40" height="40"><rect width="40" '
+        'height="40" rx="10" fill="#1F4FD1"/><path d="M8 26c4 3 8 3 12 0s8-3 12 0" fill="none" stroke="#fff" '
+        'stroke-width="2.6" stroke-linecap="round"/><path d="M20 9v14M15 13.5h10M14 21c1.5 2.5 3.7 3.8 6 3.8s4.5-1.3 '
+        '6-3.8" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round"/><circle cx="20" cy="8.5" '
+        'r="2.2" fill="#fff"/></svg>', "", 26, 26)
+
+    # one reading per source, coloured by what it says
+    alarm_val = {"ALARM": ("In alarm", buoy), "OK": ("OK", kelp), "INSUFFICIENT_DATA": ("No data", flare)}.get(
+        alarm.get("state"), ("Not read", grey))
+    alarm_since = when(alarm.get("since"))
+    ledger = (
+        ("Router's view", *{"up": ("Up", kelp), "down": ("Down", buoy)}.get(router_sig, ("Not read", grey)),
+         "IKE session to AWS ready" if edge.get("ike_sa_ready") else "no IKE session to AWS"),
+        ("Traffic", f"{ping}%" if isinstance(ping, int) else "Not read", kelp if data_sig == "up" else buoy,
+         "pings through the tunnel"),
+        ("AWS monitor", *{"up": ("Up", kelp), "down": ("Down", buoy), "disagreement": ("Disagrees", flare)}.get(
+            aws_sig, ("No reading", flare)), "what strongSwan reports"),
+        ("CloudWatch", *alarm_val, f"since {alarm_since:%H:%M} UTC" if alarm_since else "the tunnel-down alarm"),
+    )
+    ledger_html = "".join(
+        f'<div class="reading" style="--c:{c}"><p class="src">{e(src)}</p><p class="val">{e(val)}</p>'
+        f'<p class="why">{e(why)}</p></div>' for src, val, c, why in ledger)
+
+    def value(v, bad_when_positive=False):
+        if v is None:
+            return '<span class="unk">not read</span>'
+        if isinstance(v, bool):
+            return f'<span class="{"ok" if v else "bad"}">{"yes" if v else "no"}</span>'
+        if bad_when_positive:
+            return f'<span class="{"bad" if v else "ok"}">{e(str(v))}</span>'
+        return f'<span class="ok">{e(str(v))}</span>'
+
+    rows = (
+        ("h", f"{device}, read by lab-edge verify"),
+        ("IKE session to AWS ready", value(edge.get("ike_sa_ready"))),
+        ("identities match", value(edge.get("identities_match"))),
+        ("PFS configured", value(edge.get("pfs_configured"))),
+        ("packets rising both ways", value(edge.get("packets_rising"))),
+        ("pings through the tunnel", value(None) if not isinstance(ping, int) else
+         f'<span class="{"ok" if ping > 50 else "bad"}">{ping}%</span>'),
+        ("drops from AWS to the router", value(edge.get("dropped_aws_to_self"), True)),
+        ("h", "strongSwan, read by the AWS VPN monitor"),
+        ("monitor answered", value(mon.get("lambda_answered"))),
+        ("its check succeeded", value(mon.get("check_succeeded"))),
+        ("strongSwan says established", value(mon.get("lambda_says_established"))),
+        ("h", "CloudWatch"),
+        ("tunnel-down alarm", f'<span class="{"bad" if alarm.get("state") == "ALARM" else "ok" if alarm.get("state") == "OK" else "unk"}">'
+                              f'{e(str(alarm.get("state") or "not read"))}</span>'),
+    )
+    term = "".join(f'<p class="h">{e(b)}</p>' if a == "h" else f'<p class="row"><span>{e(a)}</span>{b}</p>'
+                   for a, b in rows)
+
+    session = str(fix_out.get("session") or "")[:8]
+    agent_by = "tunnel-diagnostics agent" + (f", session {session}" if session else "")
+    evidence = str(fix_out.get("evidence") or "")
+    promises_html = "".join(f'<li class="promise">{e(p.format(d=device))}</li>' for p in promises)
+    page = f"""<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>AWS VPN outage: {e(number)}</title>
+<style>{OUTAGE_CARD_CSS}</style></head>
+<body><div class="oc">
+<header class="band">
+<div class="brand">{mark}<span><b>Elliot's Itential Lab</b>&nbsp; outage response</span></div>
+<div><h1>The AWS VPN is down on {e(device)}</h1>
+<p class="lede">Itential opened <strong>{e(number)}</strong> and the tunnel-diagnostics agent found the likely cause.
+One fix is ready, and nothing runs until you approve it.</p></div>
+<div class="status"><span class="pill">Waiting for your approval</span>
+<p class="elapsed">{e(elapsed)}<small>{e(since)}</small></p></div>
+</header>
+<div class="body">
+<section class="panel topo" aria-labelledby="t-where"><h2 id="t-where">Where the tunnel breaks</h2>{drawing}
+<div class="ledger">{ledger_html}</div></section>
+<section class="panel" aria-labelledby="t-when"><h2 id="t-when">What has happened so far</h2>
+<ol class="steps">
+<li><span class="who">Prometheus</span><b>Alert fired</b>{e(since[len("Tunnel10 down "):] if start else "Tunnel10 down")}</li>
+<li><span class="who">ServiceNow</span><b>Incident opened</b>{e(number)}, with the evidence</li>
+<li><span class="who">The agent</span><b>Cause found</b>one fix picked from a fixed menu</li>
+<li class="now"><span class="who">You</span><b>Approve or reject</b>nothing has run yet</li>
+<li class="next"><span class="who">Itential</span><b>Fix and prove</b>reads the tunnel, then resolves</li>
+</ol></section>
+<section class="panel diag" aria-labelledby="t-found"><div>
+<h2 id="t-found">What the agent found</h2><span class="by"><i></i>{e(agent_by)}</span>
+<p class="cause">{e(str(fix_out.get("cause") or "no cause given"))}</p>
+<p>{e(evidence) if evidence else "The agent's full diagnosis is in the incident's work notes."}</p></div>
+<div class="term" role="group" aria-label="What Verify read when the incident opened">{term}</div></section>
+<section class="panel action" aria-labelledby="t-fix"><div><p class="kicker">The proposed fix</p>
+<h2 id="t-fix">{e(title.format(d=device))}</h2><p class="what">{e(what)}</p></div>
+<p class="scope">Scope<b>{e(scope)}</b>{e(scope_note)}</p>
+<ul class="promises">{promises_html}</ul></section>
+<section class="panel decide" aria-labelledby="t-decide"><div><h2 id="t-decide">Your decision</h2>
+<p>Approve runs only this fix. Reject runs nothing and leaves {e(number)} open for a person.</p>
+<p>Either way, your note goes into the incident's work notes.</p></div>
+<form name="decision"><label for="oc-note">Note for the incident</label>
+<textarea id="oc-note" name="note" placeholder="Why you approve or reject, or what you checked first"></textarea>
+</form></section>
+</div>
+<p class="foot">Prepared by Itential's Diagnose AWS VPN Outage workflow at {now:%H:%M} UTC, from live reads of
+{e(device)}, the AWS VPN monitor and CloudWatch.</p>
+</div></body></html>"""
+    return {"html": page}
 
 
 def _source(*fns, call: str, extra: str = "") -> str:
@@ -5338,7 +5687,14 @@ OUTAGE_SUMMARY_CODE = _source(outage_summary, call='outage_summary(json.loads(sy
 OUTAGE_REQUEST_CODE = _source(outage_request, call='outage_request(json.loads(sys.stdin.read() or "{}"))')
 OUTAGE_FIX_CODE = _source(outage_fix, call='outage_fix(json.loads(sys.stdin.read() or "{}"))',
                           extra="OUTAGE_FIXES = " + repr(OUTAGE_FIXES) + "\n\n\n")
-OUTAGE_RESULT_CODE = _source(outage_result, call='outage_result(json.loads(sys.stdin.read() or "{}"))')
+OUTAGE_RESULT_CODE = _source(decision_note, outage_result, call='outage_result(json.loads(sys.stdin.read() or "{}"))')
+OUTAGE_REJECTED_CODE = _source(decision_note, outage_rejected,
+                               call='outage_rejected(json.loads(sys.stdin.read() or "{}"))')
+OUTAGE_CARD_CODE = _source(outage_card_image, outage_card_topology, outage_card,
+                           call='outage_card(json.loads(sys.stdin.read() or "{}"))',
+                           extra="import base64\nimport html\nimport re\nfrom datetime import datetime, timezone\n\n"
+                                 "OUTAGE_CARD_CSS = " + repr(OUTAGE_CARD_CSS) + "\nOUTAGE_FIX_COPY = "
+                                 + repr(OUTAGE_FIX_COPY) + "\n\n\n")
 
 
 def run_agent(summary: str, agent_marker: str, request_ref: str, out_job: str, x: int, y: int = 0) -> dict:
@@ -5435,16 +5791,25 @@ def diagnose_aws_vpn_outage() -> dict:
                   x=2375, y=600),
         "44": note("escalated", "the agent found no fix from the menu: the incident is escalated to a person", "error",
                    x=2400, y=600),
-        # the card
-        "5a": replace("the card's message", OUTAGE_APPROVAL, "__T__", "$var.job.device", x=2400),
-        "5b": jq("the card's body", "$var.4f.result", "stdout_json.card_body", x=2425),
-        "5c": view("approval", "Approve the fix for the AWS VPN outage", "$var.5a.replacedString", "$var.5b.return_data",
-                   "Approve", "Reject", x=2450),
+        # the card: one HTML page from the outage's own readings (outage_card), the engineer's note comes back
+        "5a": set_key("the card: the fix", "$var.34.object", "fix", "$var.job.outage_fix", x=2400),
+        "5b": set_key("the card: the incident number", "$var.5a.object", "number", "$var.4d.return_data", x=2410),
+        "5d": set_key("the card: the deployment", "$var.5b.object", "plan", "$var.job.outage_plan", x=2420),
+        "5e": run_code("the card's page (Python on the runner)", OUTAGE_CARD_CODE, "$var.5d.object", "outage_card",
+                       x=2430),
+        "5f": jq("the card's HTML", "$var.5e.result", "stdout_json.html", x=2440),
+        "5c": task("InteractiveHTML", "WorkCenter", "approval: the outage card",
+                   {"header": "Approve the fix for the AWS VPN outage", "body": "$var.5f.return_data", "variables": {},
+                    "btn_success": "Approve and run the fix", "btn_failure": "Reject"},
+                   {"export": "$var.job.card_decision"}, kind="manual", display="Work Center",
+                   view="/work-center/task/InteractiveHTML", x=2450),
         "50": jq("the incident (rejected)", "$var.job.outage_request", "stdout_json.sys_id", x=2500, y=900),
+        "58": run_code("the rejection note, with the engineer's (Python on the runner)", OUTAGE_REJECTED_CODE,
+                       "$var.job.card_decision", "outage_rejected", x=2510, y=900),
+        "59": jq("the rejection note", "$var.58.result", "stdout_json", x=2520, y=900),
         "51": sni("updateIncident", "note the incident: the fix was rejected",
-                  {"sys_id": "$var.50.return_data", "sysparm_fields": "number",
-                   **nbi_body({"work_notes": "The proposed fix was rejected in Work Center: nothing was run. The incident "
-                                             "stays open for a person."})}, x=2525, y=900),
+                  {"sys_id": "$var.50.return_data", "sysparm_fields": "number", **nbi_body("$var.59.return_data")},
+                  x=2525, y=900),
         "52": note("rejected", "the fix was rejected in Work Center: nothing was run, the incident stays open",
                    "outcome", x=2550, y=900),
         # the approved fix, exactly one
@@ -5485,7 +5850,9 @@ def diagnose_aws_vpn_outage() -> dict:
         "73": set_key("the result: which fix", {}, "fix", "$var.72.return_data", x=2975),
         "74": set_key("the result: its answer", "$var.73.object", "answer", "$var.job.fix_result", x=3000),
         "75": set_key("the result: the tunnel now", "$var.74.object", "check", "$var.job.check_result", x=3025),
-        "76": run_code("fixed? (Python on the runner)", OUTAGE_RESULT_CODE, "$var.75.object", "outage_result", x=3050),
+        "81": set_key("the result: the engineer's note", "$var.75.object", "decision", "$var.job.card_decision",
+                      x=3037),
+        "76": run_code("fixed? (Python on the runner)", OUTAGE_RESULT_CODE, "$var.81.object", "outage_result", x=3050),
         "77": jq("the incident", "$var.job.outage_request", "stdout_json.sys_id", x=3075),
         "78": evaluate("fixed?", "76", "result", "stdout_json.fixed", "==", True, x=3100),
         "79": jq("the resolution", "$var.76.result", "stdout_json.resolve", x=3125),
@@ -5570,10 +5937,13 @@ def diagnose_aws_vpn_outage() -> dict:
         "42": _edge(**{"43": ok, "8e": err}),
         "43": _edge(**{"44": ok, "8e": err}),
         "44": _edge(**{"f0": ok}),
-        "5a": _edge(**{"5b": ok}),
-        "5b": _edge(**{"5c": ok, "8e": err}),
+        "5a": _edge(**{"5b": ok}), "5b": _edge(**{"5d": ok}), "5d": _edge(**{"5e": ok}),
+        "5e": _edge(**{"5f": ok, "8e": err}),
+        "5f": _edge(**{"5c": ok, "8e": err}),
         "5c": _edge(**{"60": ok, "50": fail}),
-        "50": _edge(**{"51": ok, "8e": err}),
+        "50": _edge(**{"58": ok, "8e": err}),
+        "58": _edge(**{"59": ok, "8e": err}),
+        "59": _edge(**{"51": ok, "8e": err}),
         "51": _edge(**{"52": ok, "8e": err}),
         "52": _edge(**{"workflow_end": ok}),
         "60": _edge(**{"61": ok, "64": fail}),
@@ -5602,7 +5972,7 @@ def diagnose_aws_vpn_outage() -> dict:
         "80": _edge(**{"72": ok}),
         "72": _edge(**{"73": ok, "8e": err}),
         "73": _edge(**{"74": ok}), "74": _edge(**{"75": ok}),
-        "75": _edge(**{"76": ok}),
+        "75": _edge(**{"81": ok}), "81": _edge(**{"76": ok}),
         "76": _edge(**{"77": ok, "8e": err}),
         "77": _edge(**{"78": ok, "8e": err}),
         "78": _edge(**{"79": ok, "7c": fail}),
@@ -5632,7 +6002,8 @@ def diagnose_aws_vpn_outage() -> dict:
             "outage_summary": {"type": "object"}, "incident_created": {"type": "object"},
             "outage_request": {"type": "object"}, "agent_result": {"type": "object"}, "outage_fix": {"type": "object"},
             "render_result": {"type": "object"}, "fix_result": {"type": "object"}, "check_result": {"type": "object"},
-            "outage_result": {"type": "object"},
+            "outage_result": {"type": "object"}, "outage_card": {"type": "object"},
+            "card_decision": {"type": ["object", "null"]}, "outage_rejected": {"type": "object"},
         },
     )
 

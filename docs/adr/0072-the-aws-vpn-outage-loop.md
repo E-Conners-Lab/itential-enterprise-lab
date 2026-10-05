@@ -68,6 +68,26 @@ Five probes (2026-10-05) shaped the design:
    The router faults wait for a probe on dc1-wan01: how IOS-XE treats a timed change while another timed change is
    pending.
 
+7. **The card is an HTML page (owner, 2026-10-05).** Work Center's `InteractiveHTML` task replaces `ViewData`, so the
+   engineer sees the ticket laid out in the lab's portal design rather than raw JSON. The page is built per outage on the
+   runner (`outage_card`, pure and tested) from the readings the loop already holds:
+   - the drawing of the path (router, Tunnel10, strongSwan), coloured by Verify's signals;
+   - one reading per source (router, traffic, AWS monitor, CloudWatch);
+   - the handoffs so far (Prometheus, ServiceNow, the agent, you, Itential);
+   - the agent's cause beside Verify's yes/no readings;
+   - the one fix, with its scope and three promises;
+   - a note box.
+
+   Every outside value is escaped, the agent's words included. Three probes on production shaped it:
+   - **P6:** the body renders in an iframe that keeps `<style>`, `@keyframes`, the form and its textarea, but strips
+     `<svg>`.
+   - **P6b:** an `<img>` with an SVG data URI survives, so each drawing travels as one.
+   - **P6c:** the generated page renders as designed, and Work Center sizes the frame to it.
+
+   Approve and Reject both export `{"decision": {"note": ...}}`. The note goes into the incident either way: in the
+   resolution or the still-down note after an approval, and in the rejection note (`outage_rejected`). A card that
+   cannot be drawn runs nothing and opens the Work Center task.
+
 ## Consequences
 
 - One alert, one ticket, one approval per outage. The loop never changes the router or AWS without a person.
