@@ -18,7 +18,7 @@ VERIFY = ROOT / "verify" / "test-06-flowai.sh"
 PID = ROOT / "docs" / "PID.md"
 ADR = ROOT / "docs" / "adr" / "0046-agent-fleet-tiered-autonomy.md"
 
-FLEET = ("netbox-sot", "device-ops", "compliance", "diagnostics", "remediation", "cloud-status")
+FLEET = ("netbox-sot", "device-ops", "compliance", "diagnostics", "remediation", "cloud-status", "tunnel-diagnostics")
 DEVICE_WRITE_TOOLS = {
     "send-config",
     "Push Configuration with Approval",
@@ -76,7 +76,7 @@ def test_every_fleet_agent_exists_on_claude_with_a_local_twin(
 
 def test_tiered_autonomy_by_tool_kind(docs: dict) -> None:
     # read-only tiers hold no device-writing tool at all; remediation's only write is the governed push
-    for name in ("netbox-sot", "device-ops", "compliance", "diagnostics", "cloud-status"):
+    for name in ("netbox-sot", "device-ops", "compliance", "diagnostics", "cloud-status", "tunnel-diagnostics"):
         for variant in (name, f"{name}-local"):
             assert not (tool_names(docs[variant]) & DEVICE_WRITE_TOOLS), (
                 f"{variant} must not write to devices"
@@ -522,7 +522,8 @@ def test_the_mac_script_does_not_hardcode_the_model() -> None:
 
 # the AWS VPN workflows that change something: no fleet agent holds one (A4 Cloud Concierge will, behind Work Center)
 AWS_WRITE_TOOLS = {"Deploy AWS VPN", "Hand Off AWS VPN", "Tear Down AWS VPN", "Tear Down Expired AWS VPN",
-                   "Push Configuration with Revert Timer"}
+                   "Push Configuration with Revert Timer", "Rotate AWS VPN Key", "Rotate AWS VPN Key Monthly",
+                   "Diagnose AWS VPN Outage"}  # Diagnose runs the approved fix: the agent it calls must not hold it
 
 
 @pytest.mark.parametrize("name", ["cloud-status", "cloud-status-local"])
@@ -549,3 +550,27 @@ def test_cloud_status_tools_are_current_workflows() -> None:
     assert {"Get AWS VPN Status", "Verify AWS VPN"} <= set(names.values())
     for wf in ("Get AWS VPN Status", "Verify AWS VPN"):
         assert (ROOT / "itential" / "workflows" / _file(wf)).exists()
+
+
+# ── A3 tunnel-diagnostics (R6 + A3, ADR 0072): reads, one work note, one fix from the menu ──
+
+FIX_MENU = ("repush-router-block", "restart-strongswan", "reset-ike", "escalate")
+
+
+def test_tunnel_diagnostics_reads_notes_and_proposes_from_the_menu_only(docs: dict) -> None:
+    assert tool_names(docs["tunnel-diagnostics"]) == {
+        "Run Show Command on a Device", "Verify AWS VPN", "Get AWS VPN Status", "getIncident", "updateIncident"}
+    assert tool_names(docs["tunnel-diagnostics-local"]) == {"Run Show Command on a Device", "updateIncident"}
+    for variant in ("tunnel-diagnostics", "tunnel-diagnostics-local"):
+        text = docs[variant]["instructions"]
+        for fix in FIX_MENU:
+            assert fix in text, (variant, fix)
+        for command in ("show interfaces Tunnel10 | include line protocol", "show ip access-list INET-IN",
+                        "show crypto ikev2 sa"):
+            assert command in text, (variant, command)
+        assert '{"fix": "' in text and 'device "dc1-wan01"' in text
+
+
+def test_tunnel_diagnostics_never_runs_a_fix_itself(docs: dict) -> None:
+    text = docs["tunnel-diagnostics"]["instructions"]
+    assert "Work Center" in text and "never run a fix yourself" in text.lower() and "exactly one work note" in text

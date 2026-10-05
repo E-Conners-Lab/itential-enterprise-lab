@@ -8,7 +8,7 @@ re-syncs the roles the models register, and asserts every operation is an author
 | Document | Model id | Integration | Operations |
 |---|---|---|---|
 | `lab-netbox.json` | `lab-netbox:1.0.0` | `netbox-api` (token from `NETBOX_TOKEN`) | six read operations: devices, device by id, interfaces, IP addresses, VLANs, sites |
-| `lab-servicenow.json` | `lab-servicenow:1.0.0` | `servicenow-api` (basic auth `SNOW_USER`, host from `SNOW_INSTANCE`) | incidents (list, get, update), change requests (list, get) |
+| `lab-servicenow.json` | `lab-servicenow:1.0.0` | `servicenow-api` (basic auth `SNOW_USER`, host from `SNOW_INSTANCE`) | incidents (list, get, create, update), change requests (list, get) |
 
 Tool ids: `integration:<title>%3A<version>:<instance>:<operationId>`; agent documents reference them as
 `{reference: <operationId>, kind: integration, model: netbox|servicenow}`. Never call `/adapters/<name>/start`

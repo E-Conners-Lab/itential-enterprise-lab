@@ -18,7 +18,7 @@
   vars:
     avr_names: >-
       {{ ['deploy_aws_vpn', 'hand_off_aws_vpn', 'verify_aws_vpn', 'tear_down_aws_vpn', 'tear_down_expired_aws_vpn',
-          'check_aws_drift', 'rotate_aws_vpn_key_monthly']
+          'check_aws_drift', 'rotate_aws_vpn_key_monthly', 'diagnose_aws_vpn_outage']
          | map('extract', operations_manager) | map(attribute='automation') | list }}
 
 - name: Their triggers

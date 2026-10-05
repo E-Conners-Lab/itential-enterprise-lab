@@ -15,10 +15,13 @@ the itentialopensource pre-built automations:
 
 from __future__ import annotations
 
+import base64
+import html
 import inspect
 import ipaddress
 import itertools
 import json
+import re
 import statistics
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -349,6 +352,15 @@ INPUT_GATES = {
     WF["show_version"]: {"device": NODE_NAME},
     WF["show_command"]: {"device": NODE_NAME, "command": SHOW_COMMAND},
     WF["show_all"]: {"command": SHOW_COMMAND},
+    # R6 (ADR 0072): what the alert relay sends; the device is the one open target the AWS monitor watches
+    WF["diagnose_aws_vpn_outage"]: {
+        "alertname": {"type": "string", "enum": ["LabAwsTunnelDown"]},
+        "device": {"type": "string", "enum": sorted(n for n, e in VERSIONS["aws_vpn"]["targets"].items()
+                                                    if e["window"] == "open" and e["monitor"] == "aws")},
+        "interface": {"type": "string", "pattern": r"^Tunnel[0-9]{1,4}$"},
+        "starts_at": {"type": "string", "pattern": r"^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"},
+        "fingerprint": {"type": "string", "pattern": r"^[0-9a-f]{1,32}$"},
+    },
     # reason is shown on the approval card only; no markup
     WF["config_push"]: {"device": NODE_NAME, "reason": {"type": "string", "maxLength": 500, "pattern": r"^[^<>]*$"}},
     WF["branch_vlan"]: {
@@ -5191,10 +5203,815 @@ def rotate_aws_vpn_key_monthly() -> dict:
                     "on the 1st of the month (UTC) only", {}, tasks, tr, {**ROTATE_OUTPUTS, "due": {"type": "object"}})
 
 
+# --- Diagnose AWS VPN Outage (R6 + A3, owner decisions 2026-10-05; ADR 0072) ---------------------------------------
+# Prometheus sees dc1-wan01's Tunnel10 down (LabAwsTunnelDown); Alertmanager posts to the in-cluster alert relay, which
+# starts this workflow through its endpoint trigger. It reads the deployment, finds an open incident for the same
+# outage (correlation_id) and only notes it, or gathers the evidence (Verify's own checks and the AWS tunnel-down
+# alarm), opens ONE ServiceNow incident, runs the tunnel-diagnostics agent (runAgent), and shows the one fix the agent
+# picked from the fixed menu on a Work Center card. Only after approval does it run that fix - reset the IKE SA
+# (lab-edge-push reset-sa), restart strongSwan (aws-vpn-monitor restart) or re-push the router block (lab-edge render
+# + lab-edge-push push) - then reads the tunnel again and resolves the incident, or notes it and opens a task.
+OUTAGE_FIXES = ("repush-router-block", "restart-strongswan", "reset-ike", "escalate")
+AGENT_MARKER = "__AGENT_ID:tunnel-diagnostics__"  # the agent's UUID, filled in at import (tasks/workflow-agent-ids.yml)
+ALARM_PARAMS = '{"action": "alarm", "timeout": "120"}'
+
+
+def outage_plan(d: dict, targets: dict) -> dict:
+    """What the outage loop may act on: the deployment (terraform-run outputs' answer under `outputs`), the alerting
+    `device` (an open target the AWS monitor watches), each service's params and the incident's correlation_id.
+    Pure: runCode runs this source on the Gateway with the targets written in."""
+    result = (d.get("outputs") or {}).get("result") or {}
+    outputs = (result.get("stdout_json") or {}).get("outputs")
+    if result.get("return_code") != 0 or not isinstance(outputs, dict):
+        return {"ok": False, "message": "terraform-run outputs did not answer (outage_outputs): nothing was changed"}
+    if not outputs:
+        return {"ok": True, "deployed": False, "message": "nothing is deployed in AWS: no AWS VPN to diagnose"}
+    device = d.get("device")
+    entry = (targets or {}).get(device) or {}
+    if entry.get("monitor") != "aws":
+        return {"ok": False, "message": f"{device} is not an open target the AWS monitor watches: nothing was changed"}
+    instance = outputs.get("strongswan_instance_id")
+    if not instance:
+        return {"ok": False, "message": "the outputs name no strongSwan instance (outage_outputs): nothing was changed"}
+    correlation = f"aws-vpn-{device}"
+    return {"ok": True, "deployed": True, "target": device, "correlation_id": correlation,
+            "open_query": f"correlation_id={correlation}^active=true",
+            "edge_in": {"target": device, "targets": targets, "deployed": outputs},
+            "restart": {"action": "restart", "instance_id": instance, "timeout": RELOAD_TIMEOUT}}
+
+
+def open_incident(d: dict) -> dict:
+    """The open incident for this outage, from listIncidents' response (`open`), if there is one."""
+    rows = (((d.get("open") or {}).get("body") or {}).get("result")) or []
+    row = rows[0] if isinstance(rows, list) and rows and isinstance(rows[0], dict) else {}
+    found = bool(row.get("sys_id"))
+    return {"open": found, "sys_id": row.get("sys_id"), "number": row.get("number"),
+            "note": {"work_notes": f"Still down: the tunnel-down alert fired again ({d.get('starts_at')}). "
+                                   "Itential did not open another incident."}}
+
+
+def outage_summary(d: dict) -> dict:
+    """The incident from Verify's verdict (`judgement`, the judge's runCode result), the alarm (`alarm`, aws-vpn-monitor
+    alarm's envelope) and the alert (`device`, `starts_at`); its body for createIncident, and the agent's evidence."""
+    judge = ((d.get("judgement") or {}).get("stdout_json")) or {}
+    alarm_out = (((d.get("alarm") or {}).get("result") or {}).get("stdout_json")) or {}
+    alarm = alarm_out.get("state") if alarm_out.get("found") else "not read"
+    signals = judge.get("signals") or {}
+    device = d.get("device")
+    evidence = (f"Verify says {judge.get('verdict', 'nothing (it did not run)')}; signals router "
+                f"{signals.get('router', '?')}, data plane {signals.get('data_plane', '?')}, AWS monitor "
+                f"{signals.get('aws_monitor', '?')}; the AWS tunnel-down alarm is {alarm}.")
+    return {
+        "evidence": evidence,
+        "incident": {
+            "short_description": f"AWS VPN down: {device} Tunnel10",
+            "description": (f"Prometheus alert LabAwsTunnelDown since {d.get('starts_at')}. {evidence} Opened by "
+                            "Itential's Diagnose AWS VPN Outage; the tunnel-diagnostics agent notes its diagnosis here "
+                            "and the fix runs only after a Work Center approval."),
+            "correlation_id": f"aws-vpn-{device}",
+            "correlation_display": "Itential AWS VPN outage loop",
+            "urgency": "2", "impact": "2", "category": "network",
+        },
+    }
+
+
+def outage_request(d: dict) -> dict:
+    """The agent's request: the new incident (createIncident's response, `created`) and the evidence (`summary`)."""
+    row = (((d.get("created") or {}).get("body") or {}).get("result")) or {}
+    evidence = (((d.get("summary") or {}).get("stdout_json")) or {}).get("evidence", "")
+    ok = bool(row.get("sys_id") and row.get("number"))
+    return {"ok": ok, "sys_id": row.get("sys_id"), "number": row.get("number"),
+            "request": f"Incident {row.get('number')} (sys_id {row.get('sys_id')}). Evidence: {evidence}"}
+
+
+def outage_fix(d: dict) -> dict:
+    """The fix the agent picked (`agent`: runAgent's result {sessionId, sessionStatus, lastMessage}), held to the menu:
+    the last line of its answer must be JSON naming one of OUTAGE_FIXES, or the answer is escalate."""
+    agent = d.get("agent") or {}
+    text = str(agent.get("lastMessage") or "")
+    lines = [line.strip() for line in text.strip().splitlines() if line.strip()]
+    answer: dict = {}
+    if agent.get("sessionStatus") == "COMPLETE" and lines:
+        try:
+            parsed = json.loads(lines[-1])
+            answer = parsed if isinstance(parsed, dict) else {}
+        except ValueError:
+            answer = {}
+    fix = answer.get("fix") if answer.get("fix") in OUTAGE_FIXES else "escalate"
+    why = (str(answer.get("cause") or "unknown")[:80] if answer else
+           ("the agent did not finish" if agent.get("sessionStatus") != "COMPLETE" else "the agent's answer was not the JSON line"))
+    evidence = str(answer.get("evidence") or "")[:400]
+    return {"fix": fix, "cause": why, "evidence": evidence, "card": fix != "escalate",
+            "session": str(agent.get("sessionId") or "")[:64],
+            "escalation": {"work_notes": f"Escalated to a person: no fix from the menu applies ({why}). {evidence}".strip()}}
+
+
+def outage_result(d: dict) -> dict:
+    """After the approved fix (`fix` name, its service's envelope under `answer`) and the tunnel read again (`check`,
+    lab-edge verify's envelope): fixed only when router and data plane both say up. Resolves or notes the incident."""
+    fix = d.get("fix")
+    answer = (((d.get("answer") or {}).get("result")) or {}).get("stdout_json") or {}
+    check = (((d.get("check") or {}).get("result")) or {}).get("stdout_json") or {}
+    up = check.get("router") == "up" and check.get("data_plane") == "up"
+    ran = {"reset-ike": answer.get("cleared") is True, "restart-strongswan": answer.get("restarted") is True,
+           "repush-router-block": answer.get("saved") is True}.get(fix, False)
+    note = decision_note(d.get("decision"))
+    said = (f"Approved in Work Center ({'note: ' + note if note else 'no note'}). Itential ran the approved fix {fix} "
+            f"({'it ran' if ran else 'it did not complete: ' + str(answer.get('error') or 'no answer')})")
+    if up:
+        message = f"{said}; the tunnel is up again (router and data plane)."
+        return {"fixed": True, "message": message,
+                "resolve": {"state": "6", "close_code": "Solution provided", "close_notes": message,
+                            "work_notes": message}}
+    message = (f"{said}; the tunnel is still not up (router {check.get('router', 'not read')}, data plane "
+               f"{check.get('data_plane', 'not read')}). The incident stays open for a person.")
+    return {"fixed": False, "message": message, "note": {"work_notes": message}}
+
+
+def decision_note(decision) -> str:
+    """The engineer's note from the card's export ({"decision": {"note": <the textarea>}}, P6), trimmed; "" if none."""
+    note = ((decision or {}).get("decision") or {}).get("note") if isinstance(decision, dict) else None
+    return " ".join(str(note or "").split())[:1000]
+
+
+def outage_rejected(d: dict) -> dict:
+    """The incident's work note when the card is rejected (`d` is the card's export)."""
+    note = decision_note(d)
+    return {"work_notes": "The proposed fix was rejected in Work Center: nothing was run. The incident stays open for "
+                          f"a person. The engineer's note: {note or 'no note'}."}
+
+
+# The outage card (ADR 0072 amendment, 2026-10-05): an HTML page in Work Center's InteractiveHTML task, in the lab's
+# portal design (itential/portal/deploy-aws-vpn). P6/P6b on production: the body renders in an iframe that keeps
+# <style>, @keyframes, the form and its textarea but strips <svg>, so each drawing is an <img> with an SVG data URI.
+OUTAGE_CARD_CSS = """
+body { margin: 0; padding: 4px; background: transparent; }
+.oc { --paper: #EEF3F7; --ink: #0E2A4A; --ink-soft: #4A6380; --cobalt: #1F4FD1; --kelp: #1E8C6A; --buoy: #D8433A;
+  --flare: #C7851A; --line: #D3DDE7;
+  --display: "Avenir Next Condensed", "Avenir Next", "Segoe UI Semibold", "Arial Narrow", sans-serif;
+  --mono: "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+  font-family: "Avenir Next", "Segoe UI", system-ui, -apple-system, sans-serif; color: var(--ink);
+  background: var(--paper); font-size: 15px; line-height: 1.5; max-width: 980px; margin: 0 auto;
+  border-radius: 14px; overflow: hidden; box-shadow: 0 18px 40px -24px rgba(14, 42, 74, .45); }
+.oc * { box-sizing: border-box; }
+.oc p { margin: 0; }
+.oc .band { background: var(--ink); color: #fff; padding: 22px 28px 24px; display: grid;
+  grid-template-columns: 1fr auto; gap: 18px 24px; align-items: start; }
+.oc .brand { display: flex; align-items: center; gap: 10px; font-size: 13px; color: #B9C8DB; grid-column: 1 / -1; }
+.oc .brand img { width: 26px; height: 26px; flex: none; display: block; }
+.oc .brand b { color: #fff; font-family: var(--display); font-weight: 700; font-size: 15px; }
+.oc h1 { font-family: var(--display); font-weight: 700; font-size: 34px; line-height: 1.05; margin: 0 0 8px; }
+.oc .lede { color: #C9D6E5; max-width: 58ch; }
+.oc .lede strong { color: #fff; font-weight: 600; }
+.oc .status { text-align: right; }
+.oc .pill { display: inline-flex; align-items: center; gap: 8px; background: rgba(199, 133, 26, .16); color: #F2C46D;
+  border: 1px solid rgba(242, 196, 109, .45); border-radius: 999px; padding: 5px 12px 5px 10px; font-size: 13px;
+  font-weight: 600; white-space: nowrap; }
+.oc .pill::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: #F2C46D;
+  animation: oc-blink 1.8s ease-in-out infinite; }
+@keyframes oc-blink { 0%, 100% { opacity: 1; } 50% { opacity: .3; } }
+.oc .elapsed { margin-top: 12px; font-family: var(--display); font-size: 40px; font-weight: 700; line-height: 1; }
+.oc .elapsed small { display: block; font-family: inherit; font-size: 12px; font-weight: 500; color: #9FB2C8;
+  margin-top: 4px; }
+.oc .body { padding: 22px 28px 28px; display: grid; gap: 18px; }
+.oc .panel { background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 18px 20px; }
+.oc h2 { font-family: var(--display); font-weight: 700; font-size: 19px; margin: 0 0 12px; }
+.oc .topo { padding: 16px 20px 6px; }
+.oc .topo img { display: block; width: 100%; height: auto; }
+.oc .ledger { display: grid; grid-template-columns: repeat(4, 1fr); border-top: 1px solid var(--line); margin-top: 6px; }
+.oc .reading { padding: 14px 16px 4px 14px; border-left: 3px solid var(--c); }
+.oc .src, .oc .why { font-size: 13px; color: var(--ink-soft); }
+.oc .val { font-family: var(--display); font-size: 21px; font-weight: 700; color: var(--c); line-height: 1.2;
+  margin: 2px 0; }
+.oc .steps { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(5, 1fr); }
+.oc .steps li { position: relative; padding: 26px 8px 0 0; font-size: 13px; color: var(--ink-soft); }
+.oc .steps li::before { content: ""; position: absolute; top: 6px; left: 0; width: 13px; height: 13px;
+  border-radius: 50%; background: var(--kelp); box-shadow: 0 0 0 3px #fff, 0 0 0 4px var(--kelp); }
+.oc .steps li::after { content: ""; position: absolute; top: 12px; left: 20px; right: 6px; height: 2px;
+  background: var(--kelp); }
+.oc .steps li:last-child::after { display: none; }
+.oc .steps .who { display: block; font-family: var(--display); font-weight: 700; font-size: 15px; color: var(--ink); }
+.oc .steps b { display: block; color: var(--ink); font-size: 14px; font-weight: 600; }
+.oc .steps .now::before { background: var(--flare); box-shadow: 0 0 0 3px #fff, 0 0 0 5px var(--flare); }
+.oc .steps .now::after, .oc .steps .next::after {
+  background: repeating-linear-gradient(90deg, #B8C6D4 0 6px, transparent 6px 11px); }
+.oc .steps .now b { color: #8A5A0C; }
+.oc .steps .next::before { background: #fff; box-shadow: 0 0 0 2px #B8C6D4; }
+.oc .diag { display: grid; grid-template-columns: 1fr 1.05fr; gap: 20px; align-items: start; }
+.oc .cause { font-family: var(--display); font-size: 25px; font-weight: 700; line-height: 1.15; margin: 2px 0 10px; }
+.oc .by { display: inline-flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--ink-soft);
+  background: var(--paper); border-radius: 999px; padding: 4px 10px 4px 6px; margin-bottom: 12px; }
+.oc .by i { width: 18px; height: 18px; border-radius: 50%; display: inline-block;
+  box-shadow: inset 0 0 0 4px #fff, inset 0 0 0 9px var(--cobalt); background: var(--cobalt); }
+.oc .term { background: var(--ink); color: #D6E2EF; border-radius: 10px; padding: 12px 16px 14px;
+  font-family: var(--mono); font-size: 12.3px; line-height: 1.6; }
+.oc .term .h { color: #7FA6D6; margin-top: 8px; }
+.oc .term .h:first-child { margin-top: 0; }
+.oc .term .row { display: flex; justify-content: space-between; gap: 12px; padding-left: 14px; }
+.oc .term .ok { color: #7FD1AE; }
+.oc .term .bad { color: #FF9A92; }
+.oc .term .unk { color: #9FB2C8; }
+.oc .action { background: var(--cobalt); color: #fff; border: 0; display: grid; grid-template-columns: 1fr auto;
+  gap: 6px 24px; padding: 22px 24px; }
+.oc .kicker { font-size: 13px; color: #C9D7FF; }
+.oc .action h2 { font-size: 28px; margin: 2px 0 8px; color: #fff; }
+.oc .what { color: #E4EBFF; max-width: 56ch; }
+.oc .scope { align-self: start; text-align: right; font-size: 12.5px; color: #C9D7FF; }
+.oc .scope b { display: block; font-family: var(--display); font-size: 20px; color: #fff; }
+.oc .promises { grid-column: 1 / -1; list-style: none; margin: 14px 0 0; padding: 14px 0 0;
+  border-top: 1px solid rgba(255, 255, 255, .22); display: grid; grid-template-columns: repeat(3, 1fr);
+  gap: 10px 18px; font-size: 13.5px; color: #F1F4FF; }
+.oc .promise { padding-left: 24px; position: relative; }
+.oc .promise::before { content: ""; position: absolute; left: 2px; top: 4px; width: 7px; height: 11px;
+  border: solid #fff; border-width: 0 2.5px 2.5px 0; transform: rotate(40deg); }
+.oc .decide { display: grid; grid-template-columns: 1fr 1.3fr; gap: 20px; align-items: start; }
+.oc .decide p { color: var(--ink-soft); font-size: 14px; }
+.oc .decide p + p { margin-top: 8px; }
+.oc label { display: block; font-weight: 600; font-size: 14px; margin-bottom: 6px; }
+.oc textarea { width: 100%; min-height: 88px; font: inherit; font-size: 14px; padding: 10px 12px; color: var(--ink);
+  border: 1px solid #B9C7D6; border-radius: 8px; background: #FBFCFE; resize: vertical; }
+.oc textarea:focus-visible { outline: 3px solid rgba(31, 79, 209, .35); border-color: var(--cobalt); }
+.oc .foot { padding: 0 28px 20px; font-size: 12px; color: var(--ink-soft); }
+@media (max-width: 760px) {
+  .oc .band, .oc .action, .oc .decide, .oc .diag { grid-template-columns: 1fr; }
+  .oc .status, .oc .scope { text-align: left; }
+  .oc .ledger { grid-template-columns: 1fr 1fr; }
+  .oc .steps, .oc .promises { grid-template-columns: 1fr; }
+  .oc .steps li::after { display: none; }
+}
+@media (prefers-reduced-motion: reduce) { .oc .pill::before { animation: none; } }
+"""
+
+# each menu fix as the card says it: title, what happens, scope (value, note), the three promises. {d} is the device.
+OUTAGE_FIX_COPY = {
+    "reset-ike": ("Reset the IKE session on {d}",
+                  "Itential clears the router's IKE session to the AWS peer so both ends build a fresh one, then reads "
+                  "the tunnel again.",
+                  ("1 router", "no configuration change"),
+                  ("Runs one clear command, nothing typed by the agent",
+                   "Changes no configuration on {d} and nothing in AWS",
+                   "Proven afterwards: up resolves the incident, down keeps it open")),
+    "restart-strongswan": ("Restart strongSwan in AWS",
+                           "Itential asks the VPN monitor to run its one fixed restart command on the strongSwan "
+                           "instance, then reads the tunnel again.",
+                           ("1 EC2 instance", "about 30 seconds"),
+                           ("Runs a single pre-approved command, nothing typed by the agent",
+                            "Touches nothing on {d} or anywhere else in AWS",
+                            "Proven afterwards: up resolves the incident, down keeps it open")),
+    "repush-router-block": ("Re-push the AWS VPN block to {d}",
+                            "Itential renders the router's AWS VPN block from the source of truth, as Hand Off does, "
+                            "and pushes it under a revert timer, then reads the tunnel again.",
+                            ("1 router", "configuration, with a revert timer"),
+                            ("Pushes only the block Hand Off renders, checked by its SHA-256",
+                             "Rolls back by itself unless a fresh IKE session comes up",
+                             "Proven afterwards: up resolves the incident, down keeps it open")),
+}
+
+
+def outage_card_image(svg: str, alt: str, width: int, height: int) -> str:
+    """An SVG drawing as an <img> (Work Center strips <svg>, P6): base64 in a data URI."""
+    data = base64.b64encode(svg.encode()).decode()
+    return (f'<img alt="{html.escape(alt)}" width="{width}" height="{height}" '
+            f'src="data:image/svg+xml;base64,{data}">')
+
+
+def outage_card_topology(device: str, vpc: str, tunnel: tuple, router: tuple, aws: tuple) -> str:
+    """The path as an engineer draws it: the router in DC1, Tunnel10, strongSwan in AWS. Each of tunnel, router and
+    aws is (colour, label); a tunnel that is not up is drawn broken, with a pulsing fracture."""
+    e = html.escape
+    (t_col, t_label), (r_col, r_label), (a_col, a_label) = tunnel, router, aws
+    broken = t_col != "#1E8C6A"
+    pipe = "#F3C2BE" if broken else "#CBE8DD"
+    fracture = ('<g class="f"><path d="M346 98l12 14-10 6 14 22" stroke="#D8433A" stroke-width="8" fill="none" '
+                'filter="url(#g)" opacity=".6"/><path d="M346 98l12 14-10 6 14 22" stroke="#D8433A" '
+                'stroke-width="3.2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></g>') if broken else ""
+    dash = ' stroke-dasharray="7 6"' if broken else ""
+    pipes = "M206 118H336M384 118H514" if broken else "M206 118H514"
+    return (
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 230" width="720" height="230">'
+        '<style>text{font-family:"Avenir Next","Segoe UI",system-ui,sans-serif}'
+        '.f{transform-origin:360px 118px;animation:p 1.8s ease-in-out infinite}'
+        '@keyframes p{0%,100%{opacity:1}50%{opacity:.35}}'
+        '@media (prefers-reduced-motion:reduce){.f{animation:none}}</style>'
+        '<defs><pattern id="d" width="16" height="16" patternUnits="userSpaceOnUse"><path d="M16 0H0V16" '
+        'fill="none" stroke="#E1E9F0"/></pattern><filter id="g" x="-50%" y="-50%" width="200%" height="200%">'
+        '<feGaussianBlur stdDeviation="5"/></filter></defs>'
+        '<rect x="10" y="22" width="240" height="190" rx="14" fill="url(#d)" stroke="#C9D5E2"/>'
+        '<text x="28" y="48" font-size="13" fill="#4A6380">DC1 on-prem</text>'
+        '<rect x="470" y="22" width="240" height="190" rx="14" fill="#FBF7EE" stroke="#D9C9A3" stroke-dasharray="6 5"/>'
+        f'<text x="488" y="48" font-size="13" fill="#8A6F3A">AWS, lab VPC {e(vpc)}</text>'
+        f'<path d="{pipes}" stroke="{pipe}" stroke-width="14" stroke-linecap="round"/>'
+        f'<path d="{pipes}" stroke="{t_col}" stroke-width="3"{dash} stroke-linecap="round"/>'
+        f'{fracture}'
+        '<text x="360" y="86" font-size="14" font-weight="700" fill="#0E2A4A" text-anchor="middle">Tunnel10, IKEv2</text>'
+        f'<text x="360" y="164" font-size="13" fill="{t_col}" text-anchor="middle">{e(t_label)}</text>'
+        f'<rect x="60" y="80" width="146" height="76" rx="12" fill="#fff" stroke="{r_col}" stroke-width="2.5"/>'
+        f'<circle cx="90" cy="118" r="15" fill="#fff" stroke="{r_col}" stroke-width="2"/>'
+        f'<path d="M82 114h16m-4-4 4 4-4 4M98 122H82m4-4-4 4 4 4" stroke="{r_col}" stroke-width="2" fill="none" '
+        'stroke-linecap="round" stroke-linejoin="round"/>'
+        f'<text x="114" y="113" font-size="15" font-weight="700" fill="#0E2A4A">{e(device)}</text>'
+        f'<text x="114" y="132" font-size="12.5" fill="{r_col}">{e(r_label)}</text>'
+        '<text x="60" y="182" font-size="12.5" fill="#4A6380">the edge router</text>'
+        f'<rect x="514" y="80" width="160" height="76" rx="12" fill="#fff" stroke="{a_col}" stroke-width="2.5"/>'
+        f'<rect x="531" y="103" width="30" height="30" rx="7" fill="#fff" stroke="{a_col}" stroke-width="2"/>'
+        f'<path d="M546 109l9 4v6c0 5-4 8-9 10-5-2-9-5-9-10v-6z" fill="none" stroke="{a_col}" stroke-width="1.8" '
+        'stroke-linejoin="round"/>'
+        '<text x="571" y="113" font-size="15" font-weight="700" fill="#0E2A4A">strongSwan</text>'
+        f'<text x="571" y="132" font-size="12.5" fill="{a_col}">{e(a_label)}</text>'
+        '<text x="514" y="182" font-size="12.5" fill="#8A6F3A">on EC2, watched by the monitor</text>'
+        '</svg>'
+    )
+
+
+def outage_card(d: dict) -> dict:
+    """The Work Center card as one HTML page: the outage (`device`, `starts_at`, `number`), the readings (`judgement`,
+    Verify's runCode result; `alarm`, aws-vpn-monitor alarm's envelope), the fix (`fix`, outage_fix's runCode result),
+    the VPC (`plan`, outage_plan's) and the time it is drawn (`now`, ISO; the runner's clock when absent). Every value
+    from outside is escaped. Pure: runCode runs this source on the Gateway."""
+    e = html.escape
+    kelp, buoy, flare, grey = "#1E8C6A", "#D8433A", "#C7851A", "#7A8CA0"
+    device = str(d.get("device") or "the router")
+    number = str(d.get("number") or "the incident")
+    fix_out = (d.get("fix") or {}).get("stdout_json") or {}
+    title, what, (scope, scope_note), promises = OUTAGE_FIX_COPY[fix_out.get("fix")]
+    judge = (d.get("judgement") or {}).get("stdout_json") or {}
+    signals = judge.get("signals") or {}
+    readings = judge.get("readings") or {}
+    edge = readings.get("router") or {}
+    mon = readings.get("aws_monitor") or {}
+    alarm = (((d.get("alarm") or {}).get("result")) or {}).get("stdout_json") or {}
+    deployed = ((((d.get("plan") or {}).get("stdout_json") or {}).get("edge_in")) or {}).get("deployed") or {}
+    prefixes = deployed.get("vpc_private_prefixes") or []
+    vpc = str(prefixes[0]) if prefixes and re.fullmatch(r"[0-9./]{7,18}", str(prefixes[0])) else ""
+
+    def when(value):
+        try:
+            return datetime.fromisoformat(str(value).replace("Z", "+00:00")).astimezone(timezone.utc)
+        except ValueError:
+            return None
+
+    start, now = when(d.get("starts_at")), when(d.get("now")) or datetime.now(timezone.utc)
+    minutes = int((now - start).total_seconds() // 60) if start and now >= start else None
+    elapsed = ("" if minutes is None else f"{minutes} min" if minutes < 60 else f"{minutes // 60} h {minutes % 60:02d} min")
+    since = f"Tunnel10 down since {start:%H:%M} UTC" if start else "Tunnel10 down: start time not read"
+
+    # the drawing
+    router_sig, data_sig, aws_sig = signals.get("router"), signals.get("data_plane"), signals.get("aws_monitor")
+    ping = edge.get("ping_success_percent")
+    if router_sig not in ("up", "down"):
+        tunnel = (flare, "not read")
+    elif not edge.get("ike_sa_ready"):
+        tunnel = (buoy, "no IKE session")
+    elif not edge.get("packets_rising"):
+        tunnel = (buoy, "IKE up, no packets")
+    elif data_sig != "up":
+        tunnel = (buoy, "pings fail")
+    else:
+        tunnel = (kelp, "up")
+    router = (kelp, "answers") if router_sig in ("up", "down") else (grey, "not read")
+    aws = {"up": (kelp, "reports the tunnel"), "down": (buoy, "reports no tunnel"),
+           "disagreement": (flare, "readings disagree")}.get(aws_sig, (flare, "no reading"))
+    drawing = outage_card_image(outage_card_topology(device, vpc, tunnel, router, aws),
+                                f"{device} in DC1, Tunnel10 {tunnel[1]}, strongSwan in AWS {aws[1]}", 720, 230)
+    mark = outage_card_image(
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40" width="40" height="40"><rect width="40" '
+        'height="40" rx="10" fill="#1F4FD1"/><path d="M8 26c4 3 8 3 12 0s8-3 12 0" fill="none" stroke="#fff" '
+        'stroke-width="2.6" stroke-linecap="round"/><path d="M20 9v14M15 13.5h10M14 21c1.5 2.5 3.7 3.8 6 3.8s4.5-1.3 '
+        '6-3.8" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round"/><circle cx="20" cy="8.5" '
+        'r="2.2" fill="#fff"/></svg>', "", 26, 26)
+
+    # one reading per source, coloured by what it says
+    alarm_val = {"ALARM": ("In alarm", buoy), "OK": ("OK", kelp), "INSUFFICIENT_DATA": ("No data", flare)}.get(
+        alarm.get("state"), ("Not read", grey))
+    alarm_since = when(alarm.get("since"))
+    ledger = (
+        ("Router's view", *{"up": ("Up", kelp), "down": ("Down", buoy)}.get(router_sig, ("Not read", grey)),
+         "IKE session to AWS ready" if edge.get("ike_sa_ready") else "no IKE session to AWS"),
+        ("Traffic", f"{ping}%" if isinstance(ping, int) else "Not read", kelp if data_sig == "up" else buoy,
+         "pings through the tunnel"),
+        ("AWS monitor", *{"up": ("Up", kelp), "down": ("Down", buoy), "disagreement": ("Disagrees", flare)}.get(
+            aws_sig, ("No reading", flare)), "what strongSwan reports"),
+        ("CloudWatch", *alarm_val, f"since {alarm_since:%H:%M} UTC" if alarm_since else "the tunnel-down alarm"),
+    )
+    ledger_html = "".join(
+        f'<div class="reading" style="--c:{c}"><p class="src">{e(src)}</p><p class="val">{e(val)}</p>'
+        f'<p class="why">{e(why)}</p></div>' for src, val, c, why in ledger)
+
+    def value(v, bad_when_positive=False):
+        if v is None:
+            return '<span class="unk">not read</span>'
+        if isinstance(v, bool):
+            return f'<span class="{"ok" if v else "bad"}">{"yes" if v else "no"}</span>'
+        if bad_when_positive:
+            return f'<span class="{"bad" if v else "ok"}">{e(str(v))}</span>'
+        return f'<span class="ok">{e(str(v))}</span>'
+
+    rows = (
+        ("h", f"{device}, read by lab-edge verify"),
+        ("IKE session to AWS ready", value(edge.get("ike_sa_ready"))),
+        ("identities match", value(edge.get("identities_match"))),
+        ("PFS configured", value(edge.get("pfs_configured"))),
+        ("packets rising both ways", value(edge.get("packets_rising"))),
+        ("pings through the tunnel", value(None) if not isinstance(ping, int) else
+         f'<span class="{"ok" if ping > 50 else "bad"}">{ping}%</span>'),
+        ("drops from AWS to the router", value(edge.get("dropped_aws_to_self"), True)),
+        ("h", "strongSwan, read by the AWS VPN monitor"),
+        ("monitor answered", value(mon.get("lambda_answered"))),
+        ("its check succeeded", value(mon.get("check_succeeded"))),
+        ("strongSwan says established", value(mon.get("lambda_says_established"))),
+        ("h", "CloudWatch"),
+        ("tunnel-down alarm", f'<span class="{"bad" if alarm.get("state") == "ALARM" else "ok" if alarm.get("state") == "OK" else "unk"}">'
+                              f'{e(str(alarm.get("state") or "not read"))}</span>'),
+    )
+    term = "".join(f'<p class="h">{e(b)}</p>' if a == "h" else f'<p class="row"><span>{e(a)}</span>{b}</p>'
+                   for a, b in rows)
+
+    session = str(fix_out.get("session") or "")[:8]
+    agent_by = "tunnel-diagnostics agent" + (f", session {session}" if session else "")
+    evidence = str(fix_out.get("evidence") or "")
+    promises_html = "".join(f'<li class="promise">{e(p.format(d=device))}</li>' for p in promises)
+    page = f"""<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>AWS VPN outage: {e(number)}</title>
+<style>{OUTAGE_CARD_CSS}</style></head>
+<body><div class="oc">
+<header class="band">
+<div class="brand">{mark}<span><b>Elliot's Itential Lab</b>&nbsp; outage response</span></div>
+<div><h1>The AWS VPN is down on {e(device)}</h1>
+<p class="lede">Itential opened <strong>{e(number)}</strong> and the tunnel-diagnostics agent found the likely cause.
+One fix is ready, and nothing runs until you approve it.</p></div>
+<div class="status"><span class="pill">Waiting for your approval</span>
+<p class="elapsed">{e(elapsed)}<small>{e(since)}</small></p></div>
+</header>
+<div class="body">
+<section class="panel topo" aria-labelledby="t-where"><h2 id="t-where">Where the tunnel breaks</h2>{drawing}
+<div class="ledger">{ledger_html}</div></section>
+<section class="panel" aria-labelledby="t-when"><h2 id="t-when">What has happened so far</h2>
+<ol class="steps">
+<li><span class="who">Prometheus</span><b>Alert fired</b>{e(since[len("Tunnel10 down "):] if start else "Tunnel10 down")}</li>
+<li><span class="who">ServiceNow</span><b>Incident opened</b>{e(number)}, with the evidence</li>
+<li><span class="who">The agent</span><b>Cause found</b>one fix picked from a fixed menu</li>
+<li class="now"><span class="who">You</span><b>Approve or reject</b>nothing has run yet</li>
+<li class="next"><span class="who">Itential</span><b>Fix and prove</b>reads the tunnel, then resolves</li>
+</ol></section>
+<section class="panel diag" aria-labelledby="t-found"><div>
+<h2 id="t-found">What the agent found</h2><span class="by"><i></i>{e(agent_by)}</span>
+<p class="cause">{e(str(fix_out.get("cause") or "no cause given"))}</p>
+<p>{e(evidence) if evidence else "The agent's full diagnosis is in the incident's work notes."}</p></div>
+<div class="term" role="group" aria-label="What Verify read when the incident opened">{term}</div></section>
+<section class="panel action" aria-labelledby="t-fix"><div><p class="kicker">The proposed fix</p>
+<h2 id="t-fix">{e(title.format(d=device))}</h2><p class="what">{e(what)}</p></div>
+<p class="scope">Scope<b>{e(scope)}</b>{e(scope_note)}</p>
+<ul class="promises">{promises_html}</ul></section>
+<section class="panel decide" aria-labelledby="t-decide"><div><h2 id="t-decide">Your decision</h2>
+<p>Approve runs only this fix. Reject runs nothing and leaves {e(number)} open for a person.</p>
+<p>Either way, your note goes into the incident's work notes.</p></div>
+<form name="decision"><label for="oc-note">Note for the incident</label>
+<textarea id="oc-note" name="note" placeholder="Why you approve or reject, or what you checked first"></textarea>
+</form></section>
+</div>
+<p class="foot">Prepared by Itential's Diagnose AWS VPN Outage workflow at {now:%H:%M} UTC, from live reads of
+{e(device)}, the AWS VPN monitor and CloudWatch.</p>
+</div></body></html>"""
+    return {"html": page}
+
+
+def _source(*fns, call: str, extra: str = "") -> str:
+    return ("import json, sys\n\n\n" + extra + "\n\n".join(inspect.getsource(f) for f in fns)
+            + f"\n\nprint(json.dumps({call}))\n")
+
+
+OUTAGE_PLAN_CODE = _source(outage_plan, call='outage_plan(json.loads(sys.stdin.read() or "{}"), TARGETS)',
+                           extra="TARGETS = " + repr(VERIFY_TARGETS) + "\nRELOAD_TIMEOUT = " + repr(RELOAD_TIMEOUT) + "\n\n\n")
+OPEN_INCIDENT_CODE = _source(open_incident, call='open_incident(json.loads(sys.stdin.read() or "{}"))')
+OUTAGE_SUMMARY_CODE = _source(outage_summary, call='outage_summary(json.loads(sys.stdin.read() or "{}"))')
+OUTAGE_REQUEST_CODE = _source(outage_request, call='outage_request(json.loads(sys.stdin.read() or "{}"))')
+OUTAGE_FIX_CODE = _source(outage_fix, call='outage_fix(json.loads(sys.stdin.read() or "{}"))',
+                          extra="OUTAGE_FIXES = " + repr(OUTAGE_FIXES) + "\n\n\n")
+OUTAGE_RESULT_CODE = _source(decision_note, outage_result, call='outage_result(json.loads(sys.stdin.read() or "{}"))')
+OUTAGE_REJECTED_CODE = _source(decision_note, outage_rejected,
+                               call='outage_rejected(json.loads(sys.stdin.read() or "{}"))')
+OUTAGE_CARD_CODE = _source(outage_card_image, outage_card_topology, outage_card,
+                           call='outage_card(json.loads(sys.stdin.read() or "{}"))',
+                           extra="import base64\nimport html\nimport re\nfrom datetime import datetime, timezone\n\n"
+                                 "OUTAGE_CARD_CSS = " + repr(OUTAGE_CARD_CSS) + "\nOUTAGE_FIX_COPY = "
+                                 + repr(OUTAGE_FIX_COPY) + "\n\n\n")
+
+
+def run_agent(summary: str, agent_marker: str, request_ref: str, out_job: str, x: int, y: int = 0) -> dict:
+    """AgentSessionManager.runAgent (P5, production 2026-10-05): `agent` is the agent's UUID - a name is refused - so the
+    document carries a marker the import fills in; the result is {sessionId, sessionStatus, lastMessage}. The engine
+    adds its own callback signature: the task must not name one."""
+    return task("runAgent", "AgentSessionManager", summary, {"agent": agent_marker, "inputs": {"request": request_ref}},
+                {"result": f"$var.job.{out_job}"}, display="Agent Sessions", x=x, y=y)
+
+
+def diagnose_aws_vpn_outage() -> dict:
+    ok, fail, err = "success", "failure", "error"
+    nothing = "nothing was changed"
+    tasks = {
+        "01": empty("no alarm reading yet", "alarm_result", x=0),
+        "02": empty("no agent answer yet", "agent_result", x=20),
+        "03": empty("no fix answer yet", "fix_result", x=40),
+        "04": empty("no tunnel reading after the fix yet", "check_result", x=60),
+        # the deployment and the plan
+        "1a": parse("terraform-run outputs' params", OUTPUTS_PARAMS, x=100),
+        "1b": run_service("the deployment (terraform-run outputs, a state read)", "terraform-run", "$var.1a.textObject",
+                          "outage_outputs", x=150),
+        "1c": evaluate("the state read answered?", "1b", "result", "result.return_code", "==", 0, x=200),
+        "1d": set_key("the outputs' answer", {}, "outputs", "$var.job.outage_outputs", x=250),
+        "1e": set_key("the alerting device", "$var.1d.object", "device", "$var.job.device", x=275),
+        "1f": run_code("what the loop may act on (Python on the runner)", OUTAGE_PLAN_CODE, "$var.1e.object",
+                       "outage_plan", x=300),
+        "10": evaluate("the plan made?", "1f", "result", "stdout_json.ok", "==", True, x=350),
+        "19": jq("why there is no plan", "$var.1f.result", "stdout_json.message", x=400, y=-600, to_job="error"),
+        "11": evaluate("anything deployed?", "1f", "result", "stdout_json.deployed", "==", True, x=400),
+        "12": jq("nothing to diagnose", "$var.1f.result", "stdout_json.message", x=450, y=600, to_job="outcome"),
+        "13": jq("the router's plan input", "$var.1f.result", "stdout_json.edge_in", x=450),
+        "14": run_code("what to read and push on the router (Hand Off's plan)", LAB_EDGE_PLAN_CODE,
+                       "$var.13.return_data", "outage_edge", x=500),
+        "15": evaluate("the router's plan ready?", "job", "outage_edge", "stdout_json.ready", "==", True, x=550),
+        # one incident per outage: an open one is only noted
+        "2a": jq("the open-incident query", "$var.job.outage_plan", "stdout_json.open_query", x=600),
+        "2b": sni("listIncidents", "an open incident for this outage? (correlation_id)",
+                  {"sysparm_query": "$var.2a.return_data", "sysparm_fields": "sys_id,number", "sysparm_limit": 1},
+                  x=650, outgoing={"response": "$var.job.outage_open"}),
+        "2c": set_key("the open-incident answer", {}, "open", "$var.job.outage_open", x=700),
+        "2d": set_key("when the alert started", "$var.2c.object", "starts_at", "$var.job.starts_at", x=725),
+        "2e": run_code("is one open? (Python on the runner)", OPEN_INCIDENT_CODE, "$var.2d.object", "outage_dedupe",
+                       x=750),
+        "2f": evaluate("already open?", "2e", "result", "stdout_json.open", "==", True, x=800),
+        "20": jq("the open incident", "$var.2e.result", "stdout_json.sys_id", x=850, y=600),
+        "21": jq("the still-down note", "$var.2e.result", "stdout_json.note", x=875, y=600),
+        "22": sni("updateIncident", "note the open incident: still down",
+                  {"sys_id": "$var.20.return_data", "sysparm_fields": "number", **nbi_body("$var.21.return_data")},
+                  x=900, y=600),
+        "23": note("still down: noted", "the outage already has an open incident: noted it, opened none", "outcome",
+                   x=925, y=600),
+        # the evidence: the AWS alarm, then Verify's own checks (verify_section, its third copy)
+        "3a": parse("aws-vpn-monitor alarm's params", ALARM_PARAMS, x=950),
+        "3b": run_service("the AWS tunnel-down alarm (aws-vpn-monitor alarm, a CloudWatch read)", "aws-vpn-monitor",
+                          "$var.3a.textObject", "alarm_result", x=1000),
+        "3e": evaluate("the alarm read?", "3b", "result", "result.return_code", "==", 0, x=1025),
+        "3f": note("the alarm could not be read", "the AWS tunnel-down alarm could not be read: the incident says so",
+                   "alarm_note", x=1050, y=300),
+        "30": note("the tunnel is up again", "the tunnel was up again when Itential checked: no incident opened, "
+                   "nothing was changed", "outcome", x=1800, y=600),
+        # the incident
+        "31": set_key("the incident: Verify's verdict", {}, "judgement", "$var.job.judgement", x=1800),
+        "32": set_key("the incident: the alarm", "$var.31.object", "alarm", "$var.job.alarm_result", x=1825),
+        "33": set_key("the incident: the device", "$var.32.object", "device", "$var.job.device", x=1850),
+        "34": set_key("the incident: when it started", "$var.33.object", "starts_at", "$var.job.starts_at", x=1875),
+        "35": run_code("the incident's text (Python on the runner)", OUTAGE_SUMMARY_CODE, "$var.34.object",
+                       "outage_summary", x=1900),
+        "36": jq("the incident's body", "$var.35.result", "stdout_json.incident", x=1925),
+        "37": sni("createIncident", "open one ServiceNow incident for the outage",
+                  {"sysparm_fields": "sys_id,number", **nbi_body("$var.36.return_data")}, x=1950,
+                  outgoing={"response": "$var.job.incident_created"}),
+        "38": set_key("the new incident", {}, "created", "$var.job.incident_created", x=1975),
+        "39": set_key("the evidence for the agent", "$var.38.object", "summary", "$var.job.outage_summary", x=2000),
+        "3c": run_code("the agent's request (Python on the runner)", OUTAGE_REQUEST_CODE, "$var.39.object",
+                       "outage_request", x=2025),
+        "3d": evaluate("the incident opened?", "3c", "result", "stdout_json.ok", "==", True, x=2050),
+        # A3: the agent diagnoses, notes the incident and picks one fix
+        "4a": jq("the agent's request", "$var.job.outage_request", "stdout_json.request", x=2100),
+        "4b": run_agent("tunnel-diagnostics: read both ends, note the incident, pick one fix", AGENT_MARKER,
+                        "$var.4a.return_data", "agent_result", x=2150),
+        "45": note("the agent did not run", "the tunnel-diagnostics session did not run: the loop escalates",
+                   "agent_note", x=2175, y=-300),
+        "4c": set_key("the agent's answer", {}, "agent", "$var.job.agent_result", x=2200),
+        "4d": jq("the incident number", "$var.job.outage_request", "stdout_json.number", x=2225),
+        "4e": set_key("the incident number for the card", "$var.4c.object", "number", "$var.4d.return_data", x=2250),
+        "4f": run_code("the fix, held to the menu (Python on the runner)", OUTAGE_FIX_CODE, "$var.4e.object",
+                       "outage_fix", x=2275),
+        "40": evaluate("a fix to approve?", "4f", "result", "stdout_json.card", "==", True, x=2300),
+        "41": jq("the incident", "$var.job.outage_request", "stdout_json.sys_id", x=2325, y=600),
+        "42": jq("the escalation note", "$var.4f.result", "stdout_json.escalation", x=2350, y=600),
+        "43": sni("updateIncident", "note the incident: escalated to a person",
+                  {"sys_id": "$var.41.return_data", "sysparm_fields": "number", **nbi_body("$var.42.return_data")},
+                  x=2375, y=600),
+        "44": note("escalated", "the agent found no fix from the menu: the incident is escalated to a person", "error",
+                   x=2400, y=600),
+        # the card: one HTML page from the outage's own readings (outage_card), the engineer's note comes back
+        "5a": set_key("the card: the fix", "$var.34.object", "fix", "$var.job.outage_fix", x=2400),
+        "5b": set_key("the card: the incident number", "$var.5a.object", "number", "$var.4d.return_data", x=2410),
+        "5d": set_key("the card: the deployment", "$var.5b.object", "plan", "$var.job.outage_plan", x=2420),
+        "5e": run_code("the card's page (Python on the runner)", OUTAGE_CARD_CODE, "$var.5d.object", "outage_card",
+                       x=2430),
+        "5f": jq("the card's HTML", "$var.5e.result", "stdout_json.html", x=2440),
+        "5c": task("InteractiveHTML", "WorkCenter", "approval: the outage card",
+                   {"header": "Approve the fix for the AWS VPN outage", "body": "$var.5f.return_data", "variables": {},
+                    "btn_success": "Approve and run the fix", "btn_failure": "Reject"},
+                   {"export": "$var.job.card_decision"}, kind="manual", display="Work Center",
+                   view="/work-center/task/InteractiveHTML", x=2450),
+        "50": jq("the incident (rejected)", "$var.job.outage_request", "stdout_json.sys_id", x=2500, y=900),
+        "58": run_code("the rejection note, with the engineer's (Python on the runner)", OUTAGE_REJECTED_CODE,
+                       "$var.job.card_decision", "outage_rejected", x=2510, y=900),
+        "59": jq("the rejection note", "$var.58.result", "stdout_json", x=2520, y=900),
+        "51": sni("updateIncident", "note the incident: the fix was rejected",
+                  {"sys_id": "$var.50.return_data", "sysparm_fields": "number", **nbi_body("$var.59.return_data")},
+                  x=2525, y=900),
+        "52": note("rejected", "the fix was rejected in Work Center: nothing was run, the incident stays open",
+                   "outcome", x=2550, y=900),
+        # the approved fix, exactly one
+        "60": evaluate("fix: reset the IKE SA?", "job", "outage_fix", "stdout_json.fix", "==", "reset-ike", x=2550),
+        "61": jq("lab-edge-push's params", "$var.job.outage_edge", "stdout_json.push", x=2600, y=-300),
+        "62": set_key("reset-sa, not push", "$var.61.return_data", "action", "reset-sa", x=2625, y=-300),
+        "63": run_service("reset the IKE SA (lab-edge-push reset-sa: clear, a fresh SA, no config)", "lab-edge-push",
+                          "$var.62.object", "fix_result", x=2650, y=-300),
+        "64": evaluate("fix: restart strongSwan?", "job", "outage_fix", "stdout_json.fix", "==", "restart-strongswan",
+                       x=2600),
+        "65": jq("aws-vpn-monitor restart's params", "$var.job.outage_plan", "stdout_json.restart", x=2650),
+        "66": run_service("restart strongSwan (aws-vpn-monitor restart: the Lambda's fixed document)", "aws-vpn-monitor",
+                          "$var.65.return_data", "fix_result", x=2675),
+        "67": evaluate("fix: re-push the router block?", "job", "outage_fix", "stdout_json.fix", "==",
+                       "repush-router-block", x=2650, y=300),
+        "68": jq("lab-edge render's params", "$var.job.outage_edge", "stdout_json.render", x=2675, y=300),
+        "69": run_service("render the block (lab-edge render: no device)", "lab-edge", "$var.68.return_data",
+                          "render_result", x=2700, y=300),
+        "6a": evaluate("rendered?", "69", "result", "result.return_code", "==", 0, x=2725, y=300),
+        "6b": jq("the block's SHA-256", "$var.69.result", "result.stdout_json.sha256", x=2750, y=300),
+        "6c": jq("lab-edge-push's params", "$var.job.outage_edge", "stdout_json.push", x=2775, y=300),
+        "6d": set_key("push params: the SHA-256", "$var.6c.return_data", "sha256", "$var.6b.return_data", x=2800, y=300),
+        "6e": run_service("re-push the block (lab-edge-push: revert timer, a fresh SA, save)", "lab-edge-push",
+                          "$var.6d.object", "fix_result", x=2825, y=300),
+        "53": evaluate("reset-sa exited 0?", "63", "result", "result.return_code", "==", 0, x=2675, y=-300),
+        "55": evaluate("restart exited 0?", "66", "result", "result.return_code", "==", 0, x=2700),
+        "57": evaluate("the push exited 0?", "6e", "result", "result.return_code", "==", 0, x=2850, y=300),
+        "54": note("the fix did not complete", "the approved fix exited non-zero or could not run (fix_result): the "
+                   "tunnel is read again", "fix_note", x=2875),
+        # the tunnel again, then the incident
+        "70": jq("lab-edge verify's params", "$var.job.outage_edge", "stdout_json.lab_edge", x=2900),
+        "71": run_service("the tunnel now (lab-edge verify: show commands, one ping)", "lab-edge", "$var.70.return_data",
+                          "check_result", x=2925),
+        "7f": evaluate("the tunnel read?", "71", "result", "result.return_code", "==", 0, x=2935),
+        "80": note("the tunnel could not be read", "lab-edge could not read the tunnel after the fix (check_result)",
+                   "check_note", x=2940, y=-300),
+        "72": jq("the fix that ran", "$var.job.outage_fix", "stdout_json.fix", x=2950),
+        "73": set_key("the result: which fix", {}, "fix", "$var.72.return_data", x=2975),
+        "74": set_key("the result: its answer", "$var.73.object", "answer", "$var.job.fix_result", x=3000),
+        "75": set_key("the result: the tunnel now", "$var.74.object", "check", "$var.job.check_result", x=3025),
+        "81": set_key("the result: the engineer's note", "$var.75.object", "decision", "$var.job.card_decision",
+                      x=3037),
+        "76": run_code("fixed? (Python on the runner)", OUTAGE_RESULT_CODE, "$var.81.object", "outage_result", x=3050),
+        "77": jq("the incident", "$var.job.outage_request", "stdout_json.sys_id", x=3075),
+        "78": evaluate("fixed?", "76", "result", "stdout_json.fixed", "==", True, x=3100),
+        "79": jq("the resolution", "$var.76.result", "stdout_json.resolve", x=3125),
+        "7a": sni("updateIncident", "resolve the incident (Solution provided)",
+                  {"sys_id": "$var.77.return_data", "sysparm_fields": "number,state", **nbi_body("$var.79.return_data")},
+                  x=3150),
+        "7b": jq("the outcome", "$var.76.result", "stdout_json.message", x=3175, to_job="outcome"),
+        "7c": jq("the not-fixed note", "$var.76.result", "stdout_json.note", x=3125, y=-300),
+        "7d": sni("updateIncident", "note the incident: still not up after the fix",
+                  {"sys_id": "$var.77.return_data", "sysparm_fields": "number", **nbi_body("$var.7c.return_data")},
+                  x=3150, y=-300),
+        "7e": jq("why it needs a look", "$var.76.result", "stdout_json.message", x=3175, y=-300, to_job="error"),
+        # failures: the reason, then one Work Center task
+        "8a": note("the deployment could not be read", f"terraform-run outputs could not be read (outage_outputs): "
+                   f"{nothing}", "error", x=200, y=-600),
+        "8b": note("a step could not run", f"the Gateway could not run a step before the evidence (see outage_plan, "
+                   f"outage_edge): {nothing}", "error", x=500, y=-600),
+        "8c": note("the evidence could not be read", f"Verify's checks could not run or gave no verdict (see "
+                   f"lab_edge_result, monitor_result): {nothing}", "error", x=1700, y=-900),
+        "8d": note("ServiceNow did not answer", f"ServiceNow did not answer (outage_open, incident_created): "
+                   f"{nothing}; the outage has no incident", "error", x=1950, y=-600),
+        "8e": note("a step after the incident could not run", "a step after the incident was opened could not run "
+                   "(see outage_request, agent_result, outage_fix, fix_result): check the job and the incident",
+                   "error", x=2300, y=-900),
+        "f0": view("Work Center task", "Diagnose AWS VPN Outage needs a look", "$var.job.error", "$var.job.outage_fix",
+                   "Seen", "Seen", x=3300, y=0),
+    }
+    vtasks, vtr, first = verify_section("outage_edge", passed="30", failed="31", broken="8c", judge_broken="8c",
+                                        x=1100)
+    tasks.update(vtasks)
+    tr = {
+        "workflow_start": _edge(**{"01": ok}),
+        "01": _edge(**{"02": ok}), "02": _edge(**{"03": ok}), "03": _edge(**{"04": ok}), "04": _edge(**{"1a": ok}),
+        "1a": _edge(**{"1b": ok}),
+        "1b": _edge(**{"1c": ok, "8a": err}),
+        "1c": _edge(**{"1d": ok, "8a": fail}),
+        "1d": _edge(**{"1e": ok}),
+        "1e": _edge(**{"1f": ok}),
+        "1f": _edge(**{"10": ok, "8b": err}),
+        "10": _edge(**{"11": ok, "19": fail}),
+        "19": _edge(**{"f0": ok, "8b": err}),
+        "11": _edge(**{"13": ok, "12": fail}),
+        "12": _edge(**{"workflow_end": ok, "8b": err}),
+        "13": _edge(**{"14": ok, "8b": err}),
+        "14": _edge(**{"15": ok, "8b": err}),
+        "15": _edge(**{"2a": ok, "8b": fail}),
+        "2a": _edge(**{"2b": ok, "8b": err}),
+        "2b": _edge(**{"2c": ok, "8d": err}),
+        "2c": _edge(**{"2d": ok}),
+        "2d": _edge(**{"2e": ok}),
+        "2e": _edge(**{"2f": ok, "8b": err}),
+        "2f": _edge(**{"20": ok, "3a": fail}),
+        "20": _edge(**{"21": ok, "8d": err}),
+        "21": _edge(**{"22": ok, "8d": err}),
+        "22": _edge(**{"23": ok, "8d": err}),
+        "23": _edge(**{"workflow_end": ok}),
+        "3a": _edge(**{"3b": ok}),
+        # an alarm that cannot be read is evidence too ("not read"): Verify's checks go on
+        "3b": _edge(**{"3e": ok, "3f": err}),
+        "3e": _edge(**{first: ok, "3f": fail}),
+        "3f": _edge(**{first: ok}),
+        **vtr,
+        "30": _edge(**{"workflow_end": ok}),
+        "31": _edge(**{"32": ok}), "32": _edge(**{"33": ok}), "33": _edge(**{"34": ok}), "34": _edge(**{"35": ok}),
+        "35": _edge(**{"36": ok, "8e": err}),
+        "36": _edge(**{"37": ok, "8e": err}),
+        "37": _edge(**{"38": ok, "8d": err}),
+        "38": _edge(**{"39": ok}),
+        "39": _edge(**{"3c": ok}),
+        "3c": _edge(**{"3d": ok, "8e": err}),
+        "3d": _edge(**{"4a": ok, "8d": fail}),
+        "4a": _edge(**{"4b": ok, "8e": err}),
+        # an agent that fails is an answer too: no fix from it means escalate
+        "4b": _edge(**{"4c": ok, "45": err}),
+        "45": _edge(**{"4c": ok}),
+        "4c": _edge(**{"4d": ok}),
+        "4d": _edge(**{"4e": ok, "8e": err}),
+        "4e": _edge(**{"4f": ok}),
+        "4f": _edge(**{"40": ok, "8e": err}),
+        "40": _edge(**{"5a": ok, "41": fail}),
+        "41": _edge(**{"42": ok, "8e": err}),
+        "42": _edge(**{"43": ok, "8e": err}),
+        "43": _edge(**{"44": ok, "8e": err}),
+        "44": _edge(**{"f0": ok}),
+        "5a": _edge(**{"5b": ok}), "5b": _edge(**{"5d": ok}), "5d": _edge(**{"5e": ok}),
+        "5e": _edge(**{"5f": ok, "8e": err}),
+        "5f": _edge(**{"5c": ok, "8e": err}),
+        "5c": _edge(**{"60": ok, "50": fail}),
+        "50": _edge(**{"58": ok, "8e": err}),
+        "58": _edge(**{"59": ok, "8e": err}),
+        "59": _edge(**{"51": ok, "8e": err}),
+        "51": _edge(**{"52": ok, "8e": err}),
+        "52": _edge(**{"workflow_end": ok}),
+        "60": _edge(**{"61": ok, "64": fail}),
+        "61": _edge(**{"62": ok, "8e": err}),
+        "62": _edge(**{"63": ok}),
+        "63": _edge(**{"53": ok, "54": err}),
+        "53": _edge(**{"70": ok, "54": fail}),
+        "54": _edge(**{"70": ok}),
+        "64": _edge(**{"65": ok, "67": fail}),
+        "65": _edge(**{"66": ok, "8e": err}),
+        "66": _edge(**{"55": ok, "54": err}),
+        "55": _edge(**{"70": ok, "54": fail}),
+        "67": _edge(**{"68": ok, "8e": fail}),
+        "68": _edge(**{"69": ok, "8e": err}),
+        "69": _edge(**{"6a": ok, "8e": err}),
+        "6a": _edge(**{"6b": ok, "8e": fail}),
+        "6b": _edge(**{"6c": ok, "8e": err}),
+        "6c": _edge(**{"6d": ok, "8e": err}),
+        "6d": _edge(**{"6e": ok}),
+        "6e": _edge(**{"57": ok, "54": err}),
+        "57": _edge(**{"70": ok, "54": fail}),
+        "70": _edge(**{"71": ok, "8e": err}),
+        # a read that fails leaves {} behind: the result says not read, and the incident stays open
+        "71": _edge(**{"7f": ok, "80": err}),
+        "7f": _edge(**{"72": ok, "80": fail}),
+        "80": _edge(**{"72": ok}),
+        "72": _edge(**{"73": ok, "8e": err}),
+        "73": _edge(**{"74": ok}), "74": _edge(**{"75": ok}),
+        "75": _edge(**{"81": ok}), "81": _edge(**{"76": ok}),
+        "76": _edge(**{"77": ok, "8e": err}),
+        "77": _edge(**{"78": ok, "8e": err}),
+        "78": _edge(**{"79": ok, "7c": fail}),
+        "79": _edge(**{"7a": ok, "8e": err}),
+        "7a": _edge(**{"7b": ok, "8e": err}),
+        "7b": _edge(**{"workflow_end": ok}),
+        "7c": _edge(**{"7d": ok, "8e": err}),
+        "7d": _edge(**{"7e": ok, "8e": err}),
+        "7e": _edge(**{"f0": ok}),
+        **{n: _edge(**{"f0": ok}) for n in ("8a", "8b", "8c", "8d", "8e")},
+        "f0": _edge(**{"workflow_end": ok}),
+    }
+    return workflow(
+        WF["diagnose_aws_vpn_outage"],
+        "The AWS VPN's outage loop (R6 + A3, ADR 0072): started by the tunnel-down alert, it opens one ServiceNow "
+        "incident with the evidence, lets the tunnel-diagnostics agent pick one fix from a fixed menu, and runs that "
+        "fix only after a Work Center approval - then reads the tunnel again and resolves the incident",
+        {k: {"type": "string", "required": True} for k in ("alertname", "device", "interface", "starts_at", "fingerprint")},
+        tasks,
+        tr,
+        {
+            "outcome": {"type": "string"}, "error": {"type": "string"},
+            "outage_outputs": {"type": "object"}, "outage_plan": {"type": "object"}, "outage_edge": {"type": "object"},
+            "outage_open": {"type": "object"}, "outage_dedupe": {"type": "object"}, "alarm_result": {"type": "object"},
+            "judgement": {"type": "object"}, "lab_edge_result": {"type": "object"}, "monitor_result": {"type": "object"},
+            "router_note": {"type": "string"}, "monitor_note": {"type": "string"},
+            "outage_summary": {"type": "object"}, "incident_created": {"type": "object"},
+            "outage_request": {"type": "object"}, "agent_result": {"type": "object"}, "outage_fix": {"type": "object"},
+            "render_result": {"type": "object"}, "fix_result": {"type": "object"}, "check_result": {"type": "object"},
+            "outage_result": {"type": "object"}, "outage_card": {"type": "object"},
+            "card_decision": {"type": ["object", "null"]}, "outage_rejected": {"type": "object"},
+        },
+    )
+
+
 BUILDERS = (device_count, show_version, show_command, show_all, branch_vlan, branch_vlan_delete, config_push,
             compliance_run, compliance_report, netbox_devices, backup_all, deploy_aws_vpn, verify_aws_vpn,
             hand_off_aws_vpn, config_push_revert, tear_down_aws_vpn, tear_down_expired_aws_vpn, get_aws_vpn_status,
-            check_aws_drift, rotate_aws_vpn_key, rotate_aws_vpn_key_monthly)
+            check_aws_drift, rotate_aws_vpn_key, rotate_aws_vpn_key_monthly, diagnose_aws_vpn_outage)
 
 
 if __name__ == "__main__":

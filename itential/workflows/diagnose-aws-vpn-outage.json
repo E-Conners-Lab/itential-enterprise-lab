@@ -1,0 +1,5692 @@
+{
+  "name": "Diagnose AWS VPN Outage",
+  "type": "automation",
+  "description": "The AWS VPN's outage loop (R6 + A3, ADR 0072): started by the tunnel-down alert, it opens one ServiceNow incident with the evidence, lets the tunnel-diagnostics agent pick one fix from a fixed menu, and runs that fix only after a Work Center approval - then reads the tunnel again and resolves the incident",
+  "tasks": {
+    "01": {
+      "name": "parse",
+      "canvasName": "parse",
+      "summary": "no alarm reading yet",
+      "description": "no alarm reading yet",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": -90,
+        "y": 1200
+      },
+      "variables": {
+        "incoming": {
+          "text": "{}"
+        },
+        "outgoing": {
+          "textObject": "$var.job.alarm_result"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "02": {
+      "name": "parse",
+      "canvasName": "parse",
+      "summary": "no agent answer yet",
+      "description": "no agent answer yet",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": -70,
+        "y": 1350
+      },
+      "variables": {
+        "incoming": {
+          "text": "{}"
+        },
+        "outgoing": {
+          "textObject": "$var.job.agent_result"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "03": {
+      "name": "parse",
+      "canvasName": "parse",
+      "summary": "no fix answer yet",
+      "description": "no fix answer yet",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": -50,
+        "y": 1500
+      },
+      "variables": {
+        "incoming": {
+          "text": "{}"
+        },
+        "outgoing": {
+          "textObject": "$var.job.fix_result"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "04": {
+      "name": "parse",
+      "canvasName": "parse",
+      "summary": "no tunnel reading after the fix yet",
+      "description": "no tunnel reading after the fix yet",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": -40,
+        "y": 1650
+      },
+      "variables": {
+        "incoming": {
+          "text": "{}"
+        },
+        "outgoing": {
+          "textObject": "$var.job.check_result"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "1a": {
+      "name": "parse",
+      "canvasName": "parse",
+      "summary": "terraform-run outputs' params",
+      "description": "terraform-run outputs' params",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": -30,
+        "y": 1800
+      },
+      "variables": {
+        "incoming": {
+          "text": "{\"action\": \"outputs\", \"timeout\": \"120\"}"
+        },
+        "outgoing": {
+          "textObject": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "1b": {
+      "name": "runService",
+      "canvasName": "runService",
+      "summary": "the deployment (terraform-run outputs, a state read)",
+      "description": "the deployment (terraform-run outputs, a state read)",
+      "location": "Application",
+      "locationType": null,
+      "app": "GatewayManager",
+      "type": "automatic",
+      "displayName": "GatewayManager",
+      "groups": [],
+      "nodeLocation": {
+        "x": -30,
+        "y": 1950
+      },
+      "variables": {
+        "incoming": {
+          "serviceName": "terraform-run",
+          "clusterId": "lab",
+          "params": "$var.1a.textObject"
+        },
+        "outgoing": {
+          "result": "$var.job.outage_outputs"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "1c": {
+      "name": "evaluation",
+      "canvasName": "evaluation",
+      "summary": "the state read answered?",
+      "description": "the state read answered?",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 70,
+        "y": 2100
+      },
+      "variables": {
+        "incoming": {
+          "all_true_flag": true,
+          "evaluation_groups": [
+            {
+              "all_true_flag": true,
+              "evaluations": [
+                {
+                  "query": "result.return_code",
+                  "operand_1": {
+                    "variable": "result",
+                    "task": "1b"
+                  },
+                  "operator": "==",
+                  "operand_2": {
+                    "variable": 0,
+                    "task": "static"
+                  }
+                }
+              ]
+            }
+          ],
+          "options": {}
+        },
+        "outgoing": {
+          "return_value": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "1d": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "the outputs' answer",
+      "description": "the outputs' answer",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 70,
+        "y": 2250
+      },
+      "variables": {
+        "incoming": {
+          "obj": {},
+          "path": [
+            "outputs"
+          ],
+          "value": "$var.job.outage_outputs"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "1e": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "the alerting device",
+      "description": "the alerting device",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 70,
+        "y": 2400
+      },
+      "variables": {
+        "incoming": {
+          "obj": "$var.1d.object",
+          "path": [
+            "device"
+          ],
+          "value": "$var.job.device"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "1f": {
+      "name": "runCode",
+      "canvasName": "runCode",
+      "summary": "what the loop may act on (Python on the runner)",
+      "description": "what the loop may act on (Python on the runner)",
+      "location": "Application",
+      "locationType": null,
+      "app": "GatewayManager",
+      "type": "automatic",
+      "displayName": "GatewayManager",
+      "groups": [],
+      "nodeLocation": {
+        "x": -80,
+        "y": 2550
+      },
+      "variables": {
+        "incoming": {
+          "clusterId": "lab",
+          "language": "python",
+          "code": "import json, sys\n\n\nTARGETS = {'dc1-wan01': {'target': {'name': 'dc1-wan01', 'fvrf': 'INET', 'tunnel_source': 'GigabitEthernet7', 'front_door_ip': '172.29.129.250', 'loopback_ip': '10.103.255.11', 'router_inner': '169.254.10.1/30', 'aws_inner': '169.254.10.2/30', 'vpc_cidr': '10.0.0.0/16', 'vpc_private_prefixes': ['10.0.64.0/20', '10.0.80.0/20'], 'lab_prefixes': ['10.101.0.0/16', '10.103.255.0/24'], 'local_id': 'lab-edge.lab.internal', 'remote_id': 'aws-vpn.lab.internal', 'peer_rule': 'public', 'peer_pinned': None, 'bgp_asn': 65100, 'inside_interfaces': ['GigabitEthernet5', 'GigabitEthernet6', 'Tunnel1', 'Tunnel2'], 'unzoned_interfaces': ['GigabitEthernet1', 'GigabitEthernet2', 'GigabitEthernet7'], 'mgmt_host': '10.100.0.144', 'tunnel_description': 'IPsec VTI to AWS (Hand Off AWS VPN)'}, 'username': 'itential-aws-vpn', 'monitor': 'aws', 'netbox': {'site': 'cloud-aws', 'interface': 'Tunnel10', 'prefixes': {'10.0.0.0/16': 'cloud-aws', '10.0.64.0/20': 'cloud-aws', '10.0.80.0/20': 'cloud-aws', '169.254.10.0/30': 'wan'}}}}\nRELOAD_TIMEOUT = '300'\n\n\ndef outage_plan(d: dict, targets: dict) -> dict:\n    \"\"\"What the outage loop may act on: the deployment (terraform-run outputs' answer under `outputs`), the alerting\n    `device` (an open target the AWS monitor watches), each service's params and the incident's correlation_id.\n    Pure: runCode runs this source on the Gateway with the targets written in.\"\"\"\n    result = (d.get(\"outputs\") or {}).get(\"result\") or {}\n    outputs = (result.get(\"stdout_json\") or {}).get(\"outputs\")\n    if result.get(\"return_code\") != 0 or not isinstance(outputs, dict):\n        return {\"ok\": False, \"message\": \"terraform-run outputs did not answer (outage_outputs): nothing was changed\"}\n    if not outputs:\n        return {\"ok\": True, \"deployed\": False, \"message\": \"nothing is deployed in AWS: no AWS VPN to diagnose\"}\n    device = d.get(\"device\")\n    entry = (targets or {}).get(device) or {}\n    if entry.get(\"monitor\") != \"aws\":\n        return {\"ok\": False, \"message\": f\"{device} is not an open target the AWS monitor watches: nothing was changed\"}\n    instance = outputs.get(\"strongswan_instance_id\")\n    if not instance:\n        return {\"ok\": False, \"message\": \"the outputs name no strongSwan instance (outage_outputs): nothing was changed\"}\n    correlation = f\"aws-vpn-{device}\"\n    return {\"ok\": True, \"deployed\": True, \"target\": device, \"correlation_id\": correlation,\n            \"open_query\": f\"correlation_id={correlation}^active=true\",\n            \"edge_in\": {\"target\": device, \"targets\": targets, \"deployed\": outputs},\n            \"restart\": {\"action\": \"restart\", \"instance_id\": instance, \"timeout\": RELOAD_TIMEOUT}}\n\n\nprint(json.dumps(outage_plan(json.loads(sys.stdin.read() or \"{}\"), TARGETS)))\n",
+          "data": "$var.1e.object",
+          "safety": {
+            "timeout": 30
+          },
+          "packages": []
+        },
+        "outgoing": {
+          "result": "$var.job.outage_plan"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "10": {
+      "name": "evaluation",
+      "canvasName": "evaluation",
+      "summary": "the plan made?",
+      "description": "the plan made?",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 200,
+        "y": 2700
+      },
+      "variables": {
+        "incoming": {
+          "all_true_flag": true,
+          "evaluation_groups": [
+            {
+              "all_true_flag": true,
+              "evaluations": [
+                {
+                  "query": "stdout_json.ok",
+                  "operand_1": {
+                    "variable": "result",
+                    "task": "1f"
+                  },
+                  "operator": "==",
+                  "operand_2": {
+                    "variable": true,
+                    "task": "static"
+                  }
+                }
+              ]
+            }
+          ],
+          "options": {}
+        },
+        "outgoing": {
+          "return_value": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "19": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "why there is no plan",
+      "description": "why there is no plan",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 50,
+        "y": 2850
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "stdout_json.message",
+          "obj": "$var.1f.result"
+        },
+        "outgoing": {
+          "return_data": "$var.job.error"
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "11": {
+      "name": "evaluation",
+      "canvasName": "evaluation",
+      "summary": "anything deployed?",
+      "description": "anything deployed?",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 720,
+        "y": 2850
+      },
+      "variables": {
+        "incoming": {
+          "all_true_flag": true,
+          "evaluation_groups": [
+            {
+              "all_true_flag": true,
+              "evaluations": [
+                {
+                  "query": "stdout_json.deployed",
+                  "operand_1": {
+                    "variable": "result",
+                    "task": "1f"
+                  },
+                  "operator": "==",
+                  "operand_2": {
+                    "variable": true,
+                    "task": "static"
+                  }
+                }
+              ]
+            }
+          ],
+          "options": {}
+        },
+        "outgoing": {
+          "return_value": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "12": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "nothing to diagnose",
+      "description": "nothing to diagnose",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 1350,
+        "y": 3000
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "stdout_json.message",
+          "obj": "$var.1f.result"
+        },
+        "outgoing": {
+          "return_data": "$var.job.outcome"
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "13": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "the router's plan input",
+      "description": "the router's plan input",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 720,
+        "y": 3000
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "stdout_json.edge_in",
+          "obj": "$var.1f.result"
+        },
+        "outgoing": {
+          "return_data": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "14": {
+      "name": "runCode",
+      "canvasName": "runCode",
+      "summary": "what to read and push on the router (Hand Off's plan)",
+      "description": "what to read and push on the router (Hand Off's plan)",
+      "location": "Application",
+      "locationType": null,
+      "app": "GatewayManager",
+      "type": "automatic",
+      "displayName": "GatewayManager",
+      "groups": [],
+      "nodeLocation": {
+        "x": 720,
+        "y": 3150
+      },
+      "variables": {
+        "incoming": {
+          "clusterId": "lab",
+          "language": "python",
+          "code": "import json, sys\nd = json.loads(sys.stdin.read() or \"{}\")\nname = d.get(\"target\")\nentry = (d.get(\"targets\") or {}).get(name) or {}\nmonitor = entry.get(\"monitor\")\ndeployed = entry.get(\"outputs\") if monitor != \"aws\" else d.get(\"deployed\")\nplan = {\"target\": name, \"monitor\": monitor, \"need_outputs\": bool(entry) and monitor == \"aws\" and deployed is None,\n        \"ready\": False, \"reason\": \"\", \"lab_edge\": None, \"monitor_params\": None, \"precheck\": None, \"render\": None,\n        \"push\": None, \"monitor_ready\": None, \"netbox\": bool(entry.get(\"netbox\"))}\nif not entry:\n    plan[\"reason\"] = \"%s is not an open target\" % name\nelif not plan[\"need_outputs\"] and not (deployed or {}).get(\"strongswan_eip\"):\n    plan[\"reason\"] = \"nothing is deployed (the outputs have no strongSwan address)\"\nif entry and deployed and not plan[\"reason\"]:\n    target, outputs, user = json.dumps(entry[\"target\"]), json.dumps(deployed), entry[\"username\"]\n    plan.update(\n        ready=True,\n        lab_edge={\"action\": \"verify\", \"target_json\": target, \"outputs_json\": outputs, \"username\": user, \"timeout\": \"300\"},\n        precheck={\"action\": \"precheck\", \"target_json\": target, \"username\": user, \"timeout\": \"300\"},\n        render={\"action\": \"render\", \"target_json\": target, \"outputs_json\": outputs, \"timeout\": \"300\"},\n        push={\"action\": \"push\", \"target_json\": target, \"outputs_json\": outputs, \"username\": user, \"timeout\": \"600\"})\n    if monitor == \"aws\":\n        instance = str(deployed.get(\"strongswan_instance_id\") or \"\")\n        plan[\"monitor_params\"] = {\"action\": \"check\", \"instance_id\": instance, \"timeout\": \"240\"}\n        plan[\"monitor_ready\"] = {\"action\": \"ready\", \"instance_id\": instance, \"timeout\": \"120\"}\nprint(json.dumps(plan))\n",
+          "data": "$var.13.return_data",
+          "safety": {
+            "timeout": 30
+          },
+          "packages": []
+        },
+        "outgoing": {
+          "result": "$var.job.outage_edge"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "15": {
+      "name": "evaluation",
+      "canvasName": "evaluation",
+      "summary": "the router's plan ready?",
+      "description": "the router's plan ready?",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 750,
+        "y": 3300
+      },
+      "variables": {
+        "incoming": {
+          "all_true_flag": true,
+          "evaluation_groups": [
+            {
+              "all_true_flag": true,
+              "evaluations": [
+                {
+                  "query": "stdout_json.ready",
+                  "operand_1": {
+                    "variable": "outage_edge",
+                    "task": "job"
+                  },
+                  "operator": "==",
+                  "operand_2": {
+                    "variable": true,
+                    "task": "static"
+                  }
+                }
+              ]
+            }
+          ],
+          "options": {}
+        },
+        "outgoing": {
+          "return_value": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "2a": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "the open-incident query",
+      "description": "the open-incident query",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 760,
+        "y": 3450
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "stdout_json.open_query",
+          "obj": "$var.job.outage_plan"
+        },
+        "outgoing": {
+          "return_data": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "2b": {
+      "name": "listIncidents",
+      "canvasName": "listIncidents",
+      "summary": "an open incident for this outage? (correlation_id)",
+      "description": "an open incident for this outage? (correlation_id)",
+      "location": "Adapter",
+      "locationType": "lab-servicenow:1.0.0",
+      "app": "lab-servicenow:1.0.0",
+      "type": "automatic",
+      "displayName": "lab-servicenow:1.0.0",
+      "groups": [],
+      "nodeLocation": {
+        "x": 940,
+        "y": 3600
+      },
+      "variables": {
+        "incoming": {
+          "adapter_id": "servicenow-api",
+          "sysparm_query": "$var.2a.return_data",
+          "sysparm_fields": "sys_id,number",
+          "sysparm_limit": 1
+        },
+        "outgoing": {
+          "response": "$var.job.outage_open"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "2c": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "the open-incident answer",
+      "description": "the open-incident answer",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 850,
+        "y": 3750
+      },
+      "variables": {
+        "incoming": {
+          "obj": {},
+          "path": [
+            "open"
+          ],
+          "value": "$var.job.outage_open"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "2d": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "when the alert started",
+      "description": "when the alert started",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 770,
+        "y": 3900
+      },
+      "variables": {
+        "incoming": {
+          "obj": "$var.2c.object",
+          "path": [
+            "starts_at"
+          ],
+          "value": "$var.job.starts_at"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "2e": {
+      "name": "runCode",
+      "canvasName": "runCode",
+      "summary": "is one open? (Python on the runner)",
+      "description": "is one open? (Python on the runner)",
+      "location": "Application",
+      "locationType": null,
+      "app": "GatewayManager",
+      "type": "automatic",
+      "displayName": "GatewayManager",
+      "groups": [],
+      "nodeLocation": {
+        "x": 700,
+        "y": 4050
+      },
+      "variables": {
+        "incoming": {
+          "clusterId": "lab",
+          "language": "python",
+          "code": "import json, sys\n\n\ndef open_incident(d: dict) -> dict:\n    \"\"\"The open incident for this outage, from listIncidents' response (`open`), if there is one.\"\"\"\n    rows = (((d.get(\"open\") or {}).get(\"body\") or {}).get(\"result\")) or []\n    row = rows[0] if isinstance(rows, list) and rows and isinstance(rows[0], dict) else {}\n    found = bool(row.get(\"sys_id\"))\n    return {\"open\": found, \"sys_id\": row.get(\"sys_id\"), \"number\": row.get(\"number\"),\n            \"note\": {\"work_notes\": f\"Still down: the tunnel-down alert fired again ({d.get('starts_at')}). \"\n                                   \"Itential did not open another incident.\"}}\n\n\nprint(json.dumps(open_incident(json.loads(sys.stdin.read() or \"{}\"))))\n",
+          "data": "$var.2d.object",
+          "safety": {
+            "timeout": 30
+          },
+          "packages": []
+        },
+        "outgoing": {
+          "result": "$var.job.outage_dedupe"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "2f": {
+      "name": "evaluation",
+      "canvasName": "evaluation",
+      "summary": "already open?",
+      "description": "already open?",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 710,
+        "y": 4200
+      },
+      "variables": {
+        "incoming": {
+          "all_true_flag": true,
+          "evaluation_groups": [
+            {
+              "all_true_flag": true,
+              "evaluations": [
+                {
+                  "query": "stdout_json.open",
+                  "operand_1": {
+                    "variable": "result",
+                    "task": "2e"
+                  },
+                  "operator": "==",
+                  "operand_2": {
+                    "variable": true,
+                    "task": "static"
+                  }
+                }
+              ]
+            }
+          ],
+          "options": {}
+        },
+        "outgoing": {
+          "return_value": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "20": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "the open incident",
+      "description": "the open incident",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 960,
+        "y": 4350
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "stdout_json.sys_id",
+          "obj": "$var.2e.result"
+        },
+        "outgoing": {
+          "return_data": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "21": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "the still-down note",
+      "description": "the still-down note",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 1270,
+        "y": 4500
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "stdout_json.note",
+          "obj": "$var.2e.result"
+        },
+        "outgoing": {
+          "return_data": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "22": {
+      "name": "updateIncident",
+      "canvasName": "updateIncident",
+      "summary": "note the open incident: still down",
+      "description": "note the open incident: still down",
+      "location": "Adapter",
+      "locationType": "lab-servicenow:1.0.0",
+      "app": "lab-servicenow:1.0.0",
+      "type": "automatic",
+      "displayName": "lab-servicenow:1.0.0",
+      "groups": [],
+      "nodeLocation": {
+        "x": 1570,
+        "y": 4650
+      },
+      "variables": {
+        "incoming": {
+          "adapter_id": "servicenow-api",
+          "sys_id": "$var.20.return_data",
+          "sysparm_fields": "number",
+          "bodyContentType": "application/json",
+          "requestBodyPayload": "$var.21.return_data"
+        },
+        "outgoing": {
+          "response": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "23": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "still down: noted",
+      "description": "still down: noted",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 1900,
+        "y": 4800
+      },
+      "variables": {
+        "incoming": {
+          "input": "the outage already has an open incident: noted it, opened none",
+          "outputType": "string",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.outcome"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "3a": {
+      "name": "parse",
+      "canvasName": "parse",
+      "summary": "aws-vpn-monitor alarm's params",
+      "description": "aws-vpn-monitor alarm's params",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 660,
+        "y": 4350
+      },
+      "variables": {
+        "incoming": {
+          "text": "{\"action\": \"alarm\", \"timeout\": \"120\"}"
+        },
+        "outgoing": {
+          "textObject": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "3b": {
+      "name": "runService",
+      "canvasName": "runService",
+      "summary": "the AWS tunnel-down alarm (aws-vpn-monitor alarm, a CloudWatch read)",
+      "description": "the AWS tunnel-down alarm (aws-vpn-monitor alarm, a CloudWatch read)",
+      "location": "Application",
+      "locationType": null,
+      "app": "GatewayManager",
+      "type": "automatic",
+      "displayName": "GatewayManager",
+      "groups": [],
+      "nodeLocation": {
+        "x": 630,
+        "y": 4500
+      },
+      "variables": {
+        "incoming": {
+          "serviceName": "aws-vpn-monitor",
+          "clusterId": "lab",
+          "params": "$var.3a.textObject"
+        },
+        "outgoing": {
+          "result": "$var.job.alarm_result"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "3e": {
+      "name": "evaluation",
+      "canvasName": "evaluation",
+      "summary": "the alarm read?",
+      "description": "the alarm read?",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 370,
+        "y": 4650
+      },
+      "variables": {
+        "incoming": {
+          "all_true_flag": true,
+          "evaluation_groups": [
+            {
+              "all_true_flag": true,
+              "evaluations": [
+                {
+                  "query": "result.return_code",
+                  "operand_1": {
+                    "variable": "result",
+                    "task": "3b"
+                  },
+                  "operator": "==",
+                  "operand_2": {
+                    "variable": 0,
+                    "task": "static"
+                  }
+                }
+              ]
+            }
+          ],
+          "options": {}
+        },
+        "outgoing": {
+          "return_value": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "3f": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "the alarm could not be read",
+      "description": "the alarm could not be read",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 490,
+        "y": 4800
+      },
+      "variables": {
+        "incoming": {
+          "input": "the AWS tunnel-down alarm could not be read: the incident says so",
+          "outputType": "string",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.alarm_note"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "30": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "the tunnel is up again",
+      "description": "the tunnel is up again",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": -50,
+        "y": 7350
+      },
+      "variables": {
+        "incoming": {
+          "input": "the tunnel was up again when Itential checked: no incident opened, nothing was changed",
+          "outputType": "string",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.outcome"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "31": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "the incident: Verify's verdict",
+      "description": "the incident: Verify's verdict",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 250,
+        "y": 7350
+      },
+      "variables": {
+        "incoming": {
+          "obj": {},
+          "path": [
+            "judgement"
+          ],
+          "value": "$var.job.judgement"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "32": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "the incident: the alarm",
+      "description": "the incident: the alarm",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 20,
+        "y": 7500
+      },
+      "variables": {
+        "incoming": {
+          "obj": "$var.31.object",
+          "path": [
+            "alarm"
+          ],
+          "value": "$var.job.alarm_result"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "33": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "the incident: the device",
+      "description": "the incident: the device",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": -40,
+        "y": 7650
+      },
+      "variables": {
+        "incoming": {
+          "obj": "$var.32.object",
+          "path": [
+            "device"
+          ],
+          "value": "$var.job.device"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "34": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "the incident: when it started",
+      "description": "the incident: when it started",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 80,
+        "y": 7800
+      },
+      "variables": {
+        "incoming": {
+          "obj": "$var.33.object",
+          "path": [
+            "starts_at"
+          ],
+          "value": "$var.job.starts_at"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "35": {
+      "name": "runCode",
+      "canvasName": "runCode",
+      "summary": "the incident's text (Python on the runner)",
+      "description": "the incident's text (Python on the runner)",
+      "location": "Application",
+      "locationType": null,
+      "app": "GatewayManager",
+      "type": "automatic",
+      "displayName": "GatewayManager",
+      "groups": [],
+      "nodeLocation": {
+        "x": 540,
+        "y": 7950
+      },
+      "variables": {
+        "incoming": {
+          "clusterId": "lab",
+          "language": "python",
+          "code": "import json, sys\n\n\ndef outage_summary(d: dict) -> dict:\n    \"\"\"The incident from Verify's verdict (`judgement`, the judge's runCode result), the alarm (`alarm`, aws-vpn-monitor\n    alarm's envelope) and the alert (`device`, `starts_at`); its body for createIncident, and the agent's evidence.\"\"\"\n    judge = ((d.get(\"judgement\") or {}).get(\"stdout_json\")) or {}\n    alarm_out = (((d.get(\"alarm\") or {}).get(\"result\") or {}).get(\"stdout_json\")) or {}\n    alarm = alarm_out.get(\"state\") if alarm_out.get(\"found\") else \"not read\"\n    signals = judge.get(\"signals\") or {}\n    device = d.get(\"device\")\n    evidence = (f\"Verify says {judge.get('verdict', 'nothing (it did not run)')}; signals router \"\n                f\"{signals.get('router', '?')}, data plane {signals.get('data_plane', '?')}, AWS monitor \"\n                f\"{signals.get('aws_monitor', '?')}; the AWS tunnel-down alarm is {alarm}.\")\n    return {\n        \"evidence\": evidence,\n        \"incident\": {\n            \"short_description\": f\"AWS VPN down: {device} Tunnel10\",\n            \"description\": (f\"Prometheus alert LabAwsTunnelDown since {d.get('starts_at')}. {evidence} Opened by \"\n                            \"Itential's Diagnose AWS VPN Outage; the tunnel-diagnostics agent notes its diagnosis here \"\n                            \"and the fix runs only after a Work Center approval.\"),\n            \"correlation_id\": f\"aws-vpn-{device}\",\n            \"correlation_display\": \"Itential AWS VPN outage loop\",\n            \"urgency\": \"2\", \"impact\": \"2\", \"category\": \"network\",\n        },\n    }\n\n\nprint(json.dumps(outage_summary(json.loads(sys.stdin.read() or \"{}\"))))\n",
+          "data": "$var.34.object",
+          "safety": {
+            "timeout": 30
+          },
+          "packages": []
+        },
+        "outgoing": {
+          "result": "$var.job.outage_summary"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "36": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "the incident's body",
+      "description": "the incident's body",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 740,
+        "y": 8100
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "stdout_json.incident",
+          "obj": "$var.35.result"
+        },
+        "outgoing": {
+          "return_data": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "37": {
+      "name": "createIncident",
+      "canvasName": "createIncident",
+      "summary": "open one ServiceNow incident for the outage",
+      "description": "open one ServiceNow incident for the outage",
+      "location": "Adapter",
+      "locationType": "lab-servicenow:1.0.0",
+      "app": "lab-servicenow:1.0.0",
+      "type": "automatic",
+      "displayName": "lab-servicenow:1.0.0",
+      "groups": [],
+      "nodeLocation": {
+        "x": 1540,
+        "y": 8250
+      },
+      "variables": {
+        "incoming": {
+          "adapter_id": "servicenow-api",
+          "sysparm_fields": "sys_id,number",
+          "bodyContentType": "application/json",
+          "requestBodyPayload": "$var.36.return_data"
+        },
+        "outgoing": {
+          "response": "$var.job.incident_created"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "38": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "the new incident",
+      "description": "the new incident",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 1450,
+        "y": 8400
+      },
+      "variables": {
+        "incoming": {
+          "obj": {},
+          "path": [
+            "created"
+          ],
+          "value": "$var.job.incident_created"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "39": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "the evidence for the agent",
+      "description": "the evidence for the agent",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 1780,
+        "y": 8550
+      },
+      "variables": {
+        "incoming": {
+          "obj": "$var.38.object",
+          "path": [
+            "summary"
+          ],
+          "value": "$var.job.outage_summary"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "3c": {
+      "name": "runCode",
+      "canvasName": "runCode",
+      "summary": "the agent's request (Python on the runner)",
+      "description": "the agent's request (Python on the runner)",
+      "location": "Application",
+      "locationType": null,
+      "app": "GatewayManager",
+      "type": "automatic",
+      "displayName": "GatewayManager",
+      "groups": [],
+      "nodeLocation": {
+        "x": 1570,
+        "y": 8700
+      },
+      "variables": {
+        "incoming": {
+          "clusterId": "lab",
+          "language": "python",
+          "code": "import json, sys\n\n\ndef outage_request(d: dict) -> dict:\n    \"\"\"The agent's request: the new incident (createIncident's response, `created`) and the evidence (`summary`).\"\"\"\n    row = (((d.get(\"created\") or {}).get(\"body\") or {}).get(\"result\")) or {}\n    evidence = (((d.get(\"summary\") or {}).get(\"stdout_json\")) or {}).get(\"evidence\", \"\")\n    ok = bool(row.get(\"sys_id\") and row.get(\"number\"))\n    return {\"ok\": ok, \"sys_id\": row.get(\"sys_id\"), \"number\": row.get(\"number\"),\n            \"request\": f\"Incident {row.get('number')} (sys_id {row.get('sys_id')}). Evidence: {evidence}\"}\n\n\nprint(json.dumps(outage_request(json.loads(sys.stdin.read() or \"{}\"))))\n",
+          "data": "$var.39.object",
+          "safety": {
+            "timeout": 30
+          },
+          "packages": []
+        },
+        "outgoing": {
+          "result": "$var.job.outage_request"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "3d": {
+      "name": "evaluation",
+      "canvasName": "evaluation",
+      "summary": "the incident opened?",
+      "description": "the incident opened?",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 2360,
+        "y": 8850
+      },
+      "variables": {
+        "incoming": {
+          "all_true_flag": true,
+          "evaluation_groups": [
+            {
+              "all_true_flag": true,
+              "evaluations": [
+                {
+                  "query": "stdout_json.ok",
+                  "operand_1": {
+                    "variable": "result",
+                    "task": "3c"
+                  },
+                  "operator": "==",
+                  "operand_2": {
+                    "variable": true,
+                    "task": "static"
+                  }
+                }
+              ]
+            }
+          ],
+          "options": {}
+        },
+        "outgoing": {
+          "return_value": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "4a": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "the agent's request",
+      "description": "the agent's request",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 2730,
+        "y": 9000
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "stdout_json.request",
+          "obj": "$var.job.outage_request"
+        },
+        "outgoing": {
+          "return_data": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "4b": {
+      "name": "runAgent",
+      "canvasName": "runAgent",
+      "summary": "tunnel-diagnostics: read both ends, note the incident, pick one fix",
+      "description": "tunnel-diagnostics: read both ends, note the incident, pick one fix",
+      "location": "Application",
+      "locationType": null,
+      "app": "AgentSessionManager",
+      "type": "automatic",
+      "displayName": "Agent Sessions",
+      "groups": [],
+      "nodeLocation": {
+        "x": 2130,
+        "y": 9150
+      },
+      "variables": {
+        "incoming": {
+          "agent": "__AGENT_ID:tunnel-diagnostics__",
+          "inputs": {
+            "request": "$var.4a.return_data"
+          }
+        },
+        "outgoing": {
+          "result": "$var.job.agent_result"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "45": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "the agent did not run",
+      "description": "the agent did not run",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 1810,
+        "y": 9300
+      },
+      "variables": {
+        "incoming": {
+          "input": "the tunnel-diagnostics session did not run: the loop escalates",
+          "outputType": "string",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.agent_note"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "4c": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "the agent's answer",
+      "description": "the agent's answer",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 2400,
+        "y": 9450
+      },
+      "variables": {
+        "incoming": {
+          "obj": {},
+          "path": [
+            "agent"
+          ],
+          "value": "$var.job.agent_result"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "4d": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "the incident number",
+      "description": "the incident number",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 2400,
+        "y": 9600
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "stdout_json.number",
+          "obj": "$var.job.outage_request"
+        },
+        "outgoing": {
+          "return_data": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "4e": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "the incident number for the card",
+      "description": "the incident number for the card",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 2600,
+        "y": 9750
+      },
+      "variables": {
+        "incoming": {
+          "obj": "$var.4c.object",
+          "path": [
+            "number"
+          ],
+          "value": "$var.4d.return_data"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "4f": {
+      "name": "runCode",
+      "canvasName": "runCode",
+      "summary": "the fix, held to the menu (Python on the runner)",
+      "description": "the fix, held to the menu (Python on the runner)",
+      "location": "Application",
+      "locationType": null,
+      "app": "GatewayManager",
+      "type": "automatic",
+      "displayName": "GatewayManager",
+      "groups": [],
+      "nodeLocation": {
+        "x": 2540,
+        "y": 9900
+      },
+      "variables": {
+        "incoming": {
+          "clusterId": "lab",
+          "language": "python",
+          "code": "import json, sys\n\n\nOUTAGE_FIXES = ('repush-router-block', 'restart-strongswan', 'reset-ike', 'escalate')\n\n\ndef outage_fix(d: dict) -> dict:\n    \"\"\"The fix the agent picked (`agent`: runAgent's result {sessionId, sessionStatus, lastMessage}), held to the menu:\n    the last line of its answer must be JSON naming one of OUTAGE_FIXES, or the answer is escalate.\"\"\"\n    agent = d.get(\"agent\") or {}\n    text = str(agent.get(\"lastMessage\") or \"\")\n    lines = [line.strip() for line in text.strip().splitlines() if line.strip()]\n    answer: dict = {}\n    if agent.get(\"sessionStatus\") == \"COMPLETE\" and lines:\n        try:\n            parsed = json.loads(lines[-1])\n            answer = parsed if isinstance(parsed, dict) else {}\n        except ValueError:\n            answer = {}\n    fix = answer.get(\"fix\") if answer.get(\"fix\") in OUTAGE_FIXES else \"escalate\"\n    why = (str(answer.get(\"cause\") or \"unknown\")[:80] if answer else\n           (\"the agent did not finish\" if agent.get(\"sessionStatus\") != \"COMPLETE\" else \"the agent's answer was not the JSON line\"))\n    evidence = str(answer.get(\"evidence\") or \"\")[:400]\n    return {\"fix\": fix, \"cause\": why, \"evidence\": evidence, \"card\": fix != \"escalate\",\n            \"session\": str(agent.get(\"sessionId\") or \"\")[:64],\n            \"escalation\": {\"work_notes\": f\"Escalated to a person: no fix from the menu applies ({why}). {evidence}\".strip()}}\n\n\nprint(json.dumps(outage_fix(json.loads(sys.stdin.read() or \"{}\"))))\n",
+          "data": "$var.4e.object",
+          "safety": {
+            "timeout": 30
+          },
+          "packages": []
+        },
+        "outgoing": {
+          "result": "$var.job.outage_fix"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "40": {
+      "name": "evaluation",
+      "canvasName": "evaluation",
+      "summary": "a fix to approve?",
+      "description": "a fix to approve?",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 3000,
+        "y": 10050
+      },
+      "variables": {
+        "incoming": {
+          "all_true_flag": true,
+          "evaluation_groups": [
+            {
+              "all_true_flag": true,
+              "evaluations": [
+                {
+                  "query": "stdout_json.card",
+                  "operand_1": {
+                    "variable": "result",
+                    "task": "4f"
+                  },
+                  "operator": "==",
+                  "operand_2": {
+                    "variable": true,
+                    "task": "static"
+                  }
+                }
+              ]
+            }
+          ],
+          "options": {}
+        },
+        "outgoing": {
+          "return_value": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "41": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "the incident",
+      "description": "the incident",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 2850,
+        "y": 10200
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "stdout_json.sys_id",
+          "obj": "$var.job.outage_request"
+        },
+        "outgoing": {
+          "return_data": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "42": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "the escalation note",
+      "description": "the escalation note",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 3300,
+        "y": 10350
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "stdout_json.escalation",
+          "obj": "$var.4f.result"
+        },
+        "outgoing": {
+          "return_data": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "43": {
+      "name": "updateIncident",
+      "canvasName": "updateIncident",
+      "summary": "note the incident: escalated to a person",
+      "description": "note the incident: escalated to a person",
+      "location": "Adapter",
+      "locationType": "lab-servicenow:1.0.0",
+      "app": "lab-servicenow:1.0.0",
+      "type": "automatic",
+      "displayName": "lab-servicenow:1.0.0",
+      "groups": [],
+      "nodeLocation": {
+        "x": 3150,
+        "y": 10500
+      },
+      "variables": {
+        "incoming": {
+          "adapter_id": "servicenow-api",
+          "sys_id": "$var.41.return_data",
+          "sysparm_fields": "number",
+          "bodyContentType": "application/json",
+          "requestBodyPayload": "$var.42.return_data"
+        },
+        "outgoing": {
+          "response": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "44": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "escalated",
+      "description": "escalated",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 3000,
+        "y": 10650
+      },
+      "variables": {
+        "incoming": {
+          "input": "the agent found no fix from the menu: the incident is escalated to a person",
+          "outputType": "string",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.error"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "5a": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "the card: the fix",
+      "description": "the card: the fix",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 3450,
+        "y": 10200
+      },
+      "variables": {
+        "incoming": {
+          "obj": "$var.34.object",
+          "path": [
+            "fix"
+          ],
+          "value": "$var.job.outage_fix"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "5b": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "the card: the incident number",
+      "description": "the card: the incident number",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 4260,
+        "y": 10350
+      },
+      "variables": {
+        "incoming": {
+          "obj": "$var.5a.object",
+          "path": [
+            "number"
+          ],
+          "value": "$var.4d.return_data"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "5d": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "the card: the deployment",
+      "description": "the card: the deployment",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 4730,
+        "y": 10500
+      },
+      "variables": {
+        "incoming": {
+          "obj": "$var.5b.object",
+          "path": [
+            "plan"
+          ],
+          "value": "$var.job.outage_plan"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "5e": {
+      "name": "runCode",
+      "canvasName": "runCode",
+      "summary": "the card's page (Python on the runner)",
+      "description": "the card's page (Python on the runner)",
+      "location": "Application",
+      "locationType": null,
+      "app": "GatewayManager",
+      "type": "automatic",
+      "displayName": "GatewayManager",
+      "groups": [],
+      "nodeLocation": {
+        "x": 4980,
+        "y": 10650
+      },
+      "variables": {
+        "incoming": {
+          "clusterId": "lab",
+          "language": "python",
+          "code": "import json, sys\n\n\nimport base64\nimport html\nimport re\nfrom datetime import datetime, timezone\n\nOUTAGE_CARD_CSS = '\\nbody { margin: 0; padding: 4px; background: transparent; }\\n.oc { --paper: #EEF3F7; --ink: #0E2A4A; --ink-soft: #4A6380; --cobalt: #1F4FD1; --kelp: #1E8C6A; --buoy: #D8433A;\\n  --flare: #C7851A; --line: #D3DDE7;\\n  --display: \"Avenir Next Condensed\", \"Avenir Next\", \"Segoe UI Semibold\", \"Arial Narrow\", sans-serif;\\n  --mono: \"SF Mono\", \"Cascadia Mono\", Menlo, Consolas, monospace;\\n  font-family: \"Avenir Next\", \"Segoe UI\", system-ui, -apple-system, sans-serif; color: var(--ink);\\n  background: var(--paper); font-size: 15px; line-height: 1.5; max-width: 980px; margin: 0 auto;\\n  border-radius: 14px; overflow: hidden; box-shadow: 0 18px 40px -24px rgba(14, 42, 74, .45); }\\n.oc * { box-sizing: border-box; }\\n.oc p { margin: 0; }\\n.oc .band { background: var(--ink); color: #fff; padding: 22px 28px 24px; display: grid;\\n  grid-template-columns: 1fr auto; gap: 18px 24px; align-items: start; }\\n.oc .brand { display: flex; align-items: center; gap: 10px; font-size: 13px; color: #B9C8DB; grid-column: 1 / -1; }\\n.oc .brand img { width: 26px; height: 26px; flex: none; display: block; }\\n.oc .brand b { color: #fff; font-family: var(--display); font-weight: 700; font-size: 15px; }\\n.oc h1 { font-family: var(--display); font-weight: 700; font-size: 34px; line-height: 1.05; margin: 0 0 8px; }\\n.oc .lede { color: #C9D6E5; max-width: 58ch; }\\n.oc .lede strong { color: #fff; font-weight: 600; }\\n.oc .status { text-align: right; }\\n.oc .pill { display: inline-flex; align-items: center; gap: 8px; background: rgba(199, 133, 26, .16); color: #F2C46D;\\n  border: 1px solid rgba(242, 196, 109, .45); border-radius: 999px; padding: 5px 12px 5px 10px; font-size: 13px;\\n  font-weight: 600; white-space: nowrap; }\\n.oc .pill::before { content: \"\"; width: 8px; height: 8px; border-radius: 50%; background: #F2C46D;\\n  animation: oc-blink 1.8s ease-in-out infinite; }\\n@keyframes oc-blink { 0%, 100% { opacity: 1; } 50% { opacity: .3; } }\\n.oc .elapsed { margin-top: 12px; font-family: var(--display); font-size: 40px; font-weight: 700; line-height: 1; }\\n.oc .elapsed small { display: block; font-family: inherit; font-size: 12px; font-weight: 500; color: #9FB2C8;\\n  margin-top: 4px; }\\n.oc .body { padding: 22px 28px 28px; display: grid; gap: 18px; }\\n.oc .panel { background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 18px 20px; }\\n.oc h2 { font-family: var(--display); font-weight: 700; font-size: 19px; margin: 0 0 12px; }\\n.oc .topo { padding: 16px 20px 6px; }\\n.oc .topo img { display: block; width: 100%; height: auto; }\\n.oc .ledger { display: grid; grid-template-columns: repeat(4, 1fr); border-top: 1px solid var(--line); margin-top: 6px; }\\n.oc .reading { padding: 14px 16px 4px 14px; border-left: 3px solid var(--c); }\\n.oc .src, .oc .why { font-size: 13px; color: var(--ink-soft); }\\n.oc .val { font-family: var(--display); font-size: 21px; font-weight: 700; color: var(--c); line-height: 1.2;\\n  margin: 2px 0; }\\n.oc .steps { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(5, 1fr); }\\n.oc .steps li { position: relative; padding: 26px 8px 0 0; font-size: 13px; color: var(--ink-soft); }\\n.oc .steps li::before { content: \"\"; position: absolute; top: 6px; left: 0; width: 13px; height: 13px;\\n  border-radius: 50%; background: var(--kelp); box-shadow: 0 0 0 3px #fff, 0 0 0 4px var(--kelp); }\\n.oc .steps li::after { content: \"\"; position: absolute; top: 12px; left: 20px; right: 6px; height: 2px;\\n  background: var(--kelp); }\\n.oc .steps li:last-child::after { display: none; }\\n.oc .steps .who { display: block; font-family: var(--display); font-weight: 700; font-size: 15px; color: var(--ink); }\\n.oc .steps b { display: block; color: var(--ink); font-size: 14px; font-weight: 600; }\\n.oc .steps .now::before { background: var(--flare); box-shadow: 0 0 0 3px #fff, 0 0 0 5px var(--flare); }\\n.oc .steps .now::after, .oc .steps .next::after {\\n  background: repeating-linear-gradient(90deg, #B8C6D4 0 6px, transparent 6px 11px); }\\n.oc .steps .now b { color: #8A5A0C; }\\n.oc .steps .next::before { background: #fff; box-shadow: 0 0 0 2px #B8C6D4; }\\n.oc .diag { display: grid; grid-template-columns: 1fr 1.05fr; gap: 20px; align-items: start; }\\n.oc .cause { font-family: var(--display); font-size: 25px; font-weight: 700; line-height: 1.15; margin: 2px 0 10px; }\\n.oc .by { display: inline-flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--ink-soft);\\n  background: var(--paper); border-radius: 999px; padding: 4px 10px 4px 6px; margin-bottom: 12px; }\\n.oc .by i { width: 18px; height: 18px; border-radius: 50%; display: inline-block;\\n  box-shadow: inset 0 0 0 4px #fff, inset 0 0 0 9px var(--cobalt); background: var(--cobalt); }\\n.oc .term { background: var(--ink); color: #D6E2EF; border-radius: 10px; padding: 12px 16px 14px;\\n  font-family: var(--mono); font-size: 12.3px; line-height: 1.6; }\\n.oc .term .h { color: #7FA6D6; margin-top: 8px; }\\n.oc .term .h:first-child { margin-top: 0; }\\n.oc .term .row { display: flex; justify-content: space-between; gap: 12px; padding-left: 14px; }\\n.oc .term .ok { color: #7FD1AE; }\\n.oc .term .bad { color: #FF9A92; }\\n.oc .term .unk { color: #9FB2C8; }\\n.oc .action { background: var(--cobalt); color: #fff; border: 0; display: grid; grid-template-columns: 1fr auto;\\n  gap: 6px 24px; padding: 22px 24px; }\\n.oc .kicker { font-size: 13px; color: #C9D7FF; }\\n.oc .action h2 { font-size: 28px; margin: 2px 0 8px; color: #fff; }\\n.oc .what { color: #E4EBFF; max-width: 56ch; }\\n.oc .scope { align-self: start; text-align: right; font-size: 12.5px; color: #C9D7FF; }\\n.oc .scope b { display: block; font-family: var(--display); font-size: 20px; color: #fff; }\\n.oc .promises { grid-column: 1 / -1; list-style: none; margin: 14px 0 0; padding: 14px 0 0;\\n  border-top: 1px solid rgba(255, 255, 255, .22); display: grid; grid-template-columns: repeat(3, 1fr);\\n  gap: 10px 18px; font-size: 13.5px; color: #F1F4FF; }\\n.oc .promise { padding-left: 24px; position: relative; }\\n.oc .promise::before { content: \"\"; position: absolute; left: 2px; top: 4px; width: 7px; height: 11px;\\n  border: solid #fff; border-width: 0 2.5px 2.5px 0; transform: rotate(40deg); }\\n.oc .decide { display: grid; grid-template-columns: 1fr 1.3fr; gap: 20px; align-items: start; }\\n.oc .decide p { color: var(--ink-soft); font-size: 14px; }\\n.oc .decide p + p { margin-top: 8px; }\\n.oc label { display: block; font-weight: 600; font-size: 14px; margin-bottom: 6px; }\\n.oc textarea { width: 100%; min-height: 88px; font: inherit; font-size: 14px; padding: 10px 12px; color: var(--ink);\\n  border: 1px solid #B9C7D6; border-radius: 8px; background: #FBFCFE; resize: vertical; }\\n.oc textarea:focus-visible { outline: 3px solid rgba(31, 79, 209, .35); border-color: var(--cobalt); }\\n.oc .foot { padding: 0 28px 20px; font-size: 12px; color: var(--ink-soft); }\\n@media (max-width: 760px) {\\n  .oc .band, .oc .action, .oc .decide, .oc .diag { grid-template-columns: 1fr; }\\n  .oc .status, .oc .scope { text-align: left; }\\n  .oc .ledger { grid-template-columns: 1fr 1fr; }\\n  .oc .steps, .oc .promises { grid-template-columns: 1fr; }\\n  .oc .steps li::after { display: none; }\\n}\\n@media (prefers-reduced-motion: reduce) { .oc .pill::before { animation: none; } }\\n'\nOUTAGE_FIX_COPY = {'reset-ike': ('Reset the IKE session on {d}', \"Itential clears the router's IKE session to the AWS peer so both ends build a fresh one, then reads the tunnel again.\", ('1 router', 'no configuration change'), ('Runs one clear command, nothing typed by the agent', 'Changes no configuration on {d} and nothing in AWS', 'Proven afterwards: up resolves the incident, down keeps it open')), 'restart-strongswan': ('Restart strongSwan in AWS', 'Itential asks the VPN monitor to run its one fixed restart command on the strongSwan instance, then reads the tunnel again.', ('1 EC2 instance', 'about 30 seconds'), ('Runs a single pre-approved command, nothing typed by the agent', 'Touches nothing on {d} or anywhere else in AWS', 'Proven afterwards: up resolves the incident, down keeps it open')), 'repush-router-block': ('Re-push the AWS VPN block to {d}', \"Itential renders the router's AWS VPN block from the source of truth, as Hand Off does, and pushes it under a revert timer, then reads the tunnel again.\", ('1 router', 'configuration, with a revert timer'), ('Pushes only the block Hand Off renders, checked by its SHA-256', 'Rolls back by itself unless a fresh IKE session comes up', 'Proven afterwards: up resolves the incident, down keeps it open'))}\n\n\ndef outage_card_image(svg: str, alt: str, width: int, height: int) -> str:\n    \"\"\"An SVG drawing as an <img> (Work Center strips <svg>, P6): base64 in a data URI.\"\"\"\n    data = base64.b64encode(svg.encode()).decode()\n    return (f'<img alt=\"{html.escape(alt)}\" width=\"{width}\" height=\"{height}\" '\n            f'src=\"data:image/svg+xml;base64,{data}\">')\n\n\ndef outage_card_topology(device: str, vpc: str, tunnel: tuple, router: tuple, aws: tuple) -> str:\n    \"\"\"The path as an engineer draws it: the router in DC1, Tunnel10, strongSwan in AWS. Each of tunnel, router and\n    aws is (colour, label); a tunnel that is not up is drawn broken, with a pulsing fracture.\"\"\"\n    e = html.escape\n    (t_col, t_label), (r_col, r_label), (a_col, a_label) = tunnel, router, aws\n    broken = t_col != \"#1E8C6A\"\n    pipe = \"#F3C2BE\" if broken else \"#CBE8DD\"\n    fracture = ('<g class=\"f\"><path d=\"M346 98l12 14-10 6 14 22\" stroke=\"#D8433A\" stroke-width=\"8\" fill=\"none\" '\n                'filter=\"url(#g)\" opacity=\".6\"/><path d=\"M346 98l12 14-10 6 14 22\" stroke=\"#D8433A\" '\n                'stroke-width=\"3.2\" fill=\"none\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/></g>') if broken else \"\"\n    dash = ' stroke-dasharray=\"7 6\"' if broken else \"\"\n    pipes = \"M206 118H336M384 118H514\" if broken else \"M206 118H514\"\n    return (\n        '<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 720 230\" width=\"720\" height=\"230\">'\n        '<style>text{font-family:\"Avenir Next\",\"Segoe UI\",system-ui,sans-serif}'\n        '.f{transform-origin:360px 118px;animation:p 1.8s ease-in-out infinite}'\n        '@keyframes p{0%,100%{opacity:1}50%{opacity:.35}}'\n        '@media (prefers-reduced-motion:reduce){.f{animation:none}}</style>'\n        '<defs><pattern id=\"d\" width=\"16\" height=\"16\" patternUnits=\"userSpaceOnUse\"><path d=\"M16 0H0V16\" '\n        'fill=\"none\" stroke=\"#E1E9F0\"/></pattern><filter id=\"g\" x=\"-50%\" y=\"-50%\" width=\"200%\" height=\"200%\">'\n        '<feGaussianBlur stdDeviation=\"5\"/></filter></defs>'\n        '<rect x=\"10\" y=\"22\" width=\"240\" height=\"190\" rx=\"14\" fill=\"url(#d)\" stroke=\"#C9D5E2\"/>'\n        '<text x=\"28\" y=\"48\" font-size=\"13\" fill=\"#4A6380\">DC1 on-prem</text>'\n        '<rect x=\"470\" y=\"22\" width=\"240\" height=\"190\" rx=\"14\" fill=\"#FBF7EE\" stroke=\"#D9C9A3\" stroke-dasharray=\"6 5\"/>'\n        f'<text x=\"488\" y=\"48\" font-size=\"13\" fill=\"#8A6F3A\">AWS, lab VPC {e(vpc)}</text>'\n        f'<path d=\"{pipes}\" stroke=\"{pipe}\" stroke-width=\"14\" stroke-linecap=\"round\"/>'\n        f'<path d=\"{pipes}\" stroke=\"{t_col}\" stroke-width=\"3\"{dash} stroke-linecap=\"round\"/>'\n        f'{fracture}'\n        '<text x=\"360\" y=\"86\" font-size=\"14\" font-weight=\"700\" fill=\"#0E2A4A\" text-anchor=\"middle\">Tunnel10, IKEv2</text>'\n        f'<text x=\"360\" y=\"164\" font-size=\"13\" fill=\"{t_col}\" text-anchor=\"middle\">{e(t_label)}</text>'\n        f'<rect x=\"60\" y=\"80\" width=\"146\" height=\"76\" rx=\"12\" fill=\"#fff\" stroke=\"{r_col}\" stroke-width=\"2.5\"/>'\n        f'<circle cx=\"90\" cy=\"118\" r=\"15\" fill=\"#fff\" stroke=\"{r_col}\" stroke-width=\"2\"/>'\n        f'<path d=\"M82 114h16m-4-4 4 4-4 4M98 122H82m4-4-4 4 4 4\" stroke=\"{r_col}\" stroke-width=\"2\" fill=\"none\" '\n        'stroke-linecap=\"round\" stroke-linejoin=\"round\"/>'\n        f'<text x=\"114\" y=\"113\" font-size=\"15\" font-weight=\"700\" fill=\"#0E2A4A\">{e(device)}</text>'\n        f'<text x=\"114\" y=\"132\" font-size=\"12.5\" fill=\"{r_col}\">{e(r_label)}</text>'\n        '<text x=\"60\" y=\"182\" font-size=\"12.5\" fill=\"#4A6380\">the edge router</text>'\n        f'<rect x=\"514\" y=\"80\" width=\"160\" height=\"76\" rx=\"12\" fill=\"#fff\" stroke=\"{a_col}\" stroke-width=\"2.5\"/>'\n        f'<rect x=\"531\" y=\"103\" width=\"30\" height=\"30\" rx=\"7\" fill=\"#fff\" stroke=\"{a_col}\" stroke-width=\"2\"/>'\n        f'<path d=\"M546 109l9 4v6c0 5-4 8-9 10-5-2-9-5-9-10v-6z\" fill=\"none\" stroke=\"{a_col}\" stroke-width=\"1.8\" '\n        'stroke-linejoin=\"round\"/>'\n        '<text x=\"571\" y=\"113\" font-size=\"15\" font-weight=\"700\" fill=\"#0E2A4A\">strongSwan</text>'\n        f'<text x=\"571\" y=\"132\" font-size=\"12.5\" fill=\"{a_col}\">{e(a_label)}</text>'\n        '<text x=\"514\" y=\"182\" font-size=\"12.5\" fill=\"#8A6F3A\">on EC2, watched by the monitor</text>'\n        '</svg>'\n    )\n\n\ndef outage_card(d: dict) -> dict:\n    \"\"\"The Work Center card as one HTML page: the outage (`device`, `starts_at`, `number`), the readings (`judgement`,\n    Verify's runCode result; `alarm`, aws-vpn-monitor alarm's envelope), the fix (`fix`, outage_fix's runCode result),\n    the VPC (`plan`, outage_plan's) and the time it is drawn (`now`, ISO; the runner's clock when absent). Every value\n    from outside is escaped. Pure: runCode runs this source on the Gateway.\"\"\"\n    e = html.escape\n    kelp, buoy, flare, grey = \"#1E8C6A\", \"#D8433A\", \"#C7851A\", \"#7A8CA0\"\n    device = str(d.get(\"device\") or \"the router\")\n    number = str(d.get(\"number\") or \"the incident\")\n    fix_out = (d.get(\"fix\") or {}).get(\"stdout_json\") or {}\n    title, what, (scope, scope_note), promises = OUTAGE_FIX_COPY[fix_out.get(\"fix\")]\n    judge = (d.get(\"judgement\") or {}).get(\"stdout_json\") or {}\n    signals = judge.get(\"signals\") or {}\n    readings = judge.get(\"readings\") or {}\n    edge = readings.get(\"router\") or {}\n    mon = readings.get(\"aws_monitor\") or {}\n    alarm = (((d.get(\"alarm\") or {}).get(\"result\")) or {}).get(\"stdout_json\") or {}\n    deployed = ((((d.get(\"plan\") or {}).get(\"stdout_json\") or {}).get(\"edge_in\")) or {}).get(\"deployed\") or {}\n    prefixes = deployed.get(\"vpc_private_prefixes\") or []\n    vpc = str(prefixes[0]) if prefixes and re.fullmatch(r\"[0-9./]{7,18}\", str(prefixes[0])) else \"\"\n\n    def when(value):\n        try:\n            return datetime.fromisoformat(str(value).replace(\"Z\", \"+00:00\")).astimezone(timezone.utc)\n        except ValueError:\n            return None\n\n    start, now = when(d.get(\"starts_at\")), when(d.get(\"now\")) or datetime.now(timezone.utc)\n    minutes = int((now - start).total_seconds() // 60) if start and now >= start else None\n    elapsed = (\"\" if minutes is None else f\"{minutes} min\" if minutes < 60 else f\"{minutes // 60} h {minutes % 60:02d} min\")\n    since = f\"Tunnel10 down since {start:%H:%M} UTC\" if start else \"Tunnel10 down: start time not read\"\n\n    # the drawing\n    router_sig, data_sig, aws_sig = signals.get(\"router\"), signals.get(\"data_plane\"), signals.get(\"aws_monitor\")\n    ping = edge.get(\"ping_success_percent\")\n    if router_sig not in (\"up\", \"down\"):\n        tunnel = (flare, \"not read\")\n    elif not edge.get(\"ike_sa_ready\"):\n        tunnel = (buoy, \"no IKE session\")\n    elif not edge.get(\"packets_rising\"):\n        tunnel = (buoy, \"IKE up, no packets\")\n    elif data_sig != \"up\":\n        tunnel = (buoy, \"pings fail\")\n    else:\n        tunnel = (kelp, \"up\")\n    router = (kelp, \"answers\") if router_sig in (\"up\", \"down\") else (grey, \"not read\")\n    aws = {\"up\": (kelp, \"reports the tunnel\"), \"down\": (buoy, \"reports no tunnel\"),\n           \"disagreement\": (flare, \"readings disagree\")}.get(aws_sig, (flare, \"no reading\"))\n    drawing = outage_card_image(outage_card_topology(device, vpc, tunnel, router, aws),\n                                f\"{device} in DC1, Tunnel10 {tunnel[1]}, strongSwan in AWS {aws[1]}\", 720, 230)\n    mark = outage_card_image(\n        '<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 40 40\" width=\"40\" height=\"40\"><rect width=\"40\" '\n        'height=\"40\" rx=\"10\" fill=\"#1F4FD1\"/><path d=\"M8 26c4 3 8 3 12 0s8-3 12 0\" fill=\"none\" stroke=\"#fff\" '\n        'stroke-width=\"2.6\" stroke-linecap=\"round\"/><path d=\"M20 9v14M15 13.5h10M14 21c1.5 2.5 3.7 3.8 6 3.8s4.5-1.3 '\n        '6-3.8\" fill=\"none\" stroke=\"#fff\" stroke-width=\"2.4\" stroke-linecap=\"round\"/><circle cx=\"20\" cy=\"8.5\" '\n        'r=\"2.2\" fill=\"#fff\"/></svg>', \"\", 26, 26)\n\n    # one reading per source, coloured by what it says\n    alarm_val = {\"ALARM\": (\"In alarm\", buoy), \"OK\": (\"OK\", kelp), \"INSUFFICIENT_DATA\": (\"No data\", flare)}.get(\n        alarm.get(\"state\"), (\"Not read\", grey))\n    alarm_since = when(alarm.get(\"since\"))\n    ledger = (\n        (\"Router's view\", *{\"up\": (\"Up\", kelp), \"down\": (\"Down\", buoy)}.get(router_sig, (\"Not read\", grey)),\n         \"IKE session to AWS ready\" if edge.get(\"ike_sa_ready\") else \"no IKE session to AWS\"),\n        (\"Traffic\", f\"{ping}%\" if isinstance(ping, int) else \"Not read\", kelp if data_sig == \"up\" else buoy,\n         \"pings through the tunnel\"),\n        (\"AWS monitor\", *{\"up\": (\"Up\", kelp), \"down\": (\"Down\", buoy), \"disagreement\": (\"Disagrees\", flare)}.get(\n            aws_sig, (\"No reading\", flare)), \"what strongSwan reports\"),\n        (\"CloudWatch\", *alarm_val, f\"since {alarm_since:%H:%M} UTC\" if alarm_since else \"the tunnel-down alarm\"),\n    )\n    ledger_html = \"\".join(\n        f'<div class=\"reading\" style=\"--c:{c}\"><p class=\"src\">{e(src)}</p><p class=\"val\">{e(val)}</p>'\n        f'<p class=\"why\">{e(why)}</p></div>' for src, val, c, why in ledger)\n\n    def value(v, bad_when_positive=False):\n        if v is None:\n            return '<span class=\"unk\">not read</span>'\n        if isinstance(v, bool):\n            return f'<span class=\"{\"ok\" if v else \"bad\"}\">{\"yes\" if v else \"no\"}</span>'\n        if bad_when_positive:\n            return f'<span class=\"{\"bad\" if v else \"ok\"}\">{e(str(v))}</span>'\n        return f'<span class=\"ok\">{e(str(v))}</span>'\n\n    rows = (\n        (\"h\", f\"{device}, read by lab-edge verify\"),\n        (\"IKE session to AWS ready\", value(edge.get(\"ike_sa_ready\"))),\n        (\"identities match\", value(edge.get(\"identities_match\"))),\n        (\"PFS configured\", value(edge.get(\"pfs_configured\"))),\n        (\"packets rising both ways\", value(edge.get(\"packets_rising\"))),\n        (\"pings through the tunnel\", value(None) if not isinstance(ping, int) else\n         f'<span class=\"{\"ok\" if ping > 50 else \"bad\"}\">{ping}%</span>'),\n        (\"drops from AWS to the router\", value(edge.get(\"dropped_aws_to_self\"), True)),\n        (\"h\", \"strongSwan, read by the AWS VPN monitor\"),\n        (\"monitor answered\", value(mon.get(\"lambda_answered\"))),\n        (\"its check succeeded\", value(mon.get(\"check_succeeded\"))),\n        (\"strongSwan says established\", value(mon.get(\"lambda_says_established\"))),\n        (\"h\", \"CloudWatch\"),\n        (\"tunnel-down alarm\", f'<span class=\"{\"bad\" if alarm.get(\"state\") == \"ALARM\" else \"ok\" if alarm.get(\"state\") == \"OK\" else \"unk\"}\">'\n                              f'{e(str(alarm.get(\"state\") or \"not read\"))}</span>'),\n    )\n    term = \"\".join(f'<p class=\"h\">{e(b)}</p>' if a == \"h\" else f'<p class=\"row\"><span>{e(a)}</span>{b}</p>'\n                   for a, b in rows)\n\n    session = str(fix_out.get(\"session\") or \"\")[:8]\n    agent_by = \"tunnel-diagnostics agent\" + (f\", session {session}\" if session else \"\")\n    evidence = str(fix_out.get(\"evidence\") or \"\")\n    promises_html = \"\".join(f'<li class=\"promise\">{e(p.format(d=device))}</li>' for p in promises)\n    page = f\"\"\"<!doctype html>\n<html lang=\"en\"><head><meta charset=\"utf-8\"><title>AWS VPN outage: {e(number)}</title>\n<style>{OUTAGE_CARD_CSS}</style></head>\n<body><div class=\"oc\">\n<header class=\"band\">\n<div class=\"brand\">{mark}<span><b>Elliot's Itential Lab</b>&nbsp; outage response</span></div>\n<div><h1>The AWS VPN is down on {e(device)}</h1>\n<p class=\"lede\">Itential opened <strong>{e(number)}</strong> and the tunnel-diagnostics agent found the likely cause.\nOne fix is ready, and nothing runs until you approve it.</p></div>\n<div class=\"status\"><span class=\"pill\">Waiting for your approval</span>\n<p class=\"elapsed\">{e(elapsed)}<small>{e(since)}</small></p></div>\n</header>\n<div class=\"body\">\n<section class=\"panel topo\" aria-labelledby=\"t-where\"><h2 id=\"t-where\">Where the tunnel breaks</h2>{drawing}\n<div class=\"ledger\">{ledger_html}</div></section>\n<section class=\"panel\" aria-labelledby=\"t-when\"><h2 id=\"t-when\">What has happened so far</h2>\n<ol class=\"steps\">\n<li><span class=\"who\">Prometheus</span><b>Alert fired</b>{e(since[len(\"Tunnel10 down \"):] if start else \"Tunnel10 down\")}</li>\n<li><span class=\"who\">ServiceNow</span><b>Incident opened</b>{e(number)}, with the evidence</li>\n<li><span class=\"who\">The agent</span><b>Cause found</b>one fix picked from a fixed menu</li>\n<li class=\"now\"><span class=\"who\">You</span><b>Approve or reject</b>nothing has run yet</li>\n<li class=\"next\"><span class=\"who\">Itential</span><b>Fix and prove</b>reads the tunnel, then resolves</li>\n</ol></section>\n<section class=\"panel diag\" aria-labelledby=\"t-found\"><div>\n<h2 id=\"t-found\">What the agent found</h2><span class=\"by\"><i></i>{e(agent_by)}</span>\n<p class=\"cause\">{e(str(fix_out.get(\"cause\") or \"no cause given\"))}</p>\n<p>{e(evidence) if evidence else \"The agent's full diagnosis is in the incident's work notes.\"}</p></div>\n<div class=\"term\" role=\"group\" aria-label=\"What Verify read when the incident opened\">{term}</div></section>\n<section class=\"panel action\" aria-labelledby=\"t-fix\"><div><p class=\"kicker\">The proposed fix</p>\n<h2 id=\"t-fix\">{e(title.format(d=device))}</h2><p class=\"what\">{e(what)}</p></div>\n<p class=\"scope\">Scope<b>{e(scope)}</b>{e(scope_note)}</p>\n<ul class=\"promises\">{promises_html}</ul></section>\n<section class=\"panel decide\" aria-labelledby=\"t-decide\"><div><h2 id=\"t-decide\">Your decision</h2>\n<p>Approve runs only this fix. Reject runs nothing and leaves {e(number)} open for a person.</p>\n<p>Either way, your note goes into the incident's work notes.</p></div>\n<form name=\"decision\"><label for=\"oc-note\">Note for the incident</label>\n<textarea id=\"oc-note\" name=\"note\" placeholder=\"Why you approve or reject, or what you checked first\"></textarea>\n</form></section>\n</div>\n<p class=\"foot\">Prepared by Itential's Diagnose AWS VPN Outage workflow at {now:%H:%M} UTC, from live reads of\n{e(device)}, the AWS VPN monitor and CloudWatch.</p>\n</div></body></html>\"\"\"\n    return {\"html\": page}\n\n\nprint(json.dumps(outage_card(json.loads(sys.stdin.read() or \"{}\"))))\n",
+          "data": "$var.5d.object",
+          "safety": {
+            "timeout": 30
+          },
+          "packages": []
+        },
+        "outgoing": {
+          "result": "$var.job.outage_card"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "5f": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "the card's HTML",
+      "description": "the card's HTML",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 3390,
+        "y": 10800
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "stdout_json.html",
+          "obj": "$var.5e.result"
+        },
+        "outgoing": {
+          "return_data": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "5c": {
+      "name": "InteractiveHTML",
+      "canvasName": "InteractiveHTML",
+      "summary": "approval: the outage card",
+      "description": "approval: the outage card",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkCenter",
+      "type": "manual",
+      "displayName": "Work Center",
+      "groups": [],
+      "nodeLocation": {
+        "x": 3600,
+        "y": 10950
+      },
+      "variables": {
+        "incoming": {
+          "header": "Approve the fix for the AWS VPN outage",
+          "body": "$var.5f.return_data",
+          "variables": {},
+          "btn_success": "Approve and run the fix",
+          "btn_failure": "Reject"
+        },
+        "outgoing": {
+          "export": "$var.job.card_decision"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "view": "/work-center/task/InteractiveHTML"
+    },
+    "50": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "the incident (rejected)",
+      "description": "the incident (rejected)",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 3450,
+        "y": 11100
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "stdout_json.sys_id",
+          "obj": "$var.job.outage_request"
+        },
+        "outgoing": {
+          "return_data": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "58": {
+      "name": "runCode",
+      "canvasName": "runCode",
+      "summary": "the rejection note, with the engineer's (Python on the runner)",
+      "description": "the rejection note, with the engineer's (Python on the runner)",
+      "location": "Application",
+      "locationType": null,
+      "app": "GatewayManager",
+      "type": "automatic",
+      "displayName": "GatewayManager",
+      "groups": [],
+      "nodeLocation": {
+        "x": 4290,
+        "y": 11250
+      },
+      "variables": {
+        "incoming": {
+          "clusterId": "lab",
+          "language": "python",
+          "code": "import json, sys\n\n\ndef decision_note(decision) -> str:\n    \"\"\"The engineer's note from the card's export ({\"decision\": {\"note\": <the textarea>}}, P6), trimmed; \"\" if none.\"\"\"\n    note = ((decision or {}).get(\"decision\") or {}).get(\"note\") if isinstance(decision, dict) else None\n    return \" \".join(str(note or \"\").split())[:1000]\n\n\ndef outage_rejected(d: dict) -> dict:\n    \"\"\"The incident's work note when the card is rejected (`d` is the card's export).\"\"\"\n    note = decision_note(d)\n    return {\"work_notes\": \"The proposed fix was rejected in Work Center: nothing was run. The incident stays open for \"\n                          f\"a person. The engineer's note: {note or 'no note'}.\"}\n\n\nprint(json.dumps(outage_rejected(json.loads(sys.stdin.read() or \"{}\"))))\n",
+          "data": "$var.job.card_decision",
+          "safety": {
+            "timeout": 30
+          },
+          "packages": []
+        },
+        "outgoing": {
+          "result": "$var.job.outage_rejected"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "59": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "the rejection note",
+      "description": "the rejection note",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 7340,
+        "y": 11400
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "stdout_json",
+          "obj": "$var.58.result"
+        },
+        "outgoing": {
+          "return_data": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "51": {
+      "name": "updateIncident",
+      "canvasName": "updateIncident",
+      "summary": "note the incident: the fix was rejected",
+      "description": "note the incident: the fix was rejected",
+      "location": "Adapter",
+      "locationType": "lab-servicenow:1.0.0",
+      "app": "lab-servicenow:1.0.0",
+      "type": "automatic",
+      "displayName": "lab-servicenow:1.0.0",
+      "groups": [],
+      "nodeLocation": {
+        "x": 7880,
+        "y": 11550
+      },
+      "variables": {
+        "incoming": {
+          "adapter_id": "servicenow-api",
+          "sys_id": "$var.50.return_data",
+          "sysparm_fields": "number",
+          "bodyContentType": "application/json",
+          "requestBodyPayload": "$var.59.return_data"
+        },
+        "outgoing": {
+          "response": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "52": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "rejected",
+      "description": "rejected",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 7980,
+        "y": 11700
+      },
+      "variables": {
+        "incoming": {
+          "input": "the fix was rejected in Work Center: nothing was run, the incident stays open",
+          "outputType": "string",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.outcome"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "60": {
+      "name": "evaluation",
+      "canvasName": "evaluation",
+      "summary": "fix: reset the IKE SA?",
+      "description": "fix: reset the IKE SA?",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 5830,
+        "y": 11100
+      },
+      "variables": {
+        "incoming": {
+          "all_true_flag": true,
+          "evaluation_groups": [
+            {
+              "all_true_flag": true,
+              "evaluations": [
+                {
+                  "query": "stdout_json.fix",
+                  "operand_1": {
+                    "variable": "outage_fix",
+                    "task": "job"
+                  },
+                  "operator": "==",
+                  "operand_2": {
+                    "variable": "reset-ike",
+                    "task": "static"
+                  }
+                }
+              ]
+            }
+          ],
+          "options": {}
+        },
+        "outgoing": {
+          "return_value": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "61": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "lab-edge-push's params",
+      "description": "lab-edge-push's params",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 3600,
+        "y": 11250
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "stdout_json.push",
+          "obj": "$var.job.outage_edge"
+        },
+        "outgoing": {
+          "return_data": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "62": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "reset-sa, not push",
+      "description": "reset-sa, not push",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 3730,
+        "y": 11400
+      },
+      "variables": {
+        "incoming": {
+          "obj": "$var.61.return_data",
+          "path": [
+            "action"
+          ],
+          "value": "reset-sa"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "63": {
+      "name": "runService",
+      "canvasName": "runService",
+      "summary": "reset the IKE SA (lab-edge-push reset-sa: clear, a fresh SA, no config)",
+      "description": "reset the IKE SA (lab-edge-push reset-sa: clear, a fresh SA, no config)",
+      "location": "Application",
+      "locationType": null,
+      "app": "GatewayManager",
+      "type": "automatic",
+      "displayName": "GatewayManager",
+      "groups": [],
+      "nodeLocation": {
+        "x": 3890,
+        "y": 11550
+      },
+      "variables": {
+        "incoming": {
+          "serviceName": "lab-edge-push",
+          "clusterId": "lab",
+          "params": "$var.62.object"
+        },
+        "outgoing": {
+          "result": "$var.job.fix_result"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "64": {
+      "name": "evaluation",
+      "canvasName": "evaluation",
+      "summary": "fix: restart strongSwan?",
+      "description": "fix: restart strongSwan?",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 6380,
+        "y": 11250
+      },
+      "variables": {
+        "incoming": {
+          "all_true_flag": true,
+          "evaluation_groups": [
+            {
+              "all_true_flag": true,
+              "evaluations": [
+                {
+                  "query": "stdout_json.fix",
+                  "operand_1": {
+                    "variable": "outage_fix",
+                    "task": "job"
+                  },
+                  "operator": "==",
+                  "operand_2": {
+                    "variable": "restart-strongswan",
+                    "task": "static"
+                  }
+                }
+              ]
+            }
+          ],
+          "options": {}
+        },
+        "outgoing": {
+          "return_value": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "65": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "aws-vpn-monitor restart's params",
+      "description": "aws-vpn-monitor restart's params",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 4440,
+        "y": 11400
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "stdout_json.restart",
+          "obj": "$var.job.outage_plan"
+        },
+        "outgoing": {
+          "return_data": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "66": {
+      "name": "runService",
+      "canvasName": "runService",
+      "summary": "restart strongSwan (aws-vpn-monitor restart: the Lambda's fixed document)",
+      "description": "restart strongSwan (aws-vpn-monitor restart: the Lambda's fixed document)",
+      "location": "Application",
+      "locationType": null,
+      "app": "GatewayManager",
+      "type": "automatic",
+      "displayName": "GatewayManager",
+      "groups": [],
+      "nodeLocation": {
+        "x": 4820,
+        "y": 11550
+      },
+      "variables": {
+        "incoming": {
+          "serviceName": "aws-vpn-monitor",
+          "clusterId": "lab",
+          "params": "$var.65.return_data"
+        },
+        "outgoing": {
+          "result": "$var.job.fix_result"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "67": {
+      "name": "evaluation",
+      "canvasName": "evaluation",
+      "summary": "fix: re-push the router block?",
+      "description": "fix: re-push the router block?",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 5380,
+        "y": 11400
+      },
+      "variables": {
+        "incoming": {
+          "all_true_flag": true,
+          "evaluation_groups": [
+            {
+              "all_true_flag": true,
+              "evaluations": [
+                {
+                  "query": "stdout_json.fix",
+                  "operand_1": {
+                    "variable": "outage_fix",
+                    "task": "job"
+                  },
+                  "operator": "==",
+                  "operand_2": {
+                    "variable": "repush-router-block",
+                    "task": "static"
+                  }
+                }
+              ]
+            }
+          ],
+          "options": {}
+        },
+        "outgoing": {
+          "return_value": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "68": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "lab-edge render's params",
+      "description": "lab-edge render's params",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 5980,
+        "y": 11550
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "stdout_json.render",
+          "obj": "$var.job.outage_edge"
+        },
+        "outgoing": {
+          "return_data": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "69": {
+      "name": "runService",
+      "canvasName": "runService",
+      "summary": "render the block (lab-edge render: no device)",
+      "description": "render the block (lab-edge render: no device)",
+      "location": "Application",
+      "locationType": null,
+      "app": "GatewayManager",
+      "type": "automatic",
+      "displayName": "GatewayManager",
+      "groups": [],
+      "nodeLocation": {
+        "x": 6160,
+        "y": 11700
+      },
+      "variables": {
+        "incoming": {
+          "serviceName": "lab-edge",
+          "clusterId": "lab",
+          "params": "$var.68.return_data"
+        },
+        "outgoing": {
+          "result": "$var.job.render_result"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "6a": {
+      "name": "evaluation",
+      "canvasName": "evaluation",
+      "summary": "rendered?",
+      "description": "rendered?",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 6870,
+        "y": 11850
+      },
+      "variables": {
+        "incoming": {
+          "all_true_flag": true,
+          "evaluation_groups": [
+            {
+              "all_true_flag": true,
+              "evaluations": [
+                {
+                  "query": "result.return_code",
+                  "operand_1": {
+                    "variable": "result",
+                    "task": "69"
+                  },
+                  "operator": "==",
+                  "operand_2": {
+                    "variable": 0,
+                    "task": "static"
+                  }
+                }
+              ]
+            }
+          ],
+          "options": {}
+        },
+        "outgoing": {
+          "return_value": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "6b": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "the block's SHA-256",
+      "description": "the block's SHA-256",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 7040,
+        "y": 12000
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "result.stdout_json.sha256",
+          "obj": "$var.69.result"
+        },
+        "outgoing": {
+          "return_data": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "6c": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "lab-edge-push's params",
+      "description": "lab-edge-push's params",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 7000,
+        "y": 12150
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "stdout_json.push",
+          "obj": "$var.job.outage_edge"
+        },
+        "outgoing": {
+          "return_data": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "6d": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "push params: the SHA-256",
+      "description": "push params: the SHA-256",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 6430,
+        "y": 12300
+      },
+      "variables": {
+        "incoming": {
+          "obj": "$var.6c.return_data",
+          "path": [
+            "sha256"
+          ],
+          "value": "$var.6b.return_data"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "6e": {
+      "name": "runService",
+      "canvasName": "runService",
+      "summary": "re-push the block (lab-edge-push: revert timer, a fresh SA, save)",
+      "description": "re-push the block (lab-edge-push: revert timer, a fresh SA, save)",
+      "location": "Application",
+      "locationType": null,
+      "app": "GatewayManager",
+      "type": "automatic",
+      "displayName": "GatewayManager",
+      "groups": [],
+      "nodeLocation": {
+        "x": 5700,
+        "y": 12450
+      },
+      "variables": {
+        "incoming": {
+          "serviceName": "lab-edge-push",
+          "clusterId": "lab",
+          "params": "$var.6d.object"
+        },
+        "outgoing": {
+          "result": "$var.job.fix_result"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "53": {
+      "name": "evaluation",
+      "canvasName": "evaluation",
+      "summary": "reset-sa exited 0?",
+      "description": "reset-sa exited 0?",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 3690,
+        "y": 11700
+      },
+      "variables": {
+        "incoming": {
+          "all_true_flag": true,
+          "evaluation_groups": [
+            {
+              "all_true_flag": true,
+              "evaluations": [
+                {
+                  "query": "result.return_code",
+                  "operand_1": {
+                    "variable": "result",
+                    "task": "63"
+                  },
+                  "operator": "==",
+                  "operand_2": {
+                    "variable": 0,
+                    "task": "static"
+                  }
+                }
+              ]
+            }
+          ],
+          "options": {}
+        },
+        "outgoing": {
+          "return_value": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "55": {
+      "name": "evaluation",
+      "canvasName": "evaluation",
+      "summary": "restart exited 0?",
+      "description": "restart exited 0?",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 4520,
+        "y": 11700
+      },
+      "variables": {
+        "incoming": {
+          "all_true_flag": true,
+          "evaluation_groups": [
+            {
+              "all_true_flag": true,
+              "evaluations": [
+                {
+                  "query": "result.return_code",
+                  "operand_1": {
+                    "variable": "result",
+                    "task": "66"
+                  },
+                  "operator": "==",
+                  "operand_2": {
+                    "variable": 0,
+                    "task": "static"
+                  }
+                }
+              ]
+            }
+          ],
+          "options": {}
+        },
+        "outgoing": {
+          "return_value": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "57": {
+      "name": "evaluation",
+      "canvasName": "evaluation",
+      "summary": "the push exited 0?",
+      "description": "the push exited 0?",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 5400,
+        "y": 12600
+      },
+      "variables": {
+        "incoming": {
+          "all_true_flag": true,
+          "evaluation_groups": [
+            {
+              "all_true_flag": true,
+              "evaluations": [
+                {
+                  "query": "result.return_code",
+                  "operand_1": {
+                    "variable": "result",
+                    "task": "6e"
+                  },
+                  "operator": "==",
+                  "operand_2": {
+                    "variable": 0,
+                    "task": "static"
+                  }
+                }
+              ]
+            }
+          ],
+          "options": {}
+        },
+        "outgoing": {
+          "return_value": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "54": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "the fix did not complete",
+      "description": "the fix did not complete",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 4190,
+        "y": 12750
+      },
+      "variables": {
+        "incoming": {
+          "input": "the approved fix exited non-zero or could not run (fix_result): the tunnel is read again",
+          "outputType": "string",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.fix_note"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "70": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "lab-edge verify's params",
+      "description": "lab-edge verify's params",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 3930,
+        "y": 12900
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "stdout_json.lab_edge",
+          "obj": "$var.job.outage_edge"
+        },
+        "outgoing": {
+          "return_data": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "71": {
+      "name": "runService",
+      "canvasName": "runService",
+      "summary": "the tunnel now (lab-edge verify: show commands, one ping)",
+      "description": "the tunnel now (lab-edge verify: show commands, one ping)",
+      "location": "Application",
+      "locationType": null,
+      "app": "GatewayManager",
+      "type": "automatic",
+      "displayName": "GatewayManager",
+      "groups": [],
+      "nodeLocation": {
+        "x": 4240,
+        "y": 13050
+      },
+      "variables": {
+        "incoming": {
+          "serviceName": "lab-edge",
+          "clusterId": "lab",
+          "params": "$var.70.return_data"
+        },
+        "outgoing": {
+          "result": "$var.job.check_result"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "7f": {
+      "name": "evaluation",
+      "canvasName": "evaluation",
+      "summary": "the tunnel read?",
+      "description": "the tunnel read?",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 4650,
+        "y": 13200
+      },
+      "variables": {
+        "incoming": {
+          "all_true_flag": true,
+          "evaluation_groups": [
+            {
+              "all_true_flag": true,
+              "evaluations": [
+                {
+                  "query": "result.return_code",
+                  "operand_1": {
+                    "variable": "result",
+                    "task": "71"
+                  },
+                  "operator": "==",
+                  "operand_2": {
+                    "variable": 0,
+                    "task": "static"
+                  }
+                }
+              ]
+            }
+          ],
+          "options": {}
+        },
+        "outgoing": {
+          "return_value": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "80": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "the tunnel could not be read",
+      "description": "the tunnel could not be read",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 4380,
+        "y": 13350
+      },
+      "variables": {
+        "incoming": {
+          "input": "lab-edge could not read the tunnel after the fix (check_result)",
+          "outputType": "string",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.check_note"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "72": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "the fix that ran",
+      "description": "the fix that ran",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 4380,
+        "y": 13500
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "stdout_json.fix",
+          "obj": "$var.job.outage_fix"
+        },
+        "outgoing": {
+          "return_data": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "73": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "the result: which fix",
+      "description": "the result: which fix",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 4820,
+        "y": 13650
+      },
+      "variables": {
+        "incoming": {
+          "obj": {},
+          "path": [
+            "fix"
+          ],
+          "value": "$var.72.return_data"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "74": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "the result: its answer",
+      "description": "the result: its answer",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 4810,
+        "y": 13800
+      },
+      "variables": {
+        "incoming": {
+          "obj": "$var.73.object",
+          "path": [
+            "answer"
+          ],
+          "value": "$var.job.fix_result"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "75": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "the result: the tunnel now",
+      "description": "the result: the tunnel now",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 4630,
+        "y": 13950
+      },
+      "variables": {
+        "incoming": {
+          "obj": "$var.74.object",
+          "path": [
+            "check"
+          ],
+          "value": "$var.job.check_result"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "81": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "the result: the engineer's note",
+      "description": "the result: the engineer's note",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 4560,
+        "y": 14100
+      },
+      "variables": {
+        "incoming": {
+          "obj": "$var.75.object",
+          "path": [
+            "decision"
+          ],
+          "value": "$var.job.card_decision"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "76": {
+      "name": "runCode",
+      "canvasName": "runCode",
+      "summary": "fixed? (Python on the runner)",
+      "description": "fixed? (Python on the runner)",
+      "location": "Application",
+      "locationType": null,
+      "app": "GatewayManager",
+      "type": "automatic",
+      "displayName": "GatewayManager",
+      "groups": [],
+      "nodeLocation": {
+        "x": 4600,
+        "y": 14250
+      },
+      "variables": {
+        "incoming": {
+          "clusterId": "lab",
+          "language": "python",
+          "code": "import json, sys\n\n\ndef decision_note(decision) -> str:\n    \"\"\"The engineer's note from the card's export ({\"decision\": {\"note\": <the textarea>}}, P6), trimmed; \"\" if none.\"\"\"\n    note = ((decision or {}).get(\"decision\") or {}).get(\"note\") if isinstance(decision, dict) else None\n    return \" \".join(str(note or \"\").split())[:1000]\n\n\ndef outage_result(d: dict) -> dict:\n    \"\"\"After the approved fix (`fix` name, its service's envelope under `answer`) and the tunnel read again (`check`,\n    lab-edge verify's envelope): fixed only when router and data plane both say up. Resolves or notes the incident.\"\"\"\n    fix = d.get(\"fix\")\n    answer = (((d.get(\"answer\") or {}).get(\"result\")) or {}).get(\"stdout_json\") or {}\n    check = (((d.get(\"check\") or {}).get(\"result\")) or {}).get(\"stdout_json\") or {}\n    up = check.get(\"router\") == \"up\" and check.get(\"data_plane\") == \"up\"\n    ran = {\"reset-ike\": answer.get(\"cleared\") is True, \"restart-strongswan\": answer.get(\"restarted\") is True,\n           \"repush-router-block\": answer.get(\"saved\") is True}.get(fix, False)\n    note = decision_note(d.get(\"decision\"))\n    said = (f\"Approved in Work Center ({'note: ' + note if note else 'no note'}). Itential ran the approved fix {fix} \"\n            f\"({'it ran' if ran else 'it did not complete: ' + str(answer.get('error') or 'no answer')})\")\n    if up:\n        message = f\"{said}; the tunnel is up again (router and data plane).\"\n        return {\"fixed\": True, \"message\": message,\n                \"resolve\": {\"state\": \"6\", \"close_code\": \"Solution provided\", \"close_notes\": message,\n                            \"work_notes\": message}}\n    message = (f\"{said}; the tunnel is still not up (router {check.get('router', 'not read')}, data plane \"\n               f\"{check.get('data_plane', 'not read')}). The incident stays open for a person.\")\n    return {\"fixed\": False, \"message\": message, \"note\": {\"work_notes\": message}}\n\n\nprint(json.dumps(outage_result(json.loads(sys.stdin.read() or \"{}\"))))\n",
+          "data": "$var.81.object",
+          "safety": {
+            "timeout": 30
+          },
+          "packages": []
+        },
+        "outgoing": {
+          "result": "$var.job.outage_result"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "77": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "the incident",
+      "description": "the incident",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 4600,
+        "y": 14400
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "stdout_json.sys_id",
+          "obj": "$var.job.outage_request"
+        },
+        "outgoing": {
+          "return_data": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "78": {
+      "name": "evaluation",
+      "canvasName": "evaluation",
+      "summary": "fixed?",
+      "description": "fixed?",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 4600,
+        "y": 14550
+      },
+      "variables": {
+        "incoming": {
+          "all_true_flag": true,
+          "evaluation_groups": [
+            {
+              "all_true_flag": true,
+              "evaluations": [
+                {
+                  "query": "stdout_json.fixed",
+                  "operand_1": {
+                    "variable": "result",
+                    "task": "76"
+                  },
+                  "operator": "==",
+                  "operand_2": {
+                    "variable": true,
+                    "task": "static"
+                  }
+                }
+              ]
+            }
+          ],
+          "options": {}
+        },
+        "outgoing": {
+          "return_value": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "79": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "the resolution",
+      "description": "the resolution",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 4300,
+        "y": 14700
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "stdout_json.resolve",
+          "obj": "$var.76.result"
+        },
+        "outgoing": {
+          "return_data": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "7a": {
+      "name": "updateIncident",
+      "canvasName": "updateIncident",
+      "summary": "resolve the incident (Solution provided)",
+      "description": "resolve the incident (Solution provided)",
+      "location": "Adapter",
+      "locationType": "lab-servicenow:1.0.0",
+      "app": "lab-servicenow:1.0.0",
+      "type": "automatic",
+      "displayName": "lab-servicenow:1.0.0",
+      "groups": [],
+      "nodeLocation": {
+        "x": 4450,
+        "y": 14850
+      },
+      "variables": {
+        "incoming": {
+          "adapter_id": "servicenow-api",
+          "sys_id": "$var.77.return_data",
+          "sysparm_fields": "number,state",
+          "bodyContentType": "application/json",
+          "requestBodyPayload": "$var.79.return_data"
+        },
+        "outgoing": {
+          "response": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "7b": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "the outcome",
+      "description": "the outcome",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 4380,
+        "y": 15000
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "stdout_json.message",
+          "obj": "$var.76.result"
+        },
+        "outgoing": {
+          "return_data": "$var.job.outcome"
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "7c": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "the not-fixed note",
+      "description": "the not-fixed note",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 3770,
+        "y": 14700
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "stdout_json.note",
+          "obj": "$var.76.result"
+        },
+        "outgoing": {
+          "return_data": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "7d": {
+      "name": "updateIncident",
+      "canvasName": "updateIncident",
+      "summary": "note the incident: still not up after the fix",
+      "description": "note the incident: still not up after the fix",
+      "location": "Adapter",
+      "locationType": "lab-servicenow:1.0.0",
+      "app": "lab-servicenow:1.0.0",
+      "type": "automatic",
+      "displayName": "lab-servicenow:1.0.0",
+      "groups": [],
+      "nodeLocation": {
+        "x": 3700,
+        "y": 14850
+      },
+      "variables": {
+        "incoming": {
+          "adapter_id": "servicenow-api",
+          "sys_id": "$var.77.return_data",
+          "sysparm_fields": "number",
+          "bodyContentType": "application/json",
+          "requestBodyPayload": "$var.7c.return_data"
+        },
+        "outgoing": {
+          "response": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "7e": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "why it needs a look",
+      "description": "why it needs a look",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 3710,
+        "y": 15000
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "stdout_json.message",
+          "obj": "$var.76.result"
+        },
+        "outgoing": {
+          "return_data": "$var.job.error"
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "8a": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "the deployment could not be read",
+      "description": "the deployment could not be read",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": -380,
+        "y": 2250
+      },
+      "variables": {
+        "incoming": {
+          "input": "terraform-run outputs could not be read (outage_outputs): nothing was changed",
+          "outputType": "string",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.error"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "8b": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "a step could not run",
+      "description": "a step could not run",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": -730,
+        "y": 4200
+      },
+      "variables": {
+        "incoming": {
+          "input": "the Gateway could not run a step before the evidence (see outage_plan, outage_edge): nothing was changed",
+          "outputType": "string",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.error"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "8c": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "the evidence could not be read",
+      "description": "the evidence could not be read",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": -390,
+        "y": 7200
+      },
+      "variables": {
+        "incoming": {
+          "input": "Verify's checks could not run or gave no verdict (see lab_edge_result, monitor_result): nothing was changed",
+          "outputType": "string",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.error"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "8d": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "ServiceNow did not answer",
+      "description": "ServiceNow did not answer",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 3060,
+        "y": 9000
+      },
+      "variables": {
+        "incoming": {
+          "input": "ServiceNow did not answer (outage_open, incident_created): nothing was changed; the outage has no incident",
+          "outputType": "string",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.error"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "8e": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "a step after the incident could not run",
+      "description": "a step after the incident could not run",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 2550,
+        "y": 15000
+      },
+      "variables": {
+        "incoming": {
+          "input": "a step after the incident was opened could not run (see outage_request, agent_result, outage_fix, fix_result): check the job and the incident",
+          "outputType": "string",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.error"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "f0": {
+      "name": "ViewData",
+      "canvasName": "ViewData",
+      "summary": "Work Center task",
+      "description": "Work Center task",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "manual",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 930,
+        "y": 15150
+      },
+      "variables": {
+        "incoming": {
+          "header": "Diagnose AWS VPN Outage needs a look",
+          "message": "$var.job.error",
+          "body": "$var.job.outage_fix",
+          "variables": {},
+          "btn_success": "Seen",
+          "btn_failure": "Seen"
+        },
+        "outgoing": {},
+        "error": "",
+        "decorators": []
+      },
+      "view": "/workflow_engine/task/ViewData"
+    },
+    "e0": {
+      "name": "parse",
+      "canvasName": "parse",
+      "summary": "no router reading yet",
+      "description": "no router reading yet",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 300,
+        "y": 4950
+      },
+      "variables": {
+        "incoming": {
+          "text": "{}"
+        },
+        "outgoing": {
+          "textObject": "$var.job.lab_edge_result"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "e1": {
+      "name": "parse",
+      "canvasName": "parse",
+      "summary": "no AWS monitor reading yet",
+      "description": "no AWS monitor reading yet",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 450,
+        "y": 5100
+      },
+      "variables": {
+        "incoming": {
+          "text": "{}"
+        },
+        "outgoing": {
+          "textObject": "$var.job.monitor_result"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "e2": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "lab-edge verify's params",
+      "description": "lab-edge verify's params",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 150,
+        "y": 5250
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "stdout_json.lab_edge",
+          "obj": "$var.job.outage_edge"
+        },
+        "outgoing": {
+          "return_data": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "e3": {
+      "name": "runService",
+      "canvasName": "runService",
+      "summary": "the router and the data plane (lab-edge verify: show commands, one ping)",
+      "description": "the router and the data plane (lab-edge verify: show commands, one ping)",
+      "location": "Application",
+      "locationType": null,
+      "app": "GatewayManager",
+      "type": "automatic",
+      "displayName": "GatewayManager",
+      "groups": [],
+      "nodeLocation": {
+        "x": 340,
+        "y": 5400
+      },
+      "variables": {
+        "incoming": {
+          "serviceName": "lab-edge",
+          "clusterId": "lab",
+          "params": "$var.e2.return_data"
+        },
+        "outgoing": {
+          "result": "$var.job.lab_edge_result"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "e4": {
+      "name": "evaluation",
+      "canvasName": "evaluation",
+      "summary": "lab-edge read the router?",
+      "description": "lab-edge read the router?",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 650,
+        "y": 5550
+      },
+      "variables": {
+        "incoming": {
+          "all_true_flag": true,
+          "evaluation_groups": [
+            {
+              "all_true_flag": true,
+              "evaluations": [
+                {
+                  "query": "result.return_code",
+                  "operand_1": {
+                    "variable": "result",
+                    "task": "e3"
+                  },
+                  "operator": "==",
+                  "operand_2": {
+                    "variable": 0,
+                    "task": "static"
+                  }
+                }
+              ]
+            }
+          ],
+          "options": {}
+        },
+        "outgoing": {
+          "return_value": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "e5": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "lab-edge exited non-zero",
+      "description": "lab-edge exited non-zero",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 740,
+        "y": 5700
+      },
+      "variables": {
+        "incoming": {
+          "input": "lab-edge could not read the router: see lab_edge_result.result.stdout_json.error",
+          "outputType": "string",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.router_note"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "e6": {
+      "name": "evaluation",
+      "canvasName": "evaluation",
+      "summary": "AWS monitor applies?",
+      "description": "AWS monitor applies?",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 480,
+        "y": 5850
+      },
+      "variables": {
+        "incoming": {
+          "all_true_flag": true,
+          "evaluation_groups": [
+            {
+              "all_true_flag": true,
+              "evaluations": [
+                {
+                  "query": "stdout_json.monitor",
+                  "operand_1": {
+                    "variable": "outage_edge",
+                    "task": "job"
+                  },
+                  "operator": "==",
+                  "operand_2": {
+                    "variable": "aws",
+                    "task": "static"
+                  }
+                }
+              ]
+            }
+          ],
+          "options": {}
+        },
+        "outgoing": {
+          "return_value": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "e7": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "aws-vpn-monitor's params",
+      "description": "aws-vpn-monitor's params",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 490,
+        "y": 6000
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "stdout_json.monitor_params",
+          "obj": "$var.job.outage_edge"
+        },
+        "outgoing": {
+          "return_data": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "e8": {
+      "name": "runService",
+      "canvasName": "runService",
+      "summary": "the AWS monitor (Lambda + CloudWatch)",
+      "description": "the AWS monitor (Lambda + CloudWatch)",
+      "location": "Application",
+      "locationType": null,
+      "app": "GatewayManager",
+      "type": "automatic",
+      "displayName": "GatewayManager",
+      "groups": [],
+      "nodeLocation": {
+        "x": 540,
+        "y": 6150
+      },
+      "variables": {
+        "incoming": {
+          "serviceName": "aws-vpn-monitor",
+          "clusterId": "lab",
+          "params": "$var.e7.return_data"
+        },
+        "outgoing": {
+          "result": "$var.job.monitor_result"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "e9": {
+      "name": "evaluation",
+      "canvasName": "evaluation",
+      "summary": "the monitor answered?",
+      "description": "the monitor answered?",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 600,
+        "y": 6300
+      },
+      "variables": {
+        "incoming": {
+          "all_true_flag": true,
+          "evaluation_groups": [
+            {
+              "all_true_flag": true,
+              "evaluations": [
+                {
+                  "query": "result.return_code",
+                  "operand_1": {
+                    "variable": "result",
+                    "task": "e8"
+                  },
+                  "operator": "==",
+                  "operand_2": {
+                    "variable": 0,
+                    "task": "static"
+                  }
+                }
+              ]
+            }
+          ],
+          "options": {}
+        },
+        "outgoing": {
+          "return_value": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "ea": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "aws-vpn-monitor exited non-zero",
+      "description": "aws-vpn-monitor exited non-zero",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 750,
+        "y": 6450
+      },
+      "variables": {
+        "incoming": {
+          "input": "aws-vpn-monitor could not check: see monitor_result.result.stdout_json.error",
+          "outputType": "string",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.monitor_note"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "eb": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "the readings: what was read",
+      "description": "the readings: what was read",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 130,
+        "y": 6600
+      },
+      "variables": {
+        "incoming": {
+          "obj": {},
+          "path": [
+            "plan"
+          ],
+          "value": "$var.job.outage_edge"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "ec": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "the readings: router and data plane",
+      "description": "the readings: router and data plane",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": -60,
+        "y": 6750
+      },
+      "variables": {
+        "incoming": {
+          "obj": "$var.eb.object",
+          "path": [
+            "lab_edge"
+          ],
+          "value": "$var.job.lab_edge_result"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "ed": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "the readings: AWS monitor",
+      "description": "the readings: AWS monitor",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": -100,
+        "y": 6900
+      },
+      "variables": {
+        "incoming": {
+          "obj": "$var.ec.object",
+          "path": [
+            "monitor"
+          ],
+          "value": "$var.job.monitor_result"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "ee": {
+      "name": "runCode",
+      "canvasName": "runCode",
+      "summary": "the judge (every applicable signal up passes)",
+      "description": "the judge (every applicable signal up passes)",
+      "location": "Application",
+      "locationType": null,
+      "app": "GatewayManager",
+      "type": "automatic",
+      "displayName": "GatewayManager",
+      "groups": [],
+      "nodeLocation": {
+        "x": 0,
+        "y": 7050
+      },
+      "variables": {
+        "incoming": {
+          "clusterId": "lab",
+          "language": "python",
+          "code": "import json, sys\n\n\ndef judge(d: dict) -> dict:\n    \"\"\"Verify's verdict from its readings (the spec's rules): every applicable signal up passes; any signal that could\n    not be read is \"could not check <signal>\"; every signal down is \"tunnel down\"; any other mix is \"disagreement\",\n    naming each reading. The AWS monitor applies only where the target's monitor is `aws`. Pure: runCode runs this\n    very function's source on the Gateway, so the unit tests test what runs.\"\"\"\n    states = (\"up\", \"down\", \"could not check\")\n    plan = (d.get(\"plan\") or {}).get(\"stdout_json\") or {}\n\n    def service(envelope):  # a runService result {id, jsonrpc, result: {return_code, stdout_json}}, or {} if none ran\n        result = (envelope or {}).get(\"result\") or {}\n        return result.get(\"return_code\"), result.get(\"stdout_json\") or {}\n\n    rc, edge = service(d.get(\"lab_edge\"))\n    signals = {}\n    for key in (\"router\", \"data_plane\"):\n        value = edge.get(key) if rc == 0 else \"could not check\"\n        signals[key] = value if value in states else \"could not check\"\n    applicable = plan.get(\"monitor\") == \"aws\"\n    mrc, mon = service(d.get(\"monitor\"))\n    if applicable:\n        value = mon.get(\"monitor\") if mrc == 0 else \"could not check\"\n        signals[\"aws_monitor\"] = value if value in states + (\"disagreement\",) else \"could not check\"\n    label = {\"router\": \"router\", \"data_plane\": \"data plane\", \"aws_monitor\": \"AWS monitor\"}\n    values = list(signals.values())\n    if all(v == \"up\" for v in values):\n        verdict = \"tunnel up: \" + \", \".join(f\"{label[k]} up\" for k in signals)\n    elif \"could not check\" in values:\n        verdict = \"could not check \" + \" and \".join(label[k] for k, v in signals.items() if v == \"could not check\")\n        others = [f\"{label[k]} {v}\" for k, v in signals.items() if v != \"could not check\"]\n        if others:\n            verdict += \" (\" + \", \".join(others) + \")\"\n    elif all(v == \"down\" for v in values):\n        verdict = \"tunnel down: \" + \", \".join(f\"{label[k]} down\" for k in signals)\n    else:\n        verdict = \"disagreement: \" + \", \".join(f\"{label[k]} {v}\" for k, v in signals.items())\n    if not applicable:\n        verdict += \" (AWS monitor not applicable)\"\n    return {\n        \"passed\": all(v == \"up\" for v in values),\n        \"verdict\": verdict,\n        \"signals\": {**signals, **({} if applicable else {\"aws_monitor\": \"not applicable\"})},\n        \"readings\": {\"router\": edge.get(\"readings\"), \"aws_monitor\": mon.get(\"readings\") if applicable else None},\n        # the services return an error as a class name or their own refusal text, never device or AWS output\n        \"errors\": {k: v for k, v in ((\"lab_edge\", edge.get(\"error\")), (\"aws_monitor\", mon.get(\"error\"))) if v},\n    }\n\n\nprint(json.dumps(judge(json.loads(sys.stdin.read() or \"{}\"))))\n",
+          "data": "$var.ed.object",
+          "safety": {
+            "timeout": 30
+          },
+          "packages": []
+        },
+        "outgoing": {
+          "result": "$var.job.judgement"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "ef": {
+      "name": "evaluation",
+      "canvasName": "evaluation",
+      "summary": "passed?",
+      "description": "passed?",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 0,
+        "y": 7200
+      },
+      "variables": {
+        "incoming": {
+          "all_true_flag": true,
+          "evaluation_groups": [
+            {
+              "all_true_flag": true,
+              "evaluations": [
+                {
+                  "query": "stdout_json.passed",
+                  "operand_1": {
+                    "variable": "result",
+                    "task": "ee"
+                  },
+                  "operator": "==",
+                  "operand_2": {
+                    "variable": true,
+                    "task": "static"
+                  }
+                }
+              ]
+            }
+          ],
+          "options": {}
+        },
+        "outgoing": {
+          "return_value": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "9a01": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "input to check: alertname",
+      "description": "input to check: alertname",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 0,
+        "y": 150
+      },
+      "variables": {
+        "incoming": {
+          "obj": {},
+          "path": [
+            "alertname"
+          ],
+          "value": "$var.job.alertname"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "9a02": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "input to check: device",
+      "description": "input to check: device",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 0,
+        "y": 300
+      },
+      "variables": {
+        "incoming": {
+          "obj": "$var.9a01.object",
+          "path": [
+            "device"
+          ],
+          "value": "$var.job.device"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "9a03": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "input to check: interface",
+      "description": "input to check: interface",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 0,
+        "y": 450
+      },
+      "variables": {
+        "incoming": {
+          "obj": "$var.9a02.object",
+          "path": [
+            "interface"
+          ],
+          "value": "$var.job.interface"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "9a04": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "input to check: starts_at",
+      "description": "input to check: starts_at",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 0,
+        "y": 600
+      },
+      "variables": {
+        "incoming": {
+          "obj": "$var.9a03.object",
+          "path": [
+            "starts_at"
+          ],
+          "value": "$var.job.starts_at"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "9a05": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "input to check: fingerprint",
+      "description": "input to check: fingerprint",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 0,
+        "y": 750
+      },
+      "variables": {
+        "incoming": {
+          "obj": "$var.9a04.object",
+          "path": [
+            "fingerprint"
+          ],
+          "value": "$var.job.fingerprint"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "9a0a": {
+      "name": "validateJsonSchema",
+      "canvasName": "validateJsonSchema",
+      "summary": "check the inputs",
+      "description": "check the inputs",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 0,
+        "y": 900
+      },
+      "variables": {
+        "incoming": {
+          "jsonData": "$var.9a05.object",
+          "schema": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "alertname",
+              "device",
+              "interface",
+              "starts_at",
+              "fingerprint"
+            ],
+            "properties": {
+              "alertname": {
+                "type": "string",
+                "enum": [
+                  "LabAwsTunnelDown"
+                ]
+              },
+              "device": {
+                "type": "string",
+                "enum": [
+                  "dc1-wan01"
+                ]
+              },
+              "interface": {
+                "type": "string",
+                "pattern": "^Tunnel[0-9]{1,4}$"
+              },
+              "starts_at": {
+                "type": "string",
+                "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+              },
+              "fingerprint": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{1,32}$"
+              }
+            }
+          }
+        },
+        "outgoing": {
+          "result": "$var.job.input_check"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "9a0b": {
+      "name": "evaluation",
+      "canvasName": "evaluation",
+      "summary": "inputs valid?",
+      "description": "inputs valid?",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": -100,
+        "y": 1050
+      },
+      "variables": {
+        "incoming": {
+          "all_true_flag": true,
+          "evaluation_groups": [
+            {
+              "all_true_flag": true,
+              "evaluations": [
+                {
+                  "query": "valid",
+                  "operand_1": {
+                    "variable": "result",
+                    "task": "9a0a"
+                  },
+                  "operator": "==",
+                  "operand_2": {
+                    "variable": true,
+                    "task": "static"
+                  }
+                }
+              ]
+            }
+          ],
+          "options": {}
+        },
+        "outgoing": {
+          "return_value": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "9a0c": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "the inputs were refused",
+      "description": "the inputs were refused",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 210,
+        "y": 1200
+      },
+      "variables": {
+        "incoming": {
+          "input": "the inputs were refused before anything ran (see input_check for which input and why): nothing was sent to a device",
+          "outputType": "string",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.error"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "workflow_start": {
+      "name": "workflow_start",
+      "summary": "workflow_start",
+      "groups": [],
+      "nodeLocation": {
+        "x": 0,
+        "y": 0
+      }
+    },
+    "workflow_end": {
+      "name": "workflow_end",
+      "summary": "workflow_end",
+      "groups": [],
+      "nodeLocation": {
+        "x": 10290,
+        "y": 15300
+      }
+    }
+  },
+  "transitions": {
+    "workflow_start": {
+      "9a01": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "01": {
+      "02": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "02": {
+      "03": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "03": {
+      "04": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "04": {
+      "1a": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "1a": {
+      "1b": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "1b": {
+      "1c": {
+        "state": "success",
+        "type": "standard"
+      },
+      "8a": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "1c": {
+      "1d": {
+        "state": "success",
+        "type": "standard"
+      },
+      "8a": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "1d": {
+      "1e": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "1e": {
+      "1f": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "1f": {
+      "10": {
+        "state": "success",
+        "type": "standard"
+      },
+      "8b": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "10": {
+      "11": {
+        "state": "success",
+        "type": "standard"
+      },
+      "19": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "19": {
+      "f0": {
+        "state": "success",
+        "type": "standard"
+      },
+      "8b": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "11": {
+      "13": {
+        "state": "success",
+        "type": "standard"
+      },
+      "12": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "12": {
+      "workflow_end": {
+        "state": "success",
+        "type": "standard"
+      },
+      "8b": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "13": {
+      "14": {
+        "state": "success",
+        "type": "standard"
+      },
+      "8b": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "14": {
+      "15": {
+        "state": "success",
+        "type": "standard"
+      },
+      "8b": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "15": {
+      "2a": {
+        "state": "success",
+        "type": "standard"
+      },
+      "8b": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "2a": {
+      "2b": {
+        "state": "success",
+        "type": "standard"
+      },
+      "8b": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "2b": {
+      "2c": {
+        "state": "success",
+        "type": "standard"
+      },
+      "8d": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "2c": {
+      "2d": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "2d": {
+      "2e": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "2e": {
+      "2f": {
+        "state": "success",
+        "type": "standard"
+      },
+      "8b": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "2f": {
+      "20": {
+        "state": "success",
+        "type": "standard"
+      },
+      "3a": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "20": {
+      "21": {
+        "state": "success",
+        "type": "standard"
+      },
+      "8d": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "21": {
+      "22": {
+        "state": "success",
+        "type": "standard"
+      },
+      "8d": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "22": {
+      "23": {
+        "state": "success",
+        "type": "standard"
+      },
+      "8d": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "23": {
+      "workflow_end": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "3a": {
+      "3b": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "3b": {
+      "3e": {
+        "state": "success",
+        "type": "standard"
+      },
+      "3f": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "3e": {
+      "e0": {
+        "state": "success",
+        "type": "standard"
+      },
+      "3f": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "3f": {
+      "e0": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "e0": {
+      "e1": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "e1": {
+      "e2": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "e2": {
+      "e3": {
+        "state": "success",
+        "type": "standard"
+      },
+      "8c": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "e3": {
+      "e4": {
+        "state": "success",
+        "type": "standard"
+      },
+      "e6": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "e4": {
+      "e6": {
+        "state": "success",
+        "type": "standard"
+      },
+      "e5": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "e5": {
+      "e6": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "e6": {
+      "e7": {
+        "state": "success",
+        "type": "standard"
+      },
+      "eb": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "e7": {
+      "e8": {
+        "state": "success",
+        "type": "standard"
+      },
+      "eb": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "e8": {
+      "e9": {
+        "state": "success",
+        "type": "standard"
+      },
+      "eb": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "e9": {
+      "eb": {
+        "state": "success",
+        "type": "standard"
+      },
+      "ea": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "ea": {
+      "eb": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "eb": {
+      "ec": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "ec": {
+      "ed": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "ed": {
+      "ee": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "ee": {
+      "ef": {
+        "state": "success",
+        "type": "standard"
+      },
+      "8c": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "ef": {
+      "30": {
+        "state": "success",
+        "type": "standard"
+      },
+      "31": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "30": {
+      "workflow_end": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "31": {
+      "32": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "32": {
+      "33": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "33": {
+      "34": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "34": {
+      "35": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "35": {
+      "36": {
+        "state": "success",
+        "type": "standard"
+      },
+      "8e": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "36": {
+      "37": {
+        "state": "success",
+        "type": "standard"
+      },
+      "8e": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "37": {
+      "38": {
+        "state": "success",
+        "type": "standard"
+      },
+      "8d": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "38": {
+      "39": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "39": {
+      "3c": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "3c": {
+      "3d": {
+        "state": "success",
+        "type": "standard"
+      },
+      "8e": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "3d": {
+      "4a": {
+        "state": "success",
+        "type": "standard"
+      },
+      "8d": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "4a": {
+      "4b": {
+        "state": "success",
+        "type": "standard"
+      },
+      "8e": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "4b": {
+      "4c": {
+        "state": "success",
+        "type": "standard"
+      },
+      "45": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "45": {
+      "4c": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "4c": {
+      "4d": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "4d": {
+      "4e": {
+        "state": "success",
+        "type": "standard"
+      },
+      "8e": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "4e": {
+      "4f": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "4f": {
+      "40": {
+        "state": "success",
+        "type": "standard"
+      },
+      "8e": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "40": {
+      "5a": {
+        "state": "success",
+        "type": "standard"
+      },
+      "41": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "41": {
+      "42": {
+        "state": "success",
+        "type": "standard"
+      },
+      "8e": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "42": {
+      "43": {
+        "state": "success",
+        "type": "standard"
+      },
+      "8e": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "43": {
+      "44": {
+        "state": "success",
+        "type": "standard"
+      },
+      "8e": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "44": {
+      "f0": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "5a": {
+      "5b": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "5b": {
+      "5d": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "5d": {
+      "5e": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "5e": {
+      "5f": {
+        "state": "success",
+        "type": "standard"
+      },
+      "8e": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "5f": {
+      "5c": {
+        "state": "success",
+        "type": "standard"
+      },
+      "8e": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "5c": {
+      "60": {
+        "state": "success",
+        "type": "standard"
+      },
+      "50": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "50": {
+      "58": {
+        "state": "success",
+        "type": "standard"
+      },
+      "8e": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "58": {
+      "59": {
+        "state": "success",
+        "type": "standard"
+      },
+      "8e": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "59": {
+      "51": {
+        "state": "success",
+        "type": "standard"
+      },
+      "8e": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "51": {
+      "52": {
+        "state": "success",
+        "type": "standard"
+      },
+      "8e": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "52": {
+      "workflow_end": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "60": {
+      "61": {
+        "state": "success",
+        "type": "standard"
+      },
+      "64": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "61": {
+      "62": {
+        "state": "success",
+        "type": "standard"
+      },
+      "8e": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "62": {
+      "63": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "63": {
+      "53": {
+        "state": "success",
+        "type": "standard"
+      },
+      "54": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "53": {
+      "70": {
+        "state": "success",
+        "type": "standard"
+      },
+      "54": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "54": {
+      "70": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "64": {
+      "65": {
+        "state": "success",
+        "type": "standard"
+      },
+      "67": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "65": {
+      "66": {
+        "state": "success",
+        "type": "standard"
+      },
+      "8e": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "66": {
+      "55": {
+        "state": "success",
+        "type": "standard"
+      },
+      "54": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "55": {
+      "70": {
+        "state": "success",
+        "type": "standard"
+      },
+      "54": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "67": {
+      "68": {
+        "state": "success",
+        "type": "standard"
+      },
+      "8e": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "68": {
+      "69": {
+        "state": "success",
+        "type": "standard"
+      },
+      "8e": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "69": {
+      "6a": {
+        "state": "success",
+        "type": "standard"
+      },
+      "8e": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "6a": {
+      "6b": {
+        "state": "success",
+        "type": "standard"
+      },
+      "8e": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "6b": {
+      "6c": {
+        "state": "success",
+        "type": "standard"
+      },
+      "8e": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "6c": {
+      "6d": {
+        "state": "success",
+        "type": "standard"
+      },
+      "8e": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "6d": {
+      "6e": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "6e": {
+      "57": {
+        "state": "success",
+        "type": "standard"
+      },
+      "54": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "57": {
+      "70": {
+        "state": "success",
+        "type": "standard"
+      },
+      "54": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "70": {
+      "71": {
+        "state": "success",
+        "type": "standard"
+      },
+      "8e": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "71": {
+      "7f": {
+        "state": "success",
+        "type": "standard"
+      },
+      "80": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "7f": {
+      "72": {
+        "state": "success",
+        "type": "standard"
+      },
+      "80": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "80": {
+      "72": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "72": {
+      "73": {
+        "state": "success",
+        "type": "standard"
+      },
+      "8e": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "73": {
+      "74": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "74": {
+      "75": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "75": {
+      "81": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "81": {
+      "76": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "76": {
+      "77": {
+        "state": "success",
+        "type": "standard"
+      },
+      "8e": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "77": {
+      "78": {
+        "state": "success",
+        "type": "standard"
+      },
+      "8e": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "78": {
+      "79": {
+        "state": "success",
+        "type": "standard"
+      },
+      "7c": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "79": {
+      "7a": {
+        "state": "success",
+        "type": "standard"
+      },
+      "8e": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "7a": {
+      "7b": {
+        "state": "success",
+        "type": "standard"
+      },
+      "8e": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "7b": {
+      "workflow_end": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "7c": {
+      "7d": {
+        "state": "success",
+        "type": "standard"
+      },
+      "8e": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "7d": {
+      "7e": {
+        "state": "success",
+        "type": "standard"
+      },
+      "8e": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "7e": {
+      "f0": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "8a": {
+      "f0": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "8b": {
+      "f0": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "8c": {
+      "f0": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "8d": {
+      "f0": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "8e": {
+      "f0": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "f0": {
+      "workflow_end": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "9a01": {
+      "9a02": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "9a02": {
+      "9a03": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "9a03": {
+      "9a04": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "9a04": {
+      "9a05": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "9a05": {
+      "9a0a": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "9a0a": {
+      "9a0b": {
+        "state": "success",
+        "type": "standard"
+      },
+      "9a0c": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "9a0b": {
+      "01": {
+        "state": "success",
+        "type": "standard"
+      },
+      "9a0c": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "9a0c": {
+      "workflow_end": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "workflow_end": {}
+  },
+  "groups": [],
+  "canvasVersion": 3,
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "alertname": {
+        "type": "string",
+        "required": true
+      },
+      "device": {
+        "type": "string",
+        "required": true
+      },
+      "interface": {
+        "type": "string",
+        "required": true
+      },
+      "starts_at": {
+        "type": "string",
+        "required": true
+      },
+      "fingerprint": {
+        "type": "string",
+        "required": true
+      }
+    },
+    "required": [
+      "alertname",
+      "device",
+      "interface",
+      "starts_at",
+      "fingerprint"
+    ]
+  },
+  "outputSchema": {
+    "type": "object",
+    "properties": {
+      "outcome": {
+        "type": "string"
+      },
+      "error": {
+        "type": "string"
+      },
+      "outage_outputs": {
+        "type": "object"
+      },
+      "outage_plan": {
+        "type": "object"
+      },
+      "outage_edge": {
+        "type": "object"
+      },
+      "outage_open": {
+        "type": "object"
+      },
+      "outage_dedupe": {
+        "type": "object"
+      },
+      "alarm_result": {
+        "type": "object"
+      },
+      "judgement": {
+        "type": "object"
+      },
+      "lab_edge_result": {
+        "type": "object"
+      },
+      "monitor_result": {
+        "type": "object"
+      },
+      "router_note": {
+        "type": "string"
+      },
+      "monitor_note": {
+        "type": "string"
+      },
+      "outage_summary": {
+        "type": "object"
+      },
+      "incident_created": {
+        "type": "object"
+      },
+      "outage_request": {
+        "type": "object"
+      },
+      "agent_result": {
+        "type": "object"
+      },
+      "outage_fix": {
+        "type": "object"
+      },
+      "render_result": {
+        "type": "object"
+      },
+      "fix_result": {
+        "type": "object"
+      },
+      "check_result": {
+        "type": "object"
+      },
+      "outage_result": {
+        "type": "object"
+      },
+      "outage_card": {
+        "type": "object"
+      },
+      "card_decision": {
+        "type": [
+          "object",
+          "null"
+        ]
+      },
+      "outage_rejected": {
+        "type": "object"
+      },
+      "input_check": {
+        "type": "object"
+      }
+    }
+  },
+  "tags": [],
+  "preAutomationTime": 300000,
+  "sla": 600000,
+  "font_size": 12,
+  "decorators": []
+}

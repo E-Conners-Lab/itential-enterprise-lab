@@ -235,6 +235,11 @@
       loop: [tear_down_expired_aws_vpn, check_aws_drift, rotate_aws_vpn_key_monthly]
       loop_control: {loop_var: sk}
 
+    # R6 + A3 (ADR 0072): the outage loop's automation and the endpoint trigger the alert relay posts to
+    - name: AWS VPN outage loop - its automation and the alert relay's endpoint trigger
+      ansible.builtin.include_tasks: tasks/outage-trigger.yml
+      when: (aws_vpn.tier == 'dev') == (dev_overlay | default(false) | bool)
+
     # ADR 0070: the tier that does not run the AWS VPN keeps no way to start it - no trigger, no automation, no schedule
     - name: AWS VPN retired on this tier - its triggers and automations removed
       ansible.builtin.include_tasks: tasks/aws-vpn-retire.yml

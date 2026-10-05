@@ -87,6 +87,86 @@
             "BasicAuth": []
           }
         ]
+      },
+      "post": {
+        "operationId": "createIncident",
+        "summary": "Open an incident (Table API); correlation_id identifies the outage it belongs to",
+        "description": "Open an incident (Table API); correlation_id identifies the outage it belongs to",
+        "parameters": [
+          {
+            "name": "sysparm_fields",
+            "in": "query",
+            "required": false,
+            "description": "Comma-separated fields to return",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "result": {
+                      "type": "object"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "error"
+          }
+        },
+        "security": [
+          {
+            "BasicAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "short_description": {
+                    "type": "string"
+                  },
+                  "description": {
+                    "type": "string"
+                  },
+                  "correlation_id": {
+                    "type": "string"
+                  },
+                  "correlation_display": {
+                    "type": "string"
+                  },
+                  "urgency": {
+                    "type": "string",
+                    "description": "1 high, 2 medium, 3 low"
+                  },
+                  "impact": {
+                    "type": "string",
+                    "description": "1 high, 2 medium, 3 low"
+                  },
+                  "category": {
+                    "type": "string"
+                  },
+                  "assignment_group": {
+                    "type": "string",
+                    "description": "sys_id of the group"
+                  }
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/now/table/incident/{sys_id}": {
@@ -215,6 +295,12 @@
                     "type": "string"
                   },
                   "assignment_group": {
+                    "type": "string"
+                  },
+                  "close_code": {
+                    "type": "string"
+                  },
+                  "close_notes": {
                     "type": "string"
                   }
                 }
