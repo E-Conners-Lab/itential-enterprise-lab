@@ -82,7 +82,10 @@
      },
      "expr": "lab:bgp_session_up == 0",
      "legendFormat": "",
-     "refId": "A"
+     "refId": "A",
+     "instant": true,
+     "range": false,
+     "format": "table"
     }
    ],
    "fieldConfig": {
@@ -92,9 +95,25 @@
    "options": {},
    "transformations": [
     {
-     "id": "labelsToFields"
+     "id": "organize",
+     "options": {
+      "excludeByName": {
+       "Time": true,
+       "__name__": true,
+       "Value": true
+      },
+      "indexByName": {
+       "device": 0,
+       "neighbor": 1,
+       "peer": 2,
+       "vrf": 3,
+       "remote_as": 4,
+       "pair": 5
+      }
+     }
     }
-   ]
+   ],
+   "description": "Every declared session end that is not Established right now (instant query): one row each."
   },
   {
    "id": 3,
@@ -182,16 +201,26 @@
       "type": "prometheus",
       "uid": "prometheus"
      },
-     "expr": "increase({__name__=~\"gnmic_interfaces.*(in|out)_errors\"}[5m])",
-     "legendFormat": "{{source}} {{interface_name}} {{__name__}}",
+     "expr": "increase({__name__=~\"gnmic_interfaces.*in_errors\"}[5m])",
+     "legendFormat": "{{source}} {{interface_name}} in",
      "refId": "A"
+    },
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "increase({__name__=~\"gnmic_interfaces.*out_errors\"}[5m])",
+     "legendFormat": "{{source}} {{interface_name}} out",
+     "refId": "B"
     }
    ],
    "fieldConfig": {
     "defaults": {},
     "overrides": []
    },
-   "options": {}
+   "options": {},
+   "description": "In and out errors as two queries: increase() drops the metric name, so one query over both collided on the same label set and the panel errored."
   }
  ]
 }

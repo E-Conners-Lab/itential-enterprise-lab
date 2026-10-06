@@ -237,6 +237,20 @@ def test_the_fabric_dashboard_shows_every_declared_session_from_both_sources() -
     bgp = [p for p in dash["panels"] if "BGP" in p["title"]]
     assert [t["expr"] for p in bgp for t in p["targets"]] == [
         "sum by (device) (lab:bgp_session_up)", "lab:bgp_session_up == 0"]
+    # drill 2 (2026-10-06): as a range query the table showed one series and history rows; instant: one row per end
+    down = bgp[1]["targets"][0]
+    assert down["instant"] is True and down["format"] == "table" and down["range"] is False
+
+
+def test_the_interface_errors_panel_queries_in_and_out_apart() -> None:
+    """increase() drops the metric name: in and out errors in one query collided on the same label set."""
+    import json
+
+    dash = json.loads((ROOT / "observability" / "grafana" / "dashboards" / "fabric.json").read_text())
+    (errors,) = [p for p in dash["panels"] if "errors" in p["title"]]
+    assert [t["expr"] for t in errors["targets"]] == [
+        'increase({__name__=~"gnmic_interfaces.*in_errors"}[5m])',
+        'increase({__name__=~"gnmic_interfaces.*out_errors"}[5m])']
 
 
 def test_the_verify_checks_production_against_the_topology_and_snmp() -> None:
