@@ -312,10 +312,13 @@ aws_vpn:
 # before it applies the digest (SEC-28).
 netops_knowledge:
   repository: https://github.com/E-Conners-Lab/netops-knowledge
-  source_commit: __NK_SOURCE_COMMIT__
-  image: {repository: ghcr.io/e-conners-lab/netops-knowledge, digest: "__NK_IMAGE_DIGEST__"}
-  index_sha256: __NK_INDEX_SHA256__
-  corpus_sha256: __NK_CORPUS_SHA256__
+  # netops-knowledge #2 (dd9af61), built 2026-10-06 by CI run 37505893564
+  source_commit: dd9af61a1e12eb362116dc6af9fac7892d8e2a6b
+  image:
+    repository: ghcr.io/e-conners-lab/netops-knowledge
+    digest: "sha256:c92465ec1f9b2c1f4bf80e40117b228afdfd3ccc95a7a8b7e03c1b66a0c2b942"
+  index_sha256: 3ea6c3a8f664edd0d186a720d78e13fec8a459bf2db50b85ff8da8340aef5c2f
+  corpus_sha256: 926bc1ceb344387d166c0467112dac5898b36db725b8af5be8567c1bec8a3b56 # 40 scenarios
   signer:
     identity: https://github.com/E-Conners-Lab/netops-knowledge/.github/workflows/ci.yml@refs/heads/main
     issuer: https://token.actions.githubusercontent.com
