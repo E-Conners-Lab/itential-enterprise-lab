@@ -73,7 +73,8 @@ Probes on production (2026-10-05, `itential-deliveries/bgp-outage-loop/probes-20
 8. **The drill (PR C, owner 2026-10-06).** `Break Fabric BGP` (inputs: device, neighbor, fault) breaks one declared
    session on vEOS only - the IOS-XE equivalent of a commit timer needs `archive`, which the routers lack - and only
    while both ends read Established. Its HTML card (the shared helpers) shows the session healthy, the steps, the exact
-   lines from `plan` and the time EOS rolls it back. Approved, fabric-bgp `inject-neighbor-shutdown` or
+   lines from `plan` and that EOS rolls it back 20 minutes after the approval (the timer starts at the inject, so the
+   card names no clock time: drill 3, 2026-10-06). Approved, fabric-bgp `inject-neighbor-shutdown` or
    `inject-interface-shutdown` commits the one change in a configuration session `r10-drill-<epoch>` with `commit
    timer` 20 minutes, never saved. The workflow never fixes anything: it reads the session four times over 18 minutes
    while the outage loop does its work, and `confirm-drill` (cancel the timer) runs only after a read says

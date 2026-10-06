@@ -6612,8 +6612,8 @@ def drill_card(d: dict) -> dict:
     fmt = {"d": str(near.get("device") or ""), "n": str(near.get("neighbor") or ""), "i": str(near.get("interface") or ""),
            "p": str(near.get("peer") or "")}
     _, now, _ = card_clock(None, d.get("now"))
+    # the commit timer starts when the inject commits, after the approval: the card cannot know that clock time
     minutes = int(plan.get("revert_minutes") or 20)
-    back = now + timedelta(minutes=minutes)
     reads = {"near": fabric_reading(d.get("near")), "far": fabric_reading(d.get("far"))}
 
     def end(reading: dict, side: dict) -> dict:
@@ -6633,7 +6633,7 @@ def drill_card(d: dict) -> dict:
 <li class="next"><span class="who">Itential</span><b>Breaks it</b>under a {minutes}-minute commit timer</li>
 <li class="next"><span class="who">Prometheus</span><b>Alert</b>about 4 minutes later</li>
 <li class="next"><span class="who">The loop</span><b>Incident, agent, card</b>your second approval fixes it</li>
-<li class="next"><span class="who">EOS</span><b>Safety net</b>rolls back by itself at {back:%H:%M} UTC</li>
+<li class="next"><span class="who">EOS</span><b>Safety net</b>rolls back by itself {minutes} min after you approve</li>
 </ol></section>
 <section class="panel action" aria-labelledby="t-fix"><div><p class="kicker">The drill</p>
 <h2 id="t-fix">{e(title.format(**fmt))}</h2><p class="what">{e(
@@ -6642,7 +6642,7 @@ def drill_card(d: dict) -> dict:
 <p class="scope">Scope<b>{e(scope)}</b>{e(f"rolls back by itself after {minutes} min")}</p>
 {card_lines(d.get("lines"))}
 <ul class="promises"><li class="promise">{e("Refused unless the session is Established and matches NetBox")}</li>
-<li class="promise">{e(f"Never saved: EOS rolls it back at {back:%H:%M} UTC unless the loop fixed it first")}</li>
+<li class="promise">{e(f"Never saved: EOS rolls it back {minutes} min after you approve, unless the loop fixed it first")}</li>
 <li class="promise">{e("Confirmed only once the session is Established again")}</li></ul></section>"""
     lede = ("A drill for the fabric BGP outage loop. Nothing changes until you approve, and the device undoes it by itself "
             "if nothing else does.")
@@ -6651,7 +6651,7 @@ def drill_card(d: dict) -> dict:
     foot = (f"Prepared by Itential's Break Fabric BGP workflow at {now:%H:%M} UTC, from live reads of {e(fmt['d'])} and "
             f"{e(fmt['p'])}, checked against NetBox.")
     page = card_page(f"BGP drill: {fmt['d']}", f"Break a BGP session on purpose: {fmt['d']} and {fmt['p']}", lede, "",
-                     f"rolls back at {back:%H:%M} UTC", sections, "", foot, extra_css=CARD_LINES_CSS, decide=decide,
+                     f"rolls back {minutes} min after approval", sections, "", foot, extra_css=CARD_LINES_CSS, decide=decide,
                      note_label="Note for this drill")
     return {"html": page}
 
@@ -6705,7 +6705,7 @@ DRILL_PLAN_CODE = _source(fabric_service_session, drill_plan,
                           + repr({"username": FABRIC["username"]}) + "\n\n\n")
 DRILL_CARD_CODE = _source(outage_card_image, card_clock, card_mark, card_page, card_lines, fabric_reading,
                           fabric_card_drawing, drill_card, call='drill_card(json.loads(sys.stdin.read() or "{}"))',
-                          extra="import base64\nimport html\nfrom datetime import datetime, timedelta, timezone\n\n"
+                          extra="import base64\nimport html\nfrom datetime import datetime, timezone\n\n"
                                 "OUTAGE_CARD_CSS = " + repr(OUTAGE_CARD_CSS) + "\nCARD_LINES_CSS = "
                                 + repr(CARD_LINES_CSS) + "\nCARD_LINES_MODE = " + repr(CARD_LINES_MODE)
                                 + "\nDRILL_COPY = " + repr(DRILL_COPY) + "\n\n\n")
