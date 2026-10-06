@@ -46,7 +46,8 @@ gateway_groups: "{{ ['admin_group', svc_effective_group | default('copilot-build
 
 # diagnostics-local binds lab-servicenow tools (listIncidents, updateIncident), which do not exist without
 # the ServiceNow integration. The other -local twins bind only NetBox, workflow and device tools.
-agent_exclude: [diagnostics-local, tunnel-diagnostics-local] # both bind lab-servicenow tools; dev has no ServiceNow
+# all three bind lab-servicenow tools; dev has no ServiceNow
+agent_exclude: [diagnostics-local, tunnel-diagnostics-local, fabric-diagnostics-local]
 
 # mcp-dev runs as the Copilot service account, not as the administrator (ADR 0063). The password is
 # SVC_COPILOT_DEV_PASSWORD from .env; on the very first run it is not in the environment yet, so the value

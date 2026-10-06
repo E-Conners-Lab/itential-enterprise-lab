@@ -57,7 +57,7 @@ prometheus:
     - {name: LabDeviceDown, for: 1m}
     - {name: LabTargetDown, for: 5m}
     - {name: LabUiDown, for: 3m}
-    - {name: LabBgpSessionDown, for: 2m}
+    - {name: LabBgpSessionDown, for: 2m} # R10: generated (bgp-rules.yaml); Alertmanager -> the alert relay
     - {name: VaultSealed, for: 1m}
     - {name: LabExpirySoon, for: 1h} # PrometheusRule lab-expiries, generated from expiries.yaml (ADR 0071)
     - {name: LabAwsTunnelDown, for: 2m} # R6 (ADR 0072): dc1-wan01's Tunnel10 down; Alertmanager -> the alert relay
@@ -72,6 +72,10 @@ alert_relay:
     LabAwsTunnelDown:
       route: diagnose-aws-vpn-outage # = itential/versions.yaml operations_manager.diagnose_aws_vpn_outage
       labels: {device: device, interface: ifDescr}
+    # R10 (ADR 0073): a BGP session down -> the fabric BGP outage loop; LabBgpSessionDown's labels (bgp-rules.yaml)
+    LabBgpSessionDown:
+      route: diagnose-fabric-bgp-outage # = itential/versions.yaml operations_manager.diagnose_fabric_bgp_outage
+      labels: {device: device, neighbor: neighbor, vrf: vrf, peer: peer}
 
 # gNMIc (vEOS only, ADR 0051 decision 8): port, subscriptions and the sample interval. Targets come from NetBox.
 gnmic:

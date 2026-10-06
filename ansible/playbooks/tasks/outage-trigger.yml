@@ -1,10 +1,12 @@
 ---
-# Diagnose AWS VPN Outage's start (R6 + A3, ADR 0072): an Operations Manager automation wrapping the workflow and ONE
-# endpoint trigger, the route the alert relay posts to (observability/observability.yaml alert_relay.routes). No form
-# and no manual trigger: only the tunnel-down alert starts it. The trigger's schema is the workflow's own input gate
+# An outage loop's start (R6 + A3, ADR 0072; R10 + A6, ADR 0073): an Operations Manager automation wrapping the workflow
+# and ONE endpoint trigger, the route the alert relay posts to (observability/observability.yaml alert_relay.routes). No
+# form and no manual trigger: only the alert starts it. The trigger's schema is the workflow's own input gate
 # (itential/workflows/build.py INPUT_GATES), so a malformed call is refused with a 400 before it becomes a job; an
 # existing trigger's schema is PATCHed when it differs (Operations Manager updates are PATCH). The automation follows
-# the workflow's id, which every import changes. Needs: login, platform_local, workflows, operations_manager.
+# the workflow's id, which every import changes. Caller sets `otr_key`, the loop's key in versions.yaml workflows and
+# operations_manager (diagnose_aws_vpn_outage, diagnose_fabric_bgp_outage). Needs: login, platform_local, workflows,
+# operations_manager.
 - name: Outage loop - workflows and automations now
   ansible.builtin.uri:
     url: "{{ platform_local }}/{{ item }}"
@@ -16,26 +18,26 @@
 
 - name: Outage loop - ids and the endpoint's schema
   ansible.builtin.set_fact:
-    otr: "{{ operations_manager.diagnose_aws_vpn_outage }}"
+    otr: "{{ operations_manager[otr_key] }}"
     otr_wf_id: >-
-      {{ (otr_now.results[0].json['items'] | selectattr('name', 'equalto', workflows.diagnose_aws_vpn_outage)
+      {{ (otr_now.results[0].json['items'] | selectattr('name', 'equalto', workflows[otr_key])
           | first)._id }}
     otr_auto: >-
       {{ (otr_now.results[1].json.data
-          | selectattr('name', 'equalto', operations_manager.diagnose_aws_vpn_outage.automation) | first) | default({}) }}
+          | selectattr('name', 'equalto', operations_manager[otr_key].automation) | first) | default({}) }}
     # the workflow's own input gate, from the generated document (one source: build.py INPUT_GATES)
     otr_schema: >-
-      {{ (lookup('ansible.builtin.file', playbook_dir ~ '/../../itential/workflows/diagnose-aws-vpn-outage.json')
-          | from_json).tasks['9a0a'].variables.incoming.schema }}
+      {{ (lookup('ansible.builtin.file', playbook_dir ~ '/../../itential/workflows/' ~ otr_key | replace('_', '-')
+          ~ '.json') | from_json).tasks['9a0a'].variables.incoming.schema }}
 
 - name: Outage loop - the workflow names its agent by UUID
   ansible.builtin.assert:
     that: >-
-      not ((otr_now.results[0].json['items'] | selectattr('name', 'equalto', workflows.diagnose_aws_vpn_outage)
+      not ((otr_now.results[0].json['items'] | selectattr('name', 'equalto', workflows[otr_key])
             | first) | to_json | regex_search('__AGENT_ID:'))
     fail_msg: >-
-      Diagnose AWS VPN Outage was imported before the tunnel-diagnostics agent existed (its runAgent task still holds
-      the __AGENT_ID marker): push the agents (flowai), then run this play again so the import fills in the UUID
+      {{ workflows[otr_key] }} was imported before its agent existed (its runAgent task still holds the __AGENT_ID
+      marker): push the agents (flowai), then run this play again so the import fills in the UUID
     quiet: true
 
 - name: Outage loop - the automation wrapping it
@@ -49,7 +51,7 @@
       description: "{{ otr.description }}"
       componentType: workflows
       componentId: "{{ otr_wf_id }}"
-      componentName: "{{ workflows.diagnose_aws_vpn_outage }}"
+      componentName: "{{ workflows[otr_key] }}"
     status_code: [200, 201]
   register: otr_created
   when: otr_auto | length == 0
@@ -61,7 +63,7 @@
     method: PATCH
     headers: {Cookie: "{{ login.cookies_string }}"}
     body_format: json
-    body: {componentId: "{{ otr_wf_id }}", componentName: "{{ workflows.diagnose_aws_vpn_outage }}"}
+    body: {componentId: "{{ otr_wf_id }}", componentName: "{{ workflows[otr_key] }}"}
     status_code: 200
   when: otr_auto | length > 0 and otr_auto.componentId != otr_wf_id
   changed_when: true
@@ -84,7 +86,7 @@
     body_format: json
     body:
       name: "{{ otr.endpoint.name }}"
-      description: "The alert relay (observability/alert-relay) posts the tunnel-down alert's fields here"
+      description: "The alert relay (observability/alert-relay) posts the alert's checked fields here"
       type: endpoint
       enabled: true
       actionType: automations

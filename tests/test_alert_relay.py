@@ -23,11 +23,12 @@ sys.modules["alert_relay"] = relay  # @dataclass looks its module up here
 _SPEC.loader.exec_module(relay)
 # observability.yaml alert_relay.routes: per alert, the trigger route and which payload field each alert label fills
 RAW_ROUTES = {"LabAwsTunnelDown": {"route": "diagnose-aws-vpn-outage",
-                                   "labels": {"device": "device", "interface": "ifDescr"}}}
-ROUTES = relay.parse_routes(RAW_ROUTES)
-BGP_ROUTES = relay.parse_routes({**RAW_ROUTES, "LabBgpSessionDown": {
-    "route": "diagnose-fabric-bgp-outage",
-    "labels": {"device": "device", "neighbor": "neighbor", "vrf": "vrf", "peer": "peer"}}})
+                                   "labels": {"device": "device", "interface": "ifDescr"}},
+              # R10: the fabric BGP outage loop (ADR 0073)
+              "LabBgpSessionDown": {"route": "diagnose-fabric-bgp-outage",
+                                    "labels": {"device": "device", "neighbor": "neighbor", "vrf": "vrf", "peer": "peer"}}}
+ROUTES = relay.parse_routes({"LabAwsTunnelDown": RAW_ROUTES["LabAwsTunnelDown"]})
+BGP_ROUTES = relay.parse_routes(RAW_ROUTES)
 
 
 def _doc(status: str = "firing", **labels: str) -> dict:
@@ -177,16 +178,20 @@ def test_the_route_table_is_the_oracle(platform) -> None:
     """The relay's routes come from observability.yaml, the same names the Prometheus rule and the trigger carry."""
     obs = yaml.safe_load((ROOT / "observability" / "observability.yaml").read_text())
     assert obs["alert_relay"]["routes"] == RAW_ROUTES
-    assert relay.parse_routes(obs["alert_relay"]["routes"]) == ROUTES
-    assert "LabAwsTunnelDown" in {a["name"] for a in obs["prometheus"]["alerts"]}
+    assert relay.parse_routes(obs["alert_relay"]["routes"]) == BGP_ROUTES
+    assert set(RAW_ROUTES) <= {a["name"] for a in obs["prometheus"]["alerts"]}
 
 
-def test_alertmanager_sends_only_the_tunnel_alert_to_the_relay_and_never_resolutions() -> None:
+def test_alertmanager_sends_only_the_routed_alerts_to_the_relay_and_never_resolutions() -> None:
     values = yaml.safe_load((ROOT / "k8s" / "observability" / "values" / "kube-prometheus-stack.yaml").read_text())
     cfg = values["alertmanager"]["config"]
     assert cfg["route"]["receiver"] == "lab-null"  # everything else still goes nowhere
     to_relay = [r for r in cfg["route"]["routes"] if r["receiver"] == "itential-outage-relay"]
-    assert [r["matchers"] for r in to_relay] == [["alertname = LabAwsTunnelDown"]]
+    assert [r["matchers"] for r in to_relay] == [["alertname = LabAwsTunnelDown"], ["alertname = LabBgpSessionDown"]]
+    # both ends of one broken session fire at once (probe P3): one group per device pair, so the loop starts once
+    # and a later alert from the same pair comes no sooner than group_interval (the open incident then notes it)
+    (bgp,) = [r for r in to_relay if r["matchers"] == ["alertname = LabBgpSessionDown"]]
+    assert bgp["group_by"] == ["alertname", "pair"] and bgp["group_interval"] == "5m"
     (receiver,) = [r for r in cfg["receivers"] if r["name"] == "itential-outage-relay"]
     (hook,) = receiver["webhook_configs"]
     assert hook["url"] == "http://itential-alert-relay.observability.svc:9121/alert"

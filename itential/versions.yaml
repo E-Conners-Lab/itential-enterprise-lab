@@ -75,7 +75,8 @@ terraform_run:
     # after cdp #34: lab-edge takes Tunnel10's description from the target (tunnel_description, ADR 0071). 9ab2290 =
     # main after cdp #35 (R6): lab-edge-push reset-sa, aws-vpn-monitor restart / drill-stop / alarm. e7a6f67 = main
     # after cdp #36: the restart document loads the connection only once charon answers (the first live drill's fix).
-    reference: "e7a6f6795cabef6e7de53367ad4b76a02de1b9bc"
+    # 60839ab = main after cdp #37 (R10): fabric-bgp, one BGP session end read or fixed on vEOS / IOS-XE.
+    reference: "60839ab01f1c8f3cc856c11de21c4ca5bb5aa5f5"
   executable_object:
     name: python-3-12
     description: "the runner image's Python 3.12 (ADR 0038)"
@@ -101,6 +102,14 @@ terraform_run:
         - {name: aws-psk-writer-secret-id, type: env, target: PSK_WRITER_SECRET_ID}
         - {name: aws-terraform-access-key-id, type: env, target: AWS_ACCESS_KEY_ID}
         - {name: aws-terraform-secret-access-key, type: env, target: AWS_SECRET_ACCESS_KEY}
+    # R10 (owner decisions 2026-10-05): the fabric BGP outage loop's reads and its approved fixes, on the shared device
+    # account (the inventory's own alias); it logs in only to the host keys fabric_bgp.host_keys pins
+    - name: fabric-bgp
+      description: "One BGP session end on vEOS / IOS-XE: read it, or run one approved fix and prove it Established (R10)"
+      filename: itential/fabric-bgp.py
+      working-directory: "."
+      secrets:
+        - {name: lab-automation-password, type: env, target: FABRIC_BGP_PASSWORD}
   # The edge services (Hand Off, Verify, Tear Down AWS VPN): imported on the tier that runs the AWS VPN (aws_vpn.tier,
   # tasks/gateway-terraform-run.yml). Each binds exactly the aliases of the targets that are open (aws_vpn.targets):
   # the Gateway resolves every bound alias on every run, so a secret whose alias is not bound yet (after_deploy, below)
@@ -137,6 +146,40 @@ terraform_run:
       secrets:
         - {name: aws-terraform-access-key-id, type: env, target: AWS_ACCESS_KEY_ID}
         - {name: aws-terraform-secret-access-key, type: env, target: AWS_SECRET_ACCESS_KEY}
+
+# The fabric BGP outage loop (R10, owner decisions 2026-10-05; ADR 0073): fabric-bgp's login and its bounds. The
+# devices and sessions come from the topology (topology/derive.py, the intent NetBox is seeded from). Each device's
+# SSH host key is pinned (owner: no trust on first use): the key the device reports itself through Run Show Command
+# (IOS-XE `show ip ssh`, EOS `show management ssh hostkey ed25519 public`) AND the key ssh-keyscan reads from the
+# workstation, equal on 2026-10-05 for all nine. A rebuilt device gets a new key: refused until pinned again.
+fabric_bgp:
+  username: automation # the inventory nodes' account (tasks/platform-assets.yml), its password lab-automation-password
+  wait_seconds: 90 # how long a fix waits for Established (fabric-bgp: 10-180; no-shut measured ~1 s, probe P4)
+  host_keys:
+    br1-wan01: "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDLw5SlAMKTfz0/daXPz4wjpkLtYMIdllGP/TUR0KQWPPBvarkHg5A8zJ2d0+BFVbQycCy1bw\
+      o9qFI8c4uAHDL5WFnWNPD9gEksZbc9jykDstWj/0jVq/a3jb/8GnUFacjM1gFrjRO1yjyXIf4ld1YtbRIx08Ohn1LZOj1eiwDeat8OGsMebjRU\
+      8Mu5JET696Jk0BN5wuQoqBdkqYAGkMeTEblQbIYOi9G4yHEmD06a+lVhb6+8/JKRZM9zRFVN6k6Wrpi6oq+PPluaGK45aIfTS4qNdElMFHRNMS\
+      KdIL00gz+pJ/KTgqBRcXADm4GH7CAOzA4KV7wTi9ssFoxwyC+D"
+    br2-wan01: "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCJ3GIIiriCCNbH1hd2auXvtaUGLPgrgfxkNVmDWlFjSVy0A0bCUmoSsyNHF6vrHDeSpvm2Wq\
+      R/zZmgu31MGwMMi3mRey7njsM0fFXU7wE6X6SOLZRiDekRC5E1DLrGDzv1TqQ+A+WwR9lNOdjleUrf/TsK1YT7HzBYGRxjGiiHXDwUHU6VORhd\
+      cXciY1YHMV6GaIYiZOYO373tXuwFBO8JOX9c0xff7xBqUKTasFwA8TO643u2zUdWeMxGRuYgcY5f0kNgSEVpu+uPjz9rvstRN8E10UUmBjoTLP\
+      0AJiwxt2Sh4ywYtw0hSw9qF6Ddd1EGh5w8CFGLz6GfYpMquk8Z"
+    dc1-leaf01: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGYfpDLUVUSll5VhX1AdE9vzC3G6rzNEkJhly0Ex9BAJ"
+    dc1-leaf02: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBtkI/TItZGi7L3BM06oBGjxci3Rtwz1V1ErPeJmndXu"
+    dc1-spine01: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMfepIWL7MbgwerWQEjoWBLvNONAT+UlgNiNu+jb2H3h"
+    dc1-spine02: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIM1VXyLq5WnRIdcVdgXY9N87yTL3GWK/KWexE8PZl5ZR"
+    dc1-wan01: "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCguPeSwwDHHQzIV7mPKz8O7ZWJpHZIz6yrbNVpKK1DE46zMHcXBGBgMPiaZjXxCndI3FqUBf\
+      7jlwzfo6Fl9ZxnODMqpuE7sl0mtuM96pxxqkTSO4gVyZWbGRxthrcwM7hbKXQmP3TgHnbtJ03Uepbm9FLYuOOGcPiO6jEvVXZkFNvogrxd3T2/\
+      5GPLXzq2U3hCWCt78/eBNJMkDrTZ5rOZoDLaZBSqYQjTzheQ9Ud/U+ZZvtHjBRkZ72YIqxuxZJ0AcNjw4UhTjMZUb47A5rO1po8UwDjbw/+ogS\
+      jcxEUEWMwLOcMHrQGlUPQNhJKB00NV3wirdIMnXw+tT8blgju9"
+    dc1-wan02: "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCm81o0o9688J2sZoGpMmFGE5V2A5MyGvziXe8zRibxQH4QPW4LqQhBONCz36JR/7MlRKJ444\
+      WkaQnTqElqJnNdqbyhsn8pb32Ln677d2tZj6W1WumqP+PejR/X2YFUj78L7FYCM8H59OI5WhOKOW8oYu/9vd0AR72bRYkti2ZBgySDV1V2hJiR\
+      UkLf8b1Ehgb5+ExzeaHYCmLgsCTnUD/1TO8c4+tf5TSCHaNS1YFJfmaxfQgSV2+xmozdXoJdJlpb2z3OGhb9jYT0IW+yiTrbxS6aIAtkMDSfVk\
+      TqfQBl4ArflYhhlRuQMAu1MkNhhJbA6IwGqntrcT5wfYLVGX3p"
+    isp-core01: "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCx02EQs8cE+jsdqJ68ZnMhGfvvBZf7lZlduKkC7qN6DMitDppGOJx5yIBTOhajcg9f3fdOC2\
+      PEHnGdWyV40IqzrrZTusty7AZeJKI4UFlell/P6MQ7qR5Ix5A4jSvcL36eIX/dzhsxHN1S7bIjpQkUNk1e8i1RI2jfBul6Bbh2q3e0Onbtea1V\
+      ggrC5h/Zcpoe8dka8tSqbOtjWlF1HU7K42lrsJiZm3oEmW6Ocj1VyRlaj9e5knD/LW48OJTcTG8VpYe3uFo46jgvrahe8HoTz2P2lOozID1S7a\
+      k5rjekVctS9Wj/j9nT5bNYtzET5x61flAlvTpMLzl3+LWYOuKt"
 
 # Push Configuration with Revert Timer (step 10, F9 decision 2a, owner choice 2026-10-01: a sibling of Push Configuration
 # with Approval, which stays untouched for its agent and Lifecycle Manager callers): the routers it may change and how
@@ -296,6 +339,11 @@ operations_manager:
     automation: Diagnose AWS VPN Outage
     description: "The AWS VPN's outage loop: incident, agent diagnosis, approved fix (R6 + A3)"
     endpoint: {name: Diagnose AWS VPN Outage from the alert relay, route: diagnose-aws-vpn-outage}
+  # R10 + A6 (owner decisions 2026-10-05, ADR 0073): the same shape, for a BGP session the topology declares
+  diagnose_fabric_bgp_outage:
+    automation: Diagnose Fabric BGP Outage
+    description: "The fabric BGP outage loop: both ends read, incident, agent diagnosis, approved fix (R10 + A6)"
+    endpoint: {name: Diagnose Fabric BGP Outage from the alert relay, route: diagnose-fabric-bgp-outage}
   # R4 (owner decisions 2026-10-04): monthly and unattended, no card. Operations Manager repeats by minute, hour, day or
   # week only (no month), so this runs every day and the workflow rotates on the 1st (UTC) only; off the hour, so it
   # never starts with Tear Down Expired AWS VPN (top of the hour) or Check AWS Drift (07:00)
@@ -381,6 +429,7 @@ workflows:
   check_aws_drift: Check AWS Drift # R3: daily refresh-only plan; drift opens a Work Center task, names only; reads only
   get_aws_vpn_status: Get AWS VPN Status # A1: what is deployed, until when, last change, an estimated cost; reads only
   diagnose_aws_vpn_outage: Diagnose AWS VPN Outage # R6 + A3: the tunnel-down alert -> incident, agent, approved fix
+  diagnose_fabric_bgp_outage: Diagnose Fabric BGP Outage # R10 + A6: a BGP session down -> incident, agent, approved fix
   rotate_aws_vpn_key: Rotate AWS VPN Key # R4: the key changed in place, AWS rolled back by itself when the router fails
   rotate_aws_vpn_key_monthly: Rotate AWS VPN Key Monthly # R4: the same, from a daily schedule, on the 1st (UTC) only
   tear_down_expired_aws_vpn: Tear Down Expired AWS VPN # R2b: hourly schedule; Tear Down without cards once expires_at passed

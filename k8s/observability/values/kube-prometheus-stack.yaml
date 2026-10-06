@@ -41,6 +41,15 @@ alertmanager:
           matchers: ["alertname = LabAwsTunnelDown"]
           group_wait: 30s
           repeat_interval: 4h
+        # R10 (ADR 0073): a BGP session down starts the fabric BGP outage loop. Both ends of one broken session fire at
+        # once (probe P3): grouped by device pair, the relay gets one alert per pair; another from the same pair comes no
+        # sooner than group_interval, when the loop has its incident open and only notes it
+        - receiver: itential-outage-relay
+          matchers: ["alertname = LabBgpSessionDown"]
+          group_by: [alertname, pair]
+          group_wait: 30s
+          group_interval: 5m
+          repeat_interval: 4h
     receivers:
       - name: lab-null # no notification channel in S7; Grafana and the API show the alerts
       - name: itential-outage-relay

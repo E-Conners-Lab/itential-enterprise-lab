@@ -1,0 +1,4629 @@
+{
+  "name": "Diagnose Fabric BGP Outage",
+  "type": "automation",
+  "description": "The fabric BGP outage loop (R10 + A6, ADR 0073): started by the session-down alert, it reads both ends, opens one ServiceNow incident, lets the fabric-diagnostics agent pick one fix on one end from a fixed menu, and runs that fix only after a Work Center approval - proved Established - then resolves the incident",
+  "tasks": {
+    "01": {
+      "name": "parse",
+      "canvasName": "parse",
+      "summary": "no far-end reading yet",
+      "description": "no far-end reading yet",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": -90,
+        "y": 1350
+      },
+      "variables": {
+        "incoming": {
+          "text": "{}"
+        },
+        "outgoing": {
+          "textObject": "$var.job.far_result"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "02": {
+      "name": "parse",
+      "canvasName": "parse",
+      "summary": "no agent answer yet",
+      "description": "no agent answer yet",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": -70,
+        "y": 1500
+      },
+      "variables": {
+        "incoming": {
+          "text": "{}"
+        },
+        "outgoing": {
+          "textObject": "$var.job.agent_result"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "03": {
+      "name": "parse",
+      "canvasName": "parse",
+      "summary": "no fix answer yet",
+      "description": "no fix answer yet",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": -50,
+        "y": 1650
+      },
+      "variables": {
+        "incoming": {
+          "text": "{}"
+        },
+        "outgoing": {
+          "textObject": "$var.job.fix_result"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "04": {
+      "name": "parse",
+      "canvasName": "parse",
+      "summary": "no session reading after the fix yet",
+      "description": "no session reading after the fix yet",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": -40,
+        "y": 1800
+      },
+      "variables": {
+        "incoming": {
+          "text": "{}"
+        },
+        "outgoing": {
+          "textObject": "$var.job.check_result"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "1a": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "the plan: the alerting device",
+      "description": "the plan: the alerting device",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": -30,
+        "y": 1950
+      },
+      "variables": {
+        "incoming": {
+          "obj": {},
+          "path": [
+            "device"
+          ],
+          "value": "$var.job.device"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "1b": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "the plan: its neighbor",
+      "description": "the plan: its neighbor",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": -20,
+        "y": 2100
+      },
+      "variables": {
+        "incoming": {
+          "obj": "$var.1a.object",
+          "path": [
+            "neighbor"
+          ],
+          "value": "$var.job.neighbor"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "1c": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "the plan: the VRF",
+      "description": "the plan: the VRF",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": -10,
+        "y": 2250
+      },
+      "variables": {
+        "incoming": {
+          "obj": "$var.1b.object",
+          "path": [
+            "vrf"
+          ],
+          "value": "$var.job.vrf"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "1d": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "the plan: the peer",
+      "description": "the plan: the peer",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": -10,
+        "y": 2400
+      },
+      "variables": {
+        "incoming": {
+          "obj": "$var.1c.object",
+          "path": [
+            "peer"
+          ],
+          "value": "$var.job.peer"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "1e": {
+      "name": "runCode",
+      "canvasName": "runCode",
+      "summary": "what the loop may act on: both ends of the session (Python on the runner)",
+      "description": "what the loop may act on: both ends of the session (Python on the runner)",
+      "location": "Application",
+      "locationType": null,
+      "app": "GatewayManager",
+      "type": "automatic",
+      "displayName": "GatewayManager",
+      "groups": [],
+      "nodeLocation": {
+        "x": -160,
+        "y": 2550
+      },
+      "variables": {
+        "incoming": {
+          "clusterId": "lab",
+          "language": "python",
+          "code": "import json, sys\n\n\nFABRIC_READ_TIMEOUT = '150'\nFABRIC_FIX_TIMEOUT = '300'\nFABRIC_WAIT = 90\nFABRIC_FIXES = ('no-shut-neighbor', 'no-shut-interface', 'clear-session', 'escalate')\n\n\nSESSIONS = {'isp-core01|10.103.0.2': {'device': 'isp-core01', 'neighbor': '10.103.0.2', 'vrf': 'default', 'local_as': 65000, 'remote_as': 65100, 'peer': 'dc1-wan01', 'pair': 'dc1-wan01--isp-core01', 'interface': 'GigabitEthernet2', 'via': '10.103.0.2', 'far': 'dc1-wan01|10.103.0.1'}, 'isp-core01|10.103.0.6': {'device': 'isp-core01', 'neighbor': '10.103.0.6', 'vrf': 'default', 'local_as': 65000, 'remote_as': 65100, 'peer': 'dc1-wan02', 'pair': 'dc1-wan02--isp-core01', 'interface': 'GigabitEthernet3', 'via': '10.103.0.6', 'far': 'dc1-wan02|10.103.0.5'}, 'isp-core01|10.103.0.10': {'device': 'isp-core01', 'neighbor': '10.103.0.10', 'vrf': 'default', 'local_as': 65000, 'remote_as': 65201, 'peer': 'br1-wan01', 'pair': 'br1-wan01--isp-core01', 'interface': 'GigabitEthernet4', 'via': '10.103.0.10', 'far': 'br1-wan01|10.103.0.9'}, 'isp-core01|10.103.0.14': {'device': 'isp-core01', 'neighbor': '10.103.0.14', 'vrf': 'default', 'local_as': 65000, 'remote_as': 65202, 'peer': 'br2-wan01', 'pair': 'br2-wan01--isp-core01', 'interface': 'GigabitEthernet5', 'via': '10.103.0.14', 'far': 'br2-wan01|10.103.0.13'}, 'dc1-wan01|10.103.100.2': {'device': 'dc1-wan01', 'neighbor': '10.103.100.2', 'vrf': 'default', 'local_as': 65100, 'remote_as': 65201, 'peer': 'br1-wan01', 'pair': 'br1-wan01--dc1-wan01', 'far': 'br1-wan01|10.103.100.1'}, 'dc1-wan01|10.103.100.6': {'device': 'dc1-wan01', 'neighbor': '10.103.100.6', 'vrf': 'default', 'local_as': 65100, 'remote_as': 65202, 'peer': 'br2-wan01', 'pair': 'br2-wan01--dc1-wan01', 'far': 'br2-wan01|10.103.100.5'}, 'dc1-wan01|10.101.3.2': {'device': 'dc1-wan01', 'neighbor': '10.101.3.2', 'vrf': 'default', 'local_as': 65100, 'remote_as': 65102, 'peer': 'dc1-leaf01', 'pair': 'dc1-leaf01--dc1-wan01', 'interface': 'GigabitEthernet6', 'via': '10.101.3.2', 'far': 'dc1-leaf01|10.101.3.1'}, 'dc1-wan01|10.101.2.250': {'device': 'dc1-wan01', 'neighbor': '10.101.2.250', 'vrf': 'default', 'local_as': 65100, 'remote_as': 65100, 'peer': 'dc1-wan02', 'pair': 'dc1-wan01--dc1-wan02', 'interface': 'GigabitEthernet5', 'via': '10.101.2.250', 'far': 'dc1-wan02|10.101.2.249'}, 'dc1-wan01|10.103.0.1': {'device': 'dc1-wan01', 'neighbor': '10.103.0.1', 'vrf': 'WAN', 'local_as': 65100, 'remote_as': 65000, 'peer': 'isp-core01', 'pair': 'dc1-wan01--isp-core01', 'interface': 'GigabitEthernet2', 'via': '10.103.0.1', 'far': 'isp-core01|10.103.0.2'}, 'dc1-wan02|10.103.100.10': {'device': 'dc1-wan02', 'neighbor': '10.103.100.10', 'vrf': 'default', 'local_as': 65100, 'remote_as': 65201, 'peer': 'br1-wan01', 'pair': 'br1-wan01--dc1-wan02', 'far': 'br1-wan01|10.103.100.9'}, 'dc1-wan02|10.103.100.14': {'device': 'dc1-wan02', 'neighbor': '10.103.100.14', 'vrf': 'default', 'local_as': 65100, 'remote_as': 65202, 'peer': 'br2-wan01', 'pair': 'br2-wan01--dc1-wan02', 'far': 'br2-wan01|10.103.100.13'}, 'dc1-wan02|10.101.3.6': {'device': 'dc1-wan02', 'neighbor': '10.101.3.6', 'vrf': 'default', 'local_as': 65100, 'remote_as': 65102, 'peer': 'dc1-leaf02', 'pair': 'dc1-leaf02--dc1-wan02', 'interface': 'GigabitEthernet6', 'via': '10.101.3.6', 'far': 'dc1-leaf02|10.101.3.5'}, 'dc1-wan02|10.101.2.249': {'device': 'dc1-wan02', 'neighbor': '10.101.2.249', 'vrf': 'default', 'local_as': 65100, 'remote_as': 65100, 'peer': 'dc1-wan01', 'pair': 'dc1-wan01--dc1-wan02', 'interface': 'GigabitEthernet5', 'via': '10.101.2.249', 'far': 'dc1-wan01|10.101.2.250'}, 'dc1-wan02|10.103.0.5': {'device': 'dc1-wan02', 'neighbor': '10.103.0.5', 'vrf': 'WAN', 'local_as': 65100, 'remote_as': 65000, 'peer': 'isp-core01', 'pair': 'dc1-wan02--isp-core01', 'interface': 'GigabitEthernet2', 'via': '10.103.0.5', 'far': 'isp-core01|10.103.0.6'}, 'dc1-spine01|10.101.255.1': {'device': 'dc1-spine01', 'neighbor': '10.101.255.1', 'vrf': 'default', 'local_as': 65101, 'remote_as': 65102, 'peer': 'dc1-leaf01', 'pair': 'dc1-leaf01--dc1-spine01', 'interface': 'Ethernet1', 'via': '10.101.255.1', 'far': 'dc1-leaf01|10.101.255.0'}, 'dc1-spine01|10.101.255.3': {'device': 'dc1-spine01', 'neighbor': '10.101.255.3', 'vrf': 'default', 'local_as': 65101, 'remote_as': 65102, 'peer': 'dc1-leaf02', 'pair': 'dc1-leaf02--dc1-spine01', 'interface': 'Ethernet2', 'via': '10.101.255.3', 'far': 'dc1-leaf02|10.101.255.2'}, 'dc1-spine01|10.101.254.11': {'device': 'dc1-spine01', 'neighbor': '10.101.254.11', 'vrf': 'default', 'local_as': 65101, 'remote_as': 65102, 'peer': 'dc1-leaf01', 'pair': 'dc1-leaf01--dc1-spine01', 'interface': 'Ethernet1', 'via': '10.101.255.1', 'far': 'dc1-leaf01|10.101.254.1'}, 'dc1-spine01|10.101.254.12': {'device': 'dc1-spine01', 'neighbor': '10.101.254.12', 'vrf': 'default', 'local_as': 65101, 'remote_as': 65102, 'peer': 'dc1-leaf02', 'pair': 'dc1-leaf02--dc1-spine01', 'interface': 'Ethernet2', 'via': '10.101.255.3', 'far': 'dc1-leaf02|10.101.254.1'}, 'dc1-spine02|10.101.255.5': {'device': 'dc1-spine02', 'neighbor': '10.101.255.5', 'vrf': 'default', 'local_as': 65101, 'remote_as': 65102, 'peer': 'dc1-leaf01', 'pair': 'dc1-leaf01--dc1-spine02', 'interface': 'Ethernet1', 'via': '10.101.255.5', 'far': 'dc1-leaf01|10.101.255.4'}, 'dc1-spine02|10.101.255.7': {'device': 'dc1-spine02', 'neighbor': '10.101.255.7', 'vrf': 'default', 'local_as': 65101, 'remote_as': 65102, 'peer': 'dc1-leaf02', 'pair': 'dc1-leaf02--dc1-spine02', 'interface': 'Ethernet2', 'via': '10.101.255.7', 'far': 'dc1-leaf02|10.101.255.6'}, 'dc1-spine02|10.101.254.11': {'device': 'dc1-spine02', 'neighbor': '10.101.254.11', 'vrf': 'default', 'local_as': 65101, 'remote_as': 65102, 'peer': 'dc1-leaf01', 'pair': 'dc1-leaf01--dc1-spine02', 'interface': 'Ethernet1', 'via': '10.101.255.5', 'far': 'dc1-leaf01|10.101.254.2'}, 'dc1-spine02|10.101.254.12': {'device': 'dc1-spine02', 'neighbor': '10.101.254.12', 'vrf': 'default', 'local_as': 65101, 'remote_as': 65102, 'peer': 'dc1-leaf02', 'pair': 'dc1-leaf02--dc1-spine02', 'interface': 'Ethernet2', 'via': '10.101.255.7', 'far': 'dc1-leaf02|10.101.254.2'}, 'dc1-leaf01|10.101.255.0': {'device': 'dc1-leaf01', 'neighbor': '10.101.255.0', 'vrf': 'default', 'local_as': 65102, 'remote_as': 65101, 'peer': 'dc1-spine01', 'pair': 'dc1-leaf01--dc1-spine01', 'interface': 'Ethernet1', 'via': '10.101.255.0', 'far': 'dc1-spine01|10.101.255.1'}, 'dc1-leaf01|10.101.255.4': {'device': 'dc1-leaf01', 'neighbor': '10.101.255.4', 'vrf': 'default', 'local_as': 65102, 'remote_as': 65101, 'peer': 'dc1-spine02', 'pair': 'dc1-leaf01--dc1-spine02', 'interface': 'Ethernet2', 'via': '10.101.255.4', 'far': 'dc1-spine02|10.101.255.5'}, 'dc1-leaf01|10.101.254.1': {'device': 'dc1-leaf01', 'neighbor': '10.101.254.1', 'vrf': 'default', 'local_as': 65102, 'remote_as': 65101, 'peer': 'dc1-spine01', 'pair': 'dc1-leaf01--dc1-spine01', 'interface': 'Ethernet1', 'via': '10.101.255.0', 'far': 'dc1-spine01|10.101.254.11'}, 'dc1-leaf01|10.101.254.2': {'device': 'dc1-leaf01', 'neighbor': '10.101.254.2', 'vrf': 'default', 'local_as': 65102, 'remote_as': 65101, 'peer': 'dc1-spine02', 'pair': 'dc1-leaf01--dc1-spine02', 'interface': 'Ethernet2', 'via': '10.101.255.4', 'far': 'dc1-spine02|10.101.254.11'}, 'dc1-leaf01|10.101.3.1': {'device': 'dc1-leaf01', 'neighbor': '10.101.3.1', 'vrf': 'PROD', 'local_as': 65102, 'remote_as': 65100, 'peer': 'dc1-wan01', 'pair': 'dc1-leaf01--dc1-wan01', 'interface': 'Ethernet7', 'via': '10.101.3.1', 'far': 'dc1-wan01|10.101.3.2'}, 'dc1-leaf02|10.101.255.2': {'device': 'dc1-leaf02', 'neighbor': '10.101.255.2', 'vrf': 'default', 'local_as': 65102, 'remote_as': 65101, 'peer': 'dc1-spine01', 'pair': 'dc1-leaf02--dc1-spine01', 'interface': 'Ethernet1', 'via': '10.101.255.2', 'far': 'dc1-spine01|10.101.255.3'}, 'dc1-leaf02|10.101.255.6': {'device': 'dc1-leaf02', 'neighbor': '10.101.255.6', 'vrf': 'default', 'local_as': 65102, 'remote_as': 65101, 'peer': 'dc1-spine02', 'pair': 'dc1-leaf02--dc1-spine02', 'interface': 'Ethernet2', 'via': '10.101.255.6', 'far': 'dc1-spine02|10.101.255.7'}, 'dc1-leaf02|10.101.254.1': {'device': 'dc1-leaf02', 'neighbor': '10.101.254.1', 'vrf': 'default', 'local_as': 65102, 'remote_as': 65101, 'peer': 'dc1-spine01', 'pair': 'dc1-leaf02--dc1-spine01', 'interface': 'Ethernet1', 'via': '10.101.255.2', 'far': 'dc1-spine01|10.101.254.12'}, 'dc1-leaf02|10.101.254.2': {'device': 'dc1-leaf02', 'neighbor': '10.101.254.2', 'vrf': 'default', 'local_as': 65102, 'remote_as': 65101, 'peer': 'dc1-spine02', 'pair': 'dc1-leaf02--dc1-spine02', 'interface': 'Ethernet2', 'via': '10.101.255.6', 'far': 'dc1-spine02|10.101.254.12'}, 'dc1-leaf02|10.101.3.5': {'device': 'dc1-leaf02', 'neighbor': '10.101.3.5', 'vrf': 'PROD', 'local_as': 65102, 'remote_as': 65100, 'peer': 'dc1-wan02', 'pair': 'dc1-leaf02--dc1-wan02', 'interface': 'Ethernet7', 'via': '10.101.3.5', 'far': 'dc1-wan02|10.101.3.6'}, 'br1-wan01|10.103.100.1': {'device': 'br1-wan01', 'neighbor': '10.103.100.1', 'vrf': 'default', 'local_as': 65201, 'remote_as': 65100, 'peer': 'dc1-wan01', 'pair': 'br1-wan01--dc1-wan01', 'far': 'dc1-wan01|10.103.100.2'}, 'br1-wan01|10.103.100.9': {'device': 'br1-wan01', 'neighbor': '10.103.100.9', 'vrf': 'default', 'local_as': 65201, 'remote_as': 65100, 'peer': 'dc1-wan02', 'pair': 'br1-wan01--dc1-wan02', 'far': 'dc1-wan02|10.103.100.10'}, 'br1-wan01|10.103.0.9': {'device': 'br1-wan01', 'neighbor': '10.103.0.9', 'vrf': 'WAN', 'local_as': 65201, 'remote_as': 65000, 'peer': 'isp-core01', 'pair': 'br1-wan01--isp-core01', 'interface': 'GigabitEthernet2', 'via': '10.103.0.9', 'far': 'isp-core01|10.103.0.10'}, 'br2-wan01|10.103.100.5': {'device': 'br2-wan01', 'neighbor': '10.103.100.5', 'vrf': 'default', 'local_as': 65202, 'remote_as': 65100, 'peer': 'dc1-wan01', 'pair': 'br2-wan01--dc1-wan01', 'far': 'dc1-wan01|10.103.100.6'}, 'br2-wan01|10.103.100.13': {'device': 'br2-wan01', 'neighbor': '10.103.100.13', 'vrf': 'default', 'local_as': 65202, 'remote_as': 65100, 'peer': 'dc1-wan02', 'pair': 'br2-wan01--dc1-wan02', 'far': 'dc1-wan02|10.103.100.14'}, 'br2-wan01|10.103.0.13': {'device': 'br2-wan01', 'neighbor': '10.103.0.13', 'vrf': 'WAN', 'local_as': 65202, 'remote_as': 65000, 'peer': 'isp-core01', 'pair': 'br2-wan01--isp-core01', 'interface': 'GigabitEthernet2', 'via': '10.103.0.13', 'far': 'isp-core01|10.103.0.14'}}\nTARGETS = {'br1-wan01': {'name': 'br1-wan01', 'mgmt_host': '10.100.0.146', 'platform': 'ios-xe', 'host_keys': ['ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDLw5SlAMKTfz0/daXPz4wjpkLtYMIdllGP/TUR0KQWPPBvarkHg5A8zJ2d0+BFVbQycCy1bwo9qFI8c4uAHDL5WFnWNPD9gEksZbc9jykDstWj/0jVq/a3jb/8GnUFacjM1gFrjRO1yjyXIf4ld1YtbRIx08Ohn1LZOj1eiwDeat8OGsMebjRU8Mu5JET696Jk0BN5wuQoqBdkqYAGkMeTEblQbIYOi9G4yHEmD06a+lVhb6+8/JKRZM9zRFVN6k6Wrpi6oq+PPluaGK45aIfTS4qNdElMFHRNMSKdIL00gz+pJ/KTgqBRcXADm4GH7CAOzA4KV7wTi9ssFoxwyC+D']}, 'br2-wan01': {'name': 'br2-wan01', 'mgmt_host': '10.100.0.147', 'platform': 'ios-xe', 'host_keys': ['ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCJ3GIIiriCCNbH1hd2auXvtaUGLPgrgfxkNVmDWlFjSVy0A0bCUmoSsyNHF6vrHDeSpvm2WqR/zZmgu31MGwMMi3mRey7njsM0fFXU7wE6X6SOLZRiDekRC5E1DLrGDzv1TqQ+A+WwR9lNOdjleUrf/TsK1YT7HzBYGRxjGiiHXDwUHU6VORhdcXciY1YHMV6GaIYiZOYO373tXuwFBO8JOX9c0xff7xBqUKTasFwA8TO643u2zUdWeMxGRuYgcY5f0kNgSEVpu+uPjz9rvstRN8E10UUmBjoTLP0AJiwxt2Sh4ywYtw0hSw9qF6Ddd1EGh5w8CFGLz6GfYpMquk8Z']}, 'dc1-leaf01': {'name': 'dc1-leaf01', 'mgmt_host': '10.100.0.162', 'platform': 'eos', 'host_keys': ['ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGYfpDLUVUSll5VhX1AdE9vzC3G6rzNEkJhly0Ex9BAJ']}, 'dc1-leaf02': {'name': 'dc1-leaf02', 'mgmt_host': '10.100.0.163', 'platform': 'eos', 'host_keys': ['ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBtkI/TItZGi7L3BM06oBGjxci3Rtwz1V1ErPeJmndXu']}, 'dc1-spine01': {'name': 'dc1-spine01', 'mgmt_host': '10.100.0.160', 'platform': 'eos', 'host_keys': ['ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMfepIWL7MbgwerWQEjoWBLvNONAT+UlgNiNu+jb2H3h']}, 'dc1-spine02': {'name': 'dc1-spine02', 'mgmt_host': '10.100.0.161', 'platform': 'eos', 'host_keys': ['ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIM1VXyLq5WnRIdcVdgXY9N87yTL3GWK/KWexE8PZl5ZR']}, 'dc1-wan01': {'name': 'dc1-wan01', 'mgmt_host': '10.100.0.144', 'platform': 'ios-xe', 'host_keys': ['ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCguPeSwwDHHQzIV7mPKz8O7ZWJpHZIz6yrbNVpKK1DE46zMHcXBGBgMPiaZjXxCndI3FqUBf7jlwzfo6Fl9ZxnODMqpuE7sl0mtuM96pxxqkTSO4gVyZWbGRxthrcwM7hbKXQmP3TgHnbtJ03Uepbm9FLYuOOGcPiO6jEvVXZkFNvogrxd3T2/5GPLXzq2U3hCWCt78/eBNJMkDrTZ5rOZoDLaZBSqYQjTzheQ9Ud/U+ZZvtHjBRkZ72YIqxuxZJ0AcNjw4UhTjMZUb47A5rO1po8UwDjbw/+ogSjcxEUEWMwLOcMHrQGlUPQNhJKB00NV3wirdIMnXw+tT8blgju9']}, 'dc1-wan02': {'name': 'dc1-wan02', 'mgmt_host': '10.100.0.145', 'platform': 'ios-xe', 'host_keys': ['ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCm81o0o9688J2sZoGpMmFGE5V2A5MyGvziXe8zRibxQH4QPW4LqQhBONCz36JR/7MlRKJ444WkaQnTqElqJnNdqbyhsn8pb32Ln677d2tZj6W1WumqP+PejR/X2YFUj78L7FYCM8H59OI5WhOKOW8oYu/9vd0AR72bRYkti2ZBgySDV1V2hJiRUkLf8b1Ehgb5+ExzeaHYCmLgsCTnUD/1TO8c4+tf5TSCHaNS1YFJfmaxfQgSV2+xmozdXoJdJlpb2z3OGhb9jYT0IW+yiTrbxS6aIAtkMDSfVkTqfQBl4ArflYhhlRuQMAu1MkNhhJbA6IwGqntrcT5wfYLVGX3p']}, 'isp-core01': {'name': 'isp-core01', 'mgmt_host': '10.100.0.148', 'platform': 'ios-xe', 'host_keys': ['ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCx02EQs8cE+jsdqJ68ZnMhGfvvBZf7lZlduKkC7qN6DMitDppGOJx5yIBTOhajcg9f3fdOC2PEHnGdWyV40IqzrrZTusty7AZeJKI4UFlell/P6MQ7qR5Ix5A4jSvcL36eIX/dzhsxHN1S7bIjpQkUNk1e8i1RI2jfBul6Bbh2q3e0Onbtea1VggrC5h/Zcpoe8dka8tSqbOtjWlF1HU7K42lrsJiZm3oEmW6Ocj1VyRlaj9e5knD/LW48OJTcTG8VpYe3uFo46jgvrahe8HoTz2P2lOozID1S7ak5rjekVctS9Wj/j9nT5bNYtzET5x61flAlvTpMLzl3+LWYOuKt']}}\nFABRIC = {'username': 'automation'}\n\n\ndef fabric_service_session(end: dict) -> dict:\n    \"\"\"One end as fabric-bgp's --session_json takes it.\"\"\"\n    return {k: end[k] for k in (\"neighbor\", \"vrf\", \"local_as\", \"remote_as\", \"interface\", \"via\") if k in end}\n\n\ndef fabric_plan(d: dict, sessions: dict, targets: dict, fabric: dict) -> dict:\n    \"\"\"What the loop may act on: the alerting end (`device`, `neighbor`, `vrf`, `peer`, the relay's checked labels)\n    must be a declared session; its far end, both ends' fabric-bgp read params and the incident's correlation_id\n    (one per device pair). Pure: runCode runs this source on the Gateway with the tables written in.\"\"\"\n    key = f\"{d.get('device')}|{d.get('neighbor')}\"\n    near = sessions.get(key)\n    if not near or near[\"vrf\"] != d.get(\"vrf\") or near[\"peer\"] != d.get(\"peer\"):\n        return {\"ok\": False, \"message\": f\"{key} (VRF {d.get('vrf')}, peer {d.get('peer')}) is not a session the \"\n                                        \"topology declares: nothing was changed\"}\n    far = sessions[near[\"far\"]]\n\n    def read(end: dict) -> dict:\n        return {\"action\": \"read\", \"target_json\": json.dumps(targets[end[\"device\"]]),\n                \"session_json\": json.dumps(fabric_service_session(end)), \"username\": fabric[\"username\"],\n                \"timeout\": FABRIC_READ_TIMEOUT}\n\n    correlation = f\"bgp-{near['pair']}\"\n    return {\"ok\": True, \"pair\": near[\"pair\"], \"correlation_id\": correlation,\n            # open = New, In Progress or On Hold (R6: a Resolved incident stays active=true until ServiceNow closes it)\n            \"open_query\": f\"correlation_id={correlation}^stateIN1,2,3\",\n            \"near\": near, \"far\": far, \"near_read\": read(near), \"far_read\": read(far),\n            \"platforms\": {end[\"device\"]: targets[end[\"device\"]][\"platform\"] for end in (near, far)}}\n\n\nprint(json.dumps(fabric_plan(json.loads(sys.stdin.read() or \"{}\"), SESSIONS, TARGETS, FABRIC)))\n",
+          "data": "$var.1d.object",
+          "safety": {
+            "timeout": 30
+          },
+          "packages": []
+        },
+        "outgoing": {
+          "result": "$var.job.fabric_plan"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "10": {
+      "name": "evaluation",
+      "canvasName": "evaluation",
+      "summary": "a declared session?",
+      "description": "a declared session?",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 210,
+        "y": 2700
+      },
+      "variables": {
+        "incoming": {
+          "all_true_flag": true,
+          "evaluation_groups": [
+            {
+              "all_true_flag": true,
+              "evaluations": [
+                {
+                  "query": "stdout_json.ok",
+                  "operand_1": {
+                    "variable": "result",
+                    "task": "1e"
+                  },
+                  "operator": "==",
+                  "operand_2": {
+                    "variable": true,
+                    "task": "static"
+                  }
+                }
+              ]
+            }
+          ],
+          "options": {}
+        },
+        "outgoing": {
+          "return_value": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "19": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "why there is no plan",
+      "description": "why there is no plan",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 210,
+        "y": 2850
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "stdout_json.message",
+          "obj": "$var.1e.result"
+        },
+        "outgoing": {
+          "return_data": "$var.job.error"
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "2a": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "the open-incident query",
+      "description": "the open-incident query",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 510,
+        "y": 2850
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "stdout_json.open_query",
+          "obj": "$var.job.fabric_plan"
+        },
+        "outgoing": {
+          "return_data": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "2b": {
+      "name": "listIncidents",
+      "canvasName": "listIncidents",
+      "summary": "an open incident for this pair? (correlation_id)",
+      "description": "an open incident for this pair? (correlation_id)",
+      "location": "Adapter",
+      "locationType": "lab-servicenow:1.0.0",
+      "app": "lab-servicenow:1.0.0",
+      "type": "automatic",
+      "displayName": "lab-servicenow:1.0.0",
+      "groups": [],
+      "nodeLocation": {
+        "x": 660,
+        "y": 3000
+      },
+      "variables": {
+        "incoming": {
+          "adapter_id": "servicenow-api",
+          "sysparm_query": "$var.2a.return_data",
+          "sysparm_fields": "sys_id,number",
+          "sysparm_limit": 1
+        },
+        "outgoing": {
+          "response": "$var.job.fabric_open"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "2c": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "the open-incident answer",
+      "description": "the open-incident answer",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 990,
+        "y": 3150
+      },
+      "variables": {
+        "incoming": {
+          "obj": {},
+          "path": [
+            "open"
+          ],
+          "value": "$var.job.fabric_open"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "2d": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "when the alert started",
+      "description": "when the alert started",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 1010,
+        "y": 3300
+      },
+      "variables": {
+        "incoming": {
+          "obj": "$var.2c.object",
+          "path": [
+            "starts_at"
+          ],
+          "value": "$var.job.starts_at"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "24": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "which alert",
+      "description": "which alert",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 1000,
+        "y": 3450
+      },
+      "variables": {
+        "incoming": {
+          "obj": "$var.2d.object",
+          "path": [
+            "alert"
+          ],
+          "value": "the BGP session-down alert"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "2e": {
+      "name": "runCode",
+      "canvasName": "runCode",
+      "summary": "is one open? (Python on the runner)",
+      "description": "is one open? (Python on the runner)",
+      "location": "Application",
+      "locationType": null,
+      "app": "GatewayManager",
+      "type": "automatic",
+      "displayName": "GatewayManager",
+      "groups": [],
+      "nodeLocation": {
+        "x": 680,
+        "y": 3600
+      },
+      "variables": {
+        "incoming": {
+          "clusterId": "lab",
+          "language": "python",
+          "code": "import json, sys\n\n\ndef open_incident(d: dict) -> dict:\n    \"\"\"The open incident for this outage, from listIncidents' response (`open`), if there is one. `alert` names the\n    alert in the still-down note (the tunnel-down alert when absent, R6).\"\"\"\n    rows = (((d.get(\"open\") or {}).get(\"body\") or {}).get(\"result\")) or []\n    row = rows[0] if isinstance(rows, list) and rows and isinstance(rows[0], dict) else {}\n    found = bool(row.get(\"sys_id\"))\n    alert = d.get(\"alert\") or \"the tunnel-down alert\"\n    return {\"open\": found, \"sys_id\": row.get(\"sys_id\"), \"number\": row.get(\"number\"),\n            \"note\": {\"work_notes\": f\"Still down: {alert} fired again ({d.get('starts_at')}). \"\n                                   \"Itential did not open another incident.\"}}\n\n\nprint(json.dumps(open_incident(json.loads(sys.stdin.read() or \"{}\"))))\n",
+          "data": "$var.24.object",
+          "safety": {
+            "timeout": 30
+          },
+          "packages": []
+        },
+        "outgoing": {
+          "result": "$var.job.fabric_dedupe"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "2f": {
+      "name": "evaluation",
+      "canvasName": "evaluation",
+      "summary": "already open?",
+      "description": "already open?",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 1190,
+        "y": 3750
+      },
+      "variables": {
+        "incoming": {
+          "all_true_flag": true,
+          "evaluation_groups": [
+            {
+              "all_true_flag": true,
+              "evaluations": [
+                {
+                  "query": "stdout_json.open",
+                  "operand_1": {
+                    "variable": "result",
+                    "task": "2e"
+                  },
+                  "operator": "==",
+                  "operand_2": {
+                    "variable": true,
+                    "task": "static"
+                  }
+                }
+              ]
+            }
+          ],
+          "options": {}
+        },
+        "outgoing": {
+          "return_value": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "20": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "the open incident",
+      "description": "the open incident",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 1900,
+        "y": 3900
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "stdout_json.sys_id",
+          "obj": "$var.2e.result"
+        },
+        "outgoing": {
+          "return_data": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "21": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "the still-down note",
+      "description": "the still-down note",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 2380,
+        "y": 4050
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "stdout_json.note",
+          "obj": "$var.2e.result"
+        },
+        "outgoing": {
+          "return_data": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "22": {
+      "name": "updateIncident",
+      "canvasName": "updateIncident",
+      "summary": "note the open incident: still down",
+      "description": "note the open incident: still down",
+      "location": "Adapter",
+      "locationType": "lab-servicenow:1.0.0",
+      "app": "lab-servicenow:1.0.0",
+      "type": "automatic",
+      "displayName": "lab-servicenow:1.0.0",
+      "groups": [],
+      "nodeLocation": {
+        "x": 2730,
+        "y": 4200
+      },
+      "variables": {
+        "incoming": {
+          "adapter_id": "servicenow-api",
+          "sys_id": "$var.20.return_data",
+          "sysparm_fields": "number",
+          "bodyContentType": "application/json",
+          "requestBodyPayload": "$var.21.return_data"
+        },
+        "outgoing": {
+          "response": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "23": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "still down: noted",
+      "description": "still down: noted",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 2910,
+        "y": 4350
+      },
+      "variables": {
+        "incoming": {
+          "input": "the pair already has an open incident: noted it, opened none",
+          "outputType": "string",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.outcome"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "3a": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "the alerting end's read params",
+      "description": "the alerting end's read params",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 860,
+        "y": 3900
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "stdout_json.near_read",
+          "obj": "$var.job.fabric_plan"
+        },
+        "outgoing": {
+          "return_data": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "3b": {
+      "name": "runService",
+      "canvasName": "runService",
+      "summary": "the alerting end (fabric-bgp read: the session, the link, AS against NetBox)",
+      "description": "the alerting end (fabric-bgp read: the session, the link, AS against NetBox)",
+      "location": "Application",
+      "locationType": null,
+      "app": "GatewayManager",
+      "type": "automatic",
+      "displayName": "GatewayManager",
+      "groups": [],
+      "nodeLocation": {
+        "x": 680,
+        "y": 4050
+      },
+      "variables": {
+        "incoming": {
+          "serviceName": "fabric-bgp",
+          "clusterId": "lab",
+          "params": "$var.3a.return_data"
+        },
+        "outgoing": {
+          "result": "$var.job.near_result"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "3c": {
+      "name": "evaluation",
+      "canvasName": "evaluation",
+      "summary": "the alerting end read?",
+      "description": "the alerting end read?",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 780,
+        "y": 4200
+      },
+      "variables": {
+        "incoming": {
+          "all_true_flag": true,
+          "evaluation_groups": [
+            {
+              "all_true_flag": true,
+              "evaluations": [
+                {
+                  "query": "result.return_code",
+                  "operand_1": {
+                    "variable": "result",
+                    "task": "3b"
+                  },
+                  "operator": "==",
+                  "operand_2": {
+                    "variable": 0,
+                    "task": "static"
+                  }
+                }
+              ]
+            }
+          ],
+          "options": {}
+        },
+        "outgoing": {
+          "return_value": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "3d": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "the far end's read params",
+      "description": "the far end's read params",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 1660,
+        "y": 4350
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "stdout_json.far_read",
+          "obj": "$var.job.fabric_plan"
+        },
+        "outgoing": {
+          "return_data": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "3e": {
+      "name": "runService",
+      "canvasName": "runService",
+      "summary": "the far end (fabric-bgp read)",
+      "description": "the far end (fabric-bgp read)",
+      "location": "Application",
+      "locationType": null,
+      "app": "GatewayManager",
+      "type": "automatic",
+      "displayName": "GatewayManager",
+      "groups": [],
+      "nodeLocation": {
+        "x": 1150,
+        "y": 4500
+      },
+      "variables": {
+        "incoming": {
+          "serviceName": "fabric-bgp",
+          "clusterId": "lab",
+          "params": "$var.3d.return_data"
+        },
+        "outgoing": {
+          "result": "$var.job.far_result"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "3f": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "the far end could not be read",
+      "description": "the far end could not be read",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 1090,
+        "y": 4650
+      },
+      "variables": {
+        "incoming": {
+          "input": "fabric-bgp could not read the far end: the incident says so",
+          "outputType": "string",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.far_note"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "c0": {
+      "name": "evaluation",
+      "canvasName": "evaluation",
+      "summary": "Established again?",
+      "description": "Established again?",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 760,
+        "y": 4800
+      },
+      "variables": {
+        "incoming": {
+          "all_true_flag": true,
+          "evaluation_groups": [
+            {
+              "all_true_flag": true,
+              "evaluations": [
+                {
+                  "query": "result.stdout_json.session.state",
+                  "operand_1": {
+                    "variable": "result",
+                    "task": "3b"
+                  },
+                  "operator": "==",
+                  "operand_2": {
+                    "variable": "Established",
+                    "task": "static"
+                  }
+                }
+              ]
+            }
+          ],
+          "options": {}
+        },
+        "outgoing": {
+          "return_value": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "30": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "the session is up again",
+      "description": "the session is up again",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 910,
+        "y": 4950
+      },
+      "variables": {
+        "incoming": {
+          "input": "the session read Established again when Itential checked: no incident opened, nothing was changed",
+          "outputType": "string",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.outcome"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "31": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "the incident: the plan",
+      "description": "the incident: the plan",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 140,
+        "y": 4950
+      },
+      "variables": {
+        "incoming": {
+          "obj": {},
+          "path": [
+            "plan"
+          ],
+          "value": "$var.job.fabric_plan"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "32": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "the incident: the alerting end",
+      "description": "the incident: the alerting end",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 330,
+        "y": 5100
+      },
+      "variables": {
+        "incoming": {
+          "obj": "$var.31.object",
+          "path": [
+            "near"
+          ],
+          "value": "$var.job.near_result"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "33": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "the incident: the far end",
+      "description": "the incident: the far end",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 240,
+        "y": 5250
+      },
+      "variables": {
+        "incoming": {
+          "obj": "$var.32.object",
+          "path": [
+            "far"
+          ],
+          "value": "$var.job.far_result"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "34": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "the incident: when it started",
+      "description": "the incident: when it started",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 330,
+        "y": 5400
+      },
+      "variables": {
+        "incoming": {
+          "obj": "$var.33.object",
+          "path": [
+            "starts_at"
+          ],
+          "value": "$var.job.starts_at"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "35": {
+      "name": "runCode",
+      "canvasName": "runCode",
+      "summary": "the incident's text (Python on the runner)",
+      "description": "the incident's text (Python on the runner)",
+      "location": "Application",
+      "locationType": null,
+      "app": "GatewayManager",
+      "type": "automatic",
+      "displayName": "GatewayManager",
+      "groups": [],
+      "nodeLocation": {
+        "x": 10,
+        "y": 5550
+      },
+      "variables": {
+        "incoming": {
+          "clusterId": "lab",
+          "language": "python",
+          "code": "import json, sys\n\n\ndef fabric_reading(envelope) -> dict:\n    \"\"\"A fabric-bgp read's answer (runService's envelope) as {read, state, admin_shutdown, matches_intent, local_as,\n    remote_as, interface}; read False when it did not answer.\"\"\"\n    result = ((envelope or {}).get(\"result\")) or {}\n    out = result.get(\"stdout_json\") or {}\n    session = out.get(\"session\") or {}\n    if result.get(\"return_code\") != 0 or not session:\n        return {\"read\": False, \"state\": \"not read\", \"admin_shutdown\": None, \"matches_intent\": None,\n                \"local_as\": None, \"remote_as\": None, \"interface\": None}\n    return {\"read\": True, \"state\": session.get(\"state\"), \"admin_shutdown\": session.get(\"admin_shutdown\"),\n            \"matches_intent\": session.get(\"matches_intent\"), \"local_as\": session.get(\"local_as\"),\n            \"remote_as\": session.get(\"remote_as\"), \"interface\": out.get(\"interface\")}\n\n\ndef fabric_commands(end: dict, platform: str) -> list[str]:\n    \"\"\"The agent's confirming reads of one end through Run Show Command on a Device (its gate: show + one pipe).\"\"\"\n    if platform == \"eos\":\n        vrf = \"\" if end[\"vrf\"] == \"default\" else f\" vrf {end['vrf']}\"\n        cmds = [f\"show ip bgp neighbors {end['neighbor']}{vrf} | include BGP state\"]\n    else:\n        table = \"show ip bgp summary\" if end[\"vrf\"] == \"default\" else f\"show ip bgp vpnv4 vrf {end['vrf']} summary\"\n        cmds = [f\"{table} | include {end['neighbor']}\"]\n    if end.get(\"interface\"):\n        cmds.append(f\"show interfaces {end['interface']} | include line protocol\")\n    return cmds\n\n\ndef fabric_summary(d: dict) -> dict:\n    \"\"\"The incident from both ends' fabric-bgp reads (`near`, `far`, runService envelopes), the plan (`plan`, its\n    runCode result) and the alert (`starts_at`): the body for createIncident, and the agent's evidence with the exact\n    reads it should confirm with.\"\"\"\n    plan = (d.get(\"plan\") or {}).get(\"stdout_json\") or {}\n    near, far = plan.get(\"near\") or {}, plan.get(\"far\") or {}\n\n    def end_text(end: dict, reading: dict) -> str:\n        if not reading[\"read\"]:\n            return f\"{end.get('device')} could not be read\"\n        words = [f\"{end['device']} -> {end['neighbor']} (VRF {end['vrf']}) reads {reading['state']}\"]\n        if reading[\"admin_shutdown\"]:\n            words.append(\"the neighbor is administratively shut down\")\n        if reading[\"matches_intent\"] is False:\n            words.append(f\"the device runs AS {reading['local_as']} -> {reading['remote_as']}, NetBox intends \"\n                         f\"{end['local_as']} -> {end['remote_as']}\")\n        iface = reading[\"interface\"] or {}\n        if iface:\n            admin = {True: \"up\", False: \"administratively down\"}.get(iface.get(\"admin_up\"), \"not read\")\n            line = {True: \"up\", False: \"down\"}.get(iface.get(\"oper_up\"), \"not read\")\n            words.append(f\"{iface.get('name')} toward {end['peer']} is {admin}, line protocol {line}\")\n        return \"; \".join(words)\n\n    readings = (fabric_reading(d.get(\"near\")), fabric_reading(d.get(\"far\")))\n    evidence = f\"{end_text(near, readings[0])}. {end_text(far, readings[1])}.\"\n    platforms = plan.get(\"platforms\") or {}\n    reads = \"; \".join(f\"on {end['device']} \" + \" and then \".join(f'\"{c}\"' for c in fabric_commands(end, platforms.get(\n        end[\"device\"], \"eos\"))) for end in (near, far) if end)\n    device, peer, pair = near.get(\"device\"), near.get(\"peer\"), plan.get(\"pair\")\n    vrf = \"\" if near.get(\"vrf\") in (None, \"default\") else f\", VRF {near.get('vrf')}\"\n    return {\n        \"evidence\": f\"{evidence} Confirm with these reads: {reads}.\",\n        \"readings\": {\"near\": readings[0], \"far\": readings[1]},\n        \"incident\": {\n            \"short_description\": f\"BGP session down: {device} <-> {peer} ({near.get('neighbor')}{vrf})\",\n            \"description\": (f\"Prometheus alert LabBgpSessionDown since {d.get('starts_at')}. {evidence} Opened by \"\n                            \"Itential's Diagnose Fabric BGP Outage; the fabric-diagnostics agent notes its diagnosis \"\n                            \"here and the fix runs only after a Work Center approval.\"),\n            \"correlation_id\": f\"bgp-{pair}\",\n            \"correlation_display\": \"Itential fabric BGP outage loop\",\n            \"urgency\": \"2\", \"impact\": \"2\", \"category\": \"network\",\n        },\n    }\n\n\nprint(json.dumps(fabric_summary(json.loads(sys.stdin.read() or \"{}\"))))\n",
+          "data": "$var.34.object",
+          "safety": {
+            "timeout": 30
+          },
+          "packages": []
+        },
+        "outgoing": {
+          "result": "$var.job.fabric_summary"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "36": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "the incident's body",
+      "description": "the incident's body",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 450,
+        "y": 5700
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "stdout_json.incident",
+          "obj": "$var.35.result"
+        },
+        "outgoing": {
+          "return_data": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "37": {
+      "name": "createIncident",
+      "canvasName": "createIncident",
+      "summary": "open one ServiceNow incident for the session",
+      "description": "open one ServiceNow incident for the session",
+      "location": "Adapter",
+      "locationType": "lab-servicenow:1.0.0",
+      "app": "lab-servicenow:1.0.0",
+      "type": "automatic",
+      "displayName": "lab-servicenow:1.0.0",
+      "groups": [],
+      "nodeLocation": {
+        "x": 1160,
+        "y": 5850
+      },
+      "variables": {
+        "incoming": {
+          "adapter_id": "servicenow-api",
+          "sysparm_fields": "sys_id,number",
+          "bodyContentType": "application/json",
+          "requestBodyPayload": "$var.36.return_data"
+        },
+        "outgoing": {
+          "response": "$var.job.incident_created"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "38": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "the new incident",
+      "description": "the new incident",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 1010,
+        "y": 6000
+      },
+      "variables": {
+        "incoming": {
+          "obj": {},
+          "path": [
+            "created"
+          ],
+          "value": "$var.job.incident_created"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "39": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "the evidence for the agent",
+      "description": "the evidence for the agent",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 1130,
+        "y": 6150
+      },
+      "variables": {
+        "incoming": {
+          "obj": "$var.38.object",
+          "path": [
+            "summary"
+          ],
+          "value": "$var.job.fabric_summary"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "c1": {
+      "name": "runCode",
+      "canvasName": "runCode",
+      "summary": "the agent's request (Python on the runner)",
+      "description": "the agent's request (Python on the runner)",
+      "location": "Application",
+      "locationType": null,
+      "app": "GatewayManager",
+      "type": "automatic",
+      "displayName": "GatewayManager",
+      "groups": [],
+      "nodeLocation": {
+        "x": 1600,
+        "y": 6300
+      },
+      "variables": {
+        "incoming": {
+          "clusterId": "lab",
+          "language": "python",
+          "code": "import json, sys\n\n\ndef outage_request(d: dict) -> dict:\n    \"\"\"The agent's request: the new incident (createIncident's response, `created`) and the evidence (`summary`).\"\"\"\n    row = (((d.get(\"created\") or {}).get(\"body\") or {}).get(\"result\")) or {}\n    evidence = (((d.get(\"summary\") or {}).get(\"stdout_json\")) or {}).get(\"evidence\", \"\")\n    ok = bool(row.get(\"sys_id\") and row.get(\"number\"))\n    return {\"ok\": ok, \"sys_id\": row.get(\"sys_id\"), \"number\": row.get(\"number\"),\n            \"request\": f\"Incident {row.get('number')} (sys_id {row.get('sys_id')}). Evidence: {evidence}\"}\n\n\nprint(json.dumps(outage_request(json.loads(sys.stdin.read() or \"{}\"))))\n",
+          "data": "$var.39.object",
+          "safety": {
+            "timeout": 30
+          },
+          "packages": []
+        },
+        "outgoing": {
+          "result": "$var.job.fabric_request"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "c2": {
+      "name": "evaluation",
+      "canvasName": "evaluation",
+      "summary": "the incident opened?",
+      "description": "the incident opened?",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 1490,
+        "y": 6450
+      },
+      "variables": {
+        "incoming": {
+          "all_true_flag": true,
+          "evaluation_groups": [
+            {
+              "all_true_flag": true,
+              "evaluations": [
+                {
+                  "query": "stdout_json.ok",
+                  "operand_1": {
+                    "variable": "result",
+                    "task": "c1"
+                  },
+                  "operator": "==",
+                  "operand_2": {
+                    "variable": true,
+                    "task": "static"
+                  }
+                }
+              ]
+            }
+          ],
+          "options": {}
+        },
+        "outgoing": {
+          "return_value": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "4a": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "the agent's request",
+      "description": "the agent's request",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 1230,
+        "y": 6600
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "stdout_json.request",
+          "obj": "$var.job.fabric_request"
+        },
+        "outgoing": {
+          "return_data": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "4b": {
+      "name": "runAgent",
+      "canvasName": "runAgent",
+      "summary": "fabric-diagnostics: confirm both ends, note the incident, pick one fix",
+      "description": "fabric-diagnostics: confirm both ends, note the incident, pick one fix",
+      "location": "Application",
+      "locationType": null,
+      "app": "AgentSessionManager",
+      "type": "automatic",
+      "displayName": "Agent Sessions",
+      "groups": [],
+      "nodeLocation": {
+        "x": 1370,
+        "y": 6750
+      },
+      "variables": {
+        "incoming": {
+          "agent": "__AGENT_ID:fabric-diagnostics__",
+          "inputs": {
+            "request": "$var.4a.return_data"
+          }
+        },
+        "outgoing": {
+          "result": "$var.job.agent_result"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "45": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "the agent did not run",
+      "description": "the agent did not run",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 1440,
+        "y": 6900
+      },
+      "variables": {
+        "incoming": {
+          "input": "the fabric-diagnostics session did not run: the loop escalates",
+          "outputType": "string",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.agent_note"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "4c": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "the agent's answer",
+      "description": "the agent's answer",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 1530,
+        "y": 7050
+      },
+      "variables": {
+        "incoming": {
+          "obj": {},
+          "path": [
+            "agent"
+          ],
+          "value": "$var.job.agent_result"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "4d": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "the plan for the fix",
+      "description": "the plan for the fix",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 1530,
+        "y": 7200
+      },
+      "variables": {
+        "incoming": {
+          "obj": "$var.4c.object",
+          "path": [
+            "plan"
+          ],
+          "value": "$var.job.fabric_plan"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "4f": {
+      "name": "runCode",
+      "canvasName": "runCode",
+      "summary": "the fix, held to the menu and the session's ends (Python on the runner)",
+      "description": "the fix, held to the menu and the session's ends (Python on the runner)",
+      "location": "Application",
+      "locationType": null,
+      "app": "GatewayManager",
+      "type": "automatic",
+      "displayName": "GatewayManager",
+      "groups": [],
+      "nodeLocation": {
+        "x": 1600,
+        "y": 7350
+      },
+      "variables": {
+        "incoming": {
+          "clusterId": "lab",
+          "language": "python",
+          "code": "import json, sys\n\n\nFABRIC_READ_TIMEOUT = '150'\nFABRIC_FIX_TIMEOUT = '300'\nFABRIC_WAIT = 90\nFABRIC_FIXES = ('no-shut-neighbor', 'no-shut-interface', 'clear-session', 'escalate')\n\n\ndef fabric_fix(d: dict) -> dict:\n    \"\"\"The fix the agent picked (`agent`: runAgent's result), held to the menu AND to the session's two ends (`plan`):\n    the last line of its answer must be JSON naming one of FABRIC_FIXES and, for a fix, `device` one of the two ends;\n    no-shut-interface needs an interface fabric-bgp may change. Anything else is escalate. A fix carries fabric-bgp's\n    params for exactly that end.\"\"\"\n    agent = d.get(\"agent\") or {}\n    plan = (d.get(\"plan\") or {}).get(\"stdout_json\") or {}\n    text = str(agent.get(\"lastMessage\") or \"\")\n    lines = [line.strip() for line in text.strip().splitlines() if line.strip()]\n    answer: dict = {}\n    if agent.get(\"sessionStatus\") == \"COMPLETE\" and lines:\n        try:\n            parsed = json.loads(lines[-1])\n            answer = parsed if isinstance(parsed, dict) else {}\n        except ValueError:\n            answer = {}\n    ends = {e.get(\"device\"): (e, plan.get(f\"{side}_read\")) for side, e in ((\"near\", plan.get(\"near\") or {}),\n                                                                          (\"far\", plan.get(\"far\") or {}))}\n    fix = answer.get(\"fix\") if answer.get(\"fix\") in FABRIC_FIXES else \"escalate\"\n    why = (str(answer.get(\"cause\") or \"unknown\")[:80] if answer else\n           (\"the agent did not finish\" if agent.get(\"sessionStatus\") != \"COMPLETE\" else \"the agent's answer was not the JSON line\"))\n    device = answer.get(\"device\")\n    if fix != \"escalate\" and device not in ends:\n        fix, why = \"escalate\", f\"the agent named {str(device)[:40]!r}, not one end of the session\"\n    if fix == \"no-shut-interface\" and \"interface\" not in (ends.get(device, ({}, None))[0]):\n        fix, why = \"escalate\", f\"{device}'s link toward the peer is not an interface fabric-bgp may change\"\n    evidence = str(answer.get(\"evidence\") or \"\")[:400]\n    out = {\"fix\": fix, \"device\": device if fix != \"escalate\" else None, \"cause\": why, \"evidence\": evidence,\n           \"card\": fix != \"escalate\", \"session\": str(agent.get(\"sessionId\") or \"\")[:64],\n           \"escalation\": {\"work_notes\": f\"Escalated to a person: no fix from the menu applies ({why}). {evidence}\".strip()}}\n    if fix != \"escalate\":\n        end, read = ends[device]\n        out[\"end\"] = end\n        out[\"params\"] = {**read, \"action\": fix, \"wait_seconds\": str(FABRIC_WAIT), \"timeout\": FABRIC_FIX_TIMEOUT}\n    return out\n\n\nprint(json.dumps(fabric_fix(json.loads(sys.stdin.read() or \"{}\"))))\n",
+          "data": "$var.4d.object",
+          "safety": {
+            "timeout": 30
+          },
+          "packages": []
+        },
+        "outgoing": {
+          "result": "$var.job.fabric_fix"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "40": {
+      "name": "evaluation",
+      "canvasName": "evaluation",
+      "summary": "a fix to approve?",
+      "description": "a fix to approve?",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 2020,
+        "y": 7500
+      },
+      "variables": {
+        "incoming": {
+          "all_true_flag": true,
+          "evaluation_groups": [
+            {
+              "all_true_flag": true,
+              "evaluations": [
+                {
+                  "query": "stdout_json.card",
+                  "operand_1": {
+                    "variable": "result",
+                    "task": "4f"
+                  },
+                  "operator": "==",
+                  "operand_2": {
+                    "variable": true,
+                    "task": "static"
+                  }
+                }
+              ]
+            }
+          ],
+          "options": {}
+        },
+        "outgoing": {
+          "return_value": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "41": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "the incident",
+      "description": "the incident",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 2020,
+        "y": 7650
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "stdout_json.sys_id",
+          "obj": "$var.job.fabric_request"
+        },
+        "outgoing": {
+          "return_data": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "42": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "the escalation note",
+      "description": "the escalation note",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 2390,
+        "y": 7800
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "stdout_json.escalation",
+          "obj": "$var.4f.result"
+        },
+        "outgoing": {
+          "return_data": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "43": {
+      "name": "updateIncident",
+      "canvasName": "updateIncident",
+      "summary": "note the incident: escalated to a person",
+      "description": "note the incident: escalated to a person",
+      "location": "Adapter",
+      "locationType": "lab-servicenow:1.0.0",
+      "app": "lab-servicenow:1.0.0",
+      "type": "automatic",
+      "displayName": "lab-servicenow:1.0.0",
+      "groups": [],
+      "nodeLocation": {
+        "x": 2630,
+        "y": 7950
+      },
+      "variables": {
+        "incoming": {
+          "adapter_id": "servicenow-api",
+          "sys_id": "$var.41.return_data",
+          "sysparm_fields": "number",
+          "bodyContentType": "application/json",
+          "requestBodyPayload": "$var.42.return_data"
+        },
+        "outgoing": {
+          "response": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "44": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "escalated",
+      "description": "escalated",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 2560,
+        "y": 8100
+      },
+      "variables": {
+        "incoming": {
+          "input": "the agent found no fix from the menu: the incident is escalated to a person",
+          "outputType": "string",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.error"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "4e": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "the incident number",
+      "description": "the incident number",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 3110,
+        "y": 7650
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "stdout_json.number",
+          "obj": "$var.job.fabric_request"
+        },
+        "outgoing": {
+          "return_data": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "5a": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "the card: the fix",
+      "description": "the card: the fix",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 3390,
+        "y": 7800
+      },
+      "variables": {
+        "incoming": {
+          "obj": "$var.34.object",
+          "path": [
+            "fix"
+          ],
+          "value": "$var.job.fabric_fix"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "5b": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "the card: the incident number",
+      "description": "the card: the incident number",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 3960,
+        "y": 7950
+      },
+      "variables": {
+        "incoming": {
+          "obj": "$var.5a.object",
+          "path": [
+            "number"
+          ],
+          "value": "$var.4e.return_data"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "5e": {
+      "name": "runCode",
+      "canvasName": "runCode",
+      "summary": "the card's page (Python on the runner)",
+      "description": "the card's page (Python on the runner)",
+      "location": "Application",
+      "locationType": null,
+      "app": "GatewayManager",
+      "type": "automatic",
+      "displayName": "GatewayManager",
+      "groups": [],
+      "nodeLocation": {
+        "x": 4170,
+        "y": 8100
+      },
+      "variables": {
+        "incoming": {
+          "clusterId": "lab",
+          "language": "python",
+          "code": "import json, sys\n\n\nimport base64\nimport html\nfrom datetime import datetime, timezone\n\nOUTAGE_CARD_CSS = '\\nbody { margin: 0; padding: 4px; background: transparent; }\\n.oc { --paper: #EEF3F7; --ink: #0E2A4A; --ink-soft: #4A6380; --cobalt: #1F4FD1; --kelp: #1E8C6A; --buoy: #D8433A;\\n  --flare: #C7851A; --line: #D3DDE7;\\n  --display: \"Avenir Next Condensed\", \"Avenir Next\", \"Segoe UI Semibold\", \"Arial Narrow\", sans-serif;\\n  --mono: \"SF Mono\", \"Cascadia Mono\", Menlo, Consolas, monospace;\\n  font-family: \"Avenir Next\", \"Segoe UI\", system-ui, -apple-system, sans-serif; color: var(--ink);\\n  background: var(--paper); font-size: 15px; line-height: 1.5; max-width: 980px; margin: 0 auto;\\n  border-radius: 14px; overflow: hidden; box-shadow: 0 18px 40px -24px rgba(14, 42, 74, .45); }\\n.oc * { box-sizing: border-box; }\\n.oc p { margin: 0; }\\n.oc .band { background: var(--ink); color: #fff; padding: 22px 28px 24px; display: grid;\\n  grid-template-columns: 1fr auto; gap: 18px 24px; align-items: start; }\\n.oc .brand { display: flex; align-items: center; gap: 10px; font-size: 13px; color: #B9C8DB; grid-column: 1 / -1; }\\n.oc .brand img { width: 26px; height: 26px; flex: none; display: block; }\\n.oc .brand b { color: #fff; font-family: var(--display); font-weight: 700; font-size: 15px; }\\n.oc h1 { font-family: var(--display); font-weight: 700; font-size: 34px; line-height: 1.05; margin: 0 0 8px; }\\n.oc .lede { color: #C9D6E5; max-width: 58ch; }\\n.oc .lede strong { color: #fff; font-weight: 600; }\\n.oc .status { text-align: right; }\\n.oc .pill { display: inline-flex; align-items: center; gap: 8px; background: rgba(199, 133, 26, .16); color: #F2C46D;\\n  border: 1px solid rgba(242, 196, 109, .45); border-radius: 999px; padding: 5px 12px 5px 10px; font-size: 13px;\\n  font-weight: 600; white-space: nowrap; }\\n.oc .pill::before { content: \"\"; width: 8px; height: 8px; border-radius: 50%; background: #F2C46D;\\n  animation: oc-blink 1.8s ease-in-out infinite; }\\n@keyframes oc-blink { 0%, 100% { opacity: 1; } 50% { opacity: .3; } }\\n.oc .elapsed { margin-top: 12px; font-family: var(--display); font-size: 40px; font-weight: 700; line-height: 1; }\\n.oc .elapsed small { display: block; font-family: inherit; font-size: 12px; font-weight: 500; color: #9FB2C8;\\n  margin-top: 4px; }\\n.oc .body { padding: 22px 28px 28px; display: grid; gap: 18px; }\\n.oc .panel { background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 18px 20px; }\\n.oc h2 { font-family: var(--display); font-weight: 700; font-size: 19px; margin: 0 0 12px; }\\n.oc .topo { padding: 16px 20px 6px; }\\n.oc .topo img { display: block; width: 100%; height: auto; }\\n.oc .ledger { display: grid; grid-template-columns: repeat(4, 1fr); border-top: 1px solid var(--line); margin-top: 6px; }\\n.oc .reading { padding: 14px 16px 4px 14px; border-left: 3px solid var(--c); }\\n.oc .src, .oc .why { font-size: 13px; color: var(--ink-soft); }\\n.oc .val { font-family: var(--display); font-size: 21px; font-weight: 700; color: var(--c); line-height: 1.2;\\n  margin: 2px 0; }\\n.oc .steps { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(5, 1fr); }\\n.oc .steps li { position: relative; padding: 26px 8px 0 0; font-size: 13px; color: var(--ink-soft); }\\n.oc .steps li::before { content: \"\"; position: absolute; top: 6px; left: 0; width: 13px; height: 13px;\\n  border-radius: 50%; background: var(--kelp); box-shadow: 0 0 0 3px #fff, 0 0 0 4px var(--kelp); }\\n.oc .steps li::after { content: \"\"; position: absolute; top: 12px; left: 20px; right: 6px; height: 2px;\\n  background: var(--kelp); }\\n.oc .steps li:last-child::after { display: none; }\\n.oc .steps .who { display: block; font-family: var(--display); font-weight: 700; font-size: 15px; color: var(--ink); }\\n.oc .steps b { display: block; color: var(--ink); font-size: 14px; font-weight: 600; }\\n.oc .steps .now::before { background: var(--flare); box-shadow: 0 0 0 3px #fff, 0 0 0 5px var(--flare); }\\n.oc .steps .now::after, .oc .steps .next::after {\\n  background: repeating-linear-gradient(90deg, #B8C6D4 0 6px, transparent 6px 11px); }\\n.oc .steps .now b { color: #8A5A0C; }\\n.oc .steps .next::before { background: #fff; box-shadow: 0 0 0 2px #B8C6D4; }\\n.oc .diag { display: grid; grid-template-columns: 1fr 1.05fr; gap: 20px; align-items: start; }\\n.oc .cause { font-family: var(--display); font-size: 25px; font-weight: 700; line-height: 1.15; margin: 2px 0 10px; }\\n.oc .by { display: inline-flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--ink-soft);\\n  background: var(--paper); border-radius: 999px; padding: 4px 10px 4px 6px; margin-bottom: 12px; }\\n.oc .by i { width: 18px; height: 18px; border-radius: 50%; display: inline-block;\\n  box-shadow: inset 0 0 0 4px #fff, inset 0 0 0 9px var(--cobalt); background: var(--cobalt); }\\n.oc .term { background: var(--ink); color: #D6E2EF; border-radius: 10px; padding: 12px 16px 14px;\\n  font-family: var(--mono); font-size: 12.3px; line-height: 1.6; }\\n.oc .term .h { color: #7FA6D6; margin-top: 8px; }\\n.oc .term .h:first-child { margin-top: 0; }\\n.oc .term .row { display: flex; justify-content: space-between; gap: 12px; padding-left: 14px; }\\n.oc .term .ok { color: #7FD1AE; }\\n.oc .term .bad { color: #FF9A92; }\\n.oc .term .unk { color: #9FB2C8; }\\n.oc .action { background: var(--cobalt); color: #fff; border: 0; display: grid; grid-template-columns: 1fr auto;\\n  gap: 6px 24px; padding: 22px 24px; }\\n.oc .kicker { font-size: 13px; color: #C9D7FF; }\\n.oc .action h2 { font-size: 28px; margin: 2px 0 8px; color: #fff; }\\n.oc .what { color: #E4EBFF; max-width: 56ch; }\\n.oc .scope { align-self: start; text-align: right; font-size: 12.5px; color: #C9D7FF; }\\n.oc .scope b { display: block; font-family: var(--display); font-size: 20px; color: #fff; }\\n.oc .promises { grid-column: 1 / -1; list-style: none; margin: 14px 0 0; padding: 14px 0 0;\\n  border-top: 1px solid rgba(255, 255, 255, .22); display: grid; grid-template-columns: repeat(3, 1fr);\\n  gap: 10px 18px; font-size: 13.5px; color: #F1F4FF; }\\n.oc .promise { padding-left: 24px; position: relative; }\\n.oc .promise::before { content: \"\"; position: absolute; left: 2px; top: 4px; width: 7px; height: 11px;\\n  border: solid #fff; border-width: 0 2.5px 2.5px 0; transform: rotate(40deg); }\\n.oc .decide { display: grid; grid-template-columns: 1fr 1.3fr; gap: 20px; align-items: start; }\\n.oc .decide p { color: var(--ink-soft); font-size: 14px; }\\n.oc .decide p + p { margin-top: 8px; }\\n.oc label { display: block; font-weight: 600; font-size: 14px; margin-bottom: 6px; }\\n.oc textarea { width: 100%; min-height: 88px; font: inherit; font-size: 14px; padding: 10px 12px; color: var(--ink);\\n  border: 1px solid #B9C7D6; border-radius: 8px; background: #FBFCFE; resize: vertical; }\\n.oc textarea:focus-visible { outline: 3px solid rgba(31, 79, 209, .35); border-color: var(--cobalt); }\\n.oc .foot { padding: 0 28px 20px; font-size: 12px; color: var(--ink-soft); }\\n@media (max-width: 760px) {\\n  .oc .band, .oc .action, .oc .decide, .oc .diag { grid-template-columns: 1fr; }\\n  .oc .status, .oc .scope { text-align: left; }\\n  .oc .ledger { grid-template-columns: 1fr 1fr; }\\n  .oc .steps, .oc .promises { grid-template-columns: 1fr; }\\n  .oc .steps li::after { display: none; }\\n}\\n@media (prefers-reduced-motion: reduce) { .oc .pill::before { animation: none; } }\\n'\nFABRIC_FIX_COPY = {'no-shut-neighbor': ('Bring the BGP neighbor back on {d}', \"Itential removes the neighbor's shutdown on {d}, waits for the session to reach Established, then saves the configuration.\", ('1 BGP neighbor', 'one line of configuration'), ('Sends one line, nothing typed by the agent', 'Refused unless the neighbor is shut and {d} matches NetBox', 'Saved only once the session is Established')), 'no-shut-interface': ('Bring {i} back up on {d}', 'Itential removes the shutdown on {i}, the interface toward {p}, waits for the session to reach Established, then saves the configuration.', ('1 interface', 'one line of configuration'), ('Sends one line, nothing typed by the agent', 'Refused unless {i} is shut and its address faces {p}', 'Saved only once the session is Established')), 'clear-session': ('Reset the BGP session on {d}', 'Itential clears this one session on {d} so both ends rebuild it, then waits for Established.', ('1 BGP session', 'no configuration change'), ('Runs one clear command for this neighbor only', 'Refused if the neighbor or its interface is shut: that needs another fix', 'Proven afterwards: Established resolves the incident'))}\nFABRIC_CAUSES = {'neighbor-shut': 'The BGP neighbor {n} is shut down on {d}', 'interface-shut': '{i} toward {p} is shut down on {d}', 'stuck-session': 'The session is stuck with both links up'}\n\n\ndef outage_card_image(svg: str, alt: str, width: int, height: int) -> str:\n    \"\"\"An SVG drawing as an <img> (Work Center strips <svg>, P6): base64 in a data URI.\"\"\"\n    data = base64.b64encode(svg.encode()).decode()\n    return (f'<img alt=\"{html.escape(alt)}\" width=\"{width}\" height=\"{height}\" '\n            f'src=\"data:image/svg+xml;base64,{data}\">')\n\n\ndef card_clock(starts_at, now) -> tuple:\n    \"\"\"(start, now, elapsed) for a card: the alert's start and the card's time as UTC datetimes (now: the runner's clock\n    when absent or unreadable; start: None when unreadable) and the outage's age as text (\"\" when unknown).\"\"\"\n    def when(value):\n        try:\n            return datetime.fromisoformat(str(value).replace(\"Z\", \"+00:00\")).astimezone(timezone.utc)\n        except ValueError:\n            return None\n\n    start, now = when(starts_at), when(now) or datetime.now(timezone.utc)\n    minutes = int((now - start).total_seconds() // 60) if start and now >= start else None\n    elapsed = (\"\" if minutes is None else f\"{minutes} min\" if minutes < 60 else f\"{minutes // 60} h {minutes % 60:02d} min\")\n    return start, now, elapsed\n\n\ndef card_mark() -> str:\n    \"\"\"The lab's mark for a card's band.\"\"\"\n    return outage_card_image(\n        '<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 40 40\" width=\"40\" height=\"40\"><rect width=\"40\" '\n        'height=\"40\" rx=\"10\" fill=\"#1F4FD1\"/><path d=\"M8 26c4 3 8 3 12 0s8-3 12 0\" fill=\"none\" stroke=\"#fff\" '\n        'stroke-width=\"2.6\" stroke-linecap=\"round\"/><path d=\"M20 9v14M15 13.5h10M14 21c1.5 2.5 3.7 3.8 6 3.8s4.5-1.3 '\n        '6-3.8\" fill=\"none\" stroke=\"#fff\" stroke-width=\"2.4\" stroke-linecap=\"round\"/><circle cx=\"20\" cy=\"8.5\" '\n        'r=\"2.2\" fill=\"#fff\"/></svg>', \"\", 26, 26)\n\n\ndef card_page(title: str, headline: str, lede: str, elapsed: str, since: str, sections: str, number: str,\n              foot: str) -> str:\n    \"\"\"A Work Center card's page (R6, R10): the band (title, lede, waiting pill, the outage's age), the card's own\n    sections, the decision with the engineer's note, the foot. `lede`, `sections` and `foot` are HTML the caller built\n    from escaped values; every other argument is escaped here.\"\"\"\n    e = html.escape\n    return f\"\"\"<!doctype html>\n<html lang=\"en\"><head><meta charset=\"utf-8\"><title>{e(title)}</title>\n<style>{OUTAGE_CARD_CSS}</style></head>\n<body><div class=\"oc\">\n<header class=\"band\">\n<div class=\"brand\">{card_mark()}<span><b>Elliot's Itential Lab</b>&nbsp; outage response</span></div>\n<div><h1>{e(headline)}</h1>\n<p class=\"lede\">{lede}</p></div>\n<div class=\"status\"><span class=\"pill\">Waiting for your approval</span>\n<p class=\"elapsed\">{e(elapsed)}<small>{e(since)}</small></p></div>\n</header>\n<div class=\"body\">\n{sections}\n<section class=\"panel decide\" aria-labelledby=\"t-decide\"><div><h2 id=\"t-decide\">Your decision</h2>\n<p>Approve runs only this fix. Reject runs nothing and leaves {e(number)} open for a person.</p>\n<p>Either way, your note goes into the incident's work notes.</p></div>\n<form name=\"decision\"><label for=\"oc-note\">Note for the incident</label>\n<textarea id=\"oc-note\" name=\"note\" placeholder=\"Why you approve or reject, or what you checked first\"></textarea>\n</form></section>\n</div>\n<p class=\"foot\">{foot}</p>\n</div></body></html>\"\"\"\n\n\ndef fabric_reading(envelope) -> dict:\n    \"\"\"A fabric-bgp read's answer (runService's envelope) as {read, state, admin_shutdown, matches_intent, local_as,\n    remote_as, interface}; read False when it did not answer.\"\"\"\n    result = ((envelope or {}).get(\"result\")) or {}\n    out = result.get(\"stdout_json\") or {}\n    session = out.get(\"session\") or {}\n    if result.get(\"return_code\") != 0 or not session:\n        return {\"read\": False, \"state\": \"not read\", \"admin_shutdown\": None, \"matches_intent\": None,\n                \"local_as\": None, \"remote_as\": None, \"interface\": None}\n    return {\"read\": True, \"state\": session.get(\"state\"), \"admin_shutdown\": session.get(\"admin_shutdown\"),\n            \"matches_intent\": session.get(\"matches_intent\"), \"local_as\": session.get(\"local_as\"),\n            \"remote_as\": session.get(\"remote_as\"), \"interface\": out.get(\"interface\")}\n\n\ndef fabric_card_drawing(left: dict, right: dict, link: tuple) -> str:\n    \"\"\"The session as an engineer draws it: two devices with their AS, the link between them. Each end is {name, asn,\n    state (colour, label), iface (colour, label)}; link is (colour, label); a link that is not up is drawn broken.\"\"\"\n    e = html.escape\n    l_col, l_label = link\n    broken = l_col != \"#1E8C6A\"\n    pipe = \"#F3C2BE\" if broken else \"#CBE8DD\"\n    fracture = ('<g class=\"f\"><path d=\"M346 98l12 14-10 6 14 22\" stroke=\"#D8433A\" stroke-width=\"8\" fill=\"none\" '\n                'filter=\"url(#g)\" opacity=\".6\"/><path d=\"M346 98l12 14-10 6 14 22\" stroke=\"#D8433A\" '\n                'stroke-width=\"3.2\" fill=\"none\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/></g>') if broken else \"\"\n    dash = ' stroke-dasharray=\"7 6\"' if broken else \"\"\n    pipes = \"M222 118H336M384 118H498\" if broken else \"M222 118H498\"\n\n    def box(x: int, end: dict, align: str) -> str:\n        s_col, s_label = end[\"state\"]\n        i_col, i_label = end[\"iface\"]\n        return (f'<rect x=\"{x}\" y=\"72\" width=\"176\" height=\"92\" rx=\"12\" fill=\"#fff\" stroke=\"{s_col}\" stroke-width=\"2.5\"/>'\n                f'<circle cx=\"{x + 30}\" cy=\"104\" r=\"14\" fill=\"#fff\" stroke=\"{s_col}\" stroke-width=\"2\"/>'\n                f'<path d=\"M{x + 22} 100h16m-4-4 4 4-4 4M{x + 38} 108H{x + 22}m4-4-4 4 4 4\" stroke=\"{s_col}\" '\n                'stroke-width=\"2\" fill=\"none\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>'\n                f'<text x=\"{x + 52}\" y=\"100\" font-size=\"15\" font-weight=\"700\" fill=\"#0E2A4A\">{e(end[\"name\"])}</text>'\n                f'<text x=\"{x + 52}\" y=\"118\" font-size=\"12\" fill=\"#4A6380\">AS {e(str(end[\"asn\"]))}</text>'\n                f'<text x=\"{x + 16}\" y=\"148\" font-size=\"12.5\" fill=\"{s_col}\">{e(s_label)}</text>'\n                f'<text x=\"{x + (0 if align == \"start\" else 176)}\" y=\"186\" font-size=\"12\" fill=\"{i_col}\" '\n                f'text-anchor=\"{align}\">{e(i_label)}</text>')\n\n    return (\n        '<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 720 230\" width=\"720\" height=\"230\">'\n        '<style>text{font-family:\"Avenir Next\",\"Segoe UI\",system-ui,sans-serif}'\n        '.f{transform-origin:360px 118px;animation:p 1.8s ease-in-out infinite}'\n        '@keyframes p{0%,100%{opacity:1}50%{opacity:.35}}'\n        '@media (prefers-reduced-motion:reduce){.f{animation:none}}</style>'\n        '<defs><pattern id=\"d\" width=\"16\" height=\"16\" patternUnits=\"userSpaceOnUse\"><path d=\"M16 0H0V16\" '\n        'fill=\"none\" stroke=\"#E1E9F0\"/></pattern><filter id=\"g\" x=\"-50%\" y=\"-50%\" width=\"200%\" height=\"200%\">'\n        '<feGaussianBlur stdDeviation=\"5\"/></filter></defs>'\n        '<rect x=\"10\" y=\"22\" width=\"700\" height=\"190\" rx=\"14\" fill=\"url(#d)\" stroke=\"#C9D5E2\"/>'\n        '<text x=\"28\" y=\"48\" font-size=\"13\" fill=\"#4A6380\">the BGP session, as each end reads it</text>'\n        f'<path d=\"{pipes}\" stroke=\"{pipe}\" stroke-width=\"14\" stroke-linecap=\"round\"/>'\n        f'<path d=\"{pipes}\" stroke=\"{l_col}\" stroke-width=\"3\"{dash} stroke-linecap=\"round\"/>'\n        f'{fracture}'\n        f'<text x=\"360\" y=\"92\" font-size=\"14\" font-weight=\"700\" fill=\"#0E2A4A\" text-anchor=\"middle\">BGP</text>'\n        f'<text x=\"360\" y=\"150\" font-size=\"13\" fill=\"{l_col}\" text-anchor=\"middle\">{e(l_label)}</text>'\n        f'{box(46, left, \"start\")}{box(498, right, \"end\")}'\n        '</svg>'\n    )\n\n\ndef fabric_card(d: dict) -> dict:\n    \"\"\"The Work Center card as one HTML page: the plan (`plan`), both ends' reads (`near`, `far`: fabric-bgp envelopes),\n    the fix (`fix`, fabric_fix's runCode result), the incident (`number`), the alert's start (`starts_at`) and the time\n    it is drawn (`now`). Every value from outside is escaped. Pure: runCode runs this source on the Gateway.\"\"\"\n    e = html.escape\n    kelp, buoy, flare, grey = \"#1E8C6A\", \"#D8433A\", \"#C7851A\", \"#7A8CA0\"\n    plan = (d.get(\"plan\") or {}).get(\"stdout_json\") or {}\n    near_end, far_end = plan.get(\"near\") or {}, plan.get(\"far\") or {}\n    number = str(d.get(\"number\") or \"the incident\")\n    fix_out = (d.get(\"fix\") or {}).get(\"stdout_json\") or {}\n    fix_end = fix_out.get(\"end\") or {}\n    fmt = {\"d\": str(fix_out.get(\"device\") or \"\"), \"p\": str(fix_end.get(\"peer\") or \"\"),\n           \"i\": str(fix_end.get(\"interface\") or \"\"), \"n\": str(fix_end.get(\"neighbor\") or \"\")}\n    title, what, (scope, scope_note), promises = FABRIC_FIX_COPY[fix_out.get(\"fix\")]\n    reads = {\"near\": fabric_reading(d.get(\"near\")), \"far\": fabric_reading(d.get(\"far\"))}\n    device, peer = str(near_end.get(\"device\") or \"the device\"), str(near_end.get(\"peer\") or \"its peer\")\n    start, now, elapsed = card_clock(d.get(\"starts_at\"), d.get(\"now\"))\n    since = f\"BGP down since {start:%H:%M} UTC\" if start else \"BGP down: start time not read\"\n\n    def state(reading: dict) -> tuple:\n        if not reading[\"read\"]:\n            return grey, \"not read\"\n        if reading[\"state\"] == \"Established\":\n            return kelp, \"Established\"\n        if reading[\"admin_shutdown\"]:\n            return buoy, f\"{reading['state']}: neighbor shut\"\n        return buoy, str(reading[\"state\"])\n\n    def iface(reading: dict, end: dict) -> tuple:\n        i = reading[\"interface\"] or {}\n        if not end.get(\"interface\"):\n            return grey, \"link: not checked\"\n        if i.get(\"admin_up\") is False:\n            return buoy, f\"{end['interface']} admin down\"\n        if i.get(\"admin_up\") is True:\n            return (kelp, f\"{end['interface']} up\") if i.get(\"oper_up\") else (flare, f\"{end['interface']} line down\")\n        return grey, f\"{end['interface']} not read\"\n\n    ends = []\n    for side, end in ((\"near\", near_end), (\"far\", far_end)):\n        ends.append({\"name\": str(end.get(\"device\") or \"?\"), \"asn\": end.get(\"local_as\", \"?\"),\n                     \"state\": state(reads[side]), \"iface\": iface(reads[side], end)})\n    up = all(r[\"state\"] == \"Established\" for r in reads.values())\n    vrf = \"\" if near_end.get(\"vrf\") in (None, \"default\") else f\"VRF {near_end.get('vrf')}, \"\n    link = (kelp, f\"{vrf}up\") if up else (buoy, f\"{vrf}down\")\n    drawing = outage_card_image(fabric_card_drawing(ends[0], ends[1], link),\n                                f\"{device} and {peer}: BGP {link[1]}\", 720, 230)\n\n    ledger = (\n        (f\"{device}'s view\", ends[0][\"state\"][1], ends[0][\"state\"][0], f\"to {near_end.get('neighbor', '?')}\"),\n        (f\"{peer}'s view\", ends[1][\"state\"][1], ends[1][\"state\"][0], f\"to {far_end.get('neighbor', '?')}\"),\n        (\"Links\", \"Up\" if all(e_[\"iface\"][0] == kelp for e_ in ends) else \"Check\", kelp if all(\n            e_[\"iface\"][0] == kelp for e_ in ends) else buoy, \"the interfaces toward each other\"),\n        (\"NetBox intent\", *((\"Matches\", kelp) if all(r[\"matches_intent\"] for r in reads.values()) else\n                            (\"Differs\", buoy) if any(r[\"matches_intent\"] is False for r in reads.values()) else\n                            (\"Not read\", grey)), \"AS numbers and the neighbor\"),\n    )\n    ledger_html = \"\".join(\n        f'<div class=\"reading\" style=\"--c:{c}\"><p class=\"src\">{e(src)}</p><p class=\"val\">{e(val)}</p>'\n        f'<p class=\"why\">{e(why)}</p></div>' for src, val, c, why in ledger)\n\n    def yn(v, good=True):\n        if v is None:\n            return '<span class=\"unk\">not read</span>'\n        return f'<span class=\"{\"ok\" if bool(v) == good else \"bad\"}\">{\"yes\" if v else \"no\"}</span>'\n\n    def asn(have, want):\n        if have is None:\n            return '<span class=\"unk\">not read</span>'\n        return f'<span class=\"{\"ok\" if have == want else \"bad\"}\">{e(str(have))} (NetBox {e(str(want))})</span>'\n\n    rows = []\n    for side, end in ((\"near\", near_end), (\"far\", far_end)):\n        r = reads[side]\n        i = r[\"interface\"] or {}\n        rows += [(\"h\", f\"{end.get('device', '?')} -> {end.get('neighbor', '?')}, read by fabric-bgp\"),\n                 (\"session state\", f'<span class=\"{\"ok\" if r[\"state\"] == \"Established\" else \"bad\" if r[\"read\"] else \"unk\"}\">'\n                                   f'{e(str(r[\"state\"]))}</span>'),\n                 (\"neighbor shut down\", yn(r[\"admin_shutdown\"], good=False)),\n                 (\"local AS\", asn(r[\"local_as\"], end.get(\"local_as\"))),\n                 (\"remote AS\", asn(r[\"remote_as\"], end.get(\"remote_as\")))]\n        if end.get(\"interface\"):\n            rows.append((f\"{end['interface']} admin up\", yn(i.get(\"admin_up\") if i else None)))\n    term = \"\".join(f'<p class=\"h\">{e(b)}</p>' if a == \"h\" else f'<p class=\"row\"><span>{e(a)}</span>{b}</p>'\n                   for a, b in rows)\n\n    tag = str(fix_out.get(\"cause\") or \"no cause given\")\n    cause = FABRIC_CAUSES[tag].format(**fmt) if tag in FABRIC_CAUSES else tag\n    session = str(fix_out.get(\"session\") or \"\")[:8]\n    agent_by = \"fabric-diagnostics agent\" + (f\", session {session}\" if session else \"\")\n    evidence = str(fix_out.get(\"evidence\") or \"\")\n    promises_html = \"\".join(f'<li class=\"promise\">{e(p.format(**fmt))}</li>' for p in promises)\n    sections = f\"\"\"<section class=\"panel topo\" aria-labelledby=\"t-where\"><h2 id=\"t-where\">Where the session breaks</h2>{drawing}\n<div class=\"ledger\">{ledger_html}</div></section>\n<section class=\"panel\" aria-labelledby=\"t-when\"><h2 id=\"t-when\">What has happened so far</h2>\n<ol class=\"steps\">\n<li><span class=\"who\">Prometheus</span><b>Alert fired</b>{e(since[len(\"BGP down \"):] if start else \"BGP down\")}</li>\n<li><span class=\"who\">ServiceNow</span><b>Incident opened</b>{e(number)}, with both ends' readings</li>\n<li><span class=\"who\">The agent</span><b>Cause found</b>one fix picked from a fixed menu</li>\n<li class=\"now\"><span class=\"who\">You</span><b>Approve or reject</b>nothing has run yet</li>\n<li class=\"next\"><span class=\"who\">Itential</span><b>Fix and prove</b>Established, then resolves</li>\n</ol></section>\n<section class=\"panel diag\" aria-labelledby=\"t-found\"><div>\n<h2 id=\"t-found\">What the agent found</h2><span class=\"by\"><i></i>{e(agent_by)}</span>\n<p class=\"cause\">{e(cause)}</p>\n<p>{e(evidence) if evidence else \"The agent's full diagnosis is in the incident's work notes.\"}</p></div>\n<div class=\"term\" role=\"group\" aria-label=\"What fabric-bgp read at both ends\">{term}</div></section>\n<section class=\"panel action\" aria-labelledby=\"t-fix\"><div><p class=\"kicker\">The proposed fix</p>\n<h2 id=\"t-fix\">{e(title.format(**fmt))}</h2><p class=\"what\">{e(what.format(**fmt))}</p></div>\n<p class=\"scope\">Scope<b>{e(scope)}</b>{e(scope_note)}</p>\n<ul class=\"promises\">{promises_html}</ul></section>\"\"\"\n    lede = (f\"Itential opened <strong>{e(number)}</strong> and the fabric-diagnostics agent found the likely cause.\\n\"\n            \"One fix is ready, and nothing runs until you approve it.\")\n    foot = (f\"Prepared by Itential's Diagnose Fabric BGP Outage workflow at {now:%H:%M} UTC, from live reads of\\n\"\n            f\"{e(device)} and {e(peer)}, checked against NetBox.\")\n    page = card_page(f\"BGP outage: {number}\", f\"A BGP session is down: {device} and {peer}\", lede, elapsed, since,\n                     sections, number, foot)\n    return {\"html\": page}\n\n\nprint(json.dumps(fabric_card(json.loads(sys.stdin.read() or \"{}\"))))\n",
+          "data": "$var.5b.object",
+          "safety": {
+            "timeout": 30
+          },
+          "packages": []
+        },
+        "outgoing": {
+          "result": "$var.job.fabric_card"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "5f": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "the card's HTML",
+      "description": "the card's HTML",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 2860,
+        "y": 8250
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "stdout_json.html",
+          "obj": "$var.5e.result"
+        },
+        "outgoing": {
+          "return_data": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "5c": {
+      "name": "InteractiveHTML",
+      "canvasName": "InteractiveHTML",
+      "summary": "approval: the BGP outage card",
+      "description": "approval: the BGP outage card",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkCenter",
+      "type": "manual",
+      "displayName": "Work Center",
+      "groups": [],
+      "nodeLocation": {
+        "x": 3300,
+        "y": 8400
+      },
+      "variables": {
+        "incoming": {
+          "header": "Approve the fix for the BGP outage",
+          "body": "$var.5f.return_data",
+          "variables": {},
+          "btn_success": "Approve and run the fix",
+          "btn_failure": "Reject"
+        },
+        "outgoing": {
+          "export": "$var.job.card_decision"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "view": "/work-center/task/InteractiveHTML"
+    },
+    "50": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "the incident (rejected)",
+      "description": "the incident (rejected)",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 3870,
+        "y": 8550
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "stdout_json.sys_id",
+          "obj": "$var.job.fabric_request"
+        },
+        "outgoing": {
+          "return_data": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "58": {
+      "name": "runCode",
+      "canvasName": "runCode",
+      "summary": "the rejection note, with the engineer's (Python on the runner)",
+      "description": "the rejection note, with the engineer's (Python on the runner)",
+      "location": "Application",
+      "locationType": null,
+      "app": "GatewayManager",
+      "type": "automatic",
+      "displayName": "GatewayManager",
+      "groups": [],
+      "nodeLocation": {
+        "x": 4190,
+        "y": 8700
+      },
+      "variables": {
+        "incoming": {
+          "clusterId": "lab",
+          "language": "python",
+          "code": "import json, sys\n\n\ndef decision_note(decision) -> str:\n    \"\"\"The engineer's note from the card's export ({\"decision\": {\"note\": <the textarea>}}, P6), trimmed; \"\" if none.\"\"\"\n    note = ((decision or {}).get(\"decision\") or {}).get(\"note\") if isinstance(decision, dict) else None\n    return \" \".join(str(note or \"\").split())[:1000]\n\n\ndef outage_rejected(d: dict) -> dict:\n    \"\"\"The incident's work note when the card is rejected (`d` is the card's export).\"\"\"\n    note = decision_note(d)\n    return {\"work_notes\": \"The proposed fix was rejected in Work Center: nothing was run. The incident stays open for \"\n                          f\"a person. The engineer's note: {note or 'no note'}.\"}\n\n\nprint(json.dumps(outage_rejected(json.loads(sys.stdin.read() or \"{}\"))))\n",
+          "data": "$var.job.card_decision",
+          "safety": {
+            "timeout": 30
+          },
+          "packages": []
+        },
+        "outgoing": {
+          "result": "$var.job.fabric_rejected"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "59": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "the rejection note",
+      "description": "the rejection note",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 4490,
+        "y": 8850
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "stdout_json",
+          "obj": "$var.58.result"
+        },
+        "outgoing": {
+          "return_data": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "51": {
+      "name": "updateIncident",
+      "canvasName": "updateIncident",
+      "summary": "note the incident: the fix was rejected",
+      "description": "note the incident: the fix was rejected",
+      "location": "Adapter",
+      "locationType": "lab-servicenow:1.0.0",
+      "app": "lab-servicenow:1.0.0",
+      "type": "automatic",
+      "displayName": "lab-servicenow:1.0.0",
+      "groups": [],
+      "nodeLocation": {
+        "x": 5080,
+        "y": 9000
+      },
+      "variables": {
+        "incoming": {
+          "adapter_id": "servicenow-api",
+          "sys_id": "$var.50.return_data",
+          "sysparm_fields": "number",
+          "bodyContentType": "application/json",
+          "requestBodyPayload": "$var.59.return_data"
+        },
+        "outgoing": {
+          "response": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "52": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "rejected",
+      "description": "rejected",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 5230,
+        "y": 9150
+      },
+      "variables": {
+        "incoming": {
+          "input": "the fix was rejected in Work Center: nothing was run, the incident stays open",
+          "outputType": "string",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.outcome"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "60": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "the fix's params (one end, one action)",
+      "description": "the fix's params (one end, one action)",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 3150,
+        "y": 8550
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "stdout_json.params",
+          "obj": "$var.job.fabric_fix"
+        },
+        "outgoing": {
+          "return_data": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "61": {
+      "name": "runService",
+      "canvasName": "runService",
+      "summary": "run the approved fix (fabric-bgp: one change, Established, then save)",
+      "description": "run the approved fix (fabric-bgp: one change, Established, then save)",
+      "location": "Application",
+      "locationType": null,
+      "app": "GatewayManager",
+      "type": "automatic",
+      "displayName": "GatewayManager",
+      "groups": [],
+      "nodeLocation": {
+        "x": 3520,
+        "y": 8700
+      },
+      "variables": {
+        "incoming": {
+          "serviceName": "fabric-bgp",
+          "clusterId": "lab",
+          "params": "$var.60.return_data"
+        },
+        "outgoing": {
+          "result": "$var.job.fix_result"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "62": {
+      "name": "evaluation",
+      "canvasName": "evaluation",
+      "summary": "the fix exited 0?",
+      "description": "the fix exited 0?",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 3300,
+        "y": 8850
+      },
+      "variables": {
+        "incoming": {
+          "all_true_flag": true,
+          "evaluation_groups": [
+            {
+              "all_true_flag": true,
+              "evaluations": [
+                {
+                  "query": "result.return_code",
+                  "operand_1": {
+                    "variable": "result",
+                    "task": "61"
+                  },
+                  "operator": "==",
+                  "operand_2": {
+                    "variable": 0,
+                    "task": "static"
+                  }
+                }
+              ]
+            }
+          ],
+          "options": {}
+        },
+        "outgoing": {
+          "return_value": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "54": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "the fix did not complete",
+      "description": "the fix did not complete",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 3450,
+        "y": 9000
+      },
+      "variables": {
+        "incoming": {
+          "input": "the approved fix exited non-zero or could not run (fix_result): the session is read again",
+          "outputType": "string",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.fix_note"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "70": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "the alerting end's read params",
+      "description": "the alerting end's read params",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 3350,
+        "y": 9150
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "stdout_json.near_read",
+          "obj": "$var.job.fabric_plan"
+        },
+        "outgoing": {
+          "return_data": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "80": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "the session could not be read",
+      "description": "the session could not be read",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 3540,
+        "y": 10950
+      },
+      "variables": {
+        "incoming": {
+          "input": "fabric-bgp could not read the session after the fix (check_result)",
+          "outputType": "string",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.check_note"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "72": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "the result: the fix",
+      "description": "the result: the fix",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 3940,
+        "y": 11250
+      },
+      "variables": {
+        "incoming": {
+          "obj": {},
+          "path": [
+            "fix"
+          ],
+          "value": "$var.job.fabric_fix"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "74": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "the result: its answer",
+      "description": "the result: its answer",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 3930,
+        "y": 11400
+      },
+      "variables": {
+        "incoming": {
+          "obj": "$var.72.object",
+          "path": [
+            "answer"
+          ],
+          "value": "$var.job.fix_result"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "75": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "the result: the session now",
+      "description": "the result: the session now",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 3900,
+        "y": 11550
+      },
+      "variables": {
+        "incoming": {
+          "obj": "$var.74.object",
+          "path": [
+            "check"
+          ],
+          "value": "$var.job.check_result"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "81": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "the result: the engineer's note",
+      "description": "the result: the engineer's note",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 3860,
+        "y": 11700
+      },
+      "variables": {
+        "incoming": {
+          "obj": "$var.75.object",
+          "path": [
+            "decision"
+          ],
+          "value": "$var.job.card_decision"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "76": {
+      "name": "runCode",
+      "canvasName": "runCode",
+      "summary": "fixed? (Python on the runner)",
+      "description": "fixed? (Python on the runner)",
+      "location": "Application",
+      "locationType": null,
+      "app": "GatewayManager",
+      "type": "automatic",
+      "displayName": "GatewayManager",
+      "groups": [],
+      "nodeLocation": {
+        "x": 3800,
+        "y": 11850
+      },
+      "variables": {
+        "incoming": {
+          "clusterId": "lab",
+          "language": "python",
+          "code": "import json, sys\n\n\ndef fabric_reading(envelope) -> dict:\n    \"\"\"A fabric-bgp read's answer (runService's envelope) as {read, state, admin_shutdown, matches_intent, local_as,\n    remote_as, interface}; read False when it did not answer.\"\"\"\n    result = ((envelope or {}).get(\"result\")) or {}\n    out = result.get(\"stdout_json\") or {}\n    session = out.get(\"session\") or {}\n    if result.get(\"return_code\") != 0 or not session:\n        return {\"read\": False, \"state\": \"not read\", \"admin_shutdown\": None, \"matches_intent\": None,\n                \"local_as\": None, \"remote_as\": None, \"interface\": None}\n    return {\"read\": True, \"state\": session.get(\"state\"), \"admin_shutdown\": session.get(\"admin_shutdown\"),\n            \"matches_intent\": session.get(\"matches_intent\"), \"local_as\": session.get(\"local_as\"),\n            \"remote_as\": session.get(\"remote_as\"), \"interface\": out.get(\"interface\")}\n\n\ndef decision_note(decision) -> str:\n    \"\"\"The engineer's note from the card's export ({\"decision\": {\"note\": <the textarea>}}, P6), trimmed; \"\" if none.\"\"\"\n    note = ((decision or {}).get(\"decision\") or {}).get(\"note\") if isinstance(decision, dict) else None\n    return \" \".join(str(note or \"\").split())[:1000]\n\n\ndef fabric_result(d: dict) -> dict:\n    \"\"\"After the approved fix (`fix`, fabric_fix's runCode result; its fabric-bgp envelope under `answer`) and the\n    session read again at the alerting end (`check`, a fabric-bgp read envelope): fixed only when that read says\n    Established. Resolves or notes the incident; the engineer's note (`decision`) goes in either way.\"\"\"\n    fix_out = (d.get(\"fix\") or {}).get(\"stdout_json\") or {}\n    fix, device = fix_out.get(\"fix\"), fix_out.get(\"device\")\n    answer = (((d.get(\"answer\") or {}).get(\"result\")) or {}).get(\"stdout_json\") or {}\n    check = fabric_reading(d.get(\"check\"))\n    up = check[\"state\"] == \"Established\"\n    proved = \"it proved Established\" if answer.get(\"established\") else (\n        \"it did not complete: \" + str(answer.get(\"error\") or \"no answer\"))\n    saved = \" and saved the configuration\" if answer.get(\"saved\") else \"\"\n    note = decision_note(d.get(\"decision\"))\n    said = (f\"Approved in Work Center ({'note: ' + note if note else 'no note'}). Itential ran the approved fix {fix} on \"\n            f\"{device} ({proved}{saved})\")\n    if up:\n        message = f\"{said}; the session reads Established again.\"\n        return {\"fixed\": True, \"message\": message,\n                \"resolve\": {\"state\": \"6\", \"close_code\": \"Solution provided\", \"close_notes\": message,\n                            \"work_notes\": message}}\n    message = f\"{said}; the session still reads {check['state']}. The incident stays open for a person.\"\n    return {\"fixed\": False, \"message\": message, \"note\": {\"work_notes\": message}}\n\n\nprint(json.dumps(fabric_result(json.loads(sys.stdin.read() or \"{}\"))))\n",
+          "data": "$var.81.object",
+          "safety": {
+            "timeout": 30
+          },
+          "packages": []
+        },
+        "outgoing": {
+          "result": "$var.job.fabric_result"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "77": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "the incident",
+      "description": "the incident",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 3800,
+        "y": 12000
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "stdout_json.sys_id",
+          "obj": "$var.job.fabric_request"
+        },
+        "outgoing": {
+          "return_data": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "78": {
+      "name": "evaluation",
+      "canvasName": "evaluation",
+      "summary": "fixed?",
+      "description": "fixed?",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 3800,
+        "y": 12150
+      },
+      "variables": {
+        "incoming": {
+          "all_true_flag": true,
+          "evaluation_groups": [
+            {
+              "all_true_flag": true,
+              "evaluations": [
+                {
+                  "query": "stdout_json.fixed",
+                  "operand_1": {
+                    "variable": "result",
+                    "task": "76"
+                  },
+                  "operator": "==",
+                  "operand_2": {
+                    "variable": true,
+                    "task": "static"
+                  }
+                }
+              ]
+            }
+          ],
+          "options": {}
+        },
+        "outgoing": {
+          "return_value": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "79": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "the resolution",
+      "description": "the resolution",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 3800,
+        "y": 12300
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "stdout_json.resolve",
+          "obj": "$var.76.result"
+        },
+        "outgoing": {
+          "return_data": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "7a": {
+      "name": "updateIncident",
+      "canvasName": "updateIncident",
+      "summary": "resolve the incident (Solution provided)",
+      "description": "resolve the incident (Solution provided)",
+      "location": "Adapter",
+      "locationType": "lab-servicenow:1.0.0",
+      "app": "lab-servicenow:1.0.0",
+      "type": "automatic",
+      "displayName": "lab-servicenow:1.0.0",
+      "groups": [],
+      "nodeLocation": {
+        "x": 3800,
+        "y": 12450
+      },
+      "variables": {
+        "incoming": {
+          "adapter_id": "servicenow-api",
+          "sys_id": "$var.77.return_data",
+          "sysparm_fields": "number,state",
+          "bodyContentType": "application/json",
+          "requestBodyPayload": "$var.79.return_data"
+        },
+        "outgoing": {
+          "response": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "7b": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "the outcome",
+      "description": "the outcome",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 3670,
+        "y": 12600
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "stdout_json.message",
+          "obj": "$var.76.result"
+        },
+        "outgoing": {
+          "return_data": "$var.job.outcome"
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "7c": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "the not-fixed note",
+      "description": "the not-fixed note",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 3400,
+        "y": 12300
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "stdout_json.note",
+          "obj": "$var.76.result"
+        },
+        "outgoing": {
+          "return_data": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "7d": {
+      "name": "updateIncident",
+      "canvasName": "updateIncident",
+      "summary": "note the incident: still not Established after the fix",
+      "description": "note the incident: still not Established after the fix",
+      "location": "Adapter",
+      "locationType": "lab-servicenow:1.0.0",
+      "app": "lab-servicenow:1.0.0",
+      "type": "automatic",
+      "displayName": "lab-servicenow:1.0.0",
+      "groups": [],
+      "nodeLocation": {
+        "x": 3350,
+        "y": 12450
+      },
+      "variables": {
+        "incoming": {
+          "adapter_id": "servicenow-api",
+          "sys_id": "$var.77.return_data",
+          "sysparm_fields": "number",
+          "bodyContentType": "application/json",
+          "requestBodyPayload": "$var.7c.return_data"
+        },
+        "outgoing": {
+          "response": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "7e": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "why it needs a look",
+      "description": "why it needs a look",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 2830,
+        "y": 12600
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "stdout_json.message",
+          "obj": "$var.76.result"
+        },
+        "outgoing": {
+          "return_data": "$var.job.error"
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "8b": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "a step could not run",
+      "description": "a step could not run",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": -470,
+        "y": 4500
+      },
+      "variables": {
+        "incoming": {
+          "input": "the Gateway could not run a step before the evidence (see fabric_plan): nothing was changed",
+          "outputType": "string",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.error"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "8c": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "the alerting end could not be read",
+      "description": "the alerting end could not be read",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 460,
+        "y": 4950
+      },
+      "variables": {
+        "incoming": {
+          "input": "fabric-bgp could not read the alerting end (near_result): nothing was changed",
+          "outputType": "string",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.error"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "8d": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "ServiceNow did not answer",
+      "description": "ServiceNow did not answer",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 2180,
+        "y": 6600
+      },
+      "variables": {
+        "incoming": {
+          "input": "ServiceNow did not answer (fabric_open, incident_created): nothing was changed; the outage has no incident",
+          "outputType": "string",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.error"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "8e": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "a step after the incident could not run",
+      "description": "a step after the incident could not run",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 2530,
+        "y": 12600
+      },
+      "variables": {
+        "incoming": {
+          "input": "a step after the incident was opened could not run (see fabric_request, agent_result, fabric_fix, fix_result): check the job and the incident",
+          "outputType": "string",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.error"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "f0": {
+      "name": "ViewData",
+      "canvasName": "ViewData",
+      "summary": "Work Center task",
+      "description": "Work Center task",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "manual",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 2330,
+        "y": 12750
+      },
+      "variables": {
+        "incoming": {
+          "header": "Diagnose Fabric BGP Outage needs a look",
+          "message": "$var.job.error",
+          "body": "$var.job.fabric_fix",
+          "variables": {},
+          "btn_success": "Seen",
+          "btn_failure": "Seen"
+        },
+        "outgoing": {},
+        "error": "",
+        "decorators": []
+      },
+      "view": "/workflow_engine/task/ViewData"
+    },
+    "b0": {
+      "name": "delay",
+      "canvasName": "delay",
+      "summary": "wait 15 s for the session (read 1)",
+      "description": "wait 15 s for the session (read 1)",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 3520,
+        "y": 9300
+      },
+      "variables": {
+        "incoming": {
+          "time": 15
+        },
+        "outgoing": {
+          "time_in_milliseconds": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "b1": {
+      "name": "runService",
+      "canvasName": "runService",
+      "summary": "the session now, read 1 (fabric-bgp read)",
+      "description": "the session now, read 1 (fabric-bgp read)",
+      "location": "Application",
+      "locationType": null,
+      "app": "GatewayManager",
+      "type": "automatic",
+      "displayName": "GatewayManager",
+      "groups": [],
+      "nodeLocation": {
+        "x": 3390,
+        "y": 9450
+      },
+      "variables": {
+        "incoming": {
+          "serviceName": "fabric-bgp",
+          "clusterId": "lab",
+          "params": "$var.70.return_data"
+        },
+        "outgoing": {
+          "result": "$var.job.check_result"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "b2": {
+      "name": "evaluation",
+      "canvasName": "evaluation",
+      "summary": "Established? (read 1)",
+      "description": "Established? (read 1)",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 4240,
+        "y": 9600
+      },
+      "variables": {
+        "incoming": {
+          "all_true_flag": true,
+          "evaluation_groups": [
+            {
+              "all_true_flag": true,
+              "evaluations": [
+                {
+                  "query": "result.stdout_json.session.state",
+                  "operand_1": {
+                    "variable": "result",
+                    "task": "b1"
+                  },
+                  "operator": "==",
+                  "operand_2": {
+                    "variable": "Established",
+                    "task": "static"
+                  }
+                }
+              ]
+            }
+          ],
+          "options": {}
+        },
+        "outgoing": {
+          "return_value": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "b3": {
+      "name": "delay",
+      "canvasName": "delay",
+      "summary": "wait 30 s for the session (read 2)",
+      "description": "wait 30 s for the session (read 2)",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 3820,
+        "y": 9750
+      },
+      "variables": {
+        "incoming": {
+          "time": 30
+        },
+        "outgoing": {
+          "time_in_milliseconds": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "b4": {
+      "name": "runService",
+      "canvasName": "runService",
+      "summary": "the session now, read 2 (fabric-bgp read)",
+      "description": "the session now, read 2 (fabric-bgp read)",
+      "location": "Application",
+      "locationType": null,
+      "app": "GatewayManager",
+      "type": "automatic",
+      "displayName": "GatewayManager",
+      "groups": [],
+      "nodeLocation": {
+        "x": 3830,
+        "y": 9900
+      },
+      "variables": {
+        "incoming": {
+          "serviceName": "fabric-bgp",
+          "clusterId": "lab",
+          "params": "$var.70.return_data"
+        },
+        "outgoing": {
+          "result": "$var.job.check_result"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "b5": {
+      "name": "evaluation",
+      "canvasName": "evaluation",
+      "summary": "Established? (read 2)",
+      "description": "Established? (read 2)",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 3990,
+        "y": 10050
+      },
+      "variables": {
+        "incoming": {
+          "all_true_flag": true,
+          "evaluation_groups": [
+            {
+              "all_true_flag": true,
+              "evaluations": [
+                {
+                  "query": "result.stdout_json.session.state",
+                  "operand_1": {
+                    "variable": "result",
+                    "task": "b4"
+                  },
+                  "operator": "==",
+                  "operand_2": {
+                    "variable": "Established",
+                    "task": "static"
+                  }
+                }
+              ]
+            }
+          ],
+          "options": {}
+        },
+        "outgoing": {
+          "return_value": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "b6": {
+      "name": "delay",
+      "canvasName": "delay",
+      "summary": "wait 45 s for the session (read 3)",
+      "description": "wait 45 s for the session (read 3)",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 3840,
+        "y": 10200
+      },
+      "variables": {
+        "incoming": {
+          "time": 45
+        },
+        "outgoing": {
+          "time_in_milliseconds": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "b7": {
+      "name": "runService",
+      "canvasName": "runService",
+      "summary": "the session now, read 3 (fabric-bgp read)",
+      "description": "the session now, read 3 (fabric-bgp read)",
+      "location": "Application",
+      "locationType": null,
+      "app": "GatewayManager",
+      "type": "automatic",
+      "displayName": "GatewayManager",
+      "groups": [],
+      "nodeLocation": {
+        "x": 3850,
+        "y": 10350
+      },
+      "variables": {
+        "incoming": {
+          "serviceName": "fabric-bgp",
+          "clusterId": "lab",
+          "params": "$var.70.return_data"
+        },
+        "outgoing": {
+          "result": "$var.job.check_result"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "b8": {
+      "name": "evaluation",
+      "canvasName": "evaluation",
+      "summary": "Established? (read 3)",
+      "description": "Established? (read 3)",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 4280,
+        "y": 10500
+      },
+      "variables": {
+        "incoming": {
+          "all_true_flag": true,
+          "evaluation_groups": [
+            {
+              "all_true_flag": true,
+              "evaluations": [
+                {
+                  "query": "result.stdout_json.session.state",
+                  "operand_1": {
+                    "variable": "result",
+                    "task": "b7"
+                  },
+                  "operator": "==",
+                  "operand_2": {
+                    "variable": "Established",
+                    "task": "static"
+                  }
+                }
+              ]
+            }
+          ],
+          "options": {}
+        },
+        "outgoing": {
+          "return_value": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "b9": {
+      "name": "delay",
+      "canvasName": "delay",
+      "summary": "wait 60 s for the session (read 4)",
+      "description": "wait 60 s for the session (read 4)",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 3790,
+        "y": 10650
+      },
+      "variables": {
+        "incoming": {
+          "time": 60
+        },
+        "outgoing": {
+          "time_in_milliseconds": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "ba": {
+      "name": "runService",
+      "canvasName": "runService",
+      "summary": "the session now, read 4 (fabric-bgp read)",
+      "description": "the session now, read 4 (fabric-bgp read)",
+      "location": "Application",
+      "locationType": null,
+      "app": "GatewayManager",
+      "type": "automatic",
+      "displayName": "GatewayManager",
+      "groups": [],
+      "nodeLocation": {
+        "x": 3660,
+        "y": 10800
+      },
+      "variables": {
+        "incoming": {
+          "serviceName": "fabric-bgp",
+          "clusterId": "lab",
+          "params": "$var.70.return_data"
+        },
+        "outgoing": {
+          "result": "$var.job.check_result"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "bb": {
+      "name": "evaluation",
+      "canvasName": "evaluation",
+      "summary": "Established? (read 4)",
+      "description": "Established? (read 4)",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 3840,
+        "y": 10950
+      },
+      "variables": {
+        "incoming": {
+          "all_true_flag": true,
+          "evaluation_groups": [
+            {
+              "all_true_flag": true,
+              "evaluations": [
+                {
+                  "query": "result.stdout_json.session.state",
+                  "operand_1": {
+                    "variable": "result",
+                    "task": "ba"
+                  },
+                  "operator": "==",
+                  "operand_2": {
+                    "variable": "Established",
+                    "task": "static"
+                  }
+                }
+              ]
+            }
+          ],
+          "options": {}
+        },
+        "outgoing": {
+          "return_value": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "bc": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "still not Established after the last read",
+      "description": "still not Established after the last read",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 3770,
+        "y": 11100
+      },
+      "variables": {
+        "incoming": {
+          "input": "the session was still not Established after the last read (about 150 s after the fix): the result says so",
+          "outputType": "string",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.check_note"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "9a01": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "input to check: alertname",
+      "description": "input to check: alertname",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 0,
+        "y": 150
+      },
+      "variables": {
+        "incoming": {
+          "obj": {},
+          "path": [
+            "alertname"
+          ],
+          "value": "$var.job.alertname"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "9a02": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "input to check: device",
+      "description": "input to check: device",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 0,
+        "y": 300
+      },
+      "variables": {
+        "incoming": {
+          "obj": "$var.9a01.object",
+          "path": [
+            "device"
+          ],
+          "value": "$var.job.device"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "9a03": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "input to check: neighbor",
+      "description": "input to check: neighbor",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 0,
+        "y": 450
+      },
+      "variables": {
+        "incoming": {
+          "obj": "$var.9a02.object",
+          "path": [
+            "neighbor"
+          ],
+          "value": "$var.job.neighbor"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "9a04": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "input to check: vrf",
+      "description": "input to check: vrf",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 0,
+        "y": 600
+      },
+      "variables": {
+        "incoming": {
+          "obj": "$var.9a03.object",
+          "path": [
+            "vrf"
+          ],
+          "value": "$var.job.vrf"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "9a05": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "input to check: peer",
+      "description": "input to check: peer",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 0,
+        "y": 750
+      },
+      "variables": {
+        "incoming": {
+          "obj": "$var.9a04.object",
+          "path": [
+            "peer"
+          ],
+          "value": "$var.job.peer"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "9a06": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "input to check: starts_at",
+      "description": "input to check: starts_at",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 0,
+        "y": 900
+      },
+      "variables": {
+        "incoming": {
+          "obj": "$var.9a05.object",
+          "path": [
+            "starts_at"
+          ],
+          "value": "$var.job.starts_at"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "9a0a": {
+      "name": "validateJsonSchema",
+      "canvasName": "validateJsonSchema",
+      "summary": "check the inputs",
+      "description": "check the inputs",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 0,
+        "y": 1050
+      },
+      "variables": {
+        "incoming": {
+          "jsonData": "$var.9a06.object",
+          "schema": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "alertname",
+              "device",
+              "neighbor",
+              "vrf",
+              "peer",
+              "starts_at",
+              "fingerprint"
+            ],
+            "properties": {
+              "alertname": {
+                "type": "string",
+                "enum": [
+                  "LabBgpSessionDown"
+                ]
+              },
+              "device": {
+                "type": "string",
+                "enum": [
+                  "br1-wan01",
+                  "br2-wan01",
+                  "dc1-leaf01",
+                  "dc1-leaf02",
+                  "dc1-spine01",
+                  "dc1-spine02",
+                  "dc1-wan01",
+                  "dc1-wan02",
+                  "isp-core01"
+                ]
+              },
+              "neighbor": {
+                "type": "string",
+                "pattern": "^(25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)(\\.(25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)){3}$"
+              },
+              "vrf": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9_-]{1,32}$"
+              },
+              "peer": {
+                "type": "string",
+                "enum": [
+                  "br1-wan01",
+                  "br2-wan01",
+                  "dc1-leaf01",
+                  "dc1-leaf02",
+                  "dc1-spine01",
+                  "dc1-spine02",
+                  "dc1-wan01",
+                  "dc1-wan02",
+                  "isp-core01"
+                ]
+              },
+              "starts_at": {
+                "type": "string",
+                "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+              },
+              "fingerprint": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{1,32}$"
+              }
+            }
+          }
+        },
+        "outgoing": {
+          "result": "$var.job.input_check"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "9a0b": {
+      "name": "evaluation",
+      "canvasName": "evaluation",
+      "summary": "inputs valid?",
+      "description": "inputs valid?",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": -100,
+        "y": 1200
+      },
+      "variables": {
+        "incoming": {
+          "all_true_flag": true,
+          "evaluation_groups": [
+            {
+              "all_true_flag": true,
+              "evaluations": [
+                {
+                  "query": "valid",
+                  "operand_1": {
+                    "variable": "result",
+                    "task": "9a0a"
+                  },
+                  "operator": "==",
+                  "operand_2": {
+                    "variable": true,
+                    "task": "static"
+                  }
+                }
+              ]
+            }
+          ],
+          "options": {}
+        },
+        "outgoing": {
+          "return_value": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "9a0c": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "the inputs were refused",
+      "description": "the inputs were refused",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 510,
+        "y": 1350
+      },
+      "variables": {
+        "incoming": {
+          "input": "the inputs were refused before anything ran (see input_check for which input and why): nothing was sent to a device",
+          "outputType": "string",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.error"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "workflow_start": {
+      "name": "workflow_start",
+      "summary": "workflow_start",
+      "groups": [],
+      "nodeLocation": {
+        "x": 0,
+        "y": 0
+      }
+    },
+    "workflow_end": {
+      "name": "workflow_end",
+      "summary": "workflow_end",
+      "groups": [],
+      "nodeLocation": {
+        "x": 6120,
+        "y": 12900
+      }
+    }
+  },
+  "transitions": {
+    "workflow_start": {
+      "9a01": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "01": {
+      "02": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "02": {
+      "03": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "03": {
+      "04": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "04": {
+      "1a": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "1a": {
+      "1b": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "1b": {
+      "1c": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "1c": {
+      "1d": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "1d": {
+      "1e": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "1e": {
+      "10": {
+        "state": "success",
+        "type": "standard"
+      },
+      "8b": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "10": {
+      "2a": {
+        "state": "success",
+        "type": "standard"
+      },
+      "19": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "19": {
+      "f0": {
+        "state": "success",
+        "type": "standard"
+      },
+      "8b": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "2a": {
+      "2b": {
+        "state": "success",
+        "type": "standard"
+      },
+      "8b": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "2b": {
+      "2c": {
+        "state": "success",
+        "type": "standard"
+      },
+      "8d": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "2c": {
+      "2d": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "2d": {
+      "24": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "24": {
+      "2e": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "2e": {
+      "2f": {
+        "state": "success",
+        "type": "standard"
+      },
+      "8b": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "2f": {
+      "20": {
+        "state": "success",
+        "type": "standard"
+      },
+      "3a": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "20": {
+      "21": {
+        "state": "success",
+        "type": "standard"
+      },
+      "8d": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "21": {
+      "22": {
+        "state": "success",
+        "type": "standard"
+      },
+      "8d": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "22": {
+      "23": {
+        "state": "success",
+        "type": "standard"
+      },
+      "8d": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "23": {
+      "workflow_end": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "3a": {
+      "3b": {
+        "state": "success",
+        "type": "standard"
+      },
+      "8b": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "3b": {
+      "3c": {
+        "state": "success",
+        "type": "standard"
+      },
+      "8c": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "3c": {
+      "3d": {
+        "state": "success",
+        "type": "standard"
+      },
+      "8c": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "3d": {
+      "3e": {
+        "state": "success",
+        "type": "standard"
+      },
+      "8b": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "3e": {
+      "c0": {
+        "state": "success",
+        "type": "standard"
+      },
+      "3f": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "3f": {
+      "c0": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "c0": {
+      "30": {
+        "state": "success",
+        "type": "standard"
+      },
+      "31": {
+        "state": "failure",
+        "type": "standard"
+      },
+      "8c": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "30": {
+      "workflow_end": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "31": {
+      "32": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "32": {
+      "33": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "33": {
+      "34": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "34": {
+      "35": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "35": {
+      "36": {
+        "state": "success",
+        "type": "standard"
+      },
+      "8e": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "36": {
+      "37": {
+        "state": "success",
+        "type": "standard"
+      },
+      "8e": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "37": {
+      "38": {
+        "state": "success",
+        "type": "standard"
+      },
+      "8d": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "38": {
+      "39": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "39": {
+      "c1": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "c1": {
+      "c2": {
+        "state": "success",
+        "type": "standard"
+      },
+      "8e": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "c2": {
+      "4a": {
+        "state": "success",
+        "type": "standard"
+      },
+      "8d": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "4a": {
+      "4b": {
+        "state": "success",
+        "type": "standard"
+      },
+      "8e": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "4b": {
+      "4c": {
+        "state": "success",
+        "type": "standard"
+      },
+      "45": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "45": {
+      "4c": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "4c": {
+      "4d": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "4d": {
+      "4f": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "4f": {
+      "40": {
+        "state": "success",
+        "type": "standard"
+      },
+      "8e": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "40": {
+      "4e": {
+        "state": "success",
+        "type": "standard"
+      },
+      "41": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "41": {
+      "42": {
+        "state": "success",
+        "type": "standard"
+      },
+      "8e": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "42": {
+      "43": {
+        "state": "success",
+        "type": "standard"
+      },
+      "8e": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "43": {
+      "44": {
+        "state": "success",
+        "type": "standard"
+      },
+      "8e": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "44": {
+      "f0": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "4e": {
+      "5a": {
+        "state": "success",
+        "type": "standard"
+      },
+      "8e": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "5a": {
+      "5b": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "5b": {
+      "5e": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "5e": {
+      "5f": {
+        "state": "success",
+        "type": "standard"
+      },
+      "8e": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "5f": {
+      "5c": {
+        "state": "success",
+        "type": "standard"
+      },
+      "8e": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "5c": {
+      "60": {
+        "state": "success",
+        "type": "standard"
+      },
+      "50": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "50": {
+      "58": {
+        "state": "success",
+        "type": "standard"
+      },
+      "8e": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "58": {
+      "59": {
+        "state": "success",
+        "type": "standard"
+      },
+      "8e": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "59": {
+      "51": {
+        "state": "success",
+        "type": "standard"
+      },
+      "8e": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "51": {
+      "52": {
+        "state": "success",
+        "type": "standard"
+      },
+      "8e": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "52": {
+      "workflow_end": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "60": {
+      "61": {
+        "state": "success",
+        "type": "standard"
+      },
+      "8e": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "61": {
+      "62": {
+        "state": "success",
+        "type": "standard"
+      },
+      "54": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "62": {
+      "70": {
+        "state": "success",
+        "type": "standard"
+      },
+      "54": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "54": {
+      "70": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "70": {
+      "b0": {
+        "state": "success",
+        "type": "standard"
+      },
+      "8e": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "80": {
+      "72": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "b0": {
+      "b1": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "b1": {
+      "b2": {
+        "state": "success",
+        "type": "standard"
+      },
+      "b3": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "b2": {
+      "72": {
+        "state": "success",
+        "type": "standard"
+      },
+      "b3": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "b3": {
+      "b4": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "b4": {
+      "b5": {
+        "state": "success",
+        "type": "standard"
+      },
+      "b6": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "b5": {
+      "72": {
+        "state": "success",
+        "type": "standard"
+      },
+      "b6": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "b6": {
+      "b7": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "b7": {
+      "b8": {
+        "state": "success",
+        "type": "standard"
+      },
+      "b9": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "b8": {
+      "72": {
+        "state": "success",
+        "type": "standard"
+      },
+      "b9": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "b9": {
+      "ba": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "ba": {
+      "bb": {
+        "state": "success",
+        "type": "standard"
+      },
+      "80": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "bb": {
+      "72": {
+        "state": "success",
+        "type": "standard"
+      },
+      "bc": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "bc": {
+      "72": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "72": {
+      "74": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "74": {
+      "75": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "75": {
+      "81": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "81": {
+      "76": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "76": {
+      "77": {
+        "state": "success",
+        "type": "standard"
+      },
+      "8e": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "77": {
+      "78": {
+        "state": "success",
+        "type": "standard"
+      },
+      "8e": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "78": {
+      "79": {
+        "state": "success",
+        "type": "standard"
+      },
+      "7c": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "79": {
+      "7a": {
+        "state": "success",
+        "type": "standard"
+      },
+      "8e": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "7a": {
+      "7b": {
+        "state": "success",
+        "type": "standard"
+      },
+      "8e": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "7b": {
+      "workflow_end": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "7c": {
+      "7d": {
+        "state": "success",
+        "type": "standard"
+      },
+      "8e": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "7d": {
+      "7e": {
+        "state": "success",
+        "type": "standard"
+      },
+      "8e": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "7e": {
+      "f0": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "8b": {
+      "f0": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "8c": {
+      "f0": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "8d": {
+      "f0": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "8e": {
+      "f0": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "f0": {
+      "workflow_end": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "9a01": {
+      "9a02": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "9a02": {
+      "9a03": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "9a03": {
+      "9a04": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "9a04": {
+      "9a05": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "9a05": {
+      "9a06": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "9a06": {
+      "9a0a": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "9a0a": {
+      "9a0b": {
+        "state": "success",
+        "type": "standard"
+      },
+      "9a0c": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "9a0b": {
+      "01": {
+        "state": "success",
+        "type": "standard"
+      },
+      "9a0c": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "9a0c": {
+      "workflow_end": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "workflow_end": {}
+  },
+  "groups": [],
+  "canvasVersion": 3,
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "alertname": {
+        "type": "string",
+        "required": true
+      },
+      "device": {
+        "type": "string",
+        "required": true
+      },
+      "neighbor": {
+        "type": "string",
+        "required": true
+      },
+      "vrf": {
+        "type": "string",
+        "required": true
+      },
+      "peer": {
+        "type": "string",
+        "required": true
+      },
+      "starts_at": {
+        "type": "string",
+        "required": true
+      },
+      "fingerprint": {
+        "type": "string",
+        "required": true
+      }
+    },
+    "required": [
+      "alertname",
+      "device",
+      "neighbor",
+      "vrf",
+      "peer",
+      "starts_at",
+      "fingerprint"
+    ]
+  },
+  "outputSchema": {
+    "type": "object",
+    "properties": {
+      "outcome": {
+        "type": "string"
+      },
+      "error": {
+        "type": "string"
+      },
+      "fabric_plan": {
+        "type": "object"
+      },
+      "fabric_open": {
+        "type": "object"
+      },
+      "fabric_dedupe": {
+        "type": "object"
+      },
+      "near_result": {
+        "type": "object"
+      },
+      "far_result": {
+        "type": "object"
+      },
+      "far_note": {
+        "type": "string"
+      },
+      "fabric_summary": {
+        "type": "object"
+      },
+      "incident_created": {
+        "type": "object"
+      },
+      "fabric_request": {
+        "type": "object"
+      },
+      "agent_result": {
+        "type": "object"
+      },
+      "agent_note": {
+        "type": "string"
+      },
+      "fabric_fix": {
+        "type": "object"
+      },
+      "fabric_card": {
+        "type": "object"
+      },
+      "card_decision": {
+        "type": [
+          "object",
+          "null"
+        ]
+      },
+      "fabric_rejected": {
+        "type": "object"
+      },
+      "fix_result": {
+        "type": "object"
+      },
+      "fix_note": {
+        "type": "string"
+      },
+      "check_result": {
+        "type": "object"
+      },
+      "check_note": {
+        "type": "string"
+      },
+      "fabric_result": {
+        "type": "object"
+      },
+      "input_check": {
+        "type": "object"
+      }
+    }
+  },
+  "tags": [],
+  "preAutomationTime": 300000,
+  "sla": 600000,
+  "font_size": 12,
+  "decorators": []
+}
