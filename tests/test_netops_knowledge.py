@@ -164,6 +164,11 @@ def test_the_registration_has_the_import_shape_the_gateway_parses() -> None:
     headers = wanted["ansible.builtin.set_fact"]["nk_mcp_wanted"]["headers"]
     assert isinstance(headers, dict) and list(headers) == ["Authorization"]
     assert headers["Authorization"].startswith("Bearer ") and "netops_knowledge.token_alias" in headers["Authorization"]
+    # the second live import (2026-10-06, Gateway 5.5.2): "'netops-knowledge' mcp server url is required" - the import
+    # takes `url` for an HTTP server; `command_or_url` is the CLI's argument name, which the import drops
+    server = wanted["ansible.builtin.set_fact"]["nk_mcp_wanted"]
+    assert server["url"] == "{{ netops_knowledge.url }}" and "command_or_url" not in server
+    assert "command_or_url" not in MCP_TASKS.read_text().split("\n---\n", 1)[-1].split("\n- name:", 1)[-1]
     names = [t["name"] for t in tasks]
     connected = next(i for i, n in enumerate(names) if "connected to Gateway Manager" in n)
     assert connected < names.index("Register netops-knowledge (new, changed or asked to re-register)")
