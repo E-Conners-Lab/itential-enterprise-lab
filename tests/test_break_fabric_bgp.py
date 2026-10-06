@@ -82,7 +82,9 @@ def test_the_card_shows_the_session_healthy_the_exact_lines_and_when_it_rolls_ba
     assert "Shut the BGP neighbor 10.101.254.11 on dc1-spine01" in page
     assert "<pre>router bgp 65101\nneighbor 10.101.254.11 shutdown\ncommit timer 00:20:00</pre>" in page
     assert "a configuration session under a commit timer; never saved" in page
-    assert "rolls it back at 18:20 UTC" in page and "Approve breaks this one session on purpose" in page
+    assert "rolls it back 20 min after you approve" in page and "Approve breaks this one session on purpose" in page
+    # drill 3: the card said "at 19:13" (drawn 18:53) but the timer started at the approval, 18:58 - no clock time
+    assert "18:20" not in page and "rolls back 20 min after approval" in page
     assert "Note for this drill" in page and "incident" not in page.split("Your decision")[1].lower()
     svgs = [base64.b64decode(b).decode() for b in re.findall(r'src="data:image/svg\+xml;base64,([A-Za-z0-9+/=]+)"', page)]
     assert "<svg" not in page and len(svgs) == 2
