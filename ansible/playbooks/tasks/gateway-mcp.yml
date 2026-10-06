@@ -3,10 +3,12 @@
 # other Gateway resource: through Gateway Manager's configuration import (the `iagctl db import` form), proven by the
 # export afterwards, because the import drops unknown fields silently (tasks/gateway-vault.yml). Measured on production
 # 2026-10-06 (read-only): the export carries `mcp_servers` (null while none is registered); its entries use the FlowMCP
-# reference's field names (name, command_or_url, transport, description, tags, headers). The first live import
+# reference's field names (name, transport, description, tags, headers). The first live import
 # (2026-10-06) measured two more facts: `headers` is a map (map[string]string), not the CLI's list of KEY=VALUE
 # strings ("cannot unmarshal !!seq into map[string]string", HTTP 502); and right after the alias import restarts the
-# server and the runner, an import answers 503 "No connection found to Gateway" until the cluster reconnects.
+# server and the runner, an import answers 503 "No connection found to Gateway" until the cluster reconnects. The
+# second (Gateway 5.5.2) refused "'netops-knowledge' mcp server url is required": the import takes `url` for an HTTP
+# server, where the CLI's argument is `command_or_url`.
 # The header carries the bearer token as a secret template over the Vault alias, so the token is never in this file,
 # in the import body or in the export. Then the discovery is proven: Gateway Manager lists a service for each tool the
 # server advertises, which needs TLS, the token and the pod's NetworkPolicy all to be right (a data-plane check).
@@ -29,7 +31,7 @@
          | selectattr('name', 'equalto', netops_knowledge.mcp_server) | list }}
     nk_mcp_wanted:
       name: "{{ netops_knowledge.mcp_server }}"
-      command_or_url: "{{ netops_knowledge.url }}"
+      url: "{{ netops_knowledge.url }}"
       transport: streamable-http
       description: "Read-only troubleshooting knowledge (ADR 0074); two tools, reference data only"
       tags: [netops-knowledge, adr-0074]
@@ -57,7 +59,7 @@
   when: >-
     nk_reregister | default(false) | bool
     or nk_mcp_have | length == 0
-    or nk_mcp_have[0].command_or_url | default('') != nk_mcp_wanted.command_or_url
+    or nk_mcp_have[0].url | default('') != nk_mcp_wanted.url
     or nk_mcp_have[0].transport | default('') != nk_mcp_wanted.transport
   register: nk_mcp_import
   changed_when: true
@@ -76,7 +78,7 @@
   ansible.builtin.assert:
     that:
       - held | length == 1
-      - held[0].command_or_url == nk_mcp_wanted.command_or_url
+      - held[0].url == nk_mcp_wanted.url
       - held[0].transport == nk_mcp_wanted.transport
       - held[0].headers | default([]) | length == 1
     fail_msg: >-
