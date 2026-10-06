@@ -105,9 +105,11 @@ c5() {
   curl -s --cacert "$CA" "https://$(val itential/ha2/versions.yaml "d['service_name'] + '.' + d['domain']")/gateway_manager/v1/services?limit=500&token=${tok}" \
     | ${PY} -c '
 import sys, json, re, yaml
-tools = yaml.safe_load(open("itential/versions.yaml"))["netops_knowledge"]["tools"]
+nk = yaml.safe_load(open("itential/versions.yaml"))["netops_knowledge"]
 names = [s["service_metadata"]["name"] for s in json.load(sys.stdin)["result"]]
-found = {t: [n for n in names if re.sub(r"^.*[/:.]", "", n) == t] for t in tools}
+# FlowMCP names each service <mcp_server>_<tool> (measured 2026-10-06, ADR 0074 amendment)
+server = nk["mcp_server"]
+found = {t: [n for n in names if n == server + "_" + t] for t in nk["tools"]}
 assert all(found.values()), f"missing: {[t for t, f in found.items() if not f]}"
 print("Gateway Manager lists", sorted(n for f in found.values() for n in f))'
 }
