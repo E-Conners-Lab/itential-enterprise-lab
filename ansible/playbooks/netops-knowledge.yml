@@ -1,0 +1,201 @@
+---
+# ADR 0074: netops-knowledge on k3s - `make netops-knowledge`. Runs on the workstation against ~/.kube/lab-k3s.yaml like
+# vault.yml. Order, and why:
+#   1. the pins are filled and both secrets exist in production's Vault (make knowledge-token, make knowledge-pull-token)
+#      - read with the owner's administrator token, registered no_log, never printed;
+#   2. the pinned digest's cosign signature is verified against the repo's CI identity BEFORE anything is applied
+#      (SEC-28); the registry login lives in a throw-away docker config for that one command, never in argv;
+#   3. the pod gets the token's SHA-256 only (the token itself stays in Vault for the Gateway), the pull secret, a lab-CA
+#      certificate, and the manifests (templates/netops-knowledge.yaml.j2): non-root, read-only, no capabilities, no
+#      service-account token, a VIP that admits only the Gateway, and NO egress;
+#   4. the rollout is waited for, and the running pod's image digest is compared with the pin.
+# The Gateway side (FlowMCP registration) is tasks/gateway-mcp.yml in platform-ha2-gateway.yml. Idempotent.
+- name: The netops-knowledge service on k3s
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars_files:
+    - ../../itential/versions.yaml
+    - ../../topology/ipam.yaml
+  vars:
+    ansible_python_interpreter: "{{ playbook_dir }}/../../.venv/bin/python"
+    kubeconfig: >-
+      {{ lookup('ansible.builtin.env', 'KUBECONFIG_PATH')
+         | default(lookup('ansible.builtin.env', 'HOME') ~ '/.kube/lab-k3s.yaml', true) }}
+    ca_file: "{{ playbook_dir }}/../../docs/lab-root-ca.crt"
+    vault_admin_token: "{{ lookup('ansible.builtin.env', 'VAULT_TOKEN') }}"
+    nk: "{{ netops_knowledge }}"
+    nk_ns: "{{ nk.namespace }}"
+    nk_fqdn: "{{ nk.hostname }}.{{ domain }}"
+    nk_vip: "{{ (addresses | selectattr('hostname', 'equalto', nk.hostname) | first).address }}"
+    nk_gateway_ip: "{{ (addresses | selectattr('hostname', 'equalto', nk.gateway_host) | first).address }}"
+    nk_image: "{{ nk.image.repository }}@{{ nk.image.digest }}"
+  tasks:
+    - name: The pins are filled from a release (no __NK_ marker left)
+      ansible.builtin.assert:
+        that:
+          - nk.image.digest is match('^sha256:[0-9a-f]{64}$')
+          - nk.index_sha256 is match('^[0-9a-f]{64}$')
+          - nk.source_commit is match('^[0-9a-f]{40}$')
+        fail_msg: "itential/versions.yaml netops_knowledge still holds a marker: copy the pins from the release.json"
+        quiet: true
+
+    - name: A production Vault administrator token is exported
+      ansible.builtin.assert:
+        that: vault_admin_token | length > 0
+        fail_msg: "export VAULT_TOKEN (make vault-login) - the play reads the two secrets with it"
+        quiet: true
+      no_log: true
+
+    - name: Kubeconfig must exist
+      ansible.builtin.stat:
+        path: "{{ kubeconfig }}"
+      register: kc
+      failed_when: not kc.stat.exists
+
+    - name: Cosign is installed (brew install cosign)
+      ansible.builtin.command: cosign version
+      changed_when: false
+
+    - name: The secrets from production's Vault (values never shown)
+      ansible.builtin.uri:
+        url: "{{ vault.prod.url }}/v1/{{ vault.kv_mount }}/data/{{ item }}"
+        headers: {X-Vault-Token: "{{ vault_admin_token }}"}
+        ca_path: "{{ ca_file }}"
+        status_code: [200, 404]
+      loop: ["{{ vault.knowledge.token_path }}", "{{ vault.knowledge.pull_path }}"]
+      register: nk_secrets
+      no_log: true
+
+    - name: Both secrets exist (make knowledge-token, make knowledge-pull-token)
+      ansible.builtin.assert:
+        that:
+          - nk_secrets.results[0].status == 200 and nk_secrets.results[0].json.data.data.token | default('') | length >= 32
+          - nk_secrets.results[1].status == 200 and nk_secrets.results[1].json.data.data.token | default('') | length > 0
+        fail_msg: >-
+          production Vault lacks {{ vault.knowledge.token_path }} or {{ vault.knowledge.pull_path }}:
+          run make knowledge-token / make knowledge-pull-token
+        quiet: true
+      no_log: true
+
+    - name: The secrets as facts for this run only
+      ansible.builtin.set_fact:
+        nk_token_sha256: "{{ nk_secrets.results[0].json.data.data.token | hash('sha256') }}"
+        nk_pull_user: "{{ nk_secrets.results[1].json.data.data.username }}"
+        nk_pull_token: "{{ nk_secrets.results[1].json.data.data.token }}"
+      no_log: true
+
+    # SEC-28: the signature, the SBOM attestation's signer and the digest are checked before anything is applied.
+    - name: The pinned digest is signed by netops-knowledge's CI on main
+      block:
+        - name: A throw-away registry login for cosign
+          ansible.builtin.tempfile:
+            state: directory
+            suffix: .cosign
+          register: nk_docker_config
+
+        - name: Registry login file, owner-readable only
+          ansible.builtin.copy:
+            dest: "{{ nk_docker_config.path }}/config.json"
+            mode: "0600"
+            content: >-
+              {{ {'auths': {'ghcr.io': {'auth': (nk_pull_user ~ ':' ~ nk_pull_token) | b64encode}}} | to_json }}
+          no_log: true
+
+        - name: Cosign verifies the digest's signature
+          ansible.builtin.command:
+            argv:
+              - cosign
+              - verify
+              - --certificate-identity
+              - "{{ nk.signer.identity }}"
+              - --certificate-oidc-issuer
+              - "{{ nk.signer.issuer }}"
+              - --output
+              - json
+              - "{{ nk_image }}"
+          environment:
+            DOCKER_CONFIG: "{{ nk_docker_config.path }}"
+          changed_when: false
+          register: nk_cosign
+      always:
+        - name: The throw-away registry login removed
+          ansible.builtin.file:
+            path: "{{ nk_docker_config.path }}"
+            state: absent
+          when: nk_docker_config.path is defined
+
+    - name: Signature verified
+      ansible.builtin.debug:
+        msg: "{{ nk_image }} verified: {{ (nk_cosign.stdout | from_json) | length }} signature(s) from {{ nk.signer.identity }}"
+
+    - name: Namespace (Pod Security "restricted" enforced)
+      kubernetes.core.k8s:
+        kubeconfig: "{{ kubeconfig }}"
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Namespace
+          metadata:
+            name: "{{ nk_ns }}"
+            labels:
+              pod-security.kubernetes.io/enforce: restricted
+              pod-security.kubernetes.io/enforce-version: latest
+
+    - name: The token's hash and the image pull secret
+      kubernetes.core.k8s:
+        kubeconfig: "{{ kubeconfig }}"
+        state: present
+        apply: true
+        definition:
+          apiVersion: v1
+          kind: Secret
+          metadata: {name: "{{ item.name }}", namespace: "{{ nk_ns }}"}
+          type: "{{ item.type }}"
+          stringData: "{{ item.data }}"
+      loop:
+        - name: netops-knowledge-token-hash
+          type: Opaque
+          data: {token.sha256: "{{ nk_token_sha256 }}"}
+        - name: ghcr-pull
+          type: kubernetes.io/dockerconfigjson
+          data:
+            .dockerconfigjson: >-
+              {{ {'auths': {'ghcr.io': {'username': nk_pull_user, 'password': nk_pull_token,
+                                         'auth': (nk_pull_user ~ ':' ~ nk_pull_token) | b64encode}}} | to_json }}
+      loop_control:
+        label: "{{ item.name }}"
+      no_log: true
+
+    - name: Certificate, Deployment, Service and NetworkPolicy
+      kubernetes.core.k8s:
+        kubeconfig: "{{ kubeconfig }}"
+        state: present
+        template: templates/netops-knowledge.yaml.j2
+        apply: true # keys the template drops are removed (a patch would keep them)
+
+    - name: The rollout finishes
+      kubernetes.core.k8s_info:
+        kubeconfig: "{{ kubeconfig }}"
+        kind: Deployment
+        namespace: "{{ nk_ns }}"
+        name: netops-knowledge
+        wait: true
+        wait_condition: {type: Available, status: "True"}
+        wait_timeout: 300
+
+    - name: The running pod's image
+      kubernetes.core.k8s_info:
+        kubeconfig: "{{ kubeconfig }}"
+        kind: Pod
+        namespace: "{{ nk_ns }}"
+        label_selectors: ["app.kubernetes.io/name=netops-knowledge"]
+        field_selectors: ["status.phase=Running"]
+      register: nk_pods
+
+    - name: The running pod runs the pinned digest
+      ansible.builtin.assert:
+        that:
+          - nk_pods.resources | length == 1
+          - nk.image.digest in nk_pods.resources[0].status.containerStatuses[0].imageID
+        fail_msg: "the running pod's image is not {{ nk.image.digest }}"

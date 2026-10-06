@@ -8,7 +8,7 @@ SHELL := /bin/bash
 
 PHASES := oob-network platform network-topology itential flowai observability platform-ha2 config-secrets-code identity ddi containerlab firewall-track
 
-.PHONY: help bootstrap lint test up verify vault-dev vault vault-status vault-init vault-unseal vault-config vault-snapshot vault-revoke-root vault-admin-user vault-login vault-logout vault-cutover aws-key deploy-key twin-key edge-account edge-account-line discover netbox-enrich tokens agents-push observability-refresh plan-oob plan-platform plan-itential plan-platform-ha2 plan-clab \
+.PHONY: help bootstrap lint test up verify vault-dev vault vault-status vault-init vault-unseal vault-config vault-snapshot vault-revoke-root vault-admin-user vault-login vault-logout vault-cutover aws-key deploy-key twin-key edge-account edge-account-line knowledge-token knowledge-pull-token netops-knowledge discover netbox-enrich tokens agents-push observability-refresh plan-oob plan-platform plan-itential plan-platform-ha2 plan-clab \
 	netbox-token-dev clab-dev dev-stack verify-dev prod-snapshot copilot-prod $(addprefix phase-,$(PHASES))
 
 help: ## Show targets
@@ -208,6 +208,18 @@ edge-account: ## AWS VPN: dc1-wan01's account password, made in memory, straight
 
 edge-account-line: ## AWS VPN: the router's account line for TIER=dev|prod's password, type-9 hash only, onto the clipboard
 	.venv/bin/python scripts/edge-account-to-vault.py $(TIER) --line
+
+# ADR 0074: netops-knowledge on k3s. Its two secrets live only in production's Vault (make vault-login first): the
+# bearer token FlowMCP sends (made in memory; ROTATE=1 replaces it, every 90 days) and a read:packages GitHub token for
+# the private image (pasted, no echo). Then `make netops-knowledge` verifies the image's signature and deploys it.
+knowledge-token: ## netops-knowledge: the FlowMCP bearer token, made in memory, straight into production's Vault (ROTATE=1 replaces it)
+	.venv/bin/python scripts/knowledge-secrets-to-vault.py token $(if $(ROTATE),--rotate,)
+
+knowledge-pull-token: ## netops-knowledge: paste a read:packages GitHub token (no echo) into production's Vault for the image pull
+	.venv/bin/python scripts/knowledge-secrets-to-vault.py pull-token
+
+netops-knowledge: ## netops-knowledge: verify the pinned image's signature, then deploy it to k3s (needs VAULT_TOKEN)
+	$(load_env) cd ansible && ansible-playbook playbooks/netops-knowledge.yml
 
 vault-revoke-root: ## Production Vault: revoke the root token - refuses unless the administrator login has been proven (make vault-login)
 	scripts/vault-prod.sh revoke-root

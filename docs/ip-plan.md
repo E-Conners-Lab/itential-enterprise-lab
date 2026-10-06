@@ -96,7 +96,8 @@ topology; "k3s VIP" means a MetalLB address.
 | 10.100.0.40 | oxidized | k3s VIP | Oxidized (phase 9) |
 | 10.100.0.41 | vault | k3s VIP | Vault (phase 9) |
 | 10.100.0.42 | gitea | k3s VIP | Gitea HTTP + SSH (phase 9) |
-| 10.100.0.43 - .63 | *(pool)* | k3s VIP | unassigned MetalLB pool |
+| 10.100.0.43 | knowledge | k3s VIP | netops-knowledge MCP server, admits iag-01 only (phase 15, ADR 0074) |
+| 10.100.0.44 - .63 | *(pool)* | k3s VIP | unassigned MetalLB pool |
 | 10.100.0.64 | netbox | Proxmox (VM 110, second NIC) | NetBox OOB leg (phase 2) |
 | 10.100.0.65 | itential-dev | Proxmox | dev stack for Copilot prototyping, alias `mcp-dev.lab.internal` (phase 5, ADR 0063). Released at S11.8 (ADR 0053) and returned under new names: `itential` and `mcp` stay on `iap-lb` and `tools-01` |
 | 10.100.0.66 | *(reserved)* | | released 2026-09-07: the separate `iag` VM was dropped with the container path |

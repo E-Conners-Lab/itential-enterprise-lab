@@ -271,3 +271,9 @@
       ansible.builtin.include_tasks: tasks/gateway-terraform-run.yml
       # its deploy key and IAM key are Vault aliases; only on the tier that runs the AWS VPN (aws_vpn.tier, ADR 0070)
       when: vault_enabled | default(false) | bool and aws_vpn.tier == 'prod'
+
+    # ADR 0074: netops-knowledge through FlowMCP Gateway, after the aliases are bound (its token is one). Off until
+    # versions.yaml netops_knowledge.register_with_gateway is true (the owner's go, once `make netops-knowledge` ran).
+    - name: The netops-knowledge MCP server registered with FlowMCP Gateway (ADR 0074)
+      ansible.builtin.include_tasks: tasks/gateway-mcp.yml
+      when: vault_enabled | default(false) | bool and netops_knowledge.register_with_gateway | bool

@@ -77,7 +77,9 @@ def test_every_gateway_alias_points_at_a_seeded_key() -> None:
     # lab edge target's tunnel key (the twin's, written once by make twin-key)
     v = _vault()
     unseeded = {v["aws"]["key_path"]: {"access_key_id", "secret_access_key"},
-                v["git"]["deploy_key_path"]: {"private_key"}, v["aws"]["writer_path"]: {"role_id", "secret_id"}}
+                v["git"]["deploy_key_path"]: {"private_key"}, v["aws"]["writer_path"]: {"role_id", "secret_id"},
+                # netops-knowledge's bearer token, made in memory by make knowledge-token (ADR 0074)
+                v["knowledge"]["token_path"]: {"token"}}
     targets = yaml.safe_load(VERSIONS.read_text())["aws_vpn"]["targets"]
     unseeded |= {t["psk_path"]: {"psk", "version"} for t in targets.values() if t["window"] == "open"}
     # and each revert target's own account (make edge-account), when it is not the seeded device account
@@ -95,6 +97,13 @@ def test_each_reader_reads_only_what_it_resolves() -> None:
     assert roles["itential-platform"]["policy_paths"] == ["services/*"]
     assert "devices/*" in roles["itential-gateway"]["policy_paths"]
     assert "services/servicenow" not in roles["itential-gateway"]["policy_paths"]
+    # netops-knowledge (ADR 0074): the Gateway reads the bearer token it sends; the Platform cannot (not under
+    # services/*), and nobody's policy reaches the image pull token, which only the owner's login reads
+    knowledge = _vault()["knowledge"]
+    assert knowledge["token_path"] in roles["itential-gateway"]["policy_paths"]
+    assert not knowledge["token_path"].startswith("services/") and not knowledge["pull_path"].startswith("services/")
+    for role in roles.values():
+        assert not any(knowledge["pull_path"].startswith(p.rstrip("*")) for p in role["policy_paths"]), role
 
 
 def test_servicenow_is_never_seeded_on_dev() -> None:
