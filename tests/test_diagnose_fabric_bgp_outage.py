@@ -306,6 +306,33 @@ def test_the_pure_functions_run_as_the_gateway_runs_them(code: str, data: dict) 
     assert json.loads(run.stdout)
 
 
+# ── the exact lines on the card (R10 PR C, owner 2026-10-06): fabric-bgp plan, what the card shows is what runs ──
+
+LINES = {"result": {"return_code": 0, "stdout_json": {"plan": {
+    "for": "no-shut-neighbor", "device": "dc1-spine01", "mode": "configure",
+    "lines": ["router bgp 65101", "no neighbor 10.101.254.11 shutdown"]}}}}
+
+
+def test_the_card_shows_the_exact_lines_fabric_bgp_will_send() -> None:
+    page = _card(lines=LINES)
+    assert "<pre>router bgp 65101\nno neighbor 10.101.254.11 shutdown</pre>" in page
+    assert "Exactly what runs on dc1-spine01 - configuration mode; saved only once the session is Established" in page
+
+
+def test_lines_that_could_not_be_read_say_so_and_cannot_inject_markup() -> None:
+    assert "The exact lines could not be read" in _card()
+    evil = {"result": {"stdout_json": {"plan": {"device": "<b>x</b>", "mode": "configure", "lines": ["<script>"]}}}}
+    page = _card(lines=evil)
+    assert "<script>" not in page and "&lt;script&gt;" in page and "<b>x</b>" not in page
+
+
+def test_a_fix_carries_the_plan_params_for_its_own_end_and_no_username() -> None:
+    f = build.fabric_fix(_agent('{"fix": "no-shut-interface", "device": "dc1-leaf01", "cause": "interface-shut"}'))
+    p = f["plan_params"]
+    assert p["action"] == "plan" and p["plan_for"] == "no-shut-interface" and "username" not in p
+    assert p["target_json"] == f["params"]["target_json"] and p["session_json"] == f["params"]["session_json"]
+
+
 # ── the workflow ──
 
 WF = build.diagnose_fabric_bgp_outage()
@@ -352,6 +379,8 @@ def test_the_approved_fix_is_one_fabric_bgp_call_with_the_params_the_menu_made()
     assert TASKS["60"]["variables"]["incoming"]["query"] == "stdout_json.params"
     services = [t["variables"]["incoming"].get("serviceName") for t in TASKS.values() if t.get("name") == "runService"]
     assert set(services) == {"fabric-bgp"}
+    fixes = [t for t in TASKS.values() if t.get("name") == "runService" and "$var.60." in json.dumps(t)]
+    assert len(fixes) == 1  # one call runs the fix; the others read or plan
 
 
 def test_both_ends_are_read_and_a_far_end_that_cannot_be_read_is_evidence_too() -> None:
@@ -371,6 +400,16 @@ def test_the_card_is_the_html_page_built_from_this_outage() -> None:
     assert TASKS["5e"]["variables"]["incoming"]["code"] == build.FABRIC_CARD_CODE
     assert TASKS["5f"]["variables"]["incoming"]["query"] == "stdout_json.html"
     assert TR["5e"]["8e"]["state"] == "error"
+
+
+def test_the_card_waits_for_its_exact_lines() -> None:
+    plan = TASKS["47"]["variables"]["incoming"]
+    assert plan["serviceName"] == "fabric-bgp" and plan["params"] == "$var.46.return_data"
+    assert TASKS["46"]["variables"]["incoming"]["query"] == "stdout_json.plan_params"
+    assert TR["40"]["46"]["state"] == "success" and TR["48"]["4e"]["state"] == "success"
+    assert TR["47"]["8e"]["state"] == "error" and TR["48"]["8e"]["state"] == "failure"  # no lines: no blind card
+    assert TASKS["5d"]["variables"]["incoming"]["value"] == "$var.job.fix_plan"
+    assert TASKS["5e"]["variables"]["incoming"]["data"] == "$var.5d.object"
 
 
 def test_the_engineers_note_reaches_the_incident_either_way() -> None:
@@ -400,7 +439,7 @@ def test_after_the_fix_the_session_is_read_again_with_patience() -> None:
 
 
 def test_an_escalation_notes_the_incident_and_shows_no_card() -> None:
-    assert TR["40"]["4e"]["state"] == "success" and TR["40"]["41"]["state"] == "failure"
+    assert TR["40"]["46"]["state"] == "success" and TR["40"]["41"]["state"] == "failure"  # 46: the fix's exact lines first
     assert "5c" not in _reach("41") and TASKS["43"]["name"] == "updateIncident"
 
 
