@@ -330,7 +330,7 @@ netops_knowledge:
   gateway_host: iag-01
   # FlowMCP Gateway (tasks/gateway-mcp.yml, production's Gateway play). Off until the pod runs: flipping it is the
   # owner's go for the registration (ADR 0074); the URL's host is <hostname>.<ipam domain>, a test holds them together.
-  register_with_gateway: false
+  register_with_gateway: true # owner's go 2026-10-06, after make netops-knowledge and S15.1-S15.4 passed
   mcp_server: netops-knowledge # the FlowMCP registration's name on the Gateway
   url: https://knowledge.lab.internal:8443/mcp
   token_alias: netops-knowledge-token # vault.gateway_aliases: FlowMCP's header is "Bearer {{ secret <alias> }}"
