@@ -1,6 +1,6 @@
 # 0073 — The fabric BGP outage loop: a session down starts Itential, an agent proposes one fix on one end, a person approves it
 
-- **Status:** accepted (owner, 2026-10-05)
+- **Status:** accepted (owner, 2026-10-05; amended 2026-10-06 for PR C: decisions 7 and 8)
 - **Date:** 2026-10-05
 - **Amends:** PID (new S14, R10 + A6), ADR 0051 (the gNMIc BGP rule and the SNMP modules), ADR 0072 (the alert relay's
   route table and the outage card, now shared)
@@ -66,6 +66,20 @@ Probes on production (2026-10-05, `itential-deliveries/bgp-outage-loop/probes-20
    decision with the engineer's note into the incident. R6's page frame, clock, mark and decision form are shared
    helpers now (R6's card byte-identical before and after); `Break Fabric BGP` (PR C) uses them too.
 
+7. **The exact lines on the outage card (PR C, owner 2026-10-06).** After the agent's answer passes, the workflow asks
+   fabric-bgp's `plan` action (cloud-devops-pipeline #38, pin 02b62f1; no device contacted) for the exact lines the
+   approved fix will send, and the card shows them in a block, with the mode they run in. A plan that does not answer
+   fails before the card: an engineer never approves a change they cannot read.
+8. **The drill (PR C, owner 2026-10-06).** `Break Fabric BGP` (inputs: device, neighbor, fault) breaks one declared
+   session on vEOS only - the IOS-XE equivalent of a commit timer needs `archive`, which the routers lack - and only
+   while both ends read Established. Its HTML card (the shared helpers) shows the session healthy, the steps, the exact
+   lines from `plan` and the time EOS rolls it back. Approved, fabric-bgp `inject-neighbor-shutdown` or
+   `inject-interface-shutdown` commits the one change in a configuration session `r10-drill-<epoch>` with `commit
+   timer` 20 minutes, never saved. The workflow never fixes anything: it reads the session four times over 18 minutes
+   while the outage loop does its work, and `confirm-drill` (cancel the timer) runs only after a read says
+   Established. A session still down at the last read is left to the timer and read again after it, to prove the
+   rollback. A rejection, an unhealthy session, an undeclared session or an IOS-XE device runs nothing.
+
 ## Consequences
 
 - A session over a Tunnel interface carries no interface fabric-bgp may change (its name check takes Ethernet and
@@ -74,5 +88,9 @@ Probes on production (2026-10-05, `itential-deliveries/bgp-outage-loop/probes-20
   drill; until then a wrong form fails safe.
 - A rebuilt device has a new host key and is refused until its key is pinned again, by the same two-source check.
 - The loop and its trigger exist on production only; the dev tier imports the workflow without a trigger.
+- A fix the outage loop runs during a drill goes in through `configure terminal` while the drill's configuration
+  session waits on its timer; EOS accepting that, and the confirm that follows, is proved by the first drill run. If
+  EOS refuses it the loop's fix fails safe (nothing saved) and the timer still rolls the drill back.
+- The drill starts by API or from Operations Manager by hand; it has no trigger, so nothing outside a person starts it.
 - The leaf <-> WAN edge BFD flapping is real and unexplained (likely timers too tight for EVE-NG's virtual CPUs); it is
   not this loop's to fix.

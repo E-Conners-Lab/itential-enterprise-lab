@@ -76,7 +76,8 @@ terraform_run:
     # main after cdp #35 (R6): lab-edge-push reset-sa, aws-vpn-monitor restart / drill-stop / alarm. e7a6f67 = main
     # after cdp #36: the restart document loads the connection only once charon answers (the first live drill's fix).
     # 60839ab = main after cdp #37 (R10): fabric-bgp, one BGP session end read or fixed on vEOS / IOS-XE.
-    reference: "60839ab01f1c8f3cc856c11de21c4ca5bb5aa5f5"
+    # 02b62f1 = main after cdp #38 (R10 PR C): fabric-bgp plan (the cards' exact lines) and the drill actions.
+    reference: "02b62f15dd1293ce62ce3ba64562c8cb55d042d0"
   executable_object:
     name: python-3-12
     description: "the runner image's Python 3.12 (ADR 0038)"
@@ -430,6 +431,7 @@ workflows:
   get_aws_vpn_status: Get AWS VPN Status # A1: what is deployed, until when, last change, an estimated cost; reads only
   diagnose_aws_vpn_outage: Diagnose AWS VPN Outage # R6 + A3: the tunnel-down alert -> incident, agent, approved fix
   diagnose_fabric_bgp_outage: Diagnose Fabric BGP Outage # R10 + A6: a BGP session down -> incident, agent, approved fix
+  break_fabric_bgp: Break Fabric BGP # R10 PR C: the drill - one fault under an EOS commit timer, behind an HTML card
   rotate_aws_vpn_key: Rotate AWS VPN Key # R4: the key changed in place, AWS rolled back by itself when the router fails
   rotate_aws_vpn_key_monthly: Rotate AWS VPN Key Monthly # R4: the same, from a daily schedule, on the 1st (UTC) only
   tear_down_expired_aws_vpn: Tear Down Expired AWS VPN # R2b: hourly schedule; Tear Down without cards once expires_at passed

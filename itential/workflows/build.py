@@ -373,6 +373,12 @@ INPUT_GATES = {
         "starts_at": {"type": "string", "pattern": r"^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"},
         "fingerprint": {"type": "string", "pattern": r"^[0-9a-f]{1,32}$"},
     },
+    # R10 PR C: the drill; the plan then holds the end to a declared vEOS session
+    WF["break_fabric_bgp"]: {
+        "device": {"type": "string", "enum": sorted(FABRIC_DEVICES)},
+        "neighbor": IPV4_TEXT,
+        "fault": {"type": "string", "enum": ["interface-shutdown", "neighbor-shutdown"]},
+    },
     # reason is shown on the approval card only; no markup
     WF["config_push"]: {"device": NODE_NAME, "reason": {"type": "string", "maxLength": 500, "pattern": r"^[^<>]*$"}},
     WF["branch_vlan"]: {
@@ -5531,14 +5537,17 @@ def card_mark() -> str:
 
 
 def card_page(title: str, headline: str, lede: str, elapsed: str, since: str, sections: str, number: str,
-              foot: str) -> str:
+              foot: str, extra_css: str = "", decide: str = "", note_label: str = "Note for the incident") -> str:
     """A Work Center card's page (R6, R10): the band (title, lede, waiting pill, the outage's age), the card's own
     sections, the decision with the engineer's note, the foot. `lede`, `sections` and `foot` are HTML the caller built
-    from escaped values; every other argument is escaped here."""
+    from escaped values; every other argument is escaped here. `extra_css` adds rules after the shared ones; `decide`
+    (HTML) replaces the decision's two lines, which speak of an incident."""
     e = html.escape
+    decide = decide or (f"<p>Approve runs only this fix. Reject runs nothing and leaves {e(number)} open for a person.</p>\n"
+                        "<p>Either way, your note goes into the incident's work notes.</p>")
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><title>{e(title)}</title>
-<style>{OUTAGE_CARD_CSS}</style></head>
+<style>{OUTAGE_CARD_CSS}{extra_css}</style></head>
 <body><div class="oc">
 <header class="band">
 <div class="brand">{card_mark()}<span><b>Elliot's Itential Lab</b>&nbsp; outage response</span></div>
@@ -5550,9 +5559,8 @@ def card_page(title: str, headline: str, lede: str, elapsed: str, since: str, se
 <div class="body">
 {sections}
 <section class="panel decide" aria-labelledby="t-decide"><div><h2 id="t-decide">Your decision</h2>
-<p>Approve runs only this fix. Reject runs nothing and leaves {e(number)} open for a person.</p>
-<p>Either way, your note goes into the incident's work notes.</p></div>
-<form name="decision"><label for="oc-note">Note for the incident</label>
+{decide}</div>
+<form name="decision"><label for="oc-note">{e(note_label)}</label>
 <textarea id="oc-note" name="note" placeholder="Why you approve or reject, or what you checked first"></textarea>
 </form></section>
 </div>
@@ -6279,6 +6287,9 @@ def fabric_fix(d: dict) -> dict:
         end, read = ends[device]
         out["end"] = end
         out["params"] = {**read, "action": fix, "wait_seconds": str(FABRIC_WAIT), "timeout": FABRIC_FIX_TIMEOUT}
+        # the card's exact lines: fabric-bgp plan (no device, no login: it takes no username)
+        out["plan_params"] = {"action": "plan", "target_json": read["target_json"], "session_json": read["session_json"],
+                              "plan_for": fix, "timeout": "60"}
     return out
 
 
@@ -6330,6 +6341,33 @@ FABRIC_FIX_COPY = {
                        "Refused if the neighbor or its interface is shut: that needs another fix",
                        "Proven afterwards: Established resolves the incident")),
 }
+# the exact lines a card shows (R10 PR C, owner 2026-10-06): fabric-bgp's own `plan`, inside the blue fix panel
+CARD_LINES_CSS = """
+.oc .lines { grid-column: 1 / -1; margin-top: 14px; background: rgba(14, 42, 74, .55); border-radius: 10px;
+  padding: 10px 14px 12px; }
+.oc .lines .cap { font-size: 12.5px; color: #C9D7FF; margin-bottom: 6px; }
+.oc .lines pre { margin: 0; font-family: var(--mono); font-size: 14px; line-height: 1.55; color: #fff;
+  white-space: pre-wrap; }
+"""
+CARD_LINES_MODE = {
+    "configure": "configuration mode; saved only once the session is Established",
+    "exec": "one command; no configuration change",
+    "configure session": "a configuration session under a commit timer; never saved",
+}
+
+
+def card_lines(envelope) -> str:
+    """fabric-bgp plan's answer (runService's envelope) as the card's lines block; every value escaped."""
+    e = html.escape
+    out = ((((envelope or {}).get("result")) or {}).get("stdout_json") or {}).get("plan") or {}
+    lines = [str(line) for line in out.get("lines") or []]
+    if not lines:
+        return '<div class="lines"><p class="cap">The exact lines could not be read</p></div>'
+    mode = CARD_LINES_MODE.get(out.get("mode"), str(out.get("mode") or ""))
+    return (f'<div class="lines"><p class="cap">Exactly what runs on {e(str(out.get("device") or ""))} - {e(mode)}</p>'
+            f'<pre>{e(chr(10).join(lines))}</pre></div>')
+
+
 # the agent's cause tags (itential/agents/fabric-diagnostics.yaml, its fixed list) as the card's headline
 FABRIC_CAUSES = {
     "neighbor-shut": "The BGP neighbor {n} is shut down on {d}",
@@ -6495,14 +6533,146 @@ def fabric_card(d: dict) -> dict:
 <section class="panel action" aria-labelledby="t-fix"><div><p class="kicker">The proposed fix</p>
 <h2 id="t-fix">{e(title.format(**fmt))}</h2><p class="what">{e(what.format(**fmt))}</p></div>
 <p class="scope">Scope<b>{e(scope)}</b>{e(scope_note)}</p>
+{card_lines(d.get("lines"))}
 <ul class="promises">{promises_html}</ul></section>"""
     lede = (f"Itential opened <strong>{e(number)}</strong> and the fabric-diagnostics agent found the likely cause.\n"
             "One fix is ready, and nothing runs until you approve it.")
     foot = (f"Prepared by Itential's Diagnose Fabric BGP Outage workflow at {now:%H:%M} UTC, from live reads of\n"
             f"{e(device)} and {e(peer)}, checked against NetBox.")
     page = card_page(f"BGP outage: {number}", f"A BGP session is down: {device} and {peer}", lede, elapsed, since,
-                     sections, number, foot)
+                     sections, number, foot, extra_css=CARD_LINES_CSS)
     return {"html": page}
+
+
+# --- Break Fabric BGP (R10 PR C, owner decisions 2026-10-05 / 2026-10-06; ADR 0073 amendment) -----------------------
+# The drill for the fabric BGP outage loop: one fault - a neighbor shutdown or the interface toward the peer shut - on a
+# healthy, declared vEOS session, behind its own HTML approval card that shows the exact lines (fabric-bgp plan). The
+# fault goes in under an EOS commit timer (fabric-bgp inject-*): unless confirmed, EOS rolls it back by itself after
+# DRILL_REVERT_MINUTES. The workflow then waits for the outage loop to bring the session back, and confirms the drill
+# session (cancels the timer) only then; a session still down at the last read is left to the timer, and read again
+# after it to prove the rollback. It never runs the fix itself: that is the outage loop's, after its own approval.
+DRILL_FAULTS = {"neighbor-shutdown": "inject-neighbor-shutdown", "interface-shutdown": "inject-interface-shutdown"}
+DRILL_REVERT_MINUTES = 20
+DRILL_READS = (("d0", "d1", "d2", 300), ("d3", "d4", "d5", 300), ("d6", "d7", "d8", 300), ("d9", "da", "db", 180))
+DRILL_AFTER_TIMER = DRILL_REVERT_MINUTES * 60 - sum(r[3] for r in DRILL_READS) + 120  # the timer, plus margin
+DRILL_INJECT_TIMEOUT = "300"
+DRILL_CONFIRM_TIMEOUT = "180"
+
+
+def drill_plan(d: dict, sessions: dict, targets: dict, fabric: dict) -> dict:
+    """What the drill may break: a declared session end on vEOS (`device`, `neighbor`), the fault (`fault`), both ends'
+    read params, the plan / inject params and the confirm params (the drill session's name is added after the
+    inject). Pure: runCode runs this source on the Gateway with the tables written in."""
+    key = f"{d.get('device')}|{d.get('neighbor')}"
+    near = sessions.get(key)
+    action = DRILL_FAULTS.get(d.get("fault"))
+    if not near or not action:
+        return {"ok": False, "message": f"{key} is not a session the topology declares, or {d.get('fault')!r} is not a "
+                                        "drill fault: nothing was changed"}
+    target = targets[near["device"]]
+    if target["platform"] != "eos":
+        return {"ok": False, "message": f"{near['device']} is not vEOS: drills run on the fabric only (the IOS-XE revert "
+                                        "timer needs archive): nothing was changed"}
+    if action == "inject-interface-shutdown" and "interface" not in near:
+        return {"ok": False, "message": f"{key} has no interface the drill may shut: nothing was changed"}
+    far = sessions[near["far"]]
+
+    def end_params(end: dict) -> dict:
+        return {"target_json": json.dumps(targets[end["device"]]), "session_json": json.dumps(fabric_service_session(end))}
+
+    near_p = end_params(near)
+    read = lambda end: {**end_params(end), "action": "read", "username": fabric["username"],  # noqa: E731
+                        "timeout": FABRIC_READ_TIMEOUT}
+    minutes = str(DRILL_REVERT_MINUTES)
+    return {"ok": True, "near": near, "far": far, "fault": d.get("fault"), "action": action,
+            "revert_minutes": DRILL_REVERT_MINUTES, "near_read": read(near), "far_read": read(far),
+            "plan_params": {**near_p, "action": "plan", "plan_for": action, "revert_minutes": minutes, "timeout": "60"},
+            "inject": {**near_p, "action": action, "revert_minutes": minutes, "username": fabric["username"],
+                       "timeout": DRILL_INJECT_TIMEOUT},
+            "confirm": {**near_p, "action": "confirm-drill", "username": fabric["username"],
+                        "timeout": DRILL_CONFIRM_TIMEOUT}}
+
+
+DRILL_COPY = {
+    "neighbor-shutdown": ("Shut the BGP neighbor {n} on {d}", "1 BGP neighbor"),
+    "interface-shutdown": ("Shut {i} on {d}, the link toward {p}", "1 interface"),
+}
+
+
+def drill_card(d: dict) -> dict:
+    """The drill's approval card as one HTML page: the plan (`plan`), both ends' reads now (`near`, `far`), the exact
+    lines (`lines`, fabric-bgp plan's envelope) and the time it is drawn (`now`). Every value from outside is escaped.
+    Pure: runCode runs this source on the Gateway."""
+    e = html.escape
+    kelp, buoy, grey = "#1E8C6A", "#D8433A", "#7A8CA0"
+    plan = (d.get("plan") or {}).get("stdout_json") or {}
+    near, far = plan.get("near") or {}, plan.get("far") or {}
+    fault = str(plan.get("fault") or "")
+    title, scope = DRILL_COPY.get(fault, ("Break a BGP session", "1 session"))
+    fmt = {"d": str(near.get("device") or ""), "n": str(near.get("neighbor") or ""), "i": str(near.get("interface") or ""),
+           "p": str(near.get("peer") or "")}
+    _, now, _ = card_clock(None, d.get("now"))
+    minutes = int(plan.get("revert_minutes") or 20)
+    back = now + timedelta(minutes=minutes)
+    reads = {"near": fabric_reading(d.get("near")), "far": fabric_reading(d.get("far"))}
+
+    def end(reading: dict, side: dict) -> dict:
+        ok = reading["state"] == "Established"
+        iface = side.get("interface")
+        return {"name": str(side.get("device") or "?"), "asn": side.get("local_as", "?"),
+                "state": (kelp, "Established") if ok else ((grey, "not read") if not reading["read"] else
+                                                           (buoy, str(reading["state"]))),
+                "iface": (kelp, f"{iface} up") if iface else (grey, "link: not checked")}
+
+    drawing = outage_card_image(fabric_card_drawing(end(reads["near"], near), end(reads["far"], far), (kelp, "up now")),
+                                f"{fmt['d']} and {fmt['p']}: BGP up now", 720, 230)
+    sections = f"""<section class="panel topo" aria-labelledby="t-where"><h2 id="t-where">The session to break, healthy now</h2>{drawing}</section>
+<section class="panel" aria-labelledby="t-when"><h2 id="t-when">What will happen</h2>
+<ol class="steps">
+<li class="now"><span class="who">You</span><b>Approve the drill</b>nothing has run yet</li>
+<li class="next"><span class="who">Itential</span><b>Breaks it</b>under a {minutes}-minute commit timer</li>
+<li class="next"><span class="who">Prometheus</span><b>Alert</b>about 4 minutes later</li>
+<li class="next"><span class="who">The loop</span><b>Incident, agent, card</b>your second approval fixes it</li>
+<li class="next"><span class="who">EOS</span><b>Safety net</b>rolls back by itself at {back:%H:%M} UTC</li>
+</ol></section>
+<section class="panel action" aria-labelledby="t-fix"><div><p class="kicker">The drill</p>
+<h2 id="t-fix">{e(title.format(**fmt))}</h2><p class="what">{e(
+        "Itential puts this one change on " + fmt["d"] + " in a configuration session committed with a commit timer, "
+        "then lets the fabric BGP outage loop find it, diagnose it and fix it after your approval.")}</p></div>
+<p class="scope">Scope<b>{e(scope)}</b>{e(f"rolls back by itself after {minutes} min")}</p>
+{card_lines(d.get("lines"))}
+<ul class="promises"><li class="promise">{e("Refused unless the session is Established and matches NetBox")}</li>
+<li class="promise">{e(f"Never saved: EOS rolls it back at {back:%H:%M} UTC unless the loop fixed it first")}</li>
+<li class="promise">{e("Confirmed only once the session is Established again")}</li></ul></section>"""
+    lede = ("A drill for the fabric BGP outage loop. Nothing changes until you approve, and the device undoes it by itself "
+            "if nothing else does.")
+    decide = ("<p>Approve breaks this one session on purpose. Reject changes nothing.</p>\n"
+              "<p>Your note stays with this drill's job.</p>")
+    foot = (f"Prepared by Itential's Break Fabric BGP workflow at {now:%H:%M} UTC, from live reads of {e(fmt['d'])} and "
+            f"{e(fmt['p'])}, checked against NetBox.")
+    page = card_page(f"BGP drill: {fmt['d']}", f"Break a BGP session on purpose: {fmt['d']} and {fmt['p']}", lede, "",
+                     f"rolls back at {back:%H:%M} UTC", sections, "", foot, extra_css=CARD_LINES_CSS, decide=decide,
+                     note_label="Note for this drill")
+    return {"html": page}
+
+
+def drill_result(d: dict) -> dict:
+    """The drill's outcome from the inject (`inject`), the last read of the session (`check`), the confirm
+    (`confirm`, when it ran) and the read after the commit timer (`after_timer`, when it ran)."""
+    inject = (((d.get("inject") or {}).get("result")) or {}).get("stdout_json") or {}
+    check = fabric_reading(d.get("check"))
+    confirm = (((d.get("confirm") or {}).get("result")) or {}).get("stdout_json") or {}
+    after = fabric_reading(d.get("after_timer"))
+    name = inject.get("drill_session") or "the drill session"
+    if confirm.get("confirmed"):
+        return {"ok": True, "message": f"Drill done: the session broke, the outage loop brought it back (Established), "
+                                       f"and {name} was confirmed - the commit timer is cancelled."}
+    if after["read"]:
+        state = after["state"]
+        return {"ok": state == "Established",
+                "message": f"The session was not back by the last read; the commit timer rolled {name} back: the session "
+                           f"now reads {state}."}
+    return {"ok": False, "message": f"The drill's ending could not be proved ({name}): check the session and the timer."}
 
 
 FABRIC_WAIT = int(FABRIC["wait_seconds"])
@@ -6519,11 +6689,27 @@ FABRIC_SUMMARY_CODE = _source(fabric_reading, fabric_commands, fabric_summary,
 FABRIC_FIX_CODE = _source(fabric_fix, call='fabric_fix(json.loads(sys.stdin.read() or "{}"))', extra=_FABRIC_CONSTANTS)
 FABRIC_RESULT_CODE = _source(fabric_reading, decision_note, fabric_result,
                              call='fabric_result(json.loads(sys.stdin.read() or "{}"))')
-FABRIC_CARD_CODE = _source(outage_card_image, card_clock, card_mark, card_page, fabric_reading, fabric_card_drawing,
-                           fabric_card, call='fabric_card(json.loads(sys.stdin.read() or "{}"))',
+FABRIC_CARD_CODE = _source(outage_card_image, card_clock, card_mark, card_page, card_lines, fabric_reading,
+                           fabric_card_drawing, fabric_card, call='fabric_card(json.loads(sys.stdin.read() or "{}"))',
                            extra="import base64\nimport html\nfrom datetime import datetime, timezone\n\n"
                                  "OUTAGE_CARD_CSS = " + repr(OUTAGE_CARD_CSS) + "\nFABRIC_FIX_COPY = "
-                                 + repr(FABRIC_FIX_COPY) + "\nFABRIC_CAUSES = " + repr(FABRIC_CAUSES) + "\n\n\n")
+                                 + repr(FABRIC_FIX_COPY) + "\nFABRIC_CAUSES = " + repr(FABRIC_CAUSES)
+                                 + "\nCARD_LINES_CSS = " + repr(CARD_LINES_CSS) + "\nCARD_LINES_MODE = "
+                                 + repr(CARD_LINES_MODE) + "\n\n\n")
+DRILL_PLAN_CODE = _source(fabric_service_session, drill_plan,
+                          call='drill_plan(json.loads(sys.stdin.read() or "{}"), SESSIONS, TARGETS, FABRIC)',
+                          extra=_FABRIC_CONSTANTS + "DRILL_FAULTS = " + repr(DRILL_FAULTS) + "\nDRILL_REVERT_MINUTES = "
+                          + repr(DRILL_REVERT_MINUTES) + "\nDRILL_INJECT_TIMEOUT = " + repr(DRILL_INJECT_TIMEOUT)
+                          + "\nDRILL_CONFIRM_TIMEOUT = " + repr(DRILL_CONFIRM_TIMEOUT) + "\nSESSIONS = "
+                          + repr(FABRIC_SESSIONS) + "\nTARGETS = " + repr(FABRIC_TARGETS) + "\nFABRIC = "
+                          + repr({"username": FABRIC["username"]}) + "\n\n\n")
+DRILL_CARD_CODE = _source(outage_card_image, card_clock, card_mark, card_page, card_lines, fabric_reading,
+                          fabric_card_drawing, drill_card, call='drill_card(json.loads(sys.stdin.read() or "{}"))',
+                          extra="import base64\nimport html\nfrom datetime import datetime, timedelta, timezone\n\n"
+                                "OUTAGE_CARD_CSS = " + repr(OUTAGE_CARD_CSS) + "\nCARD_LINES_CSS = "
+                                + repr(CARD_LINES_CSS) + "\nCARD_LINES_MODE = " + repr(CARD_LINES_MODE)
+                                + "\nDRILL_COPY = " + repr(DRILL_COPY) + "\n\n\n")
+DRILL_RESULT_CODE = _source(fabric_reading, drill_result, call='drill_result(json.loads(sys.stdin.read() or "{}"))')
 
 
 def diagnose_fabric_bgp_outage() -> dict:
@@ -6608,13 +6794,19 @@ def diagnose_fabric_bgp_outage() -> dict:
                   x=1775, y=600),
         "44": note("escalated", "the agent found no fix from the menu: the incident is escalated to a person", "error",
                    x=1800, y=600),
+        # the card's exact lines: fabric-bgp plan for the picked fix (no device): what the card shows is what runs
+        "46": jq("the plan's params (the picked fix)", "$var.job.fabric_fix", "stdout_json.plan_params", x=1720),
+        "47": run_service("the fix's exact lines (fabric-bgp plan: no device)", "fabric-bgp", "$var.46.return_data",
+                          "fix_plan", x=1740),
+        "48": evaluate("the lines read?", "47", "result", "result.return_code", "==", 0, x=1760),
         # the card: one HTML page from both ends' readings (fabric_card), the engineer's note comes back
         "4e": jq("the incident number", "$var.job.fabric_request", "stdout_json.number", x=1800),
         "5a": set_key("the card: the fix", "$var.34.object", "fix", "$var.job.fabric_fix", x=1810),
         "5b": set_key("the card: the incident number", "$var.5a.object", "number", "$var.4e.return_data", x=1820),
-        "5e": run_code("the card's page (Python on the runner)", FABRIC_CARD_CODE, "$var.5b.object", "fabric_card",
+        "5e": run_code("the card's page (Python on the runner)", FABRIC_CARD_CODE, "$var.5d.object", "fabric_card",
                        x=1830),
         "5f": jq("the card's HTML", "$var.5e.result", "stdout_json.html", x=1840),
+        "5d": set_key("the card: the exact lines", "$var.5b.object", "lines", "$var.job.fix_plan", x=1825),
         "5c": task("InteractiveHTML", "WorkCenter", "approval: the BGP outage card",
                    {"header": "Approve the fix for the BGP outage", "body": "$var.5f.return_data", "variables": {},
                     "btn_success": "Approve and run the fix", "btn_failure": "Reject"},
@@ -6729,13 +6921,17 @@ def diagnose_fabric_bgp_outage() -> dict:
         "45": _edge(**{"4c": ok}),
         "4c": _edge(**{"4d": ok}), "4d": _edge(**{"4f": ok}),
         "4f": _edge(**{"40": ok, "8e": err}),
-        "40": _edge(**{"4e": ok, "41": fail}),
+        "40": _edge(**{"46": ok, "41": fail}),
+        "46": _edge(**{"47": ok, "8e": err}),
+        # a card without its exact lines would ask for a blind approval: a person looks instead
+        "47": _edge(**{"48": ok, "8e": err}),
+        "48": _edge(**{"4e": ok, "8e": fail}),
         "41": _edge(**{"42": ok, "8e": err}),
         "42": _edge(**{"43": ok, "8e": err}),
         "43": _edge(**{"44": ok, "8e": err}),
         "44": _edge(**{"f0": ok}),
         "4e": _edge(**{"5a": ok, "8e": err}),
-        "5a": _edge(**{"5b": ok}), "5b": _edge(**{"5e": ok}),
+        "5a": _edge(**{"5b": ok}), "5b": _edge(**{"5d": ok}), "5d": _edge(**{"5e": ok}),
         "5e": _edge(**{"5f": ok, "8e": err}),
         "5f": _edge(**{"5c": ok, "8e": err}),
         "5c": _edge(**{"60": ok, "50": fail}),
@@ -6779,10 +6975,181 @@ def diagnose_fabric_bgp_outage() -> dict:
             "near_result": {"type": "object"}, "far_result": {"type": "object"}, "far_note": {"type": "string"},
             "fabric_summary": {"type": "object"}, "incident_created": {"type": "object"},
             "fabric_request": {"type": "object"}, "agent_result": {"type": "object"}, "agent_note": {"type": "string"},
-            "fabric_fix": {"type": "object"}, "fabric_card": {"type": "object"},
+            "fabric_fix": {"type": "object"}, "fix_plan": {"type": "object"}, "fabric_card": {"type": "object"},
             "card_decision": {"type": ["object", "null"]}, "fabric_rejected": {"type": "object"},
             "fix_result": {"type": "object"}, "fix_note": {"type": "string"}, "check_result": {"type": "object"},
             "check_note": {"type": "string"}, "fabric_result": {"type": "object"},
+        },
+    )
+
+
+def break_fabric_bgp() -> dict:
+    ok, fail, err = "success", "failure", "error"
+    nothing = "nothing was changed"
+    tasks = {
+        "01": empty("no inject answer yet", "inject_result", x=0),
+        "02": empty("no confirm answer yet", "confirm_result", x=20),
+        "03": empty("no read after the timer yet", "after_timer_result", x=40),
+        "04": empty("no far-end reading yet", "far_result", x=60),
+        # the plan: a declared vEOS session end and a drill fault
+        "1a": set_key("the plan: the device", {}, "device", "$var.job.device", x=100),
+        "1b": set_key("the plan: its neighbor", "$var.1a.object", "neighbor", "$var.job.neighbor", x=125),
+        "1c": set_key("the plan: the fault", "$var.1b.object", "fault", "$var.job.fault", x=150),
+        "1e": run_code("what the drill may break (Python on the runner)", DRILL_PLAN_CODE, "$var.1c.object",
+                       "drill_plan", x=200),
+        "10": evaluate("a declared vEOS session?", "1e", "result", "stdout_json.ok", "==", True, x=250),
+        "19": jq("why there is no drill", "$var.1e.result", "stdout_json.message", x=300, y=600, to_job="outcome"),
+        # both ends now: only a healthy session is broken on purpose
+        "2a": jq("the session's read params", "$var.job.drill_plan", "stdout_json.near_read", x=350),
+        "2b": run_service("the session now (fabric-bgp read)", "fabric-bgp", "$var.2a.return_data", "near_result", x=400),
+        "2c": evaluate("Established now?", "2b", "result", "result.stdout_json.session.state", "==", "Established",
+                       x=450),
+        "2d": note("not healthy", f"an end of the session is not Established now: a drill never stacks on a fault, "
+                   f"{nothing}",
+                   "outcome", x=500, y=600),
+        "2e": jq("the far end's read params", "$var.job.drill_plan", "stdout_json.far_read", x=500),
+        "2f": run_service("the far end now (fabric-bgp read)", "fabric-bgp", "$var.2e.return_data", "far_result", x=550),
+        "29": evaluate("the far end Established now?", "2f", "result", "result.stdout_json.session.state", "==",
+                       "Established", x=575),
+        # the exact lines: fabric-bgp plan (no device)
+        "3a": jq("the plan's params", "$var.job.drill_plan", "stdout_json.plan_params", x=600),
+        "3b": run_service("the drill's exact lines (fabric-bgp plan: no device)", "fabric-bgp", "$var.3a.return_data",
+                          "drill_lines", x=650),
+        "3c": evaluate("the lines read?", "3b", "result", "result.return_code", "==", 0, x=700),
+        # the card
+        "4a": set_key("the card: the plan", {}, "plan", "$var.job.drill_plan", x=750),
+        "4b": set_key("the card: the session", "$var.4a.object", "near", "$var.job.near_result", x=775),
+        "4c": set_key("the card: the far end", "$var.4b.object", "far", "$var.job.far_result", x=800),
+        "4d": set_key("the card: the exact lines", "$var.4c.object", "lines", "$var.job.drill_lines", x=825),
+        "4e": run_code("the card's page (Python on the runner)", DRILL_CARD_CODE, "$var.4d.object", "drill_card",
+                       x=850),
+        "4f": jq("the card's HTML", "$var.4e.result", "stdout_json.html", x=875),
+        "47": task("InteractiveHTML", "WorkCenter", "approval: the BGP drill card",
+                   {"header": "Approve the BGP drill", "body": "$var.4f.return_data", "variables": {},
+                    "btn_success": "Approve and break it", "btn_failure": "Reject"},
+                   {"export": "$var.job.card_decision"}, kind="manual", display="Work Center",
+                   view="/work-center/task/InteractiveHTML", x=900),
+        "48": note("rejected", f"the drill was rejected in Work Center: {nothing}", "outcome", x=950, y=600),
+        # the fault, under the commit timer
+        "5a": jq("the inject's params", "$var.job.drill_plan", "stdout_json.inject", x=950),
+        "5b": run_service("break it (fabric-bgp inject: a configuration session under a commit timer, never saved)",
+                          "fabric-bgp", "$var.5a.return_data", "inject_result", x=1000),
+        "5c": evaluate("broken?", "5b", "result", "result.return_code", "==", 0, x=1025),
+        "5d": note("the drill did not apply", "fabric-bgp did not break the session (inject_result): if its commit "
+                   "timer was armed, EOS rolls the change back by itself", "error", x=1050, y=600),
+        "5e": jq("the drill session's name", "$var.5b.result", "result.stdout_json.drill_session", x=1075),
+        "5f": jq("the confirm's params", "$var.job.drill_plan", "stdout_json.confirm", x=1100),
+        "50": set_key("confirm params: the drill session", "$var.5f.return_data", "drill_session", "$var.5e.return_data",
+                      x=1125),
+        # confirmed only once the outage loop brought it back
+        "7a": run_service("cancel the commit timer (fabric-bgp confirm-drill: only when Established)", "fabric-bgp",
+                          "$var.50.object", "confirm_result", x=1600),
+        "7b": evaluate("confirmed?", "7a", "result", "result.return_code", "==", 0, x=1625),
+        # not back by the last read: the timer's, then read again
+        "8a": note("not back by the last read", "the session was not Established by the last read: the commit timer "
+                   "rolls the drill back", "timer_note", x=1600, y=300),
+        "8b": task("delay", "WorkFlowEngine", "wait for the commit timer (and a margin)", {"time": DRILL_AFTER_TIMER},
+                   {"time_in_milliseconds": None}, kind="operation", display="WorkFlowEngine", x=1625, y=300),
+        "8c": run_service("the session after the timer (fabric-bgp read)", "fabric-bgp", "$var.2a.return_data",
+                          "after_timer_result", x=1650, y=300),
+        "8d": evaluate("read after the timer?", "8c", "result", "result.return_code", "==", 0, x=1675, y=300),
+        # the outcome
+        "9a": set_key("the result: the inject", {}, "inject", "$var.job.inject_result", x=1700),
+        "9b": set_key("the result: the last read", "$var.9a.object", "check", "$var.job.check_result", x=1725),
+        "9c": set_key("the result: the confirm", "$var.9b.object", "confirm", "$var.job.confirm_result", x=1750),
+        "9d": set_key("the result: after the timer", "$var.9c.object", "after_timer", "$var.job.after_timer_result",
+                      x=1775),
+        "9e": run_code("the drill's outcome (Python on the runner)", DRILL_RESULT_CODE, "$var.9d.object",
+                       "drill_result", x=1800),
+        "9f": evaluate("a clean ending?", "9e", "result", "stdout_json.ok", "==", True, x=1825),
+        "90": jq("the outcome", "$var.9e.result", "stdout_json.message", x=1850, to_job="outcome"),
+        "91": jq("why it needs a look", "$var.9e.result", "stdout_json.message", x=1850, y=300, to_job="error"),
+        "e0": note("a step could not run", f"a step before the card could not run (see drill_plan, near_result, "
+                   f"drill_lines): {nothing}", "error", x=650, y=-600),
+        "e1": note("a step after the drill could not run", "a step after the drill was applied could not run (see "
+                   "inject_result, check_result, confirm_result, after_timer_result): the commit timer still rolls "
+                   "the drill back",
+                   "error", x=1400, y=-600),
+        "f0": view("Work Center task", "Break Fabric BGP needs a look", "$var.job.error", "$var.job.drill_plan", "Seen",
+                   "Seen", x=1950, y=0),
+    }
+    # the patient wait for the outage loop: four reads over 18 minutes, unrolled (no cycle); the first that reads
+    # Established goes to the confirm, the last read is check_result either way
+    reads_tr = {}
+    for i, (delay, read, up, secs) in enumerate(DRILL_READS):
+        nxt = DRILL_READS[i + 1][0] if i + 1 < len(DRILL_READS) else "8a"
+        x = 1150 + i * 100
+        tasks[delay] = task("delay", "WorkFlowEngine", f"wait {secs // 60} min for the outage loop (read {i + 1})",
+                            {"time": secs}, {"time_in_milliseconds": None}, kind="operation", display="WorkFlowEngine",
+                            x=x)
+        tasks[read] = run_service(f"the session now, read {i + 1} (fabric-bgp read)", "fabric-bgp", "$var.2a.return_data",
+                                  "check_result", x=x + 25)
+        tasks[up] = evaluate(f"back? (read {i + 1})", read, "result", "result.stdout_json.session.state", "==",
+                             "Established", x=x + 50)
+        reads_tr[delay] = _edge(**{read: ok})
+        reads_tr[read] = _edge(**{up: ok, nxt: err})
+        reads_tr[up] = _edge(**{"7a": ok, nxt: fail})
+    tr = {
+        "workflow_start": _edge(**{"01": ok}),
+        "01": _edge(**{"02": ok}), "02": _edge(**{"03": ok}), "03": _edge(**{"04": ok}), "04": _edge(**{"1a": ok}),
+        "1a": _edge(**{"1b": ok}), "1b": _edge(**{"1c": ok}), "1c": _edge(**{"1e": ok}),
+        "1e": _edge(**{"10": ok, "e0": err}),
+        "10": _edge(**{"2a": ok, "19": fail}),
+        "19": _edge(**{"workflow_end": ok}),
+        "2a": _edge(**{"2b": ok, "e0": err}),
+        "2b": _edge(**{"2c": ok, "e0": err}),
+        "2c": _edge(**{"2e": ok, "2d": fail, "e0": err}),
+        "2d": _edge(**{"workflow_end": ok}),
+        "2e": _edge(**{"2f": ok, "e0": err}),
+        # both ends must read Established: a drill never breaks a session it cannot see whole
+        "2f": _edge(**{"29": ok, "e0": err}),
+        "29": _edge(**{"3a": ok, "2d": fail, "e0": err}),
+        "3a": _edge(**{"3b": ok, "e0": err}),
+        "3b": _edge(**{"3c": ok, "e0": err}),
+        # a card without its exact lines would ask for a blind approval: a person looks instead
+        "3c": _edge(**{"4a": ok, "e0": fail}),
+        "4a": _edge(**{"4b": ok}), "4b": _edge(**{"4c": ok}), "4c": _edge(**{"4d": ok}), "4d": _edge(**{"4e": ok}),
+        "4e": _edge(**{"4f": ok, "e0": err}),
+        "4f": _edge(**{"47": ok, "e0": err}),
+        "47": _edge(**{"5a": ok, "48": fail}),
+        "48": _edge(**{"workflow_end": ok}),
+        "5a": _edge(**{"5b": ok, "e1": err}),
+        "5b": _edge(**{"5c": ok, "5d": err}),
+        "5c": _edge(**{"5e": ok, "5d": fail}),
+        "5d": _edge(**{"f0": ok}),
+        "5e": _edge(**{"5f": ok, "e1": err}),
+        "5f": _edge(**{"50": ok, "e1": err}),
+        "50": _edge(**{DRILL_READS[0][0]: ok}),
+        **reads_tr,
+        "7a": _edge(**{"7b": ok, "e1": err}),
+        "7b": _edge(**{"9a": ok, "e1": fail}),
+        "8a": _edge(**{"8b": ok}),
+        "8b": _edge(**{"8c": ok}),
+        "8c": _edge(**{"8d": ok, "e1": err}),
+        "8d": _edge(**{"9a": ok, "e1": fail}),
+        "9a": _edge(**{"9b": ok}), "9b": _edge(**{"9c": ok}), "9c": _edge(**{"9d": ok}), "9d": _edge(**{"9e": ok}),
+        "9e": _edge(**{"9f": ok, "e1": err}),
+        "9f": _edge(**{"90": ok, "91": fail}),
+        "90": _edge(**{"workflow_end": ok}),
+        "91": _edge(**{"f0": ok}),
+        "e0": _edge(**{"f0": ok}), "e1": _edge(**{"f0": ok}),
+        "f0": _edge(**{"workflow_end": ok}),
+    }
+    return workflow(
+        WF["break_fabric_bgp"],
+        "The fabric BGP outage loop's drill (R10 PR C, ADR 0073): after an HTML approval card with the exact lines, it "
+        "breaks one healthy vEOS session - a neighbor or the interface toward the peer shut - under an EOS commit timer, "
+        "waits for the outage loop to bring it back and only then cancels the timer; otherwise EOS rolls it back",
+        {k: {"type": "string", "required": True} for k in ("device", "neighbor", "fault")},
+        tasks,
+        tr,
+        {
+            "outcome": {"type": "string"}, "error": {"type": "string"}, "timer_note": {"type": "string"},
+            "drill_plan": {"type": "object"}, "near_result": {"type": "object"}, "far_result": {"type": "object"},
+            "drill_lines": {"type": "object"}, "drill_card": {"type": "object"},
+            "card_decision": {"type": ["object", "null"]}, "inject_result": {"type": "object"},
+            "check_result": {"type": "object"}, "confirm_result": {"type": "object"},
+            "after_timer_result": {"type": "object"}, "drill_result": {"type": "object"},
         },
     )
 
@@ -6791,7 +7158,7 @@ BUILDERS = (device_count, show_version, show_command, show_all, branch_vlan, bra
             compliance_run, compliance_report, netbox_devices, backup_all, deploy_aws_vpn, verify_aws_vpn,
             hand_off_aws_vpn, config_push_revert, tear_down_aws_vpn, tear_down_expired_aws_vpn, get_aws_vpn_status,
             check_aws_drift, rotate_aws_vpn_key, rotate_aws_vpn_key_monthly, diagnose_aws_vpn_outage,
-            diagnose_fabric_bgp_outage)
+            diagnose_fabric_bgp_outage, break_fabric_bgp)
 
 
 if __name__ == "__main__":
