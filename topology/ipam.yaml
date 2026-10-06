@@ -63,6 +63,7 @@ addresses:
   - {address: 10.100.0.40, hostname: oxidized, placement: k3s-vip, phase: 9, status: reserved}
   - {address: 10.100.0.41, hostname: vault, placement: k3s-vip, phase: 9, status: active, description: "production Vault on k3s (ADR 0065)"}
   - {address: 10.100.0.42, hostname: gitea, placement: k3s-vip, phase: 9, status: reserved}
+  - {address: 10.100.0.43, hostname: knowledge, placement: k3s-vip, phase: 15, status: reserved, description: "netops-knowledge MCP server, admits iag-01 only (ADR 0074)"}
   - {address: 10.100.0.64, hostname: netbox, placement: proxmox-vm, phase: 2, status: active, description: "VM 110 second NIC"}
   # aliases are extra A records for the same address (unbound on oob-gw renders them).
   # 10.100.0.65 was released at S11.8 (2026-09-10, ADR 0053) and returns for the Copilot dev stack (ADR 0063)

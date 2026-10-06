@@ -305,6 +305,36 @@ aws_vpn:
         tunnel_description: IPsec VTI to AWS (Hand Off AWS VPN)
 
 # Operations Manager (ADR 0068 steps 5 and 9): how the AWS VPN workflows are started - tasks/aws-vpn-triggers.yml
+# netops-knowledge (ADR 0074): the read-only troubleshooting knowledge service. Its code, corpus and index live in the
+# PRIVATE repo below and reach the lab only through this pin: the image digest and the index's SHA-256 move together,
+# from the release.json that repo's CI attaches to the main commit it built. Not under images: (images/fetch.sh pulls
+# every entry there; this package is private). netops-knowledge.yml verifies the cosign signature against `signer`
+# before it applies the digest (SEC-28).
+netops_knowledge:
+  repository: https://github.com/E-Conners-Lab/netops-knowledge
+  source_commit: __NK_SOURCE_COMMIT__
+  image: {repository: ghcr.io/e-conners-lab/netops-knowledge, digest: "__NK_IMAGE_DIGEST__"}
+  index_sha256: __NK_INDEX_SHA256__
+  corpus_sha256: __NK_CORPUS_SHA256__
+  signer:
+    identity: https://github.com/E-Conners-Lab/netops-knowledge/.github/workflows/ci.yml@refs/heads/main
+    issuer: https://token.actions.githubusercontent.com
+  namespace: netops-knowledge
+  hostname: knowledge # knowledge.lab.internal, its VIP in topology/ipam.yaml
+  port: 8443
+  # the one caller: the production Gateway (FlowMCP). The LoadBalancer source range and the Cilium policy admit only it.
+  gateway_host: iag-01
+  # FlowMCP Gateway (tasks/gateway-mcp.yml, production's Gateway play). Off until the pod runs: flipping it is the
+  # owner's go for the registration (ADR 0074); the URL's host is <hostname>.<ipam domain>, a test holds them together.
+  register_with_gateway: false
+  mcp_server: netops-knowledge # the FlowMCP registration's name on the Gateway
+  url: https://knowledge.lab.internal:8443/mcp
+  token_alias: netops-knowledge-token # vault.gateway_aliases: FlowMCP's header is "Bearer {{ secret <alias> }}"
+  tools: [search_scenarios, get_scenario] # exactly what the server advertises; the registration task asserts it
+  token_rotation_days: 90 # SEC-05 exception (FlowMCP takes a static header only), SEC-08 cadence
+  audit_retention: 2160h # Loki keeps this namespace's lines 90 days (SEC-23); everything else keeps 168h
+  resources: {cpu: 50m, memory: 96Mi, memory_limit: 256Mi}
+
 operations_manager:
   deploy_aws_vpn:
     automation: Deploy AWS VPN
@@ -611,7 +641,8 @@ vault:
     itential-gateway:
       # aws/*: the IAM key terraform-run uses, the PSK it copies to Secrets Manager and the router, and the writer's
       # own credentials (ADR 0068 decisions 3 and 5)
-      policy_paths: [devices/*, services/netbox, aws/terraform, aws/vpn-psk, aws/psk-writer, git/cloud-devops-pipeline]
+      policy_paths: [devices/*, services/netbox, aws/terraform, aws/vpn-psk, aws/psk-writer, git/cloud-devops-pipeline,
+                     mcp/netops-knowledge]
       bound_hosts: [iag-01]
     itential-aws-psk-writer:
       # its own path only. Write-only until R4; since then (owner decision 2026-10-04, ADR 0068 amendment) it may read
@@ -637,6 +668,14 @@ vault:
     repo: E-Conners-Lab/cloud-devops-pipeline
     url: git@github.com:E-Conners-Lab/cloud-devops-pipeline.git
     deploy_key_path: git/cloud-devops-pipeline # {private_key, public_key}
+  # netops-knowledge (ADR 0074). Neither is seeded from .env and neither is under services/* (the Platform reads that):
+  # - token_path: the bearer token FlowMCP sends, made in memory by `make knowledge-token` and read by the Gateway
+  #   (its alias below); the play reads it only to give the pod its SHA-256, never the token
+  # - pull_path: a GitHub token with read:packages only, which k3s pulls the private image with; the owner pastes it
+  #   into `make knowledge-pull-token` (no echo); only the play reads it, with the owner's administrator login
+  knowledge:
+    token_path: mcp/netops-knowledge # {token}
+    pull_path: k3s/ghcr-pull # {username, token}
   # What the Platform stores in place of a credential once vault_enabled is on (measured 2026-09-23): an adapter or
   # integration field resolves a $SECRET_ reference only when the reference is the WHOLE value. Not secrets.
   platform_refs:
@@ -663,6 +702,9 @@ vault:
     # aws-vpn-psk (ADR 0068 d5): the write-only writer's own credentials, which the vault config play keeps here
     aws-psk-writer-role-id: {path: aws/psk-writer, key: role_id}
     aws-psk-writer-secret-id: {path: aws/psk-writer, key: secret_id}
+    # netops-knowledge (ADR 0074): FlowMCP's Authorization header, `Bearer {{ secret "<this alias>" }}`. Only the
+    # production Gateway registers the server; on dev the alias is bound but nothing uses it.
+    netops-knowledge-token: {path: mcp/netops-knowledge, key: token}
   # The edge aliases, bound on the tier that runs the AWS VPN (aws_vpn.tier, tasks/gateway-vault.yml), from that tier's
   # Vault. Under devices/* or aws/*, so the Gateway reads them and the Platform cannot (approles above). The Gateway
   # resolves every bound alias on every run, so each entry must exist before its alias is bound: the guard refuses the
