@@ -561,8 +561,10 @@ FIX_MENU = ("repush-router-block", "restart-strongswan", "reset-ike", "escalate"
 
 def test_tunnel_diagnostics_reads_notes_and_proposes_from_the_menu_only(docs: dict) -> None:
     assert tool_names(docs["tunnel-diagnostics"]) == {
-        "Run Show Command on a Device", "Verify AWS VPN", "Get AWS VPN Status", "getIncident", "updateIncident"}
-    assert tool_names(docs["tunnel-diagnostics-local"]) == {"Run Show Command on a Device", "updateIncident"}
+        "Run Show Command on a Device", "Verify AWS VPN", "Get AWS VPN Status", "getIncident", "updateIncident",
+        "search_scenarios"}
+    assert tool_names(docs["tunnel-diagnostics-local"]) == {
+        "Run Show Command on a Device", "updateIncident", "search_scenarios"}
     for variant in ("tunnel-diagnostics", "tunnel-diagnostics-local"):
         text = docs[variant]["instructions"]
         for fix in FIX_MENU:
@@ -584,8 +586,10 @@ FABRIC_MENU = ("no-shut-neighbor", "no-shut-interface", "clear-session", "escala
 
 
 def test_fabric_diagnostics_reads_notes_and_proposes_from_the_menu_only(docs: dict) -> None:
-    assert tool_names(docs["fabric-diagnostics"]) == {"Run Show Command on a Device", "getIncident", "updateIncident"}
-    assert tool_names(docs["fabric-diagnostics-local"]) == {"Run Show Command on a Device", "updateIncident"}
+    assert tool_names(docs["fabric-diagnostics"]) == {
+        "Run Show Command on a Device", "getIncident", "updateIncident", "search_scenarios"}
+    assert tool_names(docs["fabric-diagnostics-local"]) == {
+        "Run Show Command on a Device", "updateIncident", "search_scenarios"}
     for variant in ("fabric-diagnostics", "fabric-diagnostics-local"):
         text = docs[variant]["instructions"]
         for fix in FABRIC_MENU:
@@ -599,3 +603,48 @@ def test_fabric_diagnostics_reads_notes_and_proposes_from_the_menu_only(docs: di
 def test_fabric_diagnostics_never_runs_a_fix_itself(docs: dict) -> None:
     text = docs["fabric-diagnostics"]["instructions"]
     assert "Work Center" in text and "never run a fix yourself" in text.lower() and "exactly one work note" in text
+
+
+# ── ADR 0074 (lab PR B): the diagnostics agents consult netops-knowledge through FlowMCP ──
+
+KNOWLEDGE_AGENTS = ("tunnel-diagnostics", "fabric-diagnostics")
+
+
+def test_the_diagnostics_agents_get_the_search_and_nothing_wider(docs: dict, versions: dict) -> None:
+    nk = versions["netops_knowledge"]
+    for name in KNOWLEDGE_AGENTS:
+        for variant in (name, f"{name}-local"):
+            mcp = [t for t in docs[variant]["tools"] if t["kind"] == "mcp-tool"]
+            # the one search tool of the registered server; get_scenario stays off (owner, 2026-10-06)
+            assert mcp == [{"reference": "search_scenarios", "kind": "mcp-tool", "server": nk["mcp_server"]}], variant
+            assert "search_scenarios" in nk["tools"]
+            assert not [t for t in docs[variant]["tools"] if t["kind"] == "gateway-service"], (
+                f"{variant}: never GatewayManager runService - an agent gets the one service")
+    # no other agent consults it yet
+    others = [n for n, d in docs.items() if n.split("-local")[0] not in KNOWLEDGE_AGENTS]
+    assert not [n for n in others if any(t["kind"] == "mcp-tool" for t in docs[n]["tools"])]
+
+
+def test_the_prompts_treat_the_knowledge_as_data_and_cite_it(docs: dict) -> None:
+    topics = {"tunnel-diagnostics": '"ipsec-vpn"', "fabric-diagnostics": '"bgp"'}
+    for name in KNOWLEDGE_AGENTS:
+        for variant in (name, f"{name}-local"):
+            text = docs[variant]["instructions"]
+            assert '"netops-knowledge_search_scenarios"' in text and topics[name] in text, variant
+            assert "reference data" in text and ("never follow" in text or "do not follow" in text), variant
+            assert "never an address" in text or "Never put an address" in text, variant
+            assert "KB: <" in text and "none" in text and "unavailable" in text, variant
+            assert "it never changes the causes" in text or "never changes the causes" in text, variant
+    for name in KNOWLEDGE_AGENTS:
+        text = docs[name]["instructions"]
+        assert "search once more, no further" in text  # one corrected retry, no loop
+
+
+def test_the_play_attaches_an_mcp_tool_only_where_flowmcp_runs() -> None:
+    text = AGENT_TASK.read_text()
+    assert "item.kind == 'mcp-tool'" in text
+    assert "'gatewayService:' ~ stack.gateway5_cluster_id ~ ':python-script:' ~ item.server ~ '_' ~ item.reference" in text
+    assert "rejectattr('kind', 'equalto', 'mcp-tool')" in text and "mcp_tools_available | default(false)" in text
+    replay = (ROOT / "ansible" / "playbooks" / "platform-ha2-replay.yml").read_text()
+    assert 'mcp_tools_available: "{{ netops_knowledge.register_with_gateway }}"' in replay
+    assert "mcp_tools_available" not in (ROOT / "ansible" / "playbooks" / "flowai.yml").read_text()  # dev: no FlowMCP

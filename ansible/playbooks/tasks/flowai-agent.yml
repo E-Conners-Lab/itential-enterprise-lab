@@ -5,6 +5,10 @@
 # workflow:<workflow uuid> (the document's uuid field, not its _id; the current import of that name),
 # integration:<title>%3A<version>:<instance>:<operationId> (ADR 0045; the colon of the model id is encoded),
 # application:<App>:<method> for platform application methods (kind: application, app: ConfigurationManager; ADR 0046).
+# gatewayService:<cluster>:python-script:<server>_<tool> for one tool of an MCP server registered with FlowMCP (kind:
+# mcp-tool, server: <server>; measured 2026-10-06, ADR 0074 d10): the one service, never GatewayManager runService.
+# FlowMCP is registered on production only, so an mcp-tool is attached only where mcp_tools_available is true
+# (platform-ha2-replay.yml); elsewhere the agent runs without it and its prompt notes `KB: unavailable`.
 - name: "Agent current workflow ids for {{ agent.name }}"
   ansible.builtin.uri:
     url: "{{ platform_local }}/automation-studio/workflows?limit=100"
@@ -24,12 +28,16 @@
            else ('integration:' ~ integrations.models[item.model].title ~ '%3A' ~ integrations.models[item.model].version
                  ~ ':' ~ integrations.models[item.model].instance ~ ':' ~ item.reference) if item.kind == 'integration'
            else ('application:' ~ item.app ~ ':' ~ item.reference) if item.kind == 'application'
+           else ('gatewayService:' ~ stack.gateway5_cluster_id ~ ':python-script:' ~ item.server ~ '_' ~ item.reference)
+             if item.kind == 'mcp-tool'
            else ('workflow:' ~ (wf_list.json['items'] | selectattr('name', 'equalto', item.reference) | map(attribute='uuid') | first))
          ] }}
   vars:
     gateway_methods: {send-command: sendCommand, send-config: sendConfig, run-service: runService}
     adapter_exports: {NetBox: Netbox, ServiceNow: Servicenow}
-  loop: "{{ agent.tools }}"
+  loop: >-
+    {{ agent.tools if mcp_tools_available | default(false) | bool
+       else agent.tools | rejectattr('kind', 'equalto', 'mcp-tool') | list }}
   loop_control:
     label: "{{ item.kind }} {{ item.reference }}"
 

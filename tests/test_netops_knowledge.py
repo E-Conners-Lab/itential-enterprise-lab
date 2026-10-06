@@ -187,6 +187,11 @@ def test_discovery_expects_the_names_flowmcp_gives() -> None:
     assert "regex_replace', '^', netops_knowledge.mcp_server ~ '_'" in text
     verify = (ROOT / "verify" / "test-15-knowledge.sh").read_text()
     assert 'server + "_" + t' in verify and "re.sub" not in verify.split("c5()", 1)[1].split("check ", 1)[0]
+    # S15.6 (lab PR B): the four diagnostics agents hold exactly that service, never get_scenario or runService
+    c6 = verify.split("c6()", 1)[1].split("\ncheck ", 1)[0]
+    assert "python-script:%s_search_scenarios" in c6 and '"get_scenario" in r or "runService" in r' in c6
+    for agent in ("tunnel-diagnostics", "tunnel-diagnostics-local", "fabric-diagnostics", "fabric-diagnostics-local"):
+        assert f'"{agent}"' in c6
 
 
 def test_the_mcp_secret_script_never_shows_or_leaves_the_token() -> None:
@@ -240,3 +245,72 @@ def test_the_token_script_refuses_to_overwrite_without_rotate() -> None:
     ks.vault = lambda tok, method, path, body=None: 200
     with contextlib.redirect_stdout(io.StringIO()):
         assert ks.write("admin", VAULT["knowledge"]["token_path"], {"token": "x"}, replace=False) == 1
+
+
+# ── the pull token is checked before it is stored (ADR 0074 lab PR B) ──
+
+CANARY = "ghp_" + "c" * 36
+
+
+class _Resp(io.BytesIO):
+    def __init__(self, status: int, body: bytes = b"") -> None:
+        super().__init__(body)
+        self.status = status
+
+    def __enter__(self) -> "_Resp":
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        self.close()
+
+
+def _ghcr(ks: Any, token_status: int = 200, manifest_status: int = 200) -> list[Any]:
+    seen: list[Any] = []
+
+    def fake_urlopen(req: Any, context: Any = None, timeout: int = 0) -> _Resp:
+        import urllib.error
+        seen.append(req)
+        status = token_status if "/token?" in req.full_url else manifest_status
+        if status >= 400:
+            raise urllib.error.HTTPError(req.full_url, status, "refused", {}, None)  # type: ignore[arg-type]
+        return _Resp(status, b'{"token": "bearer-canary"}')
+
+    ks.urllib.request.urlopen = fake_urlopen
+    return seen
+
+
+def test_a_pull_token_must_be_classic() -> None:
+    ks = _script()
+    seen = _ghcr(ks)
+    assert "classic" in ks.pull_problem("someone", "github_pat_" + "x" * 30)
+    assert not seen  # refused before any request
+
+
+def test_a_pull_token_must_pull_the_pinned_image() -> None:
+    ks = _script()
+    seen = _ghcr(ks)
+    assert ks.pull_problem("someone", CANARY) is None
+    token_req, manifest_req = seen
+    repo = NK["image"]["repository"].split("/", 1)[1]
+    assert token_req.full_url.startswith("https://ghcr.io/token?scope=repository:" + repo + ":pull")
+    assert manifest_req.get_method() == "HEAD" and manifest_req.full_url.endswith("/manifests/" + NK["image"]["digest"])
+    assert manifest_req.get_header("Authorization") == "Bearer bearer-canary"
+    for status in (401, 403):
+        _ghcr(ks, token_status=status)
+        assert "cannot pull" in ks.pull_problem("someone", CANARY)
+    _ghcr(ks, manifest_status=404)
+    assert "404" in ks.pull_problem("someone", CANARY)
+
+
+def test_a_refused_pull_token_is_never_stored_or_shown(monkeypatch: Any) -> None:
+    ks = _script()
+    _ghcr(ks, token_status=401)
+    stored: list[Any] = []
+    ks.vault = lambda tok, method, path, body=None: stored.append((method, path)) or 404
+    monkeypatch.setattr(ks, "admin_token", lambda: "admin")
+    monkeypatch.setattr("builtins.input", lambda prompt="": "someone")
+    monkeypatch.setattr(ks.getpass, "getpass", lambda prompt="": CANARY)
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        assert ks.main(["pull-token"]) == 1
+    assert not stored and CANARY not in out.getvalue() and "nothing stored" in out.getvalue()

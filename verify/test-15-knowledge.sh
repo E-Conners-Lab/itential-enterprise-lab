@@ -115,6 +115,27 @@ print("Gateway Manager lists", sorted(n for f in found.values() for n in f))'
 }
 check "S15.5 Gateway Manager lists a service for each tool netops-knowledge advertises (FlowMCP discovery: DNS, TLS, token, policy)" c5
 
+# --- S15.6 the diagnostics agents hold the one search tool (lab PR B) ------------------------------------------------
+c6() {
+  local user tok; user=$(val itential/ha2/versions.yaml "d['platform']['admin_user']")
+  tok=$(printf '{"username":"%s","password":"%s"}' "$user" "${ITENTIAL_ADMIN_PASSWORD:?}" \
+    | curl -s --cacert "$CA" -X POST -H 'Content-Type: application/json' --data @- \
+      "https://$(val itential/ha2/versions.yaml "d['service_name'] + '.' + d['domain']")/login")
+  curl -s --cacert "$CA" "https://$(val itential/ha2/versions.yaml "d['service_name'] + '.' + d['domain']")/agent-project-service/operable-agents?token=${tok}" \
+    | ${PY} -c '
+import sys, json, yaml
+v = yaml.safe_load(open("itential/versions.yaml"))
+want = "gatewayService:%s:python-script:%s_search_scenarios" % (v["stack"]["gateway5_cluster_id"], v["netops_knowledge"]["mcp_server"])
+agents = {a["name"]: [t["referenceId"] for t in a.get("tools") or []] for a in json.load(sys.stdin)["data"]["items"]}
+for name in ("tunnel-diagnostics", "tunnel-diagnostics-local", "fabric-diagnostics", "fabric-diagnostics-local"):
+    refs = agents.get(name)
+    assert refs is not None, f"{name}: not on the Platform"
+    assert refs.count(want) == 1, f"{name}: lacks {want}"
+    assert not [r for r in refs if "get_scenario" in r or "runService" in r], f"{name}: holds a wider tool: {refs}"
+    print(f"{name}: {len(refs)} tools, search_scenarios once, nothing wider")'
+}
+check "S15.6 the four diagnostics agents hold netops-knowledge_search_scenarios and nothing wider (no get_scenario, no runService)" c6
+
 echo
 echo "passed=${pass} failed=${fail}"
 [ "$fail" -eq 0 ]
