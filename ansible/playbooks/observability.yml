@@ -77,10 +77,16 @@
     # a key named `values` is the dict method in Jinja)
     charts:
       - {key: kube_prometheus_stack, release: kps, values_file: kube-prometheus-stack.yaml, overrides: {}}
+      # snmp_exporter does not watch its config file: the checksum rolls the pod exactly when the modules change
+      # (2026-10-05, R10: a new module stayed unknown to the running pod and the IOS-XE scrapes got 400)
       - key: snmp_exporter
         release: snmp-exporter
         values_file: snmp-exporter.yaml
-        overrides: {image: {tag: "{{ components.snmp_exporter.app_version }}"}}
+        overrides:
+          image: {tag: "{{ components.snmp_exporter.app_version }}"}
+          podAnnotations:
+            checksum/config: >-
+              {{ (lookup('ansible.builtin.file', k8s_dir ~ '/values/snmp-exporter.yaml') | from_yaml).config | hash('sha256') }}
       - key: blackbox_exporter
         release: blackbox-exporter
         values_file: blackbox-exporter.yaml
