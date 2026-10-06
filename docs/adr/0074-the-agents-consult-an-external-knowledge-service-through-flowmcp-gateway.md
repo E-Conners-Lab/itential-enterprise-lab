@@ -57,7 +57,9 @@ service makes "external" literally true. Its PID records the design and the owne
    the lab, and is proven by the export and by discovery: the export carries `mcp_servers` (measured read-only on
    production, 2026-10-06), and Gateway Manager must list a service for each tool, which needs DNS, TLS, the token
    and the policy all to be right. It is off (`register_with_gateway: false`) until the pod runs; turning it on is
-   the owner's go.
+   the owner's go. Order: the Gateway's Vault policy must allow the token's path first (`vault-prod-config.yml`
+   adds `lab/data/mcp/netops-knowledge` to `itential-gateway`), or the alias resolves to nothing and discovery fails;
+   then the Gateway play binds the alias (which restarts the Gateway server and runner) and registers the server.
 8. **Two lab PRs.** PR A: the deployment, the secrets, the VIP, the registration task, Loki's retention, this ADR.
    PR B, written from what the first registration measures (how FlowMCP names the services and how they appear in
    the Tool Registry): the agents' tool and prompts, the Gateway service group, the verify checks of the agents, the
