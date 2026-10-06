@@ -16,7 +16,7 @@
       "groups": [],
       "nodeLocation": {
         "x": -90,
-        "y": 1350
+        "y": 1500
       },
       "variables": {
         "incoming": {
@@ -44,7 +44,7 @@
       "groups": [],
       "nodeLocation": {
         "x": -70,
-        "y": 1500
+        "y": 1650
       },
       "variables": {
         "incoming": {
@@ -72,7 +72,7 @@
       "groups": [],
       "nodeLocation": {
         "x": -50,
-        "y": 1650
+        "y": 1800
       },
       "variables": {
         "incoming": {
@@ -100,7 +100,7 @@
       "groups": [],
       "nodeLocation": {
         "x": -40,
-        "y": 1800
+        "y": 1950
       },
       "variables": {
         "incoming": {
@@ -128,7 +128,7 @@
       "groups": [],
       "nodeLocation": {
         "x": -30,
-        "y": 1950
+        "y": 2100
       },
       "variables": {
         "incoming": {
@@ -160,7 +160,7 @@
       "groups": [],
       "nodeLocation": {
         "x": -20,
-        "y": 2100
+        "y": 2250
       },
       "variables": {
         "incoming": {
@@ -192,7 +192,7 @@
       "groups": [],
       "nodeLocation": {
         "x": -10,
-        "y": 2250
+        "y": 2400
       },
       "variables": {
         "incoming": {
@@ -224,7 +224,7 @@
       "groups": [],
       "nodeLocation": {
         "x": -10,
-        "y": 2400
+        "y": 2550
       },
       "variables": {
         "incoming": {
@@ -256,7 +256,7 @@
       "groups": [],
       "nodeLocation": {
         "x": -160,
-        "y": 2550
+        "y": 2700
       },
       "variables": {
         "incoming": {
@@ -291,7 +291,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 210,
-        "y": 2700
+        "y": 2850
       },
       "variables": {
         "incoming": {
@@ -337,7 +337,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 210,
-        "y": 2850
+        "y": 3000
       },
       "variables": {
         "incoming": {
@@ -365,7 +365,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 510,
-        "y": 2850
+        "y": 3000
       },
       "variables": {
         "incoming": {
@@ -393,7 +393,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 660,
-        "y": 3000
+        "y": 3150
       },
       "variables": {
         "incoming": {
@@ -424,7 +424,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 990,
-        "y": 3150
+        "y": 3300
       },
       "variables": {
         "incoming": {
@@ -456,7 +456,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 1010,
-        "y": 3300
+        "y": 3450
       },
       "variables": {
         "incoming": {
@@ -488,7 +488,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 1000,
-        "y": 3450
+        "y": 3600
       },
       "variables": {
         "incoming": {
@@ -520,7 +520,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 680,
-        "y": 3600
+        "y": 3750
       },
       "variables": {
         "incoming": {
@@ -555,7 +555,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 1190,
-        "y": 3750
+        "y": 3900
       },
       "variables": {
         "incoming": {
@@ -601,7 +601,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 1900,
-        "y": 3900
+        "y": 4050
       },
       "variables": {
         "incoming": {
@@ -629,7 +629,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 2380,
-        "y": 4050
+        "y": 4200
       },
       "variables": {
         "incoming": {
@@ -657,7 +657,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 2730,
-        "y": 4200
+        "y": 4350
       },
       "variables": {
         "incoming": {
@@ -689,7 +689,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 2910,
-        "y": 4350
+        "y": 4500
       },
       "variables": {
         "incoming": {
@@ -719,7 +719,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 860,
-        "y": 3900
+        "y": 4050
       },
       "variables": {
         "incoming": {
@@ -747,7 +747,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 680,
-        "y": 4050
+        "y": 4200
       },
       "variables": {
         "incoming": {
@@ -777,7 +777,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 780,
-        "y": 4200
+        "y": 4350
       },
       "variables": {
         "incoming": {
@@ -823,7 +823,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 1660,
-        "y": 4350
+        "y": 4500
       },
       "variables": {
         "incoming": {
@@ -851,7 +851,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 1150,
-        "y": 4500
+        "y": 4650
       },
       "variables": {
         "incoming": {
@@ -881,7 +881,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 1090,
-        "y": 4650
+        "y": 4800
       },
       "variables": {
         "incoming": {
@@ -911,7 +911,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 760,
-        "y": 4800
+        "y": 4950
       },
       "variables": {
         "incoming": {
@@ -957,7 +957,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 910,
-        "y": 4950
+        "y": 5100
       },
       "variables": {
         "incoming": {
@@ -987,7 +987,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 140,
-        "y": 4950
+        "y": 5100
       },
       "variables": {
         "incoming": {
@@ -1019,7 +1019,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 330,
-        "y": 5100
+        "y": 5250
       },
       "variables": {
         "incoming": {
@@ -1051,7 +1051,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 240,
-        "y": 5250
+        "y": 5400
       },
       "variables": {
         "incoming": {
@@ -1083,7 +1083,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 330,
-        "y": 5400
+        "y": 5550
       },
       "variables": {
         "incoming": {
@@ -1115,7 +1115,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 10,
-        "y": 5550
+        "y": 5700
       },
       "variables": {
         "incoming": {
@@ -1150,7 +1150,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 450,
-        "y": 5700
+        "y": 5850
       },
       "variables": {
         "incoming": {
@@ -1178,7 +1178,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 1160,
-        "y": 5850
+        "y": 6000
       },
       "variables": {
         "incoming": {
@@ -1209,7 +1209,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 1010,
-        "y": 6000
+        "y": 6150
       },
       "variables": {
         "incoming": {
@@ -1241,7 +1241,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 1130,
-        "y": 6150
+        "y": 6300
       },
       "variables": {
         "incoming": {
@@ -1273,7 +1273,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 1600,
-        "y": 6300
+        "y": 6450
       },
       "variables": {
         "incoming": {
@@ -1308,7 +1308,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 1490,
-        "y": 6450
+        "y": 6600
       },
       "variables": {
         "incoming": {
@@ -1354,7 +1354,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 1230,
-        "y": 6600
+        "y": 6750
       },
       "variables": {
         "incoming": {
@@ -1382,7 +1382,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 1370,
-        "y": 6750
+        "y": 6900
       },
       "variables": {
         "incoming": {
@@ -1413,7 +1413,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 1440,
-        "y": 6900
+        "y": 7050
       },
       "variables": {
         "incoming": {
@@ -1443,7 +1443,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 1530,
-        "y": 7050
+        "y": 7200
       },
       "variables": {
         "incoming": {
@@ -1475,7 +1475,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 1530,
-        "y": 7200
+        "y": 7350
       },
       "variables": {
         "incoming": {
@@ -1507,7 +1507,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 1600,
-        "y": 7350
+        "y": 7500
       },
       "variables": {
         "incoming": {
@@ -1542,7 +1542,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 2020,
-        "y": 7500
+        "y": 7650
       },
       "variables": {
         "incoming": {
@@ -1588,7 +1588,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 2020,
-        "y": 7650
+        "y": 7800
       },
       "variables": {
         "incoming": {
@@ -1616,7 +1616,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 2390,
-        "y": 7800
+        "y": 7950
       },
       "variables": {
         "incoming": {
@@ -1644,7 +1644,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 2630,
-        "y": 7950
+        "y": 8100
       },
       "variables": {
         "incoming": {
@@ -1676,7 +1676,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 2560,
-        "y": 8100
+        "y": 8250
       },
       "variables": {
         "incoming": {
@@ -1706,7 +1706,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 3110,
-        "y": 7650
+        "y": 7800
       },
       "variables": {
         "incoming": {
@@ -1734,7 +1734,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 3390,
-        "y": 7800
+        "y": 7950
       },
       "variables": {
         "incoming": {
@@ -1766,7 +1766,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 3960,
-        "y": 7950
+        "y": 8100
       },
       "variables": {
         "incoming": {
@@ -1798,7 +1798,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 4170,
-        "y": 8100
+        "y": 8250
       },
       "variables": {
         "incoming": {
@@ -1833,7 +1833,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 2860,
-        "y": 8250
+        "y": 8400
       },
       "variables": {
         "incoming": {
@@ -1861,7 +1861,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 3300,
-        "y": 8400
+        "y": 8550
       },
       "variables": {
         "incoming": {
@@ -1892,7 +1892,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 3870,
-        "y": 8550
+        "y": 8700
       },
       "variables": {
         "incoming": {
@@ -1920,7 +1920,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 4190,
-        "y": 8700
+        "y": 8850
       },
       "variables": {
         "incoming": {
@@ -1955,7 +1955,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 4490,
-        "y": 8850
+        "y": 9000
       },
       "variables": {
         "incoming": {
@@ -1983,7 +1983,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 5080,
-        "y": 9000
+        "y": 9150
       },
       "variables": {
         "incoming": {
@@ -2015,7 +2015,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 5230,
-        "y": 9150
+        "y": 9300
       },
       "variables": {
         "incoming": {
@@ -2045,7 +2045,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 3150,
-        "y": 8550
+        "y": 8700
       },
       "variables": {
         "incoming": {
@@ -2073,7 +2073,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 3520,
-        "y": 8700
+        "y": 8850
       },
       "variables": {
         "incoming": {
@@ -2103,7 +2103,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 3300,
-        "y": 8850
+        "y": 9000
       },
       "variables": {
         "incoming": {
@@ -2149,7 +2149,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 3450,
-        "y": 9000
+        "y": 9150
       },
       "variables": {
         "incoming": {
@@ -2179,7 +2179,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 3350,
-        "y": 9150
+        "y": 9300
       },
       "variables": {
         "incoming": {
@@ -2207,7 +2207,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 3540,
-        "y": 10950
+        "y": 11100
       },
       "variables": {
         "incoming": {
@@ -2237,7 +2237,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 3940,
-        "y": 11250
+        "y": 11400
       },
       "variables": {
         "incoming": {
@@ -2269,7 +2269,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 3930,
-        "y": 11400
+        "y": 11550
       },
       "variables": {
         "incoming": {
@@ -2301,7 +2301,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 3900,
-        "y": 11550
+        "y": 11700
       },
       "variables": {
         "incoming": {
@@ -2333,7 +2333,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 3860,
-        "y": 11700
+        "y": 11850
       },
       "variables": {
         "incoming": {
@@ -2365,7 +2365,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 3800,
-        "y": 11850
+        "y": 12000
       },
       "variables": {
         "incoming": {
@@ -2400,7 +2400,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 3800,
-        "y": 12000
+        "y": 12150
       },
       "variables": {
         "incoming": {
@@ -2428,7 +2428,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 3800,
-        "y": 12150
+        "y": 12300
       },
       "variables": {
         "incoming": {
@@ -2474,7 +2474,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 3800,
-        "y": 12300
+        "y": 12450
       },
       "variables": {
         "incoming": {
@@ -2502,7 +2502,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 3800,
-        "y": 12450
+        "y": 12600
       },
       "variables": {
         "incoming": {
@@ -2534,7 +2534,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 3670,
-        "y": 12600
+        "y": 12750
       },
       "variables": {
         "incoming": {
@@ -2562,7 +2562,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 3400,
-        "y": 12300
+        "y": 12450
       },
       "variables": {
         "incoming": {
@@ -2590,7 +2590,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 3350,
-        "y": 12450
+        "y": 12600
       },
       "variables": {
         "incoming": {
@@ -2622,7 +2622,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 2830,
-        "y": 12600
+        "y": 12750
       },
       "variables": {
         "incoming": {
@@ -2650,7 +2650,7 @@
       "groups": [],
       "nodeLocation": {
         "x": -470,
-        "y": 4500
+        "y": 4650
       },
       "variables": {
         "incoming": {
@@ -2680,7 +2680,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 460,
-        "y": 4950
+        "y": 5100
       },
       "variables": {
         "incoming": {
@@ -2710,7 +2710,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 2180,
-        "y": 6600
+        "y": 6750
       },
       "variables": {
         "incoming": {
@@ -2740,7 +2740,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 2530,
-        "y": 12600
+        "y": 12750
       },
       "variables": {
         "incoming": {
@@ -2770,7 +2770,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 2330,
-        "y": 12750
+        "y": 12900
       },
       "variables": {
         "incoming": {
@@ -2800,7 +2800,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 3520,
-        "y": 9300
+        "y": 9450
       },
       "variables": {
         "incoming": {
@@ -2826,7 +2826,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 3390,
-        "y": 9450
+        "y": 9600
       },
       "variables": {
         "incoming": {
@@ -2856,7 +2856,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 4240,
-        "y": 9600
+        "y": 9750
       },
       "variables": {
         "incoming": {
@@ -2902,7 +2902,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 3820,
-        "y": 9750
+        "y": 9900
       },
       "variables": {
         "incoming": {
@@ -2928,7 +2928,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 3830,
-        "y": 9900
+        "y": 10050
       },
       "variables": {
         "incoming": {
@@ -2958,7 +2958,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 3990,
-        "y": 10050
+        "y": 10200
       },
       "variables": {
         "incoming": {
@@ -3004,7 +3004,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 3840,
-        "y": 10200
+        "y": 10350
       },
       "variables": {
         "incoming": {
@@ -3030,7 +3030,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 3850,
-        "y": 10350
+        "y": 10500
       },
       "variables": {
         "incoming": {
@@ -3060,7 +3060,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 4280,
-        "y": 10500
+        "y": 10650
       },
       "variables": {
         "incoming": {
@@ -3106,7 +3106,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 3790,
-        "y": 10650
+        "y": 10800
       },
       "variables": {
         "incoming": {
@@ -3132,7 +3132,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 3660,
-        "y": 10800
+        "y": 10950
       },
       "variables": {
         "incoming": {
@@ -3162,7 +3162,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 3840,
-        "y": 10950
+        "y": 11100
       },
       "variables": {
         "incoming": {
@@ -3208,7 +3208,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 3770,
-        "y": 11100
+        "y": 11250
       },
       "variables": {
         "incoming": {
@@ -3417,6 +3417,38 @@
       "actor": "Pronghorn",
       "scheduled": false
     },
+    "9a07": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "input to check: fingerprint",
+      "description": "input to check: fingerprint",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 0,
+        "y": 1050
+      },
+      "variables": {
+        "incoming": {
+          "obj": "$var.9a06.object",
+          "path": [
+            "fingerprint"
+          ],
+          "value": "$var.job.fingerprint"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
     "9a0a": {
       "name": "validateJsonSchema",
       "canvasName": "validateJsonSchema",
@@ -3430,11 +3462,11 @@
       "groups": [],
       "nodeLocation": {
         "x": 0,
-        "y": 1050
+        "y": 1200
       },
       "variables": {
         "incoming": {
-          "jsonData": "$var.9a06.object",
+          "jsonData": "$var.9a07.object",
           "schema": {
             "type": "object",
             "additionalProperties": false,
@@ -3523,7 +3555,7 @@
       "groups": [],
       "nodeLocation": {
         "x": -100,
-        "y": 1200
+        "y": 1350
       },
       "variables": {
         "incoming": {
@@ -3569,7 +3601,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 510,
-        "y": 1350
+        "y": 1500
       },
       "variables": {
         "incoming": {
@@ -3601,7 +3633,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 6120,
-        "y": 12900
+        "y": 13050
       }
     }
   },
@@ -4467,6 +4499,12 @@
       }
     },
     "9a06": {
+      "9a07": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "9a07": {
       "9a0a": {
         "state": "success",
         "type": "standard"

@@ -137,6 +137,15 @@ def test_the_gate_is_the_only_way_in(name: str) -> None:
     assert tasks["9a0a"]["name"] == "validateJsonSchema"
     schema = tasks["9a0a"]["variables"]["incoming"]["schema"]
     assert schema["properties"] == build.INPUT_GATES[name] and schema["additionalProperties"] is False
+    # every gated field is copied into the object the schema checks (2026-10-06, the first BGP drill: the builder had six
+    # copy slots, the seventh field was dropped and every real alert was refused for "missing" fingerprint)
+    copied, ref = [], tasks["9a0a"]["variables"]["incoming"]["jsonData"]
+    while isinstance(ref, str) and ref.startswith("$var."):
+        copy = tasks[ref.split(".")[1]]["variables"]["incoming"]
+        copied.append(copy["path"][0])
+        assert copy["value"] == f"$var.job.{copy['path'][0]}"
+        ref = copy["obj"]
+    assert sorted(copied) == sorted(build.INPUT_GATES[name]) == sorted(schema["required"])
     # validateJsonSchema completes even for invalid data (measured): only the evaluate on `valid` can refuse
     assert tasks["9a0b"]["variables"]["incoming"]["evaluation_groups"][0]["evaluations"][0]["query"] == "valid"
     assert tr["9a0b"]["9a0c"]["state"] == "failure" and tr["9a0a"]["9a0c"]["state"] == "error"
@@ -169,3 +178,9 @@ def test_every_show_command_the_lab_sends_is_accepted(command: str) -> None:
 ])
 def test_anything_but_a_read_is_refused(command: str) -> None:
     assert not SHOW.fullmatch(command)
+
+
+def test_the_gate_builder_refuses_more_fields_than_it_can_copy() -> None:
+    fields = {f"f{i}": {"type": "string"} for i in range(len(build.GATE_IDS) + 1)}
+    with pytest.raises(AssertionError):
+        build.with_input_gate({}, {"workflow_start": {}}, fields)

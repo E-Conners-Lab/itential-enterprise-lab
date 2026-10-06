@@ -401,12 +401,16 @@ INPUT_GATES = {
 }
 # where a refusal is reported: the device workflows already say "did not run" in device_error, which the agents read
 GATE_ERROR_VAR = {WF[k]: "device_error" for k in ("show_version", "show_command", "show_all", "config_push")}
-GATE_IDS = ("9a01", "9a02", "9a03", "9a04", "9a05", "9a06")  # the field copies; then 9a0a validate, 9a0b evaluate, 9a0c refuse
+# the field copies; then 9a0a validate, 9a0b evaluate, 9a0c refuse
+GATE_IDS = ("9a01", "9a02", "9a03", "9a04", "9a05", "9a06", "9a07", "9a08", "9a09")
 
 
 def with_input_gate(tasks: dict, transitions: dict, fields: dict, error_var: str = "error") -> tuple[dict, dict]:
     """workflow_start -> copy each input into an object -> validate -> valid? -> the workflow's first task; refused ->
     `error` -> workflow_end. The original start edges move behind the gate unchanged."""
+    # one copy per field: zip() would drop the fields past the last slot, and the schema would then refuse every call
+    # (2026-10-06: Diagnose Fabric BGP Outage's seventh field, fingerprint, on its first real alert)
+    assert len(fields) <= len(GATE_IDS), f"{len(fields)} gated fields, {len(GATE_IDS)} copy slots: add slots"
     ids = GATE_IDS[: len(fields)]
     assert not set(ids + ("9a0a", "9a0b", "9a0c")) & set(tasks), "gate ids collide with the workflow's own"
     tasks, tr = dict(tasks), {k: dict(v) for k, v in transitions.items()}
