@@ -238,7 +238,15 @@
     # R6 + A3 (ADR 0072): the outage loop's automation and the endpoint trigger the alert relay posts to
     - name: AWS VPN outage loop - its automation and the alert relay's endpoint trigger
       ansible.builtin.include_tasks: tasks/outage-trigger.yml
+      vars: {otr_key: diagnose_aws_vpn_outage}
       when: (aws_vpn.tier == 'dev') == (dev_overlay | default(false) | bool)
+
+    # R10 + A6 (ADR 0073): the fabric BGP outage loop, on production only - its relay, its alerts and fabric-bgp's
+    # devices are production's (the dev tier is Itential only, owner 2026-09-28)
+    - name: Fabric BGP outage loop - its automation and the alert relay's endpoint trigger
+      ansible.builtin.include_tasks: tasks/outage-trigger.yml
+      vars: {otr_key: diagnose_fabric_bgp_outage}
+      when: not (dev_overlay | default(false) | bool)
 
     # ADR 0070: the tier that does not run the AWS VPN keeps no way to start it - no trigger, no automation, no schedule
     - name: AWS VPN retired on this tier - its triggers and automations removed

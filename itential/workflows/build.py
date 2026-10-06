@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import base64
 import html
+import importlib.util
 import inspect
 import ipaddress
 import itertools
@@ -348,6 +349,7 @@ REVERT_CHECKS = {
         "settle_seconds": {"type": "integer", "minimum": 0, "maximum": 780},
     },
 }
+FABRIC_DEVICES = set(VERSIONS["fabric_bgp"]["host_keys"])
 INPUT_GATES = {
     WF["show_version"]: {"device": NODE_NAME},
     WF["show_command"]: {"device": NODE_NAME, "command": SHOW_COMMAND},
@@ -358,6 +360,16 @@ INPUT_GATES = {
         "device": {"type": "string", "enum": sorted(n for n, e in VERSIONS["aws_vpn"]["targets"].items()
                                                     if e["window"] == "open" and e["monitor"] == "aws")},
         "interface": {"type": "string", "pattern": r"^Tunnel[0-9]{1,4}$"},
+        "starts_at": {"type": "string", "pattern": r"^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"},
+        "fingerprint": {"type": "string", "pattern": r"^[0-9a-f]{1,32}$"},
+    },
+    # R10 (ADR 0073): what the alert relay sends for LabBgpSessionDown; the plan then holds the end to a declared session
+    WF["diagnose_fabric_bgp_outage"]: {
+        "alertname": {"type": "string", "enum": ["LabBgpSessionDown"]},
+        "device": {"type": "string", "enum": sorted(FABRIC_DEVICES)},
+        "neighbor": IPV4_TEXT,
+        "vrf": {"type": "string", "pattern": r"^[A-Za-z0-9_-]{1,32}$"},
+        "peer": {"type": "string", "enum": sorted(FABRIC_DEVICES)},
         "starts_at": {"type": "string", "pattern": r"^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"},
         "fingerprint": {"type": "string", "pattern": r"^[0-9a-f]{1,32}$"},
     },
@@ -5243,12 +5255,14 @@ def outage_plan(d: dict, targets: dict) -> dict:
 
 
 def open_incident(d: dict) -> dict:
-    """The open incident for this outage, from listIncidents' response (`open`), if there is one."""
+    """The open incident for this outage, from listIncidents' response (`open`), if there is one. `alert` names the
+    alert in the still-down note (the tunnel-down alert when absent, R6)."""
     rows = (((d.get("open") or {}).get("body") or {}).get("result")) or []
     row = rows[0] if isinstance(rows, list) and rows and isinstance(rows[0], dict) else {}
     found = bool(row.get("sys_id"))
+    alert = d.get("alert") or "the tunnel-down alert"
     return {"open": found, "sys_id": row.get("sys_id"), "number": row.get("number"),
-            "note": {"work_notes": f"Still down: the tunnel-down alert fired again ({d.get('starts_at')}). "
+            "note": {"work_notes": f"Still down: {alert} fired again ({d.get('starts_at')}). "
                                    "Itential did not open another incident."}}
 
 
@@ -5487,6 +5501,61 @@ def outage_card_image(svg: str, alt: str, width: int, height: int) -> str:
             f'src="data:image/svg+xml;base64,{data}">')
 
 
+def card_clock(starts_at, now) -> tuple:
+    """(start, now, elapsed) for a card: the alert's start and the card's time as UTC datetimes (now: the runner's clock
+    when absent or unreadable; start: None when unreadable) and the outage's age as text ("" when unknown)."""
+    def when(value):
+        try:
+            return datetime.fromisoformat(str(value).replace("Z", "+00:00")).astimezone(timezone.utc)
+        except ValueError:
+            return None
+
+    start, now = when(starts_at), when(now) or datetime.now(timezone.utc)
+    minutes = int((now - start).total_seconds() // 60) if start and now >= start else None
+    elapsed = ("" if minutes is None else f"{minutes} min" if minutes < 60 else f"{minutes // 60} h {minutes % 60:02d} min")
+    return start, now, elapsed
+
+
+def card_mark() -> str:
+    """The lab's mark for a card's band."""
+    return outage_card_image(
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40" width="40" height="40"><rect width="40" '
+        'height="40" rx="10" fill="#1F4FD1"/><path d="M8 26c4 3 8 3 12 0s8-3 12 0" fill="none" stroke="#fff" '
+        'stroke-width="2.6" stroke-linecap="round"/><path d="M20 9v14M15 13.5h10M14 21c1.5 2.5 3.7 3.8 6 3.8s4.5-1.3 '
+        '6-3.8" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round"/><circle cx="20" cy="8.5" '
+        'r="2.2" fill="#fff"/></svg>', "", 26, 26)
+
+
+def card_page(title: str, headline: str, lede: str, elapsed: str, since: str, sections: str, number: str,
+              foot: str) -> str:
+    """A Work Center card's page (R6, R10): the band (title, lede, waiting pill, the outage's age), the card's own
+    sections, the decision with the engineer's note, the foot. `lede`, `sections` and `foot` are HTML the caller built
+    from escaped values; every other argument is escaped here."""
+    e = html.escape
+    return f"""<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>{e(title)}</title>
+<style>{OUTAGE_CARD_CSS}</style></head>
+<body><div class="oc">
+<header class="band">
+<div class="brand">{card_mark()}<span><b>Elliot's Itential Lab</b>&nbsp; outage response</span></div>
+<div><h1>{e(headline)}</h1>
+<p class="lede">{lede}</p></div>
+<div class="status"><span class="pill">Waiting for your approval</span>
+<p class="elapsed">{e(elapsed)}<small>{e(since)}</small></p></div>
+</header>
+<div class="body">
+{sections}
+<section class="panel decide" aria-labelledby="t-decide"><div><h2 id="t-decide">Your decision</h2>
+<p>Approve runs only this fix. Reject runs nothing and leaves {e(number)} open for a person.</p>
+<p>Either way, your note goes into the incident's work notes.</p></div>
+<form name="decision"><label for="oc-note">Note for the incident</label>
+<textarea id="oc-note" name="note" placeholder="Why you approve or reject, or what you checked first"></textarea>
+</form></section>
+</div>
+<p class="foot">{foot}</p>
+</div></body></html>"""
+
+
 def outage_card_topology(device: str, vpc: str, tunnel: tuple, router: tuple, aws: tuple) -> str:
     """The path as an engineer draws it: the router in DC1, Tunnel10, strongSwan in AWS. Each of tunnel, router and
     aws is (colour, label); a tunnel that is not up is drawn broken, with a pulsing fracture."""
@@ -5556,15 +5625,7 @@ def outage_card(d: dict) -> dict:
     prefixes = deployed.get("vpc_private_prefixes") or []
     vpc = str(prefixes[0]) if prefixes and re.fullmatch(r"[0-9./]{7,18}", str(prefixes[0])) else ""
 
-    def when(value):
-        try:
-            return datetime.fromisoformat(str(value).replace("Z", "+00:00")).astimezone(timezone.utc)
-        except ValueError:
-            return None
-
-    start, now = when(d.get("starts_at")), when(d.get("now")) or datetime.now(timezone.utc)
-    minutes = int((now - start).total_seconds() // 60) if start and now >= start else None
-    elapsed = ("" if minutes is None else f"{minutes} min" if minutes < 60 else f"{minutes // 60} h {minutes % 60:02d} min")
+    start, now, elapsed = card_clock(d.get("starts_at"), d.get("now"))
     since = f"Tunnel10 down since {start:%H:%M} UTC" if start else "Tunnel10 down: start time not read"
 
     # the drawing
@@ -5585,17 +5646,11 @@ def outage_card(d: dict) -> dict:
            "disagreement": (flare, "readings disagree")}.get(aws_sig, (flare, "no reading"))
     drawing = outage_card_image(outage_card_topology(device, vpc, tunnel, router, aws),
                                 f"{device} in DC1, Tunnel10 {tunnel[1]}, strongSwan in AWS {aws[1]}", 720, 230)
-    mark = outage_card_image(
-        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40" width="40" height="40"><rect width="40" '
-        'height="40" rx="10" fill="#1F4FD1"/><path d="M8 26c4 3 8 3 12 0s8-3 12 0" fill="none" stroke="#fff" '
-        'stroke-width="2.6" stroke-linecap="round"/><path d="M20 9v14M15 13.5h10M14 21c1.5 2.5 3.7 3.8 6 3.8s4.5-1.3 '
-        '6-3.8" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round"/><circle cx="20" cy="8.5" '
-        'r="2.2" fill="#fff"/></svg>', "", 26, 26)
 
     # one reading per source, coloured by what it says
     alarm_val = {"ALARM": ("In alarm", buoy), "OK": ("OK", kelp), "INSUFFICIENT_DATA": ("No data", flare)}.get(
         alarm.get("state"), ("Not read", grey))
-    alarm_since = when(alarm.get("since"))
+    alarm_since = card_clock(alarm.get("since"), None)[0]
     ledger = (
         ("Router's view", *{"up": ("Up", kelp), "down": ("Down", buoy)}.get(router_sig, ("Not read", grey)),
          "IKE session to AWS ready" if edge.get("ike_sa_ready") else "no IKE session to AWS"),
@@ -5644,20 +5699,7 @@ def outage_card(d: dict) -> dict:
     agent_by = "tunnel-diagnostics agent" + (f", session {session}" if session else "")
     evidence = str(fix_out.get("evidence") or "")
     promises_html = "".join(f'<li class="promise">{e(p.format(d=device))}</li>' for p in promises)
-    page = f"""<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><title>AWS VPN outage: {e(number)}</title>
-<style>{OUTAGE_CARD_CSS}</style></head>
-<body><div class="oc">
-<header class="band">
-<div class="brand">{mark}<span><b>Elliot's Itential Lab</b>&nbsp; outage response</span></div>
-<div><h1>The AWS VPN is down on {e(device)}</h1>
-<p class="lede">Itential opened <strong>{e(number)}</strong> and the tunnel-diagnostics agent found the likely cause.
-One fix is ready, and nothing runs until you approve it.</p></div>
-<div class="status"><span class="pill">Waiting for your approval</span>
-<p class="elapsed">{e(elapsed)}<small>{e(since)}</small></p></div>
-</header>
-<div class="body">
-<section class="panel topo" aria-labelledby="t-where"><h2 id="t-where">Where the tunnel breaks</h2>{drawing}
+    sections = f"""<section class="panel topo" aria-labelledby="t-where"><h2 id="t-where">Where the tunnel breaks</h2>{drawing}
 <div class="ledger">{ledger_html}</div></section>
 <section class="panel" aria-labelledby="t-when"><h2 id="t-when">What has happened so far</h2>
 <ol class="steps">
@@ -5675,17 +5717,13 @@ One fix is ready, and nothing runs until you approve it.</p></div>
 <section class="panel action" aria-labelledby="t-fix"><div><p class="kicker">The proposed fix</p>
 <h2 id="t-fix">{e(title.format(d=device))}</h2><p class="what">{e(what)}</p></div>
 <p class="scope">Scope<b>{e(scope)}</b>{e(scope_note)}</p>
-<ul class="promises">{promises_html}</ul></section>
-<section class="panel decide" aria-labelledby="t-decide"><div><h2 id="t-decide">Your decision</h2>
-<p>Approve runs only this fix. Reject runs nothing and leaves {e(number)} open for a person.</p>
-<p>Either way, your note goes into the incident's work notes.</p></div>
-<form name="decision"><label for="oc-note">Note for the incident</label>
-<textarea id="oc-note" name="note" placeholder="Why you approve or reject, or what you checked first"></textarea>
-</form></section>
-</div>
-<p class="foot">Prepared by Itential's Diagnose AWS VPN Outage workflow at {now:%H:%M} UTC, from live reads of
-{e(device)}, the AWS VPN monitor and CloudWatch.</p>
-</div></body></html>"""
+<ul class="promises">{promises_html}</ul></section>"""
+    lede = (f"Itential opened <strong>{e(number)}</strong> and the tunnel-diagnostics agent found the likely cause.\n"
+            "One fix is ready, and nothing runs until you approve it.")
+    foot = (f"Prepared by Itential's Diagnose AWS VPN Outage workflow at {now:%H:%M} UTC, from live reads of\n"
+            f"{e(device)}, the AWS VPN monitor and CloudWatch.")
+    page = card_page(f"AWS VPN outage: {number}", f"The AWS VPN is down on {device}", lede, elapsed, since, sections,
+                     number, foot)
     return {"html": page}
 
 
@@ -5704,7 +5742,7 @@ OUTAGE_FIX_CODE = _source(outage_fix, call='outage_fix(json.loads(sys.stdin.read
 OUTAGE_RESULT_CODE = _source(decision_note, outage_result, call='outage_result(json.loads(sys.stdin.read() or "{}"))')
 OUTAGE_REJECTED_CODE = _source(decision_note, outage_rejected,
                                call='outage_rejected(json.loads(sys.stdin.read() or "{}"))')
-OUTAGE_CARD_CODE = _source(outage_card_image, outage_card_topology, outage_card,
+OUTAGE_CARD_CODE = _source(outage_card_image, card_clock, card_mark, card_page, outage_card_topology, outage_card,
                            call='outage_card(json.loads(sys.stdin.read() or "{}"))',
                            extra="import base64\nimport html\nimport re\nfrom datetime import datetime, timezone\n\n"
                                  "OUTAGE_CARD_CSS = " + repr(OUTAGE_CARD_CSS) + "\nOUTAGE_FIX_COPY = "
@@ -6040,10 +6078,716 @@ def diagnose_aws_vpn_outage() -> dict:
     )
 
 
+# --- Diagnose Fabric BGP Outage (R10 + A6, owner decisions 2026-10-05; ADR 0073) -------------------------------------
+# Prometheus sees a declared BGP session not Established (LabBgpSessionDown, k8s/observability/manifests/bgp-rules.yaml:
+# gNMIc on vEOS, SNMP on the C8000v routers); Alertmanager groups both ends of the session by device pair and posts one
+# alert to the relay, which starts this workflow. It finds an open incident for the pair and only notes it, or reads
+# BOTH ends with fabric-bgp (cloud-devops-pipeline), opens ONE ServiceNow incident, runs the fabric-diagnostics agent,
+# and shows the one fix the agent picked - on one end of the session - on an HTML card in Work Center. Only after
+# approval does fabric-bgp run that fix and prove it Established; the loop reads the session again and resolves the
+# incident, or notes it and opens a Work Center task. The sessions and both ends come from the topology at build time
+# (topology/derive.py: the intent NetBox is seeded from); the devices' host keys from versions.yaml fabric_bgp.
+FABRIC_FIXES = ("no-shut-neighbor", "no-shut-interface", "clear-session", "escalate")
+FABRIC_AGENT_MARKER = "__AGENT_ID:fabric-diagnostics__"
+FABRIC = VERSIONS["fabric_bgp"]
+FABRIC_READ_TIMEOUT = "150"  # fabric-bgp read: the login and two reads (its own floor is 90 s)
+FABRIC_FIX_TIMEOUT = "300"  # a fix: 90 s before, the wait, 60 s for the save (fabric-bgp's floor for a 90 s wait: 240)
+FABRIC_RECHECKS = (("b0", "b1", "b2", 15), ("b3", "b4", "b5", 30), ("b6", "b7", "b8", 45), ("b9", "ba", "bb", 60))
+# the interfaces fabric-bgp accepts for no-shut-interface (its IFNAME): the fabric /31s and the WAN links. A session over
+# a Tunnel interface carries none, so a shut tunnel is the agent's escalate, never a card (a cdp follow-up)
+FABRIC_IFNAME = re.compile(r"(Ethernet|GigabitEthernet)[0-9]{1,4}(/[0-9]{1,4}){0,2}")
+
+
+def fabric_tables() -> tuple[dict, dict]:
+    """(sessions, targets) from the topology. sessions: "<device>|<neighbor>" -> one end: device, neighbor, vrf,
+    local_as, remote_as, peer, pair, far (the other end's key), and interface + via (the interface toward the peer and
+    the peer's address on that link) when fabric-bgp may no-shut it. targets: device -> fabric-bgp's --target_json."""
+    spec = importlib.util.spec_from_file_location("derive", HERE.parent.parent / "topology" / "derive.py")
+    derive = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(derive)
+    topo = derive.load_topology()
+    addrs = {dev: [(r["name"], ipaddress.IPv4Interface(r["address"])) for r in rows if r.get("address")]
+             for dev, rows in derive.interfaces(topo).items()}
+    owner = {str(i.ip): dev for dev, rows in addrs.items() for _, i in rows}
+    sessions, local = {}, {}
+    for dev in topo["nodes"]:
+        bgp = derive.device_context(topo, dev).get("bgp")
+        for n in (bgp or {}).get("neighbors", []):
+            nb, peer = ipaddress.IPv4Address(n["neighbor"]), owner[n["neighbor"]]
+            direct = [(name, i) for name, i in addrs[dev] if nb in i.network and i.network.prefixlen < 32]
+            if direct:
+                (iface, mine), via = direct[0], str(nb)
+                local[(dev, n["neighbor"])] = str(mine.ip)
+            else:  # a loopback session (EVPN): the link to the peer, and the session's source is the router id
+                links = [(name, str(pi.ip)) for name, i in addrs[dev] for _, pi in addrs[peer]
+                         if i.network == pi.network and i.ip != pi.ip and i.network.prefixlen >= 30]
+                (iface, via) = links[0]
+                local[(dev, n["neighbor"])] = bgp["router_id"]
+            end = {"device": dev, "neighbor": n["neighbor"], "vrf": n.get("vrf") or "default", "local_as": bgp["asn"],
+                   "remote_as": n["remote_as"], "peer": peer, "pair": "--".join(sorted((dev, peer)))}
+            if FABRIC_IFNAME.fullmatch(iface):
+                end.update(interface=iface, via=via)
+            sessions[f"{dev}|{n['neighbor']}"] = end
+    for (dev, neighbor), source in local.items():
+        sessions[f"{dev}|{neighbor}"]["far"] = f"{sessions[f'{dev}|{neighbor}']['peer']}|{source}"
+    platforms = {"veos": "eos", "c8000v": "ios-xe"}
+    targets = {dev: {"name": dev, "mgmt_host": topo["nodes"][dev]["mgmt_ip"].split("/")[0],
+                     "platform": platforms[topo["nodes"][dev]["platform"]], "host_keys": [FABRIC["host_keys"][dev]]}
+               for dev in sorted({e["device"] for e in sessions.values()})}
+    return sessions, targets
+
+
+FABRIC_SESSIONS, FABRIC_TARGETS = fabric_tables()
+
+
+def fabric_service_session(end: dict) -> dict:
+    """One end as fabric-bgp's --session_json takes it."""
+    return {k: end[k] for k in ("neighbor", "vrf", "local_as", "remote_as", "interface", "via") if k in end}
+
+
+def fabric_plan(d: dict, sessions: dict, targets: dict, fabric: dict) -> dict:
+    """What the loop may act on: the alerting end (`device`, `neighbor`, `vrf`, `peer`, the relay's checked labels)
+    must be a declared session; its far end, both ends' fabric-bgp read params and the incident's correlation_id
+    (one per device pair). Pure: runCode runs this source on the Gateway with the tables written in."""
+    key = f"{d.get('device')}|{d.get('neighbor')}"
+    near = sessions.get(key)
+    if not near or near["vrf"] != d.get("vrf") or near["peer"] != d.get("peer"):
+        return {"ok": False, "message": f"{key} (VRF {d.get('vrf')}, peer {d.get('peer')}) is not a session the "
+                                        "topology declares: nothing was changed"}
+    far = sessions[near["far"]]
+
+    def read(end: dict) -> dict:
+        return {"action": "read", "target_json": json.dumps(targets[end["device"]]),
+                "session_json": json.dumps(fabric_service_session(end)), "username": fabric["username"],
+                "timeout": FABRIC_READ_TIMEOUT}
+
+    correlation = f"bgp-{near['pair']}"
+    return {"ok": True, "pair": near["pair"], "correlation_id": correlation,
+            # open = New, In Progress or On Hold (R6: a Resolved incident stays active=true until ServiceNow closes it)
+            "open_query": f"correlation_id={correlation}^stateIN1,2,3",
+            "near": near, "far": far, "near_read": read(near), "far_read": read(far),
+            "platforms": {end["device"]: targets[end["device"]]["platform"] for end in (near, far)}}
+
+
+def fabric_reading(envelope) -> dict:
+    """A fabric-bgp read's answer (runService's envelope) as {read, state, admin_shutdown, matches_intent, local_as,
+    remote_as, interface}; read False when it did not answer."""
+    result = ((envelope or {}).get("result")) or {}
+    out = result.get("stdout_json") or {}
+    session = out.get("session") or {}
+    if result.get("return_code") != 0 or not session:
+        return {"read": False, "state": "not read", "admin_shutdown": None, "matches_intent": None,
+                "local_as": None, "remote_as": None, "interface": None}
+    return {"read": True, "state": session.get("state"), "admin_shutdown": session.get("admin_shutdown"),
+            "matches_intent": session.get("matches_intent"), "local_as": session.get("local_as"),
+            "remote_as": session.get("remote_as"), "interface": out.get("interface")}
+
+
+def fabric_commands(end: dict, platform: str) -> list[str]:
+    """The agent's confirming reads of one end through Run Show Command on a Device (its gate: show + one pipe)."""
+    if platform == "eos":
+        vrf = "" if end["vrf"] == "default" else f" vrf {end['vrf']}"
+        cmds = [f"show ip bgp neighbors {end['neighbor']}{vrf} | include BGP state"]
+    else:
+        table = "show ip bgp summary" if end["vrf"] == "default" else f"show ip bgp vpnv4 vrf {end['vrf']} summary"
+        cmds = [f"{table} | include {end['neighbor']}"]
+    if end.get("interface"):
+        cmds.append(f"show interfaces {end['interface']} | include line protocol")
+    return cmds
+
+
+def fabric_summary(d: dict) -> dict:
+    """The incident from both ends' fabric-bgp reads (`near`, `far`, runService envelopes), the plan (`plan`, its
+    runCode result) and the alert (`starts_at`): the body for createIncident, and the agent's evidence with the exact
+    reads it should confirm with."""
+    plan = (d.get("plan") or {}).get("stdout_json") or {}
+    near, far = plan.get("near") or {}, plan.get("far") or {}
+
+    def end_text(end: dict, reading: dict) -> str:
+        if not reading["read"]:
+            return f"{end.get('device')} could not be read"
+        words = [f"{end['device']} -> {end['neighbor']} (VRF {end['vrf']}) reads {reading['state']}"]
+        if reading["admin_shutdown"]:
+            words.append("the neighbor is administratively shut down")
+        if reading["matches_intent"] is False:
+            words.append(f"the device runs AS {reading['local_as']} -> {reading['remote_as']}, NetBox intends "
+                         f"{end['local_as']} -> {end['remote_as']}")
+        iface = reading["interface"] or {}
+        if iface:
+            admin = {True: "up", False: "administratively down"}.get(iface.get("admin_up"), "not read")
+            line = {True: "up", False: "down"}.get(iface.get("oper_up"), "not read")
+            words.append(f"{iface.get('name')} toward {end['peer']} is {admin}, line protocol {line}")
+        return "; ".join(words)
+
+    readings = (fabric_reading(d.get("near")), fabric_reading(d.get("far")))
+    evidence = f"{end_text(near, readings[0])}. {end_text(far, readings[1])}."
+    platforms = plan.get("platforms") or {}
+    reads = "; ".join(f"on {end['device']} " + " and then ".join(f'"{c}"' for c in fabric_commands(end, platforms.get(
+        end["device"], "eos"))) for end in (near, far) if end)
+    device, peer, pair = near.get("device"), near.get("peer"), plan.get("pair")
+    vrf = "" if near.get("vrf") in (None, "default") else f", VRF {near.get('vrf')}"
+    return {
+        "evidence": f"{evidence} Confirm with these reads: {reads}.",
+        "readings": {"near": readings[0], "far": readings[1]},
+        "incident": {
+            "short_description": f"BGP session down: {device} <-> {peer} ({near.get('neighbor')}{vrf})",
+            "description": (f"Prometheus alert LabBgpSessionDown since {d.get('starts_at')}. {evidence} Opened by "
+                            "Itential's Diagnose Fabric BGP Outage; the fabric-diagnostics agent notes its diagnosis "
+                            "here and the fix runs only after a Work Center approval."),
+            "correlation_id": f"bgp-{pair}",
+            "correlation_display": "Itential fabric BGP outage loop",
+            "urgency": "2", "impact": "2", "category": "network",
+        },
+    }
+
+
+def fabric_fix(d: dict) -> dict:
+    """The fix the agent picked (`agent`: runAgent's result), held to the menu AND to the session's two ends (`plan`):
+    the last line of its answer must be JSON naming one of FABRIC_FIXES and, for a fix, `device` one of the two ends;
+    no-shut-interface needs an interface fabric-bgp may change. Anything else is escalate. A fix carries fabric-bgp's
+    params for exactly that end."""
+    agent = d.get("agent") or {}
+    plan = (d.get("plan") or {}).get("stdout_json") or {}
+    text = str(agent.get("lastMessage") or "")
+    lines = [line.strip() for line in text.strip().splitlines() if line.strip()]
+    answer: dict = {}
+    if agent.get("sessionStatus") == "COMPLETE" and lines:
+        try:
+            parsed = json.loads(lines[-1])
+            answer = parsed if isinstance(parsed, dict) else {}
+        except ValueError:
+            answer = {}
+    ends = {e.get("device"): (e, plan.get(f"{side}_read")) for side, e in (("near", plan.get("near") or {}),
+                                                                          ("far", plan.get("far") or {}))}
+    fix = answer.get("fix") if answer.get("fix") in FABRIC_FIXES else "escalate"
+    why = (str(answer.get("cause") or "unknown")[:80] if answer else
+           ("the agent did not finish" if agent.get("sessionStatus") != "COMPLETE" else "the agent's answer was not the JSON line"))
+    device = answer.get("device")
+    if fix != "escalate" and device not in ends:
+        fix, why = "escalate", f"the agent named {str(device)[:40]!r}, not one end of the session"
+    if fix == "no-shut-interface" and "interface" not in (ends.get(device, ({}, None))[0]):
+        fix, why = "escalate", f"{device}'s link toward the peer is not an interface fabric-bgp may change"
+    evidence = str(answer.get("evidence") or "")[:400]
+    out = {"fix": fix, "device": device if fix != "escalate" else None, "cause": why, "evidence": evidence,
+           "card": fix != "escalate", "session": str(agent.get("sessionId") or "")[:64],
+           "escalation": {"work_notes": f"Escalated to a person: no fix from the menu applies ({why}). {evidence}".strip()}}
+    if fix != "escalate":
+        end, read = ends[device]
+        out["end"] = end
+        out["params"] = {**read, "action": fix, "wait_seconds": str(FABRIC_WAIT), "timeout": FABRIC_FIX_TIMEOUT}
+    return out
+
+
+def fabric_result(d: dict) -> dict:
+    """After the approved fix (`fix`, fabric_fix's runCode result; its fabric-bgp envelope under `answer`) and the
+    session read again at the alerting end (`check`, a fabric-bgp read envelope): fixed only when that read says
+    Established. Resolves or notes the incident; the engineer's note (`decision`) goes in either way."""
+    fix_out = (d.get("fix") or {}).get("stdout_json") or {}
+    fix, device = fix_out.get("fix"), fix_out.get("device")
+    answer = (((d.get("answer") or {}).get("result")) or {}).get("stdout_json") or {}
+    check = fabric_reading(d.get("check"))
+    up = check["state"] == "Established"
+    proved = "it proved Established" if answer.get("established") else (
+        "it did not complete: " + str(answer.get("error") or "no answer"))
+    saved = " and saved the configuration" if answer.get("saved") else ""
+    note = decision_note(d.get("decision"))
+    said = (f"Approved in Work Center ({'note: ' + note if note else 'no note'}). Itential ran the approved fix {fix} on "
+            f"{device} ({proved}{saved})")
+    if up:
+        message = f"{said}; the session reads Established again."
+        return {"fixed": True, "message": message,
+                "resolve": {"state": "6", "close_code": "Solution provided", "close_notes": message,
+                            "work_notes": message}}
+    message = f"{said}; the session still reads {check['state']}. The incident stays open for a person."
+    return {"fixed": False, "message": message, "note": {"work_notes": message}}
+
+
+# each menu fix as the card says it: title, what happens, scope (value, note), the three promises. {d} is the device the
+# fix runs on, {p} its peer, {i} the interface toward the peer
+FABRIC_FIX_COPY = {
+    "no-shut-neighbor": ("Bring the BGP neighbor back on {d}",
+                         "Itential removes the neighbor's shutdown on {d}, waits for the session to reach Established, "
+                         "then saves the configuration.",
+                         ("1 BGP neighbor", "one line of configuration"),
+                         ("Sends one line, nothing typed by the agent",
+                          "Refused unless the neighbor is shut and {d} matches NetBox",
+                          "Saved only once the session is Established")),
+    "no-shut-interface": ("Bring {i} back up on {d}",
+                          "Itential removes the shutdown on {i}, the interface toward {p}, waits for the session to "
+                          "reach Established, then saves the configuration.",
+                          ("1 interface", "one line of configuration"),
+                          ("Sends one line, nothing typed by the agent",
+                           "Refused unless {i} is shut and its address faces {p}",
+                           "Saved only once the session is Established")),
+    "clear-session": ("Reset the BGP session on {d}",
+                      "Itential clears this one session on {d} so both ends rebuild it, then waits for Established.",
+                      ("1 BGP session", "no configuration change"),
+                      ("Runs one clear command for this neighbor only",
+                       "Refused if the neighbor or its interface is shut: that needs another fix",
+                       "Proven afterwards: Established resolves the incident")),
+}
+# the agent's cause tags (itential/agents/fabric-diagnostics.yaml, its fixed list) as the card's headline
+FABRIC_CAUSES = {
+    "neighbor-shut": "The BGP neighbor {n} is shut down on {d}",
+    "interface-shut": "{i} toward {p} is shut down on {d}",
+    "stuck-session": "The session is stuck with both links up",
+}
+
+
+def fabric_card_drawing(left: dict, right: dict, link: tuple) -> str:
+    """The session as an engineer draws it: two devices with their AS, the link between them. Each end is {name, asn,
+    state (colour, label), iface (colour, label)}; link is (colour, label); a link that is not up is drawn broken."""
+    e = html.escape
+    l_col, l_label = link
+    broken = l_col != "#1E8C6A"
+    pipe = "#F3C2BE" if broken else "#CBE8DD"
+    fracture = ('<g class="f"><path d="M346 98l12 14-10 6 14 22" stroke="#D8433A" stroke-width="8" fill="none" '
+                'filter="url(#g)" opacity=".6"/><path d="M346 98l12 14-10 6 14 22" stroke="#D8433A" '
+                'stroke-width="3.2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></g>') if broken else ""
+    dash = ' stroke-dasharray="7 6"' if broken else ""
+    pipes = "M222 118H336M384 118H498" if broken else "M222 118H498"
+
+    def box(x: int, end: dict, align: str) -> str:
+        s_col, s_label = end["state"]
+        i_col, i_label = end["iface"]
+        return (f'<rect x="{x}" y="72" width="176" height="92" rx="12" fill="#fff" stroke="{s_col}" stroke-width="2.5"/>'
+                f'<circle cx="{x + 30}" cy="104" r="14" fill="#fff" stroke="{s_col}" stroke-width="2"/>'
+                f'<path d="M{x + 22} 100h16m-4-4 4 4-4 4M{x + 38} 108H{x + 22}m4-4-4 4 4 4" stroke="{s_col}" '
+                'stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>'
+                f'<text x="{x + 52}" y="100" font-size="15" font-weight="700" fill="#0E2A4A">{e(end["name"])}</text>'
+                f'<text x="{x + 52}" y="118" font-size="12" fill="#4A6380">AS {e(str(end["asn"]))}</text>'
+                f'<text x="{x + 16}" y="148" font-size="12.5" fill="{s_col}">{e(s_label)}</text>'
+                f'<text x="{x + (0 if align == "start" else 176)}" y="186" font-size="12" fill="{i_col}" '
+                f'text-anchor="{align}">{e(i_label)}</text>')
+
+    return (
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 230" width="720" height="230">'
+        '<style>text{font-family:"Avenir Next","Segoe UI",system-ui,sans-serif}'
+        '.f{transform-origin:360px 118px;animation:p 1.8s ease-in-out infinite}'
+        '@keyframes p{0%,100%{opacity:1}50%{opacity:.35}}'
+        '@media (prefers-reduced-motion:reduce){.f{animation:none}}</style>'
+        '<defs><pattern id="d" width="16" height="16" patternUnits="userSpaceOnUse"><path d="M16 0H0V16" '
+        'fill="none" stroke="#E1E9F0"/></pattern><filter id="g" x="-50%" y="-50%" width="200%" height="200%">'
+        '<feGaussianBlur stdDeviation="5"/></filter></defs>'
+        '<rect x="10" y="22" width="700" height="190" rx="14" fill="url(#d)" stroke="#C9D5E2"/>'
+        '<text x="28" y="48" font-size="13" fill="#4A6380">the BGP session, as each end reads it</text>'
+        f'<path d="{pipes}" stroke="{pipe}" stroke-width="14" stroke-linecap="round"/>'
+        f'<path d="{pipes}" stroke="{l_col}" stroke-width="3"{dash} stroke-linecap="round"/>'
+        f'{fracture}'
+        f'<text x="360" y="92" font-size="14" font-weight="700" fill="#0E2A4A" text-anchor="middle">BGP</text>'
+        f'<text x="360" y="150" font-size="13" fill="{l_col}" text-anchor="middle">{e(l_label)}</text>'
+        f'{box(46, left, "start")}{box(498, right, "end")}'
+        '</svg>'
+    )
+
+
+def fabric_card(d: dict) -> dict:
+    """The Work Center card as one HTML page: the plan (`plan`), both ends' reads (`near`, `far`: fabric-bgp envelopes),
+    the fix (`fix`, fabric_fix's runCode result), the incident (`number`), the alert's start (`starts_at`) and the time
+    it is drawn (`now`). Every value from outside is escaped. Pure: runCode runs this source on the Gateway."""
+    e = html.escape
+    kelp, buoy, flare, grey = "#1E8C6A", "#D8433A", "#C7851A", "#7A8CA0"
+    plan = (d.get("plan") or {}).get("stdout_json") or {}
+    near_end, far_end = plan.get("near") or {}, plan.get("far") or {}
+    number = str(d.get("number") or "the incident")
+    fix_out = (d.get("fix") or {}).get("stdout_json") or {}
+    fix_end = fix_out.get("end") or {}
+    fmt = {"d": str(fix_out.get("device") or ""), "p": str(fix_end.get("peer") or ""),
+           "i": str(fix_end.get("interface") or ""), "n": str(fix_end.get("neighbor") or "")}
+    title, what, (scope, scope_note), promises = FABRIC_FIX_COPY[fix_out.get("fix")]
+    reads = {"near": fabric_reading(d.get("near")), "far": fabric_reading(d.get("far"))}
+    device, peer = str(near_end.get("device") or "the device"), str(near_end.get("peer") or "its peer")
+    start, now, elapsed = card_clock(d.get("starts_at"), d.get("now"))
+    since = f"BGP down since {start:%H:%M} UTC" if start else "BGP down: start time not read"
+
+    def state(reading: dict) -> tuple:
+        if not reading["read"]:
+            return grey, "not read"
+        if reading["state"] == "Established":
+            return kelp, "Established"
+        if reading["admin_shutdown"]:
+            return buoy, f"{reading['state']}: neighbor shut"
+        return buoy, str(reading["state"])
+
+    def iface(reading: dict, end: dict) -> tuple:
+        i = reading["interface"] or {}
+        if not end.get("interface"):
+            return grey, "link: not checked"
+        if i.get("admin_up") is False:
+            return buoy, f"{end['interface']} admin down"
+        if i.get("admin_up") is True:
+            return (kelp, f"{end['interface']} up") if i.get("oper_up") else (flare, f"{end['interface']} line down")
+        return grey, f"{end['interface']} not read"
+
+    ends = []
+    for side, end in (("near", near_end), ("far", far_end)):
+        ends.append({"name": str(end.get("device") or "?"), "asn": end.get("local_as", "?"),
+                     "state": state(reads[side]), "iface": iface(reads[side], end)})
+    up = all(r["state"] == "Established" for r in reads.values())
+    vrf = "" if near_end.get("vrf") in (None, "default") else f"VRF {near_end.get('vrf')}, "
+    link = (kelp, f"{vrf}up") if up else (buoy, f"{vrf}down")
+    drawing = outage_card_image(fabric_card_drawing(ends[0], ends[1], link),
+                                f"{device} and {peer}: BGP {link[1]}", 720, 230)
+
+    ledger = (
+        (f"{device}'s view", ends[0]["state"][1], ends[0]["state"][0], f"to {near_end.get('neighbor', '?')}"),
+        (f"{peer}'s view", ends[1]["state"][1], ends[1]["state"][0], f"to {far_end.get('neighbor', '?')}"),
+        ("Links", "Up" if all(e_["iface"][0] == kelp for e_ in ends) else "Check", kelp if all(
+            e_["iface"][0] == kelp for e_ in ends) else buoy, "the interfaces toward each other"),
+        ("NetBox intent", *(("Matches", kelp) if all(r["matches_intent"] for r in reads.values()) else
+                            ("Differs", buoy) if any(r["matches_intent"] is False for r in reads.values()) else
+                            ("Not read", grey)), "AS numbers and the neighbor"),
+    )
+    ledger_html = "".join(
+        f'<div class="reading" style="--c:{c}"><p class="src">{e(src)}</p><p class="val">{e(val)}</p>'
+        f'<p class="why">{e(why)}</p></div>' for src, val, c, why in ledger)
+
+    def yn(v, good=True):
+        if v is None:
+            return '<span class="unk">not read</span>'
+        return f'<span class="{"ok" if bool(v) == good else "bad"}">{"yes" if v else "no"}</span>'
+
+    def asn(have, want):
+        if have is None:
+            return '<span class="unk">not read</span>'
+        return f'<span class="{"ok" if have == want else "bad"}">{e(str(have))} (NetBox {e(str(want))})</span>'
+
+    rows = []
+    for side, end in (("near", near_end), ("far", far_end)):
+        r = reads[side]
+        i = r["interface"] or {}
+        rows += [("h", f"{end.get('device', '?')} -> {end.get('neighbor', '?')}, read by fabric-bgp"),
+                 ("session state", f'<span class="{"ok" if r["state"] == "Established" else "bad" if r["read"] else "unk"}">'
+                                   f'{e(str(r["state"]))}</span>'),
+                 ("neighbor shut down", yn(r["admin_shutdown"], good=False)),
+                 ("local AS", asn(r["local_as"], end.get("local_as"))),
+                 ("remote AS", asn(r["remote_as"], end.get("remote_as")))]
+        if end.get("interface"):
+            rows.append((f"{end['interface']} admin up", yn(i.get("admin_up") if i else None)))
+    term = "".join(f'<p class="h">{e(b)}</p>' if a == "h" else f'<p class="row"><span>{e(a)}</span>{b}</p>'
+                   for a, b in rows)
+
+    tag = str(fix_out.get("cause") or "no cause given")
+    cause = FABRIC_CAUSES[tag].format(**fmt) if tag in FABRIC_CAUSES else tag
+    session = str(fix_out.get("session") or "")[:8]
+    agent_by = "fabric-diagnostics agent" + (f", session {session}" if session else "")
+    evidence = str(fix_out.get("evidence") or "")
+    promises_html = "".join(f'<li class="promise">{e(p.format(**fmt))}</li>' for p in promises)
+    sections = f"""<section class="panel topo" aria-labelledby="t-where"><h2 id="t-where">Where the session breaks</h2>{drawing}
+<div class="ledger">{ledger_html}</div></section>
+<section class="panel" aria-labelledby="t-when"><h2 id="t-when">What has happened so far</h2>
+<ol class="steps">
+<li><span class="who">Prometheus</span><b>Alert fired</b>{e(since[len("BGP down "):] if start else "BGP down")}</li>
+<li><span class="who">ServiceNow</span><b>Incident opened</b>{e(number)}, with both ends' readings</li>
+<li><span class="who">The agent</span><b>Cause found</b>one fix picked from a fixed menu</li>
+<li class="now"><span class="who">You</span><b>Approve or reject</b>nothing has run yet</li>
+<li class="next"><span class="who">Itential</span><b>Fix and prove</b>Established, then resolves</li>
+</ol></section>
+<section class="panel diag" aria-labelledby="t-found"><div>
+<h2 id="t-found">What the agent found</h2><span class="by"><i></i>{e(agent_by)}</span>
+<p class="cause">{e(cause)}</p>
+<p>{e(evidence) if evidence else "The agent's full diagnosis is in the incident's work notes."}</p></div>
+<div class="term" role="group" aria-label="What fabric-bgp read at both ends">{term}</div></section>
+<section class="panel action" aria-labelledby="t-fix"><div><p class="kicker">The proposed fix</p>
+<h2 id="t-fix">{e(title.format(**fmt))}</h2><p class="what">{e(what.format(**fmt))}</p></div>
+<p class="scope">Scope<b>{e(scope)}</b>{e(scope_note)}</p>
+<ul class="promises">{promises_html}</ul></section>"""
+    lede = (f"Itential opened <strong>{e(number)}</strong> and the fabric-diagnostics agent found the likely cause.\n"
+            "One fix is ready, and nothing runs until you approve it.")
+    foot = (f"Prepared by Itential's Diagnose Fabric BGP Outage workflow at {now:%H:%M} UTC, from live reads of\n"
+            f"{e(device)} and {e(peer)}, checked against NetBox.")
+    page = card_page(f"BGP outage: {number}", f"A BGP session is down: {device} and {peer}", lede, elapsed, since,
+                     sections, number, foot)
+    return {"html": page}
+
+
+FABRIC_WAIT = int(FABRIC["wait_seconds"])
+_FABRIC_CONSTANTS = ("FABRIC_READ_TIMEOUT = " + repr(FABRIC_READ_TIMEOUT) + "\nFABRIC_FIX_TIMEOUT = "
+                     + repr(FABRIC_FIX_TIMEOUT) + "\nFABRIC_WAIT = " + repr(FABRIC_WAIT) + "\nFABRIC_FIXES = "
+                     + repr(FABRIC_FIXES) + "\n\n\n")
+FABRIC_PLAN_CODE = _source(fabric_service_session, fabric_plan,
+                           call='fabric_plan(json.loads(sys.stdin.read() or "{}"), SESSIONS, TARGETS, FABRIC)',
+                           extra=_FABRIC_CONSTANTS + "SESSIONS = " + repr(FABRIC_SESSIONS) + "\nTARGETS = "
+                           + repr(FABRIC_TARGETS) + "\nFABRIC = " + repr({"username": FABRIC["username"]}) + "\n\n\n")
+FABRIC_OPEN_CODE = _source(open_incident, call='open_incident(json.loads(sys.stdin.read() or "{}"))')
+FABRIC_SUMMARY_CODE = _source(fabric_reading, fabric_commands, fabric_summary,
+                              call='fabric_summary(json.loads(sys.stdin.read() or "{}"))')
+FABRIC_FIX_CODE = _source(fabric_fix, call='fabric_fix(json.loads(sys.stdin.read() or "{}"))', extra=_FABRIC_CONSTANTS)
+FABRIC_RESULT_CODE = _source(fabric_reading, decision_note, fabric_result,
+                             call='fabric_result(json.loads(sys.stdin.read() or "{}"))')
+FABRIC_CARD_CODE = _source(outage_card_image, card_clock, card_mark, card_page, fabric_reading, fabric_card_drawing,
+                           fabric_card, call='fabric_card(json.loads(sys.stdin.read() or "{}"))',
+                           extra="import base64\nimport html\nfrom datetime import datetime, timezone\n\n"
+                                 "OUTAGE_CARD_CSS = " + repr(OUTAGE_CARD_CSS) + "\nFABRIC_FIX_COPY = "
+                                 + repr(FABRIC_FIX_COPY) + "\nFABRIC_CAUSES = " + repr(FABRIC_CAUSES) + "\n\n\n")
+
+
+def diagnose_fabric_bgp_outage() -> dict:
+    ok, fail, err = "success", "failure", "error"
+    nothing = "nothing was changed"
+    tasks = {
+        "01": empty("no far-end reading yet", "far_result", x=0),
+        "02": empty("no agent answer yet", "agent_result", x=20),
+        "03": empty("no fix answer yet", "fix_result", x=40),
+        "04": empty("no session reading after the fix yet", "check_result", x=60),
+        # the plan: the alerting end must be a declared session; its far end and both ends' reads
+        "1a": set_key("the plan: the alerting device", {}, "device", "$var.job.device", x=100),
+        "1b": set_key("the plan: its neighbor", "$var.1a.object", "neighbor", "$var.job.neighbor", x=125),
+        "1c": set_key("the plan: the VRF", "$var.1b.object", "vrf", "$var.job.vrf", x=150),
+        "1d": set_key("the plan: the peer", "$var.1c.object", "peer", "$var.job.peer", x=175),
+        "1e": run_code("what the loop may act on: both ends of the session (Python on the runner)", FABRIC_PLAN_CODE,
+                       "$var.1d.object", "fabric_plan", x=200),
+        "10": evaluate("a declared session?", "1e", "result", "stdout_json.ok", "==", True, x=250),
+        "19": jq("why there is no plan", "$var.1e.result", "stdout_json.message", x=300, y=-600, to_job="error"),
+        # one incident per device pair: an open one is only noted
+        "2a": jq("the open-incident query", "$var.job.fabric_plan", "stdout_json.open_query", x=600),
+        "2b": sni("listIncidents", "an open incident for this pair? (correlation_id)",
+                  {"sysparm_query": "$var.2a.return_data", "sysparm_fields": "sys_id,number", "sysparm_limit": 1},
+                  x=650, outgoing={"response": "$var.job.fabric_open"}),
+        "2c": set_key("the open-incident answer", {}, "open", "$var.job.fabric_open", x=700),
+        "2d": set_key("when the alert started", "$var.2c.object", "starts_at", "$var.job.starts_at", x=725),
+        "24": set_key("which alert", "$var.2d.object", "alert", "the BGP session-down alert", x=737),
+        "2e": run_code("is one open? (Python on the runner)", FABRIC_OPEN_CODE, "$var.24.object", "fabric_dedupe",
+                       x=750),
+        "2f": evaluate("already open?", "2e", "result", "stdout_json.open", "==", True, x=800),
+        "20": jq("the open incident", "$var.2e.result", "stdout_json.sys_id", x=850, y=600),
+        "21": jq("the still-down note", "$var.2e.result", "stdout_json.note", x=875, y=600),
+        "22": sni("updateIncident", "note the open incident: still down",
+                  {"sys_id": "$var.20.return_data", "sysparm_fields": "number", **nbi_body("$var.21.return_data")},
+                  x=900, y=600),
+        "23": note("still down: noted", "the pair already has an open incident: noted it, opened none", "outcome",
+                   x=925, y=600),
+        # the evidence: both ends, read by fabric-bgp (a far end that cannot be read is evidence too)
+        "3a": jq("the alerting end's read params", "$var.job.fabric_plan", "stdout_json.near_read", x=950),
+        "3b": run_service("the alerting end (fabric-bgp read: the session, the link, AS against NetBox)", "fabric-bgp",
+                          "$var.3a.return_data", "near_result", x=1000),
+        "3c": evaluate("the alerting end read?", "3b", "result", "result.return_code", "==", 0, x=1025),
+        "3d": jq("the far end's read params", "$var.job.fabric_plan", "stdout_json.far_read", x=1050),
+        "3e": run_service("the far end (fabric-bgp read)", "fabric-bgp", "$var.3d.return_data", "far_result", x=1075),
+        "3f": note("the far end could not be read", "fabric-bgp could not read the far end: the incident says so",
+                   "far_note", x=1100, y=300),
+        "c0": evaluate("Established again?", "3b", "result", "result.stdout_json.session.state", "==", "Established",
+                       x=1125),
+        "30": note("the session is up again", "the session read Established again when Itential checked: no incident "
+                   "opened, nothing was changed", "outcome", x=1150, y=600),
+        # the incident
+        "31": set_key("the incident: the plan", {}, "plan", "$var.job.fabric_plan", x=1200),
+        "32": set_key("the incident: the alerting end", "$var.31.object", "near", "$var.job.near_result", x=1225),
+        "33": set_key("the incident: the far end", "$var.32.object", "far", "$var.job.far_result", x=1250),
+        "34": set_key("the incident: when it started", "$var.33.object", "starts_at", "$var.job.starts_at", x=1275),
+        "35": run_code("the incident's text (Python on the runner)", FABRIC_SUMMARY_CODE, "$var.34.object",
+                       "fabric_summary", x=1300),
+        "36": jq("the incident's body", "$var.35.result", "stdout_json.incident", x=1325),
+        "37": sni("createIncident", "open one ServiceNow incident for the session",
+                  {"sysparm_fields": "sys_id,number", **nbi_body("$var.36.return_data")}, x=1350,
+                  outgoing={"response": "$var.job.incident_created"}),
+        "38": set_key("the new incident", {}, "created", "$var.job.incident_created", x=1375),
+        "39": set_key("the evidence for the agent", "$var.38.object", "summary", "$var.job.fabric_summary", x=1400),
+        "c1": run_code("the agent's request (Python on the runner)", OUTAGE_REQUEST_CODE, "$var.39.object",
+                       "fabric_request", x=1425),
+        "c2": evaluate("the incident opened?", "c1", "result", "stdout_json.ok", "==", True, x=1450),
+        # A6: the agent diagnoses, notes the incident and picks one fix on one end
+        "4a": jq("the agent's request", "$var.job.fabric_request", "stdout_json.request", x=1500),
+        "4b": run_agent("fabric-diagnostics: confirm both ends, note the incident, pick one fix", FABRIC_AGENT_MARKER,
+                        "$var.4a.return_data", "agent_result", x=1550),
+        "45": note("the agent did not run", "the fabric-diagnostics session did not run: the loop escalates",
+                   "agent_note", x=1575, y=-300),
+        "4c": set_key("the agent's answer", {}, "agent", "$var.job.agent_result", x=1600),
+        "4d": set_key("the plan for the fix", "$var.4c.object", "plan", "$var.job.fabric_plan", x=1625),
+        "4f": run_code("the fix, held to the menu and the session's ends (Python on the runner)", FABRIC_FIX_CODE,
+                       "$var.4d.object", "fabric_fix", x=1650),
+        "40": evaluate("a fix to approve?", "4f", "result", "stdout_json.card", "==", True, x=1700),
+        "41": jq("the incident", "$var.job.fabric_request", "stdout_json.sys_id", x=1725, y=600),
+        "42": jq("the escalation note", "$var.4f.result", "stdout_json.escalation", x=1750, y=600),
+        "43": sni("updateIncident", "note the incident: escalated to a person",
+                  {"sys_id": "$var.41.return_data", "sysparm_fields": "number", **nbi_body("$var.42.return_data")},
+                  x=1775, y=600),
+        "44": note("escalated", "the agent found no fix from the menu: the incident is escalated to a person", "error",
+                   x=1800, y=600),
+        # the card: one HTML page from both ends' readings (fabric_card), the engineer's note comes back
+        "4e": jq("the incident number", "$var.job.fabric_request", "stdout_json.number", x=1800),
+        "5a": set_key("the card: the fix", "$var.34.object", "fix", "$var.job.fabric_fix", x=1810),
+        "5b": set_key("the card: the incident number", "$var.5a.object", "number", "$var.4e.return_data", x=1820),
+        "5e": run_code("the card's page (Python on the runner)", FABRIC_CARD_CODE, "$var.5b.object", "fabric_card",
+                       x=1830),
+        "5f": jq("the card's HTML", "$var.5e.result", "stdout_json.html", x=1840),
+        "5c": task("InteractiveHTML", "WorkCenter", "approval: the BGP outage card",
+                   {"header": "Approve the fix for the BGP outage", "body": "$var.5f.return_data", "variables": {},
+                    "btn_success": "Approve and run the fix", "btn_failure": "Reject"},
+                   {"export": "$var.job.card_decision"}, kind="manual", display="Work Center",
+                   view="/work-center/task/InteractiveHTML", x=1850),
+        "50": jq("the incident (rejected)", "$var.job.fabric_request", "stdout_json.sys_id", x=1900, y=900),
+        "58": run_code("the rejection note, with the engineer's (Python on the runner)", OUTAGE_REJECTED_CODE,
+                       "$var.job.card_decision", "fabric_rejected", x=1910, y=900),
+        "59": jq("the rejection note", "$var.58.result", "stdout_json", x=1920, y=900),
+        "51": sni("updateIncident", "note the incident: the fix was rejected",
+                  {"sys_id": "$var.50.return_data", "sysparm_fields": "number", **nbi_body("$var.59.return_data")},
+                  x=1925, y=900),
+        "52": note("rejected", "the fix was rejected in Work Center: nothing was run, the incident stays open",
+                   "outcome", x=1950, y=900),
+        # the approved fix, exactly one, on the end the agent named (fabric-bgp proves it Established, then saves)
+        "60": jq("the fix's params (one end, one action)", "$var.job.fabric_fix", "stdout_json.params", x=1950),
+        "61": run_service("run the approved fix (fabric-bgp: one change, Established, then save)", "fabric-bgp",
+                          "$var.60.return_data", "fix_result", x=2000),
+        "62": evaluate("the fix exited 0?", "61", "result", "result.return_code", "==", 0, x=2025),
+        "54": note("the fix did not complete", "the approved fix exited non-zero or could not run (fix_result): the "
+                   "session is read again", "fix_note", x=2050, y=300),
+        # the session again at the alerting end, then the incident
+        "70": jq("the alerting end's read params", "$var.job.fabric_plan", "stdout_json.near_read", x=2100),
+        "80": note("the session could not be read", "fabric-bgp could not read the session after the fix "
+                   "(check_result)", "check_note", x=2140, y=-300),
+        "72": set_key("the result: the fix", {}, "fix", "$var.job.fabric_fix", x=2250),
+        "74": set_key("the result: its answer", "$var.72.object", "answer", "$var.job.fix_result", x=2275),
+        "75": set_key("the result: the session now", "$var.74.object", "check", "$var.job.check_result", x=2300),
+        "81": set_key("the result: the engineer's note", "$var.75.object", "decision", "$var.job.card_decision",
+                      x=2312),
+        "76": run_code("fixed? (Python on the runner)", FABRIC_RESULT_CODE, "$var.81.object", "fabric_result", x=2325),
+        "77": jq("the incident", "$var.job.fabric_request", "stdout_json.sys_id", x=2350),
+        "78": evaluate("fixed?", "76", "result", "stdout_json.fixed", "==", True, x=2375),
+        "79": jq("the resolution", "$var.76.result", "stdout_json.resolve", x=2400),
+        "7a": sni("updateIncident", "resolve the incident (Solution provided)",
+                  {"sys_id": "$var.77.return_data", "sysparm_fields": "number,state", **nbi_body("$var.79.return_data")},
+                  x=2425),
+        "7b": jq("the outcome", "$var.76.result", "stdout_json.message", x=2450, to_job="outcome"),
+        "7c": jq("the not-fixed note", "$var.76.result", "stdout_json.note", x=2400, y=-300),
+        "7d": sni("updateIncident", "note the incident: still not Established after the fix",
+                  {"sys_id": "$var.77.return_data", "sysparm_fields": "number", **nbi_body("$var.7c.return_data")},
+                  x=2425, y=-300),
+        "7e": jq("why it needs a look", "$var.76.result", "stdout_json.message", x=2450, y=-300, to_job="error"),
+        # failures: the reason, then one Work Center task
+        "8b": note("a step could not run", f"the Gateway could not run a step before the evidence (see fabric_plan): "
+                   f"{nothing}", "error", x=500, y=-600),
+        "8c": note("the alerting end could not be read", f"fabric-bgp could not read the alerting end (near_result): "
+                   f"{nothing}", "error", x=1050, y=-900),
+        "8d": note("ServiceNow did not answer", f"ServiceNow did not answer (fabric_open, incident_created): "
+                   f"{nothing}; the outage has no incident", "error", x=1350, y=-600),
+        "8e": note("a step after the incident could not run", "a step after the incident was opened could not run "
+                   "(see fabric_request, agent_result, fabric_fix, fix_result): check the job and the incident",
+                   "error", x=1700, y=-900),
+        "f0": view("Work Center task", "Diagnose Fabric BGP Outage needs a look", "$var.job.error", "$var.job.fabric_fix",
+                   "Seen", "Seen", x=2600, y=0),
+    }
+    # the session after the fix: fabric-bgp already waited for Established before it saved, so these reads confirm it
+    # from the alerting end - up to four over about two and a half minutes, unrolled (no cycle); the first that reads
+    # Established goes to the result, the last read is check_result either way
+    recheck_tr = {}
+    for i, (delay, read, up, secs) in enumerate(FABRIC_RECHECKS):
+        nxt = FABRIC_RECHECKS[i + 1][0] if i + 1 < len(FABRIC_RECHECKS) else "72"
+        x = 2150 + i * 25
+        tasks[delay] = task("delay", "WorkFlowEngine", f"wait {secs} s for the session (read {i + 1})", {"time": secs},
+                            {"time_in_milliseconds": None}, kind="operation", display="WorkFlowEngine", x=x)
+        tasks[read] = run_service(f"the session now, read {i + 1} (fabric-bgp read)", "fabric-bgp",
+                                  "$var.70.return_data", "check_result", x=x + 8)
+        tasks[up] = evaluate(f"Established? (read {i + 1})", read, "result", "result.stdout_json.session.state", "==",
+                             "Established", x=x + 16)
+        recheck_tr[delay] = _edge(**{read: ok})
+        recheck_tr[read] = _edge(**{up: ok, (nxt if nxt != "72" else "80"): err})
+        recheck_tr[up] = _edge(**{"72": ok, (nxt if nxt != "72" else "bc"): fail})
+    tasks["bc"] = note("still not Established after the last read", "the session was still not Established after the "
+                       f"last read (about {sum(r[3] for r in FABRIC_RECHECKS)} s after the fix): the result says so",
+                       "check_note", x=2240, y=300)
+    recheck_tr["bc"] = _edge(**{"72": ok})
+    tr = {
+        "workflow_start": _edge(**{"01": ok}),
+        "01": _edge(**{"02": ok}), "02": _edge(**{"03": ok}), "03": _edge(**{"04": ok}), "04": _edge(**{"1a": ok}),
+        "1a": _edge(**{"1b": ok}), "1b": _edge(**{"1c": ok}), "1c": _edge(**{"1d": ok}), "1d": _edge(**{"1e": ok}),
+        "1e": _edge(**{"10": ok, "8b": err}),
+        "10": _edge(**{"2a": ok, "19": fail}),
+        "19": _edge(**{"f0": ok, "8b": err}),
+        "2a": _edge(**{"2b": ok, "8b": err}),
+        "2b": _edge(**{"2c": ok, "8d": err}),
+        "2c": _edge(**{"2d": ok}), "2d": _edge(**{"24": ok}), "24": _edge(**{"2e": ok}),
+        "2e": _edge(**{"2f": ok, "8b": err}),
+        "2f": _edge(**{"20": ok, "3a": fail}),
+        "20": _edge(**{"21": ok, "8d": err}),
+        "21": _edge(**{"22": ok, "8d": err}),
+        "22": _edge(**{"23": ok, "8d": err}),
+        "23": _edge(**{"workflow_end": ok}),
+        "3a": _edge(**{"3b": ok, "8b": err}),
+        "3b": _edge(**{"3c": ok, "8c": err}),
+        "3c": _edge(**{"3d": ok, "8c": fail}),
+        "3d": _edge(**{"3e": ok, "8b": err}),
+        # a far end that cannot be read is evidence too ("not read"): the incident goes on
+        "3e": _edge(**{"c0": ok, "3f": err}),
+        "3f": _edge(**{"c0": ok}),
+        "c0": _edge(**{"30": ok, "31": fail, "8c": err}),
+        "30": _edge(**{"workflow_end": ok}),
+        "31": _edge(**{"32": ok}), "32": _edge(**{"33": ok}), "33": _edge(**{"34": ok}), "34": _edge(**{"35": ok}),
+        "35": _edge(**{"36": ok, "8e": err}),
+        "36": _edge(**{"37": ok, "8e": err}),
+        "37": _edge(**{"38": ok, "8d": err}),
+        "38": _edge(**{"39": ok}), "39": _edge(**{"c1": ok}),
+        "c1": _edge(**{"c2": ok, "8e": err}),
+        "c2": _edge(**{"4a": ok, "8d": fail}),
+        "4a": _edge(**{"4b": ok, "8e": err}),
+        # an agent that fails is an answer too: no fix from it means escalate
+        "4b": _edge(**{"4c": ok, "45": err}),
+        "45": _edge(**{"4c": ok}),
+        "4c": _edge(**{"4d": ok}), "4d": _edge(**{"4f": ok}),
+        "4f": _edge(**{"40": ok, "8e": err}),
+        "40": _edge(**{"4e": ok, "41": fail}),
+        "41": _edge(**{"42": ok, "8e": err}),
+        "42": _edge(**{"43": ok, "8e": err}),
+        "43": _edge(**{"44": ok, "8e": err}),
+        "44": _edge(**{"f0": ok}),
+        "4e": _edge(**{"5a": ok, "8e": err}),
+        "5a": _edge(**{"5b": ok}), "5b": _edge(**{"5e": ok}),
+        "5e": _edge(**{"5f": ok, "8e": err}),
+        "5f": _edge(**{"5c": ok, "8e": err}),
+        "5c": _edge(**{"60": ok, "50": fail}),
+        "50": _edge(**{"58": ok, "8e": err}),
+        "58": _edge(**{"59": ok, "8e": err}),
+        "59": _edge(**{"51": ok, "8e": err}),
+        "51": _edge(**{"52": ok, "8e": err}),
+        "52": _edge(**{"workflow_end": ok}),
+        "60": _edge(**{"61": ok, "8e": err}),
+        "61": _edge(**{"62": ok, "54": err}),
+        "62": _edge(**{"70": ok, "54": fail}),
+        "54": _edge(**{"70": ok}),
+        "70": _edge(**{FABRIC_RECHECKS[0][0]: ok, "8e": err}),
+        "80": _edge(**{"72": ok}),
+        **recheck_tr,
+        "72": _edge(**{"74": ok}), "74": _edge(**{"75": ok}), "75": _edge(**{"81": ok}), "81": _edge(**{"76": ok}),
+        "76": _edge(**{"77": ok, "8e": err}),
+        "77": _edge(**{"78": ok, "8e": err}),
+        "78": _edge(**{"79": ok, "7c": fail}),
+        "79": _edge(**{"7a": ok, "8e": err}),
+        "7a": _edge(**{"7b": ok, "8e": err}),
+        "7b": _edge(**{"workflow_end": ok}),
+        "7c": _edge(**{"7d": ok, "8e": err}),
+        "7d": _edge(**{"7e": ok, "8e": err}),
+        "7e": _edge(**{"f0": ok}),
+        **{n: _edge(**{"f0": ok}) for n in ("8b", "8c", "8d", "8e")},
+        "f0": _edge(**{"workflow_end": ok}),
+    }
+    return workflow(
+        WF["diagnose_fabric_bgp_outage"],
+        "The fabric BGP outage loop (R10 + A6, ADR 0073): started by the session-down alert, it reads both ends, opens "
+        "one ServiceNow incident, lets the fabric-diagnostics agent pick one fix on one end from a fixed menu, and runs "
+        "that fix only after a Work Center approval - proved Established - then resolves the incident",
+        {k: {"type": "string", "required": True}
+         for k in ("alertname", "device", "neighbor", "vrf", "peer", "starts_at", "fingerprint")},
+        tasks,
+        tr,
+        {
+            "outcome": {"type": "string"}, "error": {"type": "string"},
+            "fabric_plan": {"type": "object"}, "fabric_open": {"type": "object"}, "fabric_dedupe": {"type": "object"},
+            "near_result": {"type": "object"}, "far_result": {"type": "object"}, "far_note": {"type": "string"},
+            "fabric_summary": {"type": "object"}, "incident_created": {"type": "object"},
+            "fabric_request": {"type": "object"}, "agent_result": {"type": "object"}, "agent_note": {"type": "string"},
+            "fabric_fix": {"type": "object"}, "fabric_card": {"type": "object"},
+            "card_decision": {"type": ["object", "null"]}, "fabric_rejected": {"type": "object"},
+            "fix_result": {"type": "object"}, "fix_note": {"type": "string"}, "check_result": {"type": "object"},
+            "check_note": {"type": "string"}, "fabric_result": {"type": "object"},
+        },
+    )
+
+
 BUILDERS = (device_count, show_version, show_command, show_all, branch_vlan, branch_vlan_delete, config_push,
             compliance_run, compliance_report, netbox_devices, backup_all, deploy_aws_vpn, verify_aws_vpn,
             hand_off_aws_vpn, config_push_revert, tear_down_aws_vpn, tear_down_expired_aws_vpn, get_aws_vpn_status,
-            check_aws_drift, rotate_aws_vpn_key, rotate_aws_vpn_key_monthly, diagnose_aws_vpn_outage)
+            check_aws_drift, rotate_aws_vpn_key, rotate_aws_vpn_key_monthly, diagnose_aws_vpn_outage,
+            diagnose_fabric_bgp_outage)
 
 
 if __name__ == "__main__":

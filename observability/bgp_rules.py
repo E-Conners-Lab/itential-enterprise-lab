@@ -3,7 +3,9 @@
 config contexts are seeded from (ADR 0048). One PrometheusRule, group lab-bgp:
 
   lab:bgp_neighbor_intent      1 per declared session end: device, neighbor, vrf ("default" outside a VRF), the peer
-                               device that owns the neighbor address, and its remote_as
+                               device that owns the neighbor address, its remote_as, and the device pair (`pair`, the
+                               two names sorted): both ends of a broken session alert at once (probe P3), and
+                               Alertmanager groups them by pair so the outage loop is started once (R10 PR B)
   lab:bgp_session_up:snmp      1/0 per C8000v session, BGP4-MIB bgpPeerState (6 = established) - every VRF (probe P1)
   lab:bgp_session_up:gnmic     1/0 per vEOS session from gNMIc's session-state series
   lab:bgp_session_up           either source, for declared sessions only, with the intent's labels
@@ -52,8 +54,9 @@ def intent() -> list[dict]:
     ends = []
     for device in topo["nodes"]:
         for n in derive.device_context(topo, device).get("bgp", {}).get("neighbors", []):
+            peer = owner[n["neighbor"]]
             ends.append({"device": device, "neighbor": n["neighbor"], "vrf": n.get("vrf") or "default",
-                         "peer": owner[n["neighbor"]], "remote_as": str(n["remote_as"])})
+                         "peer": peer, "remote_as": str(n["remote_as"]), "pair": "--".join(sorted((device, peer)))})
     return ends
 
 
@@ -72,7 +75,7 @@ def build(ends: list[dict]) -> dict:
         {
             "record": "lab:bgp_session_up",
             "expr": "(lab:bgp_session_up:snmp or lab:bgp_session_up:gnmic) "
-                    "* on (device, neighbor) group_left (vrf, peer, remote_as) lab:bgp_neighbor_intent",
+                    "* on (device, neighbor) group_left (vrf, peer, remote_as, pair) lab:bgp_neighbor_intent",
         },
         {
             "alert": "LabBgpSessionDown",

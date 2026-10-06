@@ -512,6 +512,39 @@ c22() {
 }
 check "S4d.5n tunnel-diagnostics reads dc1-wan01, notes its verify incident once and proposes escalate on a healthy tunnel" c21
 check "S4d.5o tunnel-diagnostics-local reads dc1-wan01, notes its verify incident and answers escalate on a healthy tunnel" c22
+# p/q) fabric-diagnostics (A6, ADR 0073) on a healthy session (dc1-spine01 <-> dc1-leaf01 EVPN): each runs the reads the
+# request lists, notes its own verify incident once and answers "escalate" (no known cause matches an Established
+# session); neither may hold or call a write tool. The request is shaped as Diagnose Fabric BGP Outage builds it.
+fd_setup() { # fd_setup <label>: a fresh verify incident and the request naming it (TD_REQ)
+  local sys num
+  read -r sys num <<<"$(td_incident "bgp-$1")"; [ -n "$num" ] || { echo "the PDI did not create the incident"; return 1; }
+  TD_INCS="${TD_INCS} ${sys}"; TD_NUM=$num
+  TD_REQ="{\"request\":\"Incident ${num} (sys_id ${sys}). Evidence: dc1-spine01 -> 10.101.254.11 (VRF default) reads Established; Ethernet1 toward dc1-leaf01 is up, line protocol up. dc1-leaf01 -> 10.101.254.1 (VRF default) reads Established; Ethernet1 toward dc1-spine01 is up, line protocol up. Confirm with these reads: on dc1-spine01 \\\"show ip bgp neighbors 10.101.254.11 | include BGP state\\\" and then \\\"show interfaces Ethernet1 | include line protocol\\\"; on dc1-leaf01 \\\"show ip bgp neighbors 10.101.254.1 | include BGP state\\\" and then \\\"show interfaces Ethernet1 | include line protocol\\\".\"}"
+}
+fd_judge() { # fd_judge <agent> <session id>
+  local sid=${2##*$'\n'} txt tools fix
+  txt=$(session_text "$sid"); tools=$(session_tools "$sid"); count_tokens "$sid"
+  echo "$tools" | grep -q "Run Show Command on a Device" || { echo "$1 never read the devices: ${tools}"; return 1; }
+  echo "$tools" | grep -q "updateIncident" || { echo "$1 wrote no work note: ${tools}"; return 1; }
+  echo "$tools" | grep -qiE "Push Configuration|Diagnose Fabric|fabric-bgp|send.?config" && { echo "$1 touched a write tool: ${tools}"; return 1; }
+  fix=$(echo "$txt" | ${PY} -c 'import sys,json
+lines=[l for l in sys.stdin.read().strip().splitlines() if l.strip()]
+print(json.loads(lines[-1]).get("fix","") if lines else "")' 2>/dev/null)
+  [ "$fix" = escalate ] || { echo "$1 answered fix '${fix}' for an Established session (want escalate): $(echo "$txt" | tail -c 300)"; return 1; }
+  echo "$1: ${TD_NUM} noted, fix escalate on an Established session; tools ${tools}"
+}
+c23() {
+  local sid; fd_setup claude || return 1
+  sid=$(run_agent fabric-diagnostics "$TD_REQ") || { echo "$sid"; return 1; }
+  fd_judge fabric-diagnostics "$sid"
+}
+c24() {
+  local sid; fd_setup local || return 1
+  sid=$(run_agent fabric-diagnostics-local "$TD_REQ") || { echo "$sid"; return 1; }
+  fd_judge fabric-diagnostics-local "$sid"
+}
+check "S4d.5p fabric-diagnostics runs the listed reads, notes its verify incident once and proposes escalate on an Established session" c23
+check "S4d.5q fabric-diagnostics-local runs the listed reads, notes its verify incident and answers escalate on an Established session" c24
 
 # cleanup: close the verify's incident; restore the hostname if a failed run left the drift behind
 if [ -n "$INC_SYS" ]; then sn -X PATCH "$SN/incident/${INC_SYS}" -d '{"state":"7","close_code":"Solution provided","close_notes":"closed by verify/test-06-flowai.sh"}' -o /dev/null; echo "closed ${INC_NUM}"; fi

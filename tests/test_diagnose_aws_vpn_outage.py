@@ -383,11 +383,11 @@ def test_the_alert_relays_route_is_this_workflows_trigger() -> None:
 
 def test_the_trigger_task_takes_the_workflows_own_gate_and_refuses_a_marker() -> None:
     text = (ROOT / "ansible" / "playbooks" / "tasks" / "outage-trigger.yml").read_text()
-    assert "diagnose-aws-vpn-outage.json" in text and "tasks['9a0a'].variables.incoming.schema" in text
+    assert "otr_key | replace('_', '-')" in text and "tasks['9a0a'].variables.incoming.schema" in text
     assert "type: endpoint" in text and "type: manual" not in text  # only the relay starts it
     assert "regex_search('__AGENT_ID:')" in text
     play = (ROOT / "ansible" / "playbooks" / "platform.yml").read_text()
-    assert "include_tasks: tasks/outage-trigger.yml" in play
+    assert "include_tasks: tasks/outage-trigger.yml" in play and "otr_key: diagnose_aws_vpn_outage" in play
     assert "'diagnose_aws_vpn_outage'" in (ROOT / "ansible" / "playbooks" / "tasks" / "aws-vpn-retire.yml").read_text()
 
 

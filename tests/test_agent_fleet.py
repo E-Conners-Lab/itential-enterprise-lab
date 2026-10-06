@@ -18,7 +18,8 @@ VERIFY = ROOT / "verify" / "test-06-flowai.sh"
 PID = ROOT / "docs" / "PID.md"
 ADR = ROOT / "docs" / "adr" / "0046-agent-fleet-tiered-autonomy.md"
 
-FLEET = ("netbox-sot", "device-ops", "compliance", "diagnostics", "remediation", "cloud-status", "tunnel-diagnostics")
+FLEET = ("netbox-sot", "device-ops", "compliance", "diagnostics", "remediation", "cloud-status", "tunnel-diagnostics",
+         "fabric-diagnostics")
 DEVICE_WRITE_TOOLS = {
     "send-config",
     "Push Configuration with Approval",
@@ -76,7 +77,8 @@ def test_every_fleet_agent_exists_on_claude_with_a_local_twin(
 
 def test_tiered_autonomy_by_tool_kind(docs: dict) -> None:
     # read-only tiers hold no device-writing tool at all; remediation's only write is the governed push
-    for name in ("netbox-sot", "device-ops", "compliance", "diagnostics", "cloud-status", "tunnel-diagnostics"):
+    for name in ("netbox-sot", "device-ops", "compliance", "diagnostics", "cloud-status", "tunnel-diagnostics",
+                 "fabric-diagnostics"):
         for variant in (name, f"{name}-local"):
             assert not (tool_names(docs[variant]) & DEVICE_WRITE_TOOLS), (
                 f"{variant} must not write to devices"
@@ -573,4 +575,27 @@ def test_tunnel_diagnostics_reads_notes_and_proposes_from_the_menu_only(docs: di
 
 def test_tunnel_diagnostics_never_runs_a_fix_itself(docs: dict) -> None:
     text = docs["tunnel-diagnostics"]["instructions"]
+    assert "Work Center" in text and "never run a fix yourself" in text.lower() and "exactly one work note" in text
+
+
+# ── A6 fabric-diagnostics (R10 + A6, ADR 0073): the listed reads, one work note, one fix on one end ──
+
+FABRIC_MENU = ("no-shut-neighbor", "no-shut-interface", "clear-session", "escalate")
+
+
+def test_fabric_diagnostics_reads_notes_and_proposes_from_the_menu_only(docs: dict) -> None:
+    assert tool_names(docs["fabric-diagnostics"]) == {"Run Show Command on a Device", "getIncident", "updateIncident"}
+    assert tool_names(docs["fabric-diagnostics-local"]) == {"Run Show Command on a Device", "updateIncident"}
+    for variant in ("fabric-diagnostics", "fabric-diagnostics-local"):
+        text = docs[variant]["instructions"]
+        for fix in FABRIC_MENU:
+            assert fix in text, (variant, fix)
+        for cause in ("neighbor-shut", "interface-shut", "config-drift", "link-down", "stuck-session", "unknown"):
+            assert cause in text, (variant, cause)
+        # the answer names the end the fix runs on: the workflow holds it to the session's two devices
+        assert '"device": "<' in text and '{"fix": "<' in text
+
+
+def test_fabric_diagnostics_never_runs_a_fix_itself(docs: dict) -> None:
+    text = docs["fabric-diagnostics"]["instructions"]
     assert "Work Center" in text and "never run a fix yourself" in text.lower() and "exactly one work note" in text

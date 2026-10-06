@@ -74,4 +74,6 @@ def test_arrows_stay_clear_of_the_tasks(file: str) -> None:
 # Diagnose AWS VPN Outage (R6, 2026-10-05): five failure notes and the menu's three fixes meet at two tasks; same rule.
 # Its HTML card (2026-10-05) adds the card's own chain and the engineer's note on both branches: 10, same rule.
 # The patient re-check after the fix (four unrolled reads, 2026-10-05 run 2) brings it to 13, same rule.
-THROUGH_ALLOWED = {"hand-off-aws-vpn.json": 5, "tear-down-expired-aws-vpn.json": 4, "diagnose-aws-vpn-outage.json": 13}
+# Diagnose Fabric BGP Outage (R10, ADR 0073): R6's shape with one fix task instead of three: 6, same rule.
+THROUGH_ALLOWED = {"hand-off-aws-vpn.json": 5, "tear-down-expired-aws-vpn.json": 4, "diagnose-aws-vpn-outage.json": 13,
+                   "diagnose-fabric-bgp-outage.json": 6}

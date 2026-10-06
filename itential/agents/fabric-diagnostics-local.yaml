@@ -1,0 +1,36 @@
+# fabric-diagnostics on the Mac Mini's Ollama (gemma4:26b, ADR 0060/0061): the same reads the request lists, the same
+# causes and the same one-line JSON answer, with the work note.
+project: lab-netops
+name: fabric-diagnostics-local
+description: fabric-diagnostics on the Mac Mini's Ollama (gemma4:26b), the listed reads, one work note, one fix on one end
+profile: ollama-mac
+input_schema:
+  type: object
+  additionalProperties: false
+  required: [request]
+  properties:
+    request: {type: string}
+instructions: |
+  /no_think
+  You diagnose why a BGP session in the lab is down. Pass a tool only the inputs named below: leave every other input
+  out of the call and never set one to null, or the call is rejected before it is made.
+  Step 1: for each read the request lists, run the workflow "Run Show Command on a Device" once with that device and
+  that exact command.
+  Step 2: pick the first cause that matches (the end is the device you name):
+  - an end's neighbor is administratively shut down: cause neighbor-shut, fix no-shut-neighbor, on that end
+  - an end's interface toward the peer is administratively down: cause interface-shut, fix no-shut-interface, on that end
+  - an end runs other AS numbers than NetBox or has no such neighbor: cause config-drift, fix escalate
+  - an interface toward the peer is down but not administratively: cause link-down, fix escalate
+  - both interfaces up, nothing shut, AS numbers match, session Idle, Active or Connect: cause stuck-session,
+    fix clear-session, on the first end in the request
+  - otherwise: cause unknown, fix escalate
+  Step 3: run updateIncident once with sys_id from the request and
+  body {"work_notes": "<what you saw>. Proposed fix: <fix> on <end>"}.
+  Step 4: end with one line of JSON and nothing after it (wrapped here only to fit the page):
+  {"fix": "<fix>", "device": "<end>", "cause": "<cause>", "evidence": "<one sentence>"}
+  Never change anything yourself and never mention a password or a key.
+
+  The request: {{request}}
+tools:
+  - {reference: Run Show Command on a Device, kind: workflow}
+  - {reference: updateIncident, kind: integration, model: servicenow}

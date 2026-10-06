@@ -51,11 +51,18 @@ def test_every_declared_neighbor_has_one_intent_series() -> None:
 def test_the_intent_names_the_vrf_the_peer_and_its_asn() -> None:
     by_key = {(s["device"], s["neighbor"]): s for s in _intent_series()}
     assert by_key[("dc1-wan01", "10.103.0.1")] == {
-        "device": "dc1-wan01", "neighbor": "10.103.0.1", "vrf": "WAN", "peer": "isp-core01", "remote_as": "65000"}
+        "device": "dc1-wan01", "neighbor": "10.103.0.1", "vrf": "WAN", "peer": "isp-core01", "remote_as": "65000",
+        "pair": "dc1-wan01--isp-core01"}
     assert by_key[("dc1-leaf01", "10.101.3.1")]["vrf"] == "PROD"
     assert by_key[("dc1-spine01", "10.101.254.11")] == {
         "device": "dc1-spine01", "neighbor": "10.101.254.11", "vrf": "default", "peer": "dc1-leaf01",
-        "remote_as": "65102"}
+        "remote_as": "65102", "pair": "dc1-leaf01--dc1-spine01"}
+
+
+def test_both_ends_of_a_session_share_one_pair_label() -> None:
+    """Alertmanager groups LabBgpSessionDown by pair: one fault, two ends, one start of the outage loop."""
+    for s in _intent_series():
+        assert s["pair"] == "--".join(sorted((s["device"], s["peer"])))
 
 
 def test_every_session_is_declared_at_both_ends() -> None:
@@ -138,9 +145,9 @@ def _snmp(device: str, neighbor: str) -> str:
 
 
 DOWN_SPINE = {"device": "dc1-spine01", "neighbor": "10.101.254.11", "vrf": "default", "peer": "dc1-leaf01",
-              "remote_as": "65102", "severity": "warning"}
+              "remote_as": "65102", "pair": "dc1-leaf01--dc1-spine01", "severity": "warning"}
 DOWN_WAN = {"device": "dc1-wan01", "neighbor": "10.101.3.2", "vrf": "default", "peer": "dc1-leaf01",
-            "remote_as": "65102", "severity": "warning"}
+            "remote_as": "65102", "pair": "dc1-leaf01--dc1-wan01", "severity": "warning"}
 
 
 

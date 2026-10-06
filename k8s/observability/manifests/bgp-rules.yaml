@@ -18,6 +18,7 @@ spec:
             vrf: default
             peer: dc1-wan01
             remote_as: '65100'
+            pair: dc1-wan01--isp-core01
         - record: lab:bgp_neighbor_intent
           expr: vector(1)
           labels:
@@ -26,6 +27,7 @@ spec:
             vrf: default
             peer: dc1-wan02
             remote_as: '65100'
+            pair: dc1-wan02--isp-core01
         - record: lab:bgp_neighbor_intent
           expr: vector(1)
           labels:
@@ -34,6 +36,7 @@ spec:
             vrf: default
             peer: br1-wan01
             remote_as: '65201'
+            pair: br1-wan01--isp-core01
         - record: lab:bgp_neighbor_intent
           expr: vector(1)
           labels:
@@ -42,6 +45,7 @@ spec:
             vrf: default
             peer: br2-wan01
             remote_as: '65202'
+            pair: br2-wan01--isp-core01
         - record: lab:bgp_neighbor_intent
           expr: vector(1)
           labels:
@@ -50,6 +54,7 @@ spec:
             vrf: default
             peer: br1-wan01
             remote_as: '65201'
+            pair: br1-wan01--dc1-wan01
         - record: lab:bgp_neighbor_intent
           expr: vector(1)
           labels:
@@ -58,6 +63,7 @@ spec:
             vrf: default
             peer: br2-wan01
             remote_as: '65202'
+            pair: br2-wan01--dc1-wan01
         - record: lab:bgp_neighbor_intent
           expr: vector(1)
           labels:
@@ -66,6 +72,7 @@ spec:
             vrf: default
             peer: dc1-leaf01
             remote_as: '65102'
+            pair: dc1-leaf01--dc1-wan01
         - record: lab:bgp_neighbor_intent
           expr: vector(1)
           labels:
@@ -74,6 +81,7 @@ spec:
             vrf: default
             peer: dc1-wan02
             remote_as: '65100'
+            pair: dc1-wan01--dc1-wan02
         - record: lab:bgp_neighbor_intent
           expr: vector(1)
           labels:
@@ -82,6 +90,7 @@ spec:
             vrf: WAN
             peer: isp-core01
             remote_as: '65000'
+            pair: dc1-wan01--isp-core01
         - record: lab:bgp_neighbor_intent
           expr: vector(1)
           labels:
@@ -90,6 +99,7 @@ spec:
             vrf: default
             peer: br1-wan01
             remote_as: '65201'
+            pair: br1-wan01--dc1-wan02
         - record: lab:bgp_neighbor_intent
           expr: vector(1)
           labels:
@@ -98,6 +108,7 @@ spec:
             vrf: default
             peer: br2-wan01
             remote_as: '65202'
+            pair: br2-wan01--dc1-wan02
         - record: lab:bgp_neighbor_intent
           expr: vector(1)
           labels:
@@ -106,6 +117,7 @@ spec:
             vrf: default
             peer: dc1-leaf02
             remote_as: '65102'
+            pair: dc1-leaf02--dc1-wan02
         - record: lab:bgp_neighbor_intent
           expr: vector(1)
           labels:
@@ -114,6 +126,7 @@ spec:
             vrf: default
             peer: dc1-wan01
             remote_as: '65100'
+            pair: dc1-wan01--dc1-wan02
         - record: lab:bgp_neighbor_intent
           expr: vector(1)
           labels:
@@ -122,6 +135,7 @@ spec:
             vrf: WAN
             peer: isp-core01
             remote_as: '65000'
+            pair: dc1-wan02--isp-core01
         - record: lab:bgp_neighbor_intent
           expr: vector(1)
           labels:
@@ -130,6 +144,7 @@ spec:
             vrf: default
             peer: dc1-leaf01
             remote_as: '65102'
+            pair: dc1-leaf01--dc1-spine01
         - record: lab:bgp_neighbor_intent
           expr: vector(1)
           labels:
@@ -138,6 +153,7 @@ spec:
             vrf: default
             peer: dc1-leaf02
             remote_as: '65102'
+            pair: dc1-leaf02--dc1-spine01
         - record: lab:bgp_neighbor_intent
           expr: vector(1)
           labels:
@@ -146,6 +162,7 @@ spec:
             vrf: default
             peer: dc1-leaf01
             remote_as: '65102'
+            pair: dc1-leaf01--dc1-spine01
         - record: lab:bgp_neighbor_intent
           expr: vector(1)
           labels:
@@ -154,6 +171,7 @@ spec:
             vrf: default
             peer: dc1-leaf02
             remote_as: '65102'
+            pair: dc1-leaf02--dc1-spine01
         - record: lab:bgp_neighbor_intent
           expr: vector(1)
           labels:
@@ -162,6 +180,7 @@ spec:
             vrf: default
             peer: dc1-leaf01
             remote_as: '65102'
+            pair: dc1-leaf01--dc1-spine02
         - record: lab:bgp_neighbor_intent
           expr: vector(1)
           labels:
@@ -170,6 +189,7 @@ spec:
             vrf: default
             peer: dc1-leaf02
             remote_as: '65102'
+            pair: dc1-leaf02--dc1-spine02
         - record: lab:bgp_neighbor_intent
           expr: vector(1)
           labels:
@@ -178,6 +198,7 @@ spec:
             vrf: default
             peer: dc1-leaf01
             remote_as: '65102'
+            pair: dc1-leaf01--dc1-spine02
         - record: lab:bgp_neighbor_intent
           expr: vector(1)
           labels:
@@ -186,6 +207,7 @@ spec:
             vrf: default
             peer: dc1-leaf02
             remote_as: '65102'
+            pair: dc1-leaf02--dc1-spine02
         - record: lab:bgp_neighbor_intent
           expr: vector(1)
           labels:
@@ -194,6 +216,7 @@ spec:
             vrf: default
             peer: dc1-spine01
             remote_as: '65101'
+            pair: dc1-leaf01--dc1-spine01
         - record: lab:bgp_neighbor_intent
           expr: vector(1)
           labels:
@@ -202,6 +225,7 @@ spec:
             vrf: default
             peer: dc1-spine02
             remote_as: '65101'
+            pair: dc1-leaf01--dc1-spine02
         - record: lab:bgp_neighbor_intent
           expr: vector(1)
           labels:
@@ -210,6 +234,7 @@ spec:
             vrf: default
             peer: dc1-spine01
             remote_as: '65101'
+            pair: dc1-leaf01--dc1-spine01
         - record: lab:bgp_neighbor_intent
           expr: vector(1)
           labels:
@@ -218,6 +243,7 @@ spec:
             vrf: default
             peer: dc1-spine02
             remote_as: '65101'
+            pair: dc1-leaf01--dc1-spine02
         - record: lab:bgp_neighbor_intent
           expr: vector(1)
           labels:
@@ -226,6 +252,7 @@ spec:
             vrf: PROD
             peer: dc1-wan01
             remote_as: '65100'
+            pair: dc1-leaf01--dc1-wan01
         - record: lab:bgp_neighbor_intent
           expr: vector(1)
           labels:
@@ -234,6 +261,7 @@ spec:
             vrf: default
             peer: dc1-spine01
             remote_as: '65101'
+            pair: dc1-leaf02--dc1-spine01
         - record: lab:bgp_neighbor_intent
           expr: vector(1)
           labels:
@@ -242,6 +270,7 @@ spec:
             vrf: default
             peer: dc1-spine02
             remote_as: '65101'
+            pair: dc1-leaf02--dc1-spine02
         - record: lab:bgp_neighbor_intent
           expr: vector(1)
           labels:
@@ -250,6 +279,7 @@ spec:
             vrf: default
             peer: dc1-spine01
             remote_as: '65101'
+            pair: dc1-leaf02--dc1-spine01
         - record: lab:bgp_neighbor_intent
           expr: vector(1)
           labels:
@@ -258,6 +288,7 @@ spec:
             vrf: default
             peer: dc1-spine02
             remote_as: '65101'
+            pair: dc1-leaf02--dc1-spine02
         - record: lab:bgp_neighbor_intent
           expr: vector(1)
           labels:
@@ -266,6 +297,7 @@ spec:
             vrf: PROD
             peer: dc1-wan02
             remote_as: '65100'
+            pair: dc1-leaf02--dc1-wan02
         - record: lab:bgp_neighbor_intent
           expr: vector(1)
           labels:
@@ -274,6 +306,7 @@ spec:
             vrf: default
             peer: dc1-wan01
             remote_as: '65100'
+            pair: br1-wan01--dc1-wan01
         - record: lab:bgp_neighbor_intent
           expr: vector(1)
           labels:
@@ -282,6 +315,7 @@ spec:
             vrf: default
             peer: dc1-wan02
             remote_as: '65100'
+            pair: br1-wan01--dc1-wan02
         - record: lab:bgp_neighbor_intent
           expr: vector(1)
           labels:
@@ -290,6 +324,7 @@ spec:
             vrf: WAN
             peer: isp-core01
             remote_as: '65000'
+            pair: br1-wan01--isp-core01
         - record: lab:bgp_neighbor_intent
           expr: vector(1)
           labels:
@@ -298,6 +333,7 @@ spec:
             vrf: default
             peer: dc1-wan01
             remote_as: '65100'
+            pair: br2-wan01--dc1-wan01
         - record: lab:bgp_neighbor_intent
           expr: vector(1)
           labels:
@@ -306,6 +342,7 @@ spec:
             vrf: default
             peer: dc1-wan02
             remote_as: '65100'
+            pair: br2-wan01--dc1-wan02
         - record: lab:bgp_neighbor_intent
           expr: vector(1)
           labels:
@@ -314,6 +351,7 @@ spec:
             vrf: WAN
             peer: isp-core01
             remote_as: '65000'
+            pair: br2-wan01--isp-core01
         - record: lab:bgp_session_up:snmp
           expr: max by (device, neighbor) (label_replace(bgpPeerState{job="snmp-ios-xe"}, "neighbor", "$1", "bgpPeerRemoteAddr", "(.*)") == bool 6)
         - record: lab:bgp_session_up:gnmic
@@ -321,7 +359,7 @@ spec:
             "(.*)")) or 0 * max by (device, neighbor) (label_replace(label_replace({__name__=~"gnmic_bgp.*session_state", session_state!="ESTABLISHED"}, "device", "$1", "source", "(.*)"), "neighbor", "$1",
             "neighbor_neighbor_address", "(.*)"))
         - record: lab:bgp_session_up
-          expr: (lab:bgp_session_up:snmp or lab:bgp_session_up:gnmic) * on (device, neighbor) group_left (vrf, peer, remote_as) lab:bgp_neighbor_intent
+          expr: (lab:bgp_session_up:snmp or lab:bgp_session_up:gnmic) * on (device, neighbor) group_left (vrf, peer, remote_as, pair) lab:bgp_neighbor_intent
         - alert: LabBgpSessionDown
           expr: lab:bgp_session_up == 0
           for: 2m

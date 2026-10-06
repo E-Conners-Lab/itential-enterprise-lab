@@ -33,7 +33,7 @@ def test_pid_carries_amendment_1_36_and_s13() -> None:
 
 
 def test_s13_has_five_acceptance_criteria() -> None:
-    s13 = PID.read_text().split("### S13 —", 1)[1].split("\n## ", 1)[0]
+    s13 = PID.read_text().split("### S13 —", 1)[1].split("\n## ", 1)[0].split("\n### ", 1)[0]
     assert re.findall(r"^  (\d)\. ", s13, re.M) == ["1", "2", "3", "4", "5"]
 
 
@@ -224,7 +224,8 @@ def test_terraform_run_uses_reviewed_code_and_vault_secrets_only() -> None:
     assert re.fullmatch(r"[0-9a-f]{40}", tr["repository"]["reference"]), tr["repository"]["reference"]
     aliases = VAULT["gateway_aliases"]
     services = {s["name"]: s for s in tr["services"]}
-    assert set(services) == {"terraform-run", "aws-vpn-psk"}
+    # fabric-bgp (R10, ADR 0073) shares the repository and pin; it binds only the shared device password
+    assert set(services) == {"terraform-run", "aws-vpn-psk", "fabric-bgp"}
     for svc in services.values():
         for secret in svc["secrets"]:
             assert secret["name"] in aliases and secret["type"] == "env", secret
