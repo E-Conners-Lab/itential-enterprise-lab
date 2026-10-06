@@ -441,3 +441,21 @@ def test_the_zabbix_app_files_are_removed_from_grafanas_volume() -> None:
     assert listed < removed < restart
     assert "plugins remove alexanderzobnin-zabbix-app" in play and "plugins ls" in play
     assert "'alexanderzobnin-zabbix-app' in zbx_app.stdout" in play
+
+
+def test_grafana_never_replaces_its_bundled_plugins_at_runtime() -> None:
+    """Production 2026-10-04 to 10-06: two seconds after every start, Grafana 13's background installer tried to update
+    the bundled datasource plugins (prometheus 13.1.7 -> 13.2.2, loki ...), took each out of service first, then failed
+    to delete it ("unlinkat /usr/share/grafana/data/plugins-bundled/prometheus: read-only file system", the distroless
+    image). Every Prometheus and Loki panel answered 404 "Plugin not registered" for ~38 h. Grafana runs the plugins its
+    pinned image ships, nothing fetched at runtime."""
+    values = yaml.safe_load((ROOT / "k8s" / "observability" / "values" / "kube-prometheus-stack.yaml").read_text())
+    assert values["grafana"]["grafana.ini"]["plugins"]["preinstall_disabled"] is True
+    assert values["grafana"]["plugins"] == []
+
+
+def test_the_verify_asks_each_grafana_datasource_to_answer() -> None:
+    """Provisioned is not working: S7.5-prep passed for the whole outage above. Each datasource's health must be OK."""
+    text = (ROOT / "verify" / "test-07-observability.sh").read_text()
+    c2b = text[text.index("c2b() {"):text.index('check "S7.5-prep')]
+    assert "/api/datasources/uid/" in c2b and "/health" in c2b and '"OK"' in c2b

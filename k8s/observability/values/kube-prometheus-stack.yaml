@@ -106,6 +106,10 @@ grafana:
     plugins:
       # nothing unsigned is loaded
       allow_loading_unsigned_plugins: ""
+      # the plugins the pinned image ships, nothing installed or updated at runtime: Grafana 13's background installer
+      # took the bundled prometheus and loki plugins out of service to update them, then could not replace them on the
+      # read-only image ("Plugin not registered": every panel empty, 2026-10-04 to 10-06)
+      preinstall_disabled: true
   sidecar:
     dashboards:
       enabled: true

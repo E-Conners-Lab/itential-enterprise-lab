@@ -181,9 +181,15 @@ c2b() {
   local ds; ds=$(web -u "admin:${GRAFANA_ADMIN_PASSWORD}" "${GRAFANA}/api/datasources" | ${PY} -c 'import sys,json;print(sorted(d["type"] for d in json.load(sys.stdin)))')
   for t in prometheus alertmanager loki; do echo "$ds" | grep -q "$t" || { echo "datasource $t missing: $ds"; return 1; }; done
   echo "$ds" | grep -qi zabbix && { echo "a Zabbix datasource is still provisioned (ADR 0071): $ds"; return 1; }
-  echo "dashboards $dash; datasources $ds"
+  # provisioned is not working (2026-10-06: both were provisioned, neither had a plugin, every panel was empty)
+  local uid health
+  for uid in prometheus loki; do
+    health=$(web -u "admin:${GRAFANA_ADMIN_PASSWORD}" "${GRAFANA}/api/datasources/uid/${uid}/health" | ${PY} -c 'import sys,json;print(json.load(sys.stdin).get("status","?"))' 2>/dev/null)
+    [ "$health" = "OK" ] || { echo "Grafana datasource ${uid} does not answer its health check: ${health:-no answer}"; return 1; }
+  done
+  echo "dashboards $dash; datasources $ds; prometheus and loki answer their health checks"
 }
-check "S7.5-prep Grafana provisions the lab dashboards and the Prometheus/Alertmanager/Loki datasources, and no Zabbix one (login via Keycloak: phase 9)" c2b
+check "S7.5-prep Grafana provisions the lab dashboards and the Prometheus/Alertmanager/Loki datasources, Prometheus and Loki answer, and no Zabbix one (login via Keycloak: phase 9)" c2b
 
 # --- S7.3 gNMIc BGP session count for dc1-spine01 equals show bgp summary ---------------------------------
 c3() {
