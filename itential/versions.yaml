@@ -334,7 +334,12 @@ netops_knowledge:
   register_with_gateway: true # owner's go 2026-10-06, after make netops-knowledge and S15.1-S15.4 passed
   mcp_server: netops-knowledge # the FlowMCP registration's name on the Gateway
   url: https://knowledge.lab.internal:8443/mcp
-  token_alias: netops-knowledge-token # vault.gateway_aliases: FlowMCP's header is "Bearer {{ secret <alias> }}"
+  # FlowMCP's header is "Bearer {{ secret <mcp_secret> }}". Measured 2026-10-06 on Gateway 5.5.2 (ADR 0074 amendment):
+  # an MCP header cannot resolve the Vault provider ("registry is nil"), and an imported local secret is stored
+  # unencrypted, which the server cannot read. So this is a LOCAL Gateway secret, encrypted by `iagctl create secret`,
+  # copied from Vault <vault.knowledge.token_path> by `make knowledge-mcp-secret` in the owner's terminal (the iagctl
+  # login is interactive only). Vault stays the source; this is the one copy outside it.
+  mcp_secret: netops-knowledge-mcp-token
   tools: [search_scenarios, get_scenario] # exactly what the server advertises; the registration task asserts it
   token_rotation_days: 90 # SEC-05 exception (FlowMCP takes a static header only), SEC-08 cadence
   audit_retention: 2160h # Loki keeps this namespace's lines 90 days (SEC-23); everything else keeps 168h
@@ -675,8 +680,8 @@ vault:
     url: git@github.com:E-Conners-Lab/cloud-devops-pipeline.git
     deploy_key_path: git/cloud-devops-pipeline # {private_key, public_key}
   # netops-knowledge (ADR 0074). Neither is seeded from .env and neither is under services/* (the Platform reads that):
-  # - token_path: the bearer token FlowMCP sends, made in memory by `make knowledge-token` and read by the Gateway
-  #   (its alias below); the play reads it only to give the pod its SHA-256, never the token
+  # - token_path: the bearer token FlowMCP sends, made in memory by `make knowledge-token`; `make knowledge-mcp-secret`
+  #   copies it into the Gateway's local secret, and the play reads it only to give the pod its SHA-256
   # - pull_path: a GitHub token with read:packages only, which k3s pulls the private image with; the owner pastes it
   #   into `make knowledge-pull-token` (no echo); only the play reads it, with the owner's administrator login
   knowledge:
@@ -698,6 +703,9 @@ vault:
   gateway_secret_id_file: /etc/gateway/vault_secret_id
   # Gateway secret aliases, referenced as $GATEWAYSECRET_(<alias>)
   gateway_provider: lab-vault
+  # The Gateway's own `admin` (iagctl client mode, which `make knowledge-mcp-secret` needs). Reset by the owner on
+  # 2026-10-06 with `iagctl server --recover-admin-user` (ADR 0074 amendment); {username, password}, production only.
+  gateway_admin_path: gateway/iagctl-admin
   gateway_aliases:
     lab-automation-password: {path: devices/automation, key: password}
     lab-netbox-token: {path: services/netbox, key: token}
@@ -708,9 +716,6 @@ vault:
     # aws-vpn-psk (ADR 0068 d5): the write-only writer's own credentials, which the vault config play keeps here
     aws-psk-writer-role-id: {path: aws/psk-writer, key: role_id}
     aws-psk-writer-secret-id: {path: aws/psk-writer, key: secret_id}
-    # netops-knowledge (ADR 0074): FlowMCP's Authorization header, `Bearer {{ secret "<this alias>" }}`. Only the
-    # production Gateway registers the server; on dev the alias is bound but nothing uses it.
-    netops-knowledge-token: {path: mcp/netops-knowledge, key: token}
   # The edge aliases, bound on the tier that runs the AWS VPN (aws_vpn.tier, tasks/gateway-vault.yml), from that tier's
   # Vault. Under devices/* or aws/*, so the Gateway reads them and the Platform cannot (approles above). The Gateway
   # resolves every bound alias on every run, so each entry must exist before its alias is bound: the guard refuses the
@@ -720,7 +725,10 @@ vault:
   # removes an alias only through iagctl in client mode (owner, 2026-10-04: accept and name them); their Vault entries
   # are deleted, so they resolve to nothing. tasks/gateway-vault.yml and vaultcheck S8.3b leave exactly these (and,
   # on the tier that does not run the AWS VPN, the edge aliases) out of the comparison.
-  retired_gateway_aliases: [aws-vpn-psk-clab-rtr1, aws-vpn-psk-version-clab-rtr1]
+  # netops-knowledge-token (ADR 0074 amendment, 2026-10-06): FlowMCP headers cannot use an alias on Gateway 5.5.2, so
+  # its token is a local secret now (netops_knowledge.mcp_secret); the alias stays bound until iagctl deletes it, and
+  # its Vault entry stays (the pod's hash comes from it), so it still resolves, harmlessly.
+  retired_gateway_aliases: [aws-vpn-psk-clab-rtr1, aws-vpn-psk-version-clab-rtr1, netops-knowledge-token]
   edge_gateway_aliases:
     # dc1-wan01's account (make edge-account TIER=<tier>), before the converge that binds it
     dc1-wan01-aws-vpn-password: {path: devices/dc1-wan01-aws-vpn, key: password}

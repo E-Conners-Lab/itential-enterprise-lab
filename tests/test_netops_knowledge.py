@@ -60,11 +60,14 @@ def test_the_pins_come_from_a_release() -> None:
     assert NK["signer"]["identity"].endswith("@refs/heads/main")
 
 
-def test_the_token_alias_and_its_vault_path_point_at_each_other() -> None:
-    alias = VAULT["gateway_aliases"][NK["token_alias"]]
-    assert alias == {"path": VAULT["knowledge"]["token_path"], "key": "token"}
-    pointing = [a for a, ref in VAULT["gateway_aliases"].items() if ref["path"] == VAULT["knowledge"]["token_path"]]
-    assert pointing == [NK["token_alias"]]
+def test_flowmcps_token_is_a_local_secret_and_the_old_alias_is_retired() -> None:
+    # ADR 0074 amendment (measured 2026-10-06, Gateway 5.5.2): an MCP header cannot resolve the Vault provider, so the
+    # header names a local secret; no alias may point at the token any more, and the old one is named as a leftover
+    assert "token_alias" not in NK and NK["mcp_secret"] == "netops-knowledge-mcp-token"
+    assert NK["mcp_secret"] not in VAULT["gateway_aliases"]
+    assert not [a for a, ref in VAULT["gateway_aliases"].items() if ref["path"] == VAULT["knowledge"]["token_path"]]
+    assert "netops-knowledge-token" in VAULT["retired_gateway_aliases"]
+    assert VAULT["gateway_admin_path"] == "gateway/iagctl-admin"
 
 
 def test_the_url_is_the_vip_name_and_port() -> None:
@@ -145,7 +148,7 @@ def test_the_audit_stream_is_kept_90_days() -> None:
 
 def test_the_registration_sends_the_alias_never_a_token() -> None:
     text = MCP_TASKS.read_text()
-    assert "secret \\\"{{ netops_knowledge.token_alias }}\\\"" in text
+    assert "secret \\\"{{ netops_knowledge.mcp_secret }}\\\"" in text
     tasks = yaml.safe_load(text)
     for task in tasks:
         if "configuration/export" in yaml.safe_dump(task):
@@ -157,21 +160,49 @@ def test_the_registration_sends_the_alias_never_a_token() -> None:
 
 
 def test_the_registration_has_the_import_shape_the_gateway_parses() -> None:
-    # measured on production 2026-10-06: `headers` is map[string]string (a list is refused with HTTP 502), and the
-    # import waits for the Gateway's connection (a restart earlier in the play answers 503 until it reconnects)
+    # measured on production 2026-10-06 (Gateway 5.5.2, ADR 0074 amendment): the address is `command` (no `url` is
+    # stored), the transport is the enum name, `headers` is a map, the import is YAML text, and it waits for the
+    # Gateway's connection (a restart earlier in the play answers 503 until it reconnects)
     tasks = yaml.safe_load(MCP_TASKS.read_text())
     wanted = next(t for t in tasks if "nk_mcp_wanted" in t.get("ansible.builtin.set_fact", {}))
-    headers = wanted["ansible.builtin.set_fact"]["nk_mcp_wanted"]["headers"]
-    assert isinstance(headers, dict) and list(headers) == ["Authorization"]
-    assert headers["Authorization"].startswith("Bearer ") and "netops_knowledge.token_alias" in headers["Authorization"]
-    # the second live import (2026-10-06, Gateway 5.5.2): "'netops-knowledge' mcp server url is required" - the import
-    # takes `url` for an HTTP server; `command_or_url` is the CLI's argument name, which the import drops
     server = wanted["ansible.builtin.set_fact"]["nk_mcp_wanted"]
-    assert server["url"] == "{{ netops_knowledge.url }}" and "command_or_url" not in server
-    assert "command_or_url" not in MCP_TASKS.read_text().split("\n---\n", 1)[-1].split("\n- name:", 1)[-1]
+    assert server["command"] == "{{ netops_knowledge.url }}" and server["transport"] == "STREAMABLE_HTTP"
+    assert not {"url", "command_or_url"} & set(server)
+    headers = server["headers"]
+    assert isinstance(headers, dict) and list(headers) == ["Authorization"]
+    assert headers["Authorization"].startswith("Bearer ") and "netops_knowledge.mcp_secret" in headers["Authorization"]
     names = [t["name"] for t in tasks]
+    register = names.index("Register netops-knowledge (new, changed or asked to re-register)")
+    body = tasks[register]["ansible.builtin.uri"]["body"]["options"]["content"]
+    assert "to_nice_yaml" in body and "nk_mcp_wanted" in body
     connected = next(i for i, n in enumerate(names) if "connected to Gateway Manager" in n)
-    assert connected < names.index("Register netops-knowledge (new, changed or asked to re-register)")
+    local_secret = next(i for i, n in enumerate(names) if "local secret exists" in n)
+    assert local_secret < register and connected < register
+    assert "make\n      knowledge-mcp-secret" in MCP_TASKS.read_text() or "knowledge-mcp-secret" in yaml.safe_dump(tasks[local_secret])
+
+
+def test_discovery_expects_the_names_flowmcp_gives() -> None:
+    # FlowMCP names each discovered tool <mcp_server>_<tool> (measured 2026-10-06); the play and S15.5 both check that
+    text = MCP_TASKS.read_text()
+    assert "regex_replace', '^', netops_knowledge.mcp_server ~ '_'" in text
+    verify = (ROOT / "verify" / "test-15-knowledge.sh").read_text()
+    assert 'server + "_" + t' in verify and "re.sub" not in verify.split("c5()", 1)[1].split("check ", 1)[0]
+
+
+def test_the_mcp_secret_script_never_shows_or_leaves_the_token() -> None:
+    script = (ROOT / "scripts" / "knowledge-mcp-secret.sh").read_text()
+    assert script.startswith("#!/usr/bin/env bash") and "set -euo pipefail" in script
+    assert "trap cleanup EXIT" in script and 'rm -rf "$tmp"' in script and "pbcopy </dev/null" in script
+    assert "O_EXCL, 0o600" in script and "umask 077" in script
+    # the token moves only as a file: never echoed, never an argument
+    assert "--value @/tmp/nk-tok" in script and "print(token" not in script and "echo \"$token" not in script
+    assert "trap 'sudo docker exec gateway5 rm -f /tmp/nk-tok; rm -f $remote' EXIT" in script
+    for key in ('vault["knowledge"]["token_path"]', 'vault["gateway_admin_path"]', 'nk["mcp_secret"]', 'vault["prod"]["url"]'):
+        assert key in script, key
+    makefile = (ROOT / "Makefile").read_text()
+    assert "knowledge-mcp-secret: ##" in makefile and "\tscripts/knowledge-mcp-secret.sh" in makefile
+    import subprocess
+    subprocess.run(["bash", "-n", str(ROOT / "scripts" / "knowledge-mcp-secret.sh")], check=True)
 
 
 def test_the_tools_are_the_two_read_only_ones() -> None:

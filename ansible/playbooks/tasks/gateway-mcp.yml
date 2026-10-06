@@ -1,19 +1,25 @@
 ---
 # ADR 0074: netops-knowledge registered with FlowMCP Gateway on production's Gateway, the same way the lab binds every
 # other Gateway resource: through Gateway Manager's configuration import (the `iagctl db import` form), proven by the
-# export afterwards, because the import drops unknown fields silently (tasks/gateway-vault.yml). Measured on production
-# 2026-10-06 (read-only): the export carries `mcp_servers` (null while none is registered); its entries use the FlowMCP
-# reference's field names (name, transport, description, tags, headers). The first live import
-# (2026-10-06) measured two more facts: `headers` is a map (map[string]string), not the CLI's list of KEY=VALUE
-# strings ("cannot unmarshal !!seq into map[string]string", HTTP 502); and right after the alias import restarts the
-# server and the runner, an import answers 503 "No connection found to Gateway" until the cluster reconnects. The
-# second (Gateway 5.5.2) refused "'netops-knowledge' mcp server url is required": the import takes `url` for an HTTP
-# server, where the CLI's argument is `command_or_url`.
-# The header carries the bearer token as a secret template over the Vault alias, so the token is never in this file,
-# in the import body or in the export. Then the discovery is proven: Gateway Manager lists a service for each tool the
-# server advertises, which needs TLS, the token and the pod's NetworkPolicy all to be right (a data-plane check).
-# Runs on the Gateway host inside a play that has `login` (a Platform session) and `platform_local`; the alias must
-# already be bound (tasks/gateway-vault.yml runs first). Set nk_reregister=true after a token rotation.
+# export afterwards, because the import drops unknown fields silently (tasks/gateway-vault.yml).
+# Measured on production 2026-10-06 (Gateway 5.5.2; ADR 0074 amendment), none of it in the documentation:
+#   - the stored MCP server has no `url`: the address goes in `command` (the CLI's "command_or_url"); `url` and
+#     `command_or_url` are dropped, and the validator then answers "mcp server url is required";
+#   - `transport` takes the enum name STREAMABLE_HTTP; the CLI's spelling `streamable-http` is stored as DEFAULT and
+#     the client refuses it ("unknown or invalid mcp transport value: DEFAULT");
+#   - `headers` is a map (map[string]string); the CLI's list of KEY=VALUE strings is refused with HTTP 502;
+#   - the import is sent as YAML text, as Gateway Manager's own import dialog sends a file;
+#   - an MCP header cannot resolve the Vault secret provider ("cannot resolve external secret: registry is nil"), and
+#     a local secret imported with a `value` is stored unencrypted, which the server cannot decrypt. So the header
+#     names a LOCAL secret (netops_knowledge.mcp_secret) that `make knowledge-mcp-secret` creates with iagctl, which
+#     encrypts it; this task only checks that it exists;
+#   - right after a server restart an import answers 503 until the cluster reconnects, so it waits for the connection;
+#   - the server is (re)connected only when its registration changes or the server starts.
+# The header carries a secret template, so the token is never in this file, in the import body or in the export. Then
+# the discovery is proven: Gateway Manager lists a service named <mcp_server>_<tool> for each tool the server
+# advertises, which needs DNS, TLS, the token and the pod's NetworkPolicy all to be right (a data-plane check).
+# Runs on the Gateway host inside a play that has `login` (a Platform session) and `platform_local`. Set
+# nk_reregister=true after a token rotation (make knowledge-mcp-secret), so the server reconnects with the new token.
 - name: Gateway configuration now (MCP servers)
   ansible.builtin.uri:
     url: "{{ platform_local }}/gateway_manager/v1/gateways/{{ stack.gateway5_cluster_id }}/configuration/export"
@@ -24,6 +30,20 @@
   delay: 5
   no_log: true # the export also carries `users`
 
+- name: The header's local secret exists (make knowledge-mcp-secret, in the owner's terminal)
+  ansible.builtin.assert:
+    that:
+      - held | length == 1
+      - held[0].provider | default('') == ''
+    fail_msg: >-
+      the Gateway has no local secret {{ netops_knowledge.mcp_secret }} (or it is bound to a provider): run `make
+      knowledge-mcp-secret` in your terminal first (iagctl's login is interactive), then this play again
+    quiet: true
+  vars:
+    held: >-
+      {{ gw_mcp_export.json.secrets | default([], true)
+         | selectattr('name', 'equalto', netops_knowledge.mcp_secret) | list }}
+
 - name: The registration wanted and the one held
   ansible.builtin.set_fact:
     nk_mcp_have: >-
@@ -31,13 +51,13 @@
          | selectattr('name', 'equalto', netops_knowledge.mcp_server) | list }}
     nk_mcp_wanted:
       name: "{{ netops_knowledge.mcp_server }}"
-      url: "{{ netops_knowledge.url }}"
-      transport: streamable-http
+      command: "{{ netops_knowledge.url }}"
+      transport: STREAMABLE_HTTP
       description: "Read-only troubleshooting knowledge (ADR 0074); two tools, reference data only"
       tags: [netops-knowledge, adr-0074]
-      # Go template for the Gateway, not Jinja: the alias resolves from Vault at connection time
+      # Go template for the Gateway, not Jinja: the local secret resolves at connection time
       headers:
-        Authorization: "Bearer {% raw %}{{{% endraw %} secret \"{{ netops_knowledge.token_alias }}\" {% raw %}}}{% endraw %}"
+        Authorization: "Bearer {% raw %}{{{% endraw %} secret \"{{ netops_knowledge.mcp_secret }}\" {% raw %}}}{% endraw %}"
 
 - name: The Gateway is connected to Gateway Manager (a server or runner restart earlier in the play drops it)
   ansible.builtin.uri:
@@ -54,12 +74,12 @@
     method: POST
     headers: {Cookie: "{{ login.cookies_string }}"}
     body_format: json
-    body: {options: {source: content, content: {mcp_servers: ["{{ nk_mcp_wanted }}"]}, force: true}}
+    body: {options: {source: content, content: "{{ {'mcp_servers': [nk_mcp_wanted]} | to_nice_yaml }}", force: true}}
     status_code: [200, 201]
   when: >-
     nk_reregister | default(false) | bool
     or nk_mcp_have | length == 0
-    or nk_mcp_have[0].url | default('') != nk_mcp_wanted.url
+    or nk_mcp_have[0].command | default('') != nk_mcp_wanted.command
     or nk_mcp_have[0].transport | default('') != nk_mcp_wanted.transport
   register: nk_mcp_import
   changed_when: true
@@ -78,12 +98,12 @@
   ansible.builtin.assert:
     that:
       - held | length == 1
-      - held[0].url == nk_mcp_wanted.url
+      - held[0].command == nk_mcp_wanted.command
       - held[0].transport == nk_mcp_wanted.transport
-      - held[0].headers | default([]) | length == 1
+      - held[0].headers | default({}, true) | length == 1
     fail_msg: >-
       the export does not hold {{ netops_knowledge.mcp_server }} as imported (fields kept: {{ held | map('list') | list }}):
-      the import form differs from the reference's field names - measure it and amend this task
+      the import form differs from what was measured (ADR 0074 amendment) - measure it and amend this task
     quiet: true
   vars:
     held: >-
@@ -91,22 +111,22 @@
          | selectattr('name', 'equalto', netops_knowledge.mcp_server) | list }}
 
 # Discovery needs the whole path: DNS, TLS (the lab CA), the VIP's source range, the NetworkPolicy and the token.
-- name: Gateway Manager lists a service for every tool the server advertises
+- name: Gateway Manager lists a service <mcp_server>_<tool> for every tool the server advertises
   ansible.builtin.uri:
     url: "{{ platform_local }}/gateway_manager/v1/services?limit=500"
     headers: {Cookie: "{{ login.cookies_string }}"}
   register: nk_services
   until: >-
     nk_services.status | default(0) == 200
-    and (netops_knowledge.tools | reject('in', nk_services.json.result | map(attribute='service_metadata.name')
-         | map('regex_replace', '^.*[/:.]', '') | list) | list | length == 0)
+    and (netops_knowledge.tools | map('regex_replace', '^', netops_knowledge.mcp_server ~ '_')
+         | reject('in', nk_services.json.result | map(attribute='service_metadata.name') | list) | list | length == 0)
   retries: 18
   delay: 10
 
-- name: The MCP-backed services, for the record (ADR 0074 lab PR B wires the agents to these names)
+- name: The MCP-backed services, for the record (ADR 0074 lab PR B gives the agents these names)
   ansible.builtin.debug:
     msg: >-
       {{ nk_services.json.result | map(attribute='service_metadata')
-         | selectattr('name', 'search', netops_knowledge.tools | join('|'))
-         | map('dict2items') | map('selectattr', 'key', 'in', ['name', 'type', 'location', 'decorator']) | map('items2dict')
+         | selectattr('name', 'search', '^' ~ netops_knowledge.mcp_server ~ '_')
+         | map('dict2items') | map('selectattr', 'key', 'in', ['name', 'type', 'location']) | map('items2dict')
          | list }}

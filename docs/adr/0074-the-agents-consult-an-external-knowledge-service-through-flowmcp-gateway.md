@@ -1,6 +1,6 @@
 # 0074 — The diagnostics agents consult an external knowledge service through FlowMCP Gateway
 
-- **Status:** proposed (owner decisions 2026-10-05/06 recorded; accepted on merge)
+- **Status:** accepted (owner decisions 2026-10-05/06); amended 2026-10-06 (decision 10: the registration as measured)
 - **Date:** 2026-10-06
 - **Amends:** ADR 0072 (the tunnel-diagnostics prompt and tools), ADR 0073 (the fabric-diagnostics prompt and tools)
 - **Related:** ADR 0046 (the agent fleet and its tiers), ADR 0051 (observability), ADR 0065 (Vault aliases on the
@@ -66,6 +66,27 @@ service makes "external" literally true. Its PID records the design and the owne
    evals on the Ollama twins first and one Claude run, and the live drill.
 9. **Rotation, every 90 days:** `make knowledge-token ROTATE=1` (Vault), `make netops-knowledge` (the pod's hash;
    the checksum rolls the pod), then the Gateway play with `nk_reregister=true`.
+
+10. **Amendment: the registration as measured on production** (2026-10-06, Gateway 5.5.2; owner decision: a local
+    secret now and a question to Itential, "option 3"). Three facts the documentation does not give, each found by a
+    refused import and confirmed in the Gateway's own binary and log:
+    - the stored MCP server has no `url`: the address goes in `command` (the CLI's `command_or_url`); `transport` takes
+      the enum name `STREAMABLE_HTTP`; `headers` is a map; the import is sent as YAML text;
+    - an MCP header cannot resolve the Vault secret provider (`cannot resolve external secret: registry is nil`, also
+      after a server restart), so decision 3's alias cannot carry the token;
+    - a local secret imported through Gateway Manager is stored unencrypted (the export returns it in plain text) and
+      the server cannot decrypt it (`invalid encrypted data`); only `iagctl create secret` encrypts it.
+    So the header names a LOCAL Gateway secret, `netops_knowledge.mcp_secret`, copied from Vault by `make
+    knowledge-mcp-secret` in the owner's terminal: `iagctl` needs the Gateway's own `admin` login, which accepts a
+    password only interactively. The owner reset that login with `iagctl server --recover-admin-user` (its password
+    is in Vault, `vault.gateway_admin_path`). The registration itself stays in the Gateway play (proven by the export
+    and by discovery); FlowMCP names the services `<mcp_server>_<tool>`, and in the agent tool picker each one is a
+    "Gateway Service" an agent can be given directly - PR B needs no wrapper workflow and no `runService`.
+    Consequences: this is the one copy of the token outside Vault (encrypted with the Gateway's key, never in the
+    export in plain text), a documented exception to decision 3 until Itential confirms or fixes provider support for
+    MCP headers; the old alias `netops-knowledge-token` is retired (named, not compared) until `iagctl` deletes it; a
+    rotation is `make knowledge-token ROTATE=1`, `make netops-knowledge`, `make knowledge-mcp-secret`, then the Gateway
+    play with `-e nk_reregister=true` (the server reconnects only when its registration changes or the server starts).
 
 ## Consequences
 
