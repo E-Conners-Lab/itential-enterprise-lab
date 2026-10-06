@@ -156,6 +156,19 @@ def test_the_registration_sends_the_alias_never_a_token() -> None:
     assert isinstance(NK["register_with_gateway"], bool)
 
 
+def test_the_registration_has_the_import_shape_the_gateway_parses() -> None:
+    # measured on production 2026-10-06: `headers` is map[string]string (a list is refused with HTTP 502), and the
+    # import waits for the Gateway's connection (a restart earlier in the play answers 503 until it reconnects)
+    tasks = yaml.safe_load(MCP_TASKS.read_text())
+    wanted = next(t for t in tasks if "nk_mcp_wanted" in t.get("ansible.builtin.set_fact", {}))
+    headers = wanted["ansible.builtin.set_fact"]["nk_mcp_wanted"]["headers"]
+    assert isinstance(headers, dict) and list(headers) == ["Authorization"]
+    assert headers["Authorization"].startswith("Bearer ") and "netops_knowledge.token_alias" in headers["Authorization"]
+    names = [t["name"] for t in tasks]
+    connected = next(i for i, n in enumerate(names) if "connected to Gateway Manager" in n)
+    assert connected < names.index("Register netops-knowledge (new, changed or asked to re-register)")
+
+
 def test_the_tools_are_the_two_read_only_ones() -> None:
     assert NK["tools"] == ["search_scenarios", "get_scenario"]
 

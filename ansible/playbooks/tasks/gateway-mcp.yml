@@ -3,7 +3,10 @@
 # other Gateway resource: through Gateway Manager's configuration import (the `iagctl db import` form), proven by the
 # export afterwards, because the import drops unknown fields silently (tasks/gateway-vault.yml). Measured on production
 # 2026-10-06 (read-only): the export carries `mcp_servers` (null while none is registered); its entries use the FlowMCP
-# reference's field names (name, command_or_url, transport, description, tags, headers).
+# reference's field names (name, command_or_url, transport, description, tags, headers). The first live import
+# (2026-10-06) measured two more facts: `headers` is a map (map[string]string), not the CLI's list of KEY=VALUE
+# strings ("cannot unmarshal !!seq into map[string]string", HTTP 502); and right after the alias import restarts the
+# server and the runner, an import answers 503 "No connection found to Gateway" until the cluster reconnects.
 # The header carries the bearer token as a secret template over the Vault alias, so the token is never in this file,
 # in the import body or in the export. Then the discovery is proven: Gateway Manager lists a service for each tool the
 # server advertises, which needs TLS, the token and the pod's NetworkPolicy all to be right (a data-plane check).
@@ -31,7 +34,17 @@
       description: "Read-only troubleshooting knowledge (ADR 0074); two tools, reference data only"
       tags: [netops-knowledge, adr-0074]
       # Go template for the Gateway, not Jinja: the alias resolves from Vault at connection time
-      headers: ["Authorization=Bearer {% raw %}{{{% endraw %} secret \"{{ netops_knowledge.token_alias }}\" {% raw %}}}{% endraw %}"]
+      headers:
+        Authorization: "Bearer {% raw %}{{{% endraw %} secret \"{{ netops_knowledge.token_alias }}\" {% raw %}}}{% endraw %}"
+
+- name: The Gateway is connected to Gateway Manager (a server or runner restart earlier in the play drops it)
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/gateway_manager/v1/connections"
+    headers: {Cookie: "{{ login.cookies_string }}"}
+  register: nk_gw_conns
+  until: stack.gateway5_cluster_id in (nk_gw_conns.json | to_json)
+  retries: 24
+  delay: 5
 
 - name: Register netops-knowledge (new, changed or asked to re-register)
   ansible.builtin.uri:
