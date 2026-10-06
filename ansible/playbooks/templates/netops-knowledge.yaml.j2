@@ -1,0 +1,125 @@
+# netops-knowledge (ADR 0074): the read-only troubleshooting knowledge MCP server. Rendered by netops-knowledge.yml,
+# which creates the namespace and the two Secrets (the token's SHA-256 and the image pull login) first. No secret is in
+# this file. The image is the pinned, cosign-verified digest; the index is inside it, read-only.
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: netops-knowledge
+  namespace: {{ nk_ns }}
+spec:
+  secretName: netops-knowledge-tls
+  issuerRef: {name: lab-ca, kind: ClusterIssuer}
+  duration: 8760h
+  # cert-manager renews a month early; the server reads the files at start, so a renewal needs
+  # `kubectl -n netops-knowledge rollout restart deployment/netops-knowledge` within that month
+  renewBefore: 720h
+  dnsNames: ["{{ nk_fqdn }}"]
+  ipAddresses: ["{{ nk_vip }}"]
+  privateKey: {algorithm: ECDSA, size: 256, rotationPolicy: Always}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: netops-knowledge
+  namespace: {{ nk_ns }}
+  labels:
+    app.kubernetes.io/name: netops-knowledge
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: netops-knowledge
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: netops-knowledge
+      annotations:
+        # a new token hash rolls the pod (make knowledge-token ROTATE=1, then make netops-knowledge)
+        checksum/token: "{{ nk_token_sha256 | hash('sha256') }}"
+    spec:
+      automountServiceAccountToken: false # SEC-30: the pod never talks to the Kubernetes API
+      enableServiceLinks: false
+      imagePullSecrets: [{name: ghcr-pull}]
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001 # the Secret volumes' files are group 10001, mode 0440: readable by the server only
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: server
+          image: {{ nk_image }}
+          imagePullPolicy: IfNotPresent
+          env:
+            - {name: NK_INDEX_PATH, value: /app/index.sqlite}
+            - {name: NK_TOKEN_SHA256_FILE, value: /etc/netops-knowledge/token/token.sha256}
+            - {name: NK_TLS_CERT, value: /etc/netops-knowledge/tls/tls.crt}
+            - {name: NK_TLS_KEY, value: /etc/netops-knowledge/tls/tls.key}
+            - {name: NK_RESOURCE_URL, value: "https://{{ nk_fqdn }}:{{ nk.port }}/mcp"}
+            - {name: NK_ALLOWED_HOSTS, value: "{{ nk_fqdn }}:{{ nk.port }},{{ nk_vip }}:{{ nk.port }}"}
+            - {name: NK_PORT, value: "{{ nk.port }}"}
+          ports:
+            - {name: https, containerPort: {{ nk.port }}}
+          volumeMounts:
+            - {name: tls, mountPath: /etc/netops-knowledge/tls, readOnly: true}
+            - {name: token-hash, mountPath: /etc/netops-knowledge/token, readOnly: true}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          resources:
+            requests: {cpu: {{ nk.resources.cpu }}, memory: {{ nk.resources.memory }}}
+            limits: {memory: {{ nk.resources.memory_limit }}}
+          readinessProbe:
+            httpGet: {path: /healthz, port: https, scheme: HTTPS}
+            initialDelaySeconds: 3
+            periodSeconds: 15
+          livenessProbe:
+            httpGet: {path: /healthz, port: https, scheme: HTTPS}
+            initialDelaySeconds: 10
+            periodSeconds: 30
+      volumes:
+        - name: tls
+          secret: {secretName: netops-knowledge-tls, defaultMode: 0440}
+        - name: token-hash
+          secret: {secretName: netops-knowledge-token-hash, defaultMode: 0440}
+---
+# The Gateway is a VM outside k3s, so a ClusterIP Service cannot serve it. The VIP comes from topology/ipam.yaml;
+# `Local` keeps the caller's real address, which both the source range and the NetworkPolicy match on.
+apiVersion: v1
+kind: Service
+metadata:
+  name: netops-knowledge
+  namespace: {{ nk_ns }}
+  annotations:
+    metallb.io/loadBalancerIPs: "{{ nk_vip }}"
+  labels:
+    app.kubernetes.io/name: netops-knowledge
+spec:
+  type: LoadBalancer
+  externalTrafficPolicy: Local
+  loadBalancerSourceRanges: ["{{ nk_gateway_ip }}/32"]
+  selector:
+    app.kubernetes.io/name: netops-knowledge
+  ports:
+    - {name: https, port: {{ nk.port }}, targetPort: https}
+---
+# SEC-31: default deny both ways. In: the Gateway only (kubelet probes come from the node, which Cilium admits by
+# default). Out: nothing - the index is inside the image and the server makes no call (netops-knowledge PID D2).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: netops-knowledge
+  namespace: {{ nk_ns }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: netops-knowledge
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - ipBlock: {cidr: "{{ nk_gateway_ip }}/32"}
+      ports:
+        - {protocol: TCP, port: {{ nk.port }}}
+  egress: []

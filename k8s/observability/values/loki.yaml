@@ -19,6 +19,12 @@ loki:
           period: 24h
   limits_config:
     retention_period: 168h
+    # netops-knowledge's lines (its audit trail: tool, caller, the query's hash, the ids returned) are kept 90 days
+    # (ADR 0074, SEC-23); the period must match itential/versions.yaml netops_knowledge.audit_retention (a test holds it)
+    retention_stream:
+      - selector: '{namespace="netops-knowledge"}'
+        priority: 1
+        period: 2160h
     allow_structured_metadata: true
     ingestion_rate_mb: 8
     ingestion_burst_size_mb: 16
