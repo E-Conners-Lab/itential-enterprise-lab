@@ -193,3 +193,42 @@ def test_every_task_reaches_the_end_without_a_cycle() -> None:
     for tid in TASKS:
         assert "workflow_end" in _reach(tid) or tid == "workflow_end", tid
     assert all(node not in set().union(*(_reach(n) for n in TR.get(node, {}))) for node in TASKS)
+
+
+# ── the AS-mismatch drill (owner 2026-10-06): config drift the loop must escalate; the timer ends it ──
+
+
+def test_an_as_mismatch_drill_plans_its_inject_and_needs_no_interface() -> None:
+    p = _plan(fault="remote-as-mismatch")
+    assert p["ok"] and p["inject"]["action"] == "inject-remote-as-mismatch"
+    assert p["plan_params"]["plan_for"] == "inject-remote-as-mismatch"
+    assert "remote-as-mismatch" in build.DRILL_ESCALATES
+
+
+def test_the_as_mismatch_card_says_the_agent_escalates_and_the_timer_ends_it() -> None:
+    plan = _plan(fault="remote-as-mismatch")
+    lines = _svc({"plan": {"for": "inject-remote-as-mismatch", "device": "dc1-spine01", "mode": "configure session",
+                           "lines": ["router bgp 65101", "neighbor 10.101.254.11 remote-as 64999", "commit timer 00:20:00"]}})
+    page = build.drill_card({**CARD_IN, "plan": {"stdout_json": plan}, "lines": lines})["html"]
+    assert "Give dc1-spine01 the wrong peer AS for 10.101.254.11 (config drift)" in page
+    assert "the agent should escalate config drift: no automatic fix" in page
+    assert "your second approval fixes it" not in page and "Confirmed only once" not in page
+    assert "Read again after the timer, to prove the rollback" in page and "remote-as 64999" in page
+    # the shutdown drills keep their own story
+    assert "your second approval fixes it" in build.drill_card(CARD_IN)["html"]
+
+
+def test_an_as_mismatch_drill_left_to_the_timer_is_the_designed_ending() -> None:
+    r = build.drill_result({"inject": _svc({"action": "inject-remote-as-mismatch", "wrong_as": 64999,
+                                            "drill_session": "r10-drill-1791306000"}),
+                            "check": _svc({"session": {"state": "Active"}}), "after_timer": _up(65101, 65102)})
+    assert r["ok"] and "as designed" in r["message"] and "64999" in r["message"] and "escalates" in r["message"]
+
+
+def test_the_as_mismatch_card_runs_as_the_gateway_runs_it() -> None:
+    import subprocess
+    import sys
+    data = {**CARD_IN, "plan": {"stdout_json": _plan(fault="remote-as-mismatch")}}
+    run = subprocess.run([sys.executable, "-I", "-c", build.DRILL_CARD_CODE], input=json.dumps(data),
+                         capture_output=True, text=True, timeout=30, env={}, check=True)
+    assert "no automatic fix" in json.loads(run.stdout)["html"]

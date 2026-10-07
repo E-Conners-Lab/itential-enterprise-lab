@@ -245,12 +245,11 @@ def test_each_fix_names_itself_its_end_and_its_scope(fix: str, device: str, titl
     assert title in page and page.count('class="promise"') == 3
 
 
-def test_every_cause_the_agent_may_name_for_a_fix_has_a_headline() -> None:
+def test_the_fix_menu_is_the_agents_and_the_workflows_alike() -> None:
+    # ADR 0075: the prompt names every fix the workflow accepts, and no other
     agent = (ROOT / "itential" / "agents" / "fabric-diagnostics.yaml").read_text()
-    tags = {t for t, fix in re.findall(r"-> cause ([a-z-]+), fix ([a-z-]+)", agent) if fix != "escalate"}
-    assert tags == set(build.FABRIC_CAUSES)
-    fixes = {fix for _, fix in re.findall(r"-> cause ([a-z-]+), fix ([a-z-]+)", agent)}
-    assert fixes == set(build.FABRIC_FIXES)
+    menu = set(re.findall(r"^  - ([a-z-]+): ", agent.split("The fix menu", 1)[1].split("Never propose", 1)[0], re.M))
+    assert menu == set(build.FABRIC_FIXES) | {"escalate"}
 
 
 def test_an_escalation_never_becomes_a_card() -> None:
@@ -483,3 +482,86 @@ def test_fabric_bgp_is_a_gateway_service_on_the_shared_device_account() -> None:
     assert svc["secrets"] == [{"name": "lab-automation-password", "type": "env", "target": "FABRIC_BGP_PASSWORD"}]
     assert "lab-automation-password" in VERSIONS["vault"]["gateway_aliases"]  # a base alias, bound on every tier
     assert VERSIONS["fabric_bgp"]["username"] == "automation"
+
+
+# ── ADR 0075 (owner 2026-10-06): the agent infers from facts; Itential checks its answer independently ──
+
+DRILL_READS = {"near": _read("Active", matches=False, remote=64999, iface=UP),
+               "far": _read("Active", local=65102, remote=65101, iface=UP)}
+
+
+def test_the_agent_gets_facts_and_never_what_the_reads_concluded() -> None:
+    s = build.fabric_summary({"plan": {"stdout_json": PLAN}, "starts_at": "2026-10-06T19:03:13Z", **DRILL_READS})
+    facts = s["facts"]
+    assert "LabBgpSessionDown at 2026-10-06T19:03:13Z" in facts and "dc1-spine01 (eos) AS 65101 peers with" in facts
+    assert "10.101.254.11 AS 65102" in facts and "nothing has been read from the devices for you" in facts.lower()
+    for leak in ("reads Active", "64999", "differs", "NetBox intends 65101 -> 65102", "administratively", "line protocol",
+                 "Confirm with these reads"):
+        assert leak not in facts, leak
+    # the incident keeps the readings for people
+    assert "64999" in s["incident"]["description"]
+    req = build.outage_request({"created": {"body": {"result": {"sys_id": "abc", "number": "INC0010040"}}},
+                                "summary": {"stdout_json": s}})
+    assert req["request"].startswith("Incident INC0010040 (sys_id abc). Facts: ") and "64999" not in req["request"]
+    # the AWS VPN loop, whose summary has no facts yet, still sends its evidence
+    old = build.outage_request({"created": {"body": {"result": {"sys_id": "a", "number": "INC1"}}},
+                                "summary": {"stdout_json": {"evidence": "Tunnel10 down"}}})
+    assert old["request"].endswith("Evidence: Tunnel10 down")
+
+
+def _fix(answer: dict, **reads) -> dict:
+    return build.fabric_fix({**_agent(json.dumps(answer)), **reads})
+
+
+def test_the_agents_account_reaches_the_card_capped() -> None:
+    f = _fix({"fix": "escalate", "device": None, "cause": "wrong peer AS", "evidence": "dc1-spine01 peers with 64999",
+              "findings": [f"read {i}: " + "x" * 300 for i in range(9)], "ruled_out": ["neighbor shut: not shut"] * 7,
+              "kb": "bgp-neighbor-stuck-idle"}, **DRILL_READS)
+    assert len(f["findings"]) == 6 and all(len(x) <= 200 for x in f["findings"]) and len(f["ruled_out"]) == 4
+    assert f["kb"] == "bgp-neighbor-stuck-idle" and "confidence" not in f
+    # the AS-mismatch drill's right answer: escalate, and the independent check agrees (drift is not a menu fix)
+    assert f["agreement"]["agree"] is True and "AS differs from NetBox on dc1-spine01" in f["agreement"]["why"]
+    assert "independent check agrees" in f["escalation"]["work_notes"] and "KB: bgp-neighbor-stuck-idle" in \
+        f["escalation"]["work_notes"]
+
+
+@pytest.mark.parametrize(("answer", "reads", "agree"), [
+    ({"fix": "no-shut-neighbor", "device": "dc1-spine01"}, {"near": _read("Idle", admin=True, iface=UP),
+                                                            "far": _read("Active", local=65102, remote=65101, iface=UP)}, True),
+    ({"fix": "no-shut-neighbor", "device": "dc1-leaf01"}, {"near": _read("Idle", admin=True, iface=UP),
+                                                           "far": _read("Active", local=65102, remote=65101, iface=UP)}, False),
+    ({"fix": "clear-session", "device": "dc1-spine01"}, DRILL_READS, False),  # the AS differs: a clear cannot help
+    ({"fix": "clear-session", "device": "dc1-spine01"}, {"near": _read("Active", iface=UP),
+                                                         "far": _read("Active", local=65102, remote=65101, iface=UP)}, True),
+    ({"fix": "escalate", "device": None}, {"near": _read("Idle", admin=True, iface=UP),
+                                           "far": _read("Active", local=65102, remote=65101, iface=UP)}, False),
+])
+def test_itentials_own_reads_check_the_agents_answer(answer: dict, reads: dict, agree: bool) -> None:
+    assert _fix({**answer, "cause": "c", "evidence": "e"}, **reads)["agreement"]["agree"] is agree
+
+
+def test_no_independent_check_when_an_end_was_not_read() -> None:
+    f = _fix({"fix": "escalate", "cause": "c"}, near=_read("Active", iface=UP), far=_svc({}, rc=1))
+    assert f["agreement"]["agree"] is None
+
+
+def test_a_disagreement_is_red_on_the_card_but_still_approvable() -> None:
+    fix = _fix({"fix": "clear-session", "device": "dc1-spine01", "cause": "stuck", "evidence": "e",
+                "findings": ["both ends Active", "<b>no shut</b>"], "ruled_out": ["neighbor shut: not shut"],
+                "kb": "bgp-neighbor-stuck-active-tcp179"}, **DRILL_READS)
+    page = _card(fix={"stdout_json": fix}, **DRILL_READS)
+    assert "DISAGREES" in page and "#D8433A" in page and "AS differs from NetBox" in page
+    assert "<li>both ends Active</li>" in page and "&lt;b&gt;no shut&lt;/b&gt;" in page  # the agent's words, escaped
+    assert "Knowledge cited: <b>bgp-neighbor-stuck-active-tcp179</b>" in page
+    assert 'href="/agent-sessions/#/sessions/f00d"' in page
+    # red, never blocking (owner): the decision buttons are still there
+    task = build.diagnose_fabric_bgp_outage()["tasks"]
+    assert any(v.get("name") == "InteractiveHTML" for v in task.values())
+
+
+def test_the_fix_check_sees_the_workflows_own_reads() -> None:
+    wf = build.diagnose_fabric_bgp_outage()
+    t = wf["tasks"]
+    assert t["c3"]["variables"]["incoming"]["value"] == "$var.job.near_result"
+    assert t["c4"]["variables"]["incoming"]["value"] == "$var.job.far_result"
+    assert "$var.c4.object" in json.dumps(t["4f"]["variables"]["incoming"])

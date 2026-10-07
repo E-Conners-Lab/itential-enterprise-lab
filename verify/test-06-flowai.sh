@@ -519,7 +519,8 @@ fd_setup() { # fd_setup <label>: a fresh verify incident and the request naming 
   local sys num
   read -r sys num <<<"$(td_incident "bgp-$1")"; [ -n "$num" ] || { echo "the PDI did not create the incident"; return 1; }
   TD_INCS="${TD_INCS} ${sys}"; TD_NUM=$num
-  TD_REQ="{\"request\":\"Incident ${num} (sys_id ${sys}). Evidence: dc1-spine01 -> 10.101.254.11 (VRF default) reads Established; Ethernet1 toward dc1-leaf01 is up, line protocol up. dc1-leaf01 -> 10.101.254.1 (VRF default) reads Established; Ethernet1 toward dc1-spine01 is up, line protocol up. Confirm with these reads: on dc1-spine01 \\\"show ip bgp neighbors 10.101.254.11 | include BGP state\\\" and then \\\"show interfaces Ethernet1 | include line protocol\\\"; on dc1-leaf01 \\\"show ip bgp neighbors 10.101.254.1 | include BGP state\\\" and then \\\"show interfaces Ethernet1 | include line protocol\\\".\"}"
+  # ADR 0075: facts only, as Diagnose Fabric BGP Outage now sends them - the agent reads the devices itself
+  TD_REQ="{\"request\":\"Incident ${num} (sys_id ${sys}). Facts: Prometheus raised LabBgpSessionDown at (a verify run) for dc1-spine01 -> 10.101.254.11 (VRF default), peer dc1-leaf01. NetBox intends: dc1-spine01 (eos) AS 65101 peers with 10.101.254.11 AS 65102, toward dc1-leaf01 over Ethernet1; dc1-leaf01 (eos) AS 65102 peers with 10.101.254.1 AS 65101, toward dc1-spine01 over Ethernet1. Nothing has been read from the devices for you: run the reads you need.\"}"
 }
 fd_judge() { # fd_judge <agent> <session id>
   local sid=${2##*$'\n'} txt tools fix
@@ -543,8 +544,8 @@ c24() {
   sid=$(run_agent fabric-diagnostics-local "$TD_REQ") || { echo "$sid"; return 1; }
   fd_judge fabric-diagnostics-local "$sid"
 }
-check "S4d.5p fabric-diagnostics runs the listed reads, notes its verify incident once and proposes escalate on an Established session" c23
-check "S4d.5q fabric-diagnostics-local runs the listed reads, notes its verify incident and answers escalate on an Established session" c24
+check "S4d.5p fabric-diagnostics reads the devices itself, notes its verify incident once and proposes escalate on an Established session" c23
+check "S4d.5q fabric-diagnostics-local reads the devices itself, notes its verify incident and answers escalate on an Established session" c24
 
 # cleanup: close the verify's incident; restore the hostname if a failed run left the drift behind
 if [ -n "$INC_SYS" ]; then sn -X PATCH "$SN/incident/${INC_SYS}" -d '{"state":"7","close_code":"Solution provided","close_notes":"closed by verify/test-06-flowai.sh"}' -o /dev/null; echo "closed ${INC_NUM}"; fi
