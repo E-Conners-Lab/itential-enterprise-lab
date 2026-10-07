@@ -88,6 +88,17 @@ service makes "external" literally true. Its PID records the design and the owne
     rotation is `make knowledge-token ROTATE=1`, `make netops-knowledge`, `make knowledge-mcp-secret`, then the Gateway
     play with `-e nk_reregister=true` (the server reconnects only when its registration changes or the server starts).
 
+11. **Lab PR B: the agents** (owner, 2026-10-06). `tunnel-diagnostics`, `fabric-diagnostics` and both twins get the one
+    service `netops-knowledge_search_scenarios` - a new tool kind `mcp-tool` that resolves to the Tool Registry's
+    `gatewayService:<cluster>:python-script:<server>_<tool>` (measured), never GatewayManager `runService`;
+    `get_scenario` stays off (owner: the search hit already carries the id, the menu item and a 400-character excerpt,
+    and a full scenario is up to 8 KB more untrusted text, tokens and turns for no change in the answer). FlowMCP runs
+    on production only, so the tool is attached only there (`mcp_tools_available`); elsewhere the agents run without
+    it and note `KB: unavailable`. The prompts follow decision 5 (topic `bgp` or `ipsec-vpn`, the incident number as
+    `ref`, one corrected retry). `make knowledge-pull-token` now refuses a token that is not a classic `ghp_` token or
+    that GHCR does not serve the pinned image with. No Gateway Manager service group: its export carries none, and
+    decision 4 already holds that a group would not restrict an agent. Verify S15.6 holds the agents' tool lists.
+
 ## Consequences
 
 - The agents' answers may cite the lab's own history; the fix they can propose is still one menu item, approved by

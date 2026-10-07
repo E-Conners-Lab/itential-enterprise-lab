@@ -11,13 +11,16 @@ an entry exists (check-and-set 0); --rotate replaces it, after which `make netop
 hash and the Gateway play re-registers the server (ADR 0074, the 90-day rotation).
 
 pull-token: a GitHub token with read:packages only, which k3s pulls the private image with. The owner creates it on
-GitHub and pastes it here (no echo); with the GitHub user name it goes to vault.knowledge.pull_path.
+GitHub and pastes it here (no echo). It is checked before it is written (ADR 0074 lab PR B): a classic token (`ghp_`,
+the kind GHCR accepts), and GHCR must serve the PINNED image's manifest with it (a real pull's first step). Only then
+does it go, with the GitHub user name, to vault.knowledge.pull_path.
 
 Token: VAULT_TOKEN or the make vault-login file (production only: the service runs on production, ADR 0070).
 """
 
 from __future__ import annotations
 
+import base64
 import getpass
 import json
 import os
@@ -75,6 +78,32 @@ def write(tok: str, path: str, data: dict[str, str], *, replace: bool) -> int:
     return 0
 
 
+def pull_problem(username: str, pull: str) -> str | None:
+    """Why GHCR would not let k3s pull the pinned image with this token, or None. Never shows the token."""
+    if not pull.startswith("ghp_"):
+        return "not a classic token (ghp_...): GHCR pulls need a classic token with read:packages"
+    image = V["netops_knowledge"]["image"]
+    host, _, repo = image["repository"].partition("/")
+    public = ssl.create_default_context()  # ghcr.io: the public CAs, not the lab's
+    basic = base64.b64encode(f"{username}:{pull}".encode()).decode()
+    try:
+        req = urllib.request.Request(f"https://{host}/token?scope=repository:{repo}:pull&service={host}",
+                                     headers={"Authorization": f"Basic {basic}"})
+        with urllib.request.urlopen(req, context=public, timeout=30) as r:
+            bearer = json.load(r).get("token", "")
+        req = urllib.request.Request(f"https://{host}/v2/{repo}/manifests/{image['digest']}", method="HEAD",
+                                     headers={"Authorization": f"Bearer {bearer}", "Accept": ", ".join((
+                                         "application/vnd.oci.image.index.v1+json",
+                                         "application/vnd.oci.image.manifest.v1+json",
+                                         "application/vnd.docker.distribution.manifest.v2+json"))})
+        with urllib.request.urlopen(req, context=public, timeout=30) as r:
+            return None if r.status == 200 else f"GHCR answered {r.status} for the pinned image"
+    except urllib.error.HTTPError as e:
+        return f"GHCR answered {e.code}: the token cannot pull {image['repository']} (read:packages, the right user?)"
+    except (urllib.error.URLError, OSError) as e:
+        return f"GHCR could not be reached ({type(e).__name__}): nothing checked"
+
+
 def main(argv: list[str]) -> int:
     if not argv or argv[0] not in ("token", "pull-token"):
         print("usage: knowledge-secrets-to-vault.py token [--rotate] | pull-token")
@@ -87,6 +116,11 @@ def main(argv: list[str]) -> int:
     if not username or not pull:
         print("both are needed - nothing done")
         return 1
+    problem = pull_problem(username, pull)
+    if problem:
+        print(f"{problem} - nothing stored")
+        return 1
+    print("GHCR serves the pinned image with this token")
     return write(tok, KNOWLEDGE["pull_path"], {"username": username, "token": pull}, replace=True)
 
 

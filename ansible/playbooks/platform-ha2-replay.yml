@@ -91,6 +91,8 @@
     admin_user: "{{ platform_admin_user | default(platform.admin_user) }}"
     admin_pw: "{{ lookup('ansible.builtin.env', 'ITENTIAL_ADMIN_PASSWORD') }}"
     tool_registry_base: tools # app-tool_registry mounts under its pronghorn title
+    # ADR 0074: FlowMCP's tools exist on production's Gateway once netops-knowledge is registered (tasks/flowai-agent.yml)
+    mcp_tools_available: "{{ netops_knowledge.register_with_gateway }}"
     agent_docs: "{{ lookup('ansible.builtin.fileglob', playbook_dir ~ '/../../' ~ agents.documents ~ '/*.yaml', wantlist=True) | sort }}"
     required_profiles: "{{ llm.profiles | rejectattr('optional', 'defined') | list }}"
     optional_profiles: "{{ llm.profiles | selectattr('optional', 'defined') | list }}"
