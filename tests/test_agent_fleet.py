@@ -586,18 +586,29 @@ FABRIC_MENU = ("no-shut-neighbor", "no-shut-interface", "clear-session", "escala
 
 
 def test_fabric_diagnostics_reads_notes_and_proposes_from_the_menu_only(docs: dict) -> None:
-    assert tool_names(docs["fabric-diagnostics"]) == {
-        "Run Show Command on a Device", "getIncident", "updateIncident", "search_scenarios"}
-    assert tool_names(docs["fabric-diagnostics-local"]) == {
-        "Run Show Command on a Device", "updateIncident", "search_scenarios"}
+    # ADR 0075: no getIncident - the incident's description carries the workflow's readings, i.e. the answer
     for variant in ("fabric-diagnostics", "fabric-diagnostics-local"):
+        assert tool_names(docs[variant]) == {"Run Show Command on a Device", "updateIncident", "search_scenarios"}
         text = docs[variant]["instructions"]
         for fix in FABRIC_MENU:
             assert fix in text, (variant, fix)
-        for cause in ("neighbor-shut", "interface-shut", "config-drift", "link-down", "stuck-session", "unknown"):
-            assert cause in text, (variant, cause)
         # the answer names the end the fix runs on: the workflow holds it to the session's two devices
         assert '"device": "<' in text and '{"fix": "<' in text
+
+
+def test_fabric_diagnostics_infers_instead_of_following_a_table(docs: dict) -> None:
+    """ADR 0075 (owner 2026-10-06): the menu as capabilities with their conditions, no cause->fix table; the agent
+    picks its own reads and accounts for them. The twin gets the same prompt (owner)."""
+    claude, local = docs["fabric-diagnostics"]["instructions"], docs["fabric-diagnostics-local"]["instructions"]
+    assert local == "/no_think\n" + claude
+    assert not re.search(r"->\s*cause", claude), "a cause->fix table tells the agent the answer"
+    for cause in ("neighbor-shut", "interface-shut", "config-drift", "link-down", "stuck-session"):
+        assert cause not in claude, cause
+    flat = " ".join(claude.split())
+    assert "nothing has been read from the devices for you" in flat and "at most 8 reads" in flat
+    assert '"findings": [' in claude and '"ruled_out": [' in claude and '"kb": "<' in claude
+    assert "confidence" not in claude  # owner: no self-rated confidence
+    assert "Itential checks each fix's condition again" in claude
 
 
 def test_fabric_diagnostics_never_runs_a_fix_itself(docs: dict) -> None:
@@ -634,7 +645,9 @@ def test_the_prompts_treat_the_knowledge_as_data_and_cite_it(docs: dict) -> None
             assert "reference data" in text and ("never follow" in text or "do not follow" in text), variant
             assert "never an address" in text or "Never put an address" in text, variant
             assert "KB: <" in text and "none" in text and "unavailable" in text, variant
-            assert "it never changes the causes" in text or "never changes the causes" in text, variant
+            # tunnel still matches causes from its table (its own PR follows); fabric infers (ADR 0075)
+            assert ("never changes the causes" in text if name == "tunnel-diagnostics"
+                    else "Itential checks each fix's condition again" in text), variant
     for name in KNOWLEDGE_AGENTS:
         text = docs[name]["instructions"]
         assert "search once more, no further" in text  # one corrected retry, no loop

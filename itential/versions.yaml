@@ -78,7 +78,8 @@ terraform_run:
     # 60839ab = main after cdp #37 (R10): fabric-bgp, one BGP session end read or fixed on vEOS / IOS-XE.
     # 02b62f1 = main after cdp #38 (R10 PR C): fabric-bgp plan (the cards' exact lines) and the drill actions.
     # e7a8648 = main after cdp #39: confirm-drill reports sent: true once it sends the commit (drill 3).
-    reference: "e7a8648ab3718020269f35659f5f3f10f211a98e"
+    # acc9646 = main after cdp #40/#41: the drills inject-remote-as-mismatch and inject-md5-mismatch (ADR 0075).
+    reference: "acc96462d6fd4afc33609fb9d2b6f76b42cfa4e2"
   executable_object:
     name: python-3-12
     description: "the runner image's Python 3.12 (ADR 0038)"

@@ -377,7 +377,8 @@ INPUT_GATES = {
     WF["break_fabric_bgp"]: {
         "device": {"type": "string", "enum": sorted(FABRIC_DEVICES)},
         "neighbor": IPV4_TEXT,
-        "fault": {"type": "string", "enum": ["interface-shutdown", "neighbor-shutdown"]},
+        "fault": {"type": "string", "enum": ["interface-shutdown", "md5-mismatch", "neighbor-shutdown",
+                                              "remote-as-mismatch"]},
     },
     # reason is shown on the approval card only; no markup
     WF["config_push"]: {"device": NODE_NAME, "reason": {"type": "string", "maxLength": 500, "pattern": r"^[^<>]*$"}},
@@ -5304,10 +5305,12 @@ def outage_summary(d: dict) -> dict:
 def outage_request(d: dict) -> dict:
     """The agent's request: the new incident (createIncident's response, `created`) and the evidence (`summary`)."""
     row = (((d.get("created") or {}).get("body") or {}).get("result")) or {}
-    evidence = (((d.get("summary") or {}).get("stdout_json")) or {}).get("evidence", "")
+    summary = ((d.get("summary") or {}).get("stdout_json")) or {}
+    # ADR 0075: a loop whose agent infers hands it facts only; the AWS VPN loop still hands it evidence
+    body = f"Facts: {summary['facts']}" if summary.get("facts") else f"Evidence: {summary.get('evidence', '')}"
     ok = bool(row.get("sys_id") and row.get("number"))
     return {"ok": ok, "sys_id": row.get("sys_id"), "number": row.get("number"),
-            "request": f"Incident {row.get('number')} (sys_id {row.get('sys_id')}). Evidence: {evidence}"}
+            "request": f"Incident {row.get('number')} (sys_id {row.get('sys_id')}). {body}"}
 
 
 def outage_fix(d: dict) -> dict:
@@ -6234,12 +6237,24 @@ def fabric_summary(d: dict) -> dict:
     readings = (fabric_reading(d.get("near")), fabric_reading(d.get("far")))
     evidence = f"{end_text(near, readings[0])}. {end_text(far, readings[1])}."
     platforms = plan.get("platforms") or {}
+
+    def intent(end: dict) -> str:
+        vrf_ = "" if end.get("vrf") in (None, "default") else f" in VRF {end['vrf']}"
+        link = f", toward {end.get('peer')} over {end['interface']}" if end.get("interface") else ""
+        return (f"{end.get('device')} ({platforms.get(end.get('device'), 'eos')}) AS {end.get('local_as')} peers with "
+                f"{end.get('neighbor')} AS {end.get('remote_as')}{vrf_}{link}")
+
+    # ADR 0075 (owner 2026-10-06): the agent gets the alert and NetBox's intent - never what the reads concluded
+    facts = (f"Prometheus raised LabBgpSessionDown at {d.get('starts_at')} for {near.get('device')} -> "
+             f"{near.get('neighbor')} (VRF {near.get('vrf')}), peer {near.get('peer')}. NetBox intends: "
+             f"{intent(near)}; {intent(far)}. Nothing has been read from the devices for you: run the reads you need.")
     reads = "; ".join(f"on {end['device']} " + " and then ".join(f'"{c}"' for c in fabric_commands(end, platforms.get(
         end["device"], "eos"))) for end in (near, far) if end)
     device, peer, pair = near.get("device"), near.get("peer"), plan.get("pair")
     vrf = "" if near.get("vrf") in (None, "default") else f", VRF {near.get('vrf')}"
     return {
         "evidence": f"{evidence} Confirm with these reads: {reads}.",
+        "facts": facts,
         "readings": {"near": readings[0], "far": readings[1]},
         "incident": {
             "short_description": f"BGP session down: {device} <-> {peer} ({near.get('neighbor')}{vrf})",
@@ -6251,6 +6266,38 @@ def fabric_summary(d: dict) -> dict:
             "urgency": "2", "impact": "2", "category": "network",
         },
     }
+
+
+def fabric_agreement(fix: str, device, plan: dict, near, far) -> dict:
+    """Whether the workflow's own fabric-bgp reads (`near`, `far` envelopes - the agent never sees them) back the
+    agent's answer (ADR 0075): a fix needs its own condition on the end it names; escalate is backed unless an end
+    shows a condition a menu fix covers. Shown on the card; a disagreement is red but never blocks (owner)."""
+    ends = {(plan.get("near") or {}).get("device"): fabric_reading(near), (plan.get("far") or {}).get("device"):
+            fabric_reading(far)}
+    if not all(r["read"] for r in ends.values()):
+        return {"agree": None, "why": "an end could not be read: no independent check"}
+    shut = [dev for dev, r in ends.items() if r["admin_shutdown"]]
+    down = [dev for dev, r in ends.items() if (r["interface"] or {}).get("admin_up") is False]
+    drift = [dev for dev, r in ends.items() if r["matches_intent"] is False]
+    if fix == "no-shut-neighbor":
+        ok = device in shut
+        why = f"fabric-bgp reads {device}'s neighbor shut down" if ok else f"fabric-bgp does not read {device}'s neighbor shut"
+    elif fix == "no-shut-interface":
+        ok = device in down
+        why = f"fabric-bgp reads {device}'s interface admin down" if ok else f"fabric-bgp reads {device}'s interface not admin down"
+    elif fix == "clear-session":
+        ok = not (shut or down or drift)
+        why = ("fabric-bgp reads nothing shut and both ends as NetBox intends" if ok else
+               "fabric-bgp reads " + ", ".join(f"{dev}: " + ("neighbor shut" if dev in shut else "interface admin down"
+                                                              if dev in down else "AS differs from NetBox")
+                                               for dev in dict.fromkeys(shut + down + drift)))
+    else:
+        ok = not (shut or down)
+        why = ("fabric-bgp reads no condition a menu fix covers" + (": the AS differs from NetBox on " + ", ".join(drift)
+                                                                     if drift else "") if ok else
+               "fabric-bgp reads a fixable condition: " + ", ".join(f"{dev}: neighbor shut" for dev in shut)
+               + ("; " if shut and down else "") + ", ".join(f"{dev}: interface admin down" for dev in down))
+    return {"agree": ok, "why": why}
 
 
 def fabric_fix(d: dict) -> dict:
@@ -6280,9 +6327,21 @@ def fabric_fix(d: dict) -> dict:
     if fix == "no-shut-interface" and "interface" not in (ends.get(device, ({}, None))[0]):
         fix, why = "escalate", f"{device}'s link toward the peer is not an interface fabric-bgp may change"
     evidence = str(answer.get("evidence") or "")[:400]
+
+    def capped(key: str, most: int) -> list:
+        items = answer.get(key) if isinstance(answer.get(key), list) else []
+        return [str(x)[:200] for x in items if isinstance(x, (str, int, float))][:most]
+
+    # ADR 0075: the agent's own account of how it got there, for the card - capped, escaped where it is drawn
+    findings, ruled_out = capped("findings", 6), capped("ruled_out", 4)
+    kb = str(answer.get("kb") or "none")[:64]
+    agreement = fabric_agreement(fix, device if fix != "escalate" else None, plan, d.get("near"), d.get("far"))
+    check = {True: "agrees", False: "DISAGREES", None: "is not available"}[agreement["agree"]]
     out = {"fix": fix, "device": device if fix != "escalate" else None, "cause": why, "evidence": evidence,
+           "findings": findings, "ruled_out": ruled_out, "kb": kb, "agreement": agreement,
            "card": fix != "escalate", "session": str(agent.get("sessionId") or "")[:64],
-           "escalation": {"work_notes": f"Escalated to a person: no fix from the menu applies ({why}). {evidence}".strip()}}
+           "escalation": {"work_notes": (f"Escalated to a person: no fix from the menu applies ({why}). {evidence} "
+                                         f"Itential's independent check {check}: {agreement['why']}. KB: {kb}").strip()}}
     if fix != "escalate":
         end, read = ends[device]
         out["end"] = end
@@ -6498,7 +6557,7 @@ def fabric_card(d: dict) -> dict:
     for side, end in (("near", near_end), ("far", far_end)):
         r = reads[side]
         i = r["interface"] or {}
-        rows += [("h", f"{end.get('device', '?')} -> {end.get('neighbor', '?')}, read by fabric-bgp"),
+        rows += [("h", f"{end.get('device', '?')} -> {end.get('neighbor', '?')}, Itential's own read (the agent never saw it)"),
                  ("session state", f'<span class="{"ok" if r["state"] == "Established" else "bad" if r["read"] else "unk"}">'
                                    f'{e(str(r["state"]))}</span>'),
                  ("neighbor shut down", yn(r["admin_shutdown"], good=False)),
@@ -6511,9 +6570,20 @@ def fabric_card(d: dict) -> dict:
 
     tag = str(fix_out.get("cause") or "no cause given")
     cause = FABRIC_CAUSES[tag].format(**fmt) if tag in FABRIC_CAUSES else tag
-    session = str(fix_out.get("session") or "")[:8]
+    session_id = str(fix_out.get("session") or "")
+    session = session_id[:8]
     agent_by = "fabric-diagnostics agent" + (f", session {session}" if session else "")
     evidence = str(fix_out.get("evidence") or "")
+    # ADR 0075: the agent's own account, the knowledge it cited, and Itential's independent check of it
+    agreement = fix_out.get("agreement") or {}
+    badge_c, badge_t = {True: (kelp, "Itential's independent check agrees"),
+                        False: (buoy, "Itential's independent check DISAGREES"),
+                        None: (grey, "No independent check")}[agreement.get("agree")]
+    account = "".join(f"<li>{e(str(x))}</li>" for x in fix_out.get("findings") or [])
+    ruled = "".join(f"<li>{e(str(x))}</li>" for x in fix_out.get("ruled_out") or [])
+    kb = str(fix_out.get("kb") or "none")
+    trace = (f'<a href="/agent-sessions/#/sessions/{e(session_id)}">every command it ran, and the raw output</a>'
+             if session_id else "the agent's session")
     promises_html = "".join(f'<li class="promise">{e(p.format(**fmt))}</li>' for p in promises)
     sections = f"""<section class="panel topo" aria-labelledby="t-where"><h2 id="t-where">Where the session breaks</h2>{drawing}
 <div class="ledger">{ledger_html}</div></section>
@@ -6521,15 +6591,21 @@ def fabric_card(d: dict) -> dict:
 <ol class="steps">
 <li><span class="who">Prometheus</span><b>Alert fired</b>{e(since[len("BGP down "):] if start else "BGP down")}</li>
 <li><span class="who">ServiceNow</span><b>Incident opened</b>{e(number)}, with both ends' readings</li>
-<li><span class="who">The agent</span><b>Cause found</b>one fix picked from a fixed menu</li>
+<li><span class="who">The agent</span><b>Cause worked out</b>from its own reads, one fix from the menu</li>
 <li class="now"><span class="who">You</span><b>Approve or reject</b>nothing has run yet</li>
 <li class="next"><span class="who">Itential</span><b>Fix and prove</b>Established, then resolves</li>
 </ol></section>
 <section class="panel diag" aria-labelledby="t-found"><div>
 <h2 id="t-found">What the agent found</h2><span class="by"><i></i>{e(agent_by)}</span>
 <p class="cause">{e(cause)}</p>
-<p>{e(evidence) if evidence else "The agent's full diagnosis is in the incident's work notes."}</p></div>
-<div class="term" role="group" aria-label="What fabric-bgp read at both ends">{term}</div></section>
+<p>{e(evidence) if evidence else "The agent's full diagnosis is in the incident's work notes."}</p>
+{f'<p><b>What it read and found</b></p><ul class="account">{account}</ul>' if account else ""}
+{f'<p><b>What it ruled out</b></p><ul class="account">{ruled}</ul>' if ruled else ""}
+<p class="kb">Knowledge cited: <b>{e(kb)}</b></p>
+<p class="check" style="border-left:4px solid {badge_c};padding:6px 10px;color:{badge_c}"><b>{e(badge_t)}</b>
+{e(str(agreement.get("why") or ""))}</p>
+<p class="trace">The agent chose its own reads: {trace}.</p></div>
+<div class="term" role="group" aria-label="Itential's independent check: what fabric-bgp read at both ends">{term}</div></section>
 <section class="panel action" aria-labelledby="t-fix"><div><p class="kicker">The proposed fix</p>
 <h2 id="t-fix">{e(title.format(**fmt))}</h2><p class="what">{e(what.format(**fmt))}</p></div>
 <p class="scope">Scope<b>{e(scope)}</b>{e(scope_note)}</p>
@@ -6551,7 +6627,13 @@ def fabric_card(d: dict) -> dict:
 # DRILL_REVERT_MINUTES. The workflow then waits for the outage loop to bring the session back, and confirms the drill
 # session (cancels the timer) only then; a session still down at the last read is left to the timer, and read again
 # after it to prove the rollback. It never runs the fix itself: that is the outage loop's, after its own approval.
-DRILL_FAULTS = {"neighbor-shutdown": "inject-neighbor-shutdown", "interface-shutdown": "inject-interface-shutdown"}
+DRILL_FAULTS = {"neighbor-shutdown": "inject-neighbor-shutdown", "interface-shutdown": "inject-interface-shutdown",
+                "remote-as-mismatch": "inject-remote-as-mismatch", "md5-mismatch": "inject-md5-mismatch"}
+# Faults the outage loop must NOT fix (owner 2026-10-06), with what the agent should find: the right answer is
+# escalate; the commit timer, not a fix, ends the drill, and the read after it proves the rollback. (An agent that
+# proposes clear-session for the MD5 fault is refused nothing; the loop proves the session did not come back.)
+DRILL_ESCALATES = {"remote-as-mismatch": "config drift: a peer AS NetBox does not intend",
+                   "md5-mismatch": "an authentication mismatch: a password on one end only"}
 DRILL_REVERT_MINUTES = 20
 DRILL_READS = (("d0", "d1", "d2", 300), ("d3", "d4", "d5", 300), ("d6", "d7", "d8", 300), ("d9", "da", "db", 180))
 DRILL_AFTER_TIMER = DRILL_REVERT_MINUTES * 60 - sum(r[3] for r in DRILL_READS) + 120  # the timer, plus margin
@@ -6596,6 +6678,8 @@ def drill_plan(d: dict, sessions: dict, targets: dict, fabric: dict) -> dict:
 DRILL_COPY = {
     "neighbor-shutdown": ("Shut the BGP neighbor {n} on {d}", "1 BGP neighbor"),
     "interface-shutdown": ("Shut {i} on {d}, the link toward {p}", "1 interface"),
+    "remote-as-mismatch": ("Give {d} the wrong peer AS for {n} (config drift)", "1 BGP neighbor"),
+    "md5-mismatch": ("Set a BGP password for {n} on {d} only (authentication mismatch)", "1 BGP neighbor"),
 }
 
 
@@ -6615,6 +6699,11 @@ def drill_card(d: dict) -> dict:
     # the commit timer starts when the inject commits, after the approval: the card cannot know that clock time
     minutes = int(plan.get("revert_minutes") or 20)
     reads = {"near": fabric_reading(d.get("near")), "far": fabric_reading(d.get("far"))}
+    escalates = fault in DRILL_ESCALATES
+    loop_step = (f'<li class="next"><span class="who">The loop</span><b>Incident, agent</b>the agent should escalate '
+                 f'{e(DRILL_ESCALATES.get(fault, ""))} - no automatic fix</li>' if escalates else
+                 '<li class="next"><span class="who">The loop</span><b>Incident, agent, card</b>your second approval '
+                 'fixes it</li>')
 
     def end(reading: dict, side: dict) -> dict:
         ok = reading["state"] == "Established"
@@ -6632,18 +6721,23 @@ def drill_card(d: dict) -> dict:
 <li class="now"><span class="who">You</span><b>Approve the drill</b>nothing has run yet</li>
 <li class="next"><span class="who">Itential</span><b>Breaks it</b>under a {minutes}-minute commit timer</li>
 <li class="next"><span class="who">Prometheus</span><b>Alert</b>about 4 minutes later</li>
-<li class="next"><span class="who">The loop</span><b>Incident, agent, card</b>your second approval fixes it</li>
+{loop_step}
 <li class="next"><span class="who">EOS</span><b>Safety net</b>rolls back by itself {minutes} min after you approve</li>
 </ol></section>
 <section class="panel action" aria-labelledby="t-fix"><div><p class="kicker">The drill</p>
 <h2 id="t-fix">{e(title.format(**fmt))}</h2><p class="what">{e(
         "Itential puts this one change on " + fmt["d"] + " in a configuration session committed with a commit timer, "
-        "then lets the fabric BGP outage loop find it, diagnose it and fix it after your approval.")}</p></div>
+        + ("then lets the fabric BGP outage loop find it and diagnose it. The agent should find "
+           + DRILL_ESCALATES.get(fault, "") + ", which has no automatic fix: it should escalate it, and the commit timer "
+           "ends the drill."
+           if escalates else "then lets the fabric BGP outage loop find it, diagnose it and fix it after your approval."))}</p></div>
 <p class="scope">Scope<b>{e(scope)}</b>{e(f"rolls back by itself after {minutes} min")}</p>
 {card_lines(d.get("lines"))}
 <ul class="promises"><li class="promise">{e("Refused unless the session is Established and matches NetBox")}</li>
-<li class="promise">{e(f"Never saved: EOS rolls it back {minutes} min after you approve, unless the loop fixed it first")}</li>
-<li class="promise">{e("Confirmed only once the session is Established again")}</li></ul></section>"""
+<li class="promise">{e(f"Never saved: EOS rolls it back {minutes} min after you approve" + ("" if escalates else
+                         ", unless the loop fixed it first"))}</li>
+<li class="promise">{e("Read again after the timer, to prove the rollback" if escalates else
+                       "Confirmed only once the session is Established again")}</li></ul></section>"""
     lede = ("A drill for the fabric BGP outage loop. Nothing changes until you approve, and the device undoes it by itself "
             "if nothing else does.")
     decide = ("<p>Approve breaks this one session on purpose. Reject changes nothing.</p>\n"
@@ -6669,6 +6763,14 @@ def drill_result(d: dict) -> dict:
                                        f"and {name} was confirmed - the commit timer is cancelled."}
     if after["read"]:
         state = after["state"]
+        if inject.get("action") in ("inject-remote-as-mismatch", "inject-md5-mismatch"):
+            # escalated, never fixed: this IS the designed ending (owner 2026-10-06)
+            what = (f"the wrong peer AS ({inject.get('wrong_as')}) is config drift"
+                    if inject.get("action") == "inject-remote-as-mismatch" else
+                    "a password on one end only is an authentication mismatch")
+            return {"ok": state == "Established",
+                    "message": f"Drill done as designed: {what}, which the outage loop escalates instead of fixing; the "
+                               f"commit timer rolled {name} back: the session now reads {state}."}
         return {"ok": state == "Established",
                 "message": f"The session was not back by the last read; the commit timer rolled {name} back: the session "
                            f"now reads {state}."}
@@ -6686,7 +6788,8 @@ FABRIC_PLAN_CODE = _source(fabric_service_session, fabric_plan,
 FABRIC_OPEN_CODE = _source(open_incident, call='open_incident(json.loads(sys.stdin.read() or "{}"))')
 FABRIC_SUMMARY_CODE = _source(fabric_reading, fabric_commands, fabric_summary,
                               call='fabric_summary(json.loads(sys.stdin.read() or "{}"))')
-FABRIC_FIX_CODE = _source(fabric_fix, call='fabric_fix(json.loads(sys.stdin.read() or "{}"))', extra=_FABRIC_CONSTANTS)
+FABRIC_FIX_CODE = _source(fabric_reading, fabric_agreement, fabric_fix,
+                          call='fabric_fix(json.loads(sys.stdin.read() or "{}"))', extra=_FABRIC_CONSTANTS)
 FABRIC_RESULT_CODE = _source(fabric_reading, decision_note, fabric_result,
                              call='fabric_result(json.loads(sys.stdin.read() or "{}"))')
 FABRIC_CARD_CODE = _source(outage_card_image, card_clock, card_mark, card_page, card_lines, fabric_reading,
@@ -6708,7 +6811,8 @@ DRILL_CARD_CODE = _source(outage_card_image, card_clock, card_mark, card_page, c
                           extra="import base64\nimport html\nfrom datetime import datetime, timezone\n\n"
                                 "OUTAGE_CARD_CSS = " + repr(OUTAGE_CARD_CSS) + "\nCARD_LINES_CSS = "
                                 + repr(CARD_LINES_CSS) + "\nCARD_LINES_MODE = " + repr(CARD_LINES_MODE)
-                                + "\nDRILL_COPY = " + repr(DRILL_COPY) + "\n\n\n")
+                                + "\nDRILL_COPY = " + repr(DRILL_COPY) + "\nDRILL_ESCALATES = " + repr(DRILL_ESCALATES)
+                                + "\n\n\n")
 DRILL_RESULT_CODE = _source(fabric_reading, drill_result, call='drill_result(json.loads(sys.stdin.read() or "{}"))')
 
 
@@ -6784,8 +6888,12 @@ def diagnose_fabric_bgp_outage() -> dict:
                    "agent_note", x=1575, y=-300),
         "4c": set_key("the agent's answer", {}, "agent", "$var.job.agent_result", x=1600),
         "4d": set_key("the plan for the fix", "$var.4c.object", "plan", "$var.job.fabric_plan", x=1625),
+        # ADR 0075: the workflow's own reads - the agent never sees them - check its answer (the card's badge)
+        "c3": set_key("the fix check: the alerting end's read", "$var.4d.object", "near", "$var.job.near_result",
+                      x=1630),
+        "c4": set_key("the fix check: the far end's read", "$var.c3.object", "far", "$var.job.far_result", x=1640),
         "4f": run_code("the fix, held to the menu and the session's ends (Python on the runner)", FABRIC_FIX_CODE,
-                       "$var.4d.object", "fabric_fix", x=1650),
+                       "$var.c4.object", "fabric_fix", x=1650),
         "40": evaluate("a fix to approve?", "4f", "result", "stdout_json.card", "==", True, x=1700),
         "41": jq("the incident", "$var.job.fabric_request", "stdout_json.sys_id", x=1725, y=600),
         "42": jq("the escalation note", "$var.4f.result", "stdout_json.escalation", x=1750, y=600),
@@ -6919,7 +7027,7 @@ def diagnose_fabric_bgp_outage() -> dict:
         # an agent that fails is an answer too: no fix from it means escalate
         "4b": _edge(**{"4c": ok, "45": err}),
         "45": _edge(**{"4c": ok}),
-        "4c": _edge(**{"4d": ok}), "4d": _edge(**{"4f": ok}),
+        "4c": _edge(**{"4d": ok}), "4d": _edge(**{"c3": ok}), "c3": _edge(**{"c4": ok}), "c4": _edge(**{"4f": ok}),
         "4f": _edge(**{"40": ok, "8e": err}),
         "40": _edge(**{"46": ok, "41": fail}),
         "46": _edge(**{"47": ok, "8e": err}),
