@@ -211,7 +211,7 @@ def test_the_as_mismatch_card_says_the_agent_escalates_and_the_timer_ends_it() -
                            "lines": ["router bgp 65101", "neighbor 10.101.254.11 remote-as 64999", "commit timer 00:20:00"]}})
     page = build.drill_card({**CARD_IN, "plan": {"stdout_json": plan}, "lines": lines})["html"]
     assert "Give dc1-spine01 the wrong peer AS for 10.101.254.11 (config drift)" in page
-    assert "the agent should escalate config drift: no automatic fix" in page
+    assert "the agent should escalate config drift: a peer AS NetBox does not intend - no automatic fix" in page
     assert "your second approval fixes it" not in page and "Confirmed only once" not in page
     assert "Read again after the timer, to prove the rollback" in page and "remote-as 64999" in page
     # the shutdown drills keep their own story
@@ -232,3 +232,15 @@ def test_the_as_mismatch_card_runs_as_the_gateway_runs_it() -> None:
     run = subprocess.run([sys.executable, "-I", "-c", build.DRILL_CARD_CODE], input=json.dumps(data),
                          capture_output=True, text=True, timeout=30, env={}, check=True)
     assert "no automatic fix" in json.loads(run.stdout)["html"]
+
+
+def test_an_md5_drill_tells_the_approver_what_the_agent_should_find_and_ends_at_the_timer() -> None:
+    plan = _plan(fault="md5-mismatch")
+    assert plan["ok"] and plan["inject"]["action"] == "inject-md5-mismatch"
+    page = build.drill_card({**CARD_IN, "plan": {"stdout_json": plan}})["html"]
+    assert "Set a BGP password for 10.101.254.11 on dc1-spine01 only (authentication mismatch)" in page
+    assert "an authentication mismatch: a password on one end only - no automatic fix" in page
+    r = build.drill_result({"inject": _svc({"action": "inject-md5-mismatch", "drill_session": "r10-drill-1791306000"}),
+                            "check": _svc({"session": {"state": "Active"}}), "after_timer": _up(65101, 65102)})
+    assert r["ok"] and "authentication mismatch" in r["message"] and "as designed" in r["message"]
+    assert build.INPUT_GATES[NAME]["fault"]["enum"] == sorted(build.DRILL_FAULTS)

@@ -377,7 +377,8 @@ INPUT_GATES = {
     WF["break_fabric_bgp"]: {
         "device": {"type": "string", "enum": sorted(FABRIC_DEVICES)},
         "neighbor": IPV4_TEXT,
-        "fault": {"type": "string", "enum": ["interface-shutdown", "neighbor-shutdown", "remote-as-mismatch"]},
+        "fault": {"type": "string", "enum": ["interface-shutdown", "md5-mismatch", "neighbor-shutdown",
+                                              "remote-as-mismatch"]},
     },
     # reason is shown on the approval card only; no markup
     WF["config_push"]: {"device": NODE_NAME, "reason": {"type": "string", "maxLength": 500, "pattern": r"^[^<>]*$"}},
@@ -6627,10 +6628,12 @@ def fabric_card(d: dict) -> dict:
 # session (cancels the timer) only then; a session still down at the last read is left to the timer, and read again
 # after it to prove the rollback. It never runs the fix itself: that is the outage loop's, after its own approval.
 DRILL_FAULTS = {"neighbor-shutdown": "inject-neighbor-shutdown", "interface-shutdown": "inject-interface-shutdown",
-                "remote-as-mismatch": "inject-remote-as-mismatch"}
-# Faults the outage loop must NOT fix (owner 2026-10-06): a wrong peer AS is config drift against NetBox, which the
-# agent escalates; the commit timer, not a fix, ends the drill, and the read after it proves the rollback.
-DRILL_ESCALATES = ("remote-as-mismatch",)
+                "remote-as-mismatch": "inject-remote-as-mismatch", "md5-mismatch": "inject-md5-mismatch"}
+# Faults the outage loop must NOT fix (owner 2026-10-06), with what the agent should find: the right answer is
+# escalate; the commit timer, not a fix, ends the drill, and the read after it proves the rollback. (An agent that
+# proposes clear-session for the MD5 fault is refused nothing; the loop proves the session did not come back.)
+DRILL_ESCALATES = {"remote-as-mismatch": "config drift: a peer AS NetBox does not intend",
+                   "md5-mismatch": "an authentication mismatch: a password on one end only"}
 DRILL_REVERT_MINUTES = 20
 DRILL_READS = (("d0", "d1", "d2", 300), ("d3", "d4", "d5", 300), ("d6", "d7", "d8", 300), ("d9", "da", "db", 180))
 DRILL_AFTER_TIMER = DRILL_REVERT_MINUTES * 60 - sum(r[3] for r in DRILL_READS) + 120  # the timer, plus margin
@@ -6676,6 +6679,7 @@ DRILL_COPY = {
     "neighbor-shutdown": ("Shut the BGP neighbor {n} on {d}", "1 BGP neighbor"),
     "interface-shutdown": ("Shut {i} on {d}, the link toward {p}", "1 interface"),
     "remote-as-mismatch": ("Give {d} the wrong peer AS for {n} (config drift)", "1 BGP neighbor"),
+    "md5-mismatch": ("Set a BGP password for {n} on {d} only (authentication mismatch)", "1 BGP neighbor"),
 }
 
 
@@ -6696,8 +6700,8 @@ def drill_card(d: dict) -> dict:
     minutes = int(plan.get("revert_minutes") or 20)
     reads = {"near": fabric_reading(d.get("near")), "far": fabric_reading(d.get("far"))}
     escalates = fault in DRILL_ESCALATES
-    loop_step = ('<li class="next"><span class="who">The loop</span><b>Incident, agent</b>the agent should escalate '
-                 'config drift: no automatic fix</li>' if escalates else
+    loop_step = (f'<li class="next"><span class="who">The loop</span><b>Incident, agent</b>the agent should escalate '
+                 f'{e(DRILL_ESCALATES.get(fault, ""))} - no automatic fix</li>' if escalates else
                  '<li class="next"><span class="who">The loop</span><b>Incident, agent, card</b>your second approval '
                  'fixes it</li>')
 
@@ -6723,8 +6727,9 @@ def drill_card(d: dict) -> dict:
 <section class="panel action" aria-labelledby="t-fix"><div><p class="kicker">The drill</p>
 <h2 id="t-fix">{e(title.format(**fmt))}</h2><p class="what">{e(
         "Itential puts this one change on " + fmt["d"] + " in a configuration session committed with a commit timer, "
-        + ("then lets the fabric BGP outage loop find it and diagnose it. Config drift against NetBox has no automatic "
-           "fix: the agent should escalate it, and the commit timer ends the drill."
+        + ("then lets the fabric BGP outage loop find it and diagnose it. The agent should find "
+           + DRILL_ESCALATES.get(fault, "") + ", which has no automatic fix: it should escalate it, and the commit timer "
+           "ends the drill."
            if escalates else "then lets the fabric BGP outage loop find it, diagnose it and fix it after your approval."))}</p></div>
 <p class="scope">Scope<b>{e(scope)}</b>{e(f"rolls back by itself after {minutes} min")}</p>
 {card_lines(d.get("lines"))}
@@ -6758,12 +6763,14 @@ def drill_result(d: dict) -> dict:
                                        f"and {name} was confirmed - the commit timer is cancelled."}
     if after["read"]:
         state = after["state"]
-        if inject.get("action") == "inject-remote-as-mismatch":
-            # config drift is escalated, never fixed: this IS the designed ending (owner 2026-10-06)
+        if inject.get("action") in ("inject-remote-as-mismatch", "inject-md5-mismatch"):
+            # escalated, never fixed: this IS the designed ending (owner 2026-10-06)
+            what = (f"the wrong peer AS ({inject.get('wrong_as')}) is config drift"
+                    if inject.get("action") == "inject-remote-as-mismatch" else
+                    "a password on one end only is an authentication mismatch")
             return {"ok": state == "Established",
-                    "message": f"Drill done as designed: the wrong peer AS ({inject.get('wrong_as')}) is config drift, "
-                               f"which the outage loop escalates instead of fixing; the commit timer rolled {name} back: "
-                               f"the session now reads {state}."}
+                    "message": f"Drill done as designed: {what}, which the outage loop escalates instead of fixing; the "
+                               f"commit timer rolled {name} back: the session now reads {state}."}
         return {"ok": state == "Established",
                 "message": f"The session was not back by the last read; the commit timer rolled {name} back: the session "
                            f"now reads {state}."}

@@ -36,9 +36,11 @@ the owner wants the agent to have to infer its answer (2026-10-06).
 4. **The guards are unchanged.** The workflow accepts only a menu fix on one of the session's two ends, and fabric-bgp
    re-reads the session and refuses a fix whose condition does not hold, then proves it Established.
 5. **The drills test inference.** Besides the shutdowns, `Break Fabric BGP` can now inject a wrong peer AS (config
-   drift: the right answer is escalate) and, next, an MD5 password on one end only. An eval matrix - every fault plus
-   a healthy session, the twin three times and Claude once each - scores the right fix on the right end, nothing off
-   the menu, a KB line and the read budget.
+   drift) and an MD5 password on one end only (an authentication mismatch) - cloud-devops-pipeline #40 and #41, pin
+   acc9646. For both the right answer is escalate and the commit timer ends the drill; an agent that proposes
+   clear-session for the MD5 fault is refused nothing, and the loop proves the session did not come back. An eval
+   matrix - every fault plus a healthy session, the twin three times and Claude once each - scores the right fix on
+   the right end, nothing off the menu, a KB line and the read budget.
 
 ## Consequences
 
