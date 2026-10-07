@@ -13,18 +13,19 @@
 -->
 <style>
   :root {
-    --paper: #EEF3F7;
-    --paper-deep: #E1E9F0;
-    --ink: #0E2A4A;
-    --ink-soft: #4A6380;
-    --cobalt: #1F4FD1;
-    --cobalt-deep: #173C9E;
-    --sand: #D9C9A3;
-    --sand-edge: #C4B185;
-    --kelp: #1E8C6A;
-    --buoy: #D8433A;
-    --flare: #C7851A;
-    --card: #FFFFFF;
+    /* the flying theme (ADR 0077): a night cockpit lit by its instruments; the meaning colours keep their meanings */
+    --paper: #0B1322;
+    --paper-deep: #070D18;
+    --ink: #E6EDF7;
+    --ink-soft: #9FB0C8;
+    --cobalt: #4FA3F7;
+    --cobalt-deep: #8CC4FF;
+    --sand: #24344D;
+    --sand-edge: #3A4C66;
+    --kelp: #39C27A;
+    --buoy: #FF5A5F;
+    --flare: #F2B134;
+    --card: #121D31;
     --display: "Avenir Next Condensed", "Avenir Next", "Segoe UI Semibold", "Arial Narrow", sans-serif;
     --body: "Avenir Next", "Segoe UI", system-ui, -apple-system, sans-serif;
   }
@@ -33,7 +34,7 @@
   body {
     margin: 0; color: var(--ink); font-family: var(--body); font-size: 16px; line-height: 1.5;
     background:
-      radial-gradient(circle at 1px 1px, rgba(14, 42, 74, .07) 1px, transparent 0) 0 0 / 24px 24px,
+      radial-gradient(circle at 1px 1px, rgba(230, 237, 247, .07) 1px, transparent 0) 0 0 / 24px 24px,
       var(--paper);
   }
   .wrap { max-width: 1120px; margin: 0 auto; padding: 0 24px; }
@@ -45,7 +46,7 @@
   .brand b { font-family: var(--display); font-weight: 700; font-size: 22px; letter-spacing: .01em; display: block; line-height: 1.1; }
   .brand span { font-size: 13px; color: var(--ink-soft); }
   .presenter { display: flex; align-items: center; gap: 10px; font-size: 14px; color: var(--ink-soft); cursor: pointer; user-select: none; }
-  .switch { position: relative; width: 40px; height: 22px; border-radius: 11px; background: #C9D5E1; transition: background .2s; flex: none; }
+  .switch { position: relative; width: 40px; height: 22px; border-radius: 11px; background: #3A4C66; transition: background .2s; flex: none; }
   .switch::after { content: ""; position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: 50%; background: #fff; transition: transform .2s; }
   input.visually-hidden:checked + .switch { background: var(--cobalt); }
   input.visually-hidden:checked + .switch::after { transform: translateX(18px); }
@@ -61,25 +62,25 @@
   .runs-on li::before { content: ""; width: 8px; height: 8px; border-radius: 2px; background: var(--c, var(--cobalt)); transform: rotate(45deg); }
 
   /* chart */
-  .chart { margin: 26px 0 8px; background: var(--card); border: 1px solid #D4DEE8; border-radius: 18px; overflow: hidden; }
+  .chart { margin: 26px 0 8px; background: var(--card); border: 1px solid #24344D; border-radius: 18px; overflow: hidden; }
   .chart svg { display: block; width: 100%; height: auto; }
   .chart .sea { overflow-x: auto; }
   @media (max-width: 760px) { .chart svg { width: 820px; max-width: none; } }
-  .chart .caption { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 12px 20px; border-top: 1px solid #E3EAF1; font-size: 14px; color: var(--ink-soft); }
+  .chart .caption { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 12px 20px; border-top: 1px solid #24344D; font-size: 14px; color: var(--ink-soft); }
   .chart .caption strong { color: var(--ink); }
-  .wp-dot { fill: #fff; stroke: #9DB0C4; stroke-width: 3; }
-  .wp-num { font: 700 15px var(--display); fill: #9DB0C4; }
+  .wp-dot { fill: #121D31; stroke: #7C8EA6; stroke-width: 3; }
+  .wp-num { font: 700 15px var(--display); fill: #9FB0C8; }
   .wp-label { font: 600 15px var(--body); fill: var(--ink-soft); }
-  .wp-sub { font: 13px var(--body); fill: #7C90A6; }
-  .wp.active .wp-dot { stroke: var(--cobalt); fill: #E7EEFF; }
+  .wp-sub { font: 13px var(--body); fill: #7C8EA6; }
+  .wp.active .wp-dot { stroke: var(--cobalt); fill: #0E2A4A; }
   .wp.active .wp-num { fill: var(--cobalt); }
   .wp.active .ring { opacity: 1; }
   .wp.done .wp-dot { fill: var(--cobalt); stroke: var(--cobalt); }
-  .wp.done .wp-num { fill: #fff; }
+  .wp.done .wp-num { fill: #06101E; }
   .wp.failed .wp-dot { fill: var(--buoy); stroke: var(--buoy); }
-  .wp.failed .wp-num { fill: #fff; }
+  .wp.failed .wp-num { fill: #06101E; }
   .wp.rejected .wp-dot { fill: var(--flare); stroke: var(--flare); }
-  .wp.rejected .wp-num { fill: #fff; }
+  .wp.rejected .wp-num { fill: #06101E; }
   .wp.failed .wp-label, .wp.rejected .wp-label { fill: var(--ink); }
   /* a run that stopped: the rest of the route fades, so the stop is what the eye lands on */
   .chart.stopped .wp:not(.done):not(.failed):not(.rejected) { opacity: .4; }
@@ -95,18 +96,18 @@
   /* form + log */
   .panes { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); gap: 24px; margin: 22px 0 40px; align-items: start; }
   @media (max-width: 860px) { .panes { grid-template-columns: 1fr; } }
-  .pane { background: var(--card); border: 1px solid #D4DEE8; border-radius: 14px; padding: 22px 24px 24px; }
+  .pane { background: var(--card); border: 1px solid #24344D; border-radius: 14px; padding: 22px 24px 24px; }
   h2 { font-family: var(--display); font-weight: 700; font-size: 26px; margin: 0 0 4px; }
   .pane > p.hint { margin: 0 0 18px; color: var(--ink-soft); font-size: 15px; }
   label.field { display: block; margin: 0 0 16px; }
   label.field > span { display: block; font-weight: 600; font-size: 15px; margin-bottom: 6px; }
   label.field small { display: block; color: var(--ink-soft); font-size: 13px; margin-top: 6px; }
   input[type=text], textarea {
-    width: 100%; font: 17px var(--body); color: var(--ink); background: var(--paper); border: 1.5px solid #C3D1DF;
+    width: 100%; font: 17px var(--body); color: var(--ink); background: var(--paper); border: 1.5px solid #3A4C66;
     border-radius: 10px; padding: 11px 13px; font-variant-numeric: tabular-nums;
   }
   textarea { min-height: 84px; resize: vertical; font-size: 15px; }
-  input[type=text]:focus, textarea:focus { outline: none; border-color: var(--cobalt); box-shadow: 0 0 0 3px rgba(31, 79, 209, .18); background: #fff; }
+  input[type=text]:focus, textarea:focus { outline: none; border-color: var(--cobalt); box-shadow: 0 0 0 3px rgba(79, 163, 247, .25); background: var(--card); }
   input[aria-invalid=true] { border-color: var(--buoy); }
   .err { color: var(--buoy); font-size: 13px; margin-top: 6px; min-height: 1em; }
   .nat { display: flex; gap: 12px; align-items: flex-start; padding: 12px 14px; border-radius: 10px; background: var(--paper); margin: 0 0 18px; cursor: pointer; }
@@ -114,41 +115,41 @@
   .nat b { display: block; font-size: 15px; }
   .nat span { font-size: 13px; color: var(--ink-soft); }
   button.go {
-    width: 100%; font: 700 19px var(--display); letter-spacing: .01em; color: #fff; background: var(--cobalt);
+    width: 100%; font: 700 19px var(--display); letter-spacing: .01em; color: #06101E; background: var(--cobalt);
     border: none; border-radius: 12px; padding: 14px 18px; cursor: pointer; transition: background .15s;
   }
   button.go:hover { background: var(--cobalt-deep); }
   button.go:focus-visible, a:focus-visible, button.link:focus-visible { outline: 3px solid var(--cobalt); outline-offset: 3px; }
-  button.go:disabled { background: #9DB0C4; cursor: default; }
+  button.go:disabled { background: #3A4C66; color: #9FB0C8; cursor: default; }
   .fineprint { font-size: 13px; color: var(--ink-soft); margin: 12px 0 0; }
 
   .log { list-style: none; margin: 0; padding: 0; }
-  .log li { display: grid; grid-template-columns: 64px 1fr; gap: 12px; padding: 9px 0; border-bottom: 1px dashed #D4DEE8; font-size: 15px; }
+  .log li { display: grid; grid-template-columns: 64px 1fr; gap: 12px; padding: 9px 0; border-bottom: 1px dashed #24344D; font-size: 15px; }
   .log li:last-child { border-bottom: none; }
-  .log time { color: #7C90A6; font-variant-numeric: tabular-nums; font-size: 13px; padding-top: 2px; }
+  .log time { color: #7C8EA6; font-variant-numeric: tabular-nums; font-size: 13px; padding-top: 2px; }
   .log .ok { color: var(--kelp); font-weight: 600; }
   .log .bad { color: var(--buoy); font-weight: 600; }
   .empty { color: var(--ink-soft); font-size: 15px; padding: 18px 0 6px; }
-  .callout { margin: 16px 0 0; padding: 14px 16px; border-radius: 10px; background: #FFF6DE; border: 1px solid #EBD493; font-size: 15px; display: none; }
+  .callout { margin: 16px 0 0; padding: 14px 16px; border-radius: 10px; background: rgba(242, 177, 52, .12); border: 1px solid rgba(242, 177, 52, .5); font-size: 15px; display: none; }
   .callout a { color: var(--cobalt-deep); font-weight: 600; }
   button.link { background: none; border: none; padding: 0; font: inherit; color: var(--cobalt-deep); text-decoration: underline; cursor: pointer; }
-  dl.outputs { display: grid; grid-template-columns: max-content 1fr; gap: 8px 18px; margin: 18px 0 0; padding: 16px 0 0; border-top: 1px solid #E3EAF1; font-size: 15px; }
+  dl.outputs { display: grid; grid-template-columns: max-content 1fr; gap: 8px 18px; margin: 18px 0 0; padding: 16px 0 0; border-top: 1px solid #24344D; font-size: 15px; }
   dl.outputs dt { color: var(--ink-soft); }
   dl.outputs dd { margin: 0; font-weight: 600; font-variant-numeric: tabular-nums; word-break: break-word; }
   .jobid { font-size: 13px; color: var(--ink-soft); margin: 0 0 10px; }
-  footer { padding: 0 0 36px; font-size: 13px; color: #7C90A6; }
-  .preview-flag { display: none; margin-left: 10px; font-size: 12px; font-weight: 600; color: var(--cobalt-deep); background: #E7EEFF; border-radius: 6px; padding: 2px 8px; vertical-align: middle; }
+  footer { padding: 0 0 36px; font-size: 13px; color: #7C8EA6; }
+  .preview-flag { display: none; margin-left: 10px; font-size: 12px; font-weight: 600; color: var(--cobalt-deep); background: #0E2A4A; border-radius: 6px; padding: 2px 8px; vertical-align: middle; }
   .is-preview .preview-flag { display: inline-block; }
 
   /* the journey: three legs on one route, a tab per workflow */
-  .leg-label { font: 700 13px var(--display); letter-spacing: .08em; text-transform: uppercase; fill: #7C90A6; }
+  .leg-label { font: 700 13px var(--display); letter-spacing: .08em; text-transform: uppercase; fill: #7C8EA6; }
   .leg-label.current { fill: var(--cobalt-deep); }
   .tabs { display: flex; gap: 6px; margin: 0 0 16px; padding: 4px; background: var(--paper); border-radius: 12px; }
   .tabs button { flex: 1; font: 700 16px var(--display); color: var(--ink-soft); background: none; border: none; border-radius: 9px; padding: 9px 8px; cursor: pointer; }
-  .tabs button[aria-selected=true] { background: var(--card); color: var(--cobalt-deep); box-shadow: 0 1px 3px rgba(14, 42, 74, .12); }
+  .tabs button[aria-selected=true] { background: var(--card); color: var(--cobalt-deep); box-shadow: 0 1px 3px rgba(0, 0, 0, .4); }
   .tabs button:focus-visible { outline: 3px solid var(--cobalt); outline-offset: 2px; }
-  select { width: 100%; font: 17px var(--body); color: var(--ink); background: var(--paper); border: 1.5px solid #C3D1DF; border-radius: 10px; padding: 11px 13px; }
-  select:focus { outline: none; border-color: var(--cobalt); box-shadow: 0 0 0 3px rgba(31, 79, 209, .18); background: #fff; }
+  select { width: 100%; font: 17px var(--body); color: var(--ink); background: var(--paper); border: 1.5px solid #3A4C66; border-radius: 10px; padding: 11px 13px; }
+  select:focus { outline: none; border-color: var(--cobalt); box-shadow: 0 0 0 3px rgba(79, 163, 247, .25); background: var(--card); }
   .next { margin: 14px 0 0; display: none; }
 </style>
 </head>
@@ -157,10 +158,16 @@
   <header class="bar">
     <a class="brand" href="./" aria-label="Elliot's Itential Lab, network automation portal">
       <svg viewBox="0 0 40 40" aria-hidden="true">
-        <rect width="40" height="40" rx="10" fill="#1F4FD1"/>
-        <path d="M8 26c4 3 8 3 12 0s8-3 12 0" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round"/>
-        <path d="M20 9v14M15 13.5h10M14 21c1.5 2.5 3.7 3.8 6 3.8s4.5-1.3 6-3.8" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round"/>
-        <circle cx="20" cy="8.5" r="2.2" fill="#fff"/>
+        <rect width="40" height="40" rx="10" fill="#070D18"/>
+        <clipPath id="mark-clip"><circle cx="20" cy="20" r="14"/></clipPath>
+        <g clip-path="url(#mark-clip)">
+          <rect x="4" y="4" width="32" height="16" fill="#4FA3F7"/><rect x="4" y="20" width="32" height="16" fill="#8A5A1E"/>
+          <path d="M6 20h28" stroke="#fff" stroke-width="1.2"/>
+          <path d="M14 15h4M22 15h4M16 25h2M22 25h2" stroke="#fff" stroke-width="1" opacity=".8"/>
+        </g>
+        <path d="M9 21h8l3 3 3-3h8" fill="none" stroke="#F2B134" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+        <circle cx="20" cy="21" r="1.6" fill="#F2B134"/>
+        <circle cx="20" cy="20" r="14" fill="none" stroke="#fff" stroke-width="1.4" opacity=".9"/>
       </svg>
       <div><b>Elliot's Itential Lab</b><span>Network automation portal</span></div>
     </a>
@@ -179,7 +186,7 @@
       <li style="--c:#1F4FD1">Itential Platform</li>
       <li style="--c:#7B42BC">Terraform 1.5.7</li>
       <li style="--c:#E48A1B">AWS us-east-1</li>
-      <li style="--c:#111111">HashiCorp Vault</li>
+      <li style="--c:#E6EDF7">HashiCorp Vault</li>
       <li style="--c:#1BA0D7">Cisco C8000v</li>
     </ul>
   </section>
@@ -189,31 +196,31 @@
     <svg viewBox="0 0 1120 300" role="img" aria-labelledby="chart-title">
       <title id="chart-title">Route from the lab to AWS: deploy, hand off, verify</title>
       <defs>
-        <pattern id="waves" width="46" height="18" patternUnits="userSpaceOnUse">
-          <path d="M0 9c6-5 11-5 17 0s11 5 17 0 8-4 12-2" fill="none" stroke="#D6E2EE" stroke-width="1.4"/>
+        <pattern id="waves" width="40" height="40" patternUnits="userSpaceOnUse">
+          <path d="M40 0H0V40" fill="none" stroke="#1A2740" stroke-width="1"/>
         </pattern>
       </defs>
-      <rect width="1120" height="300" fill="#F7FAFC"/>
+      <rect width="1120" height="300" fill="#070D18"/>
       <rect width="1120" height="300" fill="url(#waves)"/>
-      <!-- the lab's shore -->
-      <path d="M0 0h150c-18 40 22 70 4 110s30 70 10 110-8 55-8 80H0z" fill="#D9C9A3"/>
-      <path d="M150 0c-18 40 22 70 4 110s30 70 10 110-8 55-8 80" fill="none" stroke="#C4B185" stroke-width="2"/>
-      <!-- the AWS shore -->
-      <path d="M1120 0H968c20 42-18 74 2 112s-26 66-6 108 10 50 10 80h146z" fill="#D9C9A3"/>
-      <path d="M968 0c20 42-18 74 2 112s-26 66-6 108 10 50 10 80" fill="none" stroke="#C4B185" stroke-width="2"/>
-      <!-- harbours -->
+      <!-- the horizon line and the two ends of the route (the lab, AWS) -->
+      <path d="M0 150H1120" stroke="#24344D" stroke-width="1" stroke-dasharray="4 10"/>
+      <rect x="0" y="0" width="150" height="300" fill="#0B1322" opacity=".85"/>
+      <path d="M150 0v300" stroke="#3A4C66" stroke-width="1.5"/>
+      <rect x="968" y="0" width="152" height="300" fill="#0B1322" opacity=".85"/>
+      <path d="M968 0v300" stroke="#3A4C66" stroke-width="1.5"/>
+      <!-- the two ends -->
       <g font-family="Avenir Next Condensed, Avenir Next, Segoe UI, sans-serif">
-        <text x="26" y="118" font-size="22" font-weight="700" fill="#0E2A4A">The lab</text>
-        <text x="26" y="142" font-size="14" fill="#4A6380" id="lab-router">dc1-wan01</text>
-        <text x="26" y="162" font-size="14" fill="#4A6380" class="mask-ip" data-ip="onprem">your public IP</text>
-        <text x="1094" y="118" font-size="22" font-weight="700" fill="#0E2A4A" text-anchor="end">AWS</text>
-        <text x="1094" y="142" font-size="14" fill="#4A6380" text-anchor="end">strongSwan, us-east-1</text>
-        <text x="1094" y="162" font-size="14" fill="#4A6380" text-anchor="end" class="mask-ip" data-ip="eip">Elastic IP after apply</text>
+        <text x="26" y="118" font-size="22" font-weight="700" fill="#E6EDF7">The lab</text>
+        <text x="26" y="142" font-size="14" fill="#9FB0C8" id="lab-router">dc1-wan01</text>
+        <text x="26" y="162" font-size="14" fill="#9FB0C8" class="mask-ip" data-ip="onprem">your public IP</text>
+        <text x="1094" y="118" font-size="22" font-weight="700" fill="#E6EDF7" text-anchor="end">AWS</text>
+        <text x="1094" y="142" font-size="14" fill="#9FB0C8" text-anchor="end">strongSwan, us-east-1</text>
+        <text x="1094" y="162" font-size="14" fill="#9FB0C8" text-anchor="end" class="mask-ip" data-ip="eip">Elastic IP after apply</text>
         <text id="aws-note" x="1094" y="186" text-anchor="end"></text>
       </g>
       <!-- the channel -->
-      <path id="route-base" d="M200 150 C 330 96, 440 204, 565 150 S 800 96, 930 150" fill="none" stroke="#B9C8D8" stroke-width="4" stroke-dasharray="2 12" stroke-linecap="round"/>
-      <path id="route-progress" d="M200 150 C 330 96, 440 204, 565 150 S 800 96, 930 150" fill="none" stroke="#1F4FD1" stroke-width="5" stroke-linecap="round" style="stroke-dasharray: 0 99999"/>
+      <path id="route-base" d="M200 150 C 330 96, 440 204, 565 150 S 800 96, 930 150" fill="none" stroke="#3A4C66" stroke-width="4" stroke-dasharray="2 12" stroke-linecap="round"/>
+      <path id="route-progress" d="M200 150 C 330 96, 440 204, 565 150 S 800 96, 930 150" fill="none" stroke="#4FA3F7" stroke-width="5" stroke-linecap="round" style="stroke-dasharray: 0 99999"/>
       <g id="legs"></g>
       <g id="waypoints"></g>
     </svg>
@@ -310,7 +317,7 @@
     </section>
 
     <section class="pane" aria-labelledby="log-title" aria-live="polite">
-      <h2 id="log-title">Voyage log</h2>
+      <h2 id="log-title">Job log</h2>
       <p class="jobid" id="jobid" hidden></p>
       <p class="empty" id="empty">No run yet. The log fills in as the job moves along the route.</p>
       <ul class="log" id="log"></ul>
@@ -505,7 +512,7 @@
   }
   ipInput.addEventListener("blur", () => ipInput.value && checkIp());
 
-  // the router pickers: only the open targets, and one choice for the whole page - the lab's shore and every picker
+  // the router pickers: only the open targets, and one choice for the whole page - the lab's end of the route and every picker
   // name the same router: the one just picked, or the one the job on show (or the newest run on the route) ran on
   const PICKERS = ["handoff-target", "verify-target", "teardown-target"];
   function showRouter(target) {
@@ -541,7 +548,7 @@
     const m = LEGS[(to + LEGS.length) % LEGS.length]; setMode(m); $(`tab-${m}`).focus();
   });
 
-  // --- the voyage log ------------------------------------------------------------------------------------------
+  // --- the job log ------------------------------------------------------------------------------------------
   const seen = new Set();
   function log(key, html, cls) {
     if (key && seen.has(key)) return;

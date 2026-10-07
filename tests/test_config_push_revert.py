@@ -63,7 +63,7 @@ def test_the_workflow_is_registered_under_its_name() -> None:
 
 
 def test_nothing_reaches_the_router_before_the_approval() -> None:
-    approval = _task("ViewData")
+    approval = _task("InteractiveHTML")
     assert PUSH in _reach("workflow_start")
     assert PUSH not in _reach("workflow_start", skip={approval})
     # Reject (the view's failure) never reaches the push
@@ -96,8 +96,8 @@ def test_the_card_shows_every_line_and_every_check_and_the_service_gets_the_same
     answer = WF["tasks"][timeout_key["value"].split(".")[1]]["variables"]["incoming"]
     assert answer["query"] == "result.stdout_json.timeout" and answer["obj"] == f"$var.{CHECK}.result"
     # the card the approver sees is the plan's card, and the push takes the plan's params
-    view = WF["tasks"][_task("ViewData")]["variables"]["incoming"]
-    card = WF["tasks"][view["body"].split(".")[2] if view["body"].count(".") > 2 else view["body"].split(".")[1]]
+    body = WF["tasks"][_task("InteractiveHTML") + "3"]["variables"]["incoming"]["value"]  # the page's body (ADR 0077)
+    card = WF["tasks"][body.split(".")[1]]
     assert card["variables"]["incoming"]["query"] == "stdout_json.card"
     plan_task = card["variables"]["incoming"]["obj"].split(".")[1]
     with_timeout = WF["tasks"][WF["tasks"][PUSH]["variables"]["incoming"]["params"].split(".")[1]]
@@ -124,7 +124,8 @@ def test_the_shipped_code_runs_as_the_runner_runs_it() -> None:
     # each runCode task carries its own code
     code = {t["summary"]: t["variables"]["incoming"]["code"] for t in WF["tasks"].values() if t["name"] == "runCode"}
     assert code == {"the plan: the service's params and the approval card (Python on the runner)": build.REVERT_PLAN_CODE,
-                    "what the push did (saved, rolled back, nothing sent or unknown)": build.REVERT_SUMMARY_CODE}
+                    "what the push did (saved, rolled back, nothing sent or unknown)": build.REVERT_SUMMARY_CODE,
+                    "the card's page (Python on the runner)": build.APPROVAL_CARD_CODE}  # the branded approval (ADR 0077)
 
 
 @pytest.mark.parametrize("answer, state, changed", [
@@ -190,5 +191,5 @@ def test_a_refusal_or_an_unavailable_service_before_the_card_sends_nothing() -> 
     for src, state in (("13", "error"), ("14", "failure")):
         branch = next(d for d, e in WF["transitions"][src].items() if e["state"] == state)
         reached = _reach(branch)
-        assert "workflow_end" in reached and PUSH not in reached and _task("ViewData") not in reached
+        assert "workflow_end" in reached and PUSH not in reached and _task("InteractiveHTML") not in reached
         assert not any(WF["tasks"].get(k, {}).get("summary", "").startswith("changed = true") for k in reached)

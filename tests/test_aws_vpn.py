@@ -267,9 +267,11 @@ def test_deploy_plans_then_asks_then_applies_exactly_that_plan() -> None:
     assert wf["name"] == "Deploy AWS VPN"
     order = [tid for tid in ("1d", "2b", "3e", "4d")]
     names = [(tasks[t]["name"], tasks[t]["variables"]["incoming"].get("serviceName")) for t in order]
-    assert names == [("runService", "terraform-run"), ("ViewData", None), ("runService", "terraform-run"),
+    assert names == [("runService", "terraform-run"), ("InteractiveHTML", None), ("runService", "terraform-run"),
                      ("runService", "aws-vpn-psk")]
-    assert tasks["2b"]["variables"]["incoming"]["body"] == "$var.job.plan"  # the approver sees the plan summary
+    # the approver sees the plan summary, on the branded page (ADR 0077): the body task feeds the renderer
+    assert tasks["2b3"]["variables"]["incoming"]["value"] == "$var.job.plan"
+    assert tasks["2b"]["variables"]["incoming"]["body"] == "$var.2b5.return_data"
     plan_fixed = tasks["1a"]["variables"]["incoming"]["text"]  # the inputs are added as data (WEB-01)
     assert '"job": "new"' in plan_fixed and '"enable_vpn": "true"' in plan_fixed and '"action": "plan"' in plan_fixed
     # the apply's plan ID and SHA-256 are the plan result's own, never typed in
@@ -990,7 +992,7 @@ def test_the_card_shows_the_end_time_and_what_approving_it_means() -> None:
     _, tasks = _deploy()
     end = tasks["2c"]["variables"]["incoming"]
     assert end["substr"] == "__END__" and end["newSubstr"] == "$var.job.expires_at" and end["str"] == "$var.2a.replacedString"
-    assert tasks["2b"]["variables"]["incoming"]["message"] == "$var.2c.replacedString"
+    assert tasks["2b2"]["variables"]["incoming"]["value"] == "$var.2c.replacedString"  # the page's lede (ADR 0077)
     message = tasks["2a"]["variables"]["incoming"]["str"]
     assert "__END__" in message and "Tear Down Expired AWS VPN" in message and "no further card" in message
 

@@ -382,6 +382,14 @@ INPUT_GATES = {
     },
     # reason is shown on the approval card only; no markup
     WF["config_push"]: {"device": NODE_NAME, "reason": {"type": "string", "maxLength": 500, "pattern": r"^[^<>]*$"}},
+    # ADR 0077: the approval card's message (the requester's note, the end time) is rendered on the runner, so Deploy
+    # gets the same input gate as every other workflow whose inputs reach text; the note allows no markup
+    WF["deploy_aws_vpn"]: {
+        "onprem_public_ip": IPV4_TEXT,
+        "enable_nat_gateway": {"type": "string", "enum": ["false", "true"]},
+        "change_note": {"type": "string", "maxLength": 280, "pattern": r"^[^<>\"\\\r\n]{0,280}$"},
+        "lifetime_hours": {"type": "string", "enum": VERSIONS["aws_vpn"]["lifetime_hours"]["choices"]},
+    },
     WF["branch_vlan"]: {
         "branch": {"type": "string", "pattern": r"^[a-z0-9][a-z0-9-]{0,31}$"},
         "vlan_name": VLAN_NAME,
@@ -3174,7 +3182,8 @@ def deploy_aws_vpn() -> dict:
             "__NOTE__", "$var.job.change_note", x=800,
         ),
         "2c": replace("the card's message: end time", "$var.2a.replacedString", "__END__", "$var.job.expires_at", x=850),
-        "2b": view("approval", "Approve the AWS change", "$var.2c.replacedString", "$var.job.plan", "Approve", "Reject", x=900),
+        **approval("2b", "Approve the AWS change", "$var.2c.replacedString", "$var.job.plan", "Approve", "Reject",
+                   x=900, var="approval"),
         # apply
         "3a": jq("the approved plan's SHA-256", "$var.1d.result", "result.stdout_json.plan_sha256", x=1000),
         "3b": replace("apply params: plan ID", APPLY_TPL, "__ID__", "$var.10.return_data", x=1100),
@@ -3225,7 +3234,7 @@ def deploy_aws_vpn() -> dict:
                    "lifetime (see lifetime): nothing changed in AWS", "error", x=220, y=-300),
     }
     tasks["5e"]["variables"]["outgoing"]["replacedString"] = "$var.job.outcome"
-    tr = chain("1a", "1b", "1c", "14", "15", "16", "17", "11", "12", "13", "1d", "1e", "1f", "10", "2a", "2c", "2b", "3a", "3b", "3c", "3d", "3e", "3f", "30", "31",
+    tr = chain("1a", "1b", "1c", "14", "15", "16", "17", "11", "12", "13", "1d", "1e", "1f", "10", "2a", "2c", *approval_ids("2b"), "2b", "3a", "3b", "3c", "3d", "3e", "3f", "30", "31",
                "4a", "4b", "4c", "4d", "4e", "4f", "5a", "5b", "5d", "5e")
     tr["12"] = {"13": {"state": ok, "type": "standard"}, "8f": {"state": err, "type": "standard"}}
     tr["13"] = {"1d": {"state": ok, "type": "standard"}, "8f": {"state": fail, "type": "standard"}}
@@ -3277,7 +3286,8 @@ def deploy_aws_vpn() -> dict:
         tasks,
         tr,
         {
-            "plan": {"type": "object"},
+            "plan": {"type": "object"}, "approval_card": {"type": "object"},
+            "approval_decision": {"type": ["object", "null"]},
             "expires_at": {"type": "string"},
             "lifetime": {"type": "object"},
             "outputs": {"type": "object"},
@@ -3414,6 +3424,16 @@ def empty(summary: str, job_var: str, x: int, y: int = 0) -> dict:
 
 def _edge(**states: str) -> dict:
     return {dst: {"state": st, "type": "standard"} for dst, st in states.items()}
+
+
+def approval_ids(tid: str) -> tuple:
+    """The five helper tasks in front of a branded approval `tid` (ADR 0077): header, message, body, render, HTML."""
+    return tuple(f"{tid}{i}" for i in "12345")
+
+
+def approval_edges(tid: str, ok: str = "success") -> dict:
+    ids = [*approval_ids(tid), tid]
+    return {a: _edge(**{b: ok}) for a, b in zip(ids, ids[1:])}
 
 
 def verify_section(plan_var: str, passed: str, failed: str, broken: str, judge_broken: str,
@@ -3771,8 +3791,8 @@ def hand_off_aws_vpn() -> dict:
         "6c": set_key("the card: the block (key masked)", "$var.6b.object", "block", "$var.job.block_masked", x=1600),
         "6d": set_key("the card: NetBox", "$var.6c.object", "netbox", "$var.job.netbox", x=1650),
         "6e": replace("the card's message", APPROVAL_MESSAGE, "__T__", "$var.job.target", x=1700),
-        "6f": view("approval", "Approve the router change", "$var.6e.replacedString", "$var.6d.object", "Approve",
-                   "Reject", x=1750),
+        **approval("6f", "Approve the router change", "$var.6e.replacedString", "$var.6d.object", "Approve", "Reject",
+                   x=1750, var="approval"),
         # push exactly the approved block
         "7a": jq("lab-edge-push's params", "$var.job.handoff_plan", "stdout_json.push", x=1800),
         "7b": set_key("push params: the approved SHA-256", "$var.7a.return_data", "sha256", "$var.job.sha256", x=1850),
@@ -3880,7 +3900,7 @@ def hand_off_aws_vpn() -> dict:
         "6b": _edge(**{"6c": ok}),
         "6c": _edge(**{"6d": ok}),
         "6d": _edge(**{"6e": ok}),
-        "6e": _edge(**{"6f": ok}),
+        "6e": _edge(**{"6f1": ok}), **approval_edges("6f"),
         "6f": _edge(**{"7a": ok, "a0": fail}),
         "a0": _edge(**{"a2": ok}),
         "a2": _edge(**{"workflow_end": ok}),
@@ -3928,7 +3948,8 @@ def hand_off_aws_vpn() -> dict:
             "sha256": {"type": "string"},
             "block_masked": {"type": "string"},
             "precheck_missing": {"type": "array"},
-            "handoff_plan": {"type": "object"},
+            "handoff_plan": {"type": "object"}, "approval_card": {"type": "object"},
+            "approval_decision": {"type": ["object", "null"]},
             "outputs_result": {"type": "object"},
             "ready_result": {"type": "object"},
             "precheck_result": {"type": "object"},
@@ -4059,8 +4080,8 @@ def config_push_revert() -> dict:
         # approve exactly what will be pushed and what must hold afterwards
         "2a": jq("the card", "$var.1f.result", "stdout_json.card", x=450),
         "2b": replace("the card's message", REVERT_APPROVAL_MESSAGE, "__D__", "$var.job.device", x=500),
-        "2c": view("approval", "Approve the change under a revert timer", "$var.2b.replacedString",
-                   "$var.2a.return_data", "Approve", "Reject", x=550),
+        **approval("2c", "Approve the change under a revert timer", "$var.2b.replacedString", "$var.2a.return_data",
+                   "Approve", "Reject", x=550, var="approval"),
         # push, check, confirm and save - or roll back
         "17": flag("rejected = false", "false", "rejected", x=570),
         "3a": jq("config-push-revert's params", "$var.1f.result", "stdout_json.params", x=600),
@@ -4112,7 +4133,7 @@ def config_push_revert() -> dict:
         "18": _edge(**{"workflow_end": ok}),
         "b8": _edge(**{"workflow_end": ok}),
         "2a": _edge(**{"2b": ok, "b0": err}),
-        "2b": _edge(**{"2c": ok}),
+        "2b": _edge(**{"2c1": ok}), **approval_edges("2c"),
         "2c": _edge(**{"17": ok, "a0": fail}),
         "17": _edge(**{"3a": ok}),
         "3a": _edge(**{"16": ok, "b3": err}),
@@ -4155,7 +4176,8 @@ def config_push_revert() -> dict:
             "changed": {"type": "boolean"},
             "rejected": {"type": "boolean"},
             "router_state": {"type": "string"},
-            "revert_plan": {"type": "object"},
+            "revert_plan": {"type": "object"}, "approval_card": {"type": "object"},
+            "approval_decision": {"type": ["object", "null"]},
             "check_result": {"type": "object"},
             "push_result": {"type": "object"},
             "push_summary": {"type": "object"},
@@ -4248,7 +4270,7 @@ DESTROY_LEFT_CODE = ("import json, sys\n\n\n" + inspect.getsource(destroy_left)
 
 
 # The cards and the rejection path: a timed teardown (R2b) has neither - its approval was the Deploy card's end time
-TEARDOWN_CARDS = ("2a", "2b", "2c", "5f", "a0", "a1", "a2", "a3", "a4", "a5", "a6", "a7", "a8")
+TEARDOWN_CARDS = ("2a", "2b", "2c", *approval_ids("2c"), "5f", *approval_ids("5f"), "a0", "a1", "a2", "a3", "a4", "a5", "a6", "a7", "a8")
 # where a teardown that failed ends: a timed one opens a Work Center task there first
 TEARDOWN_FAILED = ("bf", "c1", "c2", "c3", "c4", "c5", "c6", "c7")
 
@@ -4285,8 +4307,8 @@ def teardown_section(timed: bool, failed_end: str = "workflow_end") -> tuple[dic
         # card 1: the router
         "2a": jq("the first card", "$var.job.push_plan", "stdout_json.card", x=650),
         "2b": replace("the first card's message", TEARDOWN_ROUTER_MESSAGE, "__D__", "$var.job.target", x=700),
-        "2c": view("approval", "Approve removing the router's AWS block", "$var.2b.replacedString",
-                   "$var.2a.return_data", "Approve", "Reject", x=750),
+        **approval("2c", "Approve removing the router's AWS block", "$var.2b.replacedString", "$var.2a.return_data",
+                   "Approve", "Reject", x=750, var="approval"),
         "15": flag("rejected = false", "false", "rejected", x=775),
         # push, check, confirm and save - or roll back
         "3a": jq("config-push-revert's params", "$var.job.push_plan", "stdout_json.params", x=800),
@@ -4321,8 +4343,8 @@ def teardown_section(timed: bool, failed_end: str = "workflow_end") -> tuple[dic
         "5c": evaluate("destroy planned?", "5b", "result", "result.return_code", "==", 0, x=1600),
         "5d": jq("the destroy plan", "$var.5b.result", "result.stdout_json", x=1650, to_job="destroy_plan"),
         "5e": jq("the plan ID", "$var.5b.result", "result.stdout_json.job", x=1700),
-        "5f": view("approval", "Approve destroying the AWS side", TEARDOWN_AWS_MESSAGE, "$var.job.destroy_plan",
-                   "Approve", "Reject", x=1750),
+        **approval("5f", "Approve destroying the AWS side", TEARDOWN_AWS_MESSAGE, "$var.job.destroy_plan", "Approve",
+                   "Reject", x=1750, var="approval_2"),
         "6a": jq("the approved plan's SHA-256", "$var.5b.result", "result.stdout_json.plan_sha256", x=1800),
         "6b": replace("apply params: plan ID", APPLY_TPL, "__ID__", "$var.5e.return_data", x=1850),
         "6c": replace("apply params: SHA-256", "$var.6b.replacedString", "__SHA__", "$var.6a.return_data", x=1900),
@@ -4402,7 +4424,7 @@ def teardown_section(timed: bool, failed_end: str = "workflow_end") -> tuple[dic
         "13": _edge(**{"14": ok, "b4": err}),
         "14": _edge(**{"2a": ok, "b4": fail}),
         "2a": _edge(**{"2b": ok, "b0": err}),
-        "2b": _edge(**{"2c": ok}),
+        "2b": _edge(**{"2c1": ok}), **approval_edges("2c"),
         "2c": _edge(**{"15": ok, "a0": fail}),
         "15": _edge(**{"3a": ok}),
         "3a": _edge(**{"16": ok, "b0": err}),
@@ -4427,7 +4449,7 @@ def teardown_section(timed: bool, failed_end: str = "workflow_end") -> tuple[dic
         "5b": _edge(**{"5c": ok, "c5": err}),
         "5c": _edge(**{"5d": ok, "c5": fail}),
         "5d": _edge(**{"5e": ok, "c5": err}),
-        "5e": _edge(**{"5f": ok, "c5": err}),
+        "5e": _edge(**{"5f1": ok, "c5": err}), **approval_edges("5f"),
         "5f": _edge(**{"6a": ok, "a2": fail}),
         "6a": _edge(**{"6b": ok, "c6": err}),
         "6b": _edge(**{"6c": ok}), "6c": _edge(**{"6d": ok}), "6d": _edge(**{"6e": ok}),
@@ -4492,7 +4514,9 @@ def tear_down_aws_vpn() -> dict:
             "push_summary": {"type": "object"},
             "absent_result": {"type": "object"},
             "destroy_plan_result": {"type": "object"},
-            "destroy_plan": {"type": "object"},
+            "destroy_plan": {"type": "object"}, "approval_card": {"type": "object"},
+            "approval_decision": {"type": ["object", "null"]}, "approval_2_card": {"type": "object"},
+            "approval_2_decision": {"type": ["object", "null"]},
             "apply_result": {"type": "object"},
             "outputs_result": {"type": "object"},
             "discard_result": {"type": "object"},
@@ -5373,94 +5397,108 @@ def outage_rejected(d: dict) -> dict:
 # The outage card (ADR 0072 amendment, 2026-10-05): an HTML page in Work Center's InteractiveHTML task, in the lab's
 # portal design (itential/portal/deploy-aws-vpn). P6/P6b on production: the body renders in an iframe that keeps
 # <style>, @keyframes, the form and its textarea but strips <svg>, so each drawing is an <img> with an SVG data URI.
+# The flying theme (ADR 0077): a night cockpit lit by its instruments. The meaning colours exist here once: green
+# for Established, agrees and passed; amber for waiting and timers; red for down, refused and disagrees; sky for the
+# one action. The CSS, the drawings and the code the runner executes all read them (CARD_PALETTE_SRC).
+CARD_NIGHT, CARD_PANEL, CARD_EDGE, CARD_DEEP = "#0B1322", "#121D31", "#24344D", "#070D18"
+CARD_TEXT, CARD_MUTED, CARD_GREY = "#E6EDF7", "#9FB0C8", "#7C8EA6"
+CARD_GREEN, CARD_AMBER, CARD_RED, CARD_SKY = "#39C27A", "#F2B134", "#FF5A5F", "#4FA3F7"
+CARD_PALETTE = {"CARD_NIGHT": CARD_NIGHT, "CARD_PANEL": CARD_PANEL, "CARD_EDGE": CARD_EDGE, "CARD_DEEP": CARD_DEEP,
+                "CARD_TEXT": CARD_TEXT, "CARD_MUTED": CARD_MUTED, "CARD_GREY": CARD_GREY, "CARD_GREEN": CARD_GREEN,
+                "CARD_AMBER": CARD_AMBER, "CARD_RED": CARD_RED, "CARD_SKY": CARD_SKY}
+CARD_PALETTE_SRC = "".join(f"{k} = {v!r}\n" for k, v in CARD_PALETTE.items())
 OUTAGE_CARD_CSS = """
 body { margin: 0; padding: 4px; background: transparent; }
-.oc { --paper: #EEF3F7; --ink: #0E2A4A; --ink-soft: #4A6380; --cobalt: #1F4FD1; --kelp: #1E8C6A; --buoy: #D8433A;
-  --flare: #C7851A; --line: #D3DDE7;
+.oc { --night: #0B1322; --panel: #121D31; --edge: #24344D; --deep: #070D18; --ink: #E6EDF7; --ink-soft: #9FB0C8;
+  --sky: #4FA3F7; --green: #39C27A; --amber: #F2B134; --red: #FF5A5F; --line: #24344D; --on-sky: #06101E;
   --display: "Avenir Next Condensed", "Avenir Next", "Segoe UI Semibold", "Arial Narrow", sans-serif;
   --mono: "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
   font-family: "Avenir Next", "Segoe UI", system-ui, -apple-system, sans-serif; color: var(--ink);
-  background: var(--paper); font-size: 15px; line-height: 1.5; max-width: 980px; margin: 0 auto;
-  border-radius: 14px; overflow: hidden; box-shadow: 0 18px 40px -24px rgba(14, 42, 74, .45); }
+  background: var(--night); font-size: 15px; line-height: 1.5; max-width: 980px; margin: 0 auto;
+  border-radius: 14px; overflow: hidden; box-shadow: 0 18px 40px -24px rgba(0, 0, 0, .75);
+  font-variant-numeric: tabular-nums; }
 .oc * { box-sizing: border-box; }
 .oc p { margin: 0; }
-.oc .band { background: var(--ink); color: #fff; padding: 22px 28px 24px; display: grid;
-  grid-template-columns: 1fr auto; gap: 18px 24px; align-items: start; }
-.oc .brand { display: flex; align-items: center; gap: 10px; font-size: 13px; color: #B9C8DB; grid-column: 1 / -1; }
+.oc .band { background: var(--deep); color: var(--ink); padding: 22px 28px 24px; display: grid;
+  grid-template-columns: 1fr auto; gap: 18px 24px; align-items: start; border-bottom: 1px solid var(--sky); }
+.oc .brand { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--ink-soft); grid-column: 1 / -1;
+  letter-spacing: .02em; }
 .oc .brand img { width: 26px; height: 26px; flex: none; display: block; }
 .oc .brand b { color: #fff; font-family: var(--display); font-weight: 700; font-size: 15px; }
-.oc h1 { font-family: var(--display); font-weight: 700; font-size: 34px; line-height: 1.05; margin: 0 0 8px; }
-.oc .lede { color: #C9D6E5; max-width: 58ch; }
+.oc h1 { font-family: var(--display); font-weight: 700; font-size: 34px; line-height: 1.05; margin: 0 0 8px; color: #fff; }
+.oc .lede { color: var(--ink-soft); max-width: 58ch; }
 .oc .lede strong { color: #fff; font-weight: 600; }
 .oc .status { text-align: right; }
-.oc .pill { display: inline-flex; align-items: center; gap: 8px; background: rgba(199, 133, 26, .16); color: #F2C46D;
-  border: 1px solid rgba(242, 196, 109, .45); border-radius: 999px; padding: 5px 12px 5px 10px; font-size: 13px;
+.oc .pill { display: inline-flex; align-items: center; gap: 8px; background: rgba(242, 177, 52, .14); color: var(--amber);
+  border: 1px solid rgba(242, 177, 52, .55); border-radius: 999px; padding: 5px 12px 5px 10px; font-size: 13px;
   font-weight: 600; white-space: nowrap; }
-.oc .pill::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: #F2C46D;
+.oc .pill::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--amber);
   animation: oc-blink 1.8s ease-in-out infinite; }
 @keyframes oc-blink { 0%, 100% { opacity: 1; } 50% { opacity: .3; } }
-.oc .elapsed { margin-top: 12px; font-family: var(--display); font-size: 40px; font-weight: 700; line-height: 1; }
-.oc .elapsed small { display: block; font-family: inherit; font-size: 12px; font-weight: 500; color: #9FB2C8;
-  margin-top: 4px; }
+.oc .elapsed { margin-top: 12px; font-family: var(--mono); font-size: 36px; font-weight: 600; line-height: 1;
+  letter-spacing: .02em; color: var(--amber); }
+.oc .elapsed small { display: block; font-family: var(--display); font-size: 12px; font-weight: 500; color: var(--ink-soft);
+  margin-top: 4px; letter-spacing: 0; }
 .oc .body { padding: 22px 28px 28px; display: grid; gap: 18px; }
-.oc .panel { background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 18px 20px; }
-.oc h2 { font-family: var(--display); font-weight: 700; font-size: 19px; margin: 0 0 12px; }
+.oc .panel { background: var(--panel); border: 1px solid var(--edge); border-radius: 12px; padding: 18px 20px; }
+.oc h2 { font-family: var(--display); font-weight: 700; font-size: 19px; margin: 0 0 12px; color: #fff; }
 .oc .topo { padding: 16px 20px 6px; }
 .oc .topo img { display: block; width: 100%; height: auto; }
 .oc .ledger { display: grid; grid-template-columns: repeat(4, 1fr); border-top: 1px solid var(--line); margin-top: 6px; }
 .oc .reading { padding: 14px 16px 4px 14px; border-left: 3px solid var(--c); }
 .oc .src, .oc .why { font-size: 13px; color: var(--ink-soft); }
-.oc .val { font-family: var(--display); font-size: 21px; font-weight: 700; color: var(--c); line-height: 1.2;
+.oc .val { font-family: var(--mono); font-size: 19px; font-weight: 600; color: var(--c); line-height: 1.2;
   margin: 2px 0; }
 .oc .steps { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(5, 1fr); }
 .oc .steps li { position: relative; padding: 26px 8px 0 0; font-size: 13px; color: var(--ink-soft); }
 .oc .steps li::before { content: ""; position: absolute; top: 6px; left: 0; width: 13px; height: 13px;
-  border-radius: 50%; background: var(--kelp); box-shadow: 0 0 0 3px #fff, 0 0 0 4px var(--kelp); }
+  border-radius: 50%; background: var(--green); box-shadow: 0 0 0 3px var(--panel), 0 0 0 4px var(--green); }
 .oc .steps li::after { content: ""; position: absolute; top: 12px; left: 20px; right: 6px; height: 2px;
-  background: var(--kelp); }
+  background: var(--green); }
 .oc .steps li:last-child::after { display: none; }
 .oc .steps .who { display: block; font-family: var(--display); font-weight: 700; font-size: 15px; color: var(--ink); }
 .oc .steps b { display: block; color: var(--ink); font-size: 14px; font-weight: 600; }
-.oc .steps .now::before { background: var(--flare); box-shadow: 0 0 0 3px #fff, 0 0 0 5px var(--flare); }
+.oc .steps .now::before { background: var(--amber); box-shadow: 0 0 0 3px var(--panel), 0 0 0 5px var(--amber); }
 .oc .steps .now::after, .oc .steps .next::after {
-  background: repeating-linear-gradient(90deg, #B8C6D4 0 6px, transparent 6px 11px); }
-.oc .steps .now b { color: #8A5A0C; }
-.oc .steps .next::before { background: #fff; box-shadow: 0 0 0 2px #B8C6D4; }
+  background: repeating-linear-gradient(90deg, #3A4C66 0 6px, transparent 6px 11px); }
+.oc .steps .now b { color: var(--amber); }
+.oc .steps .next::before { background: var(--panel); box-shadow: 0 0 0 2px #3A4C66; }
 .oc .diag { display: grid; grid-template-columns: 1fr 1.05fr; gap: 20px; align-items: start; }
-.oc .cause { font-family: var(--display); font-size: 25px; font-weight: 700; line-height: 1.15; margin: 2px 0 10px; }
+.oc .cause { font-family: var(--display); font-size: 25px; font-weight: 700; line-height: 1.15; margin: 2px 0 10px; color: #fff; }
 .oc .by { display: inline-flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--ink-soft);
-  background: var(--paper); border-radius: 999px; padding: 4px 10px 4px 6px; margin-bottom: 12px; }
+  background: var(--night); border-radius: 999px; padding: 4px 10px 4px 6px; margin-bottom: 12px; }
 .oc .by i { width: 18px; height: 18px; border-radius: 50%; display: inline-block;
-  box-shadow: inset 0 0 0 4px #fff, inset 0 0 0 9px var(--cobalt); background: var(--cobalt); }
-.oc .term { background: var(--ink); color: #D6E2EF; border-radius: 10px; padding: 12px 16px 14px;
-  font-family: var(--mono); font-size: 12.3px; line-height: 1.6; }
-.oc .term .h { color: #7FA6D6; margin-top: 8px; }
+  box-shadow: inset 0 0 0 4px var(--panel), inset 0 0 0 9px var(--sky); background: var(--sky); }
+.oc .term { background: var(--deep); color: #C9D6E8; border: 1px solid var(--edge); border-radius: 10px;
+  padding: 12px 16px 14px; font-family: var(--mono); font-size: 12.3px; line-height: 1.6; }
+.oc .term .h { color: var(--sky); margin-top: 8px; }
 .oc .term .h:first-child { margin-top: 0; }
 .oc .term .row { display: flex; justify-content: space-between; gap: 12px; padding-left: 14px; }
-.oc .term .ok { color: #7FD1AE; }
-.oc .term .bad { color: #FF9A92; }
-.oc .term .unk { color: #9FB2C8; }
-.oc .action { background: var(--cobalt); color: #fff; border: 0; display: grid; grid-template-columns: 1fr auto;
+.oc .term .ok { color: var(--green); }
+.oc .term .bad { color: var(--red); }
+.oc .term .unk { color: var(--ink-soft); }
+.oc .action { background: var(--sky); color: var(--on-sky); border: 0; display: grid; grid-template-columns: 1fr auto;
   gap: 6px 24px; padding: 22px 24px; }
-.oc .kicker { font-size: 13px; color: #C9D7FF; }
-.oc .action h2 { font-size: 28px; margin: 2px 0 8px; color: #fff; }
-.oc .what { color: #E4EBFF; max-width: 56ch; }
-.oc .scope { align-self: start; text-align: right; font-size: 12.5px; color: #C9D7FF; }
-.oc .scope b { display: block; font-family: var(--display); font-size: 20px; color: #fff; }
+.oc .kicker { font-size: 13px; color: #0B2A4A; }
+.oc .action h2 { font-size: 28px; margin: 2px 0 8px; color: var(--on-sky); }
+.oc .what { color: #0B2A4A; max-width: 56ch; }
+.oc .scope { align-self: start; text-align: right; font-size: 12.5px; color: #0B2A4A; }
+.oc .scope b { display: block; font-family: var(--display); font-size: 20px; color: var(--on-sky); }
 .oc .promises { grid-column: 1 / -1; list-style: none; margin: 14px 0 0; padding: 14px 0 0;
-  border-top: 1px solid rgba(255, 255, 255, .22); display: grid; grid-template-columns: repeat(3, 1fr);
-  gap: 10px 18px; font-size: 13.5px; color: #F1F4FF; }
+  border-top: 1px solid rgba(6, 16, 30, .28); display: grid; grid-template-columns: repeat(3, 1fr);
+  gap: 10px 18px; font-size: 13.5px; color: var(--on-sky); }
 .oc .promise { padding-left: 24px; position: relative; }
 .oc .promise::before { content: ""; position: absolute; left: 2px; top: 4px; width: 7px; height: 11px;
-  border: solid #fff; border-width: 0 2.5px 2.5px 0; transform: rotate(40deg); }
+  border: solid var(--on-sky); border-width: 0 2.5px 2.5px 0; transform: rotate(40deg); }
 .oc .decide { display: grid; grid-template-columns: 1fr 1.3fr; gap: 20px; align-items: start; }
 .oc .decide p { color: var(--ink-soft); font-size: 14px; }
 .oc .decide p + p { margin-top: 8px; }
-.oc label { display: block; font-weight: 600; font-size: 14px; margin-bottom: 6px; }
+.oc label { display: block; font-weight: 600; font-size: 14px; margin-bottom: 6px; color: var(--ink); }
 .oc textarea { width: 100%; min-height: 88px; font: inherit; font-size: 14px; padding: 10px 12px; color: var(--ink);
-  border: 1px solid #B9C7D6; border-radius: 8px; background: #FBFCFE; resize: vertical; }
-.oc textarea:focus-visible { outline: 3px solid rgba(31, 79, 209, .35); border-color: var(--cobalt); }
+  border: 1px solid var(--edge); border-radius: 8px; background: #0E1828; resize: vertical; }
+.oc textarea:focus-visible { outline: 3px solid rgba(79, 163, 247, .4); border-color: var(--sky); }
 .oc .foot { padding: 0 28px 20px; font-size: 12px; color: var(--ink-soft); }
+.oc a { color: var(--sky); }
 @media (max-width: 760px) {
   .oc .band, .oc .action, .oc .decide, .oc .diag { grid-template-columns: 1fr; }
   .oc .status, .oc .scope { text-align: left; }
@@ -5468,7 +5506,6 @@ body { margin: 0; padding: 4px; background: transparent; }
   .oc .steps, .oc .promises { grid-template-columns: 1fr; }
   .oc .steps li::after { display: none; }
 }
-@media (prefers-reduced-motion: reduce) { .oc .pill::before { animation: none; } }
 """
 
 # each menu fix as the card says it: title, what happens, scope (value, note), the three promises. {d} is the device.
@@ -5530,13 +5567,17 @@ def card_clock(starts_at, now) -> tuple:
 
 
 def card_mark() -> str:
-    """The lab's mark for a card's band."""
+    """The lab's mark for a card's band (ADR 0077): an attitude indicator, sky over ground behind the aircraft
+    reference symbol. Drawn once here and once in the portal page; never a callsign."""
     return outage_card_image(
         '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40" width="40" height="40"><rect width="40" '
-        'height="40" rx="10" fill="#1F4FD1"/><path d="M8 26c4 3 8 3 12 0s8-3 12 0" fill="none" stroke="#fff" '
-        'stroke-width="2.6" stroke-linecap="round"/><path d="M20 9v14M15 13.5h10M14 21c1.5 2.5 3.7 3.8 6 3.8s4.5-1.3 '
-        '6-3.8" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round"/><circle cx="20" cy="8.5" '
-        'r="2.2" fill="#fff"/></svg>', "", 26, 26)
+        'height="40" rx="10" fill="#070D18"/><clipPath id="c"><circle cx="20" cy="20" r="14"/></clipPath>'
+        '<g clip-path="url(#c)"><rect x="4" y="4" width="32" height="16" fill="#4FA3F7"/><rect x="4" y="20" '
+        'width="32" height="16" fill="#8A5A1E"/><path d="M6 20h28" stroke="#fff" stroke-width="1.2"/>'
+        '<path d="M14 15h4M22 15h4M16 25h2M22 25h2" stroke="#fff" stroke-width="1" opacity=".8"/></g>'
+        '<path d="M9 21h8l3 3 3-3h8" fill="none" stroke="#F2B134" stroke-width="2.2" stroke-linecap="round" '
+        'stroke-linejoin="round"/><circle cx="20" cy="21" r="1.6" fill="#F2B134"/>'
+        '<circle cx="20" cy="20" r="14" fill="none" stroke="#fff" stroke-width="1.4" opacity=".9"/></svg>', "", 26, 26)
 
 
 def card_page(title: str, headline: str, lede: str, elapsed: str, since: str, sections: str, number: str,
@@ -5571,15 +5612,99 @@ def card_page(title: str, headline: str, lede: str, elapsed: str, since: str, se
 </div></body></html>"""
 
 
+APPROVAL_CARD_CSS = """
+.oc .facts { display: grid; grid-template-columns: max-content 1fr; gap: 6px 18px; margin: 0; font-size: 14px; }
+.oc .facts dt { color: var(--ink-soft); }
+.oc .facts dd { margin: 0; font-family: var(--mono); font-size: 13.5px; word-break: break-word; }
+.oc pre.block { margin: 0; font-family: var(--mono); font-size: 13px; line-height: 1.55; white-space: pre-wrap;
+  color: var(--ink); background: var(--deep); border: 1px solid var(--edge); border-radius: 10px; padding: 12px 14px;
+  max-height: 520px; overflow: auto; }
+"""
+APPROVAL_BLOCK_CHARS = 20_000
+APPROVAL_HELPER_OFFSET = (0, -300)  # canvas only: the helper row above the approval (measured: Revert 2 arrows through, Deploy and Tear Down within bounds)
+# the object keys the ViewData used to show raw, as a person reads them; anything else is capitalised as is
+APPROVAL_LABELS = {"block": "The block (key masked)", "lines": "The lines pushed", "netbox": "NetBox, as read back",
+                   "plan": "The plan", "resources": "Resources in the plan", "summary": "Plan summary",
+                   "kept only if": "Kept only if", "after this": "After this", "details": "Details"}
+
+
+def approval_card(d: dict) -> dict:
+    """A form-based approval as the branded page (ADR 0077): the approval's message as the lede, its object laid out
+    as facts (scalars) and blocks (lines, the block, a plan), the same two buttons and the note. `header`, `message`
+    and `body` come from the workflow; everything is escaped here, blocks are capped. Pure: runCode runs this
+    function's own source on the Gateway."""
+    e = html.escape
+    header = str(d.get("header") or "Approve this change")
+    message = str(d.get("message") or "")
+    body = d.get("body")
+    facts, blocks = [], []
+    if isinstance(body, dict):
+        for key, value in body.items():
+            if isinstance(value, list) and all(isinstance(i, str) for i in value):
+                blocks.append((str(key), "\n".join(value)))
+            elif isinstance(value, (dict, list)):
+                blocks.append((str(key), json.dumps(value, indent=2, sort_keys=True)))
+            elif isinstance(value, str) and ("\n" in value or len(value) > 90):
+                blocks.append((str(key), value))
+            else:
+                facts.append((str(key), "" if value is None else str(value)))
+    elif isinstance(body, str):
+        blocks.append(("details", body))
+    elif body is not None:
+        blocks.append(("details", json.dumps(body, indent=2, sort_keys=True)))
+    sections = ""
+    if facts:
+        rows = "".join(f"<dt>{e(k)}</dt><dd>{e(v)}</dd>" for k, v in facts)
+        sections += f'<section class="panel" aria-labelledby="t-facts"><h2 id="t-facts">What this approval covers</h2>\n<dl class="facts">{rows}</dl></section>\n'
+    for n, (key, text) in enumerate(blocks):
+        text = text if len(text) <= APPROVAL_BLOCK_CHARS else text[:APPROVAL_BLOCK_CHARS] + "\n... (cut)"
+        label = APPROVAL_LABELS.get(key, key.replace("_", " ").capitalize())
+        sections += (f'<section class="panel" aria-labelledby="t-b{n}"><h2 id="t-b{n}">{e(label)}</h2>\n'
+                     f'<pre class="block">{e(text)}</pre></section>\n')
+    try:
+        now = datetime.fromisoformat(str(d.get("now")).replace("Z", "+00:00")).astimezone(timezone.utc)
+    except ValueError:
+        now = datetime.now(timezone.utc)
+    decide = ("<p>Approve runs exactly what this card shows. Reject runs nothing and ends the job.</p>\n"
+              "<p>Your note stays on the job, for the record.</p>")
+    foot = f"Prepared by Itential at {now:%H:%M} UTC from the job's own data; the pre-shared key is never on a card."
+    page = card_page(header, header, e(message), "", "", sections, "", foot, extra_css=APPROVAL_CARD_CSS,
+                     decide=decide, note_label="Note for the record")
+    return {"html": page}
+
+
+def approval(tid: str, header: str, message_ref: str, body_ref: str, ok: str, cancel: str, x: int, var: str,
+             y: int = 0) -> dict:
+    """An approval as a branded page (ADR 0077): three setObjectKey tasks gather header, message and body, runCode
+    renders approval_card on the Gateway, a query takes the HTML, and the InteractiveHTML task `tid` shows it with the
+    same two buttons the ViewData had. `tid` keeps its id, so the workflow's edges out of the approval are unchanged;
+    the five helper tasks are tid1..tid5 (approval_edges wires them)."""
+    a, b, c, d, f = (f"{tid}{i}" for i in "12345")
+    hx, hy = APPROVAL_HELPER_OFFSET  # the five helpers sit on their own row, so the straight arrows miss the other tasks
+    return {
+        a: set_key("the card: header", {}, "header", header, x=x + hx, y=y + hy),
+        b: set_key("the card: message", f"$var.{a}.object", "message", message_ref, x=x + hx + 50, y=y + hy),
+        c: set_key("the card: body", f"$var.{b}.object", "body", body_ref, x=x + hx + 100, y=y + hy),
+        d: run_code("the card's page (Python on the runner)", APPROVAL_CARD_CODE, f"$var.{c}.object", f"{var}_card",
+                    x=x + hx + 150, y=y + hy),
+        f: jq("the card's HTML", f"$var.{d}.result", "stdout_json.html", x=x + hx + 200, y=y + hy),
+        tid: task("InteractiveHTML", "WorkCenter", f"approval: {header}",
+                  {"header": header, "body": f"$var.{f}.return_data", "variables": {}, "btn_success": ok,
+                   "btn_failure": cancel},
+                  {"export": f"$var.job.{var}_decision"}, kind="manual", display="Work Center",
+                  view="/work-center/task/InteractiveHTML", x=x, y=y),
+    }
+
+
 def outage_card_topology(device: str, vpc: str, tunnel: tuple, router: tuple, aws: tuple) -> str:
     """The path as an engineer draws it: the router in DC1, Tunnel10, strongSwan in AWS. Each of tunnel, router and
     aws is (colour, label); a tunnel that is not up is drawn broken, with a pulsing fracture."""
     e = html.escape
     (t_col, t_label), (r_col, r_label), (a_col, a_label) = tunnel, router, aws
-    broken = t_col != "#1E8C6A"
-    pipe = "#F3C2BE" if broken else "#CBE8DD"
-    fracture = ('<g class="f"><path d="M346 98l12 14-10 6 14 22" stroke="#D8433A" stroke-width="8" fill="none" '
-                'filter="url(#g)" opacity=".6"/><path d="M346 98l12 14-10 6 14 22" stroke="#D8433A" '
+    broken = t_col != CARD_GREEN
+    pipe = "#4A2430" if broken else "#15402F"
+    fracture = (f'<g class="f"><path d="M346 98l12 14-10 6 14 22" stroke="{CARD_RED}" stroke-width="8" fill="none" '
+                f'filter="url(#g)" opacity=".6"/><path d="M346 98l12 14-10 6 14 22" stroke="{CARD_RED}" '
                 'stroke-width="3.2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></g>') if broken else ""
     dash = ' stroke-dasharray="7 6"' if broken else ""
     pipes = "M206 118H336M384 118H514" if broken else "M206 118H514"
@@ -5590,31 +5715,31 @@ def outage_card_topology(device: str, vpc: str, tunnel: tuple, router: tuple, aw
         '@keyframes p{0%,100%{opacity:1}50%{opacity:.35}}'
         '@media (prefers-reduced-motion:reduce){.f{animation:none}}</style>'
         '<defs><pattern id="d" width="16" height="16" patternUnits="userSpaceOnUse"><path d="M16 0H0V16" '
-        'fill="none" stroke="#E1E9F0"/></pattern><filter id="g" x="-50%" y="-50%" width="200%" height="200%">'
+        'fill="none" stroke="#1A2740"/></pattern><filter id="g" x="-50%" y="-50%" width="200%" height="200%">'
         '<feGaussianBlur stdDeviation="5"/></filter></defs>'
-        '<rect x="10" y="22" width="240" height="190" rx="14" fill="url(#d)" stroke="#C9D5E2"/>'
-        '<text x="28" y="48" font-size="13" fill="#4A6380">DC1 on-prem</text>'
-        '<rect x="470" y="22" width="240" height="190" rx="14" fill="#FBF7EE" stroke="#D9C9A3" stroke-dasharray="6 5"/>'
-        f'<text x="488" y="48" font-size="13" fill="#8A6F3A">AWS, lab VPC {e(vpc)}</text>'
+        f'<rect x="10" y="22" width="240" height="190" rx="14" fill="url(#d)" stroke="{CARD_EDGE}"/>'
+        f'<text x="28" y="48" font-size="13" fill="{CARD_MUTED}">DC1 on-prem</text>'
+        '<rect x="470" y="22" width="240" height="190" rx="14" fill="#161A2A" stroke="#5E4B22" stroke-dasharray="6 5"/>'
+        f'<text x="488" y="48" font-size="13" fill="#C9A45C">AWS, lab VPC {e(vpc)}</text>'
         f'<path d="{pipes}" stroke="{pipe}" stroke-width="14" stroke-linecap="round"/>'
         f'<path d="{pipes}" stroke="{t_col}" stroke-width="3"{dash} stroke-linecap="round"/>'
         f'{fracture}'
-        '<text x="360" y="86" font-size="14" font-weight="700" fill="#0E2A4A" text-anchor="middle">Tunnel10, IKEv2</text>'
+        f'<text x="360" y="86" font-size="14" font-weight="700" fill="{CARD_TEXT}" text-anchor="middle">Tunnel10, IKEv2</text>'
         f'<text x="360" y="164" font-size="13" fill="{t_col}" text-anchor="middle">{e(t_label)}</text>'
-        f'<rect x="60" y="80" width="146" height="76" rx="12" fill="#fff" stroke="{r_col}" stroke-width="2.5"/>'
-        f'<circle cx="90" cy="118" r="15" fill="#fff" stroke="{r_col}" stroke-width="2"/>'
+        f'<rect x="60" y="80" width="146" height="76" rx="12" fill="{CARD_DEEP}" stroke="{r_col}" stroke-width="2.5"/>'
+        f'<circle cx="90" cy="118" r="15" fill="{CARD_DEEP}" stroke="{r_col}" stroke-width="2"/>'
         f'<path d="M82 114h16m-4-4 4 4-4 4M98 122H82m4-4-4 4 4 4" stroke="{r_col}" stroke-width="2" fill="none" '
         'stroke-linecap="round" stroke-linejoin="round"/>'
-        f'<text x="114" y="113" font-size="15" font-weight="700" fill="#0E2A4A">{e(device)}</text>'
+        f'<text x="114" y="113" font-size="15" font-weight="700" fill="{CARD_TEXT}">{e(device)}</text>'
         f'<text x="114" y="132" font-size="12.5" fill="{r_col}">{e(r_label)}</text>'
-        '<text x="60" y="182" font-size="12.5" fill="#4A6380">the edge router</text>'
-        f'<rect x="514" y="80" width="160" height="76" rx="12" fill="#fff" stroke="{a_col}" stroke-width="2.5"/>'
-        f'<rect x="531" y="103" width="30" height="30" rx="7" fill="#fff" stroke="{a_col}" stroke-width="2"/>'
+        f'<text x="60" y="182" font-size="12.5" fill="{CARD_MUTED}">the edge router</text>'
+        f'<rect x="514" y="80" width="160" height="76" rx="12" fill="{CARD_DEEP}" stroke="{a_col}" stroke-width="2.5"/>'
+        f'<rect x="531" y="103" width="30" height="30" rx="7" fill="{CARD_DEEP}" stroke="{a_col}" stroke-width="2"/>'
         f'<path d="M546 109l9 4v6c0 5-4 8-9 10-5-2-9-5-9-10v-6z" fill="none" stroke="{a_col}" stroke-width="1.8" '
         'stroke-linejoin="round"/>'
-        '<text x="571" y="113" font-size="15" font-weight="700" fill="#0E2A4A">strongSwan</text>'
+        f'<text x="571" y="113" font-size="15" font-weight="700" fill="{CARD_TEXT}">strongSwan</text>'
         f'<text x="571" y="132" font-size="12.5" fill="{a_col}">{e(a_label)}</text>'
-        '<text x="514" y="182" font-size="12.5" fill="#8A6F3A">on EC2, watched by the monitor</text>'
+        '<text x="514" y="182" font-size="12.5" fill="#C9A45C">on EC2, watched by the monitor</text>'
         '</svg>'
     )
 
@@ -5625,7 +5750,7 @@ def outage_card(d: dict) -> dict:
     the VPC (`plan`, outage_plan's) and the time it is drawn (`now`, ISO; the runner's clock when absent). Every value
     from outside is escaped. Pure: runCode runs this source on the Gateway."""
     e = html.escape
-    kelp, buoy, flare, grey = "#1E8C6A", "#D8433A", "#C7851A", "#7A8CA0"
+    kelp, buoy, flare, grey = CARD_GREEN, CARD_RED, CARD_AMBER, CARD_GREY
     device = str(d.get("device") or "the router")
     number = str(d.get("number") or "the incident")
     fix_out = (d.get("fix") or {}).get("stdout_json") or {}
@@ -5757,9 +5882,15 @@ OUTAGE_FIX_CODE = _source(outage_fix, call='outage_fix(json.loads(sys.stdin.read
 OUTAGE_RESULT_CODE = _source(decision_note, outage_result, call='outage_result(json.loads(sys.stdin.read() or "{}"))')
 OUTAGE_REJECTED_CODE = _source(decision_note, outage_rejected,
                                call='outage_rejected(json.loads(sys.stdin.read() or "{}"))')
+APPROVAL_CARD_CODE = _source(outage_card_image, card_mark, card_page, approval_card,
+                             call='approval_card(json.loads(sys.stdin.read() or "{}"))',
+                             extra=CARD_PALETTE_SRC + "import base64\nimport html\nfrom datetime import datetime, timezone\n\n"
+                             "OUTAGE_CARD_CSS = " + repr(OUTAGE_CARD_CSS) + "\nAPPROVAL_CARD_CSS = "
+                             + repr(APPROVAL_CARD_CSS) + "\nAPPROVAL_BLOCK_CHARS = " + repr(APPROVAL_BLOCK_CHARS)
+                             + "\nAPPROVAL_LABELS = " + repr(APPROVAL_LABELS) + "\n\n\n")
 OUTAGE_CARD_CODE = _source(outage_card_image, card_clock, card_mark, card_page, outage_card_topology, outage_card,
                            call='outage_card(json.loads(sys.stdin.read() or "{}"))',
-                           extra="import base64\nimport html\nimport re\nfrom datetime import datetime, timezone\n\n"
+                           extra=CARD_PALETTE_SRC + "import base64\nimport html\nimport re\nfrom datetime import datetime, timezone\n\n"
                                  "OUTAGE_CARD_CSS = " + repr(OUTAGE_CARD_CSS) + "\nOUTAGE_FIX_COPY = "
                                  + repr(OUTAGE_FIX_COPY) + "\nOUTAGE_CAUSES = " + repr(OUTAGE_CAUSES) + "\n\n\n")
 
@@ -6402,9 +6533,9 @@ FABRIC_FIX_COPY = {
 }
 # the exact lines a card shows (R10 PR C, owner 2026-10-06): fabric-bgp's own `plan`, inside the blue fix panel
 CARD_LINES_CSS = """
-.oc .lines { grid-column: 1 / -1; margin-top: 14px; background: rgba(14, 42, 74, .55); border-radius: 10px;
+.oc .lines { grid-column: 1 / -1; margin-top: 14px; background: rgba(6, 16, 30, .78); border-radius: 10px;
   padding: 10px 14px 12px; }
-.oc .lines .cap { font-size: 12.5px; color: #C9D7FF; margin-bottom: 6px; }
+.oc .lines .cap { font-size: 12.5px; color: #9FB0C8; margin-bottom: 6px; }
 .oc .lines pre { margin: 0; font-family: var(--mono); font-size: 14px; line-height: 1.55; color: #fff;
   white-space: pre-wrap; }
 """
@@ -6445,10 +6576,10 @@ def fabric_card_drawing(left: dict, right: dict, link: tuple) -> str:
     state (colour, label), iface (colour, label)}; link is (colour, label); a link that is not up is drawn broken."""
     e = html.escape
     l_col, l_label = link
-    broken = l_col != "#1E8C6A"
-    pipe = "#F3C2BE" if broken else "#CBE8DD"
-    fracture = ('<g class="f"><path d="M346 98l12 14-10 6 14 22" stroke="#D8433A" stroke-width="8" fill="none" '
-                'filter="url(#g)" opacity=".6"/><path d="M346 98l12 14-10 6 14 22" stroke="#D8433A" '
+    broken = l_col != CARD_GREEN
+    pipe = "#4A2430" if broken else "#15402F"
+    fracture = (f'<g class="f"><path d="M346 98l12 14-10 6 14 22" stroke="{CARD_RED}" stroke-width="8" fill="none" '
+                f'filter="url(#g)" opacity=".6"/><path d="M346 98l12 14-10 6 14 22" stroke="{CARD_RED}" '
                 'stroke-width="3.2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></g>') if broken else ""
     dash = ' stroke-dasharray="7 6"' if broken else ""
     pipes = "M222 118H336M384 118H498" if broken else "M222 118H498"
@@ -6456,12 +6587,12 @@ def fabric_card_drawing(left: dict, right: dict, link: tuple) -> str:
     def box(x: int, end: dict, align: str) -> str:
         s_col, s_label = end["state"]
         i_col, i_label = end["iface"]
-        return (f'<rect x="{x}" y="72" width="176" height="92" rx="12" fill="#fff" stroke="{s_col}" stroke-width="2.5"/>'
-                f'<circle cx="{x + 30}" cy="104" r="14" fill="#fff" stroke="{s_col}" stroke-width="2"/>'
+        return (f'<rect x="{x}" y="72" width="176" height="92" rx="12" fill="{CARD_DEEP}" stroke="{s_col}" stroke-width="2.5"/>'
+                f'<circle cx="{x + 30}" cy="104" r="14" fill="{CARD_DEEP}" stroke="{s_col}" stroke-width="2"/>'
                 f'<path d="M{x + 22} 100h16m-4-4 4 4-4 4M{x + 38} 108H{x + 22}m4-4-4 4 4 4" stroke="{s_col}" '
                 'stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>'
-                f'<text x="{x + 52}" y="100" font-size="15" font-weight="700" fill="#0E2A4A">{e(end["name"])}</text>'
-                f'<text x="{x + 52}" y="118" font-size="12" fill="#4A6380">AS {e(str(end["asn"]))}</text>'
+                f'<text x="{x + 52}" y="100" font-size="15" font-weight="700" fill="{CARD_TEXT}">{e(end["name"])}</text>'
+                f'<text x="{x + 52}" y="118" font-size="12" fill="{CARD_MUTED}">AS {e(str(end["asn"]))}</text>'
                 f'<text x="{x + 16}" y="148" font-size="12.5" fill="{s_col}">{e(s_label)}</text>'
                 f'<text x="{x + (0 if align == "start" else 176)}" y="186" font-size="12" fill="{i_col}" '
                 f'text-anchor="{align}">{e(i_label)}</text>')
@@ -6473,14 +6604,14 @@ def fabric_card_drawing(left: dict, right: dict, link: tuple) -> str:
         '@keyframes p{0%,100%{opacity:1}50%{opacity:.35}}'
         '@media (prefers-reduced-motion:reduce){.f{animation:none}}</style>'
         '<defs><pattern id="d" width="16" height="16" patternUnits="userSpaceOnUse"><path d="M16 0H0V16" '
-        'fill="none" stroke="#E1E9F0"/></pattern><filter id="g" x="-50%" y="-50%" width="200%" height="200%">'
+        'fill="none" stroke="#1A2740"/></pattern><filter id="g" x="-50%" y="-50%" width="200%" height="200%">'
         '<feGaussianBlur stdDeviation="5"/></filter></defs>'
-        '<rect x="10" y="22" width="700" height="190" rx="14" fill="url(#d)" stroke="#C9D5E2"/>'
-        '<text x="28" y="48" font-size="13" fill="#4A6380">the BGP session, as each end reads it</text>'
+        f'<rect x="10" y="22" width="700" height="190" rx="14" fill="url(#d)" stroke="{CARD_EDGE}"/>'
+        f'<text x="28" y="48" font-size="13" fill="{CARD_MUTED}">the BGP session, as each end reads it</text>'
         f'<path d="{pipes}" stroke="{pipe}" stroke-width="14" stroke-linecap="round"/>'
         f'<path d="{pipes}" stroke="{l_col}" stroke-width="3"{dash} stroke-linecap="round"/>'
         f'{fracture}'
-        f'<text x="360" y="92" font-size="14" font-weight="700" fill="#0E2A4A" text-anchor="middle">BGP</text>'
+        f'<text x="360" y="92" font-size="14" font-weight="700" fill="{CARD_TEXT}" text-anchor="middle">BGP</text>'
         f'<text x="360" y="150" font-size="13" fill="{l_col}" text-anchor="middle">{e(l_label)}</text>'
         f'{box(46, left, "start")}{box(498, right, "end")}'
         '</svg>'
@@ -6492,7 +6623,7 @@ def fabric_card(d: dict) -> dict:
     the fix (`fix`, fabric_fix's runCode result), the incident (`number`), the alert's start (`starts_at`) and the time
     it is drawn (`now`). Every value from outside is escaped. Pure: runCode runs this source on the Gateway."""
     e = html.escape
-    kelp, buoy, flare, grey = "#1E8C6A", "#D8433A", "#C7851A", "#7A8CA0"
+    kelp, buoy, flare, grey = CARD_GREEN, CARD_RED, CARD_AMBER, CARD_GREY
     plan = (d.get("plan") or {}).get("stdout_json") or {}
     near_end, far_end = plan.get("near") or {}, plan.get("far") or {}
     number = str(d.get("number") or "the incident")
@@ -6693,7 +6824,7 @@ def drill_card(d: dict) -> dict:
     lines (`lines`, fabric-bgp plan's envelope) and the time it is drawn (`now`). Every value from outside is escaped.
     Pure: runCode runs this source on the Gateway."""
     e = html.escape
-    kelp, buoy, grey = "#1E8C6A", "#D8433A", "#7A8CA0"
+    kelp, buoy, grey = CARD_GREEN, CARD_RED, CARD_GREY
     plan = (d.get("plan") or {}).get("stdout_json") or {}
     near, far = plan.get("near") or {}, plan.get("far") or {}
     fault = str(plan.get("fault") or "")
@@ -6799,7 +6930,7 @@ FABRIC_RESULT_CODE = _source(fabric_reading, decision_note, fabric_result,
                              call='fabric_result(json.loads(sys.stdin.read() or "{}"))')
 FABRIC_CARD_CODE = _source(outage_card_image, card_clock, card_mark, card_page, card_lines, fabric_reading,
                            fabric_card_drawing, fabric_card, call='fabric_card(json.loads(sys.stdin.read() or "{}"))',
-                           extra="import base64\nimport html\nfrom datetime import datetime, timezone\n\n"
+                           extra=CARD_PALETTE_SRC + "import base64\nimport html\nfrom datetime import datetime, timezone\n\n"
                                  "OUTAGE_CARD_CSS = " + repr(OUTAGE_CARD_CSS) + "\nFABRIC_FIX_COPY = "
                                  + repr(FABRIC_FIX_COPY) + "\nFABRIC_CAUSES = " + repr(FABRIC_CAUSES)
                                  + "\nCARD_LINES_CSS = " + repr(CARD_LINES_CSS) + "\nCARD_LINES_MODE = "
@@ -6813,7 +6944,7 @@ DRILL_PLAN_CODE = _source(fabric_service_session, drill_plan,
                           + repr({"username": FABRIC["username"]}) + "\n\n\n")
 DRILL_CARD_CODE = _source(outage_card_image, card_clock, card_mark, card_page, card_lines, fabric_reading,
                           fabric_card_drawing, drill_card, call='drill_card(json.loads(sys.stdin.read() or "{}"))',
-                          extra="import base64\nimport html\nfrom datetime import datetime, timezone\n\n"
+                          extra=CARD_PALETTE_SRC + "import base64\nimport html\nfrom datetime import datetime, timezone\n\n"
                                 "OUTAGE_CARD_CSS = " + repr(OUTAGE_CARD_CSS) + "\nCARD_LINES_CSS = "
                                 + repr(CARD_LINES_CSS) + "\nCARD_LINES_MODE = " + repr(CARD_LINES_MODE)
                                 + "\nDRILL_COPY = " + repr(DRILL_COPY) + "\nDRILL_ESCALATES = " + repr(DRILL_ESCALATES)

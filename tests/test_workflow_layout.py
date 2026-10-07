@@ -77,5 +77,8 @@ def test_arrows_stay_clear_of_the_tasks(file: str) -> None:
 # Diagnose Fabric BGP Outage (R10, ADR 0073): R6's shape with one fix task instead of three: 6, same rule.
 # Break Fabric BGP (R10 PR C, ADR 0073 decision 8): four unrolled reads that each jump to the one confirm, and the
 # notes before the card that meet at one error task: 4, same rule.
-THROUGH_ALLOWED = {"hand-off-aws-vpn.json": 5, "tear-down-expired-aws-vpn.json": 4, "diagnose-aws-vpn-outage.json": 13,
+# ADR 0077 (2026-10-07): the branded approval adds five helper tasks (header, message, body, render, HTML) in front of
+# Hand Off's approval; the layout engine places them the same for every offset tried (eight measured), 9 at best. Same
+# rule: canvas only, the job runs the same, the approval keeps its id and both edges.
+THROUGH_ALLOWED = {"hand-off-aws-vpn.json": 9, "tear-down-expired-aws-vpn.json": 4, "diagnose-aws-vpn-outage.json": 13,
                    "diagnose-fabric-bgp-outage.json": 6, "break-fabric-bgp.json": 4}
