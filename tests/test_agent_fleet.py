@@ -611,6 +611,17 @@ def test_fabric_diagnostics_infers_instead_of_following_a_table(docs: dict) -> N
     assert "Itential checks each fix's condition again" in claude
 
 
+def test_fabric_diagnostics_reads_the_configuration_before_blaming_the_path(docs: dict) -> None:
+    """Drill 6 (2026-10-07): the agent took a 30-day-old lastSocketOutErrorMsg as live and never read the BGP
+    configuration, so it escalated for the wrong cause. The rules come from that drill; the twin gets them too."""
+    for variant in ("fabric-diagnostics", "fabric-diagnostics-local"):
+        flat = " ".join(docs[variant]["instructions"].split())
+        assert 'read "show running-config section bgp" on both ends before you conclude' in flat, variant
+        assert "lastSocketOutErrorMsg is history unless lastSocketOutErrorTimeInfo is recent" in flat, variant
+        assert "peerTcpInfo.state" in flat and "Prefer a proven-in-lab scenario" in flat, variant
+        assert "vendor-documented, say so in the work note" in flat, variant
+
+
 def test_fabric_diagnostics_never_runs_a_fix_itself(docs: dict) -> None:
     text = docs["fabric-diagnostics"]["instructions"]
     assert "Work Center" in text and "never run a fix yourself" in text.lower() and "exactly one work note" in text
