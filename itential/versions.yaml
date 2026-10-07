@@ -79,7 +79,9 @@ terraform_run:
     # 02b62f1 = main after cdp #38 (R10 PR C): fabric-bgp plan (the cards' exact lines) and the drill actions.
     # e7a8648 = main after cdp #39: confirm-drill reports sent: true once it sends the commit (drill 3).
     # acc9646 = main after cdp #40/#41: the drills inject-remote-as-mismatch and inject-md5-mismatch (ADR 0075).
-    reference: "acc96462d6fd4afc33609fb9d2b6f76b42cfa4e2"
+    # 71d5223 = main after cdp #43: inject-md5-mismatch resets the neighbor after the commit - EOS applies TCP MD5 to
+    # new connections only (drill 6, 2026-10-07); plan carries the reset as `then`.
+    reference: "71d522382fca7d09d63d3579500a9bc43fc31da3"
   executable_object:
     name: python-3-12
     description: "the runner image's Python 3.12 (ADR 0038)"

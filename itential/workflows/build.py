@@ -6423,8 +6423,13 @@ def card_lines(envelope) -> str:
     if not lines:
         return '<div class="lines"><p class="cap">The exact lines could not be read</p></div>'
     mode = CARD_LINES_MODE.get(out.get("mode"), str(out.get("mode") or ""))
-    return (f'<div class="lines"><p class="cap">Exactly what runs on {e(str(out.get("device") or ""))} - {e(mode)}</p>'
-            f'<pre>{e(chr(10).join(lines))}</pre></div>')
+    block = (f'<div class="lines"><p class="cap">Exactly what runs on {e(str(out.get("device") or ""))} - {e(mode)}</p>'
+             f'<pre>{e(chr(10).join(lines))}</pre>')
+    # a drill that must reset the session once its change is committed (the MD5 drill, cdp #43) says so: `then`
+    then = [str(line) for line in out.get("then") or []]
+    if then:
+        block += f'<p class="cap">then, once, as one command - EOS applies a BGP password to new connections only</p><pre>{e(chr(10).join(then))}</pre>'
+    return block + "</div>"
 
 
 # the agent's cause tags (itential/agents/fabric-diagnostics.yaml, its fixed list) as the card's headline
