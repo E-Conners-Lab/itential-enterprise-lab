@@ -130,7 +130,7 @@
       "displayName": "GatewayManager",
       "groups": [],
       "nodeLocation": {
-        "x": -230,
+        "x": -380,
         "y": 900
       },
       "variables": {
@@ -343,7 +343,7 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 220,
+        "x": 370,
         "y": 1800
       },
       "variables": {
@@ -375,7 +375,7 @@
       "displayName": "GatewayManager",
       "groups": [],
       "nodeLocation": {
-        "x": 330,
+        "x": 480,
         "y": 1950
       },
       "variables": {
@@ -456,7 +456,7 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 610,
+        "x": 310,
         "y": 2250
       },
       "variables": {
@@ -858,7 +858,7 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 180,
+        "x": 330,
         "y": 3600
       },
       "variables": {
@@ -886,7 +886,7 @@
       "displayName": "GatewayManager",
       "groups": [],
       "nodeLocation": {
-        "x": 250,
+        "x": 100,
         "y": 3750
       },
       "variables": {
@@ -916,7 +916,7 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": -230,
+        "x": -80,
         "y": 3900
       },
       "variables": {
@@ -1018,7 +1018,7 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 1090,
+        "x": 290,
         "y": 6600
       },
       "variables": {
@@ -1050,7 +1050,7 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 870,
+        "x": 350,
         "y": 6750
       },
       "variables": {
@@ -1082,7 +1082,7 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 1040,
+        "x": 20,
         "y": 6900
       },
       "variables": {
@@ -1114,7 +1114,7 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 1140,
+        "x": 190,
         "y": 7050
       },
       "variables": {
@@ -1146,7 +1146,7 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 1890,
+        "x": 140,
         "y": 7200
       },
       "variables": {
@@ -1164,35 +1164,195 @@
       "actor": "Pronghorn",
       "scheduled": false
     },
-    "6f": {
-      "name": "ViewData",
-      "canvasName": "ViewData",
-      "summary": "approval",
-      "description": "approval",
+    "6f1": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "the card: header",
+      "description": "the card: header",
       "location": "Application",
       "locationType": null,
       "app": "WorkFlowEngine",
-      "type": "manual",
+      "type": "automatic",
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 1920,
+        "x": 300,
         "y": 7350
       },
       "variables": {
         "incoming": {
+          "obj": {},
+          "path": [
+            "header"
+          ],
+          "value": "Approve the router change"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "6f2": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "the card: message",
+      "description": "the card: message",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 1130,
+        "y": 7500
+      },
+      "variables": {
+        "incoming": {
+          "obj": "$var.6f1.object",
+          "path": [
+            "message"
+          ],
+          "value": "$var.6e.replacedString"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "6f3": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "the card: body",
+      "description": "the card: body",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 1110,
+        "y": 7650
+      },
+      "variables": {
+        "incoming": {
+          "obj": "$var.6f2.object",
+          "path": [
+            "body"
+          ],
+          "value": "$var.6d.object"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "6f4": {
+      "name": "runCode",
+      "canvasName": "runCode",
+      "summary": "the card's page (Python on the runner)",
+      "description": "the card's page (Python on the runner)",
+      "location": "Application",
+      "locationType": null,
+      "app": "GatewayManager",
+      "type": "automatic",
+      "displayName": "GatewayManager",
+      "groups": [],
+      "nodeLocation": {
+        "x": 1270,
+        "y": 7800
+      },
+      "variables": {
+        "incoming": {
+          "clusterId": "lab",
+          "language": "python",
+          "code": "import json, sys\n\n\nCARD_NIGHT = '#0B1322'\nCARD_PANEL = '#121D31'\nCARD_EDGE = '#24344D'\nCARD_DEEP = '#070D18'\nCARD_TEXT = '#E6EDF7'\nCARD_MUTED = '#9FB0C8'\nCARD_GREY = '#7C8EA6'\nCARD_GREEN = '#39C27A'\nCARD_AMBER = '#F2B134'\nCARD_RED = '#FF5A5F'\nCARD_SKY = '#4FA3F7'\nimport base64\nimport html\nfrom datetime import datetime, timezone\n\nOUTAGE_CARD_CSS = '\\nbody { margin: 0; padding: 4px; background: transparent; }\\n.oc { --night: #0B1322; --panel: #121D31; --edge: #24344D; --deep: #070D18; --ink: #E6EDF7; --ink-soft: #9FB0C8;\\n  --sky: #4FA3F7; --green: #39C27A; --amber: #F2B134; --red: #FF5A5F; --line: #24344D; --on-sky: #06101E;\\n  --display: \"Avenir Next Condensed\", \"Avenir Next\", \"Segoe UI Semibold\", \"Arial Narrow\", sans-serif;\\n  --mono: \"SF Mono\", \"Cascadia Mono\", Menlo, Consolas, monospace;\\n  font-family: \"Avenir Next\", \"Segoe UI\", system-ui, -apple-system, sans-serif; color: var(--ink);\\n  background: var(--night); font-size: 15px; line-height: 1.5; max-width: 980px; margin: 0 auto;\\n  border-radius: 14px; overflow: hidden; box-shadow: 0 18px 40px -24px rgba(0, 0, 0, .75);\\n  font-variant-numeric: tabular-nums; }\\n.oc * { box-sizing: border-box; }\\n.oc p { margin: 0; }\\n.oc .band { background: var(--deep); color: var(--ink); padding: 22px 28px 24px; display: grid;\\n  grid-template-columns: 1fr auto; gap: 18px 24px; align-items: start; border-bottom: 1px solid var(--sky); }\\n.oc .brand { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--ink-soft); grid-column: 1 / -1;\\n  letter-spacing: .02em; }\\n.oc .brand img { width: 26px; height: 26px; flex: none; display: block; }\\n.oc .brand b { color: #fff; font-family: var(--display); font-weight: 700; font-size: 15px; }\\n.oc h1 { font-family: var(--display); font-weight: 700; font-size: 34px; line-height: 1.05; margin: 0 0 8px; color: #fff; }\\n.oc .lede { color: var(--ink-soft); max-width: 58ch; }\\n.oc .lede strong { color: #fff; font-weight: 600; }\\n.oc .status { text-align: right; }\\n.oc .pill { display: inline-flex; align-items: center; gap: 8px; background: rgba(242, 177, 52, .14); color: var(--amber);\\n  border: 1px solid rgba(242, 177, 52, .55); border-radius: 999px; padding: 5px 12px 5px 10px; font-size: 13px;\\n  font-weight: 600; white-space: nowrap; }\\n.oc .pill::before { content: \"\"; width: 8px; height: 8px; border-radius: 50%; background: var(--amber);\\n  animation: oc-blink 1.8s ease-in-out infinite; }\\n@keyframes oc-blink { 0%, 100% { opacity: 1; } 50% { opacity: .3; } }\\n.oc .elapsed { margin-top: 12px; font-family: var(--mono); font-size: 36px; font-weight: 600; line-height: 1;\\n  letter-spacing: .02em; color: var(--amber); }\\n.oc .elapsed small { display: block; font-family: var(--display); font-size: 12px; font-weight: 500; color: var(--ink-soft);\\n  margin-top: 4px; letter-spacing: 0; }\\n.oc .body { padding: 22px 28px 28px; display: grid; gap: 18px; }\\n.oc .panel { background: var(--panel); border: 1px solid var(--edge); border-radius: 12px; padding: 18px 20px; }\\n.oc h2 { font-family: var(--display); font-weight: 700; font-size: 19px; margin: 0 0 12px; color: #fff; }\\n.oc .topo { padding: 16px 20px 6px; }\\n.oc .topo img { display: block; width: 100%; height: auto; }\\n.oc .ledger { display: grid; grid-template-columns: repeat(4, 1fr); border-top: 1px solid var(--line); margin-top: 6px; }\\n.oc .reading { padding: 14px 16px 4px 14px; border-left: 3px solid var(--c); }\\n.oc .src, .oc .why { font-size: 13px; color: var(--ink-soft); }\\n.oc .val { font-family: var(--mono); font-size: 19px; font-weight: 600; color: var(--c); line-height: 1.2;\\n  margin: 2px 0; }\\n.oc .steps { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(5, 1fr); }\\n.oc .steps li { position: relative; padding: 26px 8px 0 0; font-size: 13px; color: var(--ink-soft); }\\n.oc .steps li::before { content: \"\"; position: absolute; top: 6px; left: 0; width: 13px; height: 13px;\\n  border-radius: 50%; background: var(--green); box-shadow: 0 0 0 3px var(--panel), 0 0 0 4px var(--green); }\\n.oc .steps li::after { content: \"\"; position: absolute; top: 12px; left: 20px; right: 6px; height: 2px;\\n  background: var(--green); }\\n.oc .steps li:last-child::after { display: none; }\\n.oc .steps .who { display: block; font-family: var(--display); font-weight: 700; font-size: 15px; color: var(--ink); }\\n.oc .steps b { display: block; color: var(--ink); font-size: 14px; font-weight: 600; }\\n.oc .steps .now::before { background: var(--amber); box-shadow: 0 0 0 3px var(--panel), 0 0 0 5px var(--amber); }\\n.oc .steps .now::after, .oc .steps .next::after {\\n  background: repeating-linear-gradient(90deg, #3A4C66 0 6px, transparent 6px 11px); }\\n.oc .steps .now b { color: var(--amber); }\\n.oc .steps .next::before { background: var(--panel); box-shadow: 0 0 0 2px #3A4C66; }\\n.oc .diag { display: grid; grid-template-columns: 1fr 1.05fr; gap: 20px; align-items: start; }\\n.oc .cause { font-family: var(--display); font-size: 25px; font-weight: 700; line-height: 1.15; margin: 2px 0 10px; color: #fff; }\\n.oc .by { display: inline-flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--ink-soft);\\n  background: var(--night); border-radius: 999px; padding: 4px 10px 4px 6px; margin-bottom: 12px; }\\n.oc .by i { width: 18px; height: 18px; border-radius: 50%; display: inline-block;\\n  box-shadow: inset 0 0 0 4px var(--panel), inset 0 0 0 9px var(--sky); background: var(--sky); }\\n.oc .term { background: var(--deep); color: #C9D6E8; border: 1px solid var(--edge); border-radius: 10px;\\n  padding: 12px 16px 14px; font-family: var(--mono); font-size: 12.3px; line-height: 1.6; }\\n.oc .term .h { color: var(--sky); margin-top: 8px; }\\n.oc .term .h:first-child { margin-top: 0; }\\n.oc .term .row { display: flex; justify-content: space-between; gap: 12px; padding-left: 14px; }\\n.oc .term .ok { color: var(--green); }\\n.oc .term .bad { color: var(--red); }\\n.oc .term .unk { color: var(--ink-soft); }\\n.oc .action { background: var(--sky); color: var(--on-sky); border: 0; display: grid; grid-template-columns: 1fr auto;\\n  gap: 6px 24px; padding: 22px 24px; }\\n.oc .kicker { font-size: 13px; color: #0B2A4A; }\\n.oc .action h2 { font-size: 28px; margin: 2px 0 8px; color: var(--on-sky); }\\n.oc .what { color: #0B2A4A; max-width: 56ch; }\\n.oc .scope { align-self: start; text-align: right; font-size: 12.5px; color: #0B2A4A; }\\n.oc .scope b { display: block; font-family: var(--display); font-size: 20px; color: var(--on-sky); }\\n.oc .promises { grid-column: 1 / -1; list-style: none; margin: 14px 0 0; padding: 14px 0 0;\\n  border-top: 1px solid rgba(6, 16, 30, .28); display: grid; grid-template-columns: repeat(3, 1fr);\\n  gap: 10px 18px; font-size: 13.5px; color: var(--on-sky); }\\n.oc .promise { padding-left: 24px; position: relative; }\\n.oc .promise::before { content: \"\"; position: absolute; left: 2px; top: 4px; width: 7px; height: 11px;\\n  border: solid var(--on-sky); border-width: 0 2.5px 2.5px 0; transform: rotate(40deg); }\\n.oc .decide { display: grid; grid-template-columns: 1fr 1.3fr; gap: 20px; align-items: start; }\\n.oc .decide p { color: var(--ink-soft); font-size: 14px; }\\n.oc .decide p + p { margin-top: 8px; }\\n.oc label { display: block; font-weight: 600; font-size: 14px; margin-bottom: 6px; color: var(--ink); }\\n.oc textarea { width: 100%; min-height: 88px; font: inherit; font-size: 14px; padding: 10px 12px; color: var(--ink);\\n  border: 1px solid var(--edge); border-radius: 8px; background: #0E1828; resize: vertical; }\\n.oc textarea:focus-visible { outline: 3px solid rgba(79, 163, 247, .4); border-color: var(--sky); }\\n.oc .foot { padding: 0 28px 20px; font-size: 12px; color: var(--ink-soft); }\\n.oc a { color: var(--sky); }\\n@media (max-width: 760px) {\\n  .oc .band, .oc .action, .oc .decide, .oc .diag { grid-template-columns: 1fr; }\\n  .oc .status, .oc .scope { text-align: left; }\\n  .oc .ledger { grid-template-columns: 1fr 1fr; }\\n  .oc .steps, .oc .promises { grid-template-columns: 1fr; }\\n  .oc .steps li::after { display: none; }\\n}\\n'\nAPPROVAL_CARD_CSS = '\\n.oc .facts { display: grid; grid-template-columns: max-content 1fr; gap: 6px 18px; margin: 0; font-size: 14px; }\\n.oc .facts dt { color: var(--ink-soft); }\\n.oc .facts dd { margin: 0; font-family: var(--mono); font-size: 13.5px; word-break: break-word; }\\n.oc pre.block { margin: 0; font-family: var(--mono); font-size: 13px; line-height: 1.55; white-space: pre-wrap;\\n  color: var(--ink); background: var(--deep); border: 1px solid var(--edge); border-radius: 10px; padding: 12px 14px;\\n  max-height: 520px; overflow: auto; }\\n'\nAPPROVAL_BLOCK_CHARS = 20000\nAPPROVAL_LABELS = {'block': 'The block (key masked)', 'lines': 'The lines pushed', 'netbox': 'NetBox, as read back', 'plan': 'The plan', 'resources': 'Resources in the plan', 'summary': 'Plan summary', 'kept only if': 'Kept only if', 'after this': 'After this', 'details': 'Details'}\n\n\ndef outage_card_image(svg: str, alt: str, width: int, height: int) -> str:\n    \"\"\"An SVG drawing as an <img> (Work Center strips <svg>, P6): base64 in a data URI.\"\"\"\n    data = base64.b64encode(svg.encode()).decode()\n    return (f'<img alt=\"{html.escape(alt)}\" width=\"{width}\" height=\"{height}\" '\n            f'src=\"data:image/svg+xml;base64,{data}\">')\n\n\ndef card_mark() -> str:\n    \"\"\"The lab's mark for a card's band (ADR 0077): an attitude indicator, sky over ground behind the aircraft\n    reference symbol. Drawn once here and once in the portal page; never a callsign.\"\"\"\n    return outage_card_image(\n        '<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 40 40\" width=\"40\" height=\"40\"><rect width=\"40\" '\n        'height=\"40\" rx=\"10\" fill=\"#070D18\"/><clipPath id=\"c\"><circle cx=\"20\" cy=\"20\" r=\"14\"/></clipPath>'\n        '<g clip-path=\"url(#c)\"><rect x=\"4\" y=\"4\" width=\"32\" height=\"16\" fill=\"#4FA3F7\"/><rect x=\"4\" y=\"20\" '\n        'width=\"32\" height=\"16\" fill=\"#8A5A1E\"/><path d=\"M6 20h28\" stroke=\"#fff\" stroke-width=\"1.2\"/>'\n        '<path d=\"M14 15h4M22 15h4M16 25h2M22 25h2\" stroke=\"#fff\" stroke-width=\"1\" opacity=\".8\"/></g>'\n        '<path d=\"M9 21h8l3 3 3-3h8\" fill=\"none\" stroke=\"#F2B134\" stroke-width=\"2.2\" stroke-linecap=\"round\" '\n        'stroke-linejoin=\"round\"/><circle cx=\"20\" cy=\"21\" r=\"1.6\" fill=\"#F2B134\"/>'\n        '<circle cx=\"20\" cy=\"20\" r=\"14\" fill=\"none\" stroke=\"#fff\" stroke-width=\"1.4\" opacity=\".9\"/></svg>', \"\", 26, 26)\n\n\ndef card_page(title: str, headline: str, lede: str, elapsed: str, since: str, sections: str, number: str,\n              foot: str, extra_css: str = \"\", decide: str = \"\", note_label: str = \"Note for the incident\") -> str:\n    \"\"\"A Work Center card's page (R6, R10): the band (title, lede, waiting pill, the outage's age), the card's own\n    sections, the decision with the engineer's note, the foot. `lede`, `sections` and `foot` are HTML the caller built\n    from escaped values; every other argument is escaped here. `extra_css` adds rules after the shared ones; `decide`\n    (HTML) replaces the decision's two lines, which speak of an incident.\"\"\"\n    e = html.escape\n    decide = decide or (f\"<p>Approve runs only this fix. Reject runs nothing and leaves {e(number)} open for a person.</p>\\n\"\n                        \"<p>Either way, your note goes into the incident's work notes.</p>\")\n    return f\"\"\"<!doctype html>\n<html lang=\"en\"><head><meta charset=\"utf-8\"><title>{e(title)}</title>\n<style>{OUTAGE_CARD_CSS}{extra_css}</style></head>\n<body><div class=\"oc\">\n<header class=\"band\">\n<div class=\"brand\">{card_mark()}<span><b>Elliot's Itential Lab</b>&nbsp; outage response</span></div>\n<div><h1>{e(headline)}</h1>\n<p class=\"lede\">{lede}</p></div>\n<div class=\"status\"><span class=\"pill\">Waiting for your approval</span>\n<p class=\"elapsed\">{e(elapsed)}<small>{e(since)}</small></p></div>\n</header>\n<div class=\"body\">\n{sections}\n<section class=\"panel decide\" aria-labelledby=\"t-decide\"><div><h2 id=\"t-decide\">Your decision</h2>\n{decide}</div>\n<form name=\"decision\"><label for=\"oc-note\">{e(note_label)}</label>\n<textarea id=\"oc-note\" name=\"note\" placeholder=\"Why you approve or reject, or what you checked first\"></textarea>\n</form></section>\n</div>\n<p class=\"foot\">{foot}</p>\n</div></body></html>\"\"\"\n\n\ndef approval_card(d: dict) -> dict:\n    \"\"\"A form-based approval as the branded page (ADR 0077): the approval's message as the lede, its object laid out\n    as facts (scalars) and blocks (lines, the block, a plan), the same two buttons and the note. `header`, `message`\n    and `body` come from the workflow; everything is escaped here, blocks are capped. Pure: runCode runs this\n    function's own source on the Gateway.\"\"\"\n    e = html.escape\n    header = str(d.get(\"header\") or \"Approve this change\")\n    message = str(d.get(\"message\") or \"\")\n    body = d.get(\"body\")\n    facts, blocks = [], []\n    if isinstance(body, dict):\n        for key, value in body.items():\n            if isinstance(value, list) and all(isinstance(i, str) for i in value):\n                blocks.append((str(key), \"\\n\".join(value)))\n            elif isinstance(value, (dict, list)):\n                blocks.append((str(key), json.dumps(value, indent=2, sort_keys=True)))\n            elif isinstance(value, str) and (\"\\n\" in value or len(value) > 90):\n                blocks.append((str(key), value))\n            else:\n                facts.append((str(key), \"\" if value is None else str(value)))\n    elif isinstance(body, str):\n        blocks.append((\"details\", body))\n    elif body is not None:\n        blocks.append((\"details\", json.dumps(body, indent=2, sort_keys=True)))\n    sections = \"\"\n    if facts:\n        rows = \"\".join(f\"<dt>{e(k)}</dt><dd>{e(v)}</dd>\" for k, v in facts)\n        sections += f'<section class=\"panel\" aria-labelledby=\"t-facts\"><h2 id=\"t-facts\">What this approval covers</h2>\\n<dl class=\"facts\">{rows}</dl></section>\\n'\n    for n, (key, text) in enumerate(blocks):\n        text = text if len(text) <= APPROVAL_BLOCK_CHARS else text[:APPROVAL_BLOCK_CHARS] + \"\\n... (cut)\"\n        label = APPROVAL_LABELS.get(key, key.replace(\"_\", \" \").capitalize())\n        sections += (f'<section class=\"panel\" aria-labelledby=\"t-b{n}\"><h2 id=\"t-b{n}\">{e(label)}</h2>\\n'\n                     f'<pre class=\"block\">{e(text)}</pre></section>\\n')\n    try:\n        now = datetime.fromisoformat(str(d.get(\"now\")).replace(\"Z\", \"+00:00\")).astimezone(timezone.utc)\n    except ValueError:\n        now = datetime.now(timezone.utc)\n    decide = (\"<p>Approve runs exactly what this card shows. Reject runs nothing and ends the job.</p>\\n\"\n              \"<p>Your note stays on the job, for the record.</p>\")\n    foot = f\"Prepared by Itential at {now:%H:%M} UTC from the job's own data; the pre-shared key is never on a card.\"\n    page = card_page(header, header, e(message), \"\", \"\", sections, \"\", foot, extra_css=APPROVAL_CARD_CSS,\n                     decide=decide, note_label=\"Note for the record\")\n    return {\"html\": page}\n\n\nprint(json.dumps(approval_card(json.loads(sys.stdin.read() or \"{}\"))))\n",
+          "data": "$var.6f3.object",
+          "safety": {
+            "timeout": 30
+          },
+          "packages": []
+        },
+        "outgoing": {
+          "result": "$var.job.approval_card"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "6f5": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "the card's HTML",
+      "description": "the card's HTML",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 2020,
+        "y": 7950
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "stdout_json.html",
+          "obj": "$var.6f4.result"
+        },
+        "outgoing": {
+          "return_data": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "6f": {
+      "name": "InteractiveHTML",
+      "canvasName": "InteractiveHTML",
+      "summary": "approval: Approve the router change",
+      "description": "approval: Approve the router change",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkCenter",
+      "type": "manual",
+      "displayName": "Work Center",
+      "groups": [],
+      "nodeLocation": {
+        "x": 2010,
+        "y": 8100
+      },
+      "variables": {
+        "incoming": {
           "header": "Approve the router change",
-          "message": "$var.6e.replacedString",
-          "body": "$var.6d.object",
+          "body": "$var.6f5.return_data",
           "variables": {},
           "btn_success": "Approve",
           "btn_failure": "Reject"
         },
-        "outgoing": {},
+        "outgoing": {
+          "export": "$var.job.approval_decision"
+        },
         "error": "",
         "decorators": []
       },
-      "view": "/workflow_engine/task/ViewData"
+      "view": "/work-center/task/InteractiveHTML"
     },
     "7a": {
       "name": "query",
@@ -1206,8 +1366,8 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 1920,
-        "y": 7500
+        "x": 2010,
+        "y": 8250
       },
       "variables": {
         "incoming": {
@@ -1234,8 +1394,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 2090,
-        "y": 7650
+        "x": 2160,
+        "y": 8400
       },
       "variables": {
         "incoming": {
@@ -1266,8 +1426,8 @@
       "displayName": "GatewayManager",
       "groups": [],
       "nodeLocation": {
-        "x": 2110,
-        "y": 7800
+        "x": 2180,
+        "y": 8550
       },
       "variables": {
         "incoming": {
@@ -1297,7 +1457,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 2420,
-        "y": 7950
+        "y": 8700
       },
       "variables": {
         "incoming": {
@@ -1343,7 +1503,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 2420,
-        "y": 8100
+        "y": 8850
       },
       "variables": {
         "incoming": {
@@ -1373,7 +1533,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 2700,
-        "y": 8250
+        "y": 9000
       },
       "variables": {
         "incoming": {
@@ -1405,7 +1565,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 2700,
-        "y": 8400
+        "y": 9150
       },
       "variables": {
         "incoming": {
@@ -1440,7 +1600,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 2770,
-        "y": 8550
+        "y": 9300
       },
       "variables": {
         "incoming": {
@@ -1486,7 +1646,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 3010,
-        "y": 8700
+        "y": 9450
       },
       "variables": {
         "incoming": {
@@ -1516,7 +1676,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 2920,
-        "y": 8850
+        "y": 9600
       },
       "variables": {
         "incoming": {
@@ -1544,7 +1704,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 3120,
-        "y": 9000
+        "y": 9750
       },
       "variables": {
         "incoming": {
@@ -1590,7 +1750,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 3080,
-        "y": 9150
+        "y": 9900
       },
       "variables": {
         "incoming": {
@@ -1618,7 +1778,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 3380,
-        "y": 9150
+        "y": 9900
       },
       "variables": {
         "incoming": {
@@ -1644,7 +1804,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 4110,
-        "y": 11700
+        "y": 12450
       },
       "variables": {
         "incoming": {
@@ -1674,7 +1834,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 4220,
-        "y": 11850
+        "y": 12600
       },
       "variables": {
         "incoming": {
@@ -1702,7 +1862,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 4440,
-        "y": 12000
+        "y": 12750
       },
       "variables": {
         "incoming": {
@@ -1732,7 +1892,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 3810,
-        "y": 11700
+        "y": 12450
       },
       "variables": {
         "incoming": {
@@ -1762,7 +1922,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 3920,
-        "y": 11850
+        "y": 12600
       },
       "variables": {
         "incoming": {
@@ -1790,7 +1950,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 3990,
-        "y": 12000
+        "y": 12750
       },
       "variables": {
         "incoming": {
@@ -1819,8 +1979,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 2220,
-        "y": 7500
+        "x": 2310,
+        "y": 8250
       },
       "variables": {
         "incoming": {
@@ -1849,8 +2009,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 2610,
-        "y": 7650
+        "x": 2530,
+        "y": 8400
       },
       "variables": {
         "incoming": {
@@ -1879,7 +2039,7 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 230,
+        "x": 530,
         "y": 2400
       },
       "variables": {
@@ -1909,7 +2069,7 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": -1220,
+        "x": -620,
         "y": 3150
       },
       "variables": {
@@ -1939,7 +2099,7 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": -440,
+        "x": 10,
         "y": 4350
       },
       "variables": {
@@ -1969,8 +2129,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 1790,
-        "y": 7650
+        "x": 1860,
+        "y": 8400
       },
       "variables": {
         "incoming": {
@@ -1999,7 +2159,7 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 650,
+        "x": 800,
         "y": 1800
       },
       "variables": {
@@ -2059,7 +2219,7 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 730,
+        "x": 430,
         "y": 3000
       },
       "variables": {
@@ -2089,7 +2249,7 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": -1100,
+        "x": -950,
         "y": 3750
       },
       "variables": {
@@ -2119,7 +2279,7 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": -800,
+        "x": -350,
         "y": 3750
       },
       "variables": {
@@ -2149,7 +2309,7 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": -1190,
+        "x": -440,
         "y": 4050
       },
       "variables": {
@@ -2179,8 +2339,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 2070,
-        "y": 7950
+        "x": 2100,
+        "y": 8700
       },
       "variables": {
         "incoming": {
@@ -2210,7 +2370,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 2780,
-        "y": 9450
+        "y": 10200
       },
       "variables": {
         "incoming": {
@@ -2240,7 +2400,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 3690,
-        "y": 12000
+        "y": 12750
       },
       "variables": {
         "incoming": {
@@ -2270,7 +2430,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 2710,
-        "y": 9300
+        "y": 10050
       },
       "variables": {
         "incoming": {
@@ -2300,7 +2460,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 3390,
-        "y": 9300
+        "y": 10050
       },
       "variables": {
         "incoming": {
@@ -2328,7 +2488,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 3390,
-        "y": 9450
+        "y": 10200
       },
       "variables": {
         "incoming": {
@@ -2356,7 +2516,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 3240,
-        "y": 9600
+        "y": 10350
       },
       "variables": {
         "incoming": {
@@ -2384,7 +2544,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 3420,
-        "y": 9750
+        "y": 10500
       },
       "variables": {
         "incoming": {
@@ -2414,7 +2574,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 3680,
-        "y": 9900
+        "y": 10650
       },
       "variables": {
         "incoming": {
@@ -2460,7 +2620,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 3760,
-        "y": 10050
+        "y": 10800
       },
       "variables": {
         "incoming": {
@@ -2490,7 +2650,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 3500,
-        "y": 10200
+        "y": 10950
       },
       "variables": {
         "incoming": {
@@ -2536,7 +2696,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 3840,
-        "y": 10350
+        "y": 11100
       },
       "variables": {
         "incoming": {
@@ -2564,7 +2724,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 3680,
-        "y": 10500
+        "y": 11250
       },
       "variables": {
         "incoming": {
@@ -2594,7 +2754,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 3920,
-        "y": 10650
+        "y": 11400
       },
       "variables": {
         "incoming": {
@@ -2640,7 +2800,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 4180,
-        "y": 10800
+        "y": 11550
       },
       "variables": {
         "incoming": {
@@ -2670,7 +2830,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 3630,
-        "y": 10950
+        "y": 11700
       },
       "variables": {
         "incoming": {
@@ -2702,7 +2862,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 3650,
-        "y": 11100
+        "y": 11850
       },
       "variables": {
         "incoming": {
@@ -2734,7 +2894,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 3660,
-        "y": 11250
+        "y": 12000
       },
       "variables": {
         "incoming": {
@@ -2766,7 +2926,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 3360,
-        "y": 11400
+        "y": 12150
       },
       "variables": {
         "incoming": {
@@ -2801,7 +2961,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 3850,
-        "y": 11550
+        "y": 12300
       },
       "variables": {
         "incoming": {
@@ -2952,7 +3112,7 @@
       "displayName": "lab-netbox:1.0.0",
       "groups": [],
       "nodeLocation": {
-        "x": 510,
+        "x": 660,
         "y": 5100
       },
       "variables": {
@@ -3106,7 +3266,7 @@
       "displayName": "GatewayManager",
       "groups": [],
       "nodeLocation": {
-        "x": 650,
+        "x": 790,
         "y": 6150
       },
       "variables": {
@@ -3141,7 +3301,7 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 950,
+        "x": 940,
         "y": 6300
       },
       "variables": {
@@ -3169,7 +3329,7 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 470,
+        "x": 120,
         "y": 6450
       },
       "variables": {
@@ -3199,7 +3359,7 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 900,
+        "x": 600,
         "y": 4500
       },
       "variables": {
@@ -3229,7 +3389,7 @@
       "displayName": "lab-netbox:1.0.0",
       "groups": [],
       "nodeLocation": {
-        "x": -150,
+        "x": 300,
         "y": 4650
       },
       "variables": {
@@ -3259,7 +3419,7 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 600,
+        "x": 740,
         "y": 5850
       },
       "variables": {
@@ -3291,7 +3451,7 @@
       "displayName": "lab-netbox:1.0.0",
       "groups": [],
       "nodeLocation": {
-        "x": 20,
+        "x": 320,
         "y": 4800
       },
       "variables": {
@@ -3321,7 +3481,7 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 600,
+        "x": 740,
         "y": 6000
       },
       "variables": {
@@ -3473,7 +3633,7 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 650,
+        "x": 350,
         "y": 600
       },
       "variables": {
@@ -3506,7 +3666,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 2530,
-        "y": 12150
+        "y": 12900
       }
     }
   },
@@ -3924,6 +4084,36 @@
       }
     },
     "6e": {
+      "6f1": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "6f1": {
+      "6f2": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "6f2": {
+      "6f3": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "6f3": {
+      "6f4": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "6f4": {
+      "6f5": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "6f5": {
       "6f": {
         "state": "success",
         "type": "standard"
@@ -4402,6 +4592,15 @@
       },
       "handoff_plan": {
         "type": "object"
+      },
+      "approval_card": {
+        "type": "object"
+      },
+      "approval_decision": {
+        "type": [
+          "object",
+          "null"
+        ]
       },
       "outputs_result": {
         "type": "object"

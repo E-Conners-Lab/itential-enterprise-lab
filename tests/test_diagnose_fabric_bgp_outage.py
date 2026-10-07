@@ -550,7 +550,7 @@ def test_a_disagreement_is_red_on_the_card_but_still_approvable() -> None:
                 "findings": ["both ends Active", "<b>no shut</b>"], "ruled_out": ["neighbor shut: not shut"],
                 "kb": "bgp-neighbor-stuck-active-tcp179"}, **DRILL_READS)
     page = _card(fix={"stdout_json": fix}, **DRILL_READS)
-    assert "DISAGREES" in page and "#D8433A" in page and "AS differs from NetBox" in page
+    assert "DISAGREES" in page and build.CARD_RED in page and "AS differs from NetBox" in page
     assert "<li>both ends Active</li>" in page and "&lt;b&gt;no shut&lt;/b&gt;" in page  # the agent's words, escaped
     assert "Knowledge cited: <b>bgp-neighbor-stuck-active-tcp179</b>" in page
     assert 'href="/agent-sessions/#/sessions/f00d"' in page

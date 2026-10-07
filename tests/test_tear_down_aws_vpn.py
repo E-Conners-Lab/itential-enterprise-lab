@@ -144,7 +144,8 @@ def test_the_destroy_plan_has_no_variables_and_the_apply_is_the_approved_plan() 
     assert TASKS["5a"]["variables"]["incoming"]["text"] == build.DESTROY_PLAN_PARAMS
     assert TASKS["6a"]["variables"]["incoming"]["obj"] == "$var.5b.result"  # the SHA-256 of the plan the card showed
     assert TASKS["6b"]["variables"]["incoming"]["str"] == build.APPLY_TPL or build.APPLY_TPL in json.dumps(TASKS["6b"])
-    assert TASKS["5f"]["variables"]["incoming"]["body"] == "$var.job.destroy_plan"
+    assert TASKS["5f3"]["variables"]["incoming"]["value"] == "$var.job.destroy_plan"  # the page's body (ADR 0077)
+    assert TASKS["5f"]["variables"]["incoming"]["body"] == "$var.5f5.return_data"
     assert TASKS["a5"]["variables"]["incoming"]["serviceName"] == "terraform-run"  # a rejected plan is discarded
 
 

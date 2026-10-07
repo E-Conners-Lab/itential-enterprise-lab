@@ -87,7 +87,7 @@ def test_the_push_is_reached_only_through_an_approval() -> None:
     push = [tid for tid, t in tasks.items() if t["name"] == "runService"
             and t["variables"]["incoming"]["serviceName"] == "lab-edge-push"]
     assert push == ["7c"]
-    assert tasks["6f"]["name"] == "ViewData" and tr["6f"]["7a"]["state"] == "success"
+    assert tasks["6f"]["name"] == "InteractiveHTML" and tr["6f"]["7a"]["state"] == "success"
     # every way into the push chain comes from the approval's success edge
     into = {src for src, out in tr.items() if "7a" in out}
     assert into == {"6f"}
@@ -110,7 +110,8 @@ def test_the_card_shows_the_masked_block_and_never_a_key() -> None:
     tasks = _tasks(HAND)
     assert tasks["5e"]["variables"]["incoming"]["query"] == "result.stdout_json.block_masked"
     assert tasks["6c"]["variables"]["incoming"]["value"] == "$var.job.block_masked"
-    assert tasks["6f"]["variables"]["incoming"]["body"] == "$var.6d.object"
+    assert tasks["6f3"]["variables"]["incoming"]["value"] == "$var.6d.object"  # the body the page renders
+    assert tasks["6f"]["variables"]["incoming"]["body"] == "$var.6f5.return_data"
     assert "never shown" in build.APPROVAL_MESSAGE
     # only lab-edge-push is bound to the key aliases (versions.yaml), and no task names a Vault path or a key
     text = json.dumps(HAND)
