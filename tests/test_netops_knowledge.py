@@ -314,3 +314,18 @@ def test_a_refused_pull_token_is_never_stored_or_shown(monkeypatch: Any) -> None
     with contextlib.redirect_stdout(out):
         assert ks.main(["pull-token"]) == 1
     assert not stored and CANARY not in out.getvalue() and "nothing stored" in out.getvalue()
+
+
+def test_the_gateway_vault_play_survives_a_local_secret_without_a_provider() -> None:
+    # 2026-10-06: the Gateway play failed "object of type 'dict' has no attribute 'provider'" once the FlowMCP token
+    # became a local secret (no provider) - every provider filter must skip provider-less secrets first
+    import re as _re
+    text = (PLAYS / "tasks" / "gateway-vault.yml").read_text()
+    filters = _re.findall(r"(\| selectattr\('provider', '[a-z]+'(?:, vault\.gateway_provider)?\)(?:\s*\| selectattr\('provider', 'equalto', vault\.gateway_provider\))?)", text)
+    assert filters and all("'defined'" in f and "'equalto'" in f for f in filters), filters
+    env = jinja2.Environment(undefined=jinja2.StrictUndefined)
+    secrets = [{"name": "lab-automation-password", "provider": "lab-vault", "secret": "devices/automation", "key": "p"},
+               {"name": NK["mcp_secret"], "value": "<encrypted>"}]
+    expr = ("{{ secrets | selectattr('provider', 'defined') | selectattr('provider', 'equalto', 'lab-vault')"
+            " | map(attribute='name') | list }}")
+    assert env.from_string(expr).render(secrets=secrets) == "['lab-automation-password']"

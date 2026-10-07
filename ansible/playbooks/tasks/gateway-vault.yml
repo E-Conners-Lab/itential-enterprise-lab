@@ -108,13 +108,14 @@
            | selectattr('name', 'equalto', vault.gateway_provider) | list }}
       secrets: >-
         {{ gw_export.json.secrets | default([], true)
-           | selectattr('provider', 'equalto', vault.gateway_provider)
+           | selectattr('provider', 'defined') | selectattr('provider', 'equalto', vault.gateway_provider)
            | rejectattr('name', 'in', gw_leftover_names) | sort(attribute='name') | list }}
 
 - name: Inert leftover aliases on this Gateway (named, not compared)
   ansible.builtin.debug:
     msg: >-
-      {{ gw_export.json.secrets | default([], true) | selectattr('provider', 'equalto', vault.gateway_provider)
+      {{ gw_export.json.secrets | default([], true)
+         | selectattr('provider', 'defined') | selectattr('provider', 'equalto', vault.gateway_provider)
          | selectattr('name', 'in', gw_leftover_names) | map(attribute='name') | sort | list }}
 
 - name: The Gateway's AppRole credentials
@@ -192,7 +193,7 @@
          | selectattr('name', 'equalto', vault.gateway_provider) | list) == gw_vault_wanted['secret-providers']
       - >-
         (gw_export_after.json.secrets | default([], true)
-         | selectattr('provider', 'equalto', vault.gateway_provider)
+         | selectattr('provider', 'defined') | selectattr('provider', 'equalto', vault.gateway_provider)
          | rejectattr('name', 'in', gw_leftover_names) | sort(attribute='name') | list)
         == gw_vault_wanted.secrets
     fail_msg: "the Gateway stored something other than the provider and aliases sent: compare the export by hand"
