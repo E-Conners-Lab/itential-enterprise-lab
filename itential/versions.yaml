@@ -317,13 +317,13 @@ aws_vpn:
 # before it applies the digest (SEC-28).
 netops_knowledge:
   repository: https://github.com/E-Conners-Lab/netops-knowledge
-  # netops-knowledge #2 (dd9af61), built 2026-10-06 by CI run 37505893564
-  source_commit: dd9af61a1e12eb362116dc6af9fac7892d8e2a6b
+  # netops-knowledge #3 (311233f: AS-mismatch + password-mismatch scenarios, PID 1.2), built 2026-10-07 by CI run 37661225118
+  source_commit: 311233fce638138be270d8bd7230809562be8422
   image:
     repository: ghcr.io/e-conners-lab/netops-knowledge
-    digest: "sha256:c92465ec1f9b2c1f4bf80e40117b228afdfd3ccc95a7a8b7e03c1b66a0c2b942"
-  index_sha256: 3ea6c3a8f664edd0d186a720d78e13fec8a459bf2db50b85ff8da8340aef5c2f
-  corpus_sha256: 926bc1ceb344387d166c0467112dac5898b36db725b8af5be8567c1bec8a3b56 # 40 scenarios
+    digest: "sha256:d69eac0f2e94007495fc6362c5c378c6e631b2ba5739b533b519077017395f8e"
+  index_sha256: 4ae91d7d09dbc5246fa0efd23a0aec9b231de7e247eb91ca0a729d75f25be0a6
+  corpus_sha256: c8086aa22c70e53518e23e8e4072a766e112250558a841e51e49520b1ebeb621 # 42 scenarios
   signer:
     identity: https://github.com/E-Conners-Lab/netops-knowledge/.github/workflows/ci.yml@refs/heads/main
     issuer: https://token.actions.githubusercontent.com
