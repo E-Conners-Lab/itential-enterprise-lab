@@ -244,3 +244,16 @@ def test_an_md5_drill_tells_the_approver_what_the_agent_should_find_and_ends_at_
                             "check": _svc({"session": {"state": "Active"}}), "after_timer": _up(65101, 65102)})
     assert r["ok"] and "authentication mismatch" in r["message"] and "as designed" in r["message"]
     assert build.INPUT_GATES[NAME]["fault"]["enum"] == sorted(build.DRILL_FAULTS)
+
+
+def test_the_md5_card_shows_the_reset_that_follows_the_commit() -> None:
+    # cdp #43 (drill 6, 2026-10-07): EOS applies TCP MD5 to new connections only, so fabric-bgp resets the neighbor
+    # once the password is committed; its plan carries that reset as `then` and the card shows it as a second block
+    lines = _svc({"plan": {"for": "inject-md5-mismatch", "device": "dc1-spine01", "mode": "configure session",
+                           "lines": ["router bgp 65101", "neighbor 10.101.254.11 password 0 r10-drill-md5-mismatch",
+                                     "commit timer 00:20:00"], "then": ["clear ip bgp 10.101.254.11"]}})
+    page = build.drill_card({**CARD_IN, "plan": {"stdout_json": _plan(fault="md5-mismatch")}, "lines": lines})["html"]
+    assert "<pre>clear ip bgp 10.101.254.11</pre>" in page and "then, once, as one command" in page
+    assert page.index("commit timer 00:20:00") < page.index("clear ip bgp 10.101.254.11")
+    assert "then, once" not in build.drill_card(CARD_IN)["html"]  # the other drills have no reset
+    assert "<script" not in build.card_lines(_svc({"plan": {"lines": ["x"], "then": ["<script>"]}}))  # escaped

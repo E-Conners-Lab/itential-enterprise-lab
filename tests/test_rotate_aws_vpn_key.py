@@ -299,5 +299,5 @@ def test_the_retired_tier_also_loses_the_rotation() -> None:
 def test_the_gateway_runs_a_commit_with_reload_restore_and_prune() -> None:
     # 3e3f032 (cdp #33) brought them; 691531d (cdp #34), 9ab2290 (cdp #35, R6), e7a6f67 (cdp #36) and 60839ab
     # (cdp #37, R10's fabric-bgp), 02b62f1 (cdp #38, R10 PR C: plan and the drill), e7a8648 (cdp #39) and acc9646
-    # (cdp #40/#41: the AS and MD5 drills) are its descendants
-    assert VERSIONS["terraform_run"]["repository"]["reference"] == "acc96462d6fd4afc33609fb9d2b6f76b42cfa4e2"
+    # (cdp #40/#41: the AS and MD5 drills) and 71d5223 (cdp #43: the MD5 drill resets the neighbor) are its descendants
+    assert VERSIONS["terraform_run"]["repository"]["reference"] == "71d522382fca7d09d63d3579500a9bc43fc31da3"
