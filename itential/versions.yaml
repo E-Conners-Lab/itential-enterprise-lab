@@ -317,13 +317,13 @@ aws_vpn:
 # before it applies the digest (SEC-28).
 netops_knowledge:
   repository: https://github.com/E-Conners-Lab/netops-knowledge
-  # netops-knowledge #3 (311233f: AS-mismatch + password-mismatch scenarios, PID 1.2), built 2026-10-07 by CI run 37661225118
-  source_commit: 311233fce638138be270d8bd7230809562be8422
+  # netops-knowledge #4 (46153ce: 15 vendor-documented BGP/EVPN/interface/IPsec scenarios, PID 1.3), built 2026-10-07, CI run 37676745775
+  source_commit: 46153ce47ad96bca641b54fb34afe4cd7347a285
   image:
     repository: ghcr.io/e-conners-lab/netops-knowledge
-    digest: "sha256:d69eac0f2e94007495fc6362c5c378c6e631b2ba5739b533b519077017395f8e"
-  index_sha256: 4ae91d7d09dbc5246fa0efd23a0aec9b231de7e247eb91ca0a729d75f25be0a6
-  corpus_sha256: c8086aa22c70e53518e23e8e4072a766e112250558a841e51e49520b1ebeb621 # 42 scenarios
+    digest: "sha256:d29abd152508b3f89a61fd5e88707fb3beb63545448cd3cacbd05fd6f27e3876"
+  index_sha256: f7d07eadff4afb9b528e60975b45ee6a88624f195c312982a7c0a5e7025bd7c6
+  corpus_sha256: 28a6c6bd92f4edc9294e912d0e2a56387345cd9227f0582bc88b5ddcdbb036e3 # 57 scenarios
   signer:
     identity: https://github.com/E-Conners-Lab/netops-knowledge/.github/workflows/ci.yml@refs/heads/main
     issuer: https://token.actions.githubusercontent.com
