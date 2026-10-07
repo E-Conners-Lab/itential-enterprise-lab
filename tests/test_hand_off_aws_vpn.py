@@ -110,7 +110,7 @@ def test_the_card_shows_the_masked_block_and_never_a_key() -> None:
     tasks = _tasks(HAND)
     assert tasks["5e"]["variables"]["incoming"]["query"] == "result.stdout_json.block_masked"
     assert tasks["6c"]["variables"]["incoming"]["value"] == "$var.job.block_masked"
-    assert tasks["6f3"]["variables"]["incoming"]["value"] == "$var.6d.object"  # the body the page renders
+    assert tasks["6f3"]["variables"]["incoming"]["value"] == "$var.69.object"  # NetBox, then Batfish (R7), on the card
     assert tasks["6f"]["variables"]["incoming"]["body"] == "$var.6f5.return_data"
     assert "never shown" in build.APPROVAL_MESSAGE
     # only lab-edge-push is bound to the key aliases (versions.yaml), and no task names a Vault path or a key
@@ -166,7 +166,8 @@ def test_the_twins_plan_carries_every_param_and_no_aws_steps() -> None:
     entry = TARGETS["clab-rtr1"]
     plan = _run(build.LAB_EDGE_PLAN_CODE, {"targets": _with_twin(build.VERIFY_TARGETS, ("target", "outputs", "username", "monitor", "netbox")), "target": "clab-rtr1"})
     assert plan["ready"] is True and plan["monitor_ready"] is None and plan["monitor_params"] is None
-    for key, action in (("precheck", "precheck"), ("render", "render"), ("push", "push"), ("lab_edge", "verify")):
+    for key, action in (("precheck", "precheck"), ("render", "render"), ("push", "push"), ("lab_edge", "verify"),
+                        ("batfish", "check")):
         assert plan[key]["action"] == action
         assert json.loads(plan[key]["target_json"]) == entry["target"]
     assert json.loads(plan["push"]["outputs_json"]) == entry["outputs"] == json.loads(plan["render"]["outputs_json"])
@@ -195,6 +196,9 @@ def test_hand_offs_params_are_exactly_what_each_service_takes_at_the_pin() -> No
     assert set(plan["precheck"]) == _action_args("lab-edge.py", "precheck")
     assert set(plan["render"]) == _action_args("lab-edge.py", "render")
     assert set(plan["push"]) | {"sha256"} == _action_args("lab-edge-push.py", "push")
+    # R7: batfish-check takes the plan's params plus the approved SHA-256; --drill only from Drill Batfish Gate
+    assert set(plan["batfish"]) | {"sha256", "drill"} == _action_args("batfish-check.py", "check")
+    assert "sha256" not in plan["batfish"] and "drill" not in plan["batfish"]
     aws = {"dc1-wan01": {k: TARGETS["dc1-wan01"][k] for k in ("target", "username", "monitor")}}
     plan = _run(build.LAB_EDGE_PLAN_CODE, {"targets": aws, "target": "dc1-wan01",
                                            "deployed": {"strongswan_eip": "203.0.113.7",
@@ -210,7 +214,9 @@ def test_every_open_target_monitored_by_aws_has_its_netbox_read_back() -> None:
     assert open_aws and all(TARGETS[n].get("netbox") for n in open_aws) and set(build.NETBOX_WANT) == set(open_aws)
     assert not TARGETS["clab-rtr1"].get("netbox")
     tasks = _tasks(HAND)
-    assert HAND["transitions"]["5e"]["d0"]["state"] == "success" and "6a" not in HAND["transitions"]["5e"]
+    # R7 (ADR 0076): the render goes to the Batfish proof first; its pass and not-proven ways lead to the read-back
+    assert HAND["transitions"]["5e"]["f8"]["state"] == "success" and "6a" not in HAND["transitions"]["5e"]
+    assert HAND["transitions"]["f5"]["d0"]["state"] == "success" and HAND["transitions"]["f7"]["d0"]["state"] == "success"
     assert tasks["6d"]["variables"]["incoming"]["value"] == "$var.job.netbox"
     # every way through the read-back reaches the card: read, could not read, not applicable
     for tid in ("dd", "de", "df"):

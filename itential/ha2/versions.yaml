@@ -114,6 +114,11 @@ ldap:
 
 tools:
   mcp_port: 8000
+  # R7 (ADR 0076 decision 1): Batfish's API, published on the OOB address and admitted from the Gateway VM only (the
+  # play's DOCKER-USER allowlist); a 2 GB heap inside a 3 GB limit (measured: about 3 GB at a 2 GB heap)
+  batfish_port: 9996
+  batfish_heap: 2g
+  batfish_memory_limit: 3g
   # ollama_port removed with the container (ADR 0060): inference is the Mac Mini,
   # reached as ollama.lab.internal:11434 (itential/versions.yaml llm.profiles).
 

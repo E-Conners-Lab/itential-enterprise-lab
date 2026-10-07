@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# Managed by ansible/playbooks/platform-ha2-tools.yml (ADR 0076 decision 1). Do not edit.
+# Batfish's API has no authentication: only the Gateway VM may open a connection to its published port. Docker evaluates
+# DOCKER-USER before its own FORWARD rules, and a published port is DNATed before that, so the destination here is the
+# container's own port. Run at boot by batfish-access.service (after docker, which rebuilds FORWARD on every start) and
+# by the play. Idempotent: the chain is rebuilt and the jump kept exactly once, first.
+set -euo pipefail
+CHAIN=TOOLS-BATFISH
+PORT=9996
+
+iptables -w -N "$CHAIN" 2>/dev/null || true
+iptables -w -F "$CHAIN"
+# replies to flows already allowed
+iptables -w -A "$CHAIN" -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+{% for src in batfish_allow %}
+iptables -w -A "$CHAIN" -s {{ src }} -j ACCEPT
+{% endfor %}
+iptables -w -A "$CHAIN" -j DROP
+
+iptables -w -N DOCKER-USER 2>/dev/null || true
+while iptables -w -D DOCKER-USER -p tcp --dport "$PORT" -j "$CHAIN" 2>/dev/null; do :; done
+iptables -w -I DOCKER-USER 1 -p tcp --dport "$PORT" -j "$CHAIN"

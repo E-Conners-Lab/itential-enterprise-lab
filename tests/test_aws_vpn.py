@@ -186,7 +186,9 @@ def test_netmiko_is_installed_only_with_hashes_and_named_in_the_image_tag() -> N
     docker = (RUNNER / "Dockerfile").read_text()
     assert "--require-hashes --only-binary=:all: -r /tmp/requirements-lab-edge.txt" in docker
     assert docker.index("requirements-lab-edge.txt") < docker.index("USER itential")  # installed as root, run as the runner user
-    assert VERSIONS["stack"]["runner_image"].endswith(f"-nm{pins['netmiko']}")  # a new pin is a new tag: the play rebuilds
+    # a new pin is a new tag: the play rebuilds (netmiko, and since R7 pybatfish for batfish-check, ADR 0076)
+    assert f"-nm{pins['netmiko']}" in VERSIONS["stack"]["runner_image"]
+    assert VERSIONS["stack"]["runner_image"].endswith(f"-pb{pins['pybatfish']}")
 
 
 def test_githubs_host_keys_are_the_three_pinned_fingerprints() -> None:

@@ -107,6 +107,21 @@ Three read-only probes (2026-10-06) decided the design:
    dc1-wan01 with the verdict passing on the card, and the three drill modes failing. The measured answer time and
    memory go into an amendment here.
 
+9. **As built (lab PR, 2026-10-06; cloud-devops-pipeline #42 at cfa2bea).** Measured while building:
+   - pybatfish brings pandas and numpy: the runner image grows by about 210 MB. The two requirement files are compiled
+     together (pybatfish constrained to terraform-run's pins) and kept disjoint, so the runner installs each with
+     hashes as before; the image tag names the pybatfish pin, so a new pin rebuilds the runner.
+   - Batfish's API answers anyone who reaches port 9996 (no key needed), which is why the allowlist admits iag-01 alone.
+   - Batfish does not parse `inspect` under `class class-default`, so the `aws-open` drill uses `pass`; that way the
+     drill fails the simulated AWS-to-lab check as well as the text check.
+   - Against a real Batfish (the Mac, the intended config standing in for the running one): the healthy candidate
+     passes in 3.4 s; `aws-open` fails checks (b) and (f), `acl-any` fails (c), `inet-open` fails (d) and (e); no
+     snapshot is left behind. tools-01's numbers are measured at the production proof (decision 8).
+   - The Hand Off section is `f8, f0-f7, fb` between the render (5e) and the NetBox read-back (d0); the card's entry
+     is `batfish`; a failed proof ends the job through `f9` with the failed checks named in `error`. `Drill Batfish Gate`
+     holds an identical copy of the section (a test) and takes `drill` = `none | aws-open | acl-any | inet-open`;
+     `verify/test-13a-aws-vpn.sh` S13.R7a runs every mode on production.
+
 ## Consequences
 
 - A person approving the router change sees, for the first time, what the router will do with the block rather than

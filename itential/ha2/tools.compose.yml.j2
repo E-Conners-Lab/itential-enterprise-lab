@@ -45,6 +45,20 @@ services:
       LDAP_ADMIN_PASSWORD: ${ITENTIAL_ADMIN_PASSWORD:?}
     restart: unless-stopped
 
+  # R7 (ADR 0076 decision 1): Batfish, asked by batfish-check on the Gateway runner before every Hand Off card. Pinned
+  # by digest, never :latest. No volume: a snapshot lives only for the answer. Its API has no authentication, so the
+  # port is published on the OOB address only and the play's DOCKER-USER allowlist (batfish-access.sh.j2) admits the
+  # Gateway VM alone. The heap is capped inside the container's memory limit (measured: ~3 GB at a 2 GB heap).
+  batfish:
+    container_name: batfish
+    image: {{ images.batfish.repository }}@{{ images.batfish.digest }}
+    ports:
+      - "{{ ip }}:{{ tools.batfish_port }}:9996"
+    environment:
+      JAVA_TOOL_OPTIONS: "-Xmx{{ tools.batfish_heap }}"
+    mem_limit: {{ tools.batfish_memory_limit }}
+    restart: unless-stopped
+
   node-exporter:
     container_name: node-exporter
     image: {{ images.node_exporter.repository }}:{{ images.node_exporter.tag }}
