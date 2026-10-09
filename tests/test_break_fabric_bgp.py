@@ -20,6 +20,7 @@ ROOT = Path(__file__).resolve().parent.parent
 _SPEC = importlib.util.spec_from_file_location("wf_build_drill", ROOT / "itential" / "workflows" / "build.py")
 build = importlib.util.module_from_spec(_SPEC)
 _SPEC.loader.exec_module(build)
+build.LAYOUT_SEARCH = True  # this module compares its build against the committed JSON, canvas included
 NAME = "Break Fabric BGP"
 SESSIONS, TARGETS = build.FABRIC_SESSIONS, build.FABRIC_TARGETS
 

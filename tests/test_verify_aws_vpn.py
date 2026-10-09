@@ -16,6 +16,7 @@ ROOT = Path(__file__).resolve().parent.parent
 _SPEC = importlib.util.spec_from_file_location("wf_build_verify", ROOT / "itential" / "workflows" / "build.py")
 build = importlib.util.module_from_spec(_SPEC)
 _SPEC.loader.exec_module(build)
+build.LAYOUT_SEARCH = True  # this module compares builds against the committed JSON, canvas included (conftest turns it off)
 WF = json.loads((ROOT / "itential" / "workflows" / "verify-aws-vpn.json").read_text())
 TARGETS = build.VERSIONS["aws_vpn"]["targets"]
 CDP = Path(os.environ.get("CDP_DIR") or Path.home() / "PycharmProjects" / "cloud-devops-pipeline") / "itential"  # a checkout at the pin
