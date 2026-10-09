@@ -184,3 +184,15 @@ def test_the_gate_builder_refuses_more_fields_than_it_can_copy() -> None:
     fields = {f"f{i}": {"type": "string"} for i in range(len(build.GATE_IDS) + 1)}
     with pytest.raises(AssertionError):
         build.with_input_gate({}, {"workflow_start": {}}, fields)
+
+
+def test_every_input_gate_pattern_is_a_valid_javascript_unicode_regex() -> None:
+    # The Platform's validateJsonSchema compiles `pattern` with JavaScript's u flag (ajv): an identity escape of a
+    # character that is not a syntax character, such as `\"`, throws "Invalid escape", the task errors and the
+    # inputs are refused whatever they hold. Python's re accepts the same escape, so Deploy's gate (#144) passed every
+    # test here and refused every Deploy on production until 2026-10-09. The escapes a u-mode pattern may carry:
+    allowed = set("dDwWsSbBrntvf0\\/.*+?^$|()[]{}-")
+    for wf, gate in build.INPUT_GATES.items():
+        for name, spec in gate.items():
+            for m in re.finditer(r"\\(.)", spec.get("pattern", "")):
+                assert m.group(1) in allowed, f"{wf} {name}: `\\{m.group(1)}` is not an escape JavaScript accepts under u"
