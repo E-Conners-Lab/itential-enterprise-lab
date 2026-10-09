@@ -280,3 +280,19 @@ def test_the_verify_runs_every_mode_and_sweeps_the_drill() -> None:
     helper = (ROOT / "verify" / "awsvpncheck.py").read_text()
     assert '"drill": c_drill' in helper and 'V["aws_vpn"]["batfish"]["drills"]' in helper
     assert 'variables.get("drill_passed") is True' in helper
+
+
+def test_the_tools_compose_file_has_no_empty_top_level_section() -> None:
+    # Compose refuses "volumes must be a mapping": the Ollama removal (#36) took the last named volume and left the
+    # key behind, and the first tools play after it (R7, 2026-10-09) failed on tools-01 before Batfish came up.
+    # Rendered with the pinned values the play renders with: each top-level key must be a mapping.
+    import jinja2
+
+    ha2 = yaml.safe_load((ROOT / "itential" / "ha2" / "versions.yaml").read_text())
+    tools_vm = next(vm for vm in ha2["vms"] if vm["role"] == "tools")
+    env = jinja2.Environment(undefined=jinja2.StrictUndefined)
+    rendered = env.from_string(COMPOSE).render(**{**VERSIONS, **ha2}, ip=tools_vm["ip"])  # the play's two vars files
+    doc = yaml.safe_load(rendered)
+    for key, value in doc.items():
+        assert isinstance(value, dict), f"top-level `{key}:` is {value!r}, not a mapping - Compose refuses the file"
+    assert "batfish" in doc["services"]
