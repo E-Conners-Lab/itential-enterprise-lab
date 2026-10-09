@@ -149,13 +149,13 @@ def test_the_swept_workflows_are_the_aws_vpn_ones_and_the_hand_paths_to_the_edge
     assert set(ac.JOB_WORKFLOWS) == {wf[k] for k in (
         "deploy_aws_vpn", "hand_off_aws_vpn", "verify_aws_vpn", "tear_down_aws_vpn", "tear_down_expired_aws_vpn",
         "get_aws_vpn_status", "check_aws_drift", "rotate_aws_vpn_key", "rotate_aws_vpn_key_monthly",
-        "diagnose_aws_vpn_outage",
+        "diagnose_aws_vpn_outage", "drill_batfish_gate",
         "config_push_revert", "show_command")}
 
 
 def test_every_aws_vpn_workflow_is_swept() -> None:
     """A workflow that runs an AWS VPN service is swept from the day it exists (R2b's and A1's were missed until R4)."""
-    services = {"terraform-run", "aws-vpn-psk", "lab-edge", "lab-edge-push", "aws-vpn-monitor"}
+    services = {"terraform-run", "aws-vpn-psk", "lab-edge", "lab-edge-push", "aws-vpn-monitor", "batfish-check"}
     for path in sorted((ROOT / "itential" / "workflows").glob("*.json")):  # build.py's output, kept in sync by a test
         doc = json.loads(path.read_text())
         runs = {t.get("variables", {}).get("incoming", {}).get("serviceName") for t in doc["tasks"].values()

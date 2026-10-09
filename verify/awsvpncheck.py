@@ -51,7 +51,7 @@ JOB_WORKFLOWS = [
     V["workflows"][k]
     for k in ("deploy_aws_vpn", "hand_off_aws_vpn", "verify_aws_vpn", "tear_down_aws_vpn", "tear_down_expired_aws_vpn",
               "get_aws_vpn_status", "check_aws_drift", "rotate_aws_vpn_key", "rotate_aws_vpn_key_monthly",
-              "diagnose_aws_vpn_outage",
+              "diagnose_aws_vpn_outage", "drill_batfish_gate",
               "config_push_revert", "show_command")
 ]
 TIER = os.environ.get("AWS_VPN_TIER") or V["aws_vpn"]["tier"]
@@ -268,8 +268,42 @@ def c_router() -> bool:
     return ok
 
 
+def c_drill() -> bool:
+    """R7 (ADR 0076 decision 6): Drill Batfish Gate on the open target, once per mode. `none` is the healthy candidate
+    and must pass; every other mode must fail the checks it breaks (the workflow's own judge says which)."""
+    p = vc.Platform()
+    passed = True
+    for mode in V["aws_vpn"]["batfish"]["drills"]:
+        body = {"workflow": V["workflows"]["drill_batfish_gate"],
+                "options": {"type": "automation", "description": f"test-13a drill {mode}",
+                            "variables": {"target": VERIFY_TARGET, "drill": mode}}}
+        try:
+            started = p.call("POST", "/operations-manager/jobs/start", body)
+        except Exception as e:  # noqa: BLE001
+            print(f"  FAIL drill {mode}: the job did not start: {type(e).__name__} {getattr(e, 'code', '')}")
+            passed = False
+            continue
+        job_id = (started.get("data") or {}).get("_id") if isinstance(started.get("data"), dict) else None
+        if not job_id:
+            print(f"  FAIL drill {mode}: no job ID in the answer (keys: {sorted(started)})")
+            passed = False
+            continue
+        job = {}
+        for _ in range(VERIFY_POLLS):
+            job = p.call("GET", f"/operations-manager/jobs/{job_id}")["data"]
+            if job.get("status") in TERMINAL:
+                break
+            time.sleep(VERIFY_POLL_SECONDS)
+        variables = job.get("variables") or {}
+        outcome = variables.get("outcome") or variables.get("error")
+        ok = job.get("status") == "complete" and variables.get("drill_passed") is True
+        print(f"  {'ok  ' if ok else 'FAIL'} drill {mode}: job {job_id}, status {job.get('status')}: {outcome}")
+        passed = passed and ok
+    return passed
+
+
 CHECKS = {"control": c_control, "verify": c_verify, "jobs": c_jobs, "logs": c_logs, "repos": c_repos,
-          "router": c_router}
+          "router": c_router, "drill": c_drill}
 
 if __name__ == "__main__":
     if len(sys.argv) != 2 or sys.argv[1] not in CHECKS:

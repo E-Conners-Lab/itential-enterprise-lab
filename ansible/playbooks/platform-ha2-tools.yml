@@ -16,6 +16,8 @@
     ip: "{{ (vms | selectattr('name', 'equalto', inventory_hostname) | first).ip }}"
     # the load balancer's own name: the service name still points at the dev-stack until the cut-over
     service_name: "{{ (vms | selectattr('role', 'equalto', 'loadbalancer') | first).name }}"
+    # R7 (ADR 0076 decision 1): who may reach Batfish's unauthenticated API - the Gateway VM, whose runner asks
+    batfish_allow: "{{ vms | selectattr('role', 'equalto', 'gateway') | map(attribute='ip') | list }}"
   tasks:
     - name: Compose file
       ansible.builtin.template:
@@ -87,6 +89,62 @@
       # the dev host 2026-10-01), so only that counts as a change
       changed_when: ollama_gone.rc == 0 and ollama_gone.stdout | trim == 'ollama'
       failed_when: false
+
+    # R7 (ADR 0076 decision 1): Batfish answers anyone who can reach port 9996, so only the Gateway VM may. Persisted
+    # as a script plus a unit bound to docker.service, because Docker rebuilds its FORWARD chains on every start
+    # (the clab host's pattern, ADR 0063).
+    - name: DOCKER-USER allowlist for Batfish (itential/ha2/batfish-access.sh.j2)
+      ansible.builtin.template:
+        src: ../../itential/ha2/batfish-access.sh.j2
+        dest: /usr/local/sbin/batfish-access.sh
+        mode: "0755"
+      register: batfish_script
+
+    - name: Unit that re-applies the Batfish allowlist whenever Docker starts
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/batfish-access.service
+        mode: "0644"
+        content: |
+          [Unit]
+          Description=DOCKER-USER allowlist for Batfish on the tools VM (ADR 0076)
+          After=docker.service
+          Requires=docker.service
+          PartOf=docker.service
+
+          [Service]
+          Type=oneshot
+          RemainAfterExit=true
+          ExecStart=/usr/local/sbin/batfish-access.sh
+
+          [Install]
+          WantedBy=docker.service
+      register: batfish_unit
+
+    - name: Batfish allowlist unit enabled and applied now
+      ansible.builtin.systemd:
+        name: batfish-access
+        enabled: true
+        state: "{{ 'restarted' if (batfish_script is changed or batfish_unit is changed) else 'started' }}"
+        daemon_reload: "{{ batfish_unit is changed }}"
+
+    - name: The Batfish allowlist is live (jump first in DOCKER-USER, one ACCEPT per allowed source)
+      ansible.builtin.command: iptables -w -S TOOLS-BATFISH
+      register: batfish_rules
+      changed_when: false
+      failed_when: >-
+        (batfish_rules.stdout_lines | select('search', ' -s .* -j ACCEPT') | map('regex_replace', '^.* -s (\S+) .*$', '\1')
+         | map('regex_replace', '/32$', '') | list)
+        != batfish_allow
+
+    - name: Batfish answers (its v2 API lists the networks it holds; from this VM the allowlist does not apply)
+      ansible.builtin.uri:
+        url: "http://{{ ip }}:{{ tools.batfish_port }}/v2/networks"
+        method: GET
+        status_code: [200]
+      register: batfish_up
+      retries: 30
+      delay: 5
+      until: batfish_up.status is defined and batfish_up.status == 200
 
     - name: MCP answers
       ansible.builtin.uri:

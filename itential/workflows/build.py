@@ -374,6 +374,11 @@ INPUT_GATES = {
         "fingerprint": {"type": "string", "pattern": r"^[0-9a-f]{1,32}$"},
     },
     # R10 PR C: the drill; the plan then holds the end to a declared vEOS session
+    # R7 (ADR 0076 decision 6): an open target and one of batfish-check's own drill modes (aws_vpn.batfish.drills)
+    WF["drill_batfish_gate"]: {
+        "target": {"enum": sorted(n for n, t in VERSIONS["aws_vpn"]["targets"].items() if t["window"] == "open")},
+        "drill": {"type": "string", "enum": list(VERSIONS["aws_vpn"]["batfish"]["drills"])},
+    },
     WF["break_fabric_bgp"]: {
         "device": {"type": "string", "enum": sorted(FABRIC_DEVICES)},
         "neighbor": IPV4_TEXT,
@@ -3326,6 +3331,10 @@ PRECHECK_TIMEOUT = "300"
 PUSH_TIMEOUT = "600"  # login, precheck again, the block, the post-read, up to 120 s for the tunnel, confirm, the
 # post-read again, write memory (a job the Gateway stops leaves the change to the router's revert timer)
 READY_TIMEOUT = "120"
+# R7 (ADR 0076): login, `show running-config`, the scrub, two Batfish snapshots and seven questions (measured 2026-10-06
+# on the Mac: 3.4 s after the read)
+BATFISH_TIMEOUT = "300"
+BATFISH_HOST = VERSIONS["aws_vpn"]["batfish"]["host"]
 
 # One plan for both workflows: every service's params for this target, or why there is nothing to do.
 LAB_EDGE_PLAN_CODE = """import json, sys
@@ -3336,7 +3345,7 @@ monitor = entry.get("monitor")
 deployed = entry.get("outputs") if monitor != "aws" else d.get("deployed")
 plan = {"target": name, "monitor": monitor, "need_outputs": bool(entry) and monitor == "aws" and deployed is None,
         "ready": False, "reason": "", "lab_edge": None, "monitor_params": None, "precheck": None, "render": None,
-        "push": None, "monitor_ready": None, "netbox": bool(entry.get("netbox"))}
+        "push": None, "batfish": None, "monitor_ready": None, "netbox": bool(entry.get("netbox"))}
 if not entry:
     plan["reason"] = "%%s is not an open target" %% name
 elif not plan["need_outputs"] and not (deployed or {}).get("strongswan_eip"):
@@ -3348,13 +3357,18 @@ if entry and deployed and not plan["reason"]:
         lab_edge={"action": "verify", "target_json": target, "outputs_json": outputs, "username": user, "timeout": "%s"},
         precheck={"action": "precheck", "target_json": target, "username": user, "timeout": "%s"},
         render={"action": "render", "target_json": target, "outputs_json": outputs, "timeout": "%s"},
-        push={"action": "push", "target_json": target, "outputs_json": outputs, "username": user, "timeout": "%s"})
+        push={"action": "push", "target_json": target, "outputs_json": outputs, "username": user, "timeout": "%s"},
+        batfish={"action": "check", "target_json": target, "outputs_json": outputs, "username": user,
+                 "batfish_host": "%s", "timeout": "%s"})
+    if d.get("drill") and d["drill"] != "none":
+        plan["batfish"]["drill"] = d["drill"]
     if monitor == "aws":
         instance = str(deployed.get("strongswan_instance_id") or "")
         plan["monitor_params"] = {"action": "check", "instance_id": instance, "timeout": "%s"}
         plan["monitor_ready"] = {"action": "ready", "instance_id": instance, "timeout": "%s"}
 print(json.dumps(plan))
-""" % (LAB_EDGE_TIMEOUT, PRECHECK_TIMEOUT, PRECHECK_TIMEOUT, PUSH_TIMEOUT, MONITOR_TIMEOUT, READY_TIMEOUT)
+""" % (LAB_EDGE_TIMEOUT, PRECHECK_TIMEOUT, PRECHECK_TIMEOUT, PUSH_TIMEOUT, BATFISH_HOST, BATFISH_TIMEOUT,
+       MONITOR_TIMEOUT, READY_TIMEOUT)
 
 def judge(d: dict) -> dict:
     """Verify's verdict from its readings (the spec's rules): every applicable signal up passes; any signal that could
@@ -3625,6 +3639,117 @@ PUSH_SUMMARY_CODE = ("import json, sys\n\n\n" + inspect.getsource(push_summary)
                      + "\n\nprint(json.dumps(push_summary(json.loads(sys.stdin.read() or \"{}\"))))\n")
 
 
+# --- R7: the Batfish proof between the render and the card (ADR 0076 decisions 3, 4 and 6) -------------------------
+BATFISH_CHECKS = ("parses", "aws_reaches_no_lab_address", "lab_reaches_aws_only_from_pinned_prefixes",
+                  "inet_in_admits_the_peer_only", "nothing_else_gained_or_lost", "self_zone_drops_aws",
+                  "vpc_prefix_list_unchanged")  # cloud-devops-pipeline batfish_candidate.CHECKS, in the card's order
+# what each drill mode of batfish-check breaks, and therefore which checks must fail (measured against a real Batfish
+# 2026-10-06, cloud-devops-pipeline #42); `none` is the healthy candidate and must pass
+DRILL_EXPECTS = {
+    "none": [],
+    "aws-open": ["aws_reaches_no_lab_address", "self_zone_drops_aws"],
+    "acl-any": ["lab_reaches_aws_only_from_pinned_prefixes"],
+    "inet-open": ["inet_in_admits_the_peer_only", "nothing_else_gained_or_lost"],
+}
+NOT_PROVEN = ("not proven: batfish-check could not run, exited non-zero or gave no answer (see batfish_result); "
+              "approval stays possible (ADR 0076 decision 4)")
+
+
+def batfish_summary(d: dict) -> dict:
+    """batfish-check's answer as Hand Off reads it: `pass` (every check passed), `fail` (any check failed: Hand Off
+    ends with nothing sent) or `not proven` (the service did not run, exited non-zero or answered without checks:
+    the card says so and approval stays possible, ADR 0076 decision 4). `card` is the card's entry, `failed` the
+    names, `message` the job's error when it ends here. Pure: runCode runs this very function's source."""
+    result = ((d.get("batfish") or {}).get("result")) or {}
+    rc, out = result.get("return_code"), result.get("stdout_json")
+    out = out if isinstance(out, dict) else {}
+    checks = out.get("checks") if isinstance(out.get("checks"), dict) else {}
+    if rc != 0 or out.get("verdict") not in ("pass", "fail") or not checks:
+        why = out.get("error") or ("gave no answer" if not out else "answered without checks")
+        return {"verdict": "not proven", "failed": [], "message": "",
+                "card": f"not proven: batfish-check {why} (see batfish_result); approval stays possible "
+                        "(ADR 0076 decision 4)"}
+    failed = [k for k, v in checks.items() if not isinstance(v, dict) or v.get("status") != "pass"]
+    parts = []
+    for k, v in checks.items():
+        v = v if isinstance(v, dict) else {}
+        parts.append(f"{k}: {v.get('status', '?')}" + (f" - {v.get('detail')}" if v.get("status") != "pass" else ""))
+    drill = f", drill {out['drill']}" if out.get("drill") else ""
+    head = (f"{'FAIL' if failed else 'PASS'} ({len(checks)} checks, {out.get('seconds', '?')} s on "
+            f"{out.get('batfish_host', '?')}{drill})")
+    card = f"Batfish: {head}: " + "; ".join(parts)
+    if failed:
+        return {"verdict": "fail", "failed": failed, "card": card,
+                "message": f"the Batfish proof failed ({', '.join(failed)}): nothing was sent to the router"}
+    return {"verdict": "pass", "failed": [], "card": card, "message": ""}
+
+
+BATFISH_SUMMARY_CODE = ("import json, sys\n\n\n" + inspect.getsource(batfish_summary)
+                        + "\n\nprint(json.dumps(batfish_summary(json.loads(sys.stdin.read() or \"{}\"))))\n")
+
+
+def drill_judge(d: dict) -> dict:
+    """Drill Batfish Gate's verdict: `none` must pass; any other mode must fail, with every check the mode breaks among
+    the failed ones (more may fail: a check that cannot run on a broken candidate is a failure too). Pure: runCode runs
+    this very function's source after a copy of DRILL_EXPECTS."""
+    expects = DRILL_EXPECTS
+    mode = d.get("drill")
+    s = ((d.get("summary") or {}).get("stdout_json")) or {}
+    verdict, failed = s.get("verdict"), sorted(s.get("failed") or [])
+    if mode not in expects:
+        return {"drill_passed": False, "outcome": f"unknown drill mode {mode!r}"}
+    want = sorted(expects[mode])
+    passed = verdict == "pass" if mode == "none" else (verdict == "fail" and set(want) <= set(failed))
+    said = f"Batfish said {verdict}" + (f", failed: {', '.join(failed)}" if failed else "")
+    if passed:
+        outcome = f"drill {mode} passed: {said}" + (f" (expected {', '.join(want)})" if want else " (the healthy candidate)")
+    else:
+        outcome = f"drill {mode} FAILED: {said}; expected " + (", ".join(want) + " to fail" if want else "pass")
+    return {"drill_passed": passed, "outcome": outcome}
+
+
+DRILL_JUDGE_CODE = ("import json, sys\n\nDRILL_EXPECTS = " + json.dumps(DRILL_EXPECTS) + "\n\n\n"
+                    + inspect.getsource(drill_judge)
+                    + "\n\nprint(json.dumps(drill_judge(json.loads(sys.stdin.read() or \"{}\"))))\n")
+
+
+def batfish_section(after_ok: str, after_fail: str, x: int) -> tuple[dict, dict]:
+    """f8, f0-f7, fb: batfish-check with the approved SHA-256 (the plan's params plus the one the card shows), its
+    exit code checked, its answer read by batfish_summary. pass or not proven -> after_ok (the card's entry says which);
+    fail -> after_fail. Drill Batfish Gate holds an identical copy (tests/test_batfish_gate.py): there both ways lead
+    to its judge."""
+    ok, fail, err = "success", "failure", "error"
+    tasks = {
+        "f8": jq("batfish-check's params", "$var.job.handoff_plan", "stdout_json.batfish", x=x, to_job="batfish_params"),
+        "f0": set_key("batfish-check's params: the approved SHA-256", "$var.f8.return_data", "sha256",
+                      "$var.job.sha256", x=x + 1),
+        "f1": run_service("prove the block in Batfish (batfish-check: the running config, scrubbed; seven checks)",
+                          "batfish-check", "$var.f0.object", "batfish_result", x=x + 2),
+        "fb": evaluate("batfish-check exited 0?", "f1", "result", "result.return_code", "==", 0, x=x + 3),
+        "f2": set_key("Batfish's answer", {}, "batfish", "$var.job.batfish_result", x=x + 4),
+        "f3": run_code("what Batfish proved (pass, fail or not proven)", BATFISH_SUMMARY_CODE, "$var.f2.object",
+                       "batfish_summary", x=x + 5),
+        "f4": evaluate("a check failed?", "f3", "result", "stdout_json.verdict", "==", "fail", x=x + 6),
+        "f5": jq("the card: Batfish", "$var.f3.result", "stdout_json.card", x=x + 7, to_job="batfish"),
+        "f6": jq("the proof failed: why", "$var.f3.result", "stdout_json.message", x=x + 7, y=-600,
+                 to_job="batfish_message"),
+        "f7": note("not proven", NOT_PROVEN, "batfish", x=x + 6, y=-300),
+    }
+    tr = {
+        "f8": _edge(**{"f0": ok, "f7": err}),
+        "f0": _edge(**{"f1": ok}),
+        "f1": _edge(**{"fb": ok, "f7": err}),
+        "fb": _edge(**{"f2": ok, "f7": fail}),
+        "f2": _edge(**{"f3": ok}),
+        "f3": _edge(**{"f4": ok, "f7": err}),
+        "f4": _edge(**{"f6": ok, "f5": fail}),
+        "f5": _edge(**{after_ok: ok, "f7": err}),
+        "f6": _edge(**{after_fail: ok}),
+        "f7": _edge(**{after_ok: ok}),
+    }
+    return tasks, tr
+
+
 # Hand Off's NetBox read-back (spec "NetBox read-back"): the one open target with NetBox records, read view-only from
 # production NetBox through the lab-netbox Integration Model before the card. A second such target would need its own
 # reads (the reads are generated per target), so this is refused until then rather than guessed.
@@ -3790,9 +3915,12 @@ def hand_off_aws_vpn() -> dict:
         "6b": set_key("the card: SHA-256", "$var.6a.object", "sha256", "$var.job.sha256", x=1550),
         "6c": set_key("the card: the block (key masked)", "$var.6b.object", "block", "$var.job.block_masked", x=1600),
         "6d": set_key("the card: NetBox", "$var.6c.object", "netbox", "$var.job.netbox", x=1650),
+        "69": set_key("the card: Batfish", "$var.6d.object", "batfish", "$var.job.batfish", x=1675),
         "6e": replace("the card's message", APPROVAL_MESSAGE, "__T__", "$var.job.target", x=1700),
-        **approval("6f", "Approve the router change", "$var.6e.replacedString", "$var.6d.object", "Approve", "Reject",
-                   x=1750, var="approval"),
+        **approval("6f", "Approve the router change", "$var.6e.replacedString", "$var.69.object", "Approve", "Reject",
+                   x=1750, var="approval"),  # NetBox, then Batfish (R7), on the card
+        # the Batfish proof failed (ADR 0076 decision 4): no card, nothing sent
+        "f9": replace("why Hand Off stops here", "__M__", "__M__", "$var.job.batfish_message", x=1460, y=-900),
         # push exactly the approved block
         "7a": jq("lab-edge-push's params", "$var.job.handoff_plan", "stdout_json.push", x=1800),
         "7b": set_key("push params: the approved SHA-256", "$var.7a.return_data", "sha256", "$var.job.sha256", x=1850),
@@ -3857,8 +3985,12 @@ def hand_off_aws_vpn() -> dict:
     }
     tasks["92"]["variables"]["outgoing"]["replacedString"] = "$var.job.outcome"
     tasks["96"]["variables"]["outgoing"]["replacedString"] = "$var.job.error"
+    tasks["f9"]["variables"]["outgoing"]["replacedString"] = "$var.job.error"
     vtasks, vtr, first = verify_section("handoff_plan", passed="90", failed="94", broken="c3", judge_broken="c3", x=2150)
     tasks.update(vtasks)
+    # R7 (ADR 0076): the Batfish proof after the render, before the NetBox read-back and the card
+    btasks, btr = batfish_section(after_ok="d0" if NETBOX_WANT else "6a", after_fail="f9", x=1451)
+    tasks.update(btasks)
     # the NetBox read-back before the card (dc1-wan01's records); with no such target open, the card says so itself
     nb_tr = {}
     for name, want in NETBOX_WANT.items():
@@ -3895,11 +4027,14 @@ def hand_off_aws_vpn() -> dict:
         "5b": _edge(**{"5c": ok, "b8": err}),
         "5c": _edge(**{"5d": ok, "b6": fail}),
         "5d": _edge(**{"5e": ok, "b8": err}),
-        "5e": _edge(**{"d0" if NETBOX_WANT else "6a": ok, "b8": err}),
+        "5e": _edge(**{"f8": ok, "b8": err}),
+        **btr,
+        "f9": _edge(**{"workflow_end": ok}),
         "6a": _edge(**{"6b": ok}),
         "6b": _edge(**{"6c": ok}),
         "6c": _edge(**{"6d": ok}),
-        "6d": _edge(**{"6e": ok}),
+        "6d": _edge(**{"69": ok}),
+        "69": _edge(**{"6e": ok}),
         "6e": _edge(**{"6f1": ok}), **approval_edges("6f"),
         "6f": _edge(**{"7a": ok, "a0": fail}),
         "a0": _edge(**{"a2": ok}),
@@ -3964,6 +4099,128 @@ def hand_off_aws_vpn() -> dict:
             "monitor_note": {"type": "string"},
             "netbox": {"type": ["object", "string"]},
             "netbox_result": {"type": "object"},
+            "batfish_params": {"type": "object"},
+            "batfish_result": {"type": "object"},
+            "batfish_summary": {"type": "object"},
+            "batfish": {"type": "string"},
+            "batfish_message": {"type": "string"},
+        },
+    )
+
+
+# --- R7: Drill Batfish Gate (ADR 0076 decision 6) ---------------------------------------------------------------------
+# Hand Off's own Batfish section, on a candidate batfish-check breaks in one known way (or `none`: the healthy one), with
+# no card and nothing sent: the proof that each check can fail is a run, not a claim. verify/test-13a runs every mode.
+def drill_batfish_gate() -> dict:
+    ok, fail, err = "success", "failure", "error"
+    name = WF["drill_batfish_gate"]
+    tasks = {
+        "1a": task("setObjectKey", "WorkFlowEngine", "the target and the pinned values",
+                   {"obj": {"targets": VERIFY_TARGETS}, "path": ["target"], "value": "$var.job.target"},
+                   {"object": None}, display="Tools", x=100),
+        "1b": set_key("the drill mode", "$var.1a.object", "drill", "$var.job.drill", x=150),
+        "1c": run_code("what to read and check for this target", LAB_EDGE_PLAN_CODE, "$var.job.handoff_in",
+                       "handoff_plan", x=200),
+        "1d": evaluate("deployed outputs needed (AWS)?", "1c", "result", "stdout_json.need_outputs", "==", True, x=300),
+        "2a": parse("outputs params", OUTPUTS_PARAMS, x=350, y=300),
+        "2b": run_service("the deployed outputs (terraform-run, a read)", "terraform-run", "$var.2a.textObject",
+                          "outputs_result", x=400, y=300),
+        "2c": evaluate("outputs read?", "2b", "result", "result.return_code", "==", 0, x=450, y=300),
+        "2d": jq("the outputs", "$var.2b.result", "result.stdout_json.outputs", x=500, y=300),
+        "2e": set_key("the outputs, as data", "$var.job.handoff_in", "deployed", "$var.2d.return_data", x=550, y=300),
+        "2f": run_code("what to read and check, with the outputs", LAB_EDGE_PLAN_CODE, "$var.2e.object", "handoff_plan",
+                       x=600, y=300),
+        "1e": evaluate("anything to check?", "job", "handoff_plan", "stdout_json.ready", "==", True, x=650),
+        "1f": jq("why there is nothing to check", "$var.job.handoff_plan", "stdout_json.reason", x=700, y=-900,
+                 to_job="error"),
+        # the same render as Hand Off's: the SHA-256 the service must agree with
+        "5a": jq("lab-edge render's params", "$var.job.handoff_plan", "stdout_json.render", x=1250),
+        "5b": run_service("render the block (lab-edge render: no device)", "lab-edge", "$var.5a.return_data",
+                          "render_result", x=1300),
+        "5c": evaluate("rendered?", "5b", "result", "result.return_code", "==", 0, x=1350),
+        "5d": jq("the block's SHA-256", "$var.5b.result", "result.stdout_json.sha256", x=1400, to_job="sha256"),
+        "5e": jq("the block, key masked", "$var.5b.result", "result.stdout_json.block_masked", x=1450,
+                 to_job="block_masked"),
+        # the judge: did the mode break what it should?
+        "a0": set_key("the judge's data: the drill mode", {}, "drill", "$var.job.drill", x=1500),
+        "a1": set_key("the judge's data: what Batfish proved", "$var.a0.object", "summary", "$var.job.batfish_summary",
+                      x=1550),
+        "a2": run_code("did the drill break what it should?", DRILL_JUDGE_CODE, "$var.a1.object", "drill_judgement",
+                       x=1600),
+        "a3": jq("the outcome", "$var.a2.result", "stdout_json.outcome", x=1650, to_job="outcome"),
+        "a4": evaluate("the drill passed?", "a2", "result", "stdout_json.drill_passed", "==", True, x=1700),
+        "a5": flag("drill_passed = true", "true", "drill_passed", x=1750),
+        "a6": flag("drill_passed = false", "false", "drill_passed", x=1750, y=300),
+        "b0": note("the plan could not run", "the Gateway could not work out what to check (see handoff_plan)", "error",
+                   x=700, y=-600),
+        "b1": note("the outputs could not be read", "the deployed outputs could not be read from the Terraform state "
+                   "(outputs_result)", "error", x=550, y=900),
+        "b6": note("the render refused", "the render refused the values (see render_result): nothing to prove", "error",
+                   x=1400, y=-900),
+        "b8": note("the render could not run", "the Gateway could not run lab-edge render or read its answer (see "
+                   "render_result)", "error", x=1400, y=-600),
+        "c3": note("the judge could not run", "the drill's judge could not run or gave no verdict (see "
+                   "drill_judgement, batfish_summary)", "error", x=1650, y=-600),
+    }
+    tasks["1b"]["variables"]["outgoing"]["object"] = "$var.job.handoff_in"
+    btasks, btr = batfish_section(after_ok="a0", after_fail="a0", x=1451)
+    tasks.update(btasks)
+    tr = {
+        "workflow_start": _edge(**{"1a": ok}),
+        "1a": _edge(**{"1b": ok}),
+        "1b": _edge(**{"1c": ok}),
+        "1c": _edge(**{"1d": ok, "b0": err}),
+        "1d": _edge(**{"2a": ok, "1e": fail}),
+        "2a": _edge(**{"2b": ok}),
+        "2b": _edge(**{"2c": ok, "b1": err}),
+        "2c": _edge(**{"2d": ok, "b1": fail}),
+        "2d": _edge(**{"2e": ok, "b1": err}),
+        "2e": _edge(**{"2f": ok}),
+        "2f": _edge(**{"1e": ok, "b0": err}),
+        "1e": _edge(**{"5a": ok, "1f": fail}),
+        "1f": _edge(**{"workflow_end": ok, "b0": err}),
+        "5a": _edge(**{"5b": ok, "b8": err}),
+        "5b": _edge(**{"5c": ok, "b8": err}),
+        "5c": _edge(**{"5d": ok, "b6": fail}),
+        "5d": _edge(**{"5e": ok, "b8": err}),
+        "5e": _edge(**{"f8": ok, "b8": err}),
+        **btr,
+        "a0": _edge(**{"a1": ok}),
+        "a1": _edge(**{"a2": ok}),
+        "a2": _edge(**{"a3": ok, "c3": err}),
+        "a3": _edge(**{"a4": ok, "c3": err}),
+        "a4": _edge(**{"a5": ok, "a6": fail}),
+        "a5": _edge(**{"workflow_end": ok}),
+        "a6": _edge(**{"workflow_end": ok}),
+        **{b: _edge(**{"workflow_end": ok}) for b in ("b0", "b1", "b6", "b8", "c3")},
+    }
+    return workflow(
+        name,
+        "Runs Hand Off AWS VPN's Batfish proof on the router's running configuration with the block applied and broken "
+        "in one known way (or none), without a card and without sending anything: proves that each check can fail "
+        "(R7, ADR 0076 decision 6)",
+        {"target": {"type": "string", "required": True, "enum": INPUT_GATES[name]["target"]["enum"],
+                    "description": "The lab edge router whose running configuration the candidate is built on"},
+         "drill": {"type": "string", "required": True, "enum": INPUT_GATES[name]["drill"]["enum"],
+                   "description": "How batfish-check breaks the candidate (none: the healthy candidate, must pass)"}},
+        tasks,
+        tr,
+        {
+            "outcome": {"type": "string"},
+            "error": {"type": "string"},
+            "drill_passed": {"type": "boolean"},
+            "sha256": {"type": "string"},
+            "block_masked": {"type": "string"},
+            "handoff_in": {"type": "object"},
+            "handoff_plan": {"type": "object"},
+            "outputs_result": {"type": "object"},
+            "render_result": {"type": "object"},
+            "batfish_params": {"type": "object"},
+            "batfish_result": {"type": "object"},
+            "batfish_summary": {"type": "object"},
+            "batfish": {"type": "string"},
+            "batfish_message": {"type": "string"},
+            "drill_judgement": {"type": "object"},
         },
     )
 
@@ -7402,7 +7659,7 @@ BUILDERS = (device_count, show_version, show_command, show_all, branch_vlan, bra
             compliance_run, compliance_report, netbox_devices, backup_all, deploy_aws_vpn, verify_aws_vpn,
             hand_off_aws_vpn, config_push_revert, tear_down_aws_vpn, tear_down_expired_aws_vpn, get_aws_vpn_status,
             check_aws_drift, rotate_aws_vpn_key, rotate_aws_vpn_key_monthly, diagnose_aws_vpn_outage,
-            diagnose_fabric_bgp_outage, break_fabric_bgp)
+            diagnose_fabric_bgp_outage, break_fabric_bgp, drill_batfish_gate)
 
 
 if __name__ == "__main__":

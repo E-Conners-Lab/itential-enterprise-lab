@@ -89,7 +89,7 @@ def test_the_portal_keeps_its_route_ids_and_wears_the_palette() -> None:
 
 APPROVALS = {
     "Deploy AWS VPN": ("2b", "approval", "Approve the AWS change", "$var.job.plan"),
-    "Hand Off AWS VPN": ("6f", "approval", "Approve the router change", "$var.6d.object"),
+    "Hand Off AWS VPN": ("6f", "approval", "Approve the router change", "$var.69.object"),  # NetBox, then Batfish (R7)
     "Push Configuration with Revert Timer": ("2c", "approval", "Approve the change under a revert timer", "$var.2a.return_data"),
     "Tear Down AWS VPN": ("2c", "approval", "Approve removing the router's AWS block", "$var.2a.return_data"),
 }

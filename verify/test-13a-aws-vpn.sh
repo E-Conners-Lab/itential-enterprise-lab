@@ -56,6 +56,9 @@ check "S13.2e the sweep holds every AWS VPN secret in Vault (each live version) 
 # --- criterion 4, live (before the sweeps, so its job is swept too) -----------------------------------------------
 check "S13.4a Verify AWS VPN through its endpoint trigger: router, AWS monitor and data plane all say up" vpn verify
 
+# --- R7 (ADR 0076 decision 6): the Batfish proof can fail - every drill mode, the healthy one first ----------------
+check "S13.R7a Drill Batfish Gate: the healthy candidate passes, each drill mode fails the checks it breaks" vpn drill
+
 # --- criterion 2: no copy anywhere ----------------------------------------------------------------------------------
 check "S13.2f no secret in any job document or task record of the AWS VPN and lab-edge workflows" vpn jobs
 check "S13.2g no secret in the platform logs of both Platform nodes or the gateway5 and gateway5-runner logs of the Gateway VM" vpn logs

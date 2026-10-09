@@ -130,14 +130,14 @@
       "displayName": "GatewayManager",
       "groups": [],
       "nodeLocation": {
-        "x": -380,
+        "x": -530,
         "y": 900
       },
       "variables": {
         "incoming": {
           "clusterId": "lab",
           "language": "python",
-          "code": "import json, sys\nd = json.loads(sys.stdin.read() or \"{}\")\nname = d.get(\"target\")\nentry = (d.get(\"targets\") or {}).get(name) or {}\nmonitor = entry.get(\"monitor\")\ndeployed = entry.get(\"outputs\") if monitor != \"aws\" else d.get(\"deployed\")\nplan = {\"target\": name, \"monitor\": monitor, \"need_outputs\": bool(entry) and monitor == \"aws\" and deployed is None,\n        \"ready\": False, \"reason\": \"\", \"lab_edge\": None, \"monitor_params\": None, \"precheck\": None, \"render\": None,\n        \"push\": None, \"monitor_ready\": None, \"netbox\": bool(entry.get(\"netbox\"))}\nif not entry:\n    plan[\"reason\"] = \"%s is not an open target\" % name\nelif not plan[\"need_outputs\"] and not (deployed or {}).get(\"strongswan_eip\"):\n    plan[\"reason\"] = \"nothing is deployed (the outputs have no strongSwan address)\"\nif entry and deployed and not plan[\"reason\"]:\n    target, outputs, user = json.dumps(entry[\"target\"]), json.dumps(deployed), entry[\"username\"]\n    plan.update(\n        ready=True,\n        lab_edge={\"action\": \"verify\", \"target_json\": target, \"outputs_json\": outputs, \"username\": user, \"timeout\": \"300\"},\n        precheck={\"action\": \"precheck\", \"target_json\": target, \"username\": user, \"timeout\": \"300\"},\n        render={\"action\": \"render\", \"target_json\": target, \"outputs_json\": outputs, \"timeout\": \"300\"},\n        push={\"action\": \"push\", \"target_json\": target, \"outputs_json\": outputs, \"username\": user, \"timeout\": \"600\"})\n    if monitor == \"aws\":\n        instance = str(deployed.get(\"strongswan_instance_id\") or \"\")\n        plan[\"monitor_params\"] = {\"action\": \"check\", \"instance_id\": instance, \"timeout\": \"240\"}\n        plan[\"monitor_ready\"] = {\"action\": \"ready\", \"instance_id\": instance, \"timeout\": \"120\"}\nprint(json.dumps(plan))\n",
+          "code": "import json, sys\nd = json.loads(sys.stdin.read() or \"{}\")\nname = d.get(\"target\")\nentry = (d.get(\"targets\") or {}).get(name) or {}\nmonitor = entry.get(\"monitor\")\ndeployed = entry.get(\"outputs\") if monitor != \"aws\" else d.get(\"deployed\")\nplan = {\"target\": name, \"monitor\": monitor, \"need_outputs\": bool(entry) and monitor == \"aws\" and deployed is None,\n        \"ready\": False, \"reason\": \"\", \"lab_edge\": None, \"monitor_params\": None, \"precheck\": None, \"render\": None,\n        \"push\": None, \"batfish\": None, \"monitor_ready\": None, \"netbox\": bool(entry.get(\"netbox\"))}\nif not entry:\n    plan[\"reason\"] = \"%s is not an open target\" % name\nelif not plan[\"need_outputs\"] and not (deployed or {}).get(\"strongswan_eip\"):\n    plan[\"reason\"] = \"nothing is deployed (the outputs have no strongSwan address)\"\nif entry and deployed and not plan[\"reason\"]:\n    target, outputs, user = json.dumps(entry[\"target\"]), json.dumps(deployed), entry[\"username\"]\n    plan.update(\n        ready=True,\n        lab_edge={\"action\": \"verify\", \"target_json\": target, \"outputs_json\": outputs, \"username\": user, \"timeout\": \"300\"},\n        precheck={\"action\": \"precheck\", \"target_json\": target, \"username\": user, \"timeout\": \"300\"},\n        render={\"action\": \"render\", \"target_json\": target, \"outputs_json\": outputs, \"timeout\": \"300\"},\n        push={\"action\": \"push\", \"target_json\": target, \"outputs_json\": outputs, \"username\": user, \"timeout\": \"600\"},\n        batfish={\"action\": \"check\", \"target_json\": target, \"outputs_json\": outputs, \"username\": user,\n                 \"batfish_host\": \"10.100.0.81\", \"timeout\": \"300\"})\n    if d.get(\"drill\") and d[\"drill\"] != \"none\":\n        plan[\"batfish\"][\"drill\"] = d[\"drill\"]\n    if monitor == \"aws\":\n        instance = str(deployed.get(\"strongswan_instance_id\") or \"\")\n        plan[\"monitor_params\"] = {\"action\": \"check\", \"instance_id\": instance, \"timeout\": \"240\"}\n        plan[\"monitor_ready\"] = {\"action\": \"ready\", \"instance_id\": instance, \"timeout\": \"120\"}\nprint(json.dumps(plan))\n",
           "data": "$var.job.handoff_in",
           "safety": {
             "timeout": 30
@@ -165,7 +165,7 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": -20,
+        "x": -10,
         "y": 1050
       },
       "variables": {
@@ -211,7 +211,7 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 170,
+        "x": 190,
         "y": 1200
       },
       "variables": {
@@ -239,7 +239,7 @@
       "displayName": "GatewayManager",
       "groups": [],
       "nodeLocation": {
-        "x": 210,
+        "x": 240,
         "y": 1350
       },
       "variables": {
@@ -269,7 +269,7 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 200,
+        "x": 840,
         "y": 1500
       },
       "variables": {
@@ -315,7 +315,7 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 260,
+        "x": 380,
         "y": 1650
       },
       "variables": {
@@ -343,7 +343,7 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 370,
+        "x": 350,
         "y": 1800
       },
       "variables": {
@@ -375,14 +375,14 @@
       "displayName": "GatewayManager",
       "groups": [],
       "nodeLocation": {
-        "x": 480,
+        "x": 30,
         "y": 1950
       },
       "variables": {
         "incoming": {
           "clusterId": "lab",
           "language": "python",
-          "code": "import json, sys\nd = json.loads(sys.stdin.read() or \"{}\")\nname = d.get(\"target\")\nentry = (d.get(\"targets\") or {}).get(name) or {}\nmonitor = entry.get(\"monitor\")\ndeployed = entry.get(\"outputs\") if monitor != \"aws\" else d.get(\"deployed\")\nplan = {\"target\": name, \"monitor\": monitor, \"need_outputs\": bool(entry) and monitor == \"aws\" and deployed is None,\n        \"ready\": False, \"reason\": \"\", \"lab_edge\": None, \"monitor_params\": None, \"precheck\": None, \"render\": None,\n        \"push\": None, \"monitor_ready\": None, \"netbox\": bool(entry.get(\"netbox\"))}\nif not entry:\n    plan[\"reason\"] = \"%s is not an open target\" % name\nelif not plan[\"need_outputs\"] and not (deployed or {}).get(\"strongswan_eip\"):\n    plan[\"reason\"] = \"nothing is deployed (the outputs have no strongSwan address)\"\nif entry and deployed and not plan[\"reason\"]:\n    target, outputs, user = json.dumps(entry[\"target\"]), json.dumps(deployed), entry[\"username\"]\n    plan.update(\n        ready=True,\n        lab_edge={\"action\": \"verify\", \"target_json\": target, \"outputs_json\": outputs, \"username\": user, \"timeout\": \"300\"},\n        precheck={\"action\": \"precheck\", \"target_json\": target, \"username\": user, \"timeout\": \"300\"},\n        render={\"action\": \"render\", \"target_json\": target, \"outputs_json\": outputs, \"timeout\": \"300\"},\n        push={\"action\": \"push\", \"target_json\": target, \"outputs_json\": outputs, \"username\": user, \"timeout\": \"600\"})\n    if monitor == \"aws\":\n        instance = str(deployed.get(\"strongswan_instance_id\") or \"\")\n        plan[\"monitor_params\"] = {\"action\": \"check\", \"instance_id\": instance, \"timeout\": \"240\"}\n        plan[\"monitor_ready\"] = {\"action\": \"ready\", \"instance_id\": instance, \"timeout\": \"120\"}\nprint(json.dumps(plan))\n",
+          "code": "import json, sys\nd = json.loads(sys.stdin.read() or \"{}\")\nname = d.get(\"target\")\nentry = (d.get(\"targets\") or {}).get(name) or {}\nmonitor = entry.get(\"monitor\")\ndeployed = entry.get(\"outputs\") if monitor != \"aws\" else d.get(\"deployed\")\nplan = {\"target\": name, \"monitor\": monitor, \"need_outputs\": bool(entry) and monitor == \"aws\" and deployed is None,\n        \"ready\": False, \"reason\": \"\", \"lab_edge\": None, \"monitor_params\": None, \"precheck\": None, \"render\": None,\n        \"push\": None, \"batfish\": None, \"monitor_ready\": None, \"netbox\": bool(entry.get(\"netbox\"))}\nif not entry:\n    plan[\"reason\"] = \"%s is not an open target\" % name\nelif not plan[\"need_outputs\"] and not (deployed or {}).get(\"strongswan_eip\"):\n    plan[\"reason\"] = \"nothing is deployed (the outputs have no strongSwan address)\"\nif entry and deployed and not plan[\"reason\"]:\n    target, outputs, user = json.dumps(entry[\"target\"]), json.dumps(deployed), entry[\"username\"]\n    plan.update(\n        ready=True,\n        lab_edge={\"action\": \"verify\", \"target_json\": target, \"outputs_json\": outputs, \"username\": user, \"timeout\": \"300\"},\n        precheck={\"action\": \"precheck\", \"target_json\": target, \"username\": user, \"timeout\": \"300\"},\n        render={\"action\": \"render\", \"target_json\": target, \"outputs_json\": outputs, \"timeout\": \"300\"},\n        push={\"action\": \"push\", \"target_json\": target, \"outputs_json\": outputs, \"username\": user, \"timeout\": \"600\"},\n        batfish={\"action\": \"check\", \"target_json\": target, \"outputs_json\": outputs, \"username\": user,\n                 \"batfish_host\": \"10.100.0.81\", \"timeout\": \"300\"})\n    if d.get(\"drill\") and d[\"drill\"] != \"none\":\n        plan[\"batfish\"][\"drill\"] = d[\"drill\"]\n    if monitor == \"aws\":\n        instance = str(deployed.get(\"strongswan_instance_id\") or \"\")\n        plan[\"monitor_params\"] = {\"action\": \"check\", \"instance_id\": instance, \"timeout\": \"240\"}\n        plan[\"monitor_ready\"] = {\"action\": \"ready\", \"instance_id\": instance, \"timeout\": \"120\"}\nprint(json.dumps(plan))\n",
           "data": "$var.2e.object",
           "safety": {
             "timeout": 30
@@ -410,7 +410,7 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": -120,
+        "x": -150,
         "y": 2100
       },
       "variables": {
@@ -456,7 +456,7 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 310,
+        "x": -10,
         "y": 2250
       },
       "variables": {
@@ -484,7 +484,7 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": -740,
+        "x": -610,
         "y": 2250
       },
       "variables": {
@@ -530,7 +530,7 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": -510,
+        "x": -390,
         "y": 2400
       },
       "variables": {
@@ -558,7 +558,7 @@
       "displayName": "GatewayManager",
       "groups": [],
       "nodeLocation": {
-        "x": 150,
+        "x": 670,
         "y": 2550
       },
       "variables": {
@@ -588,7 +588,7 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 40,
+        "x": 500,
         "y": 2700
       },
       "variables": {
@@ -634,7 +634,7 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 190,
+        "x": 330,
         "y": 2850
       },
       "variables": {
@@ -680,7 +680,7 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": -200,
+        "x": -160,
         "y": 3000
       },
       "variables": {
@@ -708,7 +708,7 @@
       "displayName": "GatewayManager",
       "groups": [],
       "nodeLocation": {
-        "x": -170,
+        "x": -440,
         "y": 3150
       },
       "variables": {
@@ -738,7 +738,7 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": -140,
+        "x": -110,
         "y": 3300
       },
       "variables": {
@@ -784,7 +784,7 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": -100,
+        "x": -70,
         "y": 3450
       },
       "variables": {
@@ -830,7 +830,7 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": -330,
+        "x": -290,
         "y": 3600
       },
       "variables": {
@@ -858,7 +858,7 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 330,
+        "x": 60,
         "y": 3600
       },
       "variables": {
@@ -886,7 +886,7 @@
       "displayName": "GatewayManager",
       "groups": [],
       "nodeLocation": {
-        "x": 100,
+        "x": -470,
         "y": 3750
       },
       "variables": {
@@ -916,7 +916,7 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": -80,
+        "x": 20,
         "y": 3900
       },
       "variables": {
@@ -962,7 +962,7 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 310,
+        "x": 150,
         "y": 4050
       },
       "variables": {
@@ -990,7 +990,7 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 470,
+        "x": 90,
         "y": 4200
       },
       "variables": {
@@ -1018,8 +1018,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 290,
-        "y": 6600
+        "x": 750,
+        "y": 7950
       },
       "variables": {
         "incoming": {
@@ -1050,8 +1050,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 350,
-        "y": 6750
+        "x": 830,
+        "y": 8100
       },
       "variables": {
         "incoming": {
@@ -1082,8 +1082,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 20,
-        "y": 6900
+        "x": 780,
+        "y": 8250
       },
       "variables": {
         "incoming": {
@@ -1114,8 +1114,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 190,
-        "y": 7050
+        "x": 900,
+        "y": 8400
       },
       "variables": {
         "incoming": {
@@ -1124,6 +1124,38 @@
             "netbox"
           ],
           "value": "$var.job.netbox"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "69": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "the card: Batfish",
+      "description": "the card: Batfish",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 2050,
+        "y": 8550
+      },
+      "variables": {
+        "incoming": {
+          "obj": "$var.6d.object",
+          "path": [
+            "batfish"
+          ],
+          "value": "$var.job.batfish"
         },
         "outgoing": {
           "object": null
@@ -1146,8 +1178,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 140,
-        "y": 7200
+        "x": 1960,
+        "y": 8700
       },
       "variables": {
         "incoming": {
@@ -1176,8 +1208,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 300,
-        "y": 7350
+        "x": 1990,
+        "y": 8850
       },
       "variables": {
         "incoming": {
@@ -1208,8 +1240,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 1130,
-        "y": 7500
+        "x": 2120,
+        "y": 9000
       },
       "variables": {
         "incoming": {
@@ -1240,8 +1272,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 1110,
-        "y": 7650
+        "x": 2210,
+        "y": 9150
       },
       "variables": {
         "incoming": {
@@ -1249,7 +1281,7 @@
           "path": [
             "body"
           ],
-          "value": "$var.6d.object"
+          "value": "$var.69.object"
         },
         "outgoing": {
           "object": null
@@ -1272,8 +1304,8 @@
       "displayName": "GatewayManager",
       "groups": [],
       "nodeLocation": {
-        "x": 1270,
-        "y": 7800
+        "x": 2270,
+        "y": 9300
       },
       "variables": {
         "incoming": {
@@ -1307,8 +1339,8 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 2020,
-        "y": 7950
+        "x": 2310,
+        "y": 9450
       },
       "variables": {
         "incoming": {
@@ -1335,8 +1367,8 @@
       "displayName": "Work Center",
       "groups": [],
       "nodeLocation": {
-        "x": 2010,
-        "y": 8100
+        "x": 2320,
+        "y": 9600
       },
       "variables": {
         "incoming": {
@@ -1354,6 +1386,36 @@
       },
       "view": "/work-center/task/InteractiveHTML"
     },
+    "f9": {
+      "name": "replace",
+      "canvasName": "replace",
+      "summary": "why Hand Off stops here",
+      "description": "why Hand Off stops here",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 480,
+        "y": 5550
+      },
+      "variables": {
+        "incoming": {
+          "str": "__M__",
+          "substr": "__M__",
+          "newSubstr": "$var.job.batfish_message"
+        },
+        "outgoing": {
+          "replacedString": "$var.job.error"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
     "7a": {
       "name": "query",
       "canvasName": "query",
@@ -1366,8 +1428,8 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 2010,
-        "y": 8250
+        "x": 2310,
+        "y": 9750
       },
       "variables": {
         "incoming": {
@@ -1394,8 +1456,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 2160,
-        "y": 8400
+        "x": 2460,
+        "y": 9900
       },
       "variables": {
         "incoming": {
@@ -1426,8 +1488,8 @@
       "displayName": "GatewayManager",
       "groups": [],
       "nodeLocation": {
-        "x": 2180,
-        "y": 8550
+        "x": 2480,
+        "y": 10050
       },
       "variables": {
         "incoming": {
@@ -1456,8 +1518,8 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 2420,
-        "y": 8700
+        "x": 3020,
+        "y": 10200
       },
       "variables": {
         "incoming": {
@@ -1502,8 +1564,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 2420,
-        "y": 8850
+        "x": 2570,
+        "y": 10350
       },
       "variables": {
         "incoming": {
@@ -1532,8 +1594,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 2700,
-        "y": 9000
+        "x": 3000,
+        "y": 10500
       },
       "variables": {
         "incoming": {
@@ -1564,8 +1626,8 @@
       "displayName": "GatewayManager",
       "groups": [],
       "nodeLocation": {
-        "x": 2700,
-        "y": 9150
+        "x": 3000,
+        "y": 10650
       },
       "variables": {
         "incoming": {
@@ -1599,8 +1661,8 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 2770,
-        "y": 9300
+        "x": 3070,
+        "y": 10800
       },
       "variables": {
         "incoming": {
@@ -1645,8 +1707,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 3010,
-        "y": 9450
+        "x": 3310,
+        "y": 10950
       },
       "variables": {
         "incoming": {
@@ -1675,8 +1737,8 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 2920,
-        "y": 9600
+        "x": 3220,
+        "y": 11100
       },
       "variables": {
         "incoming": {
@@ -1703,8 +1765,8 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 3120,
-        "y": 9750
+        "x": 3420,
+        "y": 11250
       },
       "variables": {
         "incoming": {
@@ -1749,8 +1811,8 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 3080,
-        "y": 9900
+        "x": 3380,
+        "y": 11400
       },
       "variables": {
         "incoming": {
@@ -1777,8 +1839,8 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 3380,
-        "y": 9900
+        "x": 3680,
+        "y": 11400
       },
       "variables": {
         "incoming": {
@@ -1803,8 +1865,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 4110,
-        "y": 12450
+        "x": 4410,
+        "y": 13950
       },
       "variables": {
         "incoming": {
@@ -1833,8 +1895,8 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 4220,
-        "y": 12600
+        "x": 4520,
+        "y": 14100
       },
       "variables": {
         "incoming": {
@@ -1861,8 +1923,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 4440,
-        "y": 12750
+        "x": 4590,
+        "y": 14250
       },
       "variables": {
         "incoming": {
@@ -1891,8 +1953,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 3810,
-        "y": 12450
+        "x": 4110,
+        "y": 13950
       },
       "variables": {
         "incoming": {
@@ -1921,8 +1983,8 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 3920,
-        "y": 12600
+        "x": 4220,
+        "y": 14100
       },
       "variables": {
         "incoming": {
@@ -1949,8 +2011,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 3990,
-        "y": 12750
+        "x": 4140,
+        "y": 14250
       },
       "variables": {
         "incoming": {
@@ -1979,8 +2041,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 2310,
-        "y": 8250
+        "x": 2610,
+        "y": 9750
       },
       "variables": {
         "incoming": {
@@ -2009,8 +2071,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 2530,
-        "y": 8400
+        "x": 2830,
+        "y": 9900
       },
       "variables": {
         "incoming": {
@@ -2039,7 +2101,7 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 530,
+        "x": 700,
         "y": 2400
       },
       "variables": {
@@ -2069,7 +2131,7 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": -620,
+        "x": 610,
         "y": 3150
       },
       "variables": {
@@ -2099,7 +2161,7 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 10,
+        "x": 480,
         "y": 4350
       },
       "variables": {
@@ -2129,8 +2191,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 1860,
-        "y": 8400
+        "x": 2160,
+        "y": 9900
       },
       "variables": {
         "incoming": {
@@ -2189,7 +2251,7 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 570,
+        "x": 630,
         "y": 2850
       },
       "variables": {
@@ -2219,7 +2281,7 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 430,
+        "x": 530,
         "y": 3000
       },
       "variables": {
@@ -2249,7 +2311,7 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": -950,
+        "x": -1070,
         "y": 3750
       },
       "variables": {
@@ -2279,7 +2341,7 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": -350,
+        "x": -170,
         "y": 3750
       },
       "variables": {
@@ -2309,7 +2371,7 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": -440,
+        "x": 600,
         "y": 4050
       },
       "variables": {
@@ -2339,8 +2401,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 2100,
-        "y": 8700
+        "x": 2400,
+        "y": 10200
       },
       "variables": {
         "incoming": {
@@ -2369,8 +2431,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 2780,
-        "y": 10200
+        "x": 2930,
+        "y": 11700
       },
       "variables": {
         "incoming": {
@@ -2399,8 +2461,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 3690,
-        "y": 12750
+        "x": 3840,
+        "y": 14250
       },
       "variables": {
         "incoming": {
@@ -2429,8 +2491,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 2710,
-        "y": 10050
+        "x": 3010,
+        "y": 11550
       },
       "variables": {
         "incoming": {
@@ -2459,8 +2521,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 3390,
-        "y": 10050
+        "x": 3690,
+        "y": 11550
       },
       "variables": {
         "incoming": {
@@ -2487,8 +2549,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 3390,
-        "y": 10200
+        "x": 3690,
+        "y": 11700
       },
       "variables": {
         "incoming": {
@@ -2515,8 +2577,8 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 3240,
-        "y": 10350
+        "x": 3540,
+        "y": 11850
       },
       "variables": {
         "incoming": {
@@ -2543,8 +2605,8 @@
       "displayName": "GatewayManager",
       "groups": [],
       "nodeLocation": {
-        "x": 3420,
-        "y": 10500
+        "x": 3720,
+        "y": 12000
       },
       "variables": {
         "incoming": {
@@ -2573,8 +2635,8 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 3680,
-        "y": 10650
+        "x": 3980,
+        "y": 12150
       },
       "variables": {
         "incoming": {
@@ -2619,8 +2681,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 3760,
-        "y": 10800
+        "x": 4060,
+        "y": 12300
       },
       "variables": {
         "incoming": {
@@ -2649,8 +2711,8 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 3500,
-        "y": 10950
+        "x": 3800,
+        "y": 12450
       },
       "variables": {
         "incoming": {
@@ -2695,8 +2757,8 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 3840,
-        "y": 11100
+        "x": 4140,
+        "y": 12600
       },
       "variables": {
         "incoming": {
@@ -2723,8 +2785,8 @@
       "displayName": "GatewayManager",
       "groups": [],
       "nodeLocation": {
-        "x": 3680,
-        "y": 11250
+        "x": 3980,
+        "y": 12750
       },
       "variables": {
         "incoming": {
@@ -2753,8 +2815,8 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 3920,
-        "y": 11400
+        "x": 4220,
+        "y": 12900
       },
       "variables": {
         "incoming": {
@@ -2799,8 +2861,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 4180,
-        "y": 11550
+        "x": 4480,
+        "y": 13050
       },
       "variables": {
         "incoming": {
@@ -2829,8 +2891,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 3630,
-        "y": 11700
+        "x": 3930,
+        "y": 13200
       },
       "variables": {
         "incoming": {
@@ -2861,8 +2923,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 3650,
-        "y": 11850
+        "x": 3950,
+        "y": 13350
       },
       "variables": {
         "incoming": {
@@ -2893,8 +2955,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 3660,
-        "y": 12000
+        "x": 3960,
+        "y": 13500
       },
       "variables": {
         "incoming": {
@@ -2925,8 +2987,8 @@
       "displayName": "GatewayManager",
       "groups": [],
       "nodeLocation": {
-        "x": 3360,
-        "y": 12150
+        "x": 3960,
+        "y": 13650
       },
       "variables": {
         "incoming": {
@@ -2960,8 +3022,8 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 3850,
-        "y": 12300
+        "x": 4150,
+        "y": 13800
       },
       "variables": {
         "incoming": {
@@ -2994,6 +3056,341 @@
         "decorators": []
       }
     },
+    "f8": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "batfish-check's params",
+      "description": "batfish-check's params",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 100,
+        "y": 4350
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "stdout_json.batfish",
+          "obj": "$var.job.handoff_plan"
+        },
+        "outgoing": {
+          "return_data": "$var.job.batfish_params"
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "f0": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "batfish-check's params: the approved SHA-256",
+      "description": "batfish-check's params: the approved SHA-256",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 330,
+        "y": 4500
+      },
+      "variables": {
+        "incoming": {
+          "obj": "$var.f8.return_data",
+          "path": [
+            "sha256"
+          ],
+          "value": "$var.job.sha256"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "f1": {
+      "name": "runService",
+      "canvasName": "runService",
+      "summary": "prove the block in Batfish (batfish-check: the running config, scrubbed; seven checks)",
+      "description": "prove the block in Batfish (batfish-check: the running config, scrubbed; seven checks)",
+      "location": "Application",
+      "locationType": null,
+      "app": "GatewayManager",
+      "type": "automatic",
+      "displayName": "GatewayManager",
+      "groups": [],
+      "nodeLocation": {
+        "x": 290,
+        "y": 4650
+      },
+      "variables": {
+        "incoming": {
+          "serviceName": "batfish-check",
+          "clusterId": "lab",
+          "params": "$var.f0.object"
+        },
+        "outgoing": {
+          "result": "$var.job.batfish_result"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "fb": {
+      "name": "evaluation",
+      "canvasName": "evaluation",
+      "summary": "batfish-check exited 0?",
+      "description": "batfish-check exited 0?",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 440,
+        "y": 4800
+      },
+      "variables": {
+        "incoming": {
+          "all_true_flag": true,
+          "evaluation_groups": [
+            {
+              "all_true_flag": true,
+              "evaluations": [
+                {
+                  "query": "result.return_code",
+                  "operand_1": {
+                    "variable": "result",
+                    "task": "f1"
+                  },
+                  "operator": "==",
+                  "operand_2": {
+                    "variable": 0,
+                    "task": "static"
+                  }
+                }
+              ]
+            }
+          ],
+          "options": {}
+        },
+        "outgoing": {
+          "return_value": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "f2": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "Batfish's answer",
+      "description": "Batfish's answer",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 350,
+        "y": 4950
+      },
+      "variables": {
+        "incoming": {
+          "obj": {},
+          "path": [
+            "batfish"
+          ],
+          "value": "$var.job.batfish_result"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "f3": {
+      "name": "runCode",
+      "canvasName": "runCode",
+      "summary": "what Batfish proved (pass, fail or not proven)",
+      "description": "what Batfish proved (pass, fail or not proven)",
+      "location": "Application",
+      "locationType": null,
+      "app": "GatewayManager",
+      "type": "automatic",
+      "displayName": "GatewayManager",
+      "groups": [],
+      "nodeLocation": {
+        "x": 480,
+        "y": 5100
+      },
+      "variables": {
+        "incoming": {
+          "clusterId": "lab",
+          "language": "python",
+          "code": "import json, sys\n\n\ndef batfish_summary(d: dict) -> dict:\n    \"\"\"batfish-check's answer as Hand Off reads it: `pass` (every check passed), `fail` (any check failed: Hand Off\n    ends with nothing sent) or `not proven` (the service did not run, exited non-zero or answered without checks:\n    the card says so and approval stays possible, ADR 0076 decision 4). `card` is the card's entry, `failed` the\n    names, `message` the job's error when it ends here. Pure: runCode runs this very function's source.\"\"\"\n    result = ((d.get(\"batfish\") or {}).get(\"result\")) or {}\n    rc, out = result.get(\"return_code\"), result.get(\"stdout_json\")\n    out = out if isinstance(out, dict) else {}\n    checks = out.get(\"checks\") if isinstance(out.get(\"checks\"), dict) else {}\n    if rc != 0 or out.get(\"verdict\") not in (\"pass\", \"fail\") or not checks:\n        why = out.get(\"error\") or (\"gave no answer\" if not out else \"answered without checks\")\n        return {\"verdict\": \"not proven\", \"failed\": [], \"message\": \"\",\n                \"card\": f\"not proven: batfish-check {why} (see batfish_result); approval stays possible \"\n                        \"(ADR 0076 decision 4)\"}\n    failed = [k for k, v in checks.items() if not isinstance(v, dict) or v.get(\"status\") != \"pass\"]\n    parts = []\n    for k, v in checks.items():\n        v = v if isinstance(v, dict) else {}\n        parts.append(f\"{k}: {v.get('status', '?')}\" + (f\" - {v.get('detail')}\" if v.get(\"status\") != \"pass\" else \"\"))\n    drill = f\", drill {out['drill']}\" if out.get(\"drill\") else \"\"\n    head = (f\"{'FAIL' if failed else 'PASS'} ({len(checks)} checks, {out.get('seconds', '?')} s on \"\n            f\"{out.get('batfish_host', '?')}{drill})\")\n    card = f\"Batfish: {head}: \" + \"; \".join(parts)\n    if failed:\n        return {\"verdict\": \"fail\", \"failed\": failed, \"card\": card,\n                \"message\": f\"the Batfish proof failed ({', '.join(failed)}): nothing was sent to the router\"}\n    return {\"verdict\": \"pass\", \"failed\": [], \"card\": card, \"message\": \"\"}\n\n\nprint(json.dumps(batfish_summary(json.loads(sys.stdin.read() or \"{}\"))))\n",
+          "data": "$var.f2.object",
+          "safety": {
+            "timeout": 30
+          },
+          "packages": []
+        },
+        "outgoing": {
+          "result": "$var.job.batfish_summary"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "f4": {
+      "name": "evaluation",
+      "canvasName": "evaluation",
+      "summary": "a check failed?",
+      "description": "a check failed?",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 470,
+        "y": 5250
+      },
+      "variables": {
+        "incoming": {
+          "all_true_flag": true,
+          "evaluation_groups": [
+            {
+              "all_true_flag": true,
+              "evaluations": [
+                {
+                  "query": "stdout_json.verdict",
+                  "operand_1": {
+                    "variable": "result",
+                    "task": "f3"
+                  },
+                  "operator": "==",
+                  "operand_2": {
+                    "variable": "fail",
+                    "task": "static"
+                  }
+                }
+              ]
+            }
+          ],
+          "options": {}
+        },
+        "outgoing": {
+          "return_value": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "f5": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "the card: Batfish",
+      "description": "the card: Batfish",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 410,
+        "y": 5400
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "stdout_json.card",
+          "obj": "$var.f3.result"
+        },
+        "outgoing": {
+          "return_data": "$var.job.batfish"
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "f6": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "the proof failed: why",
+      "description": "the proof failed: why",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 860,
+        "y": 5400
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "stdout_json.message",
+          "obj": "$var.f3.result"
+        },
+        "outgoing": {
+          "return_data": "$var.job.batfish_message"
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "f7": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "not proven",
+      "description": "not proven",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": -120,
+        "y": 5550
+      },
+      "variables": {
+        "incoming": {
+          "input": "not proven: batfish-check could not run, exited non-zero or gave no answer (see batfish_result); approval stays possible (ADR 0076 decision 4)",
+          "outputType": "string",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.batfish"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
     "d0": {
       "name": "evaluation",
       "canvasName": "evaluation",
@@ -3006,8 +3403,8 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 460,
-        "y": 4350
+        "x": 220,
+        "y": 5700
       },
       "variables": {
         "incoming": {
@@ -3052,8 +3449,8 @@
       "displayName": "lab-netbox:1.0.0",
       "groups": [],
       "nodeLocation": {
-        "x": 150,
-        "y": 4500
+        "x": 70,
+        "y": 5850
       },
       "variables": {
         "incoming": {
@@ -3082,8 +3479,8 @@
       "displayName": "lab-netbox:1.0.0",
       "groups": [],
       "nodeLocation": {
-        "x": 380,
-        "y": 4950
+        "x": 330,
+        "y": 6300
       },
       "variables": {
         "incoming": {
@@ -3112,8 +3509,8 @@
       "displayName": "lab-netbox:1.0.0",
       "groups": [],
       "nodeLocation": {
-        "x": 660,
-        "y": 5100
+        "x": 340,
+        "y": 6450
       },
       "variables": {
         "incoming": {
@@ -3142,8 +3539,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 750,
-        "y": 5250
+        "x": 430,
+        "y": 6600
       },
       "variables": {
         "incoming": {
@@ -3170,8 +3567,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 750,
-        "y": 5400
+        "x": 420,
+        "y": 6750
       },
       "variables": {
         "incoming": {
@@ -3202,8 +3599,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 700,
-        "y": 5550
+        "x": 350,
+        "y": 6900
       },
       "variables": {
         "incoming": {
@@ -3234,8 +3631,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 640,
-        "y": 5700
+        "x": 420,
+        "y": 7050
       },
       "variables": {
         "incoming": {
@@ -3266,8 +3663,8 @@
       "displayName": "GatewayManager",
       "groups": [],
       "nodeLocation": {
-        "x": 790,
-        "y": 6150
+        "x": 70,
+        "y": 7500
       },
       "variables": {
         "incoming": {
@@ -3301,8 +3698,8 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 940,
-        "y": 6300
+        "x": 150,
+        "y": 7650
       },
       "variables": {
         "incoming": {
@@ -3329,8 +3726,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 120,
-        "y": 6450
+        "x": -180,
+        "y": 7800
       },
       "variables": {
         "incoming": {
@@ -3359,8 +3756,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 600,
-        "y": 4500
+        "x": 670,
+        "y": 5850
       },
       "variables": {
         "incoming": {
@@ -3389,8 +3786,8 @@
       "displayName": "lab-netbox:1.0.0",
       "groups": [],
       "nodeLocation": {
-        "x": 300,
-        "y": 4650
+        "x": -70,
+        "y": 6000
       },
       "variables": {
         "incoming": {
@@ -3419,8 +3816,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 740,
-        "y": 5850
+        "x": 330,
+        "y": 7200
       },
       "variables": {
         "incoming": {
@@ -3451,8 +3848,8 @@
       "displayName": "lab-netbox:1.0.0",
       "groups": [],
       "nodeLocation": {
-        "x": 320,
-        "y": 4800
+        "x": 260,
+        "y": 6150
       },
       "variables": {
         "incoming": {
@@ -3481,8 +3878,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 740,
-        "y": 6000
+        "x": 410,
+        "y": 7350
       },
       "variables": {
         "incoming": {
@@ -3633,7 +4030,7 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 350,
+        "x": 500,
         "y": 600
       },
       "variables": {
@@ -3665,8 +4062,8 @@
       "summary": "workflow_end",
       "groups": [],
       "nodeLocation": {
-        "x": 2530,
-        "y": 12900
+        "x": 2680,
+        "y": 14400
       }
     }
   },
@@ -4050,12 +4447,102 @@
       }
     },
     "5e": {
-      "d0": {
+      "f8": {
         "state": "success",
         "type": "standard"
       },
       "b8": {
         "state": "error",
+        "type": "standard"
+      }
+    },
+    "f8": {
+      "f0": {
+        "state": "success",
+        "type": "standard"
+      },
+      "f7": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "f0": {
+      "f1": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "f1": {
+      "fb": {
+        "state": "success",
+        "type": "standard"
+      },
+      "f7": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "fb": {
+      "f2": {
+        "state": "success",
+        "type": "standard"
+      },
+      "f7": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "f2": {
+      "f3": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "f3": {
+      "f4": {
+        "state": "success",
+        "type": "standard"
+      },
+      "f7": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "f4": {
+      "f6": {
+        "state": "success",
+        "type": "standard"
+      },
+      "f5": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "f5": {
+      "d0": {
+        "state": "success",
+        "type": "standard"
+      },
+      "f7": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "f6": {
+      "f9": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "f7": {
+      "d0": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "f9": {
+      "workflow_end": {
+        "state": "success",
         "type": "standard"
       }
     },
@@ -4078,6 +4565,12 @@
       }
     },
     "6d": {
+      "69": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "69": {
       "6e": {
         "state": "success",
         "type": "standard"
@@ -4646,6 +5139,21 @@
       },
       "netbox_result": {
         "type": "object"
+      },
+      "batfish_params": {
+        "type": "object"
+      },
+      "batfish_result": {
+        "type": "object"
+      },
+      "batfish_summary": {
+        "type": "object"
+      },
+      "batfish": {
+        "type": "string"
+      },
+      "batfish_message": {
+        "type": "string"
       },
       "input_check": {
         "type": "object"
