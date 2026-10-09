@@ -22,6 +22,7 @@ import inspect
 import ipaddress
 import itertools
 import json
+import os
 import re
 import statistics
 from datetime import datetime, timedelta, timezone
@@ -99,6 +100,11 @@ ROW = 150  # down the page from one row to the next (a task is about 50 units ta
 COL = 300  # across the page between tasks in a row (a task is about 220 units wide)
 NUDGE = 150  # the local search's sideways step
 HALF_W, HALF_H = 100, 20  # a task box for the score, a little inside its drawn 220 x 50
+# The canvas search below is the slow part of a build (a 120-task workflow: ~30 s, nearly all in drawn_cost). Only the
+# committed JSON needs the finished canvas; a test that asks about tasks, edges or card text does not. The test
+# suite turns the search off (tests/conftest.py) except where it compares against the committed files, and
+# `python build.py` always runs it. Off: each task sits at its lane column, rows as computed, no polish.
+LAYOUT_SEARCH = os.environ.get("LAB_WORKFLOW_LAYOUT", "on").lower() != "off"
 
 
 def _rows(tasks: dict, transitions: dict) -> tuple[dict, dict, list]:
@@ -208,11 +214,12 @@ def _ordered_columns(hint: dict, row: dict, edges: list) -> dict:
     return {n: x[n] - x["workflow_start"] for n in hint}
 
 
-def _crosses(p1: tuple, p2: tuple, p3: tuple, p4: tuple) -> bool:
-    def ccw(a: tuple, b: tuple, c: tuple) -> float:
-        return (c[1] - a[1]) * (b[0] - a[0]) - (b[1] - a[1]) * (c[0] - a[0])
+def _ccw(a: tuple, b: tuple, c: tuple) -> float:
+    return (c[1] - a[1]) * (b[0] - a[0]) - (b[1] - a[1]) * (c[0] - a[0])
 
-    d1, d2, d3, d4 = ccw(p3, p4, p1), ccw(p3, p4, p2), ccw(p1, p2, p3), ccw(p1, p2, p4)
+
+def _crosses(p1: tuple, p2: tuple, p3: tuple, p4: tuple) -> bool:
+    d1, d2, d3, d4 = _ccw(p3, p4, p1), _ccw(p3, p4, p2), _ccw(p1, p2, p3), _ccw(p1, p2, p4)
     return (d1 > 0) != (d2 > 0) and (d3 > 0) != (d4 > 0) and 0 not in (d1, d2, d3, d4)
 
 
@@ -234,15 +241,31 @@ def _through_box(p: tuple, q: tuple, c: tuple) -> bool:
 
 
 def drawn_cost(where: dict, edges: list) -> tuple[int, int]:
-    """(arrows crossing, arrows through a task box) for the canvas as Studio draws it."""
+    """(arrows crossing, arrows through a task box) for the canvas as Studio draws it.
+
+    Each arrow carries its bounding box: two arrows whose boxes do not overlap cannot cross, and an arrow cannot enter
+    a task box whose centre lies outside the arrow's box grown by the task's half size. Those two cheap tests skip
+    nearly every pair before the exact ones (the polish asks for this cost thousands of times per build)."""
     at = {n: (v["x"], v["y"]) for n, v in where.items()}
-    crossing = sum(
-        1
-        for i, (a, b) in enumerate(edges)
-        for c, d in edges[i + 1 :]
-        if len({a, b, c, d}) == 4 and _crosses(at[a], at[b], at[c], at[d])
-    )
-    through = sum(1 for a, b in edges for n, c in at.items() if n not in (a, b) and _through_box(at[a], at[b], c))
+    segs = []
+    for a, b in edges:
+        (ax, ay), (bx, by) = at[a], at[b]
+        segs.append((a, b, at[a], at[b], min(ax, bx), max(ax, bx), min(ay, by), max(ay, by)))
+    crossing = 0
+    for i, (a, b, p1, p2, x0, x1, y0, y1) in enumerate(segs):
+        for c, d, p3, p4, u0, u1, v0, v1 in segs[i + 1 :]:
+            if x1 < u0 or u1 < x0 or y1 < v0 or v1 < y0 or len({a, b, c, d}) != 4:
+                continue
+            if _crosses(p1, p2, p3, p4):
+                crossing += 1
+    through = 0
+    for a, b, p, q, x0, x1, y0, y1 in segs:
+        x0, x1, y0, y1 = x0 - HALF_W, x1 + HALF_W, y0 - HALF_H, y1 + HALF_H
+        for n, c in at.items():
+            if n in (a, b) or c[0] < x0 or c[0] > x1 or c[1] < y0 or c[1] > y1:
+                continue
+            if _through_box(p, q, c):
+                through += 1
     return crossing, through
 
 
@@ -288,6 +311,8 @@ def _polish(where: dict, edges: list) -> dict:
 
 def layout(tasks: dict, transitions: dict) -> dict[str, dict]:
     hint, row, edges = _rows(tasks, transitions)
+    if not LAYOUT_SEARCH:
+        return {n: {"x": int(round(x / 10) * 10), "y": row[n] * ROW} for n, x in _lane_columns(hint, row).items()}
     candidates = [
         {n: {"x": int(round(x / 10) * 10), "y": row[n] * ROW} for n, x in columns.items()}
         for columns in (_lane_columns(hint, row), _ordered_columns(hint, row, edges))
