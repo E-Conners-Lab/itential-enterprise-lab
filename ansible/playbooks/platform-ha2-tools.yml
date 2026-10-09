@@ -131,10 +131,13 @@
       ansible.builtin.command: iptables -w -S TOOLS-BATFISH
       register: batfish_rules
       changed_when: false
+      # No backreference: inside a conditional the Jinja string literal '\1' is not the group but a control
+      # character, so the old form failed on a correct chain (first production run, 2026-10-09). The expected
+      # lines are built from the allowlist instead and compared whole, in order.
       failed_when: >-
-        (batfish_rules.stdout_lines | select('search', ' -s .* -j ACCEPT') | map('regex_replace', '^.* -s (\S+) .*$', '\1')
-         | map('regex_replace', '/32$', '') | list)
-        != batfish_allow
+        (batfish_rules.stdout_lines | select('search', ' -s .* -j ACCEPT') | list)
+        != (batfish_allow | map('regex_replace', '^', '-A TOOLS-BATFISH -s ')
+            | map('regex_replace', '$', '/32 -j ACCEPT') | list)
 
     - name: Batfish answers (its v2 API lists the networks it holds; from this VM the allowlist does not apply)
       ansible.builtin.uri:
