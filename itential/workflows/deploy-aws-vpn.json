@@ -2000,7 +2000,7 @@
               "change_note": {
                 "type": "string",
                 "maxLength": 280,
-                "pattern": "^[^<>\\\"\\\\\\r\\n]{0,280}$"
+                "pattern": "^[^<>\"\\\\\\r\\n]{0,280}$"
               },
               "lifetime_hours": {
                 "type": "string",

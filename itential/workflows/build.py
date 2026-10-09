@@ -392,7 +392,7 @@ INPUT_GATES = {
     WF["deploy_aws_vpn"]: {
         "onprem_public_ip": IPV4_TEXT,
         "enable_nat_gateway": {"type": "string", "enum": ["false", "true"]},
-        "change_note": {"type": "string", "maxLength": 280, "pattern": r"^[^<>\"\\\r\n]{0,280}$"},
+        "change_note": {"type": "string", "maxLength": 280, "pattern": r'^[^<>"\\\r\n]{0,280}$'},  # no `\"`: JS u-mode
         "lifetime_hours": {"type": "string", "enum": VERSIONS["aws_vpn"]["lifetime_hours"]["choices"]},
     },
     WF["branch_vlan"]: {
