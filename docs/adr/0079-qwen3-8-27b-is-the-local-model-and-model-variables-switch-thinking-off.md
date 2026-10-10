@@ -74,3 +74,22 @@ timeout; the twins' answer turns were 1-2 s on gemma and will be a few seconds h
   (ADR 0061 amendment); converging this change is therefore `flowai.yml`, never a hand PATCH.
 - Not changed: the twins' prompts and tool caps, which ADR 0061 left as a separate decision to make
   against measurements. A stronger model is the reason to revisit them, not the occasion.
+
+## As built (2026-10-10, production)
+
+The replay converged production (`failed=0`, nine twins bound to `qwen3.8:27b`, `modelVariables`
+`{"think": false}` on the profile). The local twins then ran: 7 passed, 4 failed, and one failure was
+new and the model's. `tunnel-diagnostics-local` ended `FAILED` with *"ollama model invocation failed:
+no user query found in messages"* on its fourth turn, right after a 35 kB show-command result landed on
+a 5.7k-token conversation. Reproduced directly against Ollama: when a conversation outgrows `num_ctx`,
+Ollama drops the **oldest** messages and protects only the last one, so in a tool loop the user's
+question is the first thing to go. gemma's template answered the pruned conversation anyway (which is a
+fair candidate for why the twins "invented causes on healthy" devices); qwen3.8's template checks for
+a user turn and refuses. The Platform sends no `num_ctx` of its own (`"options":{}` on the wire), so the
+Mac's `OLLAMA_CONTEXT_LENGTH` is the only place the limit lives: raised from 16384 to 32768 in
+`scripts/mac-ollama.sh`, held by `tests/test_agent_fleet.py`. A 14.6k-token prompt fits either way;
+the failing shape needs the headroom.
+
+Also measured: prompt processing on the dense 27B runs at roughly 95 tokens/s without a cache hit, so
+a cold 15k-token turn is about 150 s. `fabric-diagnostics-local` completed (9 turns) but outran the
+verify's 300 s session wait, under gemma as well as here; that limit is the verify's, not the model's.

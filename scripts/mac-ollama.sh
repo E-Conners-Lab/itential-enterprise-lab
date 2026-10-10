@@ -38,8 +38,14 @@ cat > "$PLIST" <<PL
     <key>OLLAMA_HOST</key><string>0.0.0.0:11434</string>
     <key>OLLAMA_KEEP_ALIVE</key><string>30m</string>
     <!-- a fleet-wide tool result must fit the context: twelve parsed devices need 16384 (ADR 0046).
-         This used to be set on the lab's Ollama container; it moved here with the inference. -->
-    <key>OLLAMA_CONTEXT_LENGTH</key><string>16384</string>
+         This used to be set on the lab's Ollama container; it moved here with the inference.
+         32768 since ADR 0079: when a conversation outgrows num_ctx, Ollama drops the OLDEST messages
+         and keeps only the last one, so in a tool loop the user's question goes first. gemma answered
+         anyway (wrongly); qwen3.8's template refuses with "no user query found in messages" and the
+         session FAILS. Measured 2026-10-10 on production: a 5.7k-token turn plus a 35 kB show-command
+         result crossed 16384 and failed tunnel-diagnostics-local. The Platform sends no num_ctx of
+         its own (options: {} on the wire), so this default is the only place the limit is set. -->
+    <key>OLLAMA_CONTEXT_LENGTH</key><string>32768</string>
     <!-- One model resident at a time. The lab's Ollama container had this; the guard did not move to
          the Mac with the inference (ADR 0060), and the gap bit on 2026-09-12: a benchmark loaded
          qwen3.6:35b-32k (27.0 GB) beside gemma4:26b (25.8 GB), KEEP_ALIVE pinned both, 52.8 GB of
