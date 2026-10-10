@@ -63,7 +63,7 @@
     method: PATCH
     headers: {Cookie: "{{ login.cookies_string }}"}
     body_format: json
-    body: {componentId: "{{ otr_wf_id }}", componentName: "{{ workflows[otr_key] }}"}
+    body: {componentType: workflows, componentId: "{{ otr_wf_id }}", componentName: "{{ workflows[otr_key] }}"}
     status_code: 200
   when: otr_auto | length > 0 and otr_auto.componentId != otr_wf_id
   changed_when: true

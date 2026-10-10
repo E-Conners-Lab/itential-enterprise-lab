@@ -130,7 +130,7 @@
     method: PATCH
     headers: {Cookie: "{{ login.cookies_string }}"}
     body_format: json
-    body: {componentId: "{{ wf_id_b }}", componentName: "{{ workflows.backup_all }}"}
+    body: {componentType: workflows, componentId: "{{ wf_id_b }}", componentName: "{{ workflows.backup_all }}"}
     status_code: 200
   vars:
     wf_id_b: "{{ (wf_list_b.json['items'] | selectattr('name', 'equalto', workflows.backup_all) | first)._id }}"
