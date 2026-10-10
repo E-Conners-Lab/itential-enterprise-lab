@@ -93,3 +93,14 @@ the failing shape needs the headroom.
 Also measured: prompt processing on the dense 27B runs at roughly 95 tokens/s without a cache hit, so
 a cold 15k-token turn is about 150 s. `fabric-diagnostics-local` completed (9 turns) but outran the
 verify's 300 s session wait, under gemma as well as here; that limit is the verify's, not the model's.
+
+## As built, later the same day: temperature 0
+
+The refusal in `remediation-local` (S4d.5k) was intermittent after the prompt fixes: dev refused five times
+in a row, production wrote the refusal sentence and emitted the tool call in the same turn, from an agent
+document that is identical apart from ids. That is sampling, and the Platform gives one sampling control.
+Measured on the wire from the gateway: a top-level `temperature` in Model Variables is mapped into
+Ollama's `options` (`{"options":{"temperature":0}}`), while a nested `options: {...}` is replaced by the
+Platform's own empty object. `ollama-mac` now carries `temperature: 0`, so every twin decodes greedily and
+the same prompt and tools give the same answer on both tiers; `tests/test_flowai.py` holds it and refuses a
+nested `options`. The bake-off already ran at temperature 0, so its numbers describe this configuration.

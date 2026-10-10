@@ -49,6 +49,15 @@ def test_llm_section_pins_providers_and_models(versions: dict) -> None:
         assert mac.get("model_variables", {}).get("think") is False, (
             "a Qwen model on ollama-mac needs model_variables: {think: false} (ADR 0079)"
         )
+    # The twins are judged by exact behaviour (a refusal with no tool call, one fix from a menu), and at the
+    # model's default temperature qwen3.8 refused on dev and pushed on production from the same prompt.
+    # A top-level temperature is the one sampling control the Platform forwards (measured on the wire).
+    assert mac.get("model_variables", {}).get("temperature") == 0, (
+        "ollama-mac needs model_variables.temperature: 0 - sampled answers made S4d.5k intermittent (ADR 0079)"
+    )
+    assert "options" not in mac.get("model_variables", {}), (
+        "a nested options object never reaches Ollama: the Platform replaces it with its own (measured 2026-10-10)"
+    )
     assert "optional" not in mac, (
         "the Mac is the only inference host now: marking it optional would let the play skip it and "
         "leave six agents pointing at nothing"
