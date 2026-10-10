@@ -206,6 +206,15 @@ and imports nothing, so the retry is clean.
 **S11.9 fails with `restored N collections, live itential has N+4`.** The release added collections on first
 start and the newest dump predates it. Take a dump now and rerun; keep the pre-upgrade dump as the rollback.
 
+**A Work Center card says "There was a problem loading this task".** Open the browser console before you blame
+the workflow. If the stack trace names the task view's `remoteEntry.js` under `workflow_engine/task/<view>/` and
+Work Center's `federatedFrame`, the release broke that task view's bundle, not your job: every chunk downloads
+with 200, a hard reload changes nothing, and the legacy Operations Manager dialog fails the same way. Seen on
+6.6.0 for `ViewData` (Push Configuration with Approval's card), while the InteractiveHTML cards rendered. Finish
+the task through the API instead, as `verify/test-06-flowai.sh` does
+(`POST /operations-manager/jobs/<job>/tasks/<task>/finish` with the button's `finish_state`), or cancel the job
+from Active Jobs. Note that cancelling an agent session does not cancel the job it started.
+
 **`make prod-snapshot MODE=compare` reports the administrator group's role count changed.** New applications
 or features carry new roles, which the Platform grants to its administrator group on upgrade. Four on 6.6.0.
 Record the number in the ADR; it is not drift.
