@@ -95,4 +95,13 @@ Measured on the day, dev first, then production:
   2026-10-05, S4d.4), test-06 green except S4c.5 (the Ollama path). k3s S2.3 is red because the workstation's
   kubeconfig names a LAN address the nodes no longer hold; the API answers on its OOB VIP. None of the red is the
   upgrade.
+- **Found the same evening, not in the release notes:** a `ViewData` manual task cannot be opened in the 6.6.0 UI.
+  Work Center and the legacy Operations Manager dialog both show "There was a problem loading this task", and the
+  browser console shows the task view's federated bundle (`workflow_engine/task/ViewData/remoteEntry.js`) throwing
+  `TypeError: Cannot read properties of undefined (reading 'call')` as Work Center's `federatedFrame` loads it;
+  every chunk downloads with 200, a hard reload changes nothing. Push Configuration with Approval's card (task
+  2a) is the one affected here; it still finishes through the API (`POST /operations-manager/jobs/<job>/tasks/2a/finish`,
+  which is how `verify/test-06-flowai.sh` approves it). The branded InteractiveHTML cards of ADR 0077 are fine:
+  a Push Configuration with Revert Timer card rendered in Work Center and its Reject button ended the job
+  (`changed = false`). Reported to Itential as an owner action; the workaround is the API or a cancel.
 - The procedure is runbook chapter 11.
