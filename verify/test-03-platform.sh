@@ -11,7 +11,21 @@ set -a; . ./.env; set +a
 KUBECONFIG_PATH=${KUBECONFIG_PATH:-$HOME/.kube/lab-k3s.yaml}
 export KUBECONFIG="$KUBECONFIG_PATH"
 API_VIP=${API_VIP:-10.100.0.19}
-TEST_LB_IP=${TEST_LB_IP:-10.100.0.43}
+# The throwaway LoadBalancer's address: the highest address of the MetalLB pool that no topology/ipam.yaml entry
+# claims, so a new VIP in the plan (10.100.0.43 became netops-knowledge's on 2026-10-06, ADR 0074, and this check
+# pinned exactly that address until 2026-10-10) can never collide with the test again. TEST_LB_IP still overrides.
+default_lb_ip=$(python3 - <<'PY'
+import ipaddress, yaml
+plan = yaml.safe_load(open("topology/ipam.yaml"))
+pool = next(r for r in plan["ranges"] if r.get("role") == "metallb-pool")
+taken = {a["address"] for a in plan["addresses"]}
+ip, start = ipaddress.ip_address(pool["end"]), ipaddress.ip_address(pool["start"])
+while ip >= start and str(ip) in taken:
+    ip -= 1
+print(ip)
+PY
+)
+TEST_LB_IP=${TEST_LB_IP:-$default_lb_ip}
 EVE_OOB=${EVE_OOB:-10.100.0.2}
 SSH="ssh -o BatchMode=yes -o ConnectTimeout=8 -o StrictHostKeyChecking=accept-new"
 ts=$(date -u +%Y%m%dT%H%M%SZ)
