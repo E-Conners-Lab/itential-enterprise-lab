@@ -137,7 +137,7 @@ CASES = [
 ]
 
 
-def chat(model: str, tools: list, prompt: str, timeout: int) -> tuple[dict, float, int, str]:
+def chat(model: str, tools: list, prompt: str, timeout: int, think: bool | None = None) -> tuple[dict, float, int, str]:
     body = {
         "model": model,
         "messages": [{"role": "system", "content": SYSTEM}, {"role": "user", "content": prompt}],
@@ -145,6 +145,11 @@ def chat(model: str, tools: list, prompt: str, timeout: int) -> tuple[dict, floa
         "stream": False,
         "options": {"temperature": 0},
     }
+    # The Platform passes a profile model's modelVariables into the request as-is (Model Registry docs), so
+    # `think: false` reaches Ollama from an agent session the same way it does here. Measured 2026-10-10:
+    # the Qwen family ignores /no_think in the prompt but honours this flag (qwen3.8:27b: 70 -> 0 thinking chars).
+    if think is not None:
+        body["think"] = think
     req = urllib.request.Request(
         f"{HOST}/api/chat", data=json.dumps(body).encode(),
         headers={"Content-Type": "application/json"}, method="POST",
@@ -166,6 +171,7 @@ def main() -> int:
     ap.add_argument("models", nargs="*")
     ap.add_argument("--runs", type=int, default=3)
     ap.add_argument("--timeout", type=int, default=180)
+    ap.add_argument("--no-think", action="store_true", help="send Ollama's think:false, as a modelVariables entry would")
     args = ap.parse_args()
 
     with urllib.request.urlopen(f"{HOST}/api/tags", timeout=10) as r:
@@ -181,7 +187,7 @@ def main() -> int:
             oks, secs, toks, notes = [], [], [], []
             for _ in range(args.runs):
                 try:
-                    call, dt, tok, thinking = chat(model, tools, prompt, args.timeout)
+                    call, dt, tok, thinking = chat(model, tools, prompt, args.timeout, False if args.no_think else None)
                 except Exception as e:  # a model that cannot do tools at all fails here
                     agg["err"] = f"{type(e).__name__}: {str(e)[:60]}"
                     oks, notes = [False], [agg["err"]]

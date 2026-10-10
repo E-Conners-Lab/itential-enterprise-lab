@@ -2,7 +2,7 @@
 # (single device, all devices, name lookup); a small model given a raw gateway tool invents node names (measured).
 project: lab-netops
 name: lab-netops-local
-description: lab-netops on the Mac Mini's Ollama (gemma4:26b, ADR 0060/0061)
+description: lab-netops on the Mac Mini's Ollama (qwen3.8:27b, ADR 0060/0061)
 profile: ollama-mac
 input_schema:
   type: object

@@ -1,7 +1,7 @@
-# cloud-status on the Mac Mini's Ollama (gemma4:26b, ADR 0060/0061): the status workflow, and Verify on request.
+# cloud-status on the Mac Mini's Ollama (qwen3.8:27b, ADR 0060/0061): the status workflow, and Verify on request.
 project: lab-netops
 name: cloud-status-local
-description: cloud-status on the Mac Mini's Ollama (gemma4:26b), the AWS VPN's status and, on request, a tunnel check
+description: cloud-status on the Mac Mini's Ollama (qwen3.8:27b), the AWS VPN's status and, on request, a tunnel check
 profile: ollama-mac
 input_schema:
   type: object

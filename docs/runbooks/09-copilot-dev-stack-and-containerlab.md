@@ -289,7 +289,7 @@ minutes.
 | Itential Platform | 6.5.2 |
 | Itential Gateway 5 | 5.5.2-amd64 (netsdk netmiko driver) |
 | Itential MCP server | v0.14.0, running as `svc-copilot` |
-| Local model | `gemma4:26b` on the Mac, the only dev profile (`ollama-mac`) |
+| Local model | `qwen3.8:27b` on the Mac with `think: false` as a model variable (ADR 0079), the only dev profile (`ollama-mac`) |
 | containerlab | 0.79.0 |
 | vrnetlab | commit `3a34fa63d73843c871f248e2df2ffa5c038183ce` |
 | Cisco C8000v | 17.13.01a, 4 GB, network-advantage |

@@ -553,21 +553,26 @@ llm:
       model: claude-sonnet-5 # Model Registry listed 11 Claude models for the key on 2026-09-07
       env_key: ANTHROPIC_API_KEY
     # The Mac Mini's Ollama is Homebrew-managed, so it is recorded rather than pinned from here:
-    # tested against ollama 0.23.3 (ADR 0060).
+    # tested against ollama 0.40.2 (ADR 0079; 0.23.3 could not load qwen3.8 at all - "unable to load
+    # model" on a fully pulled blob is the version, not the download).
     #
-    # gemma4:26b, not a Qwen (ADR 0061, measured by scripts/model-bakeoff.py). Every candidate scored
-    # 9/9 on the tool-call shapes that caused the incidents of PR #32/#33, so correctness stopped
-    # being the differentiator; thinking traces are. The Platform does not send Ollama's `think: false`
-    # (a real session emitted 1820 output tokens), `PARAMETER think false` is not a Modelfile
-    # parameter, and `/no_think` in the prompt is IGNORED by the Qwen family here - only gemma obeys
-    # it. The prompt is the only lever the Platform gives us, so it decides the model.
+    # qwen3.8:27b (ADR 0079, owner). ADR 0061 chose gemma4:26b because the prompt was the only lever:
+    # the Platform did not send Ollama's `think: false` and only gemma obeys `/no_think`. The Model
+    # Registry's per-model `modelVariables` is that lever now - the Platform passes the JSON to the
+    # provider as-is - so the Qwen family is back in contention and the owner's pick stands. Every
+    # candidate still scores 9/9 on scripts/model-bakeoff.py; `--no-think` there measures what the
+    # variables below do in a session. `/no_think` stays as the twins' first line (harmless, and the
+    # gemma fallback still needs it).
     - name: ollama-mac
       provider: ollama
       # ADR 0060: every local model runs on the Mac Mini. `ollama.lab.internal` resolves to it
       # (topology/ipam.yaml home_lan.inference_host), so no raw home-LAN address appears here and
       # a DHCP reservation change is a one-line DNS edit rather than a hunt through the repo.
       base_url: http://ollama.lab.internal:11434
-      model: gemma4:26b
+      model: qwen3.8:27b
+      # Passed to Ollama's chat request by the Platform (Model Registry modelVariables); the drift
+      # check in tasks/flowai-assets.yml re-PATCHes the profile when the live value differs.
+      model_variables: {think: false}
 
 agents:
   project: lab-netops
