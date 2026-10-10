@@ -180,6 +180,23 @@ If your home router genuinely cannot hold a static route, you can point per-work
 `${OOB_GW_LAN_IP}` — but then you must also remove the gateway's return-path policy route, or you have
 built the asymmetry deliberately.
 
+**The inference host is the one deliberate exception.** The local models are the only flows the *lab*
+opens towards the home LAN, and for them the rule above runs backwards: the request hairpins through the
+router and the Mac's reply comes straight back, so the router sees one half of every flow. For a month it
+forwarded them anyway; then it started dropping the payload after the handshake, and every `-local` twin
+in `verify/test-06-flowai.sh` (S4c.5 and the S4d.5 twins) failed at once with nothing changed in the lab.
+`ansible/playbooks/oob-gw.yml` therefore puts an on-link `/32` for `home_lan.inference_host.address` into
+the return-path table, and that one host routes the lab at the gateway's LAN leg instead of the router:
+
+```
+LAB_NEXT_HOP=${OOB_GW_LAN_IP} sudo scripts/workstation-route.sh
+```
+
+Both halves are then direct, which is still symmetric; no stateful box is in the path. The two go
+together: the `/32` without the host route breaks that host's own sessions into the lab exactly as
+described above. The tell, if it ever comes back: on the gateway, `ip route get <host> from <a lab VM>
+iif <oob leg>` must answer `dev <lan leg>` with no `via`.
+
 **`tofu apply` fails with "VM 200 already exists" after an interrupted run.** An interrupted `apply` can
 leave a VM on the hypervisor that is not in the state file. Do not delete the VM. Import it:
 

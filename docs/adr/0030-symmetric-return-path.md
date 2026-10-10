@@ -37,6 +37,26 @@ same hops it came in on:
   own segment (MetalLB VIPs, other OOB hosts) through `oob-gw`. `oob-gw` also
   accepts OOB-to-OOB forwarding so a misrouted host degrades to a hairpin
   instead of a silent drop.
+- Amendment 2026-10-10: the inference host (ADR 0060) is exempt in both
+  directions. This ADR covers flows a home-LAN client *opens*; the local
+  models are the one case where the lab opens the flow towards the home LAN,
+  and there the rule above produced the very asymmetry it exists to prevent:
+  the request hairpinned through the router, the Mac's reply came straight
+  back on-link, and the router saw one half of every flow. It tolerated that
+  from 2026-09-11 until 2026-10-08, then began dropping the payload after the
+  handshake (SYN and FIN still passed; the 92-byte request was retransmitted
+  six times and never acknowledged), which failed all ten `-local` twins and
+  S4c.5 at once while nothing in the lab had changed. Rather than depend on a
+  consumer router's state table in either direction, the Mac is taken out of
+  its path entirely: table 100 carries an on-link `/32` for
+  `home_lan.inference_host.address`, and the Mac routes `10.100.0.0/14` at
+  `oob-gw`'s LAN leg (`LAB_NEXT_HOP` in `scripts/workstation-route.sh`,
+  manual step 6c). Both halves are then direct, which is still symmetric. The
+  other home-LAN clients keep the router path. Proven 2026-10-10 with the
+  `/32` alone added live: `/api/tags` from the dev VM and iag-01 in 24 ms and
+  33 ms, a `gemma4:26b` generation answered from both; removed again until the
+  Mac's route is in place, because the `/32` without it breaks the Mac's own
+  sessions into the lab the same way.
 
 ## Consequences
 

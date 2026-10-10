@@ -35,6 +35,15 @@
     # firewall never sees the return half of the flow and drops it after the TCP handshake.
     # Sending lab-sourced traffic for the home LAN back via the router keeps both halves on
     # the same path. Direct client -> .120 traffic is unaffected (source is not 10.100/14).
+    #
+    # The one exception is the inference host (ADR 0030 amendment 2026-10-10, ADR 0060). Flows the lab
+    # OPENS to it (every local-model request) are the mirror image: the request hairpinned through the
+    # router and the Mac's reply came straight back, so the router saw one half of every flow. It
+    # tolerated that until 2026-10-08 and then started dropping the payload after the handshake, which
+    # failed every local twin at once. The host-route below keeps the router out of both directions:
+    # lab -> Mac on-link, and the Mac routes 10.100.0.0/14 at this VM's LAN leg
+    # (`LAB_NEXT_HOP=<this VM> scripts/workstation-route.sh`, manual step 6c). Symmetric, with no
+    # stateful box in the path.
     - name: "Policy route: lab-sourced traffic to the home LAN returns via the router"
       ansible.builtin.copy:
         dest: /etc/netplan/60-oob-return-path.yaml
@@ -47,6 +56,9 @@
                 routes:
                   - to: 192.168.68.0/22
                     via: {{ home_router }}
+                    table: 100
+                  - to: {{ home_lan.inference_host.address }}/32
+                    scope: link
                     table: 100
                 routing-policy:
                   - from: {{ lab_supernet }}
