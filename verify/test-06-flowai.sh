@@ -51,12 +51,17 @@ run_agent() {
   sid=$(iap -X POST "${PLATFORM}/agent-session-manager/sessions" -d "{\"agentDefinitionId\":\"${aid}\",\"inputs\":${inputs}}" | ${PY} -c 'import sys,json;print(json.load(sys.stdin).get("sessionId",""))')
   [ -n "$sid" ] || { echo "session start failed for ${name}"; return 1; }
   echo "$sid"
-  for _ in $(seq 1 60); do
+  # 15 minutes (ADR 0079): the dense 27B's diagnostics twins run 5-10 minutes (fabric-diagnostics-local:
+  # 9 turns, 12k-token prompts). The old 5-minute wait gave up first, the cleanup at the end of the run
+  # closed the twin's incident, and the still-running session's work note then hit ServiceNow's 403
+  # "ACL Exception Update Failed" on a closed incident (measured 2026-10-10, INC0010044). Claude sessions
+  # finish in well under a minute either way, so the longer wait costs nothing on a healthy run.
+  for _ in $(seq 1 "${SESSION_WAIT_POLLS:-180}"); do
     state=$(iap "${PLATFORM}/agent-session-manager/sessions/${sid}" | ${PY} -c 'import sys,json;print((json.load(sys.stdin).get("status") or "").lower())')
     case "$state" in complete|completed) return 0;; failed|error|canceled|cancelled) echo "session ${sid} ${state}"; return 1;; esac
     sleep 5
   done
-  echo "session ${sid} did not finish (${state})"; return 1
+  echo "session ${sid} did not finish (${state}) within $(( ${SESSION_WAIT_POLLS:-180} * 5 )) s"; return 1
 }
 # session_text <session id> -> the final assistant text; session_tools -> tool names called; session_usage -> "in out"
 session_msgs() { iap "${PLATFORM}/agent-session-manager/sessions/$1/messages?limit=500&sortBy=eventId&sortOrder=asc"; }
