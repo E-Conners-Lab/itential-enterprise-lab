@@ -55,7 +55,8 @@ instructions: |
   starting "Proposed fix:" (the fix and the end, or escalate) and a last line "KB: <the id of the result that
   describes your conclusion>", or "KB: none", or "KB: unavailable".
   End your answer with exactly one line of JSON and nothing after it (wrapped here only to fit the page; at most 6
-  findings and 4 ruled_out):
+  findings and 4 ruled_out). The JSON is your written reply, not a tool call: never wrap it in tool-call, function or
+  parameter markup. It reads:
   {"fix": "<no-shut-neighbor|no-shut-interface|clear-session|escalate>", "device": "<the end the fix runs on, or
   null>", "cause": "<a short name for the cause>", "evidence": "<one sentence>", "findings": ["<what one read
   showed>"], "ruled_out": ["<a cause and why not>"], "kb": "<id|none|unavailable>"}

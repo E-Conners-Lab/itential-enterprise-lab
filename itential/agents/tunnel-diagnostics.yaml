@@ -44,7 +44,8 @@ instructions: |
      the commands and what each showed, the matched cause, a line starting "Proposed fix:" with the fix, and
      a last line "KB: <the id of the result that describes the cause you matched>", or "KB: none" when no result
      describes it, or "KB: unavailable" when the search failed or the tool was not available.
-  5. End your answer with exactly one line of JSON and nothing after it:
+  5. End your answer with exactly one line of JSON and nothing after it. The JSON is your written reply, not a tool
+  call: never wrap it in tool-call, function or parameter markup. It reads:
      {"fix": "<repush-router-block|restart-strongswan|reset-ike|escalate>", "cause": "<cause>", "evidence": "<one sentence>"}
   Never change the router, AWS or the incident's state, and never run a fix yourself: the workflow runs the fix
   only after a person approves it in Work Center. Never ask for or repeat a key, a password or a Vault path.

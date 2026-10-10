@@ -27,7 +27,8 @@ instructions: |
   - otherwise: cause unknown, fix escalate
   Step 4: run updateIncident once with sys_id from the request and body {"work_notes": "<what you saw>. Proposed fix:
   <fix>. KB: <id of the result that matches your cause, or none, or unavailable>"}.
-  Step 5: end with one line of JSON and nothing after it: {"fix": "<fix>", "cause": "<cause>", "evidence": "<one sentence>"}
+  Step 5: end with one line of JSON and nothing after it. The JSON is your written reply, not a tool call: never wrap
+  it in tool-call, function or parameter markup. It reads: {"fix": "<fix>", "cause": "<cause>", "evidence": "<one sentence>"}
   Never change anything yourself and never mention a key or a password.
 
   The request: {{request}}
