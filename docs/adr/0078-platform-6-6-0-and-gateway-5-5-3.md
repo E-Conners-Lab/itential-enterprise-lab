@@ -71,6 +71,28 @@ procedure below is the lab's own (the same plays that built each tier).
 - `/metrics/webserver` and Event Auditing are available and not yet used; wiring them into the observability stack is a
   later decision.
 
-## As built
+## As built (2026-10-10)
 
-*(filled in after the production converge: measured times, verify results, anything 6.6.0 changed that the notes did not say)*
+Measured on the day, dev first, then production:
+
+- **Dev** (`make phase-flowai`): the stack play 136 ok / 13 changed, the platform play 54 ok / 2 changed, both failed=0;
+  the Platform on 6.6.0 with Node 22.23.2, the Gateway on 5.5.3, the runner rebuilt; adapter-netbox's `node_modules`
+  reinstalled by the new image's npm (no native addons). The MOP backup automation's re-point PATCH, now with
+  `componentType`, succeeded against 6.6.0. The FlowAI play stopped at its Ollama pre-check (the Mac's inference
+  host does not answer NAT'd lab VMs; unrelated, pre-existing since about 2026-10-08). Dev verify: S12.1 to S12.6
+  and S12.9 pass once the MCP container is restarted, S8.2 and S8.3 pass.
+- **Production**: dump at 16:57Z, snapshot saved, 1447 jobs and none running. The Platform play limited to iap-01:
+  19 ok / 2 changed, the container healthy on 6.6.0 in **47 seconds** end to end. The Gateway play: 5.5.3 and the
+  runner up in about two minutes, then its last section refused until the Vault administrator token was renewed
+  (the saved token had expired; `make vault-login`, then 52 ok / 1 changed / failed=0). The MCP container on
+  tools-01 restarted for its session (it had been answering 401 for days already, from an earlier Platform restart).
+- **What 6.6.0 changed that the notes did not say:** four collections added to the `itential` database on first
+  start (76 to 80; S11.9 red until a post-upgrade dump was taken), four roles added to the administrator group
+  (192 to 196; the only difference the snapshot compare reports).
+- **Verify on production:** test-05 11/12 (S4.1 6.6.0, device commands through the Gateway, Add Branch VLAN with
+  approval, S4.7 MCP 6.6.0; the one red is the PDI's interactive-login age, owner action), test-08 7/7, test-06d
+  5/5, test-06b green after the ServiceNow operation oracle caught up with `createIncident` (R6 drift since
+  2026-10-05, S4d.4), test-06 green except S4c.5 (the Ollama path). k3s S2.3 is red because the workstation's
+  kubeconfig names a LAN address the nodes no longer hold; the API answers on its OOB VIP. None of the red is the
+  upgrade.
+- The procedure is runbook chapter 11.

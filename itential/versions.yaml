@@ -638,7 +638,10 @@ integrations:
              taken: "2026-09-08", kind: documentation}
       operations: [listIncidents, getIncident, updateIncident, listChangeRequests, getChangeRequest,
                    # S4f (ADR 0054): the change writes the workflows reached through genericAdapterRequest
-                   createStandardChange, updateStandardChange, updateChangeRequest]
+                   createStandardChange, updateStandardChange, updateChangeRequest,
+                   # R6 (ADR 0072, #122): the outage loops open one incident per outage; the model carried it
+                   # since 2026-10-05, this list caught up on 2026-10-10 (verify S4d.4 compares the two)
+                   createIncident]
 
 # --- S4d.6 (ADR 0047): the Ubuntu hosts as Gateway 5 inventory nodes in their own inventory (stack.host_inventory),
 # so Configuration Manager (InventoryBroker publishes only stack.inventory) never backs them up or checks them.
