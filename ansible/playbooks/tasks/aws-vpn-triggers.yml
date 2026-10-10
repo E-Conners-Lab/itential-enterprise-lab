@@ -90,7 +90,7 @@
     method: PATCH
     headers: {Cookie: "{{ login.cookies_string }}"}
     body_format: json
-    body: {componentId: "{{ dav_wf_id }}", componentName: "{{ workflows[wt.key] }}"}
+    body: {componentType: workflows, componentId: "{{ dav_wf_id }}", componentName: "{{ workflows[wt.key] }}"}
     status_code: 200
   when: dav_auto | length > 0 and dav_auto.componentId != dav_wf_id
   changed_when: true

@@ -864,6 +864,7 @@ the verify log path and any ADRs added.
 
 | Version | Date | Change |
 |---|---|---|
+| 1.49 | 2026-10-10 | ADR 0078 (owner): Platform 6.6.0 and Gateway 5.5.3 (both pushed to Itential's ECR 2026-10-07) replace 6.5.2 and 5.5.2, both images and dev first; iap-02 stays stopped. 6.6.0 runs on Node 22 (its images bundle it) and rejects an Operations Manager update that names `componentId` without `componentType`, so the five trigger re-point tasks now send it. The runner image is rebuilt from the 5.5.3 `iagctl`. Rollback: the previous pins and the two production plays, plus the pre-upgrade dump for the schema. |
 | 1.0 | 2026-09-06 | Initial PID (Phase 1) |
 | 1.1 | 2026-09-06 | Phase 2: A-19 resolved (.120), assumption 1 amended to the chat-approval process, S1 criterion 8 (client access) and S4 criterion 7 (Itential MCP reachability) added, Itential moves to the container path (manifest 3.5, ADR 0020 to be amended in Phase 5) |
 | 1.2 | 2026-09-06 | Phase 3: object store is Garage, CNPG backups via the Barman Cloud plugin, kube-vip 1.2.3 (ADR 0031); S2.2 drill recorded separately per PIS-09; NetBox is the Ansible inventory from Phase 3 on (PIS-15 contract honoured) |

@@ -190,7 +190,7 @@
     method: PATCH
     headers: {Cookie: "{{ login.cookies_string }}"}
     body_format: json
-    body: {componentId: "{{ wf_id }}", componentName: "{{ workflows.compliance_run }}"}
+    body: {componentType: workflows, componentId: "{{ wf_id }}", componentName: "{{ workflows.compliance_run }}"}
     status_code: 200
   vars:
     wf_id: "{{ (wf_list.json['items'] | selectattr('name', 'equalto', workflows.compliance_run) | first)._id }}"

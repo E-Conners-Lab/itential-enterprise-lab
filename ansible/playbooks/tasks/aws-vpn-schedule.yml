@@ -50,7 +50,7 @@
     method: PATCH
     headers: {Cookie: "{{ login.cookies_string }}"}
     body_format: json
-    body: {componentId: "{{ avs_wf_id }}", componentName: "{{ workflows[sk] }}"}
+    body: {componentType: workflows, componentId: "{{ avs_wf_id }}", componentName: "{{ workflows[sk] }}"}
     status_code: 200
   when: avs_auto | length > 0 and avs_auto.componentId != avs_wf_id
   changed_when: true
