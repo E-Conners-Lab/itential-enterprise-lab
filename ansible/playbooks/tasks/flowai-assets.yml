@@ -80,10 +80,16 @@
   vars:
     want: "{{ llm_profiles | selectattr('name', 'equalto', item.json.name) | first }}"
     # anthropic profiles carry a write-only key and nothing comparable, so they are never touched
+    # ADR 0079: a model's modelVariables (think: false for the Qwen family) count as drift too - the
+    # Platform passes them to Ollama as-is, so a missing entry means every session pays for thinking.
+    live_variables: >-
+      {{ item.json.models | default([]) | selectattr('name', 'equalto', want.model)
+         | map(attribute='modelVariables') | map('default', {}) | first | default({}) }}
     ok: >-
       {{ item.json.provider != 'ollama'
          or ((item.json.credential.baseUrl | default('')) == want.base_url
-             and want.model in (item.json.models | default([]) | map(attribute='name') | list)) }}
+             and want.model in (item.json.models | default([]) | map(attribute='name') | list)
+             and live_variables == (want.model_variables | default({}))) }}
 
 - name: Drifted profiles updated in place
   ansible.builtin.uri:
@@ -94,7 +100,7 @@
     body:
       update:
         credential: {type: ollama, baseURL: "{{ item.want.base_url }}"}
-        models: [{name: "{{ item.want.model }}", enabled: true}]
+        models: [{name: "{{ item.want.model }}", enabled: true, modelVariables: "{{ item.want.model_variables | default({}) }}"}]
     status_code: 200
   loop: "{{ drifted_profiles | default([]) }}"
   loop_control:

@@ -1,8 +1,8 @@
-# netbox-sot on the Mac Mini's Ollama (gemma4:26b, ADR 0060/0061/0062). Four tools: the two-tool cap was a
+# netbox-sot on the Mac Mini's Ollama (qwen3.8:27b, ADR 0060/0061/0062). Four tools: the two-tool cap was a
 # measured property of qwen2.5:7b on CPU, not of this model - see ADR 0062 for what was re-measured.
 project: lab-netops
 name: netbox-sot-local
-description: netbox-sot on the Mac Mini's Ollama (gemma4:26b), NetBox devices and VLANs only
+description: netbox-sot on the Mac Mini's Ollama (qwen3.8:27b), NetBox devices and VLANs only
 profile: ollama-mac
 input_schema:
   type: object

@@ -286,9 +286,18 @@ result, writes the reply): thinking costs **6-8x** - `gemma4:26b` goes 9.9 s/137
 Modelfile parameter** (`Error: unknown parameter 'think'`); and `/no_think` in the prompt is obeyed by
 **gemma only** - the Qwen family ignores it (`qwen3:8b` stayed at 703 thinking characters,
 `qwen3:30b-a3b` at 1175). So the prompt decides the model, not the other way round: that is why the
-twins run `gemma4:26b` with `/no_think` as the **first** line (ADR 0061). Re-take the decision by
+twins ran `gemma4:26b` with `/no_think` as the **first** line (ADR 0061). Re-take the decision by
 re-running `scripts/model-bakeoff.py`, which scores candidates on the tool-call shapes that caused real
 incidents here rather than on a leaderboard.
+
+That lever exists now. A Model Registry profile carries an optional **Model Variables** JSON per enabled
+model, which the Platform passes to the provider's request as-is, so `{"think": false}` reaches Ollama
+from an agent session. The twins run `qwen3.8:27b` that way (ADR 0079, `model_variables` on the
+`ollama-mac` profile in `itential/versions.yaml`); `scripts/model-bakeoff.py --no-think` measures the
+same flag. `/no_think` stays as the first prompt line: harmless to Qwen, and still what a gemma
+fallback needs. The variables count as drift: if a session starts emitting thinking traces again, the
+profile has lost them, and `ansible/playbooks/flowai.yml` re-PATCHes it (which reissues the model id and
+re-binds every agent, as the chapter's next trap explains).
 
 **A change to a Model Registry profile does not reach the Platform.** The profile *is* updatable, but
 only through the documented shape: `PATCH /model-registry-service/profiles/<id>` with the body wrapped

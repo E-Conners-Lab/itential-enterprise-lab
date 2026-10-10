@@ -42,6 +42,13 @@ def test_llm_section_pins_providers_and_models(versions: dict) -> None:
         "the inference host is reached by name, not by address"
     )
     assert re.search(r":\d|:[a-z0-9]+-", mac["model"]), "Ollama model must carry a tag"
+    # ADR 0079: the Qwen family ignores /no_think in the prompt; only Ollama's think:false, carried as
+    # the profile model's modelVariables, keeps a session from paying for reasoning traces (ADR 0061
+    # measured 6-8x on the answer turn). A Qwen pin without it would be the ADR 0060 regression again.
+    if mac["model"].startswith("qwen"):
+        assert mac.get("model_variables", {}).get("think") is False, (
+            "a Qwen model on ollama-mac needs model_variables: {think: false} (ADR 0079)"
+        )
     assert "optional" not in mac, (
         "the Mac is the only inference host now: marking it optional would let the play skip it and "
         "leave six agents pointing at nothing"

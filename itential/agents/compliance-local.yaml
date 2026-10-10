@@ -1,7 +1,7 @@
-# compliance on the Mac Mini's Ollama (gemma4:26b, ADR 0060/0061): read the latest results with one tool.
+# compliance on the Mac Mini's Ollama (qwen3.8:27b, ADR 0060/0061): read the latest results with one tool.
 project: lab-netops
 name: compliance-local
-description: compliance on the Mac Mini's Ollama (gemma4:26b), lab-baseline results through one workflow
+description: compliance on the Mac Mini's Ollama (qwen3.8:27b), lab-baseline results through one workflow
 profile: ollama-mac
 input_schema:
   type: object

@@ -1,7 +1,7 @@
-# remediation on the Mac Mini's Ollama (gemma4:26b, ADR 0060/0061): the hostname fix only, still behind the approval.
+# remediation on the Mac Mini's Ollama (qwen3.8:27b, ADR 0060/0061): the hostname fix only, still behind the approval.
 project: lab-netops
 name: remediation-local
-description: remediation on the Mac Mini's Ollama (gemma4:26b), hostname fixes through "Push Configuration with Approval" only
+description: remediation on the Mac Mini's Ollama (qwen3.8:27b), hostname fixes through "Push Configuration with Approval" only
 profile: ollama-mac
 input_schema:
   type: object

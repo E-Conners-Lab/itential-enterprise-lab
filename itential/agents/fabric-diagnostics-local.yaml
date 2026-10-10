@@ -1,8 +1,8 @@
-# fabric-diagnostics on the Mac Mini's Ollama (gemma4:26b, ADR 0060/0061): the same reads the request lists, the same
+# fabric-diagnostics on the Mac Mini's Ollama (qwen3.8:27b, ADR 0060/0061): the same reads the request lists, the same
 # causes and the same one-line JSON answer, with the work note.
 project: lab-netops
 name: fabric-diagnostics-local
-description: fabric-diagnostics on the Mac Mini's Ollama (gemma4:26b), the listed reads, one work note, one fix on one end
+description: fabric-diagnostics on the Mac Mini's Ollama (qwen3.8:27b), the listed reads, one work note, one fix on one end
 profile: ollama-mac
 input_schema:
   type: object

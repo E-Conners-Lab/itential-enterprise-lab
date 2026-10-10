@@ -1,8 +1,8 @@
-# tunnel-diagnostics on the Mac Mini's Ollama (gemma4:26b, ADR 0060/0061): the same three router reads, the same causes
+# tunnel-diagnostics on the Mac Mini's Ollama (qwen3.8:27b, ADR 0060/0061): the same three router reads, the same causes
 # and the same one-line JSON answer, with the work note.
 project: lab-netops
 name: tunnel-diagnostics-local
-description: tunnel-diagnostics on the Mac Mini's Ollama (gemma4:26b), three router reads, one work note, one fix from the menu
+description: tunnel-diagnostics on the Mac Mini's Ollama (qwen3.8:27b), three router reads, one work note, one fix from the menu
 profile: ollama-mac
 input_schema:
   type: object
