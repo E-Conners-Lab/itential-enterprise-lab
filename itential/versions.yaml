@@ -572,7 +572,12 @@ llm:
       model: qwen3.8:27b
       # Passed to Ollama's chat request by the Platform (Model Registry modelVariables); the drift
       # check in tasks/flowai-assets.yml re-PATCHes the profile when the live value differs.
-      model_variables: {think: false}
+      # Measured on the wire 2026-10-10: a top-level `temperature` is mapped into Ollama's `options`
+      # ({"options":{"temperature":0}}), while a nested `options: {...}` is replaced by the Platform's
+      # own empty one. 0 makes every twin greedy: the same prompt and tools give the same answer on
+      # dev and on production, which is what turned remediation-local's refusal from "usually" into
+      # "always" (ADR 0079 as built).
+      model_variables: {think: false, temperature: 0}
 
 agents:
   project: lab-netops
