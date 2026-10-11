@@ -97,6 +97,7 @@ def test_a_finished_run_reads_as_the_path_it_took() -> None:
     assert '- `outcome`: "Rotate AWS VPN Key: 106 tasks in 12 steps"' in md and "- `error`: nothing (not set)" in md
     assert "Not set by this run: `described`, `describe_result`, `guide_card`, `seen`, `input_check`." in md
     assert "## The tasks that ran" in md and "- `1d` platform-describe exited 0? — ran in 1.2 s, answered yes." in md
+    assert "`_id`" not in md and "`initiator`" not in md, "the engine's own variables are not the workflow's words"
     assert "`1e`" not in md.split("## The tasks that ran")[1], "a task the run never reached is left out"
     assert "still matches this job's tasks and arrows" in md
 
@@ -220,7 +221,9 @@ def test_the_card_takes_the_jobs_words() -> None:
     r = subprocess.run([sys.executable, "-I", "-c", build.GUIDE_CARD_CODE], input=json.dumps(described),
                        capture_output=True, text=True, check=True)
     page = json.loads(r.stdout)["html"]
-    assert "the job, described" in page and "<h2>What this run did</h2>" in page and "For reading" in page
+    assert "the job, described" in page and ">The run, start to end</h2>" in page and "For reading" in page
+    assert page.count("What this run did") == 1, "the page's own heading, not repeated by the card's wrapper"
+    assert "<strong>Running.</strong>" in page and "*Running" not in page, "the status line is bold, not starred"
     assert "only read this job&#x27;s record" in page or "only read this job's record" in page
     assert "from the job record and the stored workflow document" in page
     assert "stored copy of Describe Workflow and described the run" in page, "the job card's own decision line"

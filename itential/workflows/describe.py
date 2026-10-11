@@ -573,12 +573,13 @@ def step_chart(doc: dict, steps_: list, where: dict, palette: dict | None = None
 
 # --- HTML for a card -------------------------------------------------------------------------------------------------
 def _inline(text: str) -> str:
-    """The guide's inline marks: `code`, *emphasis*; everything else escaped."""
+    """The guide's inline marks: `code`, **strong**, *emphasis*; everything else escaped."""
     import html as _html
     import re as _re
 
     out = _html.escape(text, quote=False)
     out = _re.sub(r"`([^`]+)`", r"<code>\1</code>", out)
+    out = _re.sub(r"\*\*([^*]+)\*\*", r"<strong>\1</strong>", out)
     out = _re.sub(r"(?<!\w)\*([^*]+)\*(?!\w)", r"<em>\1</em>", out)
     return out
 
@@ -915,6 +916,7 @@ def job_guide(doc: dict, job: dict, steps_: list, where: dict, read: str, which:
                         for v in [r.split(".", 2)[2] for r in t["variables"].get("outgoing", {}).values()
                                   if isinstance(r, str) and r.startswith("$var.job.")]})
     variables = job.get("variables") or {}
+    names = [n for n in names if n not in ("_id", "initiator")]  # the engine's own, not the workflow's words
     unset = [name for name in names if variables.get(name) is None and name not in ("outcome", "error")]
     for name in names:
         if name not in unset:

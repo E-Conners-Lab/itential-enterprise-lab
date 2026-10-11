@@ -6081,7 +6081,7 @@ def guide_card(d: dict) -> dict:
     summary = str(d.get("summary") or name)
     body = d.get("html") if isinstance(d.get("html"), str) else ""
     brand = str(d.get("brand") or "the workflow, described")  # Describe Job says "the job, described"
-    heading = "What this run did" if brand.startswith("the job") else "What it does, start to end"
+    heading = "The run, start to end" if brand.startswith("the job") else "What it does, start to end"
     sections = f'<section class="panel guide" aria-labelledby="t-guide"><h2 id="t-guide">{heading}</h2>\n{body}</section>\n'
     decide = "<p>%s</p>" % e(str(d.get("decide") or "Seen closes this card. Nothing runs from it: the workflow only read "
                                                        f"the Platform's own copy of {name} and described it."))
