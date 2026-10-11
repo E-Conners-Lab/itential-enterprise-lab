@@ -495,11 +495,11 @@ platform_describe:
     name: itential-enterprise-lab
     description: "platform-describe's repository (ADR 0080): this lab, public, read at the pinned commit"
     url: https://github.com/E-Conners-Lab/itential-enterprise-lab.git
-    # f0b6220 = main after #172: the job card's fix (bold renders, no repeated heading, the engine's own variables left
-    # out); 4e57a54 (after #170) brought Describe Job, 8213097 (after #168) the chart as an image, dc1ee74 (after #163)
-    # was the first commit the Gateway could run. The pin moves one merge behind the code, by design (the test asks
-    # for a commit on main).
-    reference: "f0b6220ae64bee1e926c713eba2d28592b306ee5"
+    # 02742f5 = main after #174: the list action and --which for the agent's tool (ADR 0081); f0b6220 (after #172)
+    # fixed the job card, 4e57a54 (after #170) brought Describe Job, 8213097 (after #168) the chart as an image,
+    # dc1ee74 (after #163) was the first commit the Gateway could run. The pin moves one merge behind the code, by
+    # design (the test asks for a commit on main).
+    reference: "02742f50199c3911cc54f38b92dbeeee1ca67baa"
   services:
     - name: platform-describe
       description: "The Platform's own copy of a workflow, described by the guide's walker: reads only (ADR 0080)"
