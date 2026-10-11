@@ -505,7 +505,7 @@ Conventions: **Placement** is Proxmox VM (OpenTofu + Ansible), k3s (Helm/Kustomi
   1. The service sends `POST /login` and `GET` only (a test holds the guard); the account is `svc-copilot` with its measured read-only roles; the password reaches the service only as the Vault alias.
   2. `Describe Workflow <name>` publishes `guide` (Markdown) and `outcome` (one line) and shows the guide on a Work Center card with one button; the walk-through on the card equals the repository page's for the same document (a test holds it against the fake Platform).
   3. A name that is not a workflow, a service that could not run, or a card that could not be made each end the job with the reason in `error` and open no task.
-  4. The pin names a commit on `main`; the dev tier runs the service before production (ADR 0063); P1-P4 of ADR 0080 measured and recorded here.
+  4. The pin names a commit on `main`; the dev tier runs the service before production (ADR 0063); P1-P4 of ADR 0080 measured on dev 2026-10-11 (recorded in the ADR), production to follow.
 - **Verification:** `tests/test_platform_describe.py`, `tests/test_describe_workflow.py`, `tests/test_workflow_docs.py`; on the Platform, the job and its card (P1-P4, to be captured).
 
 ## Domain 2 — Evaluation Design

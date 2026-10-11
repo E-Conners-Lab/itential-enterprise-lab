@@ -1,6 +1,6 @@
 # 0080 — The Platform describes its own workflows: Describe Workflow runs the guide's walker on the Gateway
 
-- **Status:** proposed (2026-10-11); decisions 2 and 3 wait on the owner, the probes P1-P4 on the dev tier
+- **Status:** proposed (2026-10-11); decisions 2 and 3 taken as proposed by the owner (#163 merged); probes P1-P4 measured on the dev tier 2026-10-11 (below); production next
 - **Date:** 2026-10-11
 - **Amends:** nothing; adds to PID section 3 (a new criterion set, S16)
 - **Related:** ADR 0067 (workflow names), ADR 0068 (executable services on the Gateway, a repository pinned by
@@ -86,6 +86,20 @@ What was measured and read before deciding (2026-10-11):
 | P2 | `svc-copilot` reads the Studio list | the service as that account (production measured only as admin so far) |
 | P3 | The answer fits the Gateway's result | the largest workflow (Diagnose AWS VPN Outage): Markdown + HTML through `runService` |
 | P4 | The card shows a 20 KB body | `InteractiveHTML` with the guide's HTML, read in Work Center |
+
+### Measured on the dev tier (2026-10-11, job 8c058f16f77d4975825644dd, `Rotate AWS VPN Key`)
+
+| | Result |
+|---|---|
+| P1 | The runner reached the dev Platform at `http://platform:3000` and logged in; the service answered in 2.9 s |
+| P2 | `svc-copilot` read the Studio list through `equals[name]`; the document came back whole (106 tasks, 12 steps) |
+| P3 | The answer (16 KB of Markdown, 20 KB of HTML, 33 KB as the runCode result) went through `runService` and `runCode` with no truncation; `outcome` and `guide` published |
+| P4 | The card page (32 KB) renders: the band, the summary as lede, the pill "For reading", ten sections, twelve step headings, three tables; it is 6,700 px tall and scrolls inside the task |
+
+Two things the Platform's copy shows that the repository page does not, both to live with for now: the stored
+`outputSchema` carries the job's own variables (`_id`, `initiator`, the input echoed back) and widens the `*_note`
+types to a union, so "What it publishes" is longer on the card than on the page. A later change can leave the
+Platform's own variables out.
 
 ## Alternatives considered
 
