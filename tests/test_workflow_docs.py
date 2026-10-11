@@ -131,6 +131,7 @@ def test_the_chart_names_every_step_and_marks_where_a_person_waits(name: str) ->
 def test_the_card_gets_the_chart_and_the_page_keeps_mermaid() -> None:
     doc = document("Rotate AWS VPN Key")
     out = describe.describe_document({"document": doc})
-    assert out["svg"].startswith("<svg ") and '<figure class="chart"><svg ' in out["html"]
+    assert out["svg"].startswith("<svg ") and '<figure class="chart"><img class="chart"' in out["html"]
+    assert "data:image/svg+xml;base64," in out["html"] and "<svg" not in out["html"], "an image: Work Center strips inline SVG"
     assert "```mermaid" in out["markdown"] and "<pre class=\"diagram\">" not in out["html"]
     assert '<pre class="diagram">' in describe.html_guide(out["markdown"]), "without a chart the source is shown"
