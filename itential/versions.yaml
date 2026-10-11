@@ -495,9 +495,9 @@ platform_describe:
     name: itential-enterprise-lab
     description: "platform-describe's repository (ADR 0080): this lab, public, read at the pinned commit"
     url: https://github.com/E-Conners-Lab/itential-enterprise-lab.git
-    # b0b0573 = main after #162 (the guide). The service itself lands in the PR after it, so this pin runs nothing
-    # until the next PR moves it; the test only asks that it is a commit on main.
-    reference: "b0b0573373f42676b1e6000a5782294bba5b4f4a"
+    # dc1ee74 = main after #163 (ADR 0080): the first commit that holds platform_describe.py, so the first the
+    # Gateway can run; the pin moves one merge behind the code, by design (the test asks for a commit on main).
+    reference: "dc1ee7489a70add5c18f0bf3bad458f47a975b66"
   services:
     - name: platform-describe
       description: "The Platform's own copy of a workflow, described by the guide's walker: reads only (ADR 0080)"
