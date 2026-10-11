@@ -299,6 +299,9 @@
           ITENTIAL_VAULT_READ_ONLY=true
           # the runner's Vault for aws-vpn-psk (ADR 0068 d5): the same tier's Vault, reached from the runner
           RUNNER_VAULT_ADDR={{ vault_url }}
+          # platform-describe (ADR 0080): the Platform as the runner reaches it, and the read-only account
+          RUNNER_PLATFORM_URL={{ platform_describe.platform_url.dev }}
+          RUNNER_PLATFORM_USER={{ platform_describe.user }}
           NODE_EXTRA_CA_CERTS=/opt/vault/lab-root-ca.crt
           {% endif %}
       no_log: true
@@ -575,6 +578,11 @@
       ansible.builtin.include_tasks: tasks/gateway-terraform-run.yml
       # its deploy key and IAM key are Vault aliases; only on the tier that runs the AWS VPN (aws_vpn.tier, ADR 0070)
       when: vault_enabled | default(false) | bool and (aws_vpn.tier == 'dev') == (dev_overlay | default(false) | bool)
+
+    # ADR 0080: platform-describe - this repository at its pinned commit, the read-only service; on every tier with Vault
+    - name: The platform-describe service - repository, Python object, service with its Vault secret (ADR 0080)
+      ansible.builtin.include_tasks: tasks/gateway-describe.yml
+      when: vault_enabled | default(false) | bool
 
     # --- open-source adapters: package into the custom mount, then instances via the API ------
     # The custom directory is bind-mounted read-only into the platform; npm runs in a throw-away

@@ -29,5 +29,6 @@ What each workflow does from start to end, for someone who is about to run one o
 | [Remove Branch VLAN](remove-branch-vlan.md) | 9 | 50 | 0 |
 | [Summarize Compliance Results](summarize-compliance-results.md) | 6 | 38 | 0 |
 | [List Devices from NetBox](list-devices-from-netbox.md) | 3 | 8 | 0 |
+| [Describe Workflow](describe-workflow.md) | 5 | 18 | 1 |
 
 A workflow is listed here as soon as versions.yaml names it: its builder in `build.py` names the steps (`step(...)`), and the renderer needs nothing else.
