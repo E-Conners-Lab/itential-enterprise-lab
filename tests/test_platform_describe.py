@@ -1,6 +1,6 @@
 """platform-describe (ADR 0080): the Gateway service that describes a workflow from the Platform's own copy, or a job
 from its record. A fake Platform (http.server in a thread) answers /login, the Studio workflow list with a committed
-document and one job route with a simulated run, and the script is run as the Gateway runs it: a subprocess, the
+document (and the whole list, for the agent's tool), one job route with a simulated run, and the script is run as the Gateway runs it: a subprocess, the
 credential in the environment, one JSON line out."""
 
 from __future__ import annotations
@@ -32,6 +32,12 @@ def _job() -> dict:
 
 
 JOB = _job()
+# a document the Platform holds that build.py did not make (no step titles): it lists with its tasks and no steps
+BARE = {"name": "Port Turn Up from Cisco NX-OS", "description": "Turns a port up. Vendor pack.",
+        "tasks": {"workflow_start": {"name": "workflow_start"}, "a": {"name": "query", "summary": "q", "type": "operation"},
+                  "workflow_end": {"name": "workflow_end"}},
+        "transitions": {"workflow_start": {"a": {"state": "success", "type": "standard"}},
+                        "a": {"workflow_end": {"state": "success", "type": "standard"}}}}
 
 
 class FakePlatform(BaseHTTPRequestHandler):
@@ -62,7 +68,9 @@ class FakePlatform(BaseHTTPRequestHandler):
         if self.headers.get("Cookie") != "token=a-token":
             return self._send(401, {"message": "no session"})
         if self.path.startswith("/automation-studio/workflows?"):
-            wanted = urllib.parse.unquote(self.path.split("equals[name]=", 1)[1]) if "equals[name]=" in self.path else ""
+            if "equals[name]=" not in self.path:  # the whole list (ADR 0081): two documents, one without steps
+                return self._send(200, {"items": [ROTATE, BARE], "total": 2})
+            wanted = urllib.parse.unquote(self.path.split("equals[name]=", 1)[1])
             items = [ROTATE] if wanted == ROTATE["name"] else []
             return self._send(200, {"items": items, "total": len(items)})
         if self.path == "/operations-manager/jobs/" + JOB_ID:
@@ -157,6 +165,37 @@ def test_a_bad_job_id_never_reaches_the_platform(platform: str) -> None:
     code, out = run(platform, "--action", "job", "--id", "abc; drop")
     assert code == 1 and "24 hexadecimal characters" in out["message"]
     assert all(call[1] == "/login" for call in FakePlatform.seen), "only the login was sent"
+
+
+def test_the_list_is_every_stored_document_on_one_line(platform: str) -> None:
+    """ADR 0081: the agent's first call when a request names a workflow loosely."""
+    FakePlatform.seen.clear()
+    code, out = run(platform, "--action", "list", "--which", "all")
+    assert code == 0 and out["ok"] is True and out["count"] == 2
+    assert out["summary"] == "2 workflows on this Platform, 1 of them stops for a person"
+    rows = {r["name"]: r for r in out["workflows"]}
+    assert rows["Rotate AWS VPN Key"] == {"name": "Rotate AWS VPN Key", "tasks": 106, "steps": 12, "manual": 1,
+                                          "what": first_sentence(ROTATE["description"])}
+    assert rows["Port Turn Up from Cisco NX-OS"]["steps"] == 0 and rows["Port Turn Up from Cisco NX-OS"]["tasks"] == 1
+    assert out["markdown"].startswith("# The workflows on this Platform\n") and "| Rotate AWS VPN Key | 106 | 12 | 1 |" in out["markdown"]
+    assert "by platform-describe, as svc-copilot" in out["markdown"]
+    paths = [call[1] for call in FakePlatform.seen if call[0] == "GET"]
+    assert paths == ["/automation-studio/workflows?limit=200"]
+
+
+def test_which_names_the_workflow_or_the_job_for_the_agents_tool(platform: str) -> None:
+    """ADR 0081: Describe for an Agent passes one argument whatever the action; the old ones still work."""
+    _, by_name = run(platform, "--action", "workflow", "--name", "Rotate AWS VPN Key")
+    _, by_which = run(platform, "--action", "workflow", "--which", "Rotate AWS VPN Key")
+    assert by_which["ok"] and by_which["tasks"] == by_name["tasks"] == 106
+    _, job = run(platform, "--action", "job", "--which", JOB_ID)
+    assert job["ok"] and job["name"] == "Rotate AWS VPN Key, job 6d43c80a"
+    code, out = run(platform, "--action", "job", "--which", "all")
+    assert code == 1 and "24 hexadecimal characters" in out["message"]
+
+
+def first_sentence(text: str) -> str:
+    return text.split(". ", 1)[0].rstrip(".") + "."
 
 
 def test_only_get_and_the_login_post_can_leave_the_script() -> None:

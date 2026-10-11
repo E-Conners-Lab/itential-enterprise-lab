@@ -414,6 +414,11 @@ INPUT_GATES = {
     WF["describe_workflow"]: {"workflow": {"type": "string", "minLength": 1, "maxLength": 80, "pattern": r"^[A-Za-z0-9 -]+$"}},
     # ADR 0080 decision 6: a job id as the Platform shows it (a Mongo object id); the service checks it again
     WF["describe_job"]: {"job": {"type": "string", "pattern": r"^[0-9a-f]{24}$"}},
+    # ADR 0081: the agent's one tool - what to describe, and the name, the id or the word all; the service checks again
+    WF["describe_for_agent"]: {
+        "what": {"type": "string", "enum": ["list", "workflow", "job"]},
+        "which": {"type": "string", "minLength": 1, "maxLength": 80, "pattern": r"^[A-Za-z0-9 -]+$"},
+    },
     WF["show_command"]: {"device": NODE_NAME, "command": SHOW_COMMAND},
     WF["show_all"]: {"command": SHOW_COMMAND},
     # R6 (ADR 0072): what the alert relay sends; the device is the one open target the AWS monitor watches
@@ -3234,17 +3239,18 @@ DISCARD_TPL = '{"action": "discard", "job": "__ID__", "timeout": "120"}'
 PSK_TPL = '{"action": "ensure", "secret_arn": "__ARN__", "timeout": "120"}'
 
 
-def run_service(summary: str, service: str, params_ref: str, out_job: str, x: int, y: int = 0) -> dict:
+def run_service(summary: str, service: str, params_ref: str, out_job: str | None, x: int, y: int = 0) -> dict:
     """GatewayManager.runService on this cluster; the published result is the JSON-RPC envelope {id, jsonrpc, result:
     {return_code, stdout, stdout_json, stderr, elapsed_time}} - so paths start `result.` (measured in a workflow 2026-09-29).
     No `inventory`: these services target no node, and an empty list is refused ("inventory must be a non-empty
-    array if provided", measured on dev 2026-09-29)."""
+    array if provided", measured on dev 2026-09-29). out_job None keeps the envelope on the task (ADR 0081: a tool
+    for an agent publishes only what the agent should read)."""
     return task(
         "runService",
         "GatewayManager",
         summary,
         {"serviceName": service, "clusterId": CLUSTER, "params": params_ref},
-        {"result": f"$var.job.{out_job}"},
+        {"result": f"$var.job.{out_job}" if out_job else None},
         display="GatewayManager",
         x=x,
         y=y,
@@ -7963,11 +7969,67 @@ def describe_job() -> dict:
     )
 
 
+DESCRIBE_AGENT_PARAMS = '{"timeout": "60"}'
+
+
+def describe_for_agent() -> dict:
+    """Describe for an Agent (ADR 0081): the same service, no card. The agent's one tool: what (list, workflow, job)
+    and which (the name, the id or the word all) go in as data behind the gate; the job publishes the guide (Markdown)
+    and the one-line summary, or the reason, and nothing else - the agent reads only what it should."""
+    ok, fail, err = "success", "failure", "error"
+    tasks = sectioned({
+        **step("the read: the list, one workflow or one job, read by platform-describe as the read-only account"),
+        "1a": parse("describe params: the fixed part", DESCRIBE_AGENT_PARAMS, x=100),
+        "1b": set_key("describe params: what to describe, as data", "$var.1a.textObject", "action", "$var.job.what", x=150),
+        "1c": set_key("describe params: which, as data", "$var.1b.object", "which", "$var.job.which", x=200),
+        "1d": run_service("described (platform-describe: login, the reads, the guide's walker)", "platform-describe",
+                          "$var.1c.object", None, x=250),
+        "1e": evaluate("platform-describe exited 0?", "1d", "result", "result.return_code", "==", 0, x=300),
+        "1f": jq("why it could not describe", "$var.1d.result", "result.stdout_json.message", x=350, y=-300,
+                 to_job="error", optional=True),
+        **step("the answer: the one-line summary and the guide (Markdown), published for the agent; nothing else"),
+        # the summary may pass as null (the guide is the answer); a canvas with its failure edge drew two crossings
+        "2a": jq("the summary", "$var.1d.result", "result.stdout_json.summary", x=400, to_job="outcome", optional=True),
+        "2b": jq("the guide (Markdown)", "$var.1d.result", "result.stdout_json.markdown", x=450, to_job="guide"),
+        **step("where it stops: the reason in error; nothing was changed, nothing is left to do"),
+        "8a": note("platform-describe could not run", "the Gateway could not run platform-describe or read its answer: "
+                   "nothing was read", "error", x=300, y=-600),
+        "8b": note("the guide could not be read", "platform-describe answered, but the guide could not be read from its "
+                   "answer: nothing was changed", "error", x=450, y=-600),
+    })
+    tr = {
+        "workflow_start": _edge(**{"1a": ok}),
+        "1a": _edge(**{"1b": ok}),
+        "1b": _edge(**{"1c": ok}),
+        "1c": _edge(**{"1d": ok}),
+        "1d": _edge(**{"1e": ok, "8a": err}),
+        "1e": _edge(**{"2a": ok, "1f": fail}),
+        "1f": _edge(**{"workflow_end": ok, "8a": err}),
+        "2a": _edge(**{"2b": ok}),
+        "2b": _edge(**{"workflow_end": ok, "8b": err}),
+        **{n: _edge(**{"workflow_end": ok}) for n in ("8a", "8b")},
+    }
+    return workflow(
+        WF["describe_for_agent"],
+        "The agent's one tool (ADR 0081): describes this Platform's workflows for whoever asks. what list: every "
+        "workflow on one line; what workflow: one workflow start to end from the stored document; what job: what one "
+        "run did. platform-describe reads as the read-only service account and runs the guide's walker; the job "
+        "publishes the guide and a one-line summary, no card. Reads only; a name or id that is not there ends the "
+        "job with the reason",
+        {"what": {"type": "string", "required": True, "description": "list, workflow or job"},
+         "which": {"type": "string", "required": True,
+                   "description": "the workflow's name as the Platform shows it, the job's id, or the word all for the list"}},
+        tasks,
+        tr,
+        {"outcome": {"type": "string"}, "guide": {"type": "string"}, "error": {"type": "string"}},
+    )
+
+
 BUILDERS = (device_count, show_version, show_command, show_all, branch_vlan, branch_vlan_delete, config_push,
             compliance_run, compliance_report, netbox_devices, backup_all, deploy_aws_vpn, verify_aws_vpn,
             hand_off_aws_vpn, config_push_revert, tear_down_aws_vpn, tear_down_expired_aws_vpn, get_aws_vpn_status,
             check_aws_drift, rotate_aws_vpn_key, rotate_aws_vpn_key_monthly, diagnose_aws_vpn_outage,
-            diagnose_fabric_bgp_outage, break_fabric_bgp, drill_batfish_gate, describe_workflow, describe_job)
+            diagnose_fabric_bgp_outage, break_fabric_bgp, drill_batfish_gate, describe_workflow, describe_job, describe_for_agent)
 
 
 if __name__ == "__main__":

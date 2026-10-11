@@ -2,12 +2,15 @@
 """platform-describe: the Platform describes its own workflows (ADR 0080).
 
 A Gateway 5 executable service on this repository. It logs in to the Platform as a read-only account, reads ONE
-workflow by name or ONE job by id (and, for a job, the stored workflow it ran), runs the guide's walker (describe.py,
-the code the pages in docs/workflows/ are made with) and prints one JSON object: ok, the name, the counts, the guide as
-Markdown and as HTML; for a job, the path it took, where it is or stopped and what it said.
+workflow by name or ONE job by id (and, for a job, the stored workflow it ran), or the list of every workflow, runs the
+guide's walker (describe.py, the code the pages in docs/workflows/ are made with) and prints one JSON object: ok, the
+name, the counts, the guide as Markdown and as HTML; for a job, the path it took, where it is or stopped and what it
+said; for the list, one line per workflow (ADR 0081: the agent's view).
 
   platform_describe.py --action workflow --name "Rotate AWS VPN Key" [--timeout 30]
   platform_describe.py --action job --id 6d43c80a53b14be58f8f8c8d [--timeout 30]     # ADR 0080 decision 6
+  platform_describe.py --action list --which all                                   # ADR 0081: every workflow, one line each
+  platform_describe.py --action workflow|job --which <name or id>                  # the agent's one argument (ADR 0081)
 
 Environment (the Gateway resolves the secret per run; the rest is the runner's, as VAULT_ADDR is):
   PLATFORM_URL        https://itential.lab.internal (required)
@@ -141,11 +144,33 @@ def describe_job(api: Platform, job_id: str, now: datetime) -> dict:
     })
 
 
+def fetch_workflows(api: Platform) -> tuple[list, str]:
+    """Every stored document, or why the list could not be read."""
+    status, data = api.get("/automation-studio/workflows?limit=200")
+    if status != 200 or not isinstance(data, dict):
+        return [], f"the workflow list answered HTTP {status}"
+    return [i for i in data.get("items") or [] if isinstance(i, dict)], ""
+
+
+def describe_list(api: Platform, now: datetime) -> dict:
+    """Every workflow on one line (ADR 0081): the agent's first call when a request names a workflow loosely."""
+    docs, why = fetch_workflows(api)
+    if why:
+        return {"ok": False, "message": why}
+    stamp = now.strftime("%Y-%m-%d %H:%M UTC")
+    return describe.describe_list({
+        "documents": docs,
+        "read": f"Read from the Platform's stored documents at {stamp} by platform-describe, as {api.user}.",
+    })
+
+
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description="the Platform describes its own workflows (ADR 0080)")
-    parser.add_argument("--action", required=True, choices=["workflow", "job"])
+    parser.add_argument("--action", required=True, choices=["workflow", "job", "list"])
     parser.add_argument("--name", default="", help="the workflow's name (action workflow)")
     parser.add_argument("--id", default="", help="the job's id (action job)")
+    parser.add_argument("--which", default="", help="the name or the id, whichever the action takes (ADR 0081); "
+                                                    "ignored by the list")
     parser.add_argument("--timeout", type=float, default=30.0, help="seconds per Platform call")
     args = parser.parse_args(argv)
 
@@ -161,10 +186,12 @@ def main(argv: list[str]) -> int:
             why = api.login()
             if why:
                 out = {"ok": False, "message": why}
+            elif args.action == "list":
+                out = describe_list(api, datetime.now(timezone.utc))
             elif args.action == "job":
-                out = describe_job(api, args.id, datetime.now(timezone.utc))
+                out = describe_job(api, args.which or args.id, datetime.now(timezone.utc))
             else:
-                out = describe_workflow(api, args.name, datetime.now(timezone.utc))
+                out = describe_workflow(api, args.which or args.name, datetime.now(timezone.utc))
         except (urllib.error.URLError, OSError, RuntimeError) as exc:
             out = {"ok": False, "message": f"the Platform could not be reached or refused: {type(exc).__name__}: {exc}"}
     sys.stdout.write(json.dumps(out) + "\n")
