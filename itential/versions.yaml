@@ -561,8 +561,10 @@ llm:
     # Registry's per-model `modelVariables` is that lever now - the Platform passes the JSON to the
     # provider as-is - so the Qwen family is back in contention and the owner's pick stands. Every
     # candidate still scores 9/9 on scripts/model-bakeoff.py; `--no-think` there measures what the
-    # variables below do in a session. `/no_think` stays as the twins' first line (harmless, and the
-    # gemma fallback still needs it).
+    # variables below do in a session. The twins no longer carry `/no_think` as their first line: with
+    # think:false already sent, that directive made qwen3.8 emit a think-close token that the Platform's
+    # streamed reply showed as a literal "</think>" (measured 2026-10-10). A gemma fallback would need
+    # the line back.
     - name: ollama-mac
       provider: ollama
       # ADR 0060: every local model runs on the Mac Mini. `ollama.lab.internal` resolves to it

@@ -58,7 +58,8 @@ timeout; the twins' answer turns were 1-2 s on gemma and will be a few seconds h
    `modelVariables` in the profile PATCH and treats a live profile whose variables differ as drift, so a
    session that starts emitting traces again is a converge away from fixed. A Qwen pin without it is
    refused by `tests/test_flowai.py`.
-3. **`/no_think` stays as every twin's first prompt line.** It costs nothing on Qwen and it is what a
+3. **`/no_think` stays as every twin's first prompt line** (reversed the same evening, see "As built, the
+   directive" below)**.** It costs nothing on Qwen and it is what a
    gemma fallback still needs; the test that holds it stands.
 4. **`scripts/model-bakeoff.py --no-think` is the way to re-take this.** ADR 0061's rule stands: a
    measurement, re-run when a model or an Ollama version changes.
@@ -104,3 +105,13 @@ Ollama's `options` (`{"options":{"temperature":0}}`), while a nested `options: {
 Platform's own empty object. `ollama-mac` now carries `temperature: 0`, so every twin decodes greedily and
 the same prompt and tools give the same answer on both tiers; `tests/test_flowai.py` holds it and refuses a
 nested `options`. The bake-off already ran at temperature 0, so its numbers describe this configuration.
+
+## As built, the directive: `/no_think` leaves the twins' prompts
+
+With `think: false` on the profile, the `/no_think` first line did harm instead of nothing: qwen3.8 answered
+the directive by emitting a think-close token, and the Platform's streamed reply showed it as a literal
+`</think>` after the first sentence, then the sentence again (the owner saw it in Agent Sessions; a direct
+Ollama call with the same prompt is clean, so it is the streaming path). Decision 3 is reversed: the nine
+local prompts carry no directive, the fabric twin's prompt is now identical to the Claude prompt, and
+`tests/test_agent_fleet.py` refuses a `/no_think` first line. A gemma fallback would need the line back,
+which is the one thing that fallback now costs.

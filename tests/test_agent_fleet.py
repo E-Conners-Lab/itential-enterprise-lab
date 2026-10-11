@@ -479,9 +479,12 @@ def test_every_twin_suppresses_thinking_in_its_prompt(docs: dict) -> None:
         if doc["profile"] != "ollama-mac":
             continue
         first = doc["instructions"].splitlines()[0].strip()
-        assert first == "/no_think", (
-            f"{name}: first prompt line is {first!r}, not /no_think - the twin will emit reasoning "
-            "traces the operator pays for in wall-clock"
+        # ADR 0079 as built (2026-10-10): thinking is switched off by the profile's modelVariables, not the
+        # prompt. The old /no_think first line made qwen3.8 emit a think-close token that the Platform's
+        # streamed reply showed as a literal "</think>" before the answer (and the answer twice).
+        assert first != "/no_think", (
+            f"{name}: /no_think as the first prompt line leaks a </think> tag into the reply; "
+            "model_variables.think on the ollama-mac profile is what switches thinking off"
         )
 
 
@@ -603,7 +606,7 @@ def test_fabric_diagnostics_infers_instead_of_following_a_table(docs: dict) -> N
     """ADR 0075 (owner 2026-10-06): the menu as capabilities with their conditions, no cause->fix table; the agent
     picks its own reads and accounts for them. The twin gets the same prompt (owner)."""
     claude, local = docs["fabric-diagnostics"]["instructions"], docs["fabric-diagnostics-local"]["instructions"]
-    assert local == "/no_think\n" + claude
+    assert local == claude  # the twin gets the same prompt, nothing prepended (ADR 0079 as built)
     assert not re.search(r"->\s*cause", claude), "a cause->fix table tells the agent the answer"
     for cause in ("neighbor-shut", "interface-shut", "config-drift", "link-down", "stuck-session"):
         assert cause not in claude, cause

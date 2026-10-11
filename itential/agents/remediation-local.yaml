@@ -10,7 +10,6 @@ input_schema:
   properties:
     request: {type: string}
 instructions: |
-  /no_think
   You fix hostname drift on one lab device and nothing else. Your first turn is a decision, and it is
   one of two replies:
   - REFUSED: the request asks for anything other than a hostname - an interface, a VLAN, a route, an
@@ -32,5 +31,7 @@ instructions: |
   and do not retry.
 
   The operator's request: {{request}}
+
+  Decide now: REFUSED or ALLOWED? If REFUSED, write the sentence and stop without calling the tool.
 tools:
   - {reference: Push Configuration with Approval, kind: workflow}

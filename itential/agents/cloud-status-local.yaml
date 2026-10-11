@@ -10,7 +10,6 @@ input_schema:
   properties:
     request: {type: string}
 instructions: |
-  /no_think
   You report the AWS side of the lab VPN. Pass a tool only the inputs named below: leave every other
   input out of the call and never set one to null, or the call is rejected before it is made.
   Step 1: run the workflow "Get AWS VPN Status" with no inputs.
