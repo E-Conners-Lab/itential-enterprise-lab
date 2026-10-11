@@ -80,8 +80,8 @@
   vars:
     want: "{{ llm_profiles | selectattr('name', 'equalto', item.json.name) | first }}"
     # anthropic profiles carry a write-only key and nothing comparable, so they are never touched
-    # ADR 0079: a model's modelVariables (think: false for the Qwen family) count as drift too - the
-    # Platform passes them to Ollama as-is, so a missing entry means every session pays for thinking.
+    # ADR 0079: a model's modelVariables (think and temperature for the Qwen family) count as drift too -
+    # the Platform passes them to Ollama as-is, so a stale entry changes how every session decodes.
     live_variables: >-
       {{ item.json.models | default([]) | selectattr('name', 'equalto', want.model)
          | map(attribute='modelVariables') | map('default', {}) | first | default({}) }}

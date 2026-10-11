@@ -115,3 +115,18 @@ Ollama call with the same prompt is clean, so it is the streaming path). Decisio
 local prompts carry no directive, the fabric twin's prompt is now identical to the Claude prompt, and
 `tests/test_agent_fleet.py` refuses a `/no_think` first line. A gemma fallback would need the line back,
 which is the one thing that fallback now costs.
+
+## As built, the next morning: thinking ON after all
+
+Removing the directive cleaned the first-turn replies, but two twins (netbox-sot-local, device-ops-local)
+still ended with `</think>` in the next production run, both on the turn after a tool result. Reproduced
+offline with the exact body the Platform sends (captured on the gateway), streamed or not: with
+`think: false`, Ollama 0.40.2's qwen3.8 renderer lets the model write `br2\n</think>\n\nbr2`. A stop
+sequence on the tag does nothing (it is a special token), and the trigger is prompt-sensitive line by
+line: dropping one unrelated sentence from the netbox prompt removes it, dropping another keeps it. That
+rules out prompt fixes. With `think: true` every captured turn came back clean, the reasoning in its own
+field, tool calls and the refusal unchanged, and at temperature 0 the traces stayed between 37 and 331
+characters. Decision 2 is therefore reversed: `model_variables: {think: true, temperature: 0}`. The cost
+is the extra output tokens of the traces (dev: 480-600 per session against about 260), which the
+Platform shows under "Agent Reasoning" rather than in the conclusion. A minimal reproduction for Ollama
+is in the session notes; the lab's own measurement is the one above.

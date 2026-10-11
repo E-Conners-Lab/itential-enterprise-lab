@@ -561,9 +561,11 @@ llm:
     # Registry's per-model `modelVariables` is that lever now - the Platform passes the JSON to the
     # provider as-is - so the Qwen family is back in contention and the owner's pick stands. Every
     # candidate still scores 9/9 on scripts/model-bakeoff.py; `--no-think` there measures what the
-    # variables below do in a session. The twins no longer carry `/no_think` as their first line: with
-    # think:false already sent, that directive made qwen3.8 emit a think-close token that the Platform's
-    # streamed reply showed as a literal "</think>" (measured 2026-10-10). A gemma fallback would need
+    # variables below do in a session. Thinking is ON (`think: true`, ADR 0079 as built, 2026-10-11): with it
+    # off, Ollama 0.40.2's qwen3.8 renderer lets the model write the answer, a think-close token and the
+    # answer again on the turn after a tool result ("br2\n</think>\n\nbr2"), prompt-sensitive line by line;
+    # with it on, the reasoning lands in its own field and the content is clean on every captured turn.
+    # At temperature 0 the traces stay short (37-331 chars per turn). A gemma fallback would need
     # the line back.
     - name: ollama-mac
       provider: ollama
@@ -579,7 +581,7 @@ llm:
       # own empty one. 0 makes every twin greedy: the same prompt and tools give the same answer on
       # dev and on production, which is what turned remediation-local's refusal from "usually" into
       # "always" (ADR 0079 as built).
-      model_variables: {think: false, temperature: 0}
+      model_variables: {think: true, temperature: 0}
 
 agents:
   project: lab-netops
