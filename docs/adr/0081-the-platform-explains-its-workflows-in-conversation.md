@@ -1,7 +1,6 @@
 # 0081 — The Platform explains its workflows in conversation: platform-guide, one read-only tool over the describer
 
-- **Status:** proposed (2026-10-11); built in the PR that carries this file; the eval set runs on the dev tier first
-  (ADR 0063), then production
+- **Status:** proposed (2026-10-11); built in #174, pinned by #175, converged on dev and production the same day; the eval set measured on both tiers (below): Claude 8/8 on production, the twin 8/8 on dev and on production once the judge accepted every honest way of saying a workflow is not there
 - **Date:** 2026-10-11
 - **Amends:** ADR 0080 decision 7 (the agents, "after"): this is that decision, built
 - **Related:** ADR 0046 (the agent fleet, a Claude agent with a local twin each), ADR 0075 (the agents infer and
@@ -72,6 +71,37 @@ What was measured before deciding:
 - One more agent and twin for the fleet verify to run; the twin costs no tokens, the Claude case costs one short
   session.
 - `Describe for an Agent` is a workflow like any other: it has a guide page, it is listed by the list it serves.
+
+## Measured (2026-10-11, pin 02742f5)
+
+The tool first, by direct runs on production: `what list` answered 29 workflows, 15 of them stopping for a person
+(the new tool among them); `what workflow` for `Diagnose Fabric BGP Outage` published a 17 KB guide and the summary;
+`what workflow` for `Launch Rockets` ended with `error` "no workflow named 'Launch Rockets' on this Platform" and
+no guide. The gate refused `what` "list all" with an empty `which` before anything ran (a probe's shell did the
+word-splitting wrong; the refusal named both inputs).
+
+Then the eval set, the same eight requests on each agent (`verify/results/*-platform-guide-eval.json`):
+
+| Agent | Tier | Score | A case | Tokens a case |
+|---|---|---|---|---|
+| platform-guide (Claude) | production | 8/8 | 8-25 s | 5-18k in, 0.2-1.3k out |
+| platform-guide-local (qwen3.8:27b) | dev | 7/8, 8/8 rescored | 37-119 s | 3.5-14k in, 0.25-0.75k out |
+| platform-guide-local | production | 7/8, 8/8 rescored | 33-111 s | 3.5-13k in, 0.25-0.77k out |
+
+What the answers did: every case called `Describe for an Agent` and nothing else, at most two calls; the loose name
+("the BGP outage workflow") went list first, then the exact name; the counts and the step names came back as the
+guide spells them; the job case gave the path with the branches answered and where the run ended; the missing
+workflow was answered as missing by all three runs, with nothing invented. The twin's one "miss" on each tier was the
+judge, not the twin: it wrote "does not include one called Launch Rockets ... I cannot describe it", which the first
+phrase list did not cover; the list was widened and `--rescore` re-judged the stored answers (the `-rescored.json`
+files beside the originals). The dev overlay creates only the twin (the profiles are narrowed to the Mac's Ollama),
+so Claude was measured on production only.
+
+Two things to carry forward: the twin reads the whole guide (13k tokens for the longest) and takes about two
+minutes on it, well inside its context but slow for a chat; a shorter `guide` for the agent (the summary, the steps
+and where it waits, without the walk-through) is the next lever if the twin is the front door. And the tool's output
+is read from the session's `TOOL_CALLED` events by name; the Platform records the call's inputs, which is what the
+tool-discipline score reads.
 
 ## Alternatives considered
 

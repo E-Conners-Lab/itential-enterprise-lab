@@ -1,0 +1,256 @@
+{
+ "platform": "https://itential.lab.internal",
+ "when": "20261011T182006Z",
+ "tool": "Describe for an Agent",
+ "agents": {
+  "platform-guide-local": {
+   "passed": 8,
+   "of": 8,
+   "cases": [
+    {
+     "n": 1,
+     "request": "What does Diagnose Fabric BGP Outage do?",
+     "session": "5be12a24-14b3-497f-8399-99dd69ff50c5",
+     "state": "complete",
+     "seconds": 110.5,
+     "usage": {
+      "in": 13147,
+      "out": 772
+     },
+     "answer": "Diagnose Fabric BGP Outage is the fabric BGP outage loop (R10 + A6, ADR 0073): started by the session-down alert, it reads both ends, opens one ServiceNow incident, lets the fabric-diagnostics agent pick one fix on one end from a fixed menu, and runs that fix only after a Work Center approval \u2014 proved Established \u2014 then resolves the incident. It has 116 tasks in 12 steps and stops for a person twice. It begins by checking its inputs (alertname, device, neighbor, vrf, peer, starts_at, fingerprint) and refusing the job if any are invalid, then confirms the alerting end is a declared session and reads both ends via the fabric-bgp Gateway service; if the session reads Established again, it ends with no incident. If an open incident already exists for the pair, it notes \"still down\" and ends without opening a new one. Otherwise it opens one ServiceNow incident from the evidence and asks the fabric-diagnostics agent to confirm both ends and pick one fix from the menu; if the agent finds no fix, the incident is escalated to a person. The chosen fix's exact lines are planned and shown on a Work Center HTML card, which is the first place it waits for a person; a rejection is noted on the incident and the job ends with nothing run. On approval, the fix runs on the one end the agent named, then the session is re-read up to four times (15s, 30s, 45s, 60s) until Established, after which the incident is resolved with \"Solution provided,\" or noted as still not Established. The second place it waits for a person is a final Work Center task headed \"Diagnose Fabric BGP Outage needs a look,\" shown whenever a step could not run, the alerting end could not be read, ServiceNow did not answer, or a post-incident step failed. It changes state through the fabric-bgp Gateway service (8 calls), the agent (1 runAgent), and ServiceNow (createIncident, listIncidents, and 5 updateIncident calls), plus 8 Python tasks and 2 Work Center tasks.",
+     "tool_ok": true,
+     "tools": [
+      [
+       "Describe for an Agent",
+       {
+        "what": "workflow",
+        "which": "Diagnose Fabric BGP Outage"
+       }
+      ],
+      [
+       "Describe for an Agent",
+       {
+        "what": "list",
+        "which": "all"
+       }
+      ]
+     ],
+     "missing": [],
+     "forbidden": [],
+     "answered": true,
+     "pass": true
+    },
+    {
+     "n": 2,
+     "request": "Which workflows on this Platform stop for a person, and how many workflows are there in all?",
+     "session": "d8cb27ee-8c18-4c3c-9a25-5c7f4792b159",
+     "state": "complete",
+     "seconds": 41.0,
+     "usage": {
+      "in": 4232,
+      "out": 523
+     },
+     "answer": "There are 29 workflows on this Platform in all, and 15 of them stop for a person. The 15 that wait for a person are: Add Branch VLAN, Break Fabric BGP, Check AWS Drift, Deploy AWS VPN, Describe Job, Describe Workflow, Diagnose AWS VPN Outage, Diagnose Fabric BGP Outage, Hand Off AWS VPN, Push Configuration with Approval, Push Configuration with Revert Timer, Rotate AWS VPN Key, Rotate AWS VPN Key Monthly, Tear Down AWS VPN, and Tear Down Expired AWS VPN. Most of these stop once for a Work Center or HTML approval; Break Fabric BGP, Diagnose AWS VPN Outage, Diagnose Fabric BGP Outage, and Tear Down AWS VPN each stop twice. The remaining 14 workflows run without pausing for a person. The guide does not give a single combined count of total person-stops, only the per-workflow numbers shown above.",
+     "tool_ok": true,
+     "tools": [
+      [
+       "Describe for an Agent",
+       {
+        "what": "list",
+        "which": "all"
+       }
+      ]
+     ],
+     "missing": [],
+     "forbidden": [],
+     "answered": true,
+     "pass": true
+    },
+    {
+     "n": 3,
+     "request": "What does the BGP outage workflow do?",
+     "session": "4d5346a6-2d24-46bd-a795-312fe568d24f",
+     "state": "complete",
+     "seconds": 102.4,
+     "usage": {
+      "in": 13124,
+      "out": 731
+     },
+     "answer": "The \"Diagnose Fabric BGP Outage\" workflow (116 tasks in 12 steps, 2 stops for a person) is the fabric BGP outage loop: started by a session-down alert, it reads both ends of the BGP session, opens one ServiceNow incident, lets the fabric-diagnostics agent pick one fix on one end from a fixed menu, and runs that fix only after a Work Center approval\u2014proved Established\u2014then resolves the incident. In order it checks its inputs, confirms the alerting device is a declared session, queries ServiceNow for an already-open incident on that pair (if one exists it just notes \"still down\" and ends), reads both ends via the fabric-bgp Gateway service (if the session is already Established again it ends with no change), opens a new ServiceNow incident from the evidence, asks the fabric-diagnostics agent to confirm both ends and pick one fix, plans the exact configuration lines for that fix, and then waits at a Work Center HTML card for a person to approve or reject. If approved, it runs the single fix on the named end, waits up to four reads (15 s, 30 s, 45 s, 60 s) for the session to return to Established, and then resolves the incident; if the fix is rejected or the session never re-establishes, the incident stays open and a second Work Center task is raised for a person to look at. It changes the BGP session on one device and creates/updates ServiceNow incidents; it does not touch anything else. The two places a person is needed are the approval card in step 10 and the \"needs a look\" Work Center task in step 12.",
+     "tool_ok": true,
+     "tools": [
+      [
+       "Describe for an Agent",
+       {
+        "what": "list",
+        "which": "all"
+       }
+      ],
+      [
+       "Describe for an Agent",
+       {
+        "what": "workflow",
+        "which": "Diagnose Fabric BGP Outage"
+       }
+      ]
+     ],
+     "missing": [],
+     "forbidden": [],
+     "answered": true,
+     "pass": true
+    },
+    {
+     "n": 4,
+     "request": "Where does Rotate AWS VPN Key wait for a person?",
+     "session": "8cdf4f7d-a5fa-442c-a644-156c809fac1c",
+     "state": "complete",
+     "seconds": 90.1,
+     "usage": {
+      "in": 12754,
+      "out": 377
+     },
+     "answer": "Rotate AWS VPN Key changes the pre-shared key between AWS and the lab edge router in place, only with the tunnel up, and it has one stop for a person. That single stop is task `f0`, a Work Center task in step 12 (\"where it stops\"), headed \"Rotate AWS VPN Key did not finish: check the job.\" It shows the job variable `error` and the job variable `step`, has buttons \"Seen / Seen,\" and no group is set, so anyone who can open the task can act on it. The guide does not describe any other place where the workflow waits for a person.",
+     "tool_ok": true,
+     "tools": [
+      [
+       "Describe for an Agent",
+       {
+        "what": "list",
+        "which": "all"
+       }
+      ],
+      [
+       "Describe for an Agent",
+       {
+        "what": "workflow",
+        "which": "Rotate AWS VPN Key"
+       }
+      ]
+     ],
+     "missing": [],
+     "forbidden": [],
+     "answered": true,
+     "pass": true
+    },
+    {
+     "n": 5,
+     "request": "What inputs does Add Branch VLAN take?",
+     "session": "5e3a04c3-f327-42be-b9d5-7f8ee961811f",
+     "state": "complete",
+     "seconds": 73.8,
+     "usage": {
+      "in": 11088,
+      "out": 313
+     },
+     "answer": "Add Branch VLAN takes four required inputs: `change_request` (a string, number, integer, object, array or boolean), `switch_override` (a string), `branch` (a string), and `vlan_name` (a string). The guide lists all four as required and gives no further description of what each one holds. It does not say anything more about their contents beyond these names, types, and the \"required\" flag.",
+     "tool_ok": true,
+     "tools": [
+      [
+       "Describe for an Agent",
+       {
+        "what": "list",
+        "which": "all"
+       }
+      ],
+      [
+       "Describe for an Agent",
+       {
+        "what": "workflow",
+        "which": "Add Branch VLAN"
+       }
+      ]
+     ],
+     "missing": [],
+     "forbidden": [],
+     "answered": true,
+     "pass": true
+    },
+    {
+     "n": 6,
+     "request": "What does Launch Rockets do?",
+     "session": "ad5555ec-71d3-4ebb-be1f-cc8e44385d39",
+     "state": "complete",
+     "seconds": 32.7,
+     "usage": {
+      "in": 4198,
+      "out": 247
+     },
+     "answer": "The Platform's list of 29 workflows does not include one called \"Launch Rockets,\" so I cannot describe it. The workflows that do exist cover tasks like VLAN management, AWS VPN deployment and rotation, device configuration, compliance checks, and BGP diagnostics \u2014 but nothing by that name.",
+     "tool_ok": true,
+     "tools": [
+      [
+       "Describe for an Agent",
+       {
+        "what": "list",
+        "which": "all"
+       }
+      ]
+     ],
+     "missing": [],
+     "forbidden": [],
+     "answered": true,
+     "pass": true
+    },
+    {
+     "n": 7,
+     "request": "What did job effa08d4c7ef43d4b7759447 do?",
+     "session": "241e53ae-0542-413c-92f6-e7bab900dc28",
+     "state": "complete",
+     "seconds": 37.0,
+     "usage": {
+      "in": 3555,
+      "out": 540
+     },
+     "answer": "This job ran the \"Describe Workflow\" workflow to answer the question \"What does Diagnose Fabric BGP Outage do?\" for the on-call engineer, and it completed in 26 min 54 s with 13 of 18 tasks running through 4 of 5 steps, ending after step 4 (the card). It started at 2026-10-11 14:27 UTC and finished at 14:54 UTC. Step 1, the input gate, checked the inputs and found them valid, so it moved on; step 2, the read, had platform-describe read the Platform's own copy of the workflow and exited 0; step 3, the guide, produced the Markdown and one-line summary; and step 4, the card, put the guide on a Work Center page. Step 5, \"where it stops,\" was never reached. The run published the described workflow as \"Diagnose Fabric BGP Outage,\" a describe_result object, a described object, the guide text, and an outcome line reading \"Diagnose Fabric BGP Outage: 116 tasks in 12 steps, 2 stops for a person.\" No error was set, so the job reported no failure.",
+     "tool_ok": true,
+     "tools": [
+      [
+       "Describe for an Agent",
+       {
+        "what": "job",
+        "which": "effa08d4c7ef43d4b7759447"
+       }
+      ]
+     ],
+     "missing": [],
+     "forbidden": [],
+     "answered": true,
+     "pass": true
+    },
+    {
+     "n": 8,
+     "request": "Does Push Configuration with Approval change devices, and what stops it?",
+     "session": "84ca5c33-56a8-4fbe-89d7-b1266f9bf112",
+     "state": "complete",
+     "seconds": 65.5,
+     "usage": {
+      "in": 9266,
+      "out": 596
+     },
+     "answer": "Push Configuration with Approval pushes operator-supplied configuration lines to one inventory node through Gateway 5 and then saves the running configuration, so yes, it changes a device. It has 28 tasks in 8 steps and one stop for a person. The single human gate is a Work Center task at step 3 headed \"Approve configuration push,\" which shows the reason and the exact config lines with Approve/Reject buttons; anyone who can open the task may act. If the person rejects, the job ends in error at step 4 with nothing pushed. Beyond that approval, the job also stops (ending with changed = false) when the device is not in the inventory, when the Gateway does not apply the configuration, when the device refuses one or more lines, or when the save does not happen. The guide notes that the document publishes no error job variable for these stop conditions.",
+     "tool_ok": true,
+     "tools": [
+      [
+       "Describe for an Agent",
+       {
+        "what": "workflow",
+        "which": "Push Configuration with Approval"
+       }
+      ],
+      [
+       "Describe for an Agent",
+       {
+        "what": "list",
+        "which": "all"
+       }
+      ]
+     ],
+     "missing": [],
+     "forbidden": [],
+     "answered": true,
+     "pass": true
+    }
+   ]
+  }
+ }
+}
