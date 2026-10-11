@@ -1,6 +1,6 @@
 # 0080 — The Platform describes its own workflows: Describe Workflow runs the guide's walker on the Gateway
 
-- **Status:** proposed (2026-10-11); decisions 2 and 3 taken as proposed by the owner (#163 merged); probes P1-P4 measured on the dev tier 2026-10-11 (below); production next
+- **Status:** proposed (2026-10-11); decisions 2 and 3 taken as proposed by the owner (#163 merged); probes P1-P4 measured on the dev tier 2026-10-11 (below), then production the same day (job bd8c46be, the same four answers; the card read in Work Center)
 - **Date:** 2026-10-11
 - **Amends:** nothing; adds to PID section 3 (a new criterion set, S16)
 - **Related:** ADR 0067 (workflow names), ADR 0068 (executable services on the Gateway, a repository pinned by
@@ -95,6 +95,8 @@ What was measured and read before deciding (2026-10-11):
 | P2 | `svc-copilot` read the Studio list through `equals[name]`; the document came back whole (106 tasks, 12 steps) |
 | P3 | The answer (16 KB of Markdown, 20 KB of HTML, 33 KB as the runCode result) went through `runService` and `runCode` with no truncation; `outcome` and `guide` published |
 | P4 | The card page (32 KB) renders: the band, the summary as lede, the pill "For reading", ten sections, twelve step headings, three tables; it is 6,700 px tall and scrolls inside the task |
+
+On production the same run (job `bd8c46beb95a416daffe2966`) gave the same four answers, and P4 was read in Work Center itself: the card renders inside the task with its own scroll, the Seen buttons under it. The captures are in the LinkedIn hub, folder 22.
 
 Two things the Platform's copy shows that the repository page does not, both to live with for now: the stored
 `outputSchema` carries the job's own variables (`_id`, `initiator`, the input echoed back) and widens the `*_note`
