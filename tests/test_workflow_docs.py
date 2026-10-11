@@ -90,3 +90,47 @@ def test_the_index_lists_every_page() -> None:
     for path in PAGES:
         if path.name != "README.md":
             assert f"]({path.name})" in index, f"README.md does not link {path.name}"
+
+
+# ── the step chart: the same graph as the Mermaid block, drawn as SVG for the card ──
+
+import xml.etree.ElementTree as ET  # noqa: E402
+
+SVG_NS = "{http://www.w3.org/2000/svg}"
+
+
+def _chart(name: str) -> tuple:
+    doc = document(name)
+    steps_ = describe.steps(doc)
+    where = {tid: n for n, (_, ids) in enumerate(steps_, 1) for tid in ids}
+    return doc, steps_, where, describe.step_chart(doc, steps_, where)
+
+
+@pytest.mark.parametrize("name", sorted(GUIDED))
+def test_the_chart_draws_every_step_and_every_link_once(name: str) -> None:
+    doc, steps_, where, svg = _chart(name)
+    root = ET.fromstring(svg)  # well-formed XML, or this raises
+    boxes = root.findall(f".//{SVG_NS}rect")
+    assert len(boxes) == len(steps_) + 2, "one box per step, plus start and done"
+    arrows = [p for p in root.findall(f".//{SVG_NS}path") if p.get("marker-end")]
+    assert len(arrows) == len(describe.step_links(doc, where)), "one arrow per link between steps"
+    assert "nan" not in svg and "None" not in svg
+    assert svg == describe.step_chart(doc, steps_, where), "deterministic"
+
+
+@pytest.mark.parametrize("name", sorted(GUIDED))
+def test_the_chart_names_every_step_and_marks_where_a_person_waits(name: str) -> None:
+    doc, steps_, where, svg = _chart(name)
+    texts = [("".join(t.itertext())).strip() for t in ET.fromstring(svg).findall(f".//{SVG_NS}text")]
+    for n, (title, _) in enumerate(steps_, 1):
+        assert any(t.startswith(f"step {n}:") for t in texts), f"step {n} is not named"
+    manual = {where[tid] for tid, t in doc["tasks"].items() if t.get("type") == "manual"}
+    assert texts.count("waits for a person") == len(manual)
+
+
+def test_the_card_gets_the_chart_and_the_page_keeps_mermaid() -> None:
+    doc = document("Rotate AWS VPN Key")
+    out = describe.describe_document({"document": doc})
+    assert out["svg"].startswith("<svg ") and '<figure class="chart"><svg ' in out["html"]
+    assert "```mermaid" in out["markdown"] and "<pre class=\"diagram\">" not in out["html"]
+    assert '<pre class="diagram">' in describe.html_guide(out["markdown"]), "without a chart the source is shown"
