@@ -419,6 +419,8 @@ INPUT_GATES = {
         "what": {"type": "string", "enum": ["list", "workflow", "job"]},
         "which": {"type": "string", "minLength": 1, "maxLength": 80, "pattern": r"^[A-Za-z0-9 -]+$"},
     },
+    # ADR 0081 decision 6: the question from Slack, plain words of any kind, bounded in length only (the agent's input)
+    WF["ask_platform_guide"]: {"request": {"type": "string", "minLength": 1, "maxLength": 2000}},
     WF["show_command"]: {"device": NODE_NAME, "command": SHOW_COMMAND},
     WF["show_all"]: {"command": SHOW_COMMAND},
     # R6 (ADR 0072): what the alert relay sends; the device is the one open target the AWS monitor watches
@@ -8025,11 +8027,189 @@ def describe_for_agent() -> dict:
     )
 
 
+# --- ADR 0081 decision 6: Ask Platform Guide, the Slack front door's workflow -------------------------------------
+# The bot in Slack runs the endpoint trigger as the channel's service account with the question; this workflow runs
+# platform-guide (the Platform's own session, answering from Describe for an Agent alone), puts the answer on a small
+# Work Center card the bot reads back into the thread, and publishes the answer as text. The dev overlay's import
+# fills the marker with the local twin's UUID (tasks/workflow-agent-ids.yml); production's with platform-guide's.
+ASK_GUIDE_AGENT_MARKER = "__AGENT_ID:platform-guide__"
+ASK_GUIDE_REQUEST_CHARS = 2000
+ANSWER_CARD_CSS = """
+body { margin: 0; padding: 4px; background: transparent; }
+.pa { --night: #0B1322; --panel: #121D31; --edge: #24344D; --deep: #070D18; --ink: #E6EDF7; --ink-soft: #9FB0C8;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; max-width: 760px; margin: 0 auto;
+  font: 14.5px/1.55 -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; color: var(--ink);
+  background: var(--night); border: 1px solid var(--edge); border-radius: 14px; padding: 18px 22px 16px; }
+.pa .brand { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--ink-soft); }
+.pa .brand img { width: 26px; height: 26px; border-radius: 7px; }
+.pa .eyebrow { margin: 14px 0 4px; font-size: 12px; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-soft); }
+.pa .ask { margin: 0 0 16px; padding: 10px 14px; border-left: 3px solid #4FA3F7; background: var(--panel);
+  border-radius: 0 10px 10px 0; color: var(--ink); white-space: pre-wrap; }
+.pa .answer p { margin: 0 0 10px; }
+.pa .answer ul, .pa .answer ol { margin: 0 0 10px 1.2em; padding: 0; }
+.pa .answer li { margin: 0 0 4px; }
+.pa .answer .h { margin: 12px 0 4px; font-weight: 600; }
+.pa .answer code { font-family: var(--mono); font-size: 13px; background: var(--deep); border-radius: 5px; padding: 1px 5px; }
+.pa .foot { margin: 16px 0 0; padding-top: 10px; border-top: 1px solid var(--edge); font-size: 12.5px; color: var(--ink-soft); }
+"""
+
+
+def answer_text(agent) -> tuple:
+    """(outcome, text) from runAgent's result ({sessionId, sessionStatus, lastMessage}), or from the note the
+    workflow put in its place when the agent did not run. The local twin (qwen3.8, think on) can return its reasoning,
+    a closing </think> and the answer again on the turn after a tool result (measured 2026-10-11, department-agents):
+    only the text after the last marker is the answer."""
+    if isinstance(agent, dict):
+        status = str(agent.get("sessionStatus") or "").upper()
+        text = str(agent.get("lastMessage") or "")
+        text = (text.rsplit("</think>", 1)[-1] if "</think>" in text else text).strip()
+        if status == "COMPLETE" and text:
+            return "answered", text
+        return "no answer", text or "The agent did not finish (session status %s)." % (status or "unknown")
+    return "no answer", str(agent or "The Platform guide agent could not run this request.")
+
+
+def answer_inline(text: str) -> str:
+    """One line of the answer as HTML: escaped first, then **bold** and `code` become tags; nothing the model writes
+    can bring markup onto the card."""
+    out = html.escape(text, quote=True)
+    out = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", out)
+    return re.sub(r"`([^`]+)`", r"<code>\1</code>", out)
+
+
+def answer_html(text: str) -> str:
+    """The answer as HTML: paragraphs, bullet and numbered lists, a heading line as a bold paragraph. The bot in Slack
+    reads the card back as its <p> and <li> lines, so the answer's own lines are the only <p>s between the eyebrow and
+    the foot."""
+    parts, in_list = [], None
+    for line in text.splitlines():
+        s = line.strip()
+        bullet = re.match(r"^(?:[-*•]|(\d+)[.)])\s+(.*)$", s)
+        if bullet:
+            kind = "ol" if bullet.group(1) else "ul"
+            if in_list != kind:
+                if in_list:
+                    parts.append("</%s>" % in_list)
+                parts.append("<%s>" % kind)
+                in_list = kind
+            parts.append("<li>%s</li>" % answer_inline(bullet.group(2)))
+            continue
+        if in_list:
+            parts.append("</%s>" % in_list)
+            in_list = None
+        if not s:
+            continue
+        heading = re.match(r"^#{1,6}\s+(.*)$", s)
+        if heading:
+            parts.append('<p class="h">%s</p>' % answer_inline(heading.group(1)))
+        else:
+            parts.append("<p>%s</p>" % answer_inline(s))
+    if in_list:
+        parts.append("</%s>" % in_list)
+    return "".join(parts)
+
+
+def answer_card(d: dict) -> dict:
+    """Ask Platform Guide's card: the question, the agent's answer, the foot. {request, agent} in; {html, text,
+    outcome} out. Pure: runCode runs this function's own source on the Gateway. The <p> lines are laid out for the bot
+    that reads the card back into Slack: the eyebrow (dropped there, it ends with "agent"), the answer's own lines, and
+    one foot line that starts with "Answered by" or "Nothing was changed"."""
+    e = html.escape
+    request = str(d.get("request") or "")
+    outcome, text = answer_text(d.get("agent"))
+    agent = d.get("agent") if isinstance(d.get("agent"), dict) else {}
+    session = str(agent.get("sessionId") or "")
+    ref = " (session %s)" % e(session) if session else ""
+    if outcome == "answered":
+        body, foot = answer_html(text), ("Answered by the Platform guide agent from the describer alone%s. Nothing was "
+                                         "changed; Seen closes this card." % ref)
+    else:
+        body, foot = "<p>%s</p>" % answer_inline(text), ("Nothing was changed. The agent gave no answer%s: ask again, or "
+                                                          "read its session in Agent Sessions." % ref)
+    page = (
+        "<!doctype html>\n<html lang=\"en\"><head><meta charset=\"utf-8\"><title>The Platform's answer</title>\n"
+        "<style>%s</style></head>\n<body><div class=\"pa\">\n"
+        "<div class=\"brand\">%s<span><b>Elliot's Itential Lab</b>&nbsp; the Platform, asked</span></div>\n"
+        "<p class=\"eyebrow\">Platform guide agent</p>\n"
+        "<blockquote class=\"ask\">%s</blockquote>\n"
+        "<div class=\"answer\">%s</div>\n"
+        "<p class=\"foot\">%s</p>\n"
+        "</div></body></html>"
+    ) % (ANSWER_CARD_CSS, card_mark(), e(request), body, e(foot))
+    return {"html": page, "text": text, "outcome": outcome}
+
+
+ANSWER_CARD_CODE = _source(outage_card_image, card_mark, answer_text, answer_inline, answer_html, answer_card,
+                           call='answer_card(json.loads(sys.stdin.read() or "{}"))',
+                           extra=CARD_PALETTE_SRC + "import base64\nimport html\nimport re\n\n"
+                           "ANSWER_CARD_CSS = " + repr(ANSWER_CARD_CSS) + "\n\n\n")
+
+
+def ask_platform_guide() -> dict:
+    """Ask Platform Guide (ADR 0081 decision 6): the Slack front door's workflow. The question goes in as data behind
+    the gate; platform-guide answers it in the Platform's own session, from Describe for an Agent alone; the answer
+    goes on a small Work Center card (one button) that the bot reads back into the thread, and is published as text.
+    An agent that did not run still gets a card, so the asker hears why there is no answer."""
+    ok, err = "success", "error"
+    tasks = sectioned({
+        **step("the agent: platform-guide answers the request from Describe for an Agent alone, in its own session"),
+        "1a": run_agent("platform-guide: the request, answered from the describer", ASK_GUIDE_AGENT_MARKER,
+                        "$var.job.request", "agent_result", x=100),
+        "1b": note("the agent did not run", "The Platform guide agent could not run this request.", "agent_result",
+                   x=150, y=-300),
+        "1c": note("why there is no answer", "the platform-guide session did not run: nothing was answered", "error",
+                   x=200, y=-300),
+        **step("the card: the answer on a Work Center card, one button; the answer published as text"),
+        "2a": set_key("the card: the request", {}, "request", "$var.job.request", x=250),
+        "2b": set_key("the card: the agent's answer", "$var.2a.object", "agent", "$var.job.agent_result", x=300),
+        "2c": run_code("the answer card (Python on the runner)", ANSWER_CARD_CODE, "$var.2b.object", "answer_card",
+                       x=350),
+        "2d": jq("the answer, as text", "$var.2c.result", "stdout_json.text", x=400, to_job="answer"),
+        "2e": jq("how it ended", "$var.2c.result", "stdout_json.outcome", x=450, to_job="outcome"),
+        "2f": jq("the card's HTML", "$var.2c.result", "stdout_json.html", x=500),
+        "3a": task("InteractiveHTML", "WorkCenter", "the Platform's answer",
+                   {"header": "The Platform's answer", "body": "$var.2f.return_data", "variables": {},
+                    "btn_success": "Seen", "btn_failure": "Seen"},
+                   {"export": "$var.job.seen"}, kind="manual", display="Work Center",
+                   view="/work-center/task/InteractiveHTML", x=550),
+        **step("where it stops: the reason in error; nothing was changed"),
+        "8b": note("the card could not be made", "the agent's answer is in agent_result, but its card could not be "
+                   "made (answer_card): nothing was changed", "error", x=400, y=-600),
+    })
+    tr = {
+        "workflow_start": _edge(**{"1a": ok}),
+        "1a": _edge(**{"2a": ok, "1b": err}),
+        "1b": _edge(**{"1c": ok}),
+        "1c": _edge(**{"2a": ok}),
+        "2a": _edge(**{"2b": ok}),
+        "2b": _edge(**{"2c": ok}),
+        "2c": _edge(**{"2d": ok, "8b": err}),
+        "2d": _edge(**{"2e": ok, "8b": err}),
+        "2e": _edge(**{"2f": ok, "8b": err}),
+        "2f": _edge(**{"3a": ok, "8b": err}),
+        "3a": _edge(**{"workflow_end": ok}),
+        "8b": _edge(**{"workflow_end": ok}),
+    }
+    return workflow(
+        WF["ask_platform_guide"],
+        "The Slack front door (ADR 0081 decision 6): asks platform-guide what a workflow on this Platform does or what "
+        "one of its jobs did, in the Platform's own agent session, and puts the answer on a Work Center card the bot "
+        "reads back into the thread. The agent has one read-only tool, Describe for an Agent; nothing is changed",
+        {"request": {"type": "string", "required": True,
+                     "description": "the question in plain words: what a workflow does, or what a job did"}},
+        tasks,
+        tr,
+        {"answer": {"type": "string"}, "outcome": {"type": "string"}, "error": {"type": "string"},
+         "agent_result": {"type": "object"}},
+    )
+
+
 BUILDERS = (device_count, show_version, show_command, show_all, branch_vlan, branch_vlan_delete, config_push,
             compliance_run, compliance_report, netbox_devices, backup_all, deploy_aws_vpn, verify_aws_vpn,
             hand_off_aws_vpn, config_push_revert, tear_down_aws_vpn, tear_down_expired_aws_vpn, get_aws_vpn_status,
             check_aws_drift, rotate_aws_vpn_key, rotate_aws_vpn_key_monthly, diagnose_aws_vpn_outage,
-            diagnose_fabric_bgp_outage, break_fabric_bgp, drill_batfish_gate, describe_workflow, describe_job, describe_for_agent)
+            diagnose_fabric_bgp_outage, break_fabric_bgp, drill_batfish_gate, describe_workflow, describe_job, describe_for_agent,
+            ask_platform_guide)
 
 
 if __name__ == "__main__":

@@ -335,7 +335,7 @@ def test_platform_yml_defaults_are_production() -> None:
     text = (PLAYS / "platform.yml").read_text()
     all_four = "platform_elements | default(['golden_config', 'mop', 'lcm', 'integrations'])"
     tasks = tasks_of("platform.yml")
-    includes = {t["ansible.builtin.include_tasks"]: t["when"] for t in tasks if "ansible.builtin.include_tasks" in t}
+    includes = {t["ansible.builtin.include_tasks"]: t.get("when") for t in tasks if "ansible.builtin.include_tasks" in t}
     for element, path in (("golden_config", "golden-config"), ("mop", "mop"), ("lcm", "lcm"), ("integrations", "integrations")):
         assert includes[f"tasks/{path}.yml"] == f"'{element}' in {all_four}", path
         # rendered: the default runs every element, the dev overlay skips only golden_config
