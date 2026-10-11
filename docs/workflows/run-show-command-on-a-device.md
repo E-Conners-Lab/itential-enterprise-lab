@@ -6,7 +6,8 @@ Runs one show command on an inventory node through Gateway 5 and returns the raw
 
 ## How it runs
 
-- By hand, from the Platform: the Studio's run button or the API. No automation, form, endpoint or schedule starts it.
+- Through the Operations Manager automation "Run Show Command on a Device": One show command on one lab device, parsed; reads only (ADR 0082).
+- From the endpoint trigger "Run Show Command on a Device from NetClaw" (route `run-show-command`).
 
 ## Inputs
 

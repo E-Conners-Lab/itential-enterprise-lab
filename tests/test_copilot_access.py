@@ -237,12 +237,20 @@ def test_every_password_task_is_no_log() -> None:
     assert checked >= 20
 
 
-def test_the_task_writes_only_copilot_groups() -> None:
+def test_the_task_writes_only_copilot_or_netclaw_groups() -> None:
+    """ADR 0082 widened the task from svc-copilot alone to a closed set of two service accounts; nothing else."""
     tasks = _tasks(LDAP_TASK)
-    text = LDAP_TASK.read_text()
-    assert "svc_group is match('copilot-')" in text
-    guard = next(t for t in tasks if t["name"].startswith("Only a copilot- group"))
-    assert "svc_group is match('copilot-')" in guard["ansible.builtin.assert"]["that"]
+    kinds = tasks[0]["vars"]["svc_kinds"]
+    assert {k: v["group_prefix"] for k, v in kinds.items()} == {"copilot": "copilot-", "netclaw": "netclaw"}
+    assert {k: v["password_prefix"] for k, v in kinds.items()} == {"copilot": "SVC_COPILOT_", "netclaw": "SVC_NETCLAW_"}
+    assert {k: v["oracle"] for k, v in kinds.items()} == {"copilot": "itential/copilot/roles.yaml",
+                                                         "netclaw": "itential/netclaw/roles.yaml"}
+    assert "svc_kind | default('copilot')" in json.dumps(tasks[0]), "a caller that names no kind is svc-copilot"
+    guard = next(t for t in tasks if t["name"].startswith("Only a copilot- or netclaw group"))
+    that = guard["ansible.builtin.assert"]["that"]
+    assert "svc_kind | default('copilot') in ['copilot', 'netclaw']" in that
+    assert "svc_prefix in ['copilot-', 'netclaw']" in that and "svc_group is match(svc_prefix)" in that
+    assert "password_env is match(svc_def.password_prefix)" in that
     for task in tasks:
         if not _is_write_uri(task):
             continue
@@ -250,7 +258,7 @@ def test_the_task_writes_only_copilot_groups() -> None:
         assert "admin_group" not in json.dumps(task), f"{task['name']} names admin_group in a write"
         if "/authorization/groups" in url:
             when = json.dumps(task.get("when", ""))
-            assert "match('copilot-')" in when, f"{task['name']} writes a group without the copilot- guard"
+            assert "match(svc_prefix)" in when, f"{task['name']} writes a group without the prefix guard"
         else:
             assert url.endswith("/login"), f"{task['name']}: unexpected write {url}"
 
@@ -283,7 +291,7 @@ def test_production_fails_instead_of_taking_the_fallback() -> None:
     tasks = yaml.safe_load(PROD_PLAY.read_text())[0]["tasks"]
     include = next(t for t in tasks if t.get("ansible.builtin.include_tasks") == "tasks/ldap-service-account.yml")
     assert include["vars"]["ldap_service_account_fallback"] is False
-    gate = next(t for t in _tasks(LDAP_TASK) if t["name"] == "Fallback is allowed and stays a copilot- group")
+    gate = next(t for t in _tasks(LDAP_TASK) if t["name"] == "Fallback is allowed and keeps the kind's group prefix")
     allowed = gate["ansible.builtin.assert"]["that"][0]
     assert _evaluate(allowed, ldap_service_account_fallback=False) is False, "production: the assert fails"
     assert _evaluate(allowed) is True, "dev (no override): the fallback stays available"

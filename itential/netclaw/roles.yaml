@@ -1,0 +1,50 @@
+# The role oracle for svc-netclaw (ADR 0082). One file decides what NetClaw's Itential service account can do, the same
+# on both tiers; nothing else lists a role. Read by:
+#  - ansible/playbooks/tasks/netclaw-access.yml (the custom role, created or reset to exactly these methods)
+#  - ansible/playbooks/tasks/ldap-service-account.yml (svc_kind netclaw: the group's assignedRoles)
+#  - tests/test_netclaw_access.py (the deny list and the exact methods, written into the test independently)
+#
+# What NetClaw does with it: post to the endpoint triggers of the automations its group may read
+# (versions.yaml automation_access.netclaw: gbac is the boundary, the methods only make the call possible), read the
+# jobs those triggers start, and read the platform-guide sessions its agent automations start. Measured on production
+# 6.6.0 (department-agents delivery, 2026-10-11): job and session reads are platform-wide, not per account; accepted
+# for the owner's own IT front door and recorded in ADR 0082.
+#
+# The dev half is the prod half (a YAML alias): NetClaw sees the same Platform surface on both tiers.
+prod: &netclaw
+  group: netclaw
+  builtin:
+    - {provenance: AgentSessionManager, name: "session:read"} # getSession, getMessages (describe_session)
+  # exact method names, no globs: a trigger-run method is not a read, so nothing here may be widened by a pattern
+  custom:
+    - name: netclaw-run
+      description: "NetClaw: start the endpoint triggers its group may read, and read the jobs (ADR 0082)"
+      methods:
+        - {provenance: OperationsManager, name: runEndpointTriggerWithPost} # the four starters
+        - {provenance: OperationsManager, name: getJob} # job_result
+        - {provenance: OperationsManager, name: getJobs} # latest_job
+  # Never in the set. Globs over "<provenance>/<name>"; the shared task asserts the resolved built-ins against it.
+  deny:
+    - {provenance: "*", name: admin}
+    - {provenance: "*", name: apiwrite}
+    - {provenance: "*", name: designer}
+    - {provenance: "*", name: engineering}
+    - {provenance: "*", name: operations}
+    - {provenance: "*", name: support}
+    - {provenance: "*", name: builder}
+    - {provenance: "*", name: "*:create"}
+    - {provenance: "*", name: "*:update"}
+    - {provenance: "*", name: "*:delete"}
+    - {provenance: "*", name: "*:run"}
+    - {provenance: "*", name: "*:code"}
+    - {provenance: "*", name: "*:manage"}
+    # no device path but the workflows: MOP runs commands, Configuration Manager and the Gateway reach devices
+    - {provenance: MOP, name: "*"}
+    - {provenance: ConfigurationManager, name: "*"}
+    - {provenance: GatewayManager, name: "*"}
+    - {provenance: InventoryManager, name: "*"}
+    # no workflow documents, no direct workflow start, no identity
+    - {provenance: AutomationStudio, name: "*"}
+    - {provenance: WorkFlowEngine, name: "*"}
+    - {provenance: Authorization, name: "*"}
+dev: *netclaw

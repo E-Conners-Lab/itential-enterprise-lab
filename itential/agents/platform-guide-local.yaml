@@ -3,6 +3,9 @@ project: lab-netops
 name: platform-guide-local
 description: platform-guide on the Mac Mini's Ollama (qwen3.8:27b), the same one tool, plain answers in a few sentences
 profile: ollama-mac
+# ADR 0082: an agent automation with an endpoint trigger, so NetClaw's ask_platform_guide starts a session here and
+# reads the answer with describe_session (the lab-netops exposure, S4c.6); gbac lets the netclaw group start it
+expose_route: platform-guide-local
 input_schema:
   type: object
   additionalProperties: false
