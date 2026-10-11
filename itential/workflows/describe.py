@@ -441,13 +441,18 @@ def _lanes(spans: list) -> list:
     return out
 
 
-def step_chart(doc: dict, steps_: list, where: dict, palette: dict | None = None) -> str:
+def step_chart(doc: dict, steps_: list, where: dict, palette: dict | None = None, states: dict | None = None,
+               taken: list | None = None) -> str:
     """The steps as boxes, top to bottom in the walk-through's order, start above and done below; the ordinary way on
     is a straight arrow, a branch is a bracket on the right (forward) or the left (back, or straight to done) with its
-    label; a step that waits for a person says so. Pure and deterministic: the same document draws the same picture."""
+    label; a step that waits for a person says so. Pure and deterministic: the same document draws the same picture.
+    With `states` ({step: ran|here|waiting|failed|canceled|skipped}) and `taken` ([(src, dst)] of step links, 0 start
+    and N + 1 done) a job's run is laid over the picture: the steps and arrows it took stand out, the rest fade."""
     import html as _html
 
     c = palette or CHART_DARK
+    states = states or {}
+    taken_set = {(a, b) for a, b in (taken or [])}
     n = len(steps_)
     manual = {where[tid] for tid, t in doc["tasks"].items() if t.get("type") == "manual"}
     links = step_links(doc, where)
@@ -494,27 +499,45 @@ def step_chart(doc: dict, steps_: list, where: dict, palette: dict | None = None
         out.append('<rect x="%.1f" y="%.1f" width="88" height="30" rx="15" fill="%s" stroke="%s"/>'
                    '<text x="%.1f" y="%.1f" text-anchor="middle" fill="%s">%s</text>'
                    % (cx - 44, y(i) - 15, c["box"], c["edge"], cx, y(i) + 5, c["muted"], word))
-    # the steps
+    # the steps; with a run laid over, each box says what happened to it
+    state_colour = {"ran": c["main"], "here": c["person"], "waiting": c["person"], "failed": c["error"],
+                    "canceled": c["error"], "skipped": c["edge"]}
+    state_word = {"ran": "ran", "here": "here now", "waiting": "waiting for a person now", "failed": "ended in error",
+                  "canceled": "canceled", "skipped": "not reached"}
     for i, (title, _) in enumerate(steps_, 1):
-        out.append('<rect x="%d" y="%.1f" width="%d" height="%d" rx="8" fill="%s" stroke="%s"/>'
-                   % (x0, y(i) - BOX_H / 2, BOX_W, BOX_H, c["box"], c["edge"]))
-        out.append('<text x="%d" y="%.1f" fill="%s"><tspan fill="%s">step %d:</tspan> %s</text>'
-                   % (x0 + 12, y(i) + 5 - (7 if i in manual else 0), c["text"], c["muted"], i, text(short(title), 36)))
-        if i in manual:
+        st = states.get(i, "")
+        faded = ' opacity="0.45"' if st == "skipped" else ""
+        out.append('<rect x="%d" y="%.1f" width="%d" height="%d" rx="8" fill="%s" stroke="%s"%s%s/>'
+                   % (x0, y(i) - BOX_H / 2, BOX_W, BOX_H, c["box"], state_colour.get(st, c["edge"]),
+                      ' stroke-width="2.4"' if st in ("here", "waiting") else "", faded))
+        sub = i in manual or st in ("here", "waiting", "failed", "canceled")
+        out.append('<text x="%d" y="%.1f" fill="%s"%s><tspan fill="%s">step %d:</tspan> %s</text>'
+                   % (x0 + 12, y(i) + 5 - (7 if sub else 0), c["text"], faded, c["muted"], i, text(short(title), 36)))
+        if st in ("here", "waiting", "failed", "canceled"):
+            out.append('<text x="%d" y="%.1f" fill="%s" font-size="11">%s</text>'
+                       % (x0 + 12, y(i) + 17, state_colour[st], state_word[st]))
+        elif i in manual:
             out.append('<text x="%d" y="%.1f" fill="%s" font-size="11">waits for a person</text>'
                        % (x0 + 12, y(i) + 17, c["person"]))
+        if st in ("ran", "skipped"):
+            out.append('<text x="%d" y="%.1f" fill="%s" font-size="11" text-anchor="end"%s>%s</text>'
+                       % (x0 + BOX_W - 10, y(i) + 5, state_colour[st], faded, state_word[st]))
 
-    def stroke(labs: list) -> str:
+    def stroke(labs: list, a: int, b: int, width: float) -> str:
         if any(l_ == "could not run" for l_ in labs):
-            return 'stroke="%s" stroke-dasharray="5 4"' % c["error"]
-        return 'stroke="%s"' % (c["branch"] if labs else c["main"])
+            base = 'stroke="%s" stroke-dasharray="5 4"' % c["error"]
+        else:
+            base = 'stroke="%s"' % (c["branch"] if labs else c["main"])
+        if not states:
+            return base + ' stroke-width="%s"' % width
+        return base + (' stroke-width="2.6"' if (a, b) in taken_set else ' stroke-width="%s" opacity="0.35"' % width)
 
     # straight arrows between neighbours
     for a, b, labs in straight:
         top = y(a) + (15 if a == 0 else BOX_H / 2)
         bottom = y(b) - (15 if b == n + 1 else BOX_H / 2)
-        out.append('<path d="M%.1f %.1fV%.1f" fill="none" %s stroke-width="1.6" marker-end="url(#arr)"/>'
-                   % (cx, top, bottom, stroke(labs)))
+        out.append('<path d="M%.1f %.1fV%.1f" fill="none" %s marker-end="url(#arr)"/>'
+                   % (cx, top, bottom, stroke(labs, a, b, 1.6)))
         if labs:
             out.append('<text x="%.1f" y="%.1f" fill="%s" font-size="11">%s</text>'
                        % (cx + 8, (top + bottom) / 2 + 4, c["branch"], label_text(labs)))
@@ -525,8 +548,8 @@ def step_chart(doc: dict, steps_: list, where: dict, palette: dict | None = None
         lane = box_r + 20 + k * LANE
         ys, yt = y(a), y(b)
         x_src = cx + 44 if a == 0 else box_r
-        out.append('<path d="M%.1f %.1fH%.1fV%.1fH%.1f" fill="none" %s stroke-width="1.4" marker-end="url(#arr)"/>'
-                   % (x_src, ys, lane, yt, box_r + 2, stroke(labs)))
+        out.append('<path d="M%.1f %.1fH%.1fV%.1fH%.1f" fill="none" %s marker-end="url(#arr)"/>'
+                   % (x_src, ys, lane, yt, box_r + 2, stroke(labs, a, b, 1.4)))
         if labs:
             r_labels.append((ys + 4, (c["error"] if "could not run" in labs else c["branch"], label_text(labs))))
     for y_, (colour, words) in spread(r_labels):
@@ -538,8 +561,8 @@ def step_chart(doc: dict, steps_: list, where: dict, palette: dict | None = None
         lane = x0 - 20 - k * LANE
         ys, yt = y(a), y(b)
         x_dst = cx - 44 if b == n + 1 else x0
-        out.append('<path d="M%.1f %.1fH%.1fV%.1fH%.1f" fill="none" %s stroke-width="1.4" marker-end="url(#arr)"/>'
-                   % (x0, ys, lane, yt, x_dst - 2, stroke(labs)))
+        out.append('<path d="M%.1f %.1fH%.1fV%.1fH%.1f" fill="none" %s marker-end="url(#arr)"/>'
+                   % (x0, ys, lane, yt, x_dst - 2, stroke(labs, a, b, 1.4)))
         if labs:
             l_labels.append((ys + 4, (c["error"] if "could not run" in labs else c["branch"], label_text(labs))))
     for y_, (colour, words) in spread(l_labels):
@@ -645,6 +668,359 @@ def describe_document(data: dict) -> dict:
             "html": html_guide(md, svg, doc["name"])}
 
 
+# --- a job: the run laid over the steps (ADR 0080 decision 6) ------------------------------------------------------
+# A job record is the workflow document as it was when the job started, plus what happened: each task's status
+# (complete, running, incomplete, canceled, error), its finish_state (success, failure, error), when it started (ISO
+# 8601) and ended (epoch milliseconds), and the job's variables. A job's copy of a task carries none of the task's
+# incoming values (service names, queries), so the words come from the stored document when it still matches.
+JOB_LIVE = ("running", "paused")
+
+
+def _ms(value) -> float | None:
+    """A time as the job records it, epoch milliseconds or ISO 8601, as epoch milliseconds; None when absent."""
+    if value is None or value == "":
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    try:
+        from datetime import datetime
+
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00")).timestamp() * 1000
+    except ValueError:
+        return None
+
+
+def _clock(ms: float | None) -> str:
+    from datetime import datetime, timezone
+
+    return datetime.fromtimestamp(ms / 1000, tz=timezone.utc).strftime("%Y-%m-%d %H:%M UTC") if ms else "an unknown time"
+
+
+def _span(ms: float | None) -> str:
+    """A duration in words: 0.4 s, 12 s, 3 min 25 s, 2 h 5 min."""
+    if ms is None or ms < 0:
+        return "an unknown time"
+    s = ms / 1000
+    if s < 10:
+        return "%.1f s" % s
+    if s < 60:
+        return "%d s" % round(s)
+    m, sec = divmod(int(round(s)), 60)
+    if m < 60:
+        return "%d min %d s" % (m, sec) if sec else "%d min" % m
+    h, m = divmod(m, 60)
+    return "%d h %d min" % (h, m) if m else "%d h" % h
+
+
+def job_document(job: dict, doc: dict | None) -> tuple[dict, str]:
+    """The document to describe the job with, and a note on which. The stored one when its tasks and arrows are the
+    job's (it has the words and the steps); otherwise the job's own copy, which may name no step."""
+    job_edges = {(a, b, e.get("state")) for a, tos in (job.get("transitions") or {}).items() for b, e in tos.items()}
+    if (isinstance(doc, dict) and isinstance(doc.get("tasks"), dict) and set(doc["tasks"]) == set(job.get("tasks") or {})
+            and set(edges(doc)) == job_edges):
+        return doc, "The steps and the words are the stored workflow's, which still matches this job's tasks and arrows."
+    own = {k: job.get(k) for k in ("name", "description", "tasks", "transitions", "inputSchema", "outputSchema")}
+    own = {k: v for k, v in own.items() if v is not None}
+    for t in own.get("tasks", {}).values():  # a job's copy keeps no incoming values; the walker expects the keys
+        t.setdefault("variables", {}).setdefault("incoming", {})
+        t["variables"].setdefault("outgoing", {})
+    return own, ("The stored workflow has changed since this job started (or could not be read), so this is described "
+                 "from the job's own copy of the document, which may name no steps.")
+
+
+def task_state(t: dict) -> str:
+    """ran | here | waiting | failed | canceled | skipped, for one task of a job."""
+    status = t.get("status") or "incomplete"
+    if status in JOB_LIVE:
+        return "waiting" if t.get("type") == "manual" else "here"
+    if status == "complete":
+        return "failed" if t.get("finish_state") == "error" else "ran"
+    if status == "canceled":
+        return "canceled" if t.get("start_time") else "skipped"  # the engine marks every unreached task canceled too
+    if status == "error":
+        return "failed"
+    return "skipped"
+
+
+def step_states(job: dict, steps_: list) -> dict:
+    """{step: state}: a step is where the job is if any of its tasks is, failed or canceled if one is, ran if one ran."""
+    out = {}
+    for n, (_, ids) in enumerate(steps_, 1):
+        kinds = {task_state(job["tasks"][tid]) for tid in ids if tid in job["tasks"]}
+        for k in ("waiting", "here", "canceled", "failed", "ran"):
+            if k in kinds:
+                out[n] = k
+                break
+        else:
+            out[n] = "skipped"
+    return out
+
+
+def job_path(doc: dict, job: dict, where: dict) -> list:
+    """[(src step, dst step, labels)] in the order the run took them: a task that finished took the arrow of its finish
+    state to a task that then ran; the same labels as the chart's. Start is 0, done is N + 1."""
+    n = max(where.values()) if where else 0
+    tasks = job["tasks"]
+    ran_or_live = {k for k, t in tasks.items() if task_state(t) in ("ran", "here", "waiting", "failed", "canceled")}
+    out: dict = OrderedDict()
+    order = sorted((k for k in ran_or_live if k != END),
+                   key=lambda k: (_ms(tasks[k].get("start_time")) or 0, k))
+    for a in order:
+        t = tasks[a]
+        fs = t.get("finish_state") or ("success" if a == START else "")
+        for b, e in (doc["transitions"].get(a) or {}).items():
+            if b not in ran_or_live and b != END:
+                continue
+            if b == END and tasks.get(END, {}).get("status") != "complete":
+                continue
+            if e.get("state") not in (fs, "loop") and not (e.get("state") == "error" and task_state(t) == "failed"):
+                continue
+            src = 0 if a == START else where.get(a)
+            dst = n + 1 if b == END else where.get(b)
+            if src is None or dst is None or src == dst:
+                continue
+            dt = doc["tasks"][a]
+            lab = "" if a == START else ("%s %s" % (dt["summary"], label(dt, e["state"])) if dt["name"] == "evaluation"
+                                        else ("" if e["state"] == "success" else label(dt, e["state"])))
+            out.setdefault((src, dst), [])
+            if lab and lab not in out[(src, dst)]:
+                out[(src, dst)].append(lab)
+    return [(a, b, labs) for (a, b), labs in out.items()]
+
+
+def _step_span(job: dict, ids: list) -> float | None:
+    starts = [_ms(job["tasks"][i].get("start_time")) for i in ids if i in job["tasks"]]
+    ends = [_ms(job["tasks"][i].get("end_time")) for i in ids if i in job["tasks"]]
+    starts, ends = [x for x in starts if x], [x for x in ends if x]
+    return max(ends) - min(starts) if starts and ends and max(ends) >= min(starts) else None
+
+
+def _said(value) -> str:
+    """A job variable's value in a few words, never a dump: a string is quoted and cut, the rest is counted."""
+    if value is None:
+        return "nothing (not set)"
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, (int, float)):
+        return str(value)
+    if isinstance(value, str):
+        v = " ".join(value.split())
+        return '"%s"' % (v if len(v) <= 160 else v[:157] + "...") if v else "an empty string"
+    if isinstance(value, list):
+        return "a list of %d" % len(value)
+    if isinstance(value, dict):
+        keys = sorted(value)
+        return "an object with %d key%s%s" % (len(keys), "" if len(keys) == 1 else "s",
+                                             " (%s)" % ", ".join("`%s`" % k for k in keys[:6]) + ("..." if len(keys) > 6 else "")
+                                             if keys else "")
+    return str(value)
+
+
+def job_guide(doc: dict, job: dict, steps_: list, where: dict, read: str, which: str) -> str:
+    """The page for one run: what it did, where it is or stopped, what it said, the tasks that ran."""
+    tasks = job["tasks"]
+    jid = str(job.get("_id") or "")
+    status = str(job.get("status") or "unknown")
+    metrics = job.get("metrics") or {}
+    start, end = _ms(metrics.get("start_time")), _ms(metrics.get("end_time"))
+    states_ = step_states(job, steps_)
+    path = job_path(doc, job, where)
+    n = len(steps_)
+    ran = [k for k, t in tasks.items() if k not in (START, END) and task_state(t) in ("ran", "failed", "canceled")]
+    ran_steps = [i for i in range(1, n + 1) if states_[i] != "skipped"]
+    live = sorted((k for k, t in tasks.items() if k not in (START, END) and task_state(t) in ("here", "waiting")),
+                  key=lambda k: (_ms(tasks[k].get("start_time")) or 0, k))
+    now_ms = _ms(job.get("_now")) or _ms(job.get("last_updated")) or start or 0
+    if status in JOB_LIVE:
+        ran_for = "Running for %s" % _span(now_ms - start) if start else "Running"
+    else:
+        ran_for = "Ran %s" % _span(end - start if start and end else None)
+    head = ["# %s: job %s" % (doc["name"], jid[:8] or "?"), "",
+            "**%s.** Started %s%s. %s." % (sentence(status), _clock(start),
+                                           (" with the description \"%s\"" % " ".join(str(job["description"]).split()))
+                                           if job.get("description") else "", ran_for),
+            "", "*%s %s*" % (read, which), ""]
+    # what this run did, step by step in the order taken
+    first_start = {i: min((_ms(tasks[t].get("start_time")) or float("inf")) for t in ids if t in tasks)
+                   for i, (_, ids) in enumerate(steps_, 1)}
+    did = ["## What this run did", "", "The steps in the order this job took them; a line says which way it went on when "
+           "there was a choice.", ""]
+    out_labels = {}
+    for a, b, labs in path:
+        out_labels.setdefault(a, []).append((b, labs))
+    for i in sorted(ran_steps, key=lambda i: (first_start[i], i)):
+        title, ids = steps_[i - 1]
+        st = states_[i]
+        if st == "ran":
+            what = "ran in %s" % _span(_step_span(job, ids))
+        elif st == "waiting":
+            t = next(tasks[k] for k in ids if task_state(tasks[k]) == "waiting")
+            since = _ms(t.get("start_time"))
+            what = "waiting for a person since %s (%s)" % (_clock(since), _span(now_ms - since)) if since \
+                else "waiting for a person"
+        elif st == "here":
+            what = "running now"
+        elif st == "failed":
+            what = "ended in error"
+        else:
+            what = "canceled"
+        line = "- step %d: %s — %s" % (i, short(title), what)
+        ways = []
+        for b, labs in out_labels.get(i, []):
+            target = "done" if b == n + 1 else "step %d" % b
+            ways.append(("%s → %s" % (" / ".join(labs), target)) if labs else "→ %s" % target)
+        if ways:
+            line += "; then " + "; ".join(ways)
+        did.append(line + ".")
+    skipped = [i for i in range(1, n + 1) if states_[i] == "skipped"]
+    if skipped:
+        did.append("- Not reached: %s." % ", ".join("step %d (%s)" % (i, short(steps_[i - 1][0])) for i in skipped))
+    did.append("")
+    # where it is, or stopped
+    if status in JOB_LIVE:
+        now_ = ["## Where it is now", ""]
+        for k in live or []:
+            t = tasks[k]
+            since = _ms(t.get("start_time"))
+            now_.append("- `%s` %s (step %d): %s since %s." % (
+                k, doc["tasks"][k]["summary"], where[k],
+                "waits for a person" if task_state(t) == "waiting" else "running", _clock(since)))
+        if not live:
+            now_.append("- Between tasks: nothing is running at this moment.")
+    else:
+        now_ = ["## Where it stopped", ""]
+        done_ = [k for k in ran if _ms(tasks[k].get("end_time"))]
+        last = max(done_, key=lambda k: (_ms(tasks[k].get("end_time")), k)) if done_ else None
+        halted = [k for k, t in tasks.items() if k not in (START, END) and task_state(t) in ("canceled", "failed")]
+        if status == "complete" and last:
+            now_.append("- Done at %s, after `%s` %s (step %d)." % (_clock(end or _ms(tasks[last].get("end_time"))),
+                                                                   last, doc["tasks"][last]["summary"], where[last]))
+        elif halted:
+            for k in sorted(halted, key=lambda k: (where[k], k))[:6]:
+                now_.append("- `%s` %s (step %d): %s." % (k, doc["tasks"][k]["summary"], where[k],
+                                                          "canceled" if task_state(tasks[k]) == "canceled" else "ended in error"))
+        elif last:
+            now_.append("- Ended %s at %s, after `%s` %s (step %d)." % (status, _clock(end), last,
+                                                                       doc["tasks"][last]["summary"], where[last]))
+        else:
+            now_.append("- Ended %s before any task finished." % status)
+        for err in (job.get("errors") or [])[:6]:
+            now_.append("- The job's error: %s." % _said(err.get("message") if isinstance(err, dict) else err).strip('"'))
+    now_.append("")
+    # what the job said
+    said = ["## What the job said", "", "The job variables the workflow publishes, as this job left them.", ""]
+    names = list(((doc.get("outputSchema") or {}).get("properties") or {}).keys())
+    if not names:
+        names = sorted({v for t in doc["tasks"].values() if t.get("variables")
+                        for v in [r.split(".", 2)[2] for r in t["variables"].get("outgoing", {}).values()
+                                  if isinstance(r, str) and r.startswith("$var.job.")]})
+    variables = job.get("variables") or {}
+    unset = [name for name in names if variables.get(name) is None and name not in ("outcome", "error")]
+    for name in names:
+        if name not in unset:
+            said.append("- `%s`: %s" % (name, _said(variables.get(name))))
+    if unset:
+        said.append("- Not set by this run: %s." % ", ".join("`%s`" % n for n in unset))
+    if not names:
+        said.append("- Nothing: the workflow publishes no job variable.")
+    said.append("")
+    warn = []
+    if job.get("warnings"):
+        warn = ["## Warnings the engine recorded", ""]
+        for w in job["warnings"][:8]:
+            if isinstance(w, dict):
+                warn.append("- `%s` %s: %s" % (w.get("task"), w.get("name", ""), " ".join(str(w.get("message", "")).split())[:200]))
+            else:
+                warn.append("- %s" % " ".join(str(w).split())[:200])
+        warn.append("")
+    # the tasks that ran
+    tasks_ = ["## The tasks that ran", "", "By step, in canvas order: each task that ran, with how it finished; the tasks "
+              "the run never reached are left out.", ""]
+    for i, (title, ids) in enumerate(steps_, 1):
+        if states_[i] == "skipped":
+            continue
+        tasks_ += ["### %d. %s" % (i, title), ""]
+        for k in ids:
+            t = tasks.get(k, {})
+            st = task_state(t)
+            if st == "skipped":
+                continue
+            dt = doc["tasks"][k]
+            took = _ms(t.get("end_time")) - _ms(t.get("start_time")) if _ms(t.get("end_time")) and _ms(t.get("start_time")) else None
+            if st == "ran":
+                fs = t.get("finish_state") or "success"
+                how = "ran in %s" % _span(took) if took is not None else "ran"
+                if fs != "success":
+                    how += ", %s" % ("answered no" if dt["name"] == "evaluation" else "failed")
+                elif dt["name"] == "evaluation":
+                    how += ", answered yes"
+            elif st == "waiting":
+                how = "waits for a person since %s" % _clock(_ms(t.get("start_time")))
+            elif st == "here":
+                how = "running since %s" % _clock(_ms(t.get("start_time")))
+            elif st == "failed":
+                how = "ended in error"
+            else:
+                how = "canceled"
+            tasks_.append("- `%s` %s — %s." % (k, dt["summary"], how))
+        tasks_.append("")
+    chart = ["## The steps at a glance", "",
+             "Each box is a step; the steps and arrows this job took stand out, the ones it never reached fade.", "",
+             *mermaid(doc, steps_, where), ""]
+    return "\n".join(head + did + now_ + said + warn + chart + tasks_).rstrip() + "\n"
+
+
+def describe_job_document(data: dict) -> dict:
+    """The runner contract for a job: {"job": <a job record>, "document": <the stored workflow or null>, "read": str}
+    in, the description out: ok, name, job, status, the counts, the path, summary, markdown, svg, html."""
+    job = data.get("job") or {}
+    if not isinstance(job, dict) or not job.get("name") or not isinstance(job.get("tasks"), dict):
+        return {"ok": False, "message": "no job record: expected {job: {_id, name, status, tasks, transitions, ...}}"}
+    if data.get("now") is not None:
+        job = {**job, "_now": data["now"]}  # the service's clock: how long a running job has been running
+    doc, which = job_document(job, data.get("document"))
+    steps_ = steps(doc)
+    where = {tid: k for k, (_, ids) in enumerate(steps_, 1) for tid in ids}
+    states_ = step_states(job, steps_)
+    path = job_path(doc, job, where)
+    read = str(data.get("read") or "Read from the Platform's job record, on request.")
+    md = job_guide(doc, job, steps_, where, read, which)
+    svg = step_chart(doc, steps_, where, states=states_, taken=[(a, b) for a, b, _ in path])
+    n_tasks = len(doc["tasks"]) - 2
+    ran = sum(1 for k, t in job["tasks"].items() if k not in (START, END) and task_state(t) in ("ran", "failed", "canceled"))
+    ran_steps = [i for i, st in states_.items() if st != "skipped"]
+    status = str(job.get("status") or "unknown")
+    metrics = job.get("metrics") or {}
+    start, end = _ms(metrics.get("start_time")), _ms(metrics.get("end_time"))
+    jid = str(job.get("_id") or "")
+    at = [i for i, st in states_.items() if st in ("here", "waiting", "failed", "canceled")]
+    if status in JOB_LIVE and at:
+        where_now = "%s at step %d (%s)" % ("waiting for a person" if states_[at[0]] == "waiting" else "running",
+                                            at[0], short(steps_[at[0] - 1][0]))
+    elif status == "complete" and ran_steps:
+        last = max(ran_steps, key=lambda i: max((_ms(job["tasks"][t].get("end_time")) or 0) for t in steps_[i - 1][1]))
+        where_now = "ended after step %d (%s)" % (last, short(steps_[last - 1][0]))
+    elif at:
+        where_now = "%s at step %d (%s)" % (states_[at[0]].replace("failed", "ended in error"), at[0], short(steps_[at[0] - 1][0]))
+    else:
+        where_now = status
+    now_ms = _ms(job.get("_now")) or _ms(job.get("last_updated")) or start or 0
+    span = ("running for %s" % _span(now_ms - start)) if status in JOB_LIVE and start \
+        else ("%s in %s" % (status, _span(end - start)) if start and end else status)
+    summary = "%s, job %s: %s; %d of %d tasks ran through %d of %d steps; %s" % (
+        doc["name"], jid[:8] or "?", span, ran, n_tasks, len(ran_steps), len(steps_), where_now)
+    name = "%s, job %s" % (doc["name"], jid[:8] or "?")
+    return {"ok": True, "name": name, "workflow": doc["name"], "job": jid, "status": status, "tasks": n_tasks,
+            "steps": len(steps_), "ran_tasks": ran, "ran_steps": len(ran_steps), "manual": sum(1 for st in states_.values() if st == "waiting"),
+            "path": [[a, b, labs] for a, b, labs in path], "step_states": {str(i): st for i, st in states_.items()},
+            "summary": summary, "step_titles": [t for t, _ in steps_], "markdown": md, "svg": svg,
+            "html": html_guide(md, svg, name), "brand": "the job, described",
+            "decide": "Seen closes this card. Nothing runs from it: the workflow only read this job's record and the "
+                      "stored copy of %s and described the run." % doc["name"],
+            "foot": "Prepared by Itential from the job record and the stored workflow document, with the same words "
+                    "the repository's guide uses."}
+
+
 def describe_stdin() -> int:
     """stdin JSON in, one JSON line out; a bad document is an answer, not a traceback (the workflow reads `ok`)."""
     try:
@@ -652,7 +1028,8 @@ def describe_stdin() -> int:
     except ValueError as exc:
         data = {"document": None, "_error": str(exc)}
     try:
-        out = describe_document(data if isinstance(data, dict) else {})
+        data = data if isinstance(data, dict) else {}
+        out = describe_job_document(data) if "job" in data else describe_document(data)
     except Exception as exc:  # noqa: BLE001 - the runner's answer must be JSON whatever happened
         out = {"ok": False, "message": "the description failed: %s: %s" % (type(exc).__name__, exc)}
     sys.stdout.write(json.dumps(out) + "\n")

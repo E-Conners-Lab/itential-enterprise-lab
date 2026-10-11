@@ -2,11 +2,12 @@
 """platform-describe: the Platform describes its own workflows (ADR 0080).
 
 A Gateway 5 executable service on this repository. It logs in to the Platform as a read-only account, reads ONE
-workflow by name (or, next, one job by id), runs the guide's walker (describe.py, the code the pages in
-docs/workflows/ are made with) and prints one JSON object: ok, the name, the counts, the guide as Markdown and as HTML.
+workflow by name or ONE job by id (and, for a job, the stored workflow it ran), runs the guide's walker (describe.py,
+the code the pages in docs/workflows/ are made with) and prints one JSON object: ok, the name, the counts, the guide as
+Markdown and as HTML; for a job, the path it took, where it is or stopped and what it said.
 
   platform_describe.py --action workflow --name "Rotate AWS VPN Key" [--timeout 30]
-  platform_describe.py --action job --id <job id>          # ADR 0080 decision 6: not yet
+  platform_describe.py --action job --id 6d43c80a53b14be58f8f8c8d [--timeout 30]     # ADR 0080 decision 6
 
 Environment (the Gateway resolves the secret per run; the rest is the runner's, as VAULT_ADDR is):
   PLATFORM_URL        https://itential.lab.internal (required)
@@ -23,6 +24,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import ssl
 import sys
 import urllib.error
@@ -34,6 +36,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import describe  # noqa: E402 - the walker beside this file
 
 NAME_CHARS = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 -")
+JOB_ID = re.compile(r"^[0-9a-f]{24}$")  # a Mongo object id, as the Platform shows one
 
 
 class Platform:
@@ -111,6 +114,33 @@ def describe_workflow(api: Platform, name: str, now: datetime) -> dict:
     })
 
 
+def fetch_job(api: Platform, job_id: str) -> tuple[dict | None, str]:
+    """One job record by id, or why there is none."""
+    status, data = api.get("/operations-manager/jobs/" + job_id)
+    if status == 404:
+        return None, f"no job {job_id} on this Platform"
+    if status != 200 or not isinstance(data, dict) or not isinstance(data.get("data"), dict):
+        return None, f"the job answered HTTP {status}"
+    return data["data"], ""
+
+
+def describe_job(api: Platform, job_id: str, now: datetime) -> dict:
+    """The run laid over the steps (ADR 0080 decision 6): the job record, plus the stored workflow for the words when
+    it can be read; a stored workflow that is gone or changed is a note in the answer, not a failure."""
+    if not JOB_ID.match(job_id):
+        return {"ok": False, "message": "the job id must be 24 hexadecimal characters, as the Platform shows it"}
+    job, why = fetch_job(api, job_id)
+    if job is None:
+        return {"ok": False, "message": why}
+    name = str(job.get("name") or "")
+    doc = fetch_workflow(api, name)[0] if name and len(name) <= 80 and not set(name) - NAME_CHARS else None
+    stamp = now.strftime("%Y-%m-%d %H:%M UTC")
+    return describe.describe_job_document({
+        "job": job, "document": doc, "now": now.timestamp() * 1000,
+        "read": f"Read from the Platform's job record at {stamp} by platform-describe, as {api.user}.",
+    })
+
+
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description="the Platform describes its own workflows (ADR 0080)")
     parser.add_argument("--action", required=True, choices=["workflow", "job"])
@@ -125,13 +155,16 @@ def main(argv: list[str]) -> int:
     missing = [n for n, v in (("PLATFORM_URL", url), ("PLATFORM_PASSWORD", password)) if not v]
     if missing:
         out = {"ok": False, "message": "the runner has no " + " and ".join(missing) + ": nothing was read"}
-    elif args.action == "job":
-        out = {"ok": False, "message": "action job is not built yet (ADR 0080 decision 6)"}
     else:
         api = Platform(url, user, password, cacert, args.timeout)
         try:
             why = api.login()
-            out = {"ok": False, "message": why} if why else describe_workflow(api, args.name, datetime.now(timezone.utc))
+            if why:
+                out = {"ok": False, "message": why}
+            elif args.action == "job":
+                out = describe_job(api, args.id, datetime.now(timezone.utc))
+            else:
+                out = describe_workflow(api, args.name, datetime.now(timezone.utc))
         except (urllib.error.URLError, OSError, RuntimeError) as exc:
             out = {"ok": False, "message": f"the Platform could not be reached or refused: {type(exc).__name__}: {exc}"}
     sys.stdout.write(json.dumps(out) + "\n")

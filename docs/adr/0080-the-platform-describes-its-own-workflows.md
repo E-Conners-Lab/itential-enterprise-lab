@@ -1,6 +1,6 @@
 # 0080 — The Platform describes its own workflows: Describe Workflow runs the guide's walker on the Gateway
 
-- **Status:** proposed (2026-10-11); decisions 2 and 3 taken as proposed by the owner (#163 merged); probes P1-P4 measured on the dev tier 2026-10-11 (below), then production the same day (job bd8c46be, the same four answers; the card read in Work Center)
+- **Status:** proposed (2026-10-11); decisions 2 and 3 taken as proposed by the owner (#163 merged); probes P1-P4 measured on the dev tier 2026-10-11 (below), then production the same day (job bd8c46be, the same four answers; the card read in Work Center); decision 5 amended the same day (the chart on the card goes in as an image, #168); decision 6 built (Describe Job, the PR after #169)
 - **Date:** 2026-10-11
 - **Amends:** nothing; adds to PID section 3 (a new criterion set, S16)
 - **Related:** ADR 0067 (workflow names), ADR 0068 (executable services on the Gateway, a repository pinned by
@@ -61,8 +61,20 @@ What was measured and read before deciding (2026-10-11):
    published, and one Work Center card (`InteractiveHTML`, one button, the flying theme of ADR 0077) showing the
    guide as HTML. A service that fails or finds no such workflow ends the job with the reason in `error` and opens
    no task: the workflow reads, like `Get AWS VPN Status`. It runs on demand; a form follows when wanted.
-6. **`Describe Job`** (the next PR): the same service, action `job`: the job's tasks and their states laid over the
-   steps, so the answer is which path this run took, where it stopped and what the job said, in the guide's words.
+6. **`Describe Job`**: the same service, action `job`. The service reads the job record (`GET
+   /operations-manager/jobs/<id>`: the document as it was when the job started, plus each task's status, finish
+   state, start and end) and then the stored workflow by the job's name. The walker (`describe.describe_job_document`)
+   lays the run over the steps: the path in the order taken, with the branch each evaluation answered; where the job
+   is (a task running, a person waited for and since when) or where it stopped (done after which task, canceled where
+   it was in flight, ended in error); what it said (the published job variables, strings quoted and cut, the rest
+   counted, the unset ones on one line); the engine's warnings; the tasks that ran, by step, with how each finished.
+   The chart is the same drawing with the run laid over it: the steps and arrows taken stand out, the rest fade.
+   Three things the job record taught, and the code holds: a job's copy of a task keeps none of its incoming values
+   (service names, queries), so the words come from the stored workflow when its tasks and arrows still match the
+   job's, and from the job's own copy otherwise (a note says which); the engine marks every unreached task `canceled`
+   when a job is canceled, so only a task with a start time was in flight; a task's `start_time` is ISO 8601 and its
+   `end_time` epoch milliseconds, and the walker reads both. The workflow `Describe Job` takes the id behind the input
+   gate (`^[0-9a-f]{24}$`), the service checks it again, and the card is the guide card with the job's words.
 7. **The agents** (after): the service as a Gateway Service tool on an agent, so "what does X do" and "what did
    job Y do" are answered from Slack through NetClaw by a deterministic walker, the model only relaying.
 
@@ -97,6 +109,17 @@ What was measured and read before deciding (2026-10-11):
 | P4 | The card page (32 KB) renders: the band, the summary as lede, the pill "For reading", ten sections, twelve step headings, three tables; it is 6,700 px tall and scrolls inside the task |
 
 On production the same run (job `bd8c46beb95a416daffe2966`) gave the same four answers, and P4 was read in Work Center itself: the card renders inside the task with its own scroll, the Seen buttons under it. The captures are in the LinkedIn hub, folder 22.
+
+### Describe Job, measured on the job records (2026-10-11)
+
+Before the workflow existed, the walker ran over six production job records read through the API (the same read the
+service makes): a finished `Diagnose Fabric BGP Outage` (116 tasks; 56 ran through 8 of 12 steps, the agent found no
+fix and the job ended at the escalation card, the ServiceNow warning on `2b` carried along), a finished and a canceled
+`Push Configuration with Approval` (the canceled one: 9 tasks ran, canceled at the approval, the other 21 tasks the
+engine had marked canceled read as not reached), a finished `Break Fabric BGP` and two `Describe Workflow` runs, one
+still waiting on its card ("waiting for a person at step 4 (the card)", with the wait measured from the service's
+clock). Every chart parsed and drew the run. The run on the Platform itself follows the pin bump, as for Describe
+Workflow.
 
 Two things the Platform's copy shows that the repository page does not, both to live with for now: the stored
 `outputSchema` carries the job's own variables (`_id`, `initiator`, the input echoed back) and widens the `*_note`

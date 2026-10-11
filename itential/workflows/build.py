@@ -412,6 +412,8 @@ INPUT_GATES = {
     WF["show_version"]: {"device": NODE_NAME},
     # ADR 0080: a workflow name, as versions.yaml spells them; the service checks it again
     WF["describe_workflow"]: {"workflow": {"type": "string", "minLength": 1, "maxLength": 80, "pattern": r"^[A-Za-z0-9 -]+$"}},
+    # ADR 0080 decision 6: a job id as the Platform shows it (a Mongo object id); the service checks it again
+    WF["describe_job"]: {"job": {"type": "string", "pattern": r"^[0-9a-f]{24}$"}},
     WF["show_command"]: {"device": NODE_NAME, "command": SHOW_COMMAND},
     WF["show_all"]: {"command": SHOW_COMMAND},
     # R6 (ADR 0072): what the alert relay sends; the device is the one open target the AWS monitor watches
@@ -6078,13 +6080,15 @@ def guide_card(d: dict) -> dict:
     name = str(d.get("name") or "the workflow")
     summary = str(d.get("summary") or name)
     body = d.get("html") if isinstance(d.get("html"), str) else ""
-    sections = f'<section class="panel guide" aria-labelledby="t-guide"><h2 id="t-guide">What it does, start to end</h2>\n{body}</section>\n'
-    decide = ("<p>Seen closes this card. Nothing runs from it: the workflow only read the Platform's own copy of "
-              f"{e(name)} and described it.</p>")
-    foot = "Prepared by Itential from the stored workflow document, with the same words the repository's guide uses."
+    brand = str(d.get("brand") or "the workflow, described")  # Describe Job says "the job, described"
+    heading = "What this run did" if brand.startswith("the job") else "What it does, start to end"
+    sections = f'<section class="panel guide" aria-labelledby="t-guide"><h2 id="t-guide">{heading}</h2>\n{body}</section>\n'
+    decide = "<p>%s</p>" % e(str(d.get("decide") or "Seen closes this card. Nothing runs from it: the workflow only read "
+                                                       f"the Platform's own copy of {name} and described it."))
+    foot = e(str(d.get("foot") or "Prepared by Itential from the stored workflow document, with the same words the "
+                                   "repository's guide uses."))
     page = card_page(f"{name}, described", name, e(summary), "", "", sections, "", foot, extra_css=APPROVAL_CARD_CSS
-                     + GUIDE_CARD_CSS, decide=decide, note_label="Note for the record", brand="the workflow, described",
-                     pill="For reading")
+                     + GUIDE_CARD_CSS, decide=decide, note_label="Note for the record", brand=e(brand), pill="For reading")
     return {"html": page}
 
 
@@ -7831,6 +7835,7 @@ def break_fabric_bgp() -> dict:
 # the job publishes the guide and shows it on a Work Center card with one button. Reads only: a service that fails or
 # finds no such workflow ends the job with the reason, and opens no task (as Get AWS VPN Status).
 DESCRIBE_PARAMS = '{"action": "workflow", "timeout": "60"}'
+DESCRIBE_JOB_PARAMS = '{"action": "job", "timeout": "60"}'
 
 
 def describe_workflow() -> dict:
@@ -7894,11 +7899,75 @@ def describe_workflow() -> dict:
     )
 
 
+def describe_job() -> dict:
+    """Describe Job (ADR 0080 decision 6): the same service, action job. The job's record (its tasks' states) laid over
+    the stored workflow's steps: the path this run took, where it is or stopped, what it said; on a card, one button."""
+    ok, fail, err = "success", "failure", "error"
+    tasks = sectioned({
+        **step("the read: the job's record and the stored workflow it ran, read by platform-describe as the read-only account"),
+        "1a": parse("describe params: the fixed part", DESCRIBE_JOB_PARAMS, x=100),
+        "1b": set_key("describe params: the job id, as data", "$var.1a.textObject", "id", "$var.job.job", x=150),
+        "1c": run_service("the run, described (platform-describe: login, two reads, the guide's walker over the job's states)",
+                          "platform-describe", "$var.1b.object", "describe_result", x=200),
+        "1d": evaluate("platform-describe exited 0?", "1c", "result", "result.return_code", "==", 0, x=250),
+        "1e": jq("why it could not describe", "$var.1c.result", "result.stdout_json.message", x=300, y=-300,
+                 to_job="error", optional=True),
+        **step("the guide: the run as Markdown and the one-line summary, published for whoever started the job"),
+        "2a": jq("what was described", "$var.1c.result", "result.stdout_json", x=350, to_job="described"),
+        "2b": jq("the guide (Markdown)", "$var.job.described", "markdown", x=400, to_job="guide"),
+        "2c": jq("the summary", "$var.job.described", "summary", x=450, to_job="outcome"),
+        **step("the card: the run on a Work Center page, one button, nothing to run"),
+        "3a": run_code("the card's page (Python on the runner)", GUIDE_CARD_CODE, "$var.job.described", "guide_card",
+                       x=500),
+        "3b": jq("the card's HTML", "$var.3a.result", "stdout_json.html", x=550),
+        "3c": task("InteractiveHTML", "WorkCenter", "the job, described",
+                   {"header": "The job, described", "body": "$var.3b.return_data", "variables": {},
+                    "btn_success": "Seen", "btn_failure": "Seen"},
+                   {"export": "$var.job.seen"}, kind="manual", display="Work Center",
+                   view="/work-center/task/InteractiveHTML", x=600),
+        **step("where it stops: the reason in error; nothing was changed, nothing is left to do"),
+        "8a": note("platform-describe could not run", "the Gateway could not run platform-describe or read its answer "
+                   "(describe_result): nothing was read", "error", x=250, y=-600),
+        "8b": note("the guide could not be read", "platform-describe answered, but the guide could not be read from its "
+                   "answer (describe_result): nothing was changed", "error", x=400, y=-600),
+        "8c": note("the card could not be made", "the guide is published (guide), but its card could not be made "
+                   "(guide_card)", "error", x=550, y=-600),
+    })
+    tr = {
+        "workflow_start": _edge(**{"1a": ok}),
+        "1a": _edge(**{"1b": ok}),
+        "1b": _edge(**{"1c": ok}),
+        "1c": _edge(**{"1d": ok, "8a": err}),
+        "1d": _edge(**{"2a": ok, "1e": fail}),
+        "1e": _edge(**{"workflow_end": ok, "8a": err}),
+        "2a": _edge(**{"2b": ok, "8b": err}),
+        "2b": _edge(**{"2c": ok, "8b": err}),
+        "2c": _edge(**{"3a": ok, "8b": err}),
+        "3a": _edge(**{"3b": ok, "8c": err}),
+        "3b": _edge(**{"3c": ok, "8c": err}),
+        "3c": _edge(**{"workflow_end": ok}),
+        **{n: _edge(**{"workflow_end": ok}) for n in ("8a", "8b", "8c")},
+    }
+    return workflow(
+        WF["describe_job"],
+        "Describes one job of this Platform: which path the run took through its workflow's steps, where it is or "
+        "stopped, and what it said. platform-describe reads the job's record and the stored workflow as the read-only "
+        "service account and lays the run over the guide's steps; the job publishes the description and shows it on a "
+        "Work Center card. Reads only; a job that is not there ends the job with the reason (ADR 0080 decision 6)",
+        {"job": {"type": "string", "required": True, "description": "The job's id, as Operations Manager shows it"}},
+        tasks,
+        tr,
+        {"outcome": {"type": "string"}, "error": {"type": "string"}, "guide": {"type": "string"},
+         "described": {"type": "object"}, "describe_result": {"type": "object"}, "guide_card": {"type": "object"},
+         "seen": {"type": ["object", "null"]}},
+    )
+
+
 BUILDERS = (device_count, show_version, show_command, show_all, branch_vlan, branch_vlan_delete, config_push,
             compliance_run, compliance_report, netbox_devices, backup_all, deploy_aws_vpn, verify_aws_vpn,
             hand_off_aws_vpn, config_push_revert, tear_down_aws_vpn, tear_down_expired_aws_vpn, get_aws_vpn_status,
             check_aws_drift, rotate_aws_vpn_key, rotate_aws_vpn_key_monthly, diagnose_aws_vpn_outage,
-            diagnose_fabric_bgp_outage, break_fabric_bgp, drill_batfish_gate, describe_workflow)
+            diagnose_fabric_bgp_outage, break_fabric_bgp, drill_batfish_gate, describe_workflow, describe_job)
 
 
 if __name__ == "__main__":
