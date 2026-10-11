@@ -7,7 +7,7 @@
       "name": "dcim_devices_list",
       "canvasName": "dcim_devices_list",
       "summary": "One page of devices (count comes with it)",
-      "description": "One page of devices (count comes with it)",
+      "description": "the read: one page of devices from NetBox, the count published",
       "location": "Adapter",
       "locationType": "lab-netbox:1.0.0",
       "app": "lab-netbox:1.0.0",

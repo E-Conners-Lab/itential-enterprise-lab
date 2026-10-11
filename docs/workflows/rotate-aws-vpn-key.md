@@ -223,7 +223,7 @@ One line per task, in canvas order; the task's id first, then its label as the c
 ### 11. the outcome: the rotation and Verify's verdict
 
 - `90` the verdict. Then → what the push said. Could not run → the verify steps could not run (step 12).
-- `94` the verdict (not passed) Then → why the rotation needs a look. Could not run → the verify steps could not run (step 12).
+- `94` the verdict (not passed). Then → why the rotation needs a look. Could not run → the verify steps could not run (step 12).
 - `91` what the push said. Then → the outcome: the rotation. Could not run → the verify steps could not run (step 12).
 - `95` why the rotation needs a look. Then → Work Center task (step 12).
 - `92` the outcome: the rotation

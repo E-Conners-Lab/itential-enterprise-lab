@@ -28,14 +28,30 @@ START, END = "workflow_start", "workflow_end"
 PLATFORM_APPS = ("WorkFlowEngine", "GatewayManager")
 OTHER = "other tasks: not in any step"  # a task whose description is still its summary (build.py gave it no step)
 
-# The workflows with a guide (the pilot, 2026-10-10: Rotate AWS VPN Key), each with the hand-written lines it carries
-# under "How it runs" - the one thing a document cannot say about itself.
-GUIDED = {
+# Every workflow in versions.yaml gets a guide. The hand-written lines under "How it runs" are the one thing a
+# document cannot say about itself; a workflow with none says only what versions.yaml knows (runs_lines).
+NOTES = {
     "Rotate AWS VPN Key": [
         "The same rotation, task for task, is inside Rotate AWS VPN Key Monthly: that copy runs from a daily "
         "schedule and rotates on the 1st of the month only.",
     ],
+    "Rotate AWS VPN Key Monthly": [
+        "The rotation itself is Rotate AWS VPN Key's, task for task; only the due check in front of it is this "
+        "workflow's own.",
+    ],
+    "Tear Down Expired AWS VPN": [
+        "The teardown itself is Tear Down AWS VPN's, without its two cards: the end time approved on Deploy's card "
+        "is the approval.",
+    ],
+    "Hand Off AWS VPN": [
+        "Verify AWS VPN's checks run inside it after the push, task for task.",
+    ],
 }
+
+
+def guided(versions: dict) -> list:
+    """The workflows with a guide: every one versions.yaml names, in its order."""
+    return list(versions["workflows"].values())
 
 
 def file_name(name: str) -> str:
@@ -106,6 +122,8 @@ def label(t: dict, state: str) -> str:
         return "yes" if t["name"] == "evaluation" else "then"
     if state == "error":
         return "could not run"
+    if state == "loop":
+        return "for each item"
     return "no" if t["name"] == "evaluation" else "failed"
 
 
@@ -160,9 +178,13 @@ def task_line(tid: str, nxt, here: int, where: dict, doc: dict) -> str:
         if e["state"] == "success" and dst == nxt:
             continue  # the arrow to the next line needs no words
         branches.append("%s → %s" % (sentence(label(t, e["state"])), ref(dst, here, where, doc)))
+    if not doc["transitions"].get(tid):
+        looped = any(e["state"] == "loop" for tos in doc["transitions"].values() for d, e in tos.items() if d == tid)
+        branches.append("No arrow out: back to the loop for the next item" if looped
+                        else "No arrow out: the job ends in error here, by design")
     if not branches:
         return "- " + head
-    stop = "" if head.endswith(("?", ".", ")")) else "."
+    stop = "" if head.endswith(("?", ".")) else "."
     return "- " + head + stop + " " + ". ".join(branches) + "."
 
 
@@ -393,9 +415,9 @@ def page_path(name: str) -> Path:
 def pages(versions: dict) -> dict:
     """{path: text} for every guided workflow and the index, from the committed documents."""
     out, index = {}, []
-    for name, notes in GUIDED.items():
+    for name in guided(versions):
         doc = json.loads((HERE / file_name(name)).read_text())
-        out[page_path(name)] = guide(doc, runs_lines(name, versions) + notes)
+        out[page_path(name)] = guide(doc, runs_lines(name, versions) + NOTES.get(name, []))
         steps_ = steps(doc)
         manual = sum(1 for t in doc["tasks"].values() if t.get("type") == "manual")
         index.append("| [%s](%s) | %d | %d | %d |" % (name, page_path(name).name, len(steps_), len(doc["tasks"]) - 2,
@@ -412,8 +434,8 @@ def pages(versions: dict) -> dict:
         "|---|---|---|---|",
         *index,
         "",
-        "The pilot covers Rotate AWS VPN Key. The other workflows get a page as their builders in `build.py` name "
-        "their steps (`step(...)`): the renderer needs nothing else.",
+        "A workflow is listed here as soon as versions.yaml names it: its builder in `build.py` names the steps "
+        "(`step(...)`), and the renderer needs nothing else.",
         "",
     ])
     return out
@@ -431,7 +453,7 @@ def main(argv: list) -> int:
         return 0
     if len(argv) == 1 and argv[0].endswith(".json"):
         doc = json.loads(Path(argv[0]).read_text())
-        sys.stdout.write(guide(doc, GUIDED.get(doc["name"], ["(how it runs: not known from the document alone)"])))
+        sys.stdout.write(guide(doc, ["(how it runs: not known from the document alone)"] + NOTES.get(doc["name"], [])))
         return 0
     sys.stderr.write(__doc__)
     return 2
