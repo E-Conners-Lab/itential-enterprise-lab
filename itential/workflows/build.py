@@ -84,6 +84,32 @@ def task(
     return t
 
 
+class _Step(str):
+    """A step marker inside a tasks dict literal (see `step`)."""
+
+
+def step(title: str) -> dict:
+    """A step marker in a tasks dict literal: the tasks after it, up to the next marker, belong to the step `title`.
+    `sectioned` folds the markers into each task's `description`, which is what the guide reads
+    (itential/workflows/describe.py, docs/workflows/); the canvas keeps the summaries. A title is written
+    `short: what it does` - the guide's diagram shows the short part, its headings the whole. `step("")` closes a step:
+    the tasks after it keep the description they came with (a section built elsewhere, already sectioned)."""
+    return {_Step(title): None}
+
+
+def sectioned(tasks: dict) -> dict:
+    """The tasks dict with its `step` markers folded into the tasks' descriptions (insertion order is the order)."""
+    out, title = {}, None
+    for key, t in tasks.items():
+        if isinstance(key, _Step):
+            title = str(key)
+            continue
+        if title:
+            t["description"] = title
+        out[key] = t
+    return out
+
+
 # --- the canvas ------------------------------------------------------------------------------------------------
 # Every workflow reads top to bottom and is laid out from its transitions, not by hand (owner preference,
 # 2026-09-24). The x/y a task is given in this file is only a hint: x its order along the flow, y its lane (0 the
@@ -3483,7 +3509,8 @@ def verify_section(plan_var: str, passed: str, failed: str, broken: str, judge_b
     goes, `judge_broken` where a judge that could not run goes. Reads the job variable `plan_var` (the LAB_EDGE_PLAN_CODE result); publishes lab_edge_result,
     monitor_result, router_note, monitor_note and judgement. Returns (tasks, transitions, the first task id)."""
     ok, fail, err = "success", "failure", "error"
-    tasks = {
+    tasks = sectioned({
+        **step("Verify's checks: the router, the data plane and the AWS monitor must agree"),
         # a service that does not run leaves {} behind: the judge reads it as could not check
         "e0": empty("no router reading yet", "lab_edge_result", x=x),
         "e1": empty("no AWS monitor reading yet", "monitor_result", x=x + 50),
@@ -3510,7 +3537,7 @@ def verify_section(plan_var: str, passed: str, failed: str, broken: str, judge_b
         "ee": run_code("the judge (every applicable signal up passes)", JUDGE_CODE, "$var.ed.object", "judgement",
                        x=x + 700),
         "ef": evaluate("passed?", "ee", "result", "stdout_json.passed", "==", True, x=x + 750),
-    }
+    })
     tr = {
         "e0": _edge(e1=ok),
         "e1": _edge(e2=ok),
@@ -5235,15 +5262,15 @@ def rotation_section() -> tuple[dict, dict, str]:
     the Work Center task f0, with the reason in `error`. Returns (tasks, transitions, the first task id)."""
     ok, fail, err = "success", "failure", "error"
     nothing = "nothing was changed"
-    tasks = {
-        # a service that does not run leaves {} behind: its step reads it as no answer
+    tasks = sectioned({
+        **step("empty answers: a step that never runs leaves {} behind, which its judge reads as no answer"),
         "01": empty("no write answer yet", "write_result", x=0),
         "02": empty("no reload answer yet", "reload_result", x=20),
         "03": empty("no push answer yet", "push_result", x=40),
         "04": empty("no restore answer yet", "restore_result", x=60),
         "05": empty("no reload-back answer yet", "reload_back_result", x=80),
         "06": empty("no step yet", "step", x=90),
-        # the plan: the deployment, its target and every service's params
+        **step("the plan: the deployment, its target and every service's params"),
         "1a": parse("terraform-run outputs' params", OUTPUTS_PARAMS, x=100),
         "1b": run_service("the deployment (terraform-run outputs, a state read)", "terraform-run", "$var.1a.textObject",
                           "rotate_outputs", x=150),
@@ -5259,20 +5286,20 @@ def rotation_section() -> tuple[dict, dict, str]:
         "13": run_code("what to read and push on the router (Hand Off's plan)", LAB_EDGE_PLAN_CODE,
                        "$var.12.return_data", "rotate_edge", x=500),
         "14": evaluate("the router's plan ready?", "job", "rotate_edge", "stdout_json.ready", "==", True, x=550),
-        # the tunnel must be up before anything changes
+        **step("the precheck: the tunnel must be up before anything changes"),
         "2a": jq("lab-edge verify's params", "$var.job.rotate_edge", "stdout_json.lab_edge", x=600),
         "2b": run_service("the tunnel up now? (lab-edge verify: show commands, one ping)", "lab-edge",
                           "$var.2a.return_data", "precheck_result", x=650),
         "2c": evaluate("lab-edge read the router?", "2b", "result", "result.return_code", "==", 0, x=700),
         "2d": evaluate("the router says up?", "2b", "result", "result.stdout_json.router", "==", "up", x=750),
         "2e": evaluate("the data plane says up?", "2b", "result", "result.stdout_json.data_plane", "==", "up", x=800),
-        # the block the push sends (the key is a marker in it, so its SHA-256 does not change with the key)
+        **step("the block: what the push sends; the key is a marker in it, so its SHA-256 does not change with the key"),
         "3a": jq("lab-edge render's params", "$var.job.rotate_edge", "stdout_json.render", x=850),
         "3b": run_service("render the block (lab-edge render: no device)", "lab-edge", "$var.3a.return_data",
                           "render_result", x=900),
         "3c": evaluate("rendered?", "3b", "result", "result.return_code", "==", 0, x=950),
         "3d": jq("the block's SHA-256", "$var.3b.result", "result.stdout_json.sha256", x=1000, to_job="sha256"),
-        # 1. a new key in Vault, then Secrets Manager
+        **step("change 1 of 4: a new key in Vault, then Secrets Manager"),
         "4a": jq("aws-vpn-psk write's params", "$var.job.rotate_plan", "stdout_json.write", x=1050),
         "4b": run_service("a new key: Vault, then Secrets Manager (aws-vpn-psk write)", "aws-vpn-psk",
                           "$var.4a.return_data", "write_result", x=1100),
@@ -5284,7 +5311,7 @@ def rotation_section() -> tuple[dict, dict, str]:
         "4e": evaluate("written to both stores?", "4d", "result", "stdout_json.ok", "==", True, x=1250),
         "4f": evaluate("roll back?", "4d", "result", "stdout_json.rollback", "==", True, x=1300, y=-300),
         "40": jq("why the write stopped", "$var.4d.result", "stdout_json.message", x=1350, y=-600, to_job="error"),
-        # 2. strongSwan re-reads Secrets Manager (the tunnel is down from here until the router takes the key)
+        **step("change 2 of 4: strongSwan re-reads Secrets Manager; the tunnel is down from here until the router takes the key"),
         "5a": jq("aws-vpn-monitor reload's params", "$var.job.rotate_plan", "stdout_json.reload", x=1350),
         "5b": run_service("strongSwan reloads the key (aws-vpn-monitor reload: the Lambda's SSM document)",
                           "aws-vpn-monitor", "$var.5a.return_data", "reload_result", x=1400),
@@ -5296,7 +5323,7 @@ def rotation_section() -> tuple[dict, dict, str]:
         "5e": evaluate("reloaded?", "5d", "result", "stdout_json.ok", "==", True, x=1550),
         "5f": evaluate("roll back?", "5d", "result", "stdout_json.rollback", "==", True, x=1600, y=-300),
         "50": jq("why the reload stopped", "$var.5d.result", "stdout_json.message", x=1650, y=-600, to_job="error"),
-        # 3. the router takes the key: Hand Off's push, the same block, the new key from Vault
+        **step("change 3 of 4: the router takes the key through Hand Off's push, the same block with the new key from Vault"),
         "6a": jq("lab-edge-push's params", "$var.job.rotate_edge", "stdout_json.push", x=1650),
         "6b": set_key("push params: the block's SHA-256", "$var.6a.return_data", "sha256", "$var.job.sha256", x=1700),
         "6c": run_service("the router takes the new key (lab-edge-push: revert timer, a fresh SA, save)",
@@ -5309,21 +5336,21 @@ def rotation_section() -> tuple[dict, dict, str]:
         "6f": evaluate("saved on the router?", "6e", "result", "stdout_json.ok", "==", True, x=1900),
         "60": evaluate("roll back?", "6e", "result", "stdout_json.rollback", "==", True, x=1950, y=-300),
         "61": jq("why the push stopped", "$var.6e.result", "stdout_json.message", x=2000, y=-600, to_job="error"),
-        # 4. Vault keeps the current and the one previous version; a failed prune is caught up by the next rotation
+        **step("change 4 of 4: Vault keeps the current and one previous version; a failed prune is caught up by the next rotation"),
         "7a": jq("aws-vpn-psk prune's params", "$var.job.rotate_plan", "stdout_json.prune", x=2000),
         "7b": run_service("keep two key versions in Vault (aws-vpn-psk prune)", "aws-vpn-psk", "$var.7a.return_data",
                           "prune_result", x=2050),
         "7c": evaluate("pruned?", "7b", "result", "result.return_code", "==", 0, x=2100),
         "70": note("the prune did not run", "older key versions were not pruned (prune_result): the next rotation "
                    "prunes them", "prune_note", x=2150, y=300),
-        # the outcome: the rotation and Verify's verdict
+        **step("the outcome: the rotation and Verify's verdict"),
         "90": jq("the verdict", "$var.ee.result", "stdout_json.verdict", x=2950),
         "91": jq("what the push said", "$var.job.step", "stdout_json.message", x=3000),
         "92": replace("the outcome: the rotation", ROTATED_TPL, "__S__", "$var.91.return_data", x=3050),
         "93": replace("the outcome", "$var.92.replacedString", "__V__", "$var.90.return_data", x=3100),
         "94": jq("the verdict (not passed)", "$var.ee.result", "stdout_json.verdict", x=2950, y=-300),
         "95": replace("why the rotation needs a look", UNVERIFIED_TPL, "__V__", "$var.94.return_data", x=3000, y=-300),
-        # the rollback: the previous key current again, then strongSwan reloads it
+        **step("the rollback: the previous key current again, then strongSwan reloads it"),
         "b0": jq("why it is rolled back", "$var.job.step", "stdout_json.message", x=2000, y=-900, to_job="error"),
         "b1": jq("aws-vpn-psk restore-previous's params", "$var.job.rotate_plan", "stdout_json.restore", x=2050,
                  y=-900),
@@ -5349,7 +5376,7 @@ def rotation_section() -> tuple[dict, dict, str]:
         "bb": replace("the reason and the rollback", ROLLBACK_TPL, "__E__", "$var.job.error", x=2550, y=-900),
         "bc": replace("the reason and the rollback, in full", "$var.bb.replacedString", "__R__", "$var.ba.return_data",
                       x=2600, y=-900),
-        # failures before the write change nothing; after it, the job says where it stopped
+        **step("where it stops: failures before the write change nothing; after it the job says where it stopped, and a Work Center task opens"),
         "8a": note("the deployment could not be read", f"terraform-run outputs could not be read (rotate_outputs): "
                    f"{nothing}", "error", x=200, y=-600),
         "8b": note("a step could not run", f"the Gateway could not run a step before the new key (see rotate_plan, "
@@ -5367,7 +5394,7 @@ def rotation_section() -> tuple[dict, dict, str]:
                    "run or gave no verdict: run Verify AWS VPN", "error", x=3000, y=-600),
         "f0": view("Work Center task", "Rotate AWS VPN Key did not finish: check the job", "$var.job.error",
                    "$var.job.step", "Seen", "Seen", x=3200, y=0),
-    }
+    })
     tasks["93"]["variables"]["outgoing"]["replacedString"] = "$var.job.outcome"
     tasks["95"]["variables"]["outgoing"]["replacedString"] = "$var.job.error"
     tasks["bc"]["variables"]["outgoing"]["replacedString"] = "$var.job.error"
@@ -5511,15 +5538,17 @@ def rotate_aws_vpn_key() -> dict:
 def rotate_aws_vpn_key_monthly() -> dict:
     ok, fail, err = "success", "failure", "error"
     section, section_tr, first = rotation_section()
-    tasks = {
+    tasks = sectioned({
+        **step("the due check: the 1st of the month only, on the runner's UTC clock"),
         "d1": run_code("the 1st of the month? (the runner's UTC clock)", ROTATE_DUE_CODE, "{}", "due", x=-150),
         "d2": evaluate("due?", "d1", "result", "stdout_json.due", "==", True, x=-100),
         "d3": jq("nothing to do", "$var.d1.result", "stdout_json.message", x=-50, y=600, to_job="outcome"),
         # a clock that cannot be read opens no task: the next day's run tries again
         "d4": note("the due check could not run", "the Gateway could not run the due check (due): nothing was changed",
                    "error", x=-100, y=-600),
+        **step(""),
         **section,
-    }
+    })
     tr = {
         "workflow_start": _edge(d1=ok),
         "d1": _edge(d2=ok, d4=err),
