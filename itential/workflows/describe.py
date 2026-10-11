@@ -394,6 +394,159 @@ def guide(doc: dict, runs: list, source: str = "") -> str:
     return "\n".join(lines).rstrip() + "\n"
 
 
+# --- the step chart: the same graph as the Mermaid block, drawn as SVG for a card that cannot run scripts -----------
+# Colours for the two places the chart goes: the dark branded card (ADR 0077) and, when asked, a light page.
+CHART_DARK = {"box": "#1b2733", "edge": "#2f3d4b", "text": "#e6e4de", "muted": "#9aa3ac", "main": "#5fb6d2",
+              "branch": "#c9a35a", "error": "#e0906f", "person": "#f2b134"}
+CHART_LIGHT = {"box": "#eef2f6", "edge": "#c7d0da", "text": "#1d2126", "muted": "#5d6670", "main": "#0f6e8c",
+               "branch": "#8a6a1e", "error": "#a1543a", "person": "#8a5a1e"}
+BOX_W, BOX_H, PITCH, LANE = 320, 46, 84, 16
+
+
+def step_links(doc: dict, where: dict) -> list:
+    """[(src, dst, labels)] between steps, as the Mermaid block draws them: 0 is start, N + 1 is done; labels are the
+    deciding evaluations ("roll back? yes"), "failed" or "could not run"; the plain way on carries none."""
+    n = max(where.values()) if where else 0
+    links: dict = OrderedDict()
+    for a, b, st in edges(doc):
+        src = 0 if a == START else where[a]
+        dst = n + 1 if b == END else where[b]
+        if src == dst:
+            continue
+        if a == START:
+            lab = ""
+        else:
+            t = doc["tasks"][a]
+            lab = "%s %s" % (t["summary"], label(t, st)) if t["name"] == "evaluation" else \
+                ("" if st == "success" else label(t, st))
+        links.setdefault((src, dst), [])
+        if lab and lab not in links[(src, dst)]:
+            links[(src, dst)].append(lab)
+    return [(src, dst, labs) for (src, dst), labs in links.items()]
+
+
+def _lanes(spans: list) -> list:
+    """A lane per edge so that edges whose vertical spans overlap never share one (interval colouring)."""
+    lanes: list = []  # each lane: the end row of its last span
+    out = []
+    for lo, hi in spans:
+        for k, end in enumerate(lanes):
+            if end < lo:
+                lanes[k] = hi
+                out.append(k)
+                break
+        else:
+            lanes.append(hi)
+            out.append(len(lanes) - 1)
+    return out
+
+
+def step_chart(doc: dict, steps_: list, where: dict, palette: dict | None = None) -> str:
+    """The steps as boxes, top to bottom in the walk-through's order, start above and done below; the ordinary way on
+    is a straight arrow, a branch is a bracket on the right (forward) or the left (back, or straight to done) with its
+    label; a step that waits for a person says so. Pure and deterministic: the same document draws the same picture."""
+    import html as _html
+
+    c = palette or CHART_DARK
+    n = len(steps_)
+    manual = {where[tid] for tid, t in doc["tasks"].items() if t.get("type") == "manual"}
+    links = step_links(doc, where)
+    right = [(a, b, labs) for a, b, labs in links if b > a and b != a + 1 and b != n + 1]
+    left = [(a, b, labs) for a, b, labs in links if b < a or (b == n + 1 and a != n)]
+    straight = [(a, b, labs) for a, b, labs in links if b == a + 1 or (a == n and b == n + 1 and (a, b, labs) not in left)]
+    r_lanes = _lanes([(min(a, b), max(a, b)) for a, b, _ in sorted(right)])
+    right = sorted(right)
+    l_sorted = sorted(left, key=lambda e: (min(e[0], e[1]), max(e[0], e[1])))
+    l_lanes = _lanes([(min(a, b), max(a, b)) for a, b, _ in l_sorted])
+    label_room = 230
+    x0 = 24 + (max(l_lanes) + 1 if l_lanes else 0) * LANE + label_room
+    box_r = x0 + BOX_W
+    width = box_r + 24 + (max(r_lanes) + 1 if r_lanes else 0) * LANE + label_room
+    height = (n + 2) * PITCH + 24
+
+    def y(i: int) -> float:  # the centre of row i (0 start ... n + 1 done)
+        return 32 + i * PITCH + BOX_H / 2
+
+    def text(s_: str, limit: int = 44) -> str:
+        return _html.escape(s_ if len(s_) <= limit else s_[: limit - 3] + "...")
+
+    def label_text(labs: list) -> str:
+        return text(" / ".join(labs[:2]) + (" ..." if len(labs) > 2 else ""), 40)
+
+    def spread(items: list) -> list:
+        """Labels in one column, each at its edge's row, pushed down just enough never to overlap the one above."""
+        out_, last = [], -1e9
+        for y_, rest in sorted(items, key=lambda it: it[0]):
+            y_ = max(y_, last + 13)
+            out_.append((y_, rest))
+            last = y_
+        return out_
+
+    cx = x0 + BOX_W / 2
+    out = ['<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 %d %d" width="100%%" role="img" '
+           'aria-label="the steps of %s" font-family="IBM Plex Sans, Helvetica Neue, Arial, sans-serif" font-size="13">'
+           % (width, height, _html.escape(doc["name"])),
+           '<defs><marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">'
+           '<path d="M0 0L10 5L0 10z" fill="context-stroke"/></marker></defs>']
+    # start and done
+    for i, word in ((0, "start"), (n + 1, "done")):
+        out.append('<rect x="%.1f" y="%.1f" width="88" height="30" rx="15" fill="%s" stroke="%s"/>'
+                   '<text x="%.1f" y="%.1f" text-anchor="middle" fill="%s">%s</text>'
+                   % (cx - 44, y(i) - 15, c["box"], c["edge"], cx, y(i) + 5, c["muted"], word))
+    # the steps
+    for i, (title, _) in enumerate(steps_, 1):
+        out.append('<rect x="%d" y="%.1f" width="%d" height="%d" rx="8" fill="%s" stroke="%s"/>'
+                   % (x0, y(i) - BOX_H / 2, BOX_W, BOX_H, c["box"], c["edge"]))
+        out.append('<text x="%d" y="%.1f" fill="%s"><tspan fill="%s">step %d:</tspan> %s</text>'
+                   % (x0 + 12, y(i) + 5 - (7 if i in manual else 0), c["text"], c["muted"], i, text(short(title), 36)))
+        if i in manual:
+            out.append('<text x="%d" y="%.1f" fill="%s" font-size="11">waits for a person</text>'
+                       % (x0 + 12, y(i) + 17, c["person"]))
+
+    def stroke(labs: list) -> str:
+        if any(l_ == "could not run" for l_ in labs):
+            return 'stroke="%s" stroke-dasharray="5 4"' % c["error"]
+        return 'stroke="%s"' % (c["branch"] if labs else c["main"])
+
+    # straight arrows between neighbours
+    for a, b, labs in straight:
+        top = y(a) + (15 if a == 0 else BOX_H / 2)
+        bottom = y(b) - (15 if b == n + 1 else BOX_H / 2)
+        out.append('<path d="M%.1f %.1fV%.1f" fill="none" %s stroke-width="1.6" marker-end="url(#arr)"/>'
+                   % (cx, top, bottom, stroke(labs)))
+        if labs:
+            out.append('<text x="%.1f" y="%.1f" fill="%s" font-size="11">%s</text>'
+                       % (cx + 8, (top + bottom) / 2 + 4, c["branch"], label_text(labs)))
+    # right brackets: forward skips; their labels in one column past every lane, so no lane crosses a word
+    r_col = box_r + 20 + (max(r_lanes) + 1 if r_lanes else 0) * LANE + 6
+    r_labels = []
+    for (a, b, labs), k in zip(right, r_lanes):
+        lane = box_r + 20 + k * LANE
+        ys, yt = y(a), y(b)
+        x_src = cx + 44 if a == 0 else box_r
+        out.append('<path d="M%.1f %.1fH%.1fV%.1fH%.1f" fill="none" %s stroke-width="1.4" marker-end="url(#arr)"/>'
+                   % (x_src, ys, lane, yt, box_r + 2, stroke(labs)))
+        if labs:
+            r_labels.append((ys + 4, (c["error"] if "could not run" in labs else c["branch"], label_text(labs))))
+    for y_, (colour, words) in spread(r_labels):
+        out.append('<text x="%.1f" y="%.1f" fill="%s" font-size="11">%s</text>' % (r_col, y_, colour, words))
+    # left brackets: back edges and the early ways to done; labels in a column left of every lane
+    l_col = x0 - 20 - (max(l_lanes) + 1 if l_lanes else 0) * LANE - 6
+    l_labels = []
+    for (a, b, labs), k in zip(l_sorted, l_lanes):
+        lane = x0 - 20 - k * LANE
+        ys, yt = y(a), y(b)
+        x_dst = cx - 44 if b == n + 1 else x0
+        out.append('<path d="M%.1f %.1fH%.1fV%.1fH%.1f" fill="none" %s stroke-width="1.4" marker-end="url(#arr)"/>'
+                   % (x0, ys, lane, yt, x_dst - 2, stroke(labs)))
+        if labs:
+            l_labels.append((ys + 4, (c["error"] if "could not run" in labs else c["branch"], label_text(labs))))
+    for y_, (colour, words) in spread(l_labels):
+        out.append('<text x="%.1f" y="%.1f" fill="%s" font-size="11" text-anchor="end">%s</text>' % (l_col, y_, colour, words))
+    out.append("</svg>")
+    return "\n".join(out)
+
+
 # --- HTML for a card -------------------------------------------------------------------------------------------------
 def _inline(text: str) -> str:
     """The guide's inline marks: `code`, *emphasis*; everything else escaped."""
@@ -406,9 +559,10 @@ def _inline(text: str) -> str:
     return out
 
 
-def html_guide(markdown: str) -> str:
+def html_guide(markdown: str, svg: str = "") -> str:
     """The guide as HTML, from the Markdown this file writes (headings, bullets, tables, a Mermaid block). The Mermaid
-    source goes into a <pre> (a card cannot load scripts); the step list below it says the same in words."""
+    block becomes the step chart (`svg`, inline: a card cannot load scripts) when one is given, else its source in a
+    <pre>."""
     lines = markdown.splitlines()
     out, i, in_list = [], 0, False
 
@@ -423,7 +577,8 @@ def html_guide(markdown: str) -> str:
         if ln.startswith("```mermaid"):
             close_list()
             j = lines.index("```", i + 1)
-            out.append('<pre class="diagram">%s</pre>' % _inline("\n".join(lines[i + 1:j])))
+            out.append('<figure class="chart">%s</figure>' % svg if svg
+                       else '<pre class="diagram">%s</pre>' % _inline("\n".join(lines[i + 1:j])))
             i = j + 1
             continue
         if ln.startswith("|"):
@@ -466,13 +621,16 @@ def describe_document(data: dict) -> dict:
                                                           "the stored document, on request."]
     md = guide(doc, runs, source=str(data.get("source") or "Described from the document as the Platform stores it."))
     steps_ = steps(doc)
+    where = {tid: n for n, (_, ids) in enumerate(steps_, 1) for tid in ids}
+    svg = step_chart(doc, steps_, where)
     n_tasks, manual = len(doc["tasks"]) - 2, sum(1 for t in doc["tasks"].values() if t.get("type") == "manual")
     summary = "%s: %d task%s in %d step%s, %s" % (doc["name"], n_tasks, "" if n_tasks == 1 else "s", len(steps_),
                                                   "" if len(steps_) == 1 else "s",
                                                   "no stop for a person" if not manual else
                                                   "%d stop%s for a person" % (manual, "" if manual == 1 else "s"))
     return {"ok": True, "name": doc["name"], "tasks": n_tasks, "steps": len(steps_), "manual": manual,
-            "summary": summary, "step_titles": [t for t, _ in steps_], "markdown": md, "html": html_guide(md)}
+            "summary": summary, "step_titles": [t for t, _ in steps_], "markdown": md, "svg": svg,
+            "html": html_guide(md, svg)}
 
 
 def describe_stdin() -> int:
