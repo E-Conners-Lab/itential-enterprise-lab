@@ -31,5 +31,6 @@ What each workflow does from start to end, for someone who is about to run one o
 | [List Devices from NetBox](list-devices-from-netbox.md) | 3 | 8 | 0 |
 | [Describe Workflow](describe-workflow.md) | 5 | 18 | 1 |
 | [Describe Job](describe-job.md) | 5 | 18 | 1 |
+| [Describe for an Agent](describe-for-an-agent.md) | 4 | 15 | 0 |
 
 A workflow is listed here as soon as versions.yaml names it: its builder in `build.py` names the steps (`step(...)`), and the renderer needs nothing else.

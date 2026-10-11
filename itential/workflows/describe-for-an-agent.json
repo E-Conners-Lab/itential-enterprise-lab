@@ -1,0 +1,695 @@
+{
+  "name": "Describe for an Agent",
+  "type": "automation",
+  "description": "The agent's one tool (ADR 0081): describes this Platform's workflows for whoever asks. what list: every workflow on one line; what workflow: one workflow start to end from the stored document; what job: what one run did. platform-describe reads as the read-only service account and runs the guide's walker; the job publishes the guide and a one-line summary, no card. Reads only; a name or id that is not there ends the job with the reason",
+  "tasks": {
+    "1a": {
+      "name": "parse",
+      "canvasName": "parse",
+      "summary": "describe params: the fixed part",
+      "description": "the read: the list, one workflow or one job, read by platform-describe as the read-only account",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": -90,
+        "y": 750
+      },
+      "variables": {
+        "incoming": {
+          "text": "{\"timeout\": \"60\"}"
+        },
+        "outgoing": {
+          "textObject": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "1b": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "describe params: what to describe, as data",
+      "description": "the read: the list, one workflow or one job, read by platform-describe as the read-only account",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": -80,
+        "y": 900
+      },
+      "variables": {
+        "incoming": {
+          "obj": "$var.1a.textObject",
+          "path": [
+            "action"
+          ],
+          "value": "$var.job.what"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "1c": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "describe params: which, as data",
+      "description": "the read: the list, one workflow or one job, read by platform-describe as the read-only account",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": -70,
+        "y": 1050
+      },
+      "variables": {
+        "incoming": {
+          "obj": "$var.1b.object",
+          "path": [
+            "which"
+          ],
+          "value": "$var.job.which"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "1d": {
+      "name": "runService",
+      "canvasName": "runService",
+      "summary": "described (platform-describe: login, the reads, the guide's walker)",
+      "description": "the read: the list, one workflow or one job, read by platform-describe as the read-only account",
+      "location": "Application",
+      "locationType": null,
+      "app": "GatewayManager",
+      "type": "automatic",
+      "displayName": "GatewayManager",
+      "groups": [],
+      "nodeLocation": {
+        "x": -60,
+        "y": 1200
+      },
+      "variables": {
+        "incoming": {
+          "serviceName": "platform-describe",
+          "clusterId": "lab",
+          "params": "$var.1c.object"
+        },
+        "outgoing": {
+          "result": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "1e": {
+      "name": "evaluation",
+      "canvasName": "evaluation",
+      "summary": "platform-describe exited 0?",
+      "description": "the read: the list, one workflow or one job, read by platform-describe as the read-only account",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": -10,
+        "y": 1350
+      },
+      "variables": {
+        "incoming": {
+          "all_true_flag": true,
+          "evaluation_groups": [
+            {
+              "all_true_flag": true,
+              "evaluations": [
+                {
+                  "query": "result.return_code",
+                  "operand_1": {
+                    "variable": "result",
+                    "task": "1d"
+                  },
+                  "operator": "==",
+                  "operand_2": {
+                    "variable": 0,
+                    "task": "static"
+                  }
+                }
+              ]
+            }
+          ],
+          "options": {}
+        },
+        "outgoing": {
+          "return_value": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "1f": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "why it could not describe",
+      "description": "the read: the list, one workflow or one job, read by platform-describe as the read-only account",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": -150,
+        "y": 1500
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": true,
+          "query": "result.stdout_json.message",
+          "obj": "$var.1d.result"
+        },
+        "outgoing": {
+          "return_data": "$var.job.error"
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "2a": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "the summary",
+      "description": "the answer: the one-line summary and the guide (Markdown), published for the agent; nothing else",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 300,
+        "y": 1500
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": true,
+          "query": "result.stdout_json.summary",
+          "obj": "$var.1d.result"
+        },
+        "outgoing": {
+          "return_data": "$var.job.outcome"
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "2b": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "the guide (Markdown)",
+      "description": "the answer: the one-line summary and the guide (Markdown), published for the agent; nothing else",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 620,
+        "y": 1650
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "result.stdout_json.markdown",
+          "obj": "$var.1d.result"
+        },
+        "outgoing": {
+          "return_data": "$var.job.guide"
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "8a": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "platform-describe could not run",
+      "description": "where it stops: the reason in error; nothing was changed, nothing is left to do",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": -470,
+        "y": 1650
+      },
+      "variables": {
+        "incoming": {
+          "input": "the Gateway could not run platform-describe or read its answer: nothing was read",
+          "outputType": "string",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.error"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "8b": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "the guide could not be read",
+      "description": "where it stops: the reason in error; nothing was changed, nothing is left to do",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 170,
+        "y": 1800
+      },
+      "variables": {
+        "incoming": {
+          "input": "platform-describe answered, but the guide could not be read from its answer: nothing was changed",
+          "outputType": "string",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.error"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "9a01": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "input to check: what",
+      "description": "the input gate: every input checked against its schema before anything runs; a refusal ends the job with nothing sent",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 0,
+        "y": 150
+      },
+      "variables": {
+        "incoming": {
+          "obj": {},
+          "path": [
+            "what"
+          ],
+          "value": "$var.job.what"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "9a02": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "input to check: which",
+      "description": "the input gate: every input checked against its schema before anything runs; a refusal ends the job with nothing sent",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 0,
+        "y": 300
+      },
+      "variables": {
+        "incoming": {
+          "obj": "$var.9a01.object",
+          "path": [
+            "which"
+          ],
+          "value": "$var.job.which"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "9a0a": {
+      "name": "validateJsonSchema",
+      "canvasName": "validateJsonSchema",
+      "summary": "check the inputs",
+      "description": "the input gate: every input checked against its schema before anything runs; a refusal ends the job with nothing sent",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 0,
+        "y": 450
+      },
+      "variables": {
+        "incoming": {
+          "jsonData": "$var.9a02.object",
+          "schema": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "what",
+              "which"
+            ],
+            "properties": {
+              "what": {
+                "type": "string",
+                "enum": [
+                  "list",
+                  "workflow",
+                  "job"
+                ]
+              },
+              "which": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 80,
+                "pattern": "^[A-Za-z0-9 -]+$"
+              }
+            }
+          }
+        },
+        "outgoing": {
+          "result": "$var.job.input_check"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "9a0b": {
+      "name": "evaluation",
+      "canvasName": "evaluation",
+      "summary": "inputs valid?",
+      "description": "the input gate: every input checked against its schema before anything runs; a refusal ends the job with nothing sent",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": -100,
+        "y": 600
+      },
+      "variables": {
+        "incoming": {
+          "all_true_flag": true,
+          "evaluation_groups": [
+            {
+              "all_true_flag": true,
+              "evaluations": [
+                {
+                  "query": "valid",
+                  "operand_1": {
+                    "variable": "result",
+                    "task": "9a0a"
+                  },
+                  "operator": "==",
+                  "operand_2": {
+                    "variable": true,
+                    "task": "static"
+                  }
+                }
+              ]
+            }
+          ],
+          "options": {}
+        },
+        "outgoing": {
+          "return_value": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "9a0c": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "the inputs were refused",
+      "description": "the input gate: every input checked against its schema before anything runs; a refusal ends the job with nothing sent",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 210,
+        "y": 750
+      },
+      "variables": {
+        "incoming": {
+          "input": "the inputs were refused before anything ran (see input_check for which input and why): nothing was sent to a device",
+          "outputType": "string",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.error"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "workflow_start": {
+      "name": "workflow_start",
+      "summary": "workflow_start",
+      "groups": [],
+      "nodeLocation": {
+        "x": 0,
+        "y": 0
+      }
+    },
+    "workflow_end": {
+      "name": "workflow_end",
+      "summary": "workflow_end",
+      "groups": [],
+      "nodeLocation": {
+        "x": 20,
+        "y": 1950
+      }
+    }
+  },
+  "transitions": {
+    "workflow_start": {
+      "9a01": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "1a": {
+      "1b": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "1b": {
+      "1c": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "1c": {
+      "1d": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "1d": {
+      "1e": {
+        "state": "success",
+        "type": "standard"
+      },
+      "8a": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "1e": {
+      "2a": {
+        "state": "success",
+        "type": "standard"
+      },
+      "1f": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "1f": {
+      "workflow_end": {
+        "state": "success",
+        "type": "standard"
+      },
+      "8a": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "2a": {
+      "2b": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "2b": {
+      "workflow_end": {
+        "state": "success",
+        "type": "standard"
+      },
+      "8b": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "8a": {
+      "workflow_end": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "8b": {
+      "workflow_end": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "9a01": {
+      "9a02": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "9a02": {
+      "9a0a": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "9a0a": {
+      "9a0b": {
+        "state": "success",
+        "type": "standard"
+      },
+      "9a0c": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "9a0b": {
+      "1a": {
+        "state": "success",
+        "type": "standard"
+      },
+      "9a0c": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "9a0c": {
+      "workflow_end": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "workflow_end": {}
+  },
+  "groups": [],
+  "canvasVersion": 3,
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "what": {
+        "type": "string",
+        "required": true,
+        "description": "list, workflow or job"
+      },
+      "which": {
+        "type": "string",
+        "required": true,
+        "description": "the workflow's name as the Platform shows it, the job's id, or the word all for the list"
+      }
+    },
+    "required": [
+      "what",
+      "which"
+    ]
+  },
+  "outputSchema": {
+    "type": "object",
+    "properties": {
+      "outcome": {
+        "type": "string"
+      },
+      "guide": {
+        "type": "string"
+      },
+      "error": {
+        "type": "string"
+      },
+      "input_check": {
+        "type": "object"
+      }
+    }
+  },
+  "tags": [],
+  "preAutomationTime": 300000,
+  "sla": 600000,
+  "font_size": 12,
+  "decorators": []
+}

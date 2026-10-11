@@ -552,6 +552,35 @@ c24() {
 check "S4d.5p fabric-diagnostics reads the devices itself, notes its verify incident once and proposes escalate on an Established session" c23
 check "S4d.5q fabric-diagnostics-local reads the devices itself, notes its verify incident and answers escalate on an Established session" c24
 
+# --- S16.6/7 (ADR 0081): platform-guide answers from its one tool, Describe for an Agent --------------------------
+WF_DESCRIBE_AGENT=$(wf_name describe_for_agent)
+WF_DESCRIBE=$(wf_name describe_workflow)
+# the asked workflow's counts from the committed document: the answer must carry them, and nothing the guide lacks
+read -r PG_TASKS PG_STEPS <<<"$(${PY} -c "
+import json,sys; sys.path.insert(0,'itential/workflows'); import describe
+d=json.load(open('itential/workflows/'+describe.file_name('${WF_DESCRIBE}')))
+print(len(d['tasks'])-2, len(describe.steps(d)))")"
+pg_judge() { # pg_judge <agent> <session id>
+  local sid=${2##*$'\n'} txt tools
+  txt=$(session_text "$sid"); tools=$(session_tools "$sid"); count_tokens "$sid"
+  echo "$tools" | grep -qF "${WF_DESCRIBE_AGENT}" || { echo "$1 never called ${WF_DESCRIBE_AGENT}: ${tools}"; return 1; }
+  echo "$tools" | grep -vF "${WF_DESCRIBE_AGENT}" | grep -qE "${WF_DEVICE_READS}|${WF_PUSH}|send.?command|send.?config" && { echo "$1 touched another tool: ${tools}"; return 1; }
+  echo "$txt" | grep -qE "\b${PG_TASKS}\b" && echo "$txt" | grep -qE "\b${PG_STEPS}\b" || { echo "$1 did not carry ${PG_TASKS} tasks / ${PG_STEPS} steps: $(echo "$txt" | tail -c 300)"; return 1; }
+  echo "$1: ${WF_DESCRIBE} described with ${PG_TASKS} tasks in ${PG_STEPS} steps; tools ${tools}"
+}
+c25() {
+  local sid
+  sid=$(run_agent platform-guide "{\"request\":\"What does ${WF_DESCRIBE} do, and how many tasks and steps does it have?\"}") || { echo "$sid"; return 1; }
+  pg_judge platform-guide "$sid"
+}
+c26() {
+  local sid
+  sid=$(run_agent platform-guide-local "{\"request\":\"What does ${WF_DESCRIBE} do, and how many tasks and steps does it have?\"}") || { echo "$sid"; return 1; }
+  pg_judge platform-guide-local "$sid"
+}
+check "S16.6 platform-guide describes ${WF_DESCRIBE} through ${WF_DESCRIBE_AGENT} only, with the document's own counts" c25
+check "S16.7 platform-guide-local describes ${WF_DESCRIBE} through ${WF_DESCRIBE_AGENT} only, with the document's own counts" c26
+
 # cleanup: close the verify's incident; restore the hostname if a failed run left the drift behind
 if [ -n "$INC_SYS" ]; then sn -X PATCH "$SN/incident/${INC_SYS}" -d '{"state":"7","close_code":"Solution provided","close_notes":"closed by verify/test-06-flowai.sh"}' -o /dev/null; echo "closed ${INC_NUM}"; fi
 for s in ${TD_INCS}; do sn -X PATCH "$SN/incident/${s}" -d '{"state":"7","close_code":"Solution provided","close_notes":"closed by verify/test-06-flowai.sh"}' -o /dev/null; done

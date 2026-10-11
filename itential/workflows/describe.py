@@ -1023,6 +1023,41 @@ def describe_job_document(data: dict) -> dict:
                     "the repository's guide uses."}
 
 
+def first_sentence(text: str) -> str:
+    """The first sentence of a description, for a one-line listing."""
+    text = " ".join(str(text or "").split())
+    cuts = [text.index(mark) for mark in (". ", "; ") if mark in text]
+    if cuts:
+        text = text[:min(cuts)]
+    return text.rstrip(".;") + "." if text else ""
+
+
+def describe_list(data: dict) -> dict:
+    """The runner contract for the list (ADR 0081): {"documents": [<workflow documents>], "read": line} in, every
+    workflow on one line out: its task count, its steps, how many times it stops for a person and what it does. A
+    document without step titles (one not built by build.py) lists with its tasks and no steps."""
+    docs = [d for d in (data.get("documents") or []) if isinstance(d, dict) and d.get("name")
+            and isinstance(d.get("tasks"), dict)]
+    rows_, lines = [], []
+    for doc in sorted(docs, key=lambda d: d["name"].lower()):
+        steps_ = [s for s in steps(doc) if s[0] != OTHER]
+        n_tasks = max(len(doc["tasks"]) - 2, 0)
+        manual = sum(1 for t in doc["tasks"].values() if t.get("type") == "manual")
+        what = first_sentence(doc.get("description") or "")
+        rows_.append({"name": doc["name"], "tasks": n_tasks, "steps": len(steps_), "manual": manual, "what": what})
+        lines.append("| %s | %d | %d | %d | %s |" % (doc["name"], n_tasks, len(steps_), manual, what.replace("|", "/")))
+    n, stops = len(rows_), sum(1 for r in rows_ if r["manual"])
+    summary = "%d workflow%s on this Platform, %d of them stop%s for a person" % (
+        n, "" if n == 1 else "s", stops, "s" if stops == 1 else "")
+    md = "\n".join([
+        "# The workflows on this Platform", "",
+        str(data.get("read") or "As the Platform holds them: this list was made from the stored documents, on request."),
+        "", "%s. A workflow's steps are the ones its guide names; one with no steps was not built with the guide." % summary,
+        "", "| Workflow | Tasks | Steps | Stops for a person | What it does |", "|---|---|---|---|---|", *lines, ""])
+    return {"ok": True, "name": "the workflows on this Platform", "count": n, "workflows": rows_, "summary": summary,
+            "markdown": md}
+
+
 def describe_stdin() -> int:
     """stdin JSON in, one JSON line out; a bad document is an answer, not a traceback (the workflow reads `ok`)."""
     try:
@@ -1031,7 +1066,8 @@ def describe_stdin() -> int:
         data = {"document": None, "_error": str(exc)}
     try:
         data = data if isinstance(data, dict) else {}
-        out = describe_job_document(data) if "job" in data else describe_document(data)
+        out = (describe_job_document(data) if "job" in data else describe_list(data) if "documents" in data
+               else describe_document(data))
     except Exception as exc:  # noqa: BLE001 - the runner's answer must be JSON whatever happened
         out = {"ok": False, "message": "the description failed: %s: %s" % (type(exc).__name__, exc)}
     sys.stdout.write(json.dumps(out) + "\n")

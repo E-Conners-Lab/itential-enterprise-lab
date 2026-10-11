@@ -540,6 +540,7 @@ workflows:
   netbox_devices: List Devices from NetBox # S4d.5: run or read the plan, compact per-device summary for the agents (ADR 0046)
   describe_workflow: Describe Workflow # ADR 0080: the Platform's own copy of a workflow, described by the guide's walker; reads only
   describe_job: Describe Job # ADR 0080 decision 6: one job's run laid over its workflow's steps; reads only
+  describe_for_agent: Describe for an Agent # ADR 0081: the agent's one tool - the list, a workflow or a job, no card; reads only
 
 # The names before ADR 0067. The play deletes each one it still finds on a Platform, after importing the
 # renamed documents, so a replay leaves no stale copy behind. Nothing may reuse one of these names.
