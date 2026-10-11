@@ -294,8 +294,9 @@ That lever exists now. A Model Registry profile carries an optional **Model Vari
 model, which the Platform passes to the provider's request as-is, so `{"think": false}` reaches Ollama
 from an agent session. The twins run `qwen3.8:27b` that way (ADR 0079, `model_variables` on the
 `ollama-mac` profile in `itential/versions.yaml`); `scripts/model-bakeoff.py --no-think` measures the
-same flag. `/no_think` stays as the first prompt line: harmless to Qwen, and still what a gemma
-fallback needs. The variables count as drift: if a session starts emitting thinking traces again, the
+same flag. The twins no longer start with `/no_think`: once the flag is sent, that line made qwen3.8 emit a
+think-close token that the streamed reply showed as a literal `</think>`; a gemma fallback would need it
+back. The variables count as drift: if a session starts emitting thinking traces again, the
 profile has lost them, and `ansible/playbooks/flowai.yml` re-PATCHes it (which reissues the model id and
 re-binds every agent, as the chapter's next trap explains).
 
