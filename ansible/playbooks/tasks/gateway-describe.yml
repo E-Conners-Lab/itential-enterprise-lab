@@ -1,0 +1,93 @@
+---
+# ADR 0080: platform-describe on the Gateway - this repository (public: no deploy key) at its pinned commit, the Python
+# executable object (the same python-3-12 terraform-run imports; the import replaces it by name) and the one read-only
+# service with its Vault-backed secret. The same import-and-compare shape as tasks/gateway-terraform-run.yml: the
+# import drops unknown fields without a word, so the export is compared after it. Runs on the Gateway host inside a
+# play that has `login` (a Platform session), `platform_local` and `gw_bound_aliases` (tasks/gateway-vault.yml).
+- name: Gateway configuration now (platform-describe)
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/gateway_manager/v1/gateways/{{ stack.gateway5_cluster_id }}/configuration/export"
+    headers: {Cookie: "{{ login.cookies_string }}"}
+  register: gw_pd_export
+  until: gw_pd_export.status | default(0) == 200
+  retries: 12
+  delay: 5
+  no_log: true # the export carries `users` with a password field
+
+- name: The platform-describe items wanted (the iagctl db import form)
+  ansible.builtin.set_fact:
+    gw_pd_wanted:
+      repositories:
+        - name: "{{ platform_describe.repository.name }}"
+          description: "{{ platform_describe.repository.description }}"
+          url: "{{ platform_describe.repository.url }}"
+          reference: "{{ platform_describe.repository.reference }}"
+      executable-objects:
+        - "{{ terraform_run.executable_object }}"
+      services: "{{ gw_pd_services | map('combine', gw_pd_common) | sort(attribute='name') | list }}"
+  vars:
+    # each service keeps only the secrets whose alias tasks/gateway-vault.yml bound on this Gateway
+    gw_pd_services: >-
+      {%- set out = [] -%}
+      {%- for svc in platform_describe.services -%}
+        {%- set _ = out.append(svc | combine({'secrets': svc.secrets | selectattr('name', 'in', gw_bound_aliases) | list})) -%}
+      {%- endfor -%}
+      {{ out }}
+    gw_pd_common:
+      type: executable
+      repository: "{{ platform_describe.repository.name }}"
+      executable-object: "{{ terraform_run.executable_object.name }}"
+      arg-format: "{% raw %}--{{.Key}} {{.Value}}{% endraw %}" # a Go template the Gateway fills, not Jinja
+      runtime: {}
+
+- name: What the Gateway holds for platform-describe
+  ansible.builtin.set_fact:
+    gw_pd_have:
+      repositories: >-
+        {{ gw_pd_export.json.repositories | default([], true)
+           | selectattr('name', 'equalto', platform_describe.repository.name) | list }}
+      executable-objects: >-
+        {{ gw_pd_export.json['executable-objects'] | default([], true)
+           | selectattr('name', 'equalto', terraform_run.executable_object.name) | list }}
+      services: >-
+        {{ gw_pd_export.json.services | default([], true)
+           | selectattr('name', 'in', gw_pd_wanted.services | map(attribute='name') | list)
+           | sort(attribute='name') | list }}
+
+- name: Import platform-describe (replaces the three items by name)
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/gateway_manager/v1/gateways/{{ stack.gateway5_cluster_id }}/configuration/import"
+    method: POST
+    headers: {Cookie: "{{ login.cookies_string }}"}
+    body_format: json
+    body: {options: {source: content, content: "{{ gw_pd_wanted }}", force: true}}
+  register: gw_pd_import
+  when: gw_pd_have != gw_pd_wanted
+  changed_when: true
+
+- name: Gateway configuration after the import (platform-describe)
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/gateway_manager/v1/gateways/{{ stack.gateway5_cluster_id }}/configuration/export"
+    headers: {Cookie: "{{ login.cookies_string }}"}
+  register: gw_pd_after
+  when: gw_pd_import is changed
+  until: gw_pd_after.status | default(0) == 200
+  retries: 12
+  delay: 5
+  no_log: true
+
+- name: The export matches what was sent (the import drops unknown fields without a word)
+  ansible.builtin.assert:
+    that:
+      - >-
+        (gw_pd_after.json.repositories | selectattr('name', 'equalto', platform_describe.repository.name) | list)
+        == gw_pd_wanted.repositories
+      - >-
+        (gw_pd_after.json['executable-objects'] | selectattr('name', 'equalto', terraform_run.executable_object.name)
+         | list) == gw_pd_wanted['executable-objects']
+      - >-
+        (gw_pd_after.json.services | selectattr('name', 'in', gw_pd_wanted.services | map(attribute='name') | list)
+         | sort(attribute='name') | list) == gw_pd_wanted.services
+    fail_msg: "the Gateway stored something other than the platform-describe items sent: compare the export by hand"
+    quiet: true
+  when: gw_pd_import is changed

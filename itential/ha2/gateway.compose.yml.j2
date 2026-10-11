@@ -73,6 +73,9 @@ services:
       # aws-vpn-psk (ADR 0068 d5) writes the PSK to Vault from the runner, over the lab CA
       VAULT_ADDR: "{{ vault.prod.url }}"
       VAULT_CACERT: /etc/ssl/lab/lab-root-ca.crt
+      # platform-describe (ADR 0080) logs in to the Platform from the runner as the read-only account
+      PLATFORM_URL: "{{ platform_describe.platform_url.prod }}"
+      PLATFORM_USER: "{{ platform_describe.user }}"
 {% endif %}
       GATEWAY_APPLICATION_CLUSTER_ID: "{{ gateway.cluster_id }}"
       GATEWAY_LOG_LEVEL: "info"

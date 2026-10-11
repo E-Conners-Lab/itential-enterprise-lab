@@ -1,0 +1,132 @@
+"""platform-describe (ADR 0080): the Gateway service that describes a workflow from the Platform's own copy. A fake
+Platform (http.server in a thread) answers /login and the Studio workflow list with a committed document, and the
+script is run as the Gateway runs it: a subprocess, the credential in the environment, one JSON line out."""
+
+from __future__ import annotations
+
+import importlib.util
+import json
+import os
+import subprocess
+import sys
+import threading
+import urllib.parse
+from http.server import BaseHTTPRequestHandler, HTTPServer
+from pathlib import Path
+
+import pytest
+
+ROOT = Path(__file__).resolve().parent.parent
+SCRIPT = ROOT / "itential" / "workflows" / "platform_describe.py"
+ROTATE = json.loads((ROOT / "itential" / "workflows" / "rotate-aws-vpn-key.json").read_text())
+PASSWORD = "not-a-real-password-test-only"
+
+
+class FakePlatform(BaseHTTPRequestHandler):
+    seen: list = []
+
+    def log_message(self, *_: object) -> None:  # quiet
+        pass
+
+    def _send(self, status: int, body: object, cookie: str = "") -> None:
+        data = json.dumps(body).encode() if not isinstance(body, str) else body.encode()
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        if cookie:
+            self.send_header("Set-Cookie", cookie)
+        self.end_headers()
+        self.wfile.write(data)
+
+    def do_POST(self) -> None:  # noqa: N802
+        body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", "0")) or "{}"))
+        FakePlatform.seen.append(("POST", self.path, body))
+        if self.path == "/login" and body == {"username": "svc-copilot", "password": PASSWORD}:
+            self._send(200, "a-token", cookie="token=a-token; Path=/; HttpOnly")
+        else:
+            self._send(401, {"message": "Invalid credentials"})
+
+    def do_GET(self) -> None:  # noqa: N802
+        FakePlatform.seen.append(("GET", self.path, self.headers.get("Cookie")))
+        if self.headers.get("Cookie") != "token=a-token":
+            return self._send(401, {"message": "no session"})
+        if self.path.startswith("/automation-studio/workflows?"):
+            wanted = urllib.parse.unquote(self.path.split("equals[name]=", 1)[1]) if "equals[name]=" in self.path else ""
+            items = [ROTATE] if wanted == ROTATE["name"] else []
+            return self._send(200, {"items": items, "total": len(items)})
+        self._send(404, {"message": "no such route"})
+
+
+@pytest.fixture(scope="module")
+def platform():
+    server = HTTPServer(("127.0.0.1", 0), FakePlatform)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    yield f"http://127.0.0.1:{server.server_port}"
+    server.shutdown()
+
+
+def run(platform_url: str, *argv: str, env: dict | None = None) -> tuple[int, dict]:
+    base = {"PATH": os.environ.get("PATH", ""), "PLATFORM_URL": platform_url, "PLATFORM_USER": "svc-copilot",
+            "PLATFORM_PASSWORD": PASSWORD, "PLATFORM_CACERT": ""}
+    base.update(env or {})
+    r = subprocess.run([sys.executable, "-I", str(SCRIPT), *argv], capture_output=True, text=True, env=base)
+    assert r.stderr == "", r.stderr
+    lines = r.stdout.strip().splitlines()
+    assert len(lines) == 1, "one JSON line out"
+    return r.returncode, json.loads(lines[0])
+
+
+def test_a_workflow_is_described_from_the_platforms_own_copy(platform: str) -> None:
+    code, out = run(platform, "--action", "workflow", "--name", "Rotate AWS VPN Key")
+    assert code == 0 and out["ok"] is True
+    assert out["name"] == "Rotate AWS VPN Key" and out["tasks"] == 106 and out["steps"] == 12 and out["manual"] == 1
+    assert out["markdown"].startswith("# Rotate AWS VPN Key\n")
+    assert "as the Platform stores it" in out["markdown"] and "by platform-describe, as svc-copilot" in out["markdown"]
+    assert out["html"].startswith("<h1>Rotate AWS VPN Key</h1>") and "<h3>" in out["html"]
+    assert PASSWORD not in json.dumps(out)
+
+
+def test_the_guide_is_the_pages_walk_through(platform: str) -> None:
+    """The same document, the same words: only the provenance and the 'how it runs' lines differ from the page."""
+    _, out = run(platform, "--action", "workflow", "--name", "Rotate AWS VPN Key")
+    page = (ROOT / "docs" / "workflows" / "rotate-aws-vpn-key.md").read_text()
+    walk = lambda text: text.split("## The walk-through")[1]  # noqa: E731
+    assert walk(out["markdown"]) == walk(page)
+
+
+def test_no_such_workflow_is_an_answer(platform: str) -> None:
+    code, out = run(platform, "--action", "workflow", "--name", "No Such Workflow")
+    assert code == 1 and out == {"ok": False, "message": "no workflow named 'No Such Workflow' on this Platform"}
+
+
+def test_a_bad_name_never_reaches_the_platform(platform: str) -> None:
+    FakePlatform.seen.clear()
+    code, out = run(platform, "--action", "workflow", "--name", "x; drop")
+    assert code == 1 and "1-80 characters" in out["message"]
+    assert all(call[1] == "/login" for call in FakePlatform.seen), "only the login was sent"
+
+
+def test_a_wrong_password_is_reported_without_the_password(platform: str) -> None:
+    code, out = run(platform, "--action", "workflow", "--name", "Rotate AWS VPN Key", env={"PLATFORM_PASSWORD": "wrong"})
+    assert code == 1 and out == {"ok": False, "message": "login as svc-copilot answered HTTP 401"}
+
+
+def test_a_missing_credential_reads_nothing(platform: str) -> None:
+    FakePlatform.seen.clear()
+    code, out = run(platform, "--action", "workflow", "--name", "Rotate AWS VPN Key", env={"PLATFORM_PASSWORD": ""})
+    assert code == 1 and out["message"].startswith("the runner has no PLATFORM_PASSWORD")
+    assert FakePlatform.seen == []
+
+
+def test_job_is_not_built_yet(platform: str) -> None:
+    code, out = run(platform, "--action", "job", "--id", "abc")
+    assert code == 1 and "decision 6" in out["message"]
+
+
+def test_only_get_and_the_login_post_can_leave_the_script() -> None:
+    spec = importlib.util.spec_from_file_location("pd", SCRIPT)
+    pd = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(pd)
+    api = pd.Platform("https://platform.invalid", "svc-copilot", PASSWORD, "", 1.0)
+    for method, path in (("PUT", "/automation-studio/workflows"), ("POST", "/workflows/start"), ("DELETE", "/x")):
+        with pytest.raises(RuntimeError, match="refused"):
+            api._request(method, path)

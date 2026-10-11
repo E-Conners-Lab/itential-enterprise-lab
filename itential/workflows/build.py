@@ -410,6 +410,8 @@ REVERT_CHECKS = {
 FABRIC_DEVICES = set(VERSIONS["fabric_bgp"]["host_keys"])
 INPUT_GATES = {
     WF["show_version"]: {"device": NODE_NAME},
+    # ADR 0080: a workflow name, as versions.yaml spells them; the service checks it again
+    WF["describe_workflow"]: {"workflow": {"type": "string", "minLength": 1, "maxLength": 80, "pattern": r"^[A-Za-z0-9 -]+$"}},
     WF["show_command"]: {"device": NODE_NAME, "command": SHOW_COMMAND},
     WF["show_all"]: {"command": SHOW_COMMAND},
     # R6 (ADR 0072): what the alert relay sends; the device is the one open target the AWS monitor watches
@@ -5961,7 +5963,8 @@ def card_mark() -> str:
 
 
 def card_page(title: str, headline: str, lede: str, elapsed: str, since: str, sections: str, number: str,
-              foot: str, extra_css: str = "", decide: str = "", note_label: str = "Note for the incident") -> str:
+              foot: str, extra_css: str = "", decide: str = "", note_label: str = "Note for the incident",
+              brand: str = "outage response", pill: str = "Waiting for your approval") -> str:
     """A Work Center card's page (R6, R10): the band (title, lede, waiting pill, the outage's age), the card's own
     sections, the decision with the engineer's note, the foot. `lede`, `sections` and `foot` are HTML the caller built
     from escaped values; every other argument is escaped here. `extra_css` adds rules after the shared ones; `decide`
@@ -5974,10 +5977,10 @@ def card_page(title: str, headline: str, lede: str, elapsed: str, since: str, se
 <style>{OUTAGE_CARD_CSS}{extra_css}</style></head>
 <body><div class="oc">
 <header class="band">
-<div class="brand">{card_mark()}<span><b>Elliot's Itential Lab</b>&nbsp; outage response</span></div>
+<div class="brand">{card_mark()}<span><b>Elliot's Itential Lab</b>&nbsp; {e(brand)}</span></div>
 <div><h1>{e(headline)}</h1>
 <p class="lede">{lede}</p></div>
-<div class="status"><span class="pill">Waiting for your approval</span>
+<div class="status"><span class="pill">{e(pill)}</span>
 <p class="elapsed">{e(elapsed)}<small>{e(since)}</small></p></div>
 </header>
 <div class="body">
@@ -6050,6 +6053,38 @@ def approval_card(d: dict) -> dict:
     foot = f"Prepared by Itential at {now:%H:%M} UTC from the job's own data; the pre-shared key is never on a card."
     page = card_page(header, header, e(message), "", "", sections, "", foot, extra_css=APPROVAL_CARD_CSS,
                      decide=decide, note_label="Note for the record")
+    return {"html": page}
+
+
+GUIDE_CARD_CSS = """
+.oc .guide h1 { display: none; }
+.oc .guide h2 { font-size: 17px; margin: 22px 0 8px; }
+.oc .guide h3 { font-size: 15px; margin: 18px 0 6px; color: var(--ink-soft); }
+.oc .guide p, .oc .guide li { font-size: 14px; line-height: 1.55; }
+.oc .guide ul { padding-left: 1.2em; margin: 0 0 8px; }
+.oc .guide code { font-family: var(--mono); font-size: 13px; background: var(--deep); border-radius: 5px; padding: 1px 5px; }
+.oc .guide table { border-collapse: collapse; font-size: 13.5px; margin: 8px 0 14px; }
+.oc .guide th, .oc .guide td { text-align: left; vertical-align: top; padding: 5px 9px; border-bottom: 1px solid var(--edge); }
+.oc .guide pre.diagram { font-family: var(--mono); font-size: 12.5px; line-height: 1.5; white-space: pre-wrap; color: var(--ink);
+  background: var(--deep); border: 1px solid var(--edge); border-radius: 10px; padding: 12px 14px; max-height: 360px; overflow: auto; }
+"""
+
+
+def guide_card(d: dict) -> dict:
+    """Describe Workflow's card (ADR 0080): the guide as platform-describe rendered it, on the branded page, one
+    button. `html` is this repository's own rendering of the document (describe.html_guide), never a person's input,
+    so it goes in as it is; everything else is escaped. Pure: runCode runs this function's own source on the Gateway."""
+    e = html.escape
+    name = str(d.get("name") or "the workflow")
+    summary = str(d.get("summary") or name)
+    body = d.get("html") if isinstance(d.get("html"), str) else ""
+    sections = f'<section class="panel guide" aria-labelledby="t-guide"><h2 id="t-guide">What it does, start to end</h2>\n{body}</section>\n'
+    decide = ("<p>Seen closes this card. Nothing runs from it: the workflow only read the Platform's own copy of "
+              f"{e(name)} and described it.</p>")
+    foot = "Prepared by Itential from the stored workflow document, with the same words the repository's guide uses."
+    page = card_page(f"{name}, described", name, e(summary), "", "", sections, "", foot, extra_css=APPROVAL_CARD_CSS
+                     + GUIDE_CARD_CSS, decide=decide, note_label="Note for the record", brand="the workflow, described",
+                     pill="For reading")
     return {"html": page}
 
 
@@ -6268,6 +6303,11 @@ APPROVAL_CARD_CODE = _source(outage_card_image, card_mark, card_page, approval_c
                              "OUTAGE_CARD_CSS = " + repr(OUTAGE_CARD_CSS) + "\nAPPROVAL_CARD_CSS = "
                              + repr(APPROVAL_CARD_CSS) + "\nAPPROVAL_BLOCK_CHARS = " + repr(APPROVAL_BLOCK_CHARS)
                              + "\nAPPROVAL_LABELS = " + repr(APPROVAL_LABELS) + "\n\n\n")
+GUIDE_CARD_CODE = _source(outage_card_image, card_mark, card_page, guide_card,
+                          call='guide_card(json.loads(sys.stdin.read() or "{}"))',
+                          extra=CARD_PALETTE_SRC + "import base64\nimport html\n\n"
+                          "OUTAGE_CARD_CSS = " + repr(OUTAGE_CARD_CSS) + "\nAPPROVAL_CARD_CSS = "
+                          + repr(APPROVAL_CARD_CSS) + "\nGUIDE_CARD_CSS = " + repr(GUIDE_CARD_CSS) + "\n\n\n")
 OUTAGE_CARD_CODE = _source(outage_card_image, card_clock, card_mark, card_page, outage_card_topology, outage_card,
                            call='outage_card(json.loads(sys.stdin.read() or "{}"))',
                            extra=CARD_PALETTE_SRC + "import base64\nimport html\nimport re\nfrom datetime import datetime, timezone\n\n"
@@ -7785,11 +7825,80 @@ def break_fabric_bgp() -> dict:
     )
 
 
+# --- Describe Workflow (ADR 0080) -----------------------------------------------------------------------------------
+# The Platform describes one of its own workflows: platform-describe (an executable service on this repository) logs
+# in as the read-only service account, reads the stored document by name and runs the guide's walker (describe.py);
+# the job publishes the guide and shows it on a Work Center card with one button. Reads only: a service that fails or
+# finds no such workflow ends the job with the reason, and opens no task (as Get AWS VPN Status).
+DESCRIBE_PARAMS = '{"action": "workflow", "timeout": "60"}'
+
+
+def describe_workflow() -> dict:
+    ok, fail, err = "success", "failure", "error"
+    tasks = sectioned({
+        **step("the read: the Platform's own copy of the workflow, read by platform-describe as the read-only account"),
+        "1a": parse("describe params: the fixed part", DESCRIBE_PARAMS, x=100),
+        "1b": set_key("describe params: the name, as data", "$var.1a.textObject", "name", "$var.job.workflow", x=150),
+        "1c": run_service("the Platform's copy, described (platform-describe: login, one read, the guide's walker)",
+                          "platform-describe", "$var.1b.object", "describe_result", x=200),
+        "1d": evaluate("platform-describe exited 0?", "1c", "result", "result.return_code", "==", 0, x=250),
+        "1e": jq("why it could not describe", "$var.1c.result", "result.stdout_json.message", x=300, y=-300,
+                 to_job="error", optional=True),
+        **step("the guide: the Markdown and the one-line summary, published for whoever started the job"),
+        "2a": jq("what was described", "$var.1c.result", "result.stdout_json", x=350, to_job="described"),
+        "2b": jq("the guide (Markdown)", "$var.job.described", "markdown", x=400, to_job="guide"),
+        "2c": jq("the summary", "$var.job.described", "summary", x=450, to_job="outcome"),
+        **step("the card: the guide on a Work Center page, one button, nothing to run"),
+        "3a": run_code("the card's page (Python on the runner)", GUIDE_CARD_CODE, "$var.job.described", "guide_card",
+                       x=500),
+        "3b": jq("the card's HTML", "$var.3a.result", "stdout_json.html", x=550),
+        "3c": task("InteractiveHTML", "WorkCenter", "the workflow, described",
+                   {"header": "The workflow, described", "body": "$var.3b.return_data", "variables": {},
+                    "btn_success": "Seen", "btn_failure": "Seen"},
+                   {"export": "$var.job.seen"}, kind="manual", display="Work Center",
+                   view="/work-center/task/InteractiveHTML", x=600),
+        **step("where it stops: the reason in error; nothing was changed, nothing is left to do"),
+        "8a": note("platform-describe could not run", "the Gateway could not run platform-describe or read its answer "
+                   "(describe_result): nothing was read", "error", x=250, y=-600),
+        "8b": note("the guide could not be read", "platform-describe answered, but the guide could not be read from its "
+                   "answer (describe_result): nothing was changed", "error", x=400, y=-600),
+        "8c": note("the card could not be made", "the guide is published (guide), but its card could not be made "
+                   "(guide_card)", "error", x=550, y=-600),
+    })
+    tr = {
+        "workflow_start": _edge(**{"1a": ok}),
+        "1a": _edge(**{"1b": ok}),
+        "1b": _edge(**{"1c": ok}),
+        "1c": _edge(**{"1d": ok, "8a": err}),
+        "1d": _edge(**{"2a": ok, "1e": fail}),
+        "1e": _edge(**{"workflow_end": ok, "8a": err}),
+        "2a": _edge(**{"2b": ok, "8b": err}),
+        "2b": _edge(**{"2c": ok, "8b": err}),
+        "2c": _edge(**{"3a": ok, "8b": err}),
+        "3a": _edge(**{"3b": ok, "8c": err}),
+        "3b": _edge(**{"3c": ok, "8c": err}),
+        "3c": _edge(**{"workflow_end": ok}),
+        **{n: _edge(**{"workflow_end": ok}) for n in ("8a", "8b", "8c")},
+    }
+    return workflow(
+        WF["describe_workflow"],
+        "Describes one of this Platform's own workflows from start to end, from the stored document: platform-describe "
+        "reads it as the read-only service account and runs the guide's walker, the job publishes the guide and shows "
+        "it on a Work Center card. Reads only; a workflow that is not there ends the job with the reason (ADR 0080)",
+        {"workflow": {"type": "string", "required": True, "description": "The workflow's name, as the Platform shows it"}},
+        tasks,
+        tr,
+        {"outcome": {"type": "string"}, "error": {"type": "string"}, "guide": {"type": "string"},
+         "described": {"type": "object"}, "describe_result": {"type": "object"}, "guide_card": {"type": "object"},
+         "seen": {"type": ["object", "null"]}},
+    )
+
+
 BUILDERS = (device_count, show_version, show_command, show_all, branch_vlan, branch_vlan_delete, config_push,
             compliance_run, compliance_report, netbox_devices, backup_all, deploy_aws_vpn, verify_aws_vpn,
             hand_off_aws_vpn, config_push_revert, tear_down_aws_vpn, tear_down_expired_aws_vpn, get_aws_vpn_status,
             check_aws_drift, rotate_aws_vpn_key, rotate_aws_vpn_key_monthly, diagnose_aws_vpn_outage,
-            diagnose_fabric_bgp_outage, break_fabric_bgp, drill_batfish_gate)
+            diagnose_fabric_bgp_outage, break_fabric_bgp, drill_batfish_gate, describe_workflow)
 
 
 if __name__ == "__main__":

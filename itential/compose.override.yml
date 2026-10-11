@@ -92,6 +92,9 @@ services:
       # aws-vpn-psk (ADR 0068 d5) writes the PSK to the tier's Vault from the runner, over the lab CA
       VAULT_ADDR: ${RUNNER_VAULT_ADDR:-}
       VAULT_CACERT: /etc/ssl/lab/lab-root-ca.crt
+      # platform-describe (ADR 0080) logs in to the Platform from the runner as the read-only account
+      PLATFORM_URL: ${RUNNER_PLATFORM_URL:-}
+      PLATFORM_USER: ${RUNNER_PLATFORM_USER:-svc-copilot}
       GATEWAY_APPLICATION_CLUSTER_ID: ${GATEWAY5_CLUSTER_ID:-lab}
       GATEWAY_LOG_LEVEL: ${LOG_LEVEL:-info}
       GATEWAY_STORE_BACKEND: etcd

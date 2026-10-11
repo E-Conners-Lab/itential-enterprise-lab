@@ -479,6 +479,33 @@ adapters:
     tag: v1.0.10 # commit c3bd5098, 2026-08-31
     export: Netbox
 
+# --- platform-describe (ADR 0080): the Platform describes its own workflows. A read-only executable service on THIS
+# repository (public: no deploy key), pinned by a full commit SHA like cloud-devops-pipeline (ADR 0068). The pin lags
+# by one merge: a PR that changes itential/workflows/describe.py or platform_describe.py merges first, the next PR
+# moves the pin to that commit on main (tests/test_describe_workflow.py holds the pin to an ancestor of main). The
+# service logs in as svc-copilot (its password the Gateway alias above); PLATFORM_URL and PLATFORM_USER are the
+# runner's environment (tasks/gateway-describe.yml), as VAULT_ADDR is.
+platform_describe:
+  # the runner's environment (not secrets): the Platform as the runner reaches it, and the read-only account
+  user: svc-copilot
+  platform_url:
+    prod: https://itential.lab.internal # the load balancer, over the lab CA the runner holds (VAULT_CACERT)
+    dev: http://platform:3000 # the Platform container on the dev stack's Compose network
+  repository:
+    name: itential-enterprise-lab
+    description: "platform-describe's repository (ADR 0080): this lab, public, read at the pinned commit"
+    url: https://github.com/E-Conners-Lab/itential-enterprise-lab.git
+    # b0b0573 = main after #162 (the guide). The service itself lands in the PR after it, so this pin runs nothing
+    # until the next PR moves it; the test only asks that it is a commit on main.
+    reference: "b0b0573373f42676b1e6000a5782294bba5b4f4a"
+  services:
+    - name: platform-describe
+      description: "The Platform's own copy of a workflow, described by the guide's walker: reads only (ADR 0080)"
+      filename: itential/workflows/platform_describe.py
+      working-directory: "."
+      secrets:
+        - {name: svc-copilot-password, type: env, target: PLATFORM_PASSWORD}
+
 # Workflow names say what the workflow does, in the words an operator would use (ADR 0067): a verb and an
 # object in Title Case, no `wf-` prefix and no version (git and the replay carry the version). The key is the
 # stable handle the code uses; the value is the name the Platform, the agents and the operators see. Each file
@@ -509,6 +536,7 @@ workflows:
   branch_vlan_delete: Remove Branch VLAN # S4d.3: the LCM delete action; switch write through Push Configuration with Approval (ADR 0043)
   compliance_report: Summarize Compliance Results
   netbox_devices: List Devices from NetBox # S4d.5: run or read the plan, compact per-device summary for the agents (ADR 0046)
+  describe_workflow: Describe Workflow # ADR 0080: the Platform's own copy of a workflow, described by the guide's walker; reads only
 
 # The names before ADR 0067. The play deletes each one it still finds on a Platform, after importing the
 # renamed documents, so a replay leaves no stale copy behind. Nothing may reuse one of these names.
@@ -690,6 +718,10 @@ vault:
       username: {env: SNOW_USER}
       password: {env: SNOW_PASSWORD}
       prod_only: true # ServiceNow stays off on dev (ADR 0063)
+    # ADR 0080: the read-only service account platform-describe logs in as (tasks/ldap-service-account.yml persists
+    # the password to .env); under platform/, which only the Gateway's reader resolves (never the Platform's)
+    platform/svc-copilot:
+      password: {env: SVC_COPILOT_PROD_PASSWORD, dev_env: SVC_COPILOT_DEV_PASSWORD}
   # the two readers (ADR 0065 decisions 5 and 6) and the one writer (ADR 0068 decision 5); `bound_hosts` are the
   # addresses a secret ID works from. A role's policy grants `capabilities` (default [read]) on each path.
   approles:
@@ -700,7 +732,7 @@ vault:
       # aws/*: the IAM key terraform-run uses, the PSK it copies to Secrets Manager and the router, and the writer's
       # own credentials (ADR 0068 decisions 3 and 5)
       policy_paths: [devices/*, services/netbox, aws/terraform, aws/vpn-psk, aws/psk-writer, git/cloud-devops-pipeline,
-                     mcp/netops-knowledge]
+                     mcp/netops-knowledge, platform/svc-copilot]
       bound_hosts: [iag-01]
     itential-aws-psk-writer:
       # its own path only. Write-only until R4; since then (owner decision 2026-10-04, ADR 0068 amendment) it may read
@@ -755,6 +787,9 @@ vault:
   gateway_admin_path: gateway/iagctl-admin
   gateway_aliases:
     lab-automation-password: {path: devices/automation, key: password}
+    # ADR 0080: platform-describe logs in to the Platform as the read-only service account (itential/copilot/roles.yaml);
+    # seeded from .env by the Vault config play (vault.secrets above), as the device account is
+    svc-copilot-password: {path: platform/svc-copilot, key: password}
     lab-netbox-token: {path: services/netbox, key: token}
     # terraform-run (ADR 0068): the IAM key as two environment variables, and the repository's deploy key
     aws-terraform-access-key-id: {path: aws/terraform, key: access_key_id}
