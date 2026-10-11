@@ -1,0 +1,256 @@
+{
+ "platform": "https://itential.lab.internal",
+ "when": "20261011T181635Z",
+ "tool": "Describe for an Agent",
+ "agents": {
+  "platform-guide": {
+   "passed": 8,
+   "of": 8,
+   "cases": [
+    {
+     "n": 1,
+     "request": "What does Diagnose Fabric BGP Outage do?",
+     "session": "c699af3a-1d87-444c-bb0d-643650819864",
+     "state": "complete",
+     "seconds": 24.6,
+     "usage": {
+      "in": 18393,
+      "out": 991
+     },
+     "answer": "**Diagnose Fabric BGP Outage** is the fabric BGP outage-diagnosis loop (R10 + A6, ADR 0073). It has 116 tasks across 12 steps and stops for a person twice.\n\nHere's how it runs, start to end: it's triggered by a session-down alert, carrying the device, neighbor, VRF, peer and alert details. After validating its inputs, it first checks whether an incident is already open for this session pair \u2014 if so, it just notes that and ends. Otherwise it reads both ends of the BGP session via the `fabric-bgp` Gateway service; if the session has already come back up to Established on its own, the job ends with nothing changed and no incident opened.\n\nIf the session is still down, it opens one ServiceNow incident with the evidence, then hands that evidence to the `fabric-diagnostics` agent (via `runAgent`), which picks one fix on one end from a fixed menu. If the agent finds no usable fix, the incident is escalated to a person and the job stops there. If it does pick a fix, the workflow plans the exact configuration lines for that fix (with `fabric-bgp`, no device touched yet) and presents them \u2014 along with both ends' readings and the incident number \u2014 on a Work Center approval card. This is the first point where it waits for a person.\n\nIf the fix is rejected on the card, that's noted on the incident and the job ends with nothing run. If approved, it runs exactly that one fix on the named end, proving the session reaches Established before saving. Afterwards it rereads the alerting end up to four times (waiting 15s, 30s, 45s, then 60s between reads) looking for Established. Depending on whether the session comes back, it either resolves the ServiceNow incident with \"Solution provided\" or notes that it's still not Established and raises a second Work Center task headed \"Diagnose Fabric BGP Outage needs a look\" \u2014 the second point where it waits for a person.\n\nIt changes things only after that approval: it pushes the one chosen BGP fix to one device/end. Along the way it reads from NetBox-backed data and ServiceNow (creating/updating incidents), and it publishes job variables tracking the plan, both ends' results, the agent's answer, the fix, the approval decision, and the final outcome or error.",
+     "tool_ok": true,
+     "tools": [
+      [
+       "Describe for an Agent",
+       {
+        "what": "workflow",
+        "which": "Diagnose Fabric BGP Outage"
+       }
+      ],
+      [
+       "Describe for an Agent",
+       {
+        "what": "list",
+        "which": "all"
+       }
+      ]
+     ],
+     "missing": [],
+     "forbidden": [],
+     "answered": true,
+     "pass": true
+    },
+    {
+     "n": 2,
+     "request": "Which workflows on this Platform stop for a person, and how many workflows are there in all?",
+     "session": "2e9cce60-f9fd-4e76-9e17-bbe5e7f12cc5",
+     "state": "complete",
+     "seconds": 16.4,
+     "usage": {
+      "in": 6277,
+      "out": 859
+     },
+     "answer": "There are **29 workflows** on this Platform in all, and **15 of them stop for a person** at some point (the rest run start to finish without waiting on anyone).\n\nThe 15 that stop for a person are:\n\n1. **Add Branch VLAN** \u2013 stops once, for approval on the JSON form `lab-branch-vlan-approval` before configuring a branch switch.\n2. **Break Fabric BGP** \u2013 stops twice, including an HTML approval card before it deliberately breaks a BGP session.\n3. **Check AWS Drift** \u2013 stops once (its guide doesn't say what for beyond the general approval point, just that it reports drift without changing anything).\n4. **Deploy AWS VPN** \u2013 stops once, a Work Center approval showing the Terraform plan before it's applied.\n5. **Describe Job** \u2013 stops once.\n6. **Describe Workflow** \u2013 stops once.\n7. **Diagnose AWS VPN Outage** \u2013 stops twice, including a Work Center approval before running the chosen fix.\n8. **Diagnose Fabric BGP Outage** \u2013 stops twice, similarly gated by a Work Center approval before the fix runs.\n9. **Hand Off AWS VPN** \u2013 stops once, showing the exact configuration block (key masked) for approval before pushing it.\n10. **Push Configuration with Approval** \u2013 stops once, a Work Center approval before pushing configuration lines.\n11. **Push Configuration with Revert Timer** \u2013 stops once, a Work Center approval before pushing under a revert timer.\n12. **Rotate AWS VPN Key** \u2013 stops once during the key-rotation process.\n13. **Rotate AWS VPN Key Monthly** \u2013 stops once, same kind of rotation with a revert timer.\n14. **Tear Down AWS VPN** \u2013 stops twice: once before removing the router's AWS block, and again on a second approval card before applying the destroy plan.\n15. **Tear Down Expired AWS VPN** \u2013 stops once, before removing the router's AWS block under a revert timer.\n\nThe remaining 14 workflows (e.g., **Back Up All Device Configs**, **Count Devices in NetBox**, **List Devices from NetBox**, **Verify AWS VPN**, **Run Show Command on a Device**, and others) run without ever waiting on a person.",
+     "tool_ok": true,
+     "tools": [
+      [
+       "Describe for an Agent",
+       {
+        "what": "list",
+        "which": "all"
+       }
+      ]
+     ],
+     "missing": [],
+     "forbidden": [],
+     "answered": true,
+     "pass": true
+    },
+    {
+     "n": 3,
+     "request": "What does the BGP outage workflow do?",
+     "session": "2475d15d-adfe-4463-8153-1ae7e4a14b2b",
+     "state": "complete",
+     "seconds": 24.7,
+     "usage": {
+      "in": 18521,
+      "out": 1308
+     },
+     "answer": "**Diagnose Fabric BGP Outage** (116 tasks, 12 steps, stops for a person twice) is the Platform's BGP outage workflow \u2014 it's described as \"the fabric BGP outage loop (R10 + A6, ADR 0073).\"\n\nHere's how it runs, start to end:\n\n1. **Trigger and validation** \u2014 it's started by a session-down alert and immediately validates its inputs (`starts_at`, `device`, `neighbor`, `vrf`, `peer`, `alertname`, `fingerprint`); bad inputs end the job with nothing sent.\n2. **Build the plan** \u2014 it checks that the alerting end is a declared BGP session; if not, it stops without acting.\n3. **Dedupe against open incidents** \u2014 it queries ServiceNow for an already-open incident on this session pair. If one is open, it just notes \"still down\" on that incident and ends \u2014 no duplicate incident.\n4. **Read the evidence** \u2014 it reads both ends of the session (the alerting end and the far end) via the Gateway's `fabric-bgp` service. If the session has already recovered (Established again), the job ends with nothing changed and no incident opened.\n5. **Open the incident** \u2014 if it's genuinely still down, it opens one ServiceNow incident with the evidence from both ends.\n6. **Let the agent diagnose** \u2014 the `fabric-diagnostics` agent confirms both ends, reviews the incident, and picks **one fix on one end** from a fixed menu, checked against what the workflow itself read. If the agent finds no valid fix, the incident is escalated to a person and the workflow stops there.\n7. **Plan the exact fix** \u2014 `fabric-bgp` plans the chosen fix (no device touched yet) to get the exact lines that would run.\n8. **Human approval** \u2014 a Work Center card shows both ends' readings, the incident number, and the exact lines; it **waits for a person** to approve. If rejected, the incident is noted as \"fix rejected\" and nothing is changed.\n9. **Run the fix** \u2014 once approved, `fabric-bgp` makes that one change, and tries to prove the session reaches Established, then saves.\n10. **Re-check the session** \u2014 it reads the alerting end up to four times (waiting 15s, 30s, 45s, 60s between tries) looking for Established.\n11. **Resolve or escalate** \u2014 if Established, it resolves the ServiceNow incident with \"Solution provided\"; if still not Established after the last read, it notes that on the incident and raises a second Work Center task headed \"Diagnose Fabric BGP Outage needs a look,\" which again **waits for a person**.\n\nThroughout, it only reads and changes BGP/session state through `fabric-bgp` and ServiceNow incidents \u2014 it doesn't touch anything else. The guide doesn't say what the specific fixed-menu fixes are beyond \"one fix on one end.\"",
+     "tool_ok": true,
+     "tools": [
+      [
+       "Describe for an Agent",
+       {
+        "what": "workflow",
+        "which": "Diagnose Fabric BGP Outage"
+       }
+      ],
+      [
+       "Describe for an Agent",
+       {
+        "what": "list",
+        "which": "all"
+       }
+      ]
+     ],
+     "missing": [],
+     "forbidden": [],
+     "answered": true,
+     "pass": true
+    },
+    {
+     "n": 4,
+     "request": "Where does Rotate AWS VPN Key wait for a person?",
+     "session": "21e320da-2e74-461d-8985-6a43e6f736c9",
+     "state": "complete",
+     "seconds": 20.5,
+     "usage": {
+      "in": 18191,
+      "out": 652
+     },
+     "answer": "Rotate AWS VPN Key has exactly one place where it stops for a person, and it's at the very end of the line (step 12, \"where it stops\"), not partway through the rotation itself.\n\nThe task is `f0`, a Work Center task titled \"Rotate AWS VPN Key did not finish: check the job,\" shown in step 12. It's reached only after something has already gone wrong somewhere earlier in the run \u2014 the deployment or tunnel couldn't be read, the precheck found the tunnel not up, the render failed, a step failed before or after the key was written, the rollback happened, or Verify's checks didn't pass or couldn't run. Whichever of those failure paths is taken, they all funnel into this one Work Center task, which displays the job's `error` and `step` variables so a person can see what happened. The card has Seen/Seen buttons and no group restriction, so anyone who can open it can acknowledge it; after that the job finishes.\n\nSo in short: the workflow doesn't pause mid-rotation to ask a human for input or approval \u2014 the rotation runs straight through on its own (new key to Vault/Secrets Manager, strongSwan reload, router push under a revert timer, prune, then Verify's checks). The only human stop is a notification-style task at the end, and only if the run failed or didn't pass verification.",
+     "tool_ok": true,
+     "tools": [
+      [
+       "Describe for an Agent",
+       {
+        "what": "workflow",
+        "which": "Rotate AWS VPN Key"
+       }
+      ],
+      [
+       "Describe for an Agent",
+       {
+        "what": "list",
+        "which": "all"
+       }
+      ]
+     ],
+     "missing": [],
+     "forbidden": [],
+     "answered": true,
+     "pass": true
+    },
+    {
+     "n": 5,
+     "request": "What inputs does Add Branch VLAN take?",
+     "session": "5f7aa421-3019-4b54-968f-ac099dcfb3d2",
+     "state": "complete",
+     "seconds": 20.5,
+     "usage": {
+      "in": 15906,
+      "out": 559
+     },
+     "answer": "Add Branch VLAN takes four inputs, all required:\n\n- **`change_request`** \u2014 a flexible-typed field (string, number, object, boolean, etc.) controlling whether a ServiceNow standard change is opened around the work; the guide doesn't spell out the exact expected shape beyond that it's checked by the input gate.\n- **`switch_override`** (string) \u2014 optionally names the specific switch node to configure; if not given, the workflow defaults the switch to `<branch>-sw01`.\n- **`branch`** (string) \u2014 identifies the branch the VLAN is being added for; it's used to build the switch name, the group slug (`<branch>-user`), and site lookups in NetBox.\n- **`vlan_name`** (string) \u2014 the name to give the new VLAN when it's reserved and created in NetBox.\n\nAll four are validated up front by the workflow's \"input gate\" (step 1) against their schema before anything runs; if any input is refused there, the job ends immediately with nothing sent to a device.",
+     "tool_ok": true,
+     "tools": [
+      [
+       "Describe for an Agent",
+       {
+        "what": "list",
+        "which": "all"
+       }
+      ],
+      [
+       "Describe for an Agent",
+       {
+        "what": "workflow",
+        "which": "Add Branch VLAN"
+       }
+      ]
+     ],
+     "missing": [],
+     "forbidden": [],
+     "answered": true,
+     "pass": true
+    },
+    {
+     "n": 6,
+     "request": "What does Launch Rockets do?",
+     "session": "34a8ad40-bf09-456d-a0a9-550c4acbd8fb",
+     "state": "complete",
+     "seconds": 8.3,
+     "usage": {
+      "in": 6243,
+      "out": 171
+     },
+     "answer": "There's no workflow named \"Launch Rockets\" on this Platform. The Platform's stored list of 29 workflows does not include any such name, so it cannot say what it does.",
+     "tool_ok": true,
+     "tools": [
+      [
+       "Describe for an Agent",
+       {
+        "what": "list",
+        "which": "all"
+       }
+      ]
+     ],
+     "missing": [],
+     "forbidden": [],
+     "answered": true,
+     "pass": true
+    },
+    {
+     "n": 7,
+     "request": "What did job effa08d4c7ef43d4b7759447 do?",
+     "session": "051b30ad-75ec-412d-96a0-3a502b85063c",
+     "state": "complete",
+     "seconds": 16.5,
+     "usage": {
+      "in": 5035,
+      "out": 603
+     },
+     "answer": "This job ran a **Describe Workflow** request on behalf of an on-call engineer, asking \"What does Diagnose Fabric BGP Outage do?\" It completed successfully in 26 min 54 s, running 13 of 18 tasks through 4 of its 5 steps.\n\nHere's the path it took:\n\n1. **The input gate** \u2014 validated the inputs (workflow name); they checked out valid, so it proceeded.\n2. **The read** \u2014 using the read-only service account (platform-describe), it fetched the Platform's own stored copy of the \"Diagnose Fabric BGP Outage\" workflow. This read succeeded (exited 0).\n3. **The guide** \u2014 it assembled the Markdown guide and a one-line summary from what it read.\n4. **The card** \u2014 it built a Work Center card (a page with the guide and one button, nothing to run), which took the bulk of the time (26 min 50 s of the total run).\n\nThe job stopped after step 4, never reaching **step 5** (\"where it stops\" \u2014 the no-match/failure path), since nothing went wrong.\n\n**What it published:** the job set `workflow` to \"Diagnose Fabric BGP Outage,\" along with a full `guide` and `described` object, and an `outcome` line summarizing that workflow as: *\"Diagnose Fabric BGP Outage: 116 tasks in 12 steps, 2 stops for a person.\"* No `error` was recorded \u2014 the run completed cleanly with no warnings noted.",
+     "tool_ok": true,
+     "tools": [
+      [
+       "Describe for an Agent",
+       {
+        "what": "job",
+        "which": "effa08d4c7ef43d4b7759447"
+       }
+      ]
+     ],
+     "missing": [],
+     "forbidden": [],
+     "answered": true,
+     "pass": true
+    },
+    {
+     "n": 8,
+     "request": "Does Push Configuration with Approval change devices, and what stops it?",
+     "session": "65d5f030-654c-4eb2-b2ab-8956e7127a6e",
+     "state": "complete",
+     "seconds": 20.6,
+     "usage": {
+      "in": 13561,
+      "out": 862
+     },
+     "answer": "Yes \u2014 **Push Configuration with Approval** does change devices. It pushes operator-supplied configuration lines to one inventory node through Gateway 5 and then saves the running configuration, making it the designated write path for compliance remediation. The run is 28 tasks across 8 steps, with exactly one stop for a person.\n\nHere's the order it follows: it first validates the three required inputs (`device`, `reason`, `config`) \u2014 a bad input ends the job immediately with nothing sent. It then builds a selector for the one target node and prepares a summary of the device, reason and the exact config lines. That's where it stops and waits: a Work Center approval task titled \"Approve configuration push,\" showing the lines and the device, with Approve/Reject buttons open to anyone who can see the task (no group restriction).\n\n- If **rejected**, nothing is pushed and the job ends in error (`changed = false (rejected)`).\n- If **approved**, it sends the lines through Gateway 5's `sendConfig`. If the device isn't in inventory, or the Gateway can't apply the config, the job ends there as \"not applied\" or \"no such device,\" each setting `changed = false`.\n- If the push succeeds, it reads the device's own reply to check whether any line was refused. If a line was refused, it stops with `changed = false (lines refused)` and skips the save. If the device's reply can't even be checked, that's also treated as not applied.\n- Only if every line is accepted does it move to save the running configuration (Gateway `sendCommand`). If the save fails, the job still ends but marks `changed = true`; if the save succeeds, it likewise ends with `changed = true`.\n\nSo the only thing that stops it mid-run is that one Work Center approval; everything else is automatic branching based on whether the device exists, accepts the config, and the save succeeds. The guide shows no published `error` variable for this workflow.",
+     "tool_ok": true,
+     "tools": [
+      [
+       "Describe for an Agent",
+       {
+        "what": "list",
+        "which": "all"
+       }
+      ],
+      [
+       "Describe for an Agent",
+       {
+        "what": "workflow",
+        "which": "Push Configuration with Approval"
+       }
+      ]
+     ],
+     "missing": [],
+     "forbidden": [],
+     "answered": true,
+     "pass": true
+    }
+   ]
+  }
+ }
+}

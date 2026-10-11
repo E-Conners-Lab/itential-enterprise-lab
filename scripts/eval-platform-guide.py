@@ -152,8 +152,11 @@ def cases(p: Platform) -> list:
         {"n": 5, "request": "What inputs does Add Branch VLAN take?", "what": ["workflow"],
          "facts": sorted(vlan["inputSchema"]["properties"])[:3], "none": []},
         {"n": 6, "request": "What does Launch Rockets do?", "what": ["workflow", "list"],
+         # every honest way of saying it is not there (the twin said "does not include ... isn't there", 2026-10-11)
          "facts": [["no workflow", "not on this Platform", "no such", "does not exist", "doesn't exist", "could not find",
-                    "couldn't find", "not find", "isn't a workflow", "is not a workflow", "not listed", "no match"]],
+                    "couldn't find", "not find", "isn't a workflow", "is not a workflow", "not listed", "no match",
+                    "does not include", "doesn't include", "not include", "isn't there", "is not there", "not there",
+                    "cannot describe", "can't describe", "nothing called", "no entry", "not among"]],
          "none": ["step 1", "Step 1"]},
         {"n": 8, "request": "Does Push Configuration with Approval change devices, and what stops it?", "what": ["workflow"],
          "facts": [["Work Center", "approv"], ["push", "send", "change"]], "none": []},
@@ -193,17 +196,44 @@ def score(case: dict, text: str, tools: list, state: str) -> dict:
             "answered": answered, "pass": tool_ok and not missing and not forbidden and answered}
 
 
+def rescore(path: Path, all_cases: list) -> int:
+    """The stored answers judged again with the current case definitions (a judge made stricter or wider); a job case
+    whose id has moved on keeps its stored verdict. Writes <file>-rescored.json beside the original."""
+    stored = json.loads(path.read_text())
+    by_n = {c["n"]: c for c in all_cases}
+    for agent, block in stored["agents"].items():
+        print(f"\n== {agent} (rescored)")
+        for row in block["cases"]:
+            case = by_n.get(row["n"])
+            if case is None or (case.get("job") and case["job"] not in row["request"]):
+                print(f"{'PASS' if row['pass'] else 'FAIL'}  case {row['n']}: kept (no current definition for it)")
+                continue
+            s = score(case, row["answer"], [tuple(t) for t in row["tools"]], row["state"])
+            row.update(s)
+            print(f"{'PASS' if s['pass'] else 'FAIL'}  case {row['n']}: {row['request'][:60]!r}"
+                  + ("" if s["pass"] else f" (missing {s['missing']} forbidden {s['forbidden']})"))
+        block["passed"] = sum(1 for r in block["cases"] if r["pass"])
+        print(f"{agent}: {block['passed']}/{block['of']}")
+    out = path.with_name(path.stem + "-rescored.json")
+    out.write_text(json.dumps(stored, indent=1))
+    print(f"written {out.relative_to(ROOT) if out.is_relative_to(ROOT) else out}")
+    return 0 if all(a["passed"] == a["of"] for a in stored["agents"].values()) else 1
+
+
 def main(argv: list) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--platform", default="https://itential.lab.internal")
     ap.add_argument("--agents", default="platform-guide,platform-guide-local")
     ap.add_argument("--cases", default="", help="comma-separated case numbers (default: all)")
     ap.add_argument("--timeout", type=int, default=600, help="seconds per session")
+    ap.add_argument("--rescore", default="", help="re-judge the answers stored in this results file (no new sessions)")
     args = ap.parse_args(argv)
     e = env()
     p = Platform(args.platform, e.get("ITENTIAL_ADMIN_USER", "admin@itential"), e["ITENTIAL_ADMIN_PASSWORD"])
     wanted = {int(x) for x in args.cases.split(",") if x.strip()} if args.cases else None
     all_cases = [c for c in cases(p) if wanted is None or c["n"] in wanted]
+    if args.rescore:
+        return rescore(Path(args.rescore), all_cases)
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     results = {"platform": args.platform, "when": stamp, "tool": TOOL, "agents": {}}
     for agent in [a.strip() for a in args.agents.split(",") if a.strip()]:
