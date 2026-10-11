@@ -495,10 +495,10 @@ platform_describe:
     name: itential-enterprise-lab
     description: "platform-describe's repository (ADR 0080): this lab, public, read at the pinned commit"
     url: https://github.com/E-Conners-Lab/itential-enterprise-lab.git
-    # 8213097 = main after #168: the step chart goes into the card as a data-URI image (Work Center strips inline
-    # SVG); cc929c4 (after #165/#166) drew it inline, dc1ee74 (after #163) was the first commit the Gateway could
-    # run. The pin moves one merge behind the code, by design (the test asks for a commit on main).
-    reference: "82130972bea22bc43cc9ec9d817e2e527de9117d"
+    # 4e57a54 = main after #170: Describe Job (action job: the run laid over the steps); 8213097 (after #168) put the
+    # chart on the card as an image, dc1ee74 (after #163) was the first commit the Gateway could run. The pin moves
+    # one merge behind the code, by design (the test asks for a commit on main).
+    reference: "4e57a5480645dcbffa96030e8a77458081c8a9e5"
   services:
     - name: platform-describe
       description: "The Platform's own copy of a workflow, described by the guide's walker: reads only (ADR 0080)"
