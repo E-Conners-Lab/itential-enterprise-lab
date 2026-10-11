@@ -1,6 +1,7 @@
-"""platform-describe (ADR 0080): the Gateway service that describes a workflow from the Platform's own copy. A fake
-Platform (http.server in a thread) answers /login and the Studio workflow list with a committed document, and the
-script is run as the Gateway runs it: a subprocess, the credential in the environment, one JSON line out."""
+"""platform-describe (ADR 0080): the Gateway service that describes a workflow from the Platform's own copy, or a job
+from its record. A fake Platform (http.server in a thread) answers /login, the Studio workflow list with a committed
+document and one job route with a simulated run, and the script is run as the Gateway runs it: a subprocess, the
+credential in the environment, one JSON line out."""
 
 from __future__ import annotations
 
@@ -20,6 +21,17 @@ ROOT = Path(__file__).resolve().parent.parent
 SCRIPT = ROOT / "itential" / "workflows" / "platform_describe.py"
 ROTATE = json.loads((ROOT / "itential" / "workflows" / "rotate-aws-vpn-key.json").read_text())
 PASSWORD = "not-a-real-password-test-only"
+JOB_ID = "6d43c80a53b14be58f8f8c8d"
+
+
+def _job() -> dict:
+    """A finished run of Rotate AWS VPN Key, as test_describe_job simulates one (the same shape a job record has)."""
+    from test_describe_job import simulate
+
+    return simulate(ROTATE, variables={"outcome": "rotated"})
+
+
+JOB = _job()
 
 
 class FakePlatform(BaseHTTPRequestHandler):
@@ -53,6 +65,10 @@ class FakePlatform(BaseHTTPRequestHandler):
             wanted = urllib.parse.unquote(self.path.split("equals[name]=", 1)[1]) if "equals[name]=" in self.path else ""
             items = [ROTATE] if wanted == ROTATE["name"] else []
             return self._send(200, {"items": items, "total": len(items)})
+        if self.path == "/operations-manager/jobs/" + JOB_ID:
+            return self._send(200, {"data": JOB, "message": "found"})
+        if self.path.startswith("/operations-manager/jobs/"):
+            return self._send(404, {"message": "Job not found"})
         self._send(404, {"message": "no such route"})
 
 
@@ -117,9 +133,30 @@ def test_a_missing_credential_reads_nothing(platform: str) -> None:
     assert FakePlatform.seen == []
 
 
-def test_job_is_not_built_yet(platform: str) -> None:
-    code, out = run(platform, "--action", "job", "--id", "abc")
-    assert code == 1 and "decision 6" in out["message"]
+def test_a_job_is_described_from_its_record_and_the_stored_workflow(platform: str) -> None:
+    FakePlatform.seen.clear()
+    code, out = run(platform, "--action", "job", "--id", JOB_ID)
+    assert code == 0 and out["ok"] is True
+    assert out["name"] == "Rotate AWS VPN Key, job 6d43c80a" and out["workflow"] == "Rotate AWS VPN Key" and out["job"] == JOB_ID
+    assert out["status"] == "complete" and out["tasks"] == 106 and out["steps"] == 12 and out["ran_steps"] >= 1
+    assert out["markdown"].startswith("# Rotate AWS VPN Key: job 6d43c80a\n") and "still matches" in out["markdown"]
+    assert "Read from the Platform's job record at " in out["markdown"] and "as svc-copilot" in out["markdown"]
+    assert out["brand"] == "the job, described" and '<img class="chart"' in out["html"]
+    paths = [call[1] for call in FakePlatform.seen if call[0] == "GET"]
+    assert paths == ["/operations-manager/jobs/" + JOB_ID, "/automation-studio/workflows?equals[name]=Rotate%20AWS%20VPN%20Key"]
+    assert PASSWORD not in json.dumps(out)
+
+
+def test_no_such_job_is_an_answer(platform: str) -> None:
+    code, out = run(platform, "--action", "job", "--id", "0" * 24)
+    assert code == 1 and out == {"ok": False, "message": "no job %s on this Platform" % ("0" * 24)}
+
+
+def test_a_bad_job_id_never_reaches_the_platform(platform: str) -> None:
+    FakePlatform.seen.clear()
+    code, out = run(platform, "--action", "job", "--id", "abc; drop")
+    assert code == 1 and "24 hexadecimal characters" in out["message"]
+    assert all(call[1] == "/login" for call in FakePlatform.seen), "only the login was sent"
 
 
 def test_only_get_and_the_login_post_can_leave_the_script() -> None:
