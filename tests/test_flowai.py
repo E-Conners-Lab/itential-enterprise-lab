@@ -42,12 +42,15 @@ def test_llm_section_pins_providers_and_models(versions: dict) -> None:
         "the inference host is reached by name, not by address"
     )
     assert re.search(r":\d|:[a-z0-9]+-", mac["model"]), "Ollama model must carry a tag"
-    # ADR 0079: the Qwen family ignores /no_think in the prompt; only Ollama's think:false, carried as
-    # the profile model's modelVariables, keeps a session from paying for reasoning traces (ADR 0061
-    # measured 6-8x on the answer turn). A Qwen pin without it would be the ADR 0060 regression again.
+    # ADR 0079 as built (2026-10-11): the Qwen family ignores /no_think in the prompt, so the think flag
+    # travels as the profile model's modelVariables - and it is TRUE. With it false, Ollama 0.40.2's qwen3.8
+    # renderer let the model write "answer\n</think>\n\nanswer" on the turn after a tool result, which the
+    # Platform showed verbatim; with it true the reasoning has its own field and the content is clean.
+    # The flag must be present either way: the Platform forwards it, and the drift check compares it.
     if mac["model"].startswith("qwen"):
-        assert mac.get("model_variables", {}).get("think") is False, (
-            "a Qwen model on ollama-mac needs model_variables: {think: false} (ADR 0079)"
+        assert mac.get("model_variables", {}).get("think") is True, (
+            "a Qwen model on ollama-mac needs model_variables: {think: true} (ADR 0079 as built): with "
+            "think false the reply after a tool result carries a literal </think> and the answer twice"
         )
     # The twins are judged by exact behaviour (a refusal with no tool call, one fix from a menu), and at the
     # model's default temperature qwen3.8 refused on dev and pushed on production from the same prompt.

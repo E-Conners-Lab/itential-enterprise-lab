@@ -291,12 +291,16 @@ re-running `scripts/model-bakeoff.py`, which scores candidates on the tool-call 
 incidents here rather than on a leaderboard.
 
 That lever exists now. A Model Registry profile carries an optional **Model Variables** JSON per enabled
-model, which the Platform passes to the provider's request as-is, so `{"think": false}` reaches Ollama
-from an agent session. The twins run `qwen3.8:27b` that way (ADR 0079, `model_variables` on the
-`ollama-mac` profile in `itential/versions.yaml`); `scripts/model-bakeoff.py --no-think` measures the
-same flag. The twins no longer start with `/no_think`: once the flag is sent, that line made qwen3.8 emit a
-think-close token that the streamed reply showed as a literal `</think>`; a gemma fallback would need it
-back. The variables count as drift: if a session starts emitting thinking traces again, the
+model, which the Platform passes to the provider's request as-is, so the `think` flag and a top-level
+`temperature` reach Ollama from an agent session (a nested `options` object does not: the Platform
+replaces it with its own). The twins run `qwen3.8:27b` with `{"think": true, "temperature": 0}` (ADR 0079
+as built, `model_variables` on the `ollama-mac` profile in `itential/versions.yaml`). Thinking is on
+because with it off, Ollama 0.40.2's qwen3.8 renderer lets the model write the answer, a literal
+`</think>` and the answer again on the turn after a tool result, and which prompts trigger it changes
+line by line; with it on, the reasoning has its own field (the "Agent Reasoning" filter in Agent
+Sessions) and the conclusion is clean. The twins no longer start with `/no_think` either; that line
+leaked the same tag on the first turn. A gemma fallback would need the directive back and the flag off.
+The variables count as drift: if a session starts emitting thinking traces again, the
 profile has lost them, and `ansible/playbooks/flowai.yml` re-PATCHes it (which reissues the model id and
 re-binds every agent, as the chapter's next trap explains).
 
