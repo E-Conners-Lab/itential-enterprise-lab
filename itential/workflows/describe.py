@@ -483,9 +483,10 @@ def step_chart(doc: dict, steps_: list, where: dict, palette: dict | None = None
         return out_
 
     cx = x0 + BOX_W / 2
-    out = ['<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 %d %d" width="100%%" role="img" '
+    # an explicit size: as an <img> the browser needs the intrinsic size to scale the picture to the card's width
+    out = ['<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 %d %d" width="%d" height="%d" role="img" '
            'aria-label="the steps of %s" font-family="IBM Plex Sans, Helvetica Neue, Arial, sans-serif" font-size="13">'
-           % (width, height, _html.escape(doc["name"])),
+           % (width, height, width, height, _html.escape(doc["name"])),
            '<defs><marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">'
            '<path d="M0 0L10 5L0 10z" fill="context-stroke"/></marker></defs>']
     # start and done
@@ -559,10 +560,21 @@ def _inline(text: str) -> str:
     return out
 
 
-def html_guide(markdown: str, svg: str = "") -> str:
+def chart_image(svg: str, alt: str) -> str:
+    """The chart as an <img> with a data URI. Work Center's sanitizer strips an inline <svg> from a card (measured on
+    6.6.0, 2026-10-11: the figure stayed, the drawing went) but keeps an image, which is how the cards' own mark goes
+    in (build.py outage_card_image)."""
+    import base64
+    import html as _html
+
+    return '<img class="chart" alt="%s" style="width:100%%;height:auto" src="data:image/svg+xml;base64,%s">' % (
+        _html.escape(alt, quote=True), base64.b64encode(svg.encode()).decode())
+
+
+def html_guide(markdown: str, svg: str = "", name: str = "") -> str:
     """The guide as HTML, from the Markdown this file writes (headings, bullets, tables, a Mermaid block). The Mermaid
-    block becomes the step chart (`svg`, inline: a card cannot load scripts) when one is given, else its source in a
-    <pre>."""
+    block becomes the step chart (`svg`, as an image: a card cannot load scripts and drops inline SVG) when one is
+    given, else its source in a <pre>."""
     lines = markdown.splitlines()
     out, i, in_list = [], 0, False
 
@@ -577,7 +589,7 @@ def html_guide(markdown: str, svg: str = "") -> str:
         if ln.startswith("```mermaid"):
             close_list()
             j = lines.index("```", i + 1)
-            out.append('<figure class="chart">%s</figure>' % svg if svg
+            out.append('<figure class="chart">%s</figure>' % chart_image(svg, "the steps of " + name) if svg
                        else '<pre class="diagram">%s</pre>' % _inline("\n".join(lines[i + 1:j])))
             i = j + 1
             continue
@@ -630,7 +642,7 @@ def describe_document(data: dict) -> dict:
                                                   "%d stop%s for a person" % (manual, "" if manual == 1 else "s"))
     return {"ok": True, "name": doc["name"], "tasks": n_tasks, "steps": len(steps_), "manual": manual,
             "summary": summary, "step_titles": [t for t, _ in steps_], "markdown": md, "svg": svg,
-            "html": html_guide(md, svg)}
+            "html": html_guide(md, svg, doc["name"])}
 
 
 def describe_stdin() -> int:
