@@ -14,3 +14,15 @@
     wai_ids: >-
       {{ dict(wai_agents.json.data['items'] | map(attribute='name')
               | zip(wai_agents.json.data['items'] | map(attribute='_id'))) }}
+
+# The dev overlay creates only the local twins (flowai.yml narrows the profiles to the Mac's Ollama, ADR 0063), so on
+# dev a marker that names a Claude agent is filled with its twin's UUID (`<name>-local`) when the agent itself is
+# absent (ADR 0081 decision 6: Ask Platform Guide runs platform-guide-local there). Production keeps every agent's own.
+- name: On the dev overlay, a Claude agent's marker takes its local twin
+  ansible.builtin.set_fact:
+    wai_ids: "{{ wai_twins | combine(wai_ids) }}"
+  vars:
+    wai_local: "{{ wai_ids | select('match', '.*-local$') | list }}"
+    wai_twins: >-
+      {{ dict(wai_local | map('regex_replace', '-local$', '') | zip(wai_local | map('extract', wai_ids))) }}
+  when: dev_overlay | default(false) | bool

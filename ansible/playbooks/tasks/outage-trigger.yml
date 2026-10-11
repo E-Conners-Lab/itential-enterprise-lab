@@ -5,8 +5,9 @@
 # (itential/workflows/build.py INPUT_GATES), so a malformed call is refused with a 400 before it becomes a job; an
 # existing trigger's schema is PATCHed when it differs (Operations Manager updates are PATCH). The automation follows
 # the workflow's id, which every import changes. Caller sets `otr_key`, the loop's key in versions.yaml workflows and
-# operations_manager (diagnose_aws_vpn_outage, diagnose_fabric_bgp_outage). Needs: login, platform_local, workflows,
-# operations_manager.
+# operations_manager (diagnose_aws_vpn_outage, diagnose_fabric_bgp_outage; ask_platform_guide reuses it with the Slack
+# bot's endpoint, ADR 0081 decision 6: `endpoint.description` then names the caller). Needs: login, platform_local,
+# workflows, operations_manager.
 - name: Outage loop - workflows and automations now
   ansible.builtin.uri:
     url: "{{ platform_local }}/{{ item }}"
@@ -86,7 +87,9 @@
     body_format: json
     body:
       name: "{{ otr.endpoint.name }}"
-      description: "The alert relay (observability/alert-relay) posts the alert's checked fields here"
+      description: >-
+        {{ otr.endpoint.description
+           | default("The alert relay (observability/alert-relay) posts the alert's checked fields here") }}
       type: endpoint
       enabled: true
       actionType: automations

@@ -412,6 +412,14 @@ operations_manager:
     automation: Diagnose Fabric BGP Outage
     description: "The fabric BGP outage loop: both ends read, incident, agent diagnosis, approved fix (R10 + A6)"
     endpoint: {name: Diagnose Fabric BGP Outage from the alert relay, route: diagnose-fabric-bgp-outage}
+  # ADR 0081 decision 6: the Slack front door. The bot posts the question here as the channel's service account; the
+  # answer lands on a Work Center card the bot reads back into the thread. Both tiers: dev's import fills the agent
+  # marker with the local twin (tasks/workflow-agent-ids.yml), production's with platform-guide itself.
+  ask_platform_guide:
+    automation: Ask Platform Guide
+    description: "Asks platform-guide what a workflow does or what a job did; the answer on a Work Center card (ADR 0081)"
+    endpoint: {name: Ask Platform Guide from Slack, route: ask-platform-guide,
+               description: "The Slack bot posts the question here as the channel's service account"}
   # R4 (owner decisions 2026-10-04): monthly and unattended, no card. Operations Manager repeats by minute, hour, day or
   # week only (no month), so this runs every day and the workflow rotates on the 1st (UTC) only; off the hour, so it
   # never starts with Tear Down Expired AWS VPN (top of the hour) or Check AWS Drift (07:00)
@@ -541,6 +549,7 @@ workflows:
   describe_workflow: Describe Workflow # ADR 0080: the Platform's own copy of a workflow, described by the guide's walker; reads only
   describe_job: Describe Job # ADR 0080 decision 6: one job's run laid over its workflow's steps; reads only
   describe_for_agent: Describe for an Agent # ADR 0081: the agent's one tool - the list, a workflow or a job, no card; reads only
+  ask_platform_guide: Ask Platform Guide # ADR 0081 decision 6: the Slack front door - platform-guide answers, on a card and published
 
 # The names before ADR 0067. The play deletes each one it still finds on a Platform, after importing the
 # renamed documents, so a replay leaves no stale copy behind. Nothing may reuse one of these names.

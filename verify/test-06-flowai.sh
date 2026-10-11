@@ -581,6 +581,34 @@ c26() {
 check "S16.6 platform-guide describes ${WF_DESCRIBE} through ${WF_DESCRIBE_AGENT} only, with the document's own counts" c25
 check "S16.7 platform-guide-local describes ${WF_DESCRIBE} through ${WF_DESCRIBE_AGENT} only, with the document's own counts" c26
 
+# --- S16.8 (ADR 0081 decision 6): the Slack front door - Ask Platform Guide from its endpoint, as the bot runs it: the
+# answer card found by the job id in Work Center, read, closed with Seen; the job publishes the answer with the
+# document's own counts. One more platform-guide session on production (the twin on dev: 1-2 minutes).
+WF_ASK=$(wf_name ask_platform_guide)
+WC_SEARCH='{"filters":[],"limit":25,"skip":0,"sort":{"field":"createdAt","order":"desc"}}'
+c27() {
+  local job card body out sid
+  job=$(iap -X POST "${PLATFORM}/operations-manager/triggers/endpoint/ask-platform-guide" -d "{\"request\":\"What does ${WF_DESCRIBE} do, and how many tasks and steps does it have?\"}" | ${PY} -c 'import sys,json;print((json.load(sys.stdin).get("data") or {}).get("_id",""))')
+  [ -n "$job" ] || { echo "the endpoint ask-platform-guide started no job"; return 1; }
+  for _ in $(seq 1 60); do
+    sleep 5
+    card=$(iap -X POST "${PLATFORM}/work-center-service/work-items/search" -d "$WC_SEARCH" | ${PY} -c "import sys,json;print(next((i['id'] for i in json.load(sys.stdin).get('data',[]) if '${job}' in json.dumps(i.get('execution') or i)),''))")
+    [ -n "$card" ] && break
+  done
+  [ -n "$card" ] || { echo "no answer card for job ${job} within 5 minutes"; return 1; }
+  body=$(iap "${PLATFORM}/work-center-service/work-items/${card}/variables/incoming" | ${PY} -c 'import sys,json;print((json.load(sys.stdin).get("incoming") or {}).get("body",""))')
+  iap -X PATCH "${PLATFORM}/work-center-service/work-items/${card}/claim" -d '{}' -o /dev/null
+  iap -X PATCH "${PLATFORM}/work-center-service/work-items/${card}/complete" -d '{"finishState":"success","variables":{}}' -o /dev/null
+  sleep 6
+  out=$(iap "${PLATFORM}/operations-manager/jobs/${job}" | ${PY} -c 'import sys,json;d=json.load(sys.stdin)["data"];v=d.get("variables",{});a=v.get("agent_result") or {};print(d.get("status"),"|",v.get("outcome"),"|",a.get("sessionId","") if isinstance(a,dict) else "","|",(v.get("answer") or "")[:400].replace("\n"," "))')
+  sid=$(echo "$out" | cut -d'|' -f3 | tr -d ' '); [ -n "$sid" ] && count_tokens "$sid"
+  echo "$out" | grep -q "^complete | answered |" || { echo "job ${job}: ${out}"; return 1; }
+  echo "$out" | grep -qE "\b${PG_TASKS}\b" && echo "$out" | grep -qE "\b${PG_STEPS}\b" || { echo "the answer did not carry ${PG_TASKS} tasks / ${PG_STEPS} steps: ${out}"; return 1; }
+  echo "$body" | grep -q "Platform guide agent" && echo "$body" | grep -q "Answered by" || { echo "the card is not the answer card"; return 1; }
+  echo "job ${job}: card ${card} read and closed; ${out}"
+}
+check "S16.8 ${WF_ASK} from the Slack endpoint: platform-guide's answer on the card the bot reads, published with the document's own counts" c27
+
 # cleanup: close the verify's incident; restore the hostname if a failed run left the drift behind
 if [ -n "$INC_SYS" ]; then sn -X PATCH "$SN/incident/${INC_SYS}" -d '{"state":"7","close_code":"Solution provided","close_notes":"closed by verify/test-06-flowai.sh"}' -o /dev/null; echo "closed ${INC_NUM}"; fi
 for s in ${TD_INCS}; do sn -X PATCH "$SN/incident/${s}" -d '{"state":"7","close_code":"Solution provided","close_notes":"closed by verify/test-06-flowai.sh"}' -o /dev/null; done

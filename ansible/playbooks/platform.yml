@@ -248,6 +248,12 @@
       vars: {otr_key: diagnose_fabric_bgp_outage}
       when: not (dev_overlay | default(false) | bool)
 
+    # ADR 0081 decision 6: the Slack front door - Ask Platform Guide's automation and the endpoint the bot posts the
+    # question to, on both tiers (dev's import filled the agent marker with the local twin)
+    - name: Ask Platform Guide - its automation and the Slack bot's endpoint trigger
+      ansible.builtin.include_tasks: tasks/outage-trigger.yml
+      vars: {otr_key: ask_platform_guide}
+
     # ADR 0070: the tier that does not run the AWS VPN keeps no way to start it - no trigger, no automation, no schedule
     - name: AWS VPN retired on this tier - its triggers and automations removed
       ansible.builtin.include_tasks: tasks/aws-vpn-retire.yml

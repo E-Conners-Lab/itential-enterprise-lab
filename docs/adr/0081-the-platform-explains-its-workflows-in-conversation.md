@@ -1,11 +1,12 @@
 # 0081 — The Platform explains its workflows in conversation: platform-guide, one read-only tool over the describer
 
-- **Status:** proposed (2026-10-11); built in #174, pinned by #175, converged on dev and production the same day; the eval set measured on both tiers (below): Claude 8/8 on production, the twin 8/8 on dev and on production once the judge accepted every honest way of saying a workflow is not there
+- **Status:** proposed (2026-10-11); built in #174, pinned by #175, converged on dev and production the same day; the eval set measured on both tiers (below): Claude 8/8 on production, the twin 8/8 on dev and on production once the judge accepted every honest way of saying a workflow is not there; decision 6 (the Slack front door's workflow, `Ask Platform Guide`) added 2026-10-11
 - **Date:** 2026-10-11
 - **Amends:** ADR 0080 decision 7 (the agents, "after"): this is that decision, built
 - **Related:** ADR 0046 (the agent fleet, a Claude agent with a local twin each), ADR 0075 (the agents infer and
   Itential checks them: here the opposite, by design), ADR 0079 (the local model), ADR 0080 (the describer), the
-  NetClaw exploration (Slack as the front door, not yet built)
+  NetClaw exploration (Slack as the front door), the department-agents delivery (the Slack bot this front door
+  rides: one channel, one agent, one service account, the answer on a Work Center card)
 
 ## Context
 
@@ -58,8 +59,20 @@ What was measured before deciding:
    fact is in the answer, nothing forbidden is, the only tool called is the tool, and the session completed. The
    verify (`test-06-flowai.sh`, S16.6 and S16.7) runs one case on each agent with the counts from the committed
    document.
-5. **Where it is reached.** Agent Sessions and the API now (the eval and the verify use the API); NetClaw in Slack
-   later, as ADR 0080 decision 7 said. Nothing is exposed through MCP in this ADR.
+5. **Where it is reached.** Agent Sessions and the API (the eval and the verify use the API), and Slack through
+   decision 6. Nothing is exposed through MCP in this ADR.
+6. **The Slack front door: `Ask Platform Guide`** (added 2026-10-11). The owner's Slack bot (department-agents:
+   no language model in the bot, a channel maps to one agent and one service account, the answer comes back from a
+   Work Center card the bot finds by the job's id) is the front door NetClaw was going to be. The Platform side is
+   one more workflow of the lab's own: `request` (plain words, 1-2000 characters) as data behind the input gate;
+   `runAgent` of `platform-guide` as the Platform (the automation's group access decides who may ask, as it does
+   for the department Ask automations; the marker `__AGENT_ID:platform-guide__` is filled at import, and the dev
+   overlay fills it with the twin's id, since dev creates only the twins); the answer on a small branded card with
+   one button, laid out as the bot reads it (an eyebrow it drops, the answer's own lines, one foot line), and
+   published as `answer` with `outcome` and `error`. An agent that did not run still gets a card, so the asker
+   hears why. The automation `Ask Platform Guide` and the endpoint `ask-platform-guide` come from the same play task
+   the outage loops use, on both tiers. The bot's side is the delivery's: a channel entry, a service account in its
+   own group, and the automation's group access for that group.
 
 ## Consequences
 
@@ -71,6 +84,10 @@ What was measured before deciding:
 - One more agent and twin for the fleet verify to run; the twin costs no tokens, the Claude case costs one short
   session.
 - `Describe for an Agent` is a workflow like any other: it has a guide page, it is listed by the list it serves.
+- The answer in Slack is the agent's text as the Platform's own card holds it: the same words a person sees in
+  Work Center, nothing the bot adds. The card's `</think>` cut is the twin's known leak (ADR 0079), applied once.
+- The card is open to whoever can see Work Center items with no group, like the describe cards; the asker's
+  identity and group are on the automation and the trigger, where the Platform records them.
 
 ## Measured (2026-10-11, pin 02742f5)
 
