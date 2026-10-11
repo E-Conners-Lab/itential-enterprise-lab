@@ -84,6 +84,39 @@ def task(
     return t
 
 
+class _Step(str):
+    """A step marker inside a tasks dict literal (see `step`)."""
+
+
+def step(title: str) -> dict:
+    """A step marker in a tasks dict literal: the tasks after it, up to the next marker, belong to the step `title`.
+    `sectioned` folds the markers into each task's `description`, which is what the guide reads
+    (itential/workflows/describe.py, docs/workflows/); the canvas keeps the summaries. A title is written
+    `short: what it does` - the guide's diagram shows the short part, its headings the whole. `step("")` closes a step:
+    the tasks after it keep the description they came with (a section built elsewhere, already sectioned)."""
+    return {_Step(title): None}
+
+
+def sectioned(tasks: dict) -> dict:
+    """The tasks dict with its `step` markers folded into the tasks' descriptions (insertion order is the order)."""
+    out, title = {}, None
+    for key, t in tasks.items():
+        if isinstance(key, _Step):
+            title = str(key)
+            continue
+        if title:
+            t["description"] = title
+        out[key] = t
+    return out
+
+
+def stepped(tasks: dict, title: str, *ids: str) -> None:
+    """`step` for tasks added after the dict literal: the named tasks (every task of `tasks` when none is named) get the
+    step `title`."""
+    for tid in ids or list(tasks):
+        tasks[tid]["description"] = title
+
+
 # --- the canvas ------------------------------------------------------------------------------------------------
 # Every workflow reads top to bottom and is laid out from its transitions, not by hand (owner preference,
 # 2026-09-24). The x/y a task is given in this file is only a hint: x its order along the flow, y its lane (0 the
@@ -473,6 +506,7 @@ def with_input_gate(tasks: dict, transitions: dict, fields: dict, error_var: str
     tasks["9a0c"] = note("the inputs were refused",
                        "the inputs were refused before anything ran (see input_check for which input and why): "
                        "nothing was sent to a device", error_var, x=0)
+    stepped(tasks, "the input gate: every input checked against its schema before anything runs; a refusal ends the job with nothing sent", "9a0a", "9a0b", "9a0c", *ids)
     first = tr["workflow_start"]
     tr["workflow_start"] = t("", ids[0])
     for a, b in zip(ids, ids[1:] + ("9a0a",)):
@@ -714,7 +748,8 @@ def show_command_transitions() -> dict:
 
 # --- Count Devices in NetBox (S4.2): NetBox adapter page -> job variable device_count -----------
 def device_count() -> dict:
-    tasks = {
+    tasks = sectioned({
+        **step("the read: one page of devices from NetBox, the count published"),
         "1a": nbi(
             "dcim_devices_list",
             "One page of devices (count comes with it)",
@@ -722,7 +757,7 @@ def device_count() -> dict:
             x=0,
             outgoing={"response": "$var.job.devices"},
         ),
-    }
+    })
     return workflow(
         WF["device_count"],
         "Reads the NetBox device list through the lab-netbox Integration Model and returns its count (PID S4.2, S4f)",
@@ -735,7 +770,8 @@ def device_count() -> dict:
 
 # --- Get Device Software Version (S4.3): Gateway 5 send-command on one inventory node -> job variable output --
 def show_version() -> dict:
-    tasks = {
+    tasks = sectioned({
+        **step("the read: show version on the node through the Gateway"),
         "1a": task(
             "sendCommand",
             "GatewayManager",
@@ -748,7 +784,7 @@ def show_version() -> dict:
             {"result": "$var.job.show_version"},
             x=600,
         ),
-    }
+    })
     tasks["0a"], tasks["0b"] = selector("$var.job.device", x=-300)
     # ADR 0066: with Vault sealed the Gateway answers a JSON-RPC error ("Vault is sealed") and sendCommand still
     # finishes `success`, so the job used to end `complete` with the error object as its "show version" - a silent
@@ -761,6 +797,8 @@ def show_version() -> dict:
         x=900,
         y=-300,
     )
+    stepped(tasks, "the selector: the one inventory node, in the shape the Gateway wants", "0a", "0b")
+    stepped(tasks, "the answer checked: a Gateway error that finishes success is not a version", "2a", "2b")
     tr = chain("0a", "0b", "1a", "2a")
     tr["1a"]["2b"] = {"state": "error", "type": "standard"}  # a thrown Gateway error (404 unknown node)
     tr["2a"]["2b"] = {"state": "failure", "type": "standard"}
@@ -1137,7 +1175,8 @@ def journal_chain(
 
 
 def branch_vlan() -> dict:
-    tasks = {
+    tasks = sectioned({
+        **step("the ServiceNow change: optional; a standard change opened, scheduled and moved to Implement before the device work"),
         # optional ServiceNow change (S4b): a standard change from the PDI's VLAN template, assigned to
         # the Network group (the change model refuses every state move without one), moved
         # New -> Scheduled -> Implement before the device work, work-noted with the NetBox
@@ -1202,7 +1241,7 @@ def branch_vlan() -> dict:
             y=-800,
             to_job="change_state_implement",
         ),
-        # names and selectors: the switch is <branch>-sw01 unless switch_override names another node
+        **step("names and selectors: the switch is <branch>-sw01 unless switch_override names another node"),
         "0a": evaluate(
             "override given?", "job", "switch_override", "", "!=", "", x=-300, y=-200
         ),
@@ -1245,7 +1284,7 @@ def branch_vlan() -> dict:
             x=0,
             y=-400,
         ),
-        # idempotency: does the VLAN already exist in the branch?
+        **step("idempotency: does the VLAN already exist in the branch? then nothing changes"),
         "2a": nbi(
             "ipam_vlans_list",
             "VLAN by site + name",
@@ -1256,7 +1295,7 @@ def branch_vlan() -> dict:
             "already reserved?", "2a", "response", "body.count", ">", 0, x=1200
         ),
         "9a": flag("changed = false (no-op)", "false", "changed", x=1500, y=400),
-        # reservation: next free VID in the branch VLAN group, chosen on Gateway 5
+        **step("the reservation: the next free VID chosen on the Gateway runner, the VLAN created reserved in NetBox, the change work-noted"),
         "3a": nbi(
             "ipam_vlans_list",
             "VLANs already in the branch group",
@@ -1370,7 +1409,7 @@ def branch_vlan() -> dict:
             x=5450,
             y=-800,
         ),
-        # approval on the JSON form (ADR 0044): the fields are the instance object with status reserved
+        **step("the approval: the JSON form, pre-filled with the reserved instance"),
         "a3": num2str("vlan id as string", "$var.a2.return_data", x=4700, y=-200),
         "4a": form_task("approval", "$var.a9.textObject", x=7000, y=-200),
         "4c": evaluate(
@@ -1383,7 +1422,7 @@ def branch_vlan() -> dict:
             x=7300,
             y=-200,
         ),
-        # the stored instance once the switch is configured and NetBox says active (ADR 0043)
+        **step("the stored instance: what Lifecycle Manager keeps once the switch is configured and NetBox says active"),
         "7b": replace(
             "instance: status active",
             "$var.a8.replacedString",
@@ -1395,7 +1434,7 @@ def branch_vlan() -> dict:
         "7c": parse(
             "instance object (active)", "$var.7b.replacedString", x=9800, y=-200
         ),
-        # no-op path: the instance from the VLAN NetBox already has (vid, id, status from the search result)
+        **step("the no-op path: the instance from the VLAN NetBox already has"),
         "b3": jq(
             "existing vid",
             "$var.2a.response",
@@ -1421,7 +1460,7 @@ def branch_vlan() -> dict:
         ),
         "b6": num2str("existing vid as string", "$var.b3.return_data", x=2400, y=400),
         "b7": num2str("existing id as string", "$var.b4.return_data", x=2700, y=400),
-        # configure the switch
+        **step("the switch: the VLAN configured through the Gateway, the reply read for refused lines"),
         "5a": replace(
             "config: vid",
             "vlan __V__\n   name __N__",
@@ -1503,6 +1542,7 @@ def branch_vlan() -> dict:
             x=6450,
             y=-700,
         ),
+        **step("the close: the NetBox VLAN active, the change reviewed and closed, changed = true"),
         "6a": nbi(
             "ipam_vlans_partial_update",
             "NetBox VLAN active",
@@ -1548,7 +1588,7 @@ def branch_vlan() -> dict:
             to_job="change_state_closed",
         ),
         "7a": flag("changed = true", "true", "changed", x=6900, y=-200),
-        # rollback: remove the reservation; no transition to the end, so the job ends in error
+        **step("the rollback: the reservation removed; the job ends in error"),
         "8a": nbi(
             "ipam_vlans_destroy",
             "rollback: delete the NetBox reservation",
@@ -1557,7 +1597,7 @@ def branch_vlan() -> dict:
             y=400,
         ),
         "8b": flag("rolled_back = true", "true", "rolled_back", x=6600, y=400),
-    }
+    })
     tasks["1a"]["variables"]["outgoing"] = {"replacedString": "$var.job.switch"}
     tasks["7c"]["variables"]["outgoing"] = {"textObject": "$var.job.instance"}
     form_ids = ["a4", "a5", "a6", "a7", "a8", "b1", "a9"]
@@ -1605,6 +1645,9 @@ def branch_vlan() -> dict:
         y=-1100,
     )
     tasks.update(journal_tasks)
+    stepped(tasks, "the approval: the JSON form, pre-filled with the reserved instance", *form_ids)
+    stepped(tasks, "the no-op path: the instance from the VLAN NetBox already has", *noop_ids)
+    stepped(tasks, "the journal: a NetBox journal entry on the switch records the change", *journal_ids)
     apply = ["5a", "5b", "5c", "5d", "6a", *journal_ids, "f0"]
     tr = {}
     for a, b in zip(["workflow_start", *order], order):
@@ -1771,8 +1814,8 @@ print(json.dumps(out))
 
 
 def show_command() -> dict:
-    tasks = {
-        # the command list is built from the input (a list literal would not resolve $var inside it)
+    tasks = sectioned({
+        **step("the command: the list built from the input, sent to the node through the Gateway; the answer checked"),
         "1a": replace(
             "commands JSON", '["__C__"]', "__C__", "$var.job.command", x=0, y=-300
         ),
@@ -1789,7 +1832,7 @@ def show_command() -> dict:
             {"result": "$var.job.raw"},
             x=600,
         ),
-        # the parser engine follows the node's NetBox platform
+        **step("the parser: the engine chosen from the node's NetBox platform, run on the Gateway runner; raw and parsed published"),
         "3a": nbi(
             "dcim_devices_list",
             "the node in NetBox",
@@ -1850,7 +1893,7 @@ def show_command() -> dict:
             y=400,
             to_job="parse_error",
         ),
-    }
+    })
     tasks["0a"], tasks["0b"] = selector("$var.job.device", x=-600)
     # Gateway 5 answers 404 "Missing nodes - Inventory 'lab': [X]" for a device that is not there.
     # Without a failure transition the job dead-ends ("Job has no available transitions") and the
@@ -1880,6 +1923,9 @@ def show_command() -> dict:
         y=-300,
     )
 
+    stepped(tasks, "the selector: the one inventory node, in the shape the Gateway wants", "0a", "0b")
+    stepped(tasks, "the command: the list built from the input, sent to the node through the Gateway; the answer checked", "2b")
+    stepped(tasks, "where it stops: a node not in the inventory, one that did not answer, or no parser, each with its reason", "5a", "5b", "5c")
     return workflow(
         WF["show_command"],
         "Runs one show command on an inventory node through Gateway 5 and returns the raw output plus structured data: "
@@ -1956,7 +2002,8 @@ print(json.dumps(out))
 
 
 def show_all() -> dict:
-    tasks = {
+    tasks = sectioned({
+        **step("the devices: every Configuration Manager device, as one Gateway selector"),
         "1a": task(
             "getDevicesFiltered",
             "ConfigurationManager",
@@ -1985,10 +2032,12 @@ def show_all() -> dict:
             x=900,
         ),
         "1e": parse("selector object", "$var.1d.replacedString", x=1200),
+        **step("the command: the list built from the input"),
         "2a": replace(
             "commands JSON", '["__C__"]', "__C__", "$var.job.command", x=0, y=300
         ),
         "2b": parse("commands list", "$var.2a.replacedString", x=300, y=300),
+        **step("the send: one multi-node send-command, its envelope checked"),
         "3a": task(
             "sendCommand",
             "GatewayManager",
@@ -2010,6 +2059,7 @@ def show_all() -> dict:
             display="Tools",
             x=1800,
         ),
+        **step("the parse: every reply parsed on the Gateway runner, keyed by device and capped per device"),
         "4a": task(
             "runCode",
             "GatewayManager",
@@ -2048,7 +2098,7 @@ def show_all() -> dict:
             y=400,
             to_job="parser_errors",
         ),
-    }
+    })
     # ADR 0066: the whole call failing (a sealed Vault: the Gateway answers a JSON-RPC error and sendCommand
     # still finishes `success`) used to reach the parser as if devices had answered. The envelope's status is checked;
     # a single device failing is still per-device data for the parser, as before.
@@ -2060,6 +2110,8 @@ def show_all() -> dict:
         x=1650,
         y=-400,
     )
+    stepped(tasks, "the send: one multi-node send-command, its envelope checked", "3c")
+    stepped(tasks, "where it stops: the Gateway could not run the command on any device", "5a")
     tr = chain("1a", "1b", "1c", "1d", "1e", "2a", "2b", "3a", "3c", "3b", "4a", "4b", "4c", "4d")
     tr["3a"]["5a"] = {"state": "error", "type": "standard"}
     tr["3c"]["5a"] = {"state": "failure", "type": "standard"}
@@ -2115,7 +2167,8 @@ print(json.dumps({"rejected": bool(rejections), "rejections": rejections, "messa
 
 
 def config_push() -> dict:
-    tasks = {
+    tasks = sectioned({
+        **step("the approval: device, reason and the exact lines on a Work Center task"),
         "1a": replace(
             "summary: device",
             "Push to __D__ (__R__):",
@@ -2141,6 +2194,7 @@ def config_push() -> dict:
             "Reject",
             x=600,
         ),
+        **step("the push: send-config through the Gateway, checked"),
         "3a": task(
             "sendConfig",
             "GatewayManager",
@@ -2162,6 +2216,7 @@ def config_push() -> dict:
             True,
             x=1200,
         ),
+        **step("the save: write memory, its answer checked"),
         "4a": task(
             "sendCommand",
             "GatewayManager",
@@ -2175,8 +2230,9 @@ def config_push() -> dict:
             x=1500,
         ),
         "5a": flag("changed = true", "true", "changed", x=1800),
+        **step("the rejection: nothing pushed; the job ends in error"),
         "9a": flag("changed = false (rejected)", "false", "changed", x=900, y=400),
-        # the device's own reply, read for refused lines before anything is saved
+        **step("the reply: the device's own answer read on the runner for refused lines; a refusal skips the save"),
         "3c": jq("the device's reply", "$var.3a.result", "result.results[0].output", x=1250, y=-200),
         "3d": task(
             "setObjectKey",
@@ -2214,7 +2270,7 @@ def config_push() -> dict:
             x=1400,
             y=-700,
         ),
-    }
+    })
     tasks["0a"], tasks["0b"] = selector("$var.job.device", x=-600)
     tr = chain("0a", "0b", "1a", "1b", "2a", "3a", "3b", "4a", "5a")
     tr["2a"] = {
@@ -2281,6 +2337,9 @@ def config_push() -> dict:
     tasks["8b"] = flag("changed = false (not applied)", "false", "changed", x=1500, y=-600)
     tr["8a"] = t("", "8b")
     tr["8b"] = t("", "workflow_end")
+    stepped(tasks, "the selector: the one inventory node, in the shape the Gateway wants", "0a", "0b")
+    stepped(tasks, "the save: write memory, its answer checked", "4b")
+    stepped(tasks, "where it stops: no such device, the Gateway did not apply it, or the save failed", "6a", "6b", "7a", "8a", "8b")
     return workflow(
         WF["config_push"],
         "Pushes operator-supplied configuration lines to one inventory node through Gateway 5 after a Work Center "
@@ -2323,7 +2382,8 @@ PLAN_NAME = VERSIONS["golden_config"]["plan"]
 
 
 def compliance_run() -> dict:
-    tasks = {
+    tasks = sectioned({
+        **step("the run: the plan found by name and started; the instance id published"),
         "1a": task(
             "searchCompliancePlans",
             "ConfigurationManager",
@@ -2343,7 +2403,7 @@ def compliance_run() -> dict:
             {"response": "$var.job.run"},
             x=600,
         ),
-    }
+    })
     return workflow(
         WF["compliance_run"],
         "Runs the Configuration Manager compliance plan %s; scheduled nightly by Operations Manager (PID S4d.1, ADR 0040)"
@@ -2361,7 +2421,8 @@ def compliance_run() -> dict:
 # with no change here. Loop = WorkFlowEngine forEach: the "loop" transition starts an iteration, a body
 # task with no outgoing transition returns to the forEach, "success" fires when the array is exhausted.
 def backup_all() -> dict:
-    tasks = {
+    tasks = sectioned({
+        **step("the loop: every Configuration Manager device backed up in turn"),
         "1a": task(
             "getDevicesFiltered",
             "ConfigurationManager",
@@ -2398,7 +2459,7 @@ def backup_all() -> dict:
             x=900,
             y=300,
         ),
-    }
+    })
     tr = {
         "workflow_start": t("", "1a"),
         "1a": t("", "1b"),
@@ -2429,7 +2490,8 @@ def backup_all() -> dict:
 # execution ends both and keeps the instance. Run on a retired VLAN it is a no-op (changed false, no push).
 # An instance without data fails the first read and takes the no-data path.
 def branch_vlan_delete() -> dict:
-    tasks = {
+    tasks = sectioned({
+        **step("the instance: its fields read; nothing changed yet"),
         "1a": jq("branch", "$var.job.instance", "branch", x=0, y=-300),
         "1b": jq("vid", "$var.job.instance", "vid", x=300, y=-300, to_job="vid"),
         "1c": jq("vlan name", "$var.job.instance", "vlan_name", x=600, y=-300),
@@ -2442,7 +2504,7 @@ def branch_vlan_delete() -> dict:
         "1f": num2str("vid as string", "$var.1b.return_data", x=1500, y=-300),
         "2f": num2str("NetBox id as string", "$var.1e.return_data", x=1800, y=-300),
         "2a": flag("changed = false (nothing yet)", "false", "changed", x=2700, y=-300),
-        # NetBox: the VLAN by site + name (the same lookup the create uses), deleted when present
+        **step("NetBox: the VLAN by site and name, deleted when present"),
         "3a": nbi(
             "ipam_vlans_list",
             "the VLAN in NetBox",
@@ -2468,7 +2530,7 @@ def branch_vlan_delete() -> dict:
         "3f": flag(
             "netbox_deleted = false (absent)", "false", "netbox_deleted", x=3900, y=-100
         ),
-        # the switch: read before write; `no vlan` is pushed only when the VLAN is configured
+        **step("the switch read: show vlan first; no vlan is pushed only when the VLAN is configured"),
         "4a": replace(
             "show vlan command list",
             '["show vlan __V__"]',
@@ -2501,6 +2563,7 @@ def branch_vlan_delete() -> dict:
             x=5700,
             y=-300,
         ),
+        **step("the push: no vlan through Push Configuration with Approval as a child job, its Work Center approval the gate"),
         "5a": replace(
             "config: no vlan <vid>",
             "no vlan __V__",
@@ -2550,13 +2613,14 @@ def branch_vlan_delete() -> dict:
         "6a": flag(
             "switch_changed = false (absent)", "false", "switch_changed", x=6000, y=-100
         ),
-        # no data on the instance (a rejected create): nothing to delete, LCM retires it
+        **step("no data: an instance without data has nothing to delete; Lifecycle Manager retires it"),
         "9a": flag(
             "changed = false (no instance data)", "false", "changed", x=300, y=300
         ),
-    }
+    })
     tasks["0a"], tasks["0b"] = selector("$var.1d.return_data", x=2100)
     tasks["0a"]["nodeLocation"]["y"] = tasks["0b"]["nodeLocation"]["y"] = -300
+    stepped(tasks, "the selector: the one inventory node, in the shape the Gateway wants", "0a", "0b")
     final_ids = ["7a", "7b", "7c", "7d", "7e", "7f", "2e"]
     tasks.update(
         instance_chain(
@@ -2574,6 +2638,7 @@ def branch_vlan_delete() -> dict:
             to_job=True,
         )
     )
+    stepped(tasks, "the stored instance: deleted", *final_ids)
     # order: read the switch, push through the approval, and only then touch NetBox, so a rejected push changes nothing
     head = [
         "1a",
@@ -2613,6 +2678,7 @@ def branch_vlan_delete() -> dict:
         y=-900,
     )
     tasks.update(journal_tasks)
+    stepped(tasks, "the journal: a NetBox journal entry on the switch records the change", *journal_ids)
     push_path = ["5a", "5b", "5c", "5d", "5e", *journal_ids, "2c"]
     for a, b in zip(push_path, push_path[1:] + ["2d"]):
         tr[a] = t(
@@ -2709,7 +2775,8 @@ def compliance_report() -> dict:
             y=y,
         )
 
-    tasks = {
+    tasks = sectioned({
+        **step("the plan: found by name; run it, or read the newest result?"),
         "1a": task(
             "searchCompliancePlans",
             "ConfigurationManager",
@@ -2722,7 +2789,7 @@ def compliance_report() -> dict:
             "plan id", "$var.1a.compliancePlans", "plans[0].id", x=300, to_job="plan_id"
         ),
         "1c": evaluate("new run requested?", "job", "run", "", "==", True, x=600),
-        # run=true: start the plan and wait for the instance to complete
+        **step("run=true: the plan started, then waited for"),
         "2a": task(
             "runCompliancePlan",
             "ConfigurationManager",
@@ -2749,7 +2816,7 @@ def compliance_report() -> dict:
             y=-300,
         ),
         "2d": parse("search params object", "$var.2c.replacedString", x=1800, y=-300),
-        # run=false: the newest complete instance of the plan
+        **step("run=false: the newest complete instance of the plan"),
         # the search pages at ten unsorted instances by default (measured): newest first, up to a hundred
         "4a": task(
             "searchCompliancePlanInstances",
@@ -2798,7 +2865,7 @@ def compliance_report() -> dict:
             y=300,
             to_job="instance_id",
         ),
-        # the reports of the batch, reduced to one compact summary (runCode's data must be an object: the array is wrapped)
+        **step("the summary: the batch's reports reduced on the Gateway runner to one compact object per device"),
         "6a": task(
             "getComplianceReportsByBatch",
             "ConfigurationManager",
@@ -2839,7 +2906,7 @@ def compliance_report() -> dict:
             x=5100,
             to_job="compliant",
         ),
-    }
+    })
     tr = {
         "workflow_start": t("", "1a"),
         "1a": t("", "1b"),
@@ -2908,6 +2975,7 @@ def compliance_report() -> dict:
             bt: {"state": "success", "type": "standard"}
         }  # failure: the next attempt; after the last, e2 ends the job with a reason
         tr[bt] = t("", "6a")
+    stepped(tasks, "the wait: four attempts, a delay then a search, until the run is complete", *(tid for a in attempts for tid in a[:5]))
     for (_, _, _, ev, _, _), nxt in zip(attempts, attempts[1:]):
         tr[ev][nxt[0]] = {"state": "failure", "type": "standard"}
     # ADR 0059/0066 (owner decision 2026-09-23): a read-only agent tool ends cleanly with a reason. A Configuration
@@ -2927,6 +2995,7 @@ def compliance_report() -> dict:
         x=4100,
         y=-700,
     )
+    stepped(tasks, "where it stops: a call that failed, or a run not complete after the last attempt, ends with the reason", "e1", "e2")
     # 6c/6d are queries that refuse a null (pass_on_null false) and 6e wraps the reports: a runner reply that is not the
     # expected JSON would make them throw after the calls themselves succeeded, so they end through e1 as well
     for tid in ("1a", "2a", "4a", "4b", "6a", "6b", "6c", "6d", "6e", *(a[1] for a in attempts)):
@@ -3037,12 +3106,14 @@ def netbox_devices() -> dict:
             x=x,
         )
 
-    tasks = {
+    tasks = sectioned({
+        **step("the read: every device from NetBox once, the filter beside it as data"),
         # no filter parameters: the whole list once, reduced below. 21 devices today; limit is the guard.
         "1a": nbi("dcim_devices_list", "every device in NetBox", {"limit": 500}, x=0),
         "1b": jq("the device list", "$var.1a.response", "body.results", x=300),
         "1c": put("1c", "devices", {}, "$var.1b.return_data", 600),
         "1d": put("1d", "filter", "$var.1c.object", "$var.job.filter", 900),
+        **step("the summary: reduced on the Gateway runner to six fields per device, matched against the filter"),
         "2a": task(
             "runCode",
             "GatewayManager",
@@ -3060,6 +3131,7 @@ def netbox_devices() -> dict:
         ),
         "2b": jq("summary", "$var.2a.result", "stdout_json", x=2100, to_job="summary"),
         "2c": jq("count", "$var.2a.result", "stdout_json.count", x=2400, to_job="count"),
+        **step("where it stops: a NetBox read that throws ends with the reason"),
         # ADR 0059/0066: a NetBox read that throws (a 403, or the Platform unable to resolve the token because
         # Vault is sealed) took state `error` with no edge out, and the job dead-ended "2c could have led to the
         # workflow end task" (measured on dev 2026-09-23) - the hang that holds an agent twin for ever.
@@ -3070,7 +3142,7 @@ def netbox_devices() -> dict:
             x=300,
             y=-300,
         ),
-    }
+    })
     transitions = chain("1a", "1b", "1c", "1d", "2a", "2b", "2c")
     transitions["1a"]["3a"] = {"state": "error", "type": "standard"}
     transitions["3a"] = t("", "workflow_end")
@@ -3183,11 +3255,12 @@ def set_key(summary: str, obj_ref, key: str, value_ref: str, x: int, y: int = 0)
 
 def deploy_aws_vpn() -> dict:
     ok, fail, err = "success", "failure", "error"
-    tasks = {
-        # the inputs, as data, checked before anything runs (WEB-01)
+    tasks = sectioned({
+        **step("the inputs: as data, never templated"),
         "1a": parse("plan params: the fixed part", PLAN_FIXED, x=100),
         "1b": set_key("plan params: public IP", "$var.1a.textObject", "onprem_public_ip", "$var.job.onprem_public_ip", x=150),
         "1c": set_key("plan params: NAT gateway", "$var.1b.object", "enable_nat_gateway", "$var.job.enable_nat_gateway", x=200),
+        **step("the end time: from the chosen lifetime, worked out on the runner; then every input checked against the schema"),
         # R2b: the end time, from the chosen lifetime, worked out on the runner and planned as expires_at
         "14": set_key("the lifetime, as data", {}, "lifetime_hours", "$var.job.lifetime_hours", x=210),
         "15": run_code("the end time (Python on the runner)", EXPIRES_CODE, "$var.14.object", "lifetime", x=220),
@@ -3198,11 +3271,12 @@ def deploy_aws_vpn() -> dict:
                    {"jsonData": "$var.11.object", "schema": PLAN_INPUTS_SCHEMA}, {"result": "$var.job.input_check"},
                    display="WorkFlowEngine", x=300),
         "13": evaluate("inputs valid?", "12", "result", "valid", "==", True, x=350),
+        **step("the plan: terraform plan through terraform-run, with the plan ID it mints"),
         "1d": run_service("terraform plan", "terraform-run", "$var.17.object", "plan_result", x=400),
         "1e": evaluate("plan made?", "1d", "result", "result.return_code", "==", 0, x=500),
         "1f": jq("the plan summary", "$var.1d.result", "result.stdout_json", x=600, to_job="plan"),
         "10": jq("the plan ID", "$var.1d.result", "result.stdout_json.job", x=700),
-        # approve
+        **step("the approval: the plan summary on a Work Center card"),
         "2a": replace(
             "the card's message",
             "Deploy the AWS side of the site-to-site VPN (costs about $1 a day while it is up). "
@@ -3214,7 +3288,7 @@ def deploy_aws_vpn() -> dict:
         "2c": replace("the card's message: end time", "$var.2a.replacedString", "__END__", "$var.job.expires_at", x=850),
         **approval("2b", "Approve the AWS change", "$var.2c.replacedString", "$var.job.plan", "Approve", "Reject",
                    x=900, var="approval"),
-        # apply
+        **step("the apply: exactly the approved plan, its SHA-256 and commit checked by the service"),
         "3a": jq("the approved plan's SHA-256", "$var.1d.result", "result.stdout_json.plan_sha256", x=1000),
         "3b": replace("apply params: plan ID", APPLY_TPL, "__ID__", "$var.10.return_data", x=1100),
         "3c": replace("apply params: SHA-256", "$var.3b.replacedString", "__SHA__", "$var.3a.return_data", x=1200),
@@ -3223,20 +3297,20 @@ def deploy_aws_vpn() -> dict:
         "3f": evaluate("applied?", "3e", "result", "result.return_code", "==", 0, x=1500),
         "30": jq("the outputs", "$var.3e.result", "result.stdout_json.outputs", x=1600, to_job="outputs"),
         "31": flag("aws_changed = true", "true", "aws_changed", x=1700),
-        # PSK
+        **step("the key: a pre-shared key written to Vault, then Secrets Manager"),
         "4a": jq("the PSK secret's ARN", "$var.3e.result", "result.stdout_json.outputs.psk_secret_arn", x=1800),
         "4b": replace("PSK params", PSK_TPL, "__ARN__", "$var.4a.return_data", x=1900),
         "4c": parse("PSK params", "$var.4b.replacedString", x=2000),
         "4d": run_service("the pre-shared key: Vault, then Secrets Manager", "aws-vpn-psk", "$var.4c.textObject", "psk_result", x=2100),
         "4e": evaluate("key in place?", "4d", "result", "result.return_code", "==", 0, x=2200),
         "4f": jq("the PSK versions (never the PSK)", "$var.4d.result", "result.stdout_json", x=2300, to_job="psk"),
-        # close out
+        **step("the outcome: the strongSwan address and what happened to the key"),
         "5a": jq("the strongSwan EIP", "$var.job.outputs", "strongswan_eip", x=2400),
         # the key step's own one-line summary: the version written, or that the key in place was kept
         "5b": jq("what happened to the key", "$var.job.psk", "summary", x=2500),
         "5d": replace("the outcome: EIP", "Deployed: strongSwan at __EIP__; __V__.", "__EIP__", "$var.5a.return_data", x=2700),
         "5e": replace("the outcome", "$var.5d.replacedString", "__V__", "$var.5b.return_data", x=2800),
-        # reject: discard the stored plan, end cleanly
+        **step("the rejection: the stored plan discarded, nothing changed in AWS"),
         "7a": replace("discard params", DISCARD_TPL, "__ID__", "$var.10.return_data", x=1000, y=400),
         "7b": parse("discard params", "$var.7a.replacedString", x=1100, y=400),
         "7c": run_service("discard the rejected plan", "terraform-run", "$var.7b.textObject", "discard_result", x=1200, y=400),
@@ -3245,7 +3319,7 @@ def deploy_aws_vpn() -> dict:
         "7e": flag("aws_changed = false (rejected)", "false", "aws_changed", x=1400, y=400),
         "7f": note("the rejection", "rejected in Work Center: the plan was discarded, nothing changed in AWS", "outcome", x=1500, y=400),
         "70": note("the discard did not run", "the rejected plan could not be discarded; it stays in the state bucket until removed", "error", x=1300, y=600),
-        # failures
+        **step("where it stops: the reason in error, and whether AWS changed"),
         "8a": note("the plan did not run", "the Gateway could not run terraform-run for the plan; nothing changed in AWS", "error", x=500, y=-300),
         "8b": jq("why the plan was refused", "$var.1d.result", "result.stdout_json.error", x=600, y=-300, to_job="error", optional=True),
         "8c": flag("aws_changed = false (no plan)", "false", "aws_changed", x=700, y=-300),
@@ -3262,7 +3336,7 @@ def deploy_aws_vpn() -> dict:
         "9b": jq("why the PSK step stopped", "$var.4d.result", "result.stdout_json.error", x=2300, y=-1100, to_job="error", optional=True),
         "80": note("the end time could not be worked out", "the Gateway could not work out the end time from the "
                    "lifetime (see lifetime): nothing changed in AWS", "error", x=220, y=-300),
-    }
+    })
     tasks["5e"]["variables"]["outgoing"]["replacedString"] = "$var.job.outcome"
     tr = chain("1a", "1b", "1c", "14", "15", "16", "17", "11", "12", "13", "1d", "1e", "1f", "10", "2a", "2c", *approval_ids("2b"), "2b", "3a", "3b", "3c", "3d", "3e", "3f", "30", "31",
                "4a", "4b", "4c", "4d", "4e", "4f", "5a", "5b", "5d", "5e")
@@ -3483,7 +3557,8 @@ def verify_section(plan_var: str, passed: str, failed: str, broken: str, judge_b
     goes, `judge_broken` where a judge that could not run goes. Reads the job variable `plan_var` (the LAB_EDGE_PLAN_CODE result); publishes lab_edge_result,
     monitor_result, router_note, monitor_note and judgement. Returns (tasks, transitions, the first task id)."""
     ok, fail, err = "success", "failure", "error"
-    tasks = {
+    tasks = sectioned({
+        **step("Verify's checks: the router, the data plane and the AWS monitor must agree"),
         # a service that does not run leaves {} behind: the judge reads it as could not check
         "e0": empty("no router reading yet", "lab_edge_result", x=x),
         "e1": empty("no AWS monitor reading yet", "monitor_result", x=x + 50),
@@ -3510,7 +3585,7 @@ def verify_section(plan_var: str, passed: str, failed: str, broken: str, judge_b
         "ee": run_code("the judge (every applicable signal up passes)", JUDGE_CODE, "$var.ed.object", "judgement",
                        x=x + 700),
         "ef": evaluate("passed?", "ee", "result", "stdout_json.passed", "==", True, x=x + 750),
-    }
+    })
     tr = {
         "e0": _edge(e1=ok),
         "e1": _edge(e2=ok),
@@ -3535,14 +3610,14 @@ def verify_section(plan_var: str, passed: str, failed: str, broken: str, judge_b
 
 def verify_aws_vpn() -> dict:
     ok, fail, err = "success", "failure", "error"
-    tasks = {
-        # the target's values (the target is gated: an open one)
+    tasks = sectioned({
+        **step("the plan: the target's pinned values and what to read for it"),
         "1a": task("setObjectKey", "WorkFlowEngine", "the target and the pinned values",
                    {"obj": {"targets": VERIFY_TARGETS}, "path": ["target"], "value": "$var.job.target"},
                    {"object": "$var.job.verify_in"}, display="Tools", x=100),
         "1b": run_code("what to read for this target", LAB_EDGE_PLAN_CODE, "$var.job.verify_in", "verify_plan", x=200),
         "1c": evaluate("deployed outputs needed (AWS)?", "1b", "result", "stdout_json.need_outputs", "==", True, x=300),
-        # dc1-wan01: the deployed outputs, read from the Terraform state
+        **step("the outputs: for a target monitored by AWS, the deployed outputs read from the Terraform state"),
         "2a": parse("outputs params", OUTPUTS_PARAMS, x=350, y=300),
         "2b": run_service("the deployed outputs (terraform-run, a read)", "terraform-run", "$var.2a.textObject",
                           "outputs_result", x=400, y=300),
@@ -3550,12 +3625,14 @@ def verify_aws_vpn() -> dict:
         "2d": jq("the outputs", "$var.2b.result", "result.stdout_json.outputs", x=500, y=300),
         "2e": set_key("the outputs, as data", "$var.job.verify_in", "deployed", "$var.2d.return_data", x=550, y=300),
         "2f": run_code("what to read, with the outputs", LAB_EDGE_PLAN_CODE, "$var.2e.object", "verify_plan", x=600, y=300),
+        **step("the readiness: anything to read? otherwise the reason ends the job"),
         "3e": evaluate("anything to read?", "job", "verify_plan", "stdout_json.ready", "==", True, x=650),
         "3f": jq("why there is nothing to read", "$var.job.verify_plan", "stdout_json.reason", x=700, y=-900,
                  to_job="error"),
+        **step("the verdict: passed, or not passed with the reason"),
         "5f": jq("the verdict", "$var.ee.result", "stdout_json.verdict", x=1500, to_job="outcome"),
         "50": jq("the verdict (not passed)", "$var.ee.result", "stdout_json.verdict", x=1500, y=-300, to_job="error"),
-        # failures that leave nothing to judge
+        **step("where it stops: failures that leave nothing to judge"),
         "8a": note("the outputs could not be read",
                    "could not check: the deployed outputs could not be read from the Terraform state (outputs_result); "
                    "nothing was read on the router", "error", x=600, y=600),
@@ -3563,7 +3640,7 @@ def verify_aws_vpn() -> dict:
                    "job's results); nothing more was read", "error", x=400, y=-600),
         "8c": note("the judge did not run", "could not check: the readings were taken but the judge could not run; "
                    "see lab_edge_result and monitor_result", "error", x=1600, y=-600),
-    }
+    })
     vtasks, vtr, first = verify_section("verify_plan", passed="5f", failed="50", broken="8b", judge_broken="8c", x=700)
     tasks.update(vtasks)
     tr = {
@@ -3744,7 +3821,8 @@ def batfish_section(after_ok: str, after_fail: str, x: int) -> tuple[dict, dict]
     fail -> after_fail. Drill Batfish Gate holds an identical copy (tests/test_batfish_gate.py): there both ways lead
     to its judge."""
     ok, fail, err = "success", "failure", "error"
-    tasks = {
+    tasks = sectioned({
+        **step("the Batfish proof: the rendered block on the scrubbed running config, seven checks; a failed check stops the hand-off, Batfish down reads as not proven"),
         "f8": jq("batfish-check's params", "$var.job.handoff_plan", "stdout_json.batfish", x=x, to_job="batfish_params"),
         "f0": set_key("batfish-check's params: the approved SHA-256", "$var.f8.return_data", "sha256",
                       "$var.job.sha256", x=x + 1),
@@ -3759,7 +3837,7 @@ def batfish_section(after_ok: str, after_fail: str, x: int) -> tuple[dict, dict]
         "f6": jq("the proof failed: why", "$var.f3.result", "stdout_json.message", x=x + 7, y=-600,
                  to_job="batfish_message"),
         "f7": note("not proven", NOT_PROVEN, "batfish", x=x + 6, y=-300),
-    }
+    })
     tr = {
         "f8": _edge(**{"f0": ok, "f7": err}),
         "f0": _edge(**{"f1": ok}),
@@ -3876,6 +3954,7 @@ def netbox_readback_section(name: str, want: dict, within: list[str], card: str,
         tasks[key] = set_key(f"read-back: prefixes within {block}", obj, f"prefixes_{i}", f"$var.{read}.response",
                              x=x + 35 + i)
         obj = f"$var.{key}.object"
+    stepped(tasks, "the NetBox read-back: the site, interface, address and prefixes production NetBox holds for the target, compared with what it should hold")
     tasks["dc"]["variables"]["incoming"]["data"] = obj
     chain_ids = ["d1", *reads, "d4", "d5", "d6", "d7", "d8", "d9", *keyed, "dc", "dd"]
     tr = {"d0": _edge(d1=ok, df=fail)}
@@ -3891,7 +3970,8 @@ def netbox_readback_section(name: str, want: dict, within: list[str], card: str,
 
 def hand_off_aws_vpn() -> dict:
     ok, fail, err = "success", "failure", "error"
-    tasks = {
+    tasks = sectioned({
+        **step("the plan: the target's pinned values and what to read and push; changed = false until the push"),
         # nothing is sent until the push, which sets `changed` from what the router went through
         "10": flag("changed = false (nothing sent yet)", "false", "changed", x=50),
         # the target's values (the target is gated: an open one)
@@ -3901,6 +3981,7 @@ def hand_off_aws_vpn() -> dict:
         "1b": run_code("what to read and push for this target", LAB_EDGE_PLAN_CODE, "$var.job.handoff_in",
                        "handoff_plan", x=200),
         "1c": evaluate("deployed outputs needed (AWS)?", "1b", "result", "stdout_json.need_outputs", "==", True, x=300),
+        **step("the outputs: for a target monitored by AWS, the deployed outputs read from the Terraform state"),
         "2a": parse("outputs params", OUTPUTS_PARAMS, x=350, y=300),
         "2b": run_service("the deployed outputs (terraform-run, a read)", "terraform-run", "$var.2a.textObject",
                           "outputs_result", x=400, y=300),
@@ -3909,6 +3990,7 @@ def hand_off_aws_vpn() -> dict:
         "2e": set_key("the outputs, as data", "$var.job.handoff_in", "deployed", "$var.2d.return_data", x=550, y=300),
         "2f": run_code("what to read and push, with the outputs", LAB_EDGE_PLAN_CODE, "$var.2e.object", "handoff_plan",
                        x=600, y=300),
+        **step("the readiness: anything to hand off? then the AWS end, then the router"),
         "1d": evaluate("anything to hand off?", "job", "handoff_plan", "stdout_json.ready", "==", True, x=650),
         "1e": jq("why there is nothing to hand off", "$var.job.handoff_plan", "stdout_json.reason", x=700, y=-900,
                  to_job="error"),
@@ -3927,7 +4009,7 @@ def hand_off_aws_vpn() -> dict:
         "4d": evaluate("the router is ready?", "4b", "result", "result.stdout_json.ready", "==", True, x=1150),
         "4e": jq("what the router is missing", "$var.4b.result", "result.stdout_json.missing", x=1200, y=-600,
                  to_job="precheck_missing", optional=True),
-        # render: the exact block, its SHA-256 and the block with the key masked
+        **step("the render: the exact block, its SHA-256, and the block with the key masked"),
         "5a": jq("lab-edge render's params", "$var.job.handoff_plan", "stdout_json.render", x=1250),
         "5b": run_service("render the block (lab-edge render: no device)", "lab-edge", "$var.5a.return_data",
                           "render_result", x=1300),
@@ -3935,7 +4017,7 @@ def hand_off_aws_vpn() -> dict:
         "5d": jq("the block's SHA-256", "$var.5b.result", "result.stdout_json.sha256", x=1400, to_job="sha256"),
         "5e": jq("the block, key masked", "$var.5b.result", "result.stdout_json.block_masked", x=1450,
                  to_job="block_masked"),
-        # approve
+        **step("the approval: target, SHA-256, the masked block, NetBox and Batfish on a Work Center card"),
         "6a": set_key("the card: target", {}, "target", "$var.job.target", x=1500),
         "6b": set_key("the card: SHA-256", "$var.6a.object", "sha256", "$var.job.sha256", x=1550),
         "6c": set_key("the card: the block (key masked)", "$var.6b.object", "block", "$var.job.block_masked", x=1600),
@@ -3944,9 +4026,10 @@ def hand_off_aws_vpn() -> dict:
         "6e": replace("the card's message", APPROVAL_MESSAGE, "__T__", "$var.job.target", x=1700),
         **approval("6f", "Approve the router change", "$var.6e.replacedString", "$var.69.object", "Approve", "Reject",
                    x=1750, var="approval"),  # NetBox, then Batfish (R7), on the card
+        **step("where it stops before the push: nothing was sent"),
         # the Batfish proof failed (ADR 0076 decision 4): no card, nothing sent
         "f9": replace("why Hand Off stops here", "__M__", "__M__", "$var.job.batfish_message", x=1460, y=-900),
-        # push exactly the approved block
+        **step("the push: exactly the approved block, the key from Vault, under a revert timer; what the router went through"),
         "7a": jq("lab-edge-push's params", "$var.job.handoff_plan", "stdout_json.push", x=1800),
         "7b": set_key("push params: the approved SHA-256", "$var.7a.return_data", "sha256", "$var.job.sha256", x=1850),
         "7c": run_service("push the approved block (lab-edge-push: the key from Vault, revert timer, prove, save)",
@@ -3966,7 +4049,7 @@ def hand_off_aws_vpn() -> dict:
         "73": jq("why the push did not save", "$var.7e.result", "stdout_json.message", x=2150, y=-900, to_job="error"),
         "8a": task("delay", "WorkFlowEngine", f"wait {SETTLE_SECONDS} s for the tunnel", {"time": SETTLE_SECONDS},
                    {"time_in_milliseconds": None}, kind="operation", display="WorkFlowEngine", x=2100),
-        # the outcome: what the router went through and Verify's verdict
+        **step("the outcome: what the router went through and Verify's verdict"),
         "90": replace("the outcome: router", OUTCOME_TPL, "__R__", "$var.job.router_state", x=2900),
         "91": jq("the verdict", "$var.ee.result", "stdout_json.verdict", x=2950),
         "92": replace("the outcome", "$var.90.replacedString", "__V__", "$var.91.return_data", x=3000),
@@ -3975,10 +4058,10 @@ def hand_off_aws_vpn() -> dict:
         "95": jq("the verdict (not passed)", "$var.ee.result", "stdout_json.verdict", x=2950, y=-300),
         "96": replace("the outcome (Verify did not pass)", "$var.94.replacedString", "__V__", "$var.95.return_data",
                       x=3000, y=-300),
-        # reject: nothing sent
+        **step("the rejection: nothing sent"),
         "a0": flag("rejected = true", "true", "rejected", x=1800, y=600),
         "a2": note("the rejection", "rejected in Work Center: nothing was sent to the router", "outcome", x=1900, y=600),
-        # failures before the push: nothing was sent
+        **step("where it stops before the push: nothing was sent"),
         "b0": note("the plan could not run", "the Gateway could not work out what to hand off (see handoff_plan): "
                    "nothing was sent to the router", "error", x=700, y=-600),
         "b7": note("the precheck could not start", "the precheck's params could not be read (see handoff_plan): nothing "
@@ -3999,7 +4082,7 @@ def hand_off_aws_vpn() -> dict:
                    "missing): nothing was sent to the router", "error", x=1250, y=-600),
         "b6": note("the render refused", "the render refused the values (an output that does not match versions.yaml, "
                    "or nothing deployed; see render_result): nothing was sent to the router", "error", x=1400, y=-900),
-        # failures of the push or after it
+        **step("where it stops after the push: the router may hold the change"),
         "c0": note("the push could not run", "the Gateway could not run lab-edge-push: if any line reached the router, its "
                    "revert timer rolls it back within 5 minutes - check the router", "error", x=1950, y=-600),
         "c4": note("the push's answer could not be read", "lab-edge-push ran but its answer could not be read: check "
@@ -4007,7 +4090,7 @@ def hand_off_aws_vpn() -> dict:
         "c3": note("the verify steps could not run", "the push was saved (see changed and router_state), but the verify "
                    "steps could not run or gave no verdict: run Verify AWS VPN", "error", x=3000, y=-600),
         "c5": flag("changed = true (the push's answer is unknown)", "true", "changed", x=2100, y=-900),
-    }
+    })
     tasks["92"]["variables"]["outgoing"]["replacedString"] = "$var.job.outcome"
     tasks["96"]["variables"]["outgoing"]["replacedString"] = "$var.job.error"
     tasks["f9"]["variables"]["outgoing"]["replacedString"] = "$var.job.error"
@@ -4139,7 +4222,8 @@ def hand_off_aws_vpn() -> dict:
 def drill_batfish_gate() -> dict:
     ok, fail, err = "success", "failure", "error"
     name = WF["drill_batfish_gate"]
-    tasks = {
+    tasks = sectioned({
+        **step("the plan: the target, the drill mode and what to read and check"),
         "1a": task("setObjectKey", "WorkFlowEngine", "the target and the pinned values",
                    {"obj": {"targets": VERIFY_TARGETS}, "path": ["target"], "value": "$var.job.target"},
                    {"object": None}, display="Tools", x=100),
@@ -4147,6 +4231,7 @@ def drill_batfish_gate() -> dict:
         "1c": run_code("what to read and check for this target", LAB_EDGE_PLAN_CODE, "$var.job.handoff_in",
                        "handoff_plan", x=200),
         "1d": evaluate("deployed outputs needed (AWS)?", "1c", "result", "stdout_json.need_outputs", "==", True, x=300),
+        **step("the outputs: for a target monitored by AWS, the deployed outputs read from the Terraform state"),
         "2a": parse("outputs params", OUTPUTS_PARAMS, x=350, y=300),
         "2b": run_service("the deployed outputs (terraform-run, a read)", "terraform-run", "$var.2a.textObject",
                           "outputs_result", x=400, y=300),
@@ -4155,10 +4240,12 @@ def drill_batfish_gate() -> dict:
         "2e": set_key("the outputs, as data", "$var.job.handoff_in", "deployed", "$var.2d.return_data", x=550, y=300),
         "2f": run_code("what to read and check, with the outputs", LAB_EDGE_PLAN_CODE, "$var.2e.object", "handoff_plan",
                        x=600, y=300),
+        **step("the readiness: anything to check? otherwise the reason ends the job"),
         "1e": evaluate("anything to check?", "job", "handoff_plan", "stdout_json.ready", "==", True, x=650),
         "1f": jq("why there is nothing to check", "$var.job.handoff_plan", "stdout_json.reason", x=700, y=-900,
                  to_job="error"),
-        # the same render as Hand Off's: the SHA-256 the service must agree with
+        # the same step title as Hand Off's: the render tasks are its own copy, a test holds them identical
+        **step("the render: the exact block, its SHA-256, and the block with the key masked"),
         "5a": jq("lab-edge render's params", "$var.job.handoff_plan", "stdout_json.render", x=1250),
         "5b": run_service("render the block (lab-edge render: no device)", "lab-edge", "$var.5a.return_data",
                           "render_result", x=1300),
@@ -4166,7 +4253,7 @@ def drill_batfish_gate() -> dict:
         "5d": jq("the block's SHA-256", "$var.5b.result", "result.stdout_json.sha256", x=1400, to_job="sha256"),
         "5e": jq("the block, key masked", "$var.5b.result", "result.stdout_json.block_masked", x=1450,
                  to_job="block_masked"),
-        # the judge: did the mode break what it should?
+        **step("the judge: did the drill break what it should?"),
         "a0": set_key("the judge's data: the drill mode", {}, "drill", "$var.job.drill", x=1500),
         "a1": set_key("the judge's data: what Batfish proved", "$var.a0.object", "summary", "$var.job.batfish_summary",
                       x=1550),
@@ -4176,6 +4263,7 @@ def drill_batfish_gate() -> dict:
         "a4": evaluate("the drill passed?", "a2", "result", "stdout_json.drill_passed", "==", True, x=1700),
         "a5": flag("drill_passed = true", "true", "drill_passed", x=1750),
         "a6": flag("drill_passed = false", "false", "drill_passed", x=1750, y=300),
+        **step("where it stops: the reason in error"),
         "b0": note("the plan could not run", "the Gateway could not work out what to check (see handoff_plan)", "error",
                    x=700, y=-600),
         "b1": note("the outputs could not be read", "the deployed outputs could not be read from the Terraform state "
@@ -4186,7 +4274,7 @@ def drill_batfish_gate() -> dict:
                    "render_result)", "error", x=1400, y=-600),
         "c3": note("the judge could not run", "the drill's judge could not run or gave no verdict (see "
                    "drill_judgement, batfish_summary)", "error", x=1650, y=-600),
-    }
+    })
     tasks["1b"]["variables"]["outgoing"]["object"] = "$var.job.handoff_in"
     btasks, btr = batfish_section(after_ok="a0", after_fail="a0", x=1451)
     tasks.update(btasks)
@@ -4334,7 +4422,8 @@ REVERT_SUMMARY_CODE = ("import json, sys\n\n\n" + inspect.getsource(revert_summa
 
 def config_push_revert() -> dict:
     ok, fail, err = "success", "failure", "error"
-    tasks = {
+    tasks = sectioned({
+        **step("the inputs: as data, never templated, into the plan made on the runner; changed = false until the service says so"),
         # nothing has changed until the service says so: every early end leaves this as it is
         "10": flag("changed = false", "false", "changed", x=50),
         # the inputs, as data (never templated), into the plan
@@ -4346,7 +4435,7 @@ def config_push_revert() -> dict:
         "1f": run_code("the plan: the service's params and the approval card (Python on the runner)", REVERT_PLAN_CODE,
                        "$var.1e.object", "revert_plan", x=350),
         "11": evaluate("planned?", "1f", "result", "stdout_json.ok", "==", True, x=400),
-        # config-push-revert's own check, with no device: what it would refuse never reaches an approver
+        **step("the check: config-push-revert's own, with no device; what it would refuse never reaches an approver"),
         "12": jq("config-push-revert check's params", "$var.1f.result", "stdout_json.check", x=410),
         "13": run_service("would config-push-revert take this? (check: no device)", "config-push-revert",
                           "$var.12.return_data", "check_result", x=420),
@@ -4359,12 +4448,12 @@ def config_push_revert() -> dict:
         "b8": note("config-push-revert could not run", "the Gateway could not run config-push-revert (not on this "
                    "Gateway - a dev-tier service until step 10's window - or it could not start, e.g. an alias that did "
                    "not resolve; see check_result): nothing was sent to the router", "error", x=420, y=-1500),
-        # approve exactly what will be pushed and what must hold afterwards
+        **step("the approval: exactly what will be pushed and what must hold afterwards, on a Work Center card"),
         "2a": jq("the card", "$var.1f.result", "stdout_json.card", x=450),
         "2b": replace("the card's message", REVERT_APPROVAL_MESSAGE, "__D__", "$var.job.device", x=500),
         **approval("2c", "Approve the change under a revert timer", "$var.2b.replacedString", "$var.2a.return_data",
                    "Approve", "Reject", x=550, var="approval"),
-        # push, check, confirm and save - or roll back
+        **step("the push: under the revert timer, the checks, then confirm and save, or roll back; what the router went through"),
         "17": flag("rejected = false", "false", "rejected", x=570),
         "3a": jq("config-push-revert's params", "$var.1f.result", "stdout_json.params", x=600),
         "16": jq("the timeout a push needs (check's answer)", "$var.13.result", "result.stdout_json.timeout", x=610),
@@ -4386,21 +4475,21 @@ def config_push_revert() -> dict:
         "4a": note("the outcome: saved", "saved: the change passed every check, was confirmed and saved", "outcome",
                    x=1050),
         "4b": jq("why the change was not kept", "$var.3f.result", "stdout_json.message", x=1050, y=300, to_job="error"),
-        # reject: nothing sent
+        **step("the rejection: nothing sent"),
         "a0": flag("rejected = true", "true", "rejected", x=600, y=600),
         "a2": note("the rejection", "rejected in Work Center: nothing was sent to the router", "outcome", x=700, y=300),
-        # failures before the push: nothing was sent
+        **step("where it stops before the push: nothing was sent"),
         "b0": note("the plan could not run", "the Gateway could not make the plan (see revert_plan): nothing was sent "
                    "to the router", "error", x=400, y=-600),
         "b1": jq("why there is no plan", "$var.1f.result", "stdout_json.message", x=450, y=600, to_job="error"),
         "b3": note("the push could not start", "the push's params could not be read (see revert_plan): nothing was "
                    "sent to the router", "error", x=650, y=-600),
-        # the Gateway could not run the service or the summary: the router may hold a pending change
+        **step("where it stops after the push: the router may hold a pending change"),
         "b5": note("config-push-revert could not finish", "the Gateway could not run config-push-revert or read its "
                    "answer (push_result): check the router - the change may be live and unsaved, or pending until "
                    "the revert timer rolls it back", "error", x=750, y=-1500),
         "b6": flag("changed = true (unknown)", "true", "changed", x=800, y=-1500),
-    }
+    })
     tr = {
         "workflow_start": _edge(**{"10": ok}),
         "10": _edge(**{"1a": ok}),
@@ -4562,10 +4651,11 @@ def teardown_section(timed: bool, failed_end: str = "workflow_end") -> tuple[dic
     child jobs). `timed` leaves out the two cards and the rejection path (approved on the Deploy card, R2b) and sends
     every failure to `failed_end`; everything else is the same task. Reads the job variable `target`."""
     ok, fail, err = "success", "failure", "error"
-    tasks = {
+    tasks = sectioned({
+        **step("nothing changed yet: router_changed and aws_changed start false"),
         "10": flag("router_changed = false", "false", "router_changed", x=40),
         "11": flag("aws_changed = false", "false", "aws_changed", x=60),
-        # the plan: which services, with what, and whether AWS follows
+        **step("the plan: which services run, with what, and whether AWS follows; the removal lines rendered"),
         "1a": task("setObjectKey", "WorkFlowEngine", "the router (the target is gated: an open one)",
                    {"obj": {}, "path": ["target"], "value": "$var.job.target"}, {"object": "$var.job.teardown_in"},
                    display="Tools", x=100),
@@ -4581,18 +4671,18 @@ def teardown_section(timed: bool, failed_end: str = "workflow_end") -> tuple[dic
         "18": run_code("the push's params and the first card (Python on the runner)", TEARDOWN_PLAN_CODE,
                        "$var.1f.object", "push_plan", x=400),
         "19": evaluate("push planned?", "job", "push_plan", "stdout_json.ok", "==", True, x=450),
-        # config-push-revert's own check, with no device
+        **step("the check: config-push-revert's own, with no device"),
         "12": jq("config-push-revert check's params", "$var.job.push_plan", "stdout_json.check", x=500),
         "13": run_service("would config-push-revert take this? (check: no device)", "config-push-revert",
                           "$var.12.return_data", "check_result", x=550),
         "14": evaluate("config-push-revert takes it?", "13", "result", "result.return_code", "==", 0, x=600),
-        # card 1: the router
+        **step("the first card: the router's removal on a Work Center card"),
         "2a": jq("the first card", "$var.job.push_plan", "stdout_json.card", x=650),
         "2b": replace("the first card's message", TEARDOWN_ROUTER_MESSAGE, "__D__", "$var.job.target", x=700),
         **approval("2c", "Approve removing the router's AWS block", "$var.2b.replacedString", "$var.2a.return_data",
                    "Approve", "Reject", x=750, var="approval"),
         "15": flag("rejected = false", "false", "rejected", x=775),
-        # push, check, confirm and save - or roll back
+        **step("the push: the block removed under the revert timer, confirmed and saved, or rolled back"),
         "3a": jq("config-push-revert's params", "$var.job.push_plan", "stdout_json.params", x=800),
         "16": jq("the timeout a push needs (check's answer)", "$var.13.result", "result.stdout_json.timeout", x=825),
         "34": set_key("push params: the Gateway timeout", "$var.3a.return_data", "timeout", "$var.16.return_data",
@@ -4609,7 +4699,7 @@ def teardown_section(timed: bool, failed_end: str = "workflow_end") -> tuple[dic
         "32": evaluate("the router may have changed?", "3f", "result", "stdout_json.changed", "==", True, x=1100),
         "35": flag("router_changed = true", "true", "router_changed", x=1125),
         "33": evaluate("removed and saved?", "3f", "result", "stdout_json.state", "==", "saved", x=1150),
-        # prove it gone
+        **step("the proof: lab-edge absent finds nothing of the block left"),
         "4a": jq("lab-edge absent's params", "$var.job.teardown_plan", "stdout_json.absent", x=1200),
         "4b": run_service("prove the block is gone (lab-edge absent: show commands)", "lab-edge", "$var.4a.return_data",
                           "absent_result", x=1250),
@@ -4618,7 +4708,7 @@ def teardown_section(timed: bool, failed_end: str = "workflow_end") -> tuple[dic
         "4e": evaluate("deployed in AWS?", "job", "teardown_plan", "stdout_json.aws", "==", True, x=1400),
         "4f": note("the outcome: router only", "torn down: the router's AWS block was removed, saved and proved gone; "
                    "nothing of this target is deployed in AWS", "outcome", x=1450, y=600),
-        # the AWS side: plan the destroy, card 2, apply exactly that plan
+        **step("the AWS side: terraform plan -destroy, the second card, exactly that plan applied, the state read empty"),
         "5a": parse("the destroy plan's params", DESTROY_PLAN_PARAMS, x=1500),
         "5b": run_service("terraform plan -destroy", "terraform-run", "$var.5a.textObject", "destroy_plan_result",
                           x=1550),
@@ -4644,7 +4734,7 @@ def teardown_section(timed: bool, failed_end: str = "workflow_end") -> tuple[dic
         "65": evaluate("nothing left in the state?", "64", "result", "stdout_json.empty", "==", True, x=2300),
         "66": note("the outcome: torn down", "torn down: the router's AWS block was removed, saved and proved gone, "
                    "and the AWS side was destroyed - nothing of the deployment is left", "outcome", x=2350),
-        # rejections
+        **step("the rejections: either card rejected ends cleanly; a rejected destroy plan is discarded"),
         "a0": flag("rejected = true (router)", "true", "rejected", x=800, y=600),
         "a1": note("the router rejection", "rejected in Work Center: nothing was sent to the router and nothing "
                    "changed in AWS", "outcome", x=850, y=600),
@@ -4659,7 +4749,7 @@ def teardown_section(timed: bool, failed_end: str = "workflow_end") -> tuple[dic
                    "outcome", x=2000, y=600),
         "a7": note("the discard did not run", "the rejected destroy plan could not be discarded; it stays in the "
                    "state bucket until removed", "error", x=1950, y=900),
-        # failures: before the router changes, nothing was sent
+        **step("where it stops before the push: nothing was sent"),
         "b0": note("the plan could not run", "the Gateway could not make Tear Down's plan (see teardown_plan / "
                    "push_plan): nothing was sent to the router, nothing changed in AWS", "error", x=200, y=-600),
         "b1": jq("why there is no plan", "$var.job.teardown_plan", "stdout_json.message", x=250, y=-1200,
@@ -4671,7 +4761,7 @@ def teardown_section(timed: bool, failed_end: str = "workflow_end") -> tuple[dic
         "b4": note("config-push-revert refuses it", "config-push-revert's check refused the removal (see "
                    "check_result): nothing was sent to the router, nothing changed in AWS", "error", x=600, y=-600),
         "bf": flag("router_changed = false (nothing sent)", "false", "router_changed", x=650, y=-900),
-        # failures after the push started
+        **step("where it stops after the push: the router or AWS may have changed"),
         "c0": note("the push could not finish", "the Gateway could not run config-push-revert or read its answer "
                    "(push_result): check the router - the removal may be live and unsaved, or pending until the "
                    "revert timer rolls it back. Nothing changed in AWS", "error", x=950, y=-1200),
@@ -4691,7 +4781,7 @@ def teardown_section(timed: bool, failed_end: str = "workflow_end") -> tuple[dic
                    "error", x=2050, y=-600),
         "c7": note("something is left", "the destroy applied, but terraform-run outputs still reports outputs "
                    "(outputs_result): check AWS", "error", x=2300, y=-600),
-    }
+    })
     tr = {
         "10": _edge(**{"11": ok}), "11": _edge(**{"1a": ok}), "1a": _edge(**{"1b": ok}),
         "1b": _edge(**{"1c": ok, "b0": err}),
@@ -4874,7 +4964,8 @@ STATUS_CODE = ("import json, sys\nfrom datetime import datetime, timezone\n\n\nP
 
 def get_aws_vpn_status() -> dict:
     ok, fail, err = "success", "failure", "error"
-    tasks = {
+    tasks = sectioned({
+        **step("the read: terraform-run outputs, a state read, summarised on the Gateway runner"),
         "1a": parse("terraform-run outputs' params", OUTPUTS_PARAMS, x=100),
         "1b": run_service("the deployment (terraform-run outputs, a state read)", "terraform-run", "$var.1a.textObject",
                           "outputs_result", x=200),
@@ -4882,11 +4973,12 @@ def get_aws_vpn_status() -> dict:
         "1d": set_key("the outputs' answer", {}, "outputs", "$var.job.outputs_result", x=400),
         "1e": run_code("the status (Python on the runner)", STATUS_CODE, "$var.1d.object", "status", x=500),
         "1f": jq("the summary", "$var.job.status", "stdout_json.summary", x=600, to_job="summary"),
+        **step("where it stops: the state or the status could not be read"),
         "8a": note("the state could not be read", "the Gateway could not read the deployment (terraform-run outputs, "
                    "see outputs_result): nothing was changed", "error", x=250, y=-300),
         "8b": note("the status could not be made", "the Gateway could not make the status (see status): nothing was "
                    "changed", "error", x=450, y=300),
-    }
+    })
     tr = {
         "workflow_start": _edge(**{"1a": ok}),
         "1a": _edge(**{"1b": ok}),
@@ -4948,7 +5040,8 @@ DRIFT_CODE = ("import json, sys\n\n\n" + inspect.getsource(drift_summary)
 
 def check_aws_drift() -> dict:
     ok, fail, err = "success", "failure", "error"
-    tasks = {
+    tasks = sectioned({
+        **step("the check: terraform-run drift, a refresh-only plan, read on the Gateway runner"),
         "1a": parse("terraform-run drift's params", DRIFT_PARAMS, x=100),
         "1b": run_service("what changed in AWS outside Terraform (terraform-run drift, a refresh-only plan)",
                           "terraform-run", "$var.1a.textObject", "drift_result", x=200),
@@ -4956,15 +5049,17 @@ def check_aws_drift() -> dict:
         "1d": set_key("the drift check's answer", {}, "drift", "$var.job.drift_result", x=400),
         "1e": run_code("what was found (Python on the runner)", DRIFT_CODE, "$var.1d.object", "drift", x=500),
         "1f": evaluate("drift found?", "1e", "result", "stdout_json.found", "==", True, x=600),
+        **step("the outcome: no drift ends quietly; drift opens a Work Center task"),
         "10": jq("the outcome: no drift", "$var.job.drift", "stdout_json.summary", x=700, y=300, to_job="outcome"),
         "2a": jq("the drift, in words", "$var.job.drift", "stdout_json.summary", x=700, to_job="outcome"),
         "2b": view("Work Center task", "Drift in AWS: changed outside Terraform", "$var.job.outcome",
                    "$var.job.drift", "Seen", "Seen", x=800),
+        **step("where it stops: the check could not run or be read"),
         "8a": note("the drift check could not run", "terraform-run drift did not answer (see drift_result): nothing "
                    "was changed", "error", x=250, y=-300),
         "8b": note("the drift could not be read", "the Gateway could not read the drift check's answer (see drift): "
                    "nothing was changed", "error", x=450, y=-300),
-    }
+    })
     tr = {
         "workflow_start": _edge(**{"1a": ok}),
         "1a": _edge(**{"1b": ok}),
@@ -5043,8 +5138,8 @@ EXPIRY_CODE = ("import json, sys\nfrom datetime import datetime, timezone\n\n\nT
 def tear_down_expired_aws_vpn() -> dict:
     ok, fail, err = "success", "failure", "error"
     section, section_tr = teardown_section(timed=True, failed_end="f0")
-    tasks = {
-        # is the time up? (a state read; most runs end at t8)
+    tasks = sectioned({
+        **step("the due check: the deployment's end time read from the Terraform state; most runs end here"),
         "d1": parse("terraform-run outputs' params", OUTPUTS_PARAMS, x=-300),
         "d2": run_service("the deployment and its end time (terraform-run outputs, a state read)", "terraform-run",
                           "$var.d1.textObject", "expiry_outputs", x=-250),
@@ -5059,11 +5154,12 @@ def tear_down_expired_aws_vpn() -> dict:
                  to_job="error"),
         "da": note("the check could not run", "the Gateway could not read or check the end time (expiry_outputs / "
                    "expiry): nothing was changed", "error", x=-150, y=-600),
+        **step(""),
         **section,
-        # a teardown that failed: a Work Center task says so (the job's error says where)
+        **step("where it stops: a teardown that failed opens a Work Center task"),
         "f0": view("Work Center task", "The timed teardown of the AWS VPN stopped: check the job, then run Tear Down "
                    "AWS VPN by hand", "$var.job.error", "$var.job.expiry", "Seen", "Seen", x=2400, y=-600),
-    }
+    })
     tr = {
         "workflow_start": _edge(d1=ok),
         "d1": _edge(d2=ok),
@@ -5235,15 +5331,15 @@ def rotation_section() -> tuple[dict, dict, str]:
     the Work Center task f0, with the reason in `error`. Returns (tasks, transitions, the first task id)."""
     ok, fail, err = "success", "failure", "error"
     nothing = "nothing was changed"
-    tasks = {
-        # a service that does not run leaves {} behind: its step reads it as no answer
+    tasks = sectioned({
+        **step("empty answers: a step that never runs leaves {} behind, which its judge reads as no answer"),
         "01": empty("no write answer yet", "write_result", x=0),
         "02": empty("no reload answer yet", "reload_result", x=20),
         "03": empty("no push answer yet", "push_result", x=40),
         "04": empty("no restore answer yet", "restore_result", x=60),
         "05": empty("no reload-back answer yet", "reload_back_result", x=80),
         "06": empty("no step yet", "step", x=90),
-        # the plan: the deployment, its target and every service's params
+        **step("the plan: the deployment, its target and every service's params"),
         "1a": parse("terraform-run outputs' params", OUTPUTS_PARAMS, x=100),
         "1b": run_service("the deployment (terraform-run outputs, a state read)", "terraform-run", "$var.1a.textObject",
                           "rotate_outputs", x=150),
@@ -5259,20 +5355,20 @@ def rotation_section() -> tuple[dict, dict, str]:
         "13": run_code("what to read and push on the router (Hand Off's plan)", LAB_EDGE_PLAN_CODE,
                        "$var.12.return_data", "rotate_edge", x=500),
         "14": evaluate("the router's plan ready?", "job", "rotate_edge", "stdout_json.ready", "==", True, x=550),
-        # the tunnel must be up before anything changes
+        **step("the precheck: the tunnel must be up before anything changes"),
         "2a": jq("lab-edge verify's params", "$var.job.rotate_edge", "stdout_json.lab_edge", x=600),
         "2b": run_service("the tunnel up now? (lab-edge verify: show commands, one ping)", "lab-edge",
                           "$var.2a.return_data", "precheck_result", x=650),
         "2c": evaluate("lab-edge read the router?", "2b", "result", "result.return_code", "==", 0, x=700),
         "2d": evaluate("the router says up?", "2b", "result", "result.stdout_json.router", "==", "up", x=750),
         "2e": evaluate("the data plane says up?", "2b", "result", "result.stdout_json.data_plane", "==", "up", x=800),
-        # the block the push sends (the key is a marker in it, so its SHA-256 does not change with the key)
+        **step("the block: what the push sends; the key is a marker in it, so its SHA-256 does not change with the key"),
         "3a": jq("lab-edge render's params", "$var.job.rotate_edge", "stdout_json.render", x=850),
         "3b": run_service("render the block (lab-edge render: no device)", "lab-edge", "$var.3a.return_data",
                           "render_result", x=900),
         "3c": evaluate("rendered?", "3b", "result", "result.return_code", "==", 0, x=950),
         "3d": jq("the block's SHA-256", "$var.3b.result", "result.stdout_json.sha256", x=1000, to_job="sha256"),
-        # 1. a new key in Vault, then Secrets Manager
+        **step("change 1 of 4: a new key in Vault, then Secrets Manager"),
         "4a": jq("aws-vpn-psk write's params", "$var.job.rotate_plan", "stdout_json.write", x=1050),
         "4b": run_service("a new key: Vault, then Secrets Manager (aws-vpn-psk write)", "aws-vpn-psk",
                           "$var.4a.return_data", "write_result", x=1100),
@@ -5284,7 +5380,7 @@ def rotation_section() -> tuple[dict, dict, str]:
         "4e": evaluate("written to both stores?", "4d", "result", "stdout_json.ok", "==", True, x=1250),
         "4f": evaluate("roll back?", "4d", "result", "stdout_json.rollback", "==", True, x=1300, y=-300),
         "40": jq("why the write stopped", "$var.4d.result", "stdout_json.message", x=1350, y=-600, to_job="error"),
-        # 2. strongSwan re-reads Secrets Manager (the tunnel is down from here until the router takes the key)
+        **step("change 2 of 4: strongSwan re-reads Secrets Manager; the tunnel is down from here until the router takes the key"),
         "5a": jq("aws-vpn-monitor reload's params", "$var.job.rotate_plan", "stdout_json.reload", x=1350),
         "5b": run_service("strongSwan reloads the key (aws-vpn-monitor reload: the Lambda's SSM document)",
                           "aws-vpn-monitor", "$var.5a.return_data", "reload_result", x=1400),
@@ -5296,7 +5392,7 @@ def rotation_section() -> tuple[dict, dict, str]:
         "5e": evaluate("reloaded?", "5d", "result", "stdout_json.ok", "==", True, x=1550),
         "5f": evaluate("roll back?", "5d", "result", "stdout_json.rollback", "==", True, x=1600, y=-300),
         "50": jq("why the reload stopped", "$var.5d.result", "stdout_json.message", x=1650, y=-600, to_job="error"),
-        # 3. the router takes the key: Hand Off's push, the same block, the new key from Vault
+        **step("change 3 of 4: the router takes the key through Hand Off's push, the same block with the new key from Vault"),
         "6a": jq("lab-edge-push's params", "$var.job.rotate_edge", "stdout_json.push", x=1650),
         "6b": set_key("push params: the block's SHA-256", "$var.6a.return_data", "sha256", "$var.job.sha256", x=1700),
         "6c": run_service("the router takes the new key (lab-edge-push: revert timer, a fresh SA, save)",
@@ -5309,21 +5405,21 @@ def rotation_section() -> tuple[dict, dict, str]:
         "6f": evaluate("saved on the router?", "6e", "result", "stdout_json.ok", "==", True, x=1900),
         "60": evaluate("roll back?", "6e", "result", "stdout_json.rollback", "==", True, x=1950, y=-300),
         "61": jq("why the push stopped", "$var.6e.result", "stdout_json.message", x=2000, y=-600, to_job="error"),
-        # 4. Vault keeps the current and the one previous version; a failed prune is caught up by the next rotation
+        **step("change 4 of 4: Vault keeps the current and one previous version; a failed prune is caught up by the next rotation"),
         "7a": jq("aws-vpn-psk prune's params", "$var.job.rotate_plan", "stdout_json.prune", x=2000),
         "7b": run_service("keep two key versions in Vault (aws-vpn-psk prune)", "aws-vpn-psk", "$var.7a.return_data",
                           "prune_result", x=2050),
         "7c": evaluate("pruned?", "7b", "result", "result.return_code", "==", 0, x=2100),
         "70": note("the prune did not run", "older key versions were not pruned (prune_result): the next rotation "
                    "prunes them", "prune_note", x=2150, y=300),
-        # the outcome: the rotation and Verify's verdict
+        **step("the outcome: the rotation and Verify's verdict"),
         "90": jq("the verdict", "$var.ee.result", "stdout_json.verdict", x=2950),
         "91": jq("what the push said", "$var.job.step", "stdout_json.message", x=3000),
         "92": replace("the outcome: the rotation", ROTATED_TPL, "__S__", "$var.91.return_data", x=3050),
         "93": replace("the outcome", "$var.92.replacedString", "__V__", "$var.90.return_data", x=3100),
         "94": jq("the verdict (not passed)", "$var.ee.result", "stdout_json.verdict", x=2950, y=-300),
         "95": replace("why the rotation needs a look", UNVERIFIED_TPL, "__V__", "$var.94.return_data", x=3000, y=-300),
-        # the rollback: the previous key current again, then strongSwan reloads it
+        **step("the rollback: the previous key current again, then strongSwan reloads it"),
         "b0": jq("why it is rolled back", "$var.job.step", "stdout_json.message", x=2000, y=-900, to_job="error"),
         "b1": jq("aws-vpn-psk restore-previous's params", "$var.job.rotate_plan", "stdout_json.restore", x=2050,
                  y=-900),
@@ -5349,7 +5445,7 @@ def rotation_section() -> tuple[dict, dict, str]:
         "bb": replace("the reason and the rollback", ROLLBACK_TPL, "__E__", "$var.job.error", x=2550, y=-900),
         "bc": replace("the reason and the rollback, in full", "$var.bb.replacedString", "__R__", "$var.ba.return_data",
                       x=2600, y=-900),
-        # failures before the write change nothing; after it, the job says where it stopped
+        **step("where it stops: failures before the write change nothing; after it the job says where it stopped, and a Work Center task opens"),
         "8a": note("the deployment could not be read", f"terraform-run outputs could not be read (rotate_outputs): "
                    f"{nothing}", "error", x=200, y=-600),
         "8b": note("a step could not run", f"the Gateway could not run a step before the new key (see rotate_plan, "
@@ -5367,7 +5463,7 @@ def rotation_section() -> tuple[dict, dict, str]:
                    "run or gave no verdict: run Verify AWS VPN", "error", x=3000, y=-600),
         "f0": view("Work Center task", "Rotate AWS VPN Key did not finish: check the job", "$var.job.error",
                    "$var.job.step", "Seen", "Seen", x=3200, y=0),
-    }
+    })
     tasks["93"]["variables"]["outgoing"]["replacedString"] = "$var.job.outcome"
     tasks["95"]["variables"]["outgoing"]["replacedString"] = "$var.job.error"
     tasks["bc"]["variables"]["outgoing"]["replacedString"] = "$var.job.error"
@@ -5511,15 +5607,17 @@ def rotate_aws_vpn_key() -> dict:
 def rotate_aws_vpn_key_monthly() -> dict:
     ok, fail, err = "success", "failure", "error"
     section, section_tr, first = rotation_section()
-    tasks = {
+    tasks = sectioned({
+        **step("the due check: the 1st of the month only, on the runner's UTC clock"),
         "d1": run_code("the 1st of the month? (the runner's UTC clock)", ROTATE_DUE_CODE, "{}", "due", x=-150),
         "d2": evaluate("due?", "d1", "result", "stdout_json.due", "==", True, x=-100),
         "d3": jq("nothing to do", "$var.d1.result", "stdout_json.message", x=-50, y=600, to_job="outcome"),
         # a clock that cannot be read opens no task: the next day's run tries again
         "d4": note("the due check could not run", "the Gateway could not run the due check (due): nothing was changed",
                    "error", x=-100, y=-600),
+        **step(""),
         **section,
-    }
+    })
     tr = {
         "workflow_start": _edge(d1=ok),
         "d1": _edge(d2=ok, d4=err),
@@ -6188,12 +6286,13 @@ def run_agent(summary: str, agent_marker: str, request_ref: str, out_job: str, x
 def diagnose_aws_vpn_outage() -> dict:
     ok, fail, err = "success", "failure", "error"
     nothing = "nothing was changed"
-    tasks = {
+    tasks = sectioned({
+        **step("empty answers: a step that never runs leaves {} behind, which its judge reads as no answer"),
         "01": empty("no alarm reading yet", "alarm_result", x=0),
         "02": empty("no agent answer yet", "agent_result", x=20),
         "03": empty("no fix answer yet", "fix_result", x=40),
         "04": empty("no tunnel reading after the fix yet", "check_result", x=60),
-        # the deployment and the plan
+        **step("the plan: the deployment, the alerting device, what the loop may act on"),
         "1a": parse("terraform-run outputs' params", OUTPUTS_PARAMS, x=100),
         "1b": run_service("the deployment (terraform-run outputs, a state read)", "terraform-run", "$var.1a.textObject",
                           "outage_outputs", x=150),
@@ -6210,7 +6309,7 @@ def diagnose_aws_vpn_outage() -> dict:
         "14": run_code("what to read and push on the router (Hand Off's plan)", LAB_EDGE_PLAN_CODE,
                        "$var.13.return_data", "outage_edge", x=500),
         "15": evaluate("the router's plan ready?", "job", "outage_edge", "stdout_json.ready", "==", True, x=550),
-        # one incident per outage: an open one is only noted
+        **step("one incident per outage: an open one is only noted, and the job ends"),
         "2a": jq("the open-incident query", "$var.job.outage_plan", "stdout_json.open_query", x=600),
         "2b": sni("listIncidents", "an open incident for this outage? (correlation_id)",
                   {"sysparm_query": "$var.2a.return_data", "sysparm_fields": "sys_id,number", "sysparm_limit": 1},
@@ -6227,7 +6326,7 @@ def diagnose_aws_vpn_outage() -> dict:
                   x=900, y=600),
         "23": note("still down: noted", "the outage already has an open incident: noted it, opened none", "outcome",
                    x=925, y=600),
-        # the evidence: the AWS alarm, then Verify's own checks (verify_section, its third copy)
+        **step("the evidence: the AWS tunnel-down alarm, then Verify's checks; a tunnel that is up again ends the job"),
         "3a": parse("aws-vpn-monitor alarm's params", ALARM_PARAMS, x=950),
         "3b": run_service("the AWS tunnel-down alarm (aws-vpn-monitor alarm, a CloudWatch read)", "aws-vpn-monitor",
                           "$var.3a.textObject", "alarm_result", x=1000),
@@ -6236,7 +6335,7 @@ def diagnose_aws_vpn_outage() -> dict:
                    "alarm_note", x=1050, y=300),
         "30": note("the tunnel is up again", "the tunnel was up again when Itential checked: no incident opened, "
                    "nothing was changed", "outcome", x=1800, y=600),
-        # the incident
+        **step("the incident: one ServiceNow incident opened from the evidence, the agent's request made"),
         "31": set_key("the incident: Verify's verdict", {}, "judgement", "$var.job.judgement", x=1800),
         "32": set_key("the incident: the alarm", "$var.31.object", "alarm", "$var.job.alarm_result", x=1825),
         "33": set_key("the incident: the device", "$var.32.object", "device", "$var.job.device", x=1850),
@@ -6252,7 +6351,7 @@ def diagnose_aws_vpn_outage() -> dict:
         "3c": run_code("the agent's request (Python on the runner)", OUTAGE_REQUEST_CODE, "$var.39.object",
                        "outage_request", x=2025),
         "3d": evaluate("the incident opened?", "3c", "result", "stdout_json.ok", "==", True, x=2050),
-        # A3: the agent diagnoses, notes the incident and picks one fix
+        **step("the agent: tunnel-diagnostics reads both ends, notes the incident and picks one fix from the menu, or escalates"),
         "4a": jq("the agent's request", "$var.job.outage_request", "stdout_json.request", x=2100),
         "4b": run_agent("tunnel-diagnostics: read both ends, note the incident, pick one fix", AGENT_MARKER,
                         "$var.4a.return_data", "agent_result", x=2150),
@@ -6271,7 +6370,7 @@ def diagnose_aws_vpn_outage() -> dict:
                   x=2375, y=600),
         "44": note("escalated", "the agent found no fix from the menu: the incident is escalated to a person", "error",
                    x=2400, y=600),
-        # the card: one HTML page from the outage's own readings (outage_card), the engineer's note comes back
+        **step("the card: the outage's readings and the fix on a Work Center page; a rejection is noted on the incident"),
         "5a": set_key("the card: the fix", "$var.34.object", "fix", "$var.job.outage_fix", x=2400),
         "5b": set_key("the card: the incident number", "$var.5a.object", "number", "$var.4d.return_data", x=2410),
         "5d": set_key("the card: the deployment", "$var.5b.object", "plan", "$var.job.outage_plan", x=2420),
@@ -6292,7 +6391,7 @@ def diagnose_aws_vpn_outage() -> dict:
                   x=2525, y=900),
         "52": note("rejected", "the fix was rejected in Work Center: nothing was run, the incident stays open",
                    "outcome", x=2550, y=900),
-        # the approved fix, exactly one
+        **step("the fix: exactly one, the approved one"),
         "60": evaluate("fix: reset the IKE SA?", "job", "outage_fix", "stdout_json.fix", "==", "reset-ike", x=2550),
         "61": jq("lab-edge-push's params", "$var.job.outage_edge", "stdout_json.push", x=2600, y=-300),
         "62": set_key("reset-sa, not push", "$var.61.return_data", "action", "reset-sa", x=2625, y=-300),
@@ -6319,7 +6418,7 @@ def diagnose_aws_vpn_outage() -> dict:
         "57": evaluate("the push exited 0?", "6e", "result", "result.return_code", "==", 0, x=2850, y=300),
         "54": note("the fix did not complete", "the approved fix exited non-zero or could not run (fix_result): the "
                    "tunnel is read again", "fix_note", x=2875),
-        # the tunnel again, then the incident
+        **step("the tunnel again: up to four reads, then the incident resolved or noted"),
         "70": jq("lab-edge verify's params", "$var.job.outage_edge", "stdout_json.lab_edge", x=2900),
         "80": note("the tunnel could not be read", "lab-edge could not read the tunnel after the fix (check_result)",
                    "check_note", x=2940, y=-300),
@@ -6342,7 +6441,7 @@ def diagnose_aws_vpn_outage() -> dict:
                   {"sys_id": "$var.77.return_data", "sysparm_fields": "number", **nbi_body("$var.7c.return_data")},
                   x=3150, y=-300),
         "7e": jq("why it needs a look", "$var.76.result", "stdout_json.message", x=3175, y=-300, to_job="error"),
-        # failures: the reason, then one Work Center task
+        **step("where it stops: the reason in error, then one Work Center task"),
         "8a": note("the deployment could not be read", f"terraform-run outputs could not be read (outage_outputs): "
                    f"{nothing}", "error", x=200, y=-600),
         "8b": note("a step could not run", f"the Gateway could not run a step before the evidence (see outage_plan, "
@@ -6356,7 +6455,7 @@ def diagnose_aws_vpn_outage() -> dict:
                    "error", x=2300, y=-900),
         "f0": view("Work Center task", "Diagnose AWS VPN Outage needs a look", "$var.job.error", "$var.job.outage_fix",
                    "Seen", "Seen", x=3300, y=0),
-    }
+    })
     vtasks, vtr, first = verify_section("outage_edge", passed="30", failed="31", broken="8c", judge_broken="8c",
                                         x=1100)
     tasks.update(vtasks)
@@ -6383,6 +6482,7 @@ def diagnose_aws_vpn_outage() -> dict:
                        f"{sum(r[3] for r in OUTAGE_RECHECKS)} s after the fix): the result says so", "check_note",
                        x=3020, y=300)
     recheck_tr["ac"] = _edge(**{"72": ok})
+    stepped(tasks, "the tunnel again: up to four reads, then the incident resolved or noted", "ac", *(tid for r in OUTAGE_RECHECKS for tid in r[:3]))
     tr = {
         "workflow_start": _edge(**{"01": ok}),
         "01": _edge(**{"02": ok}), "02": _edge(**{"03": ok}), "03": _edge(**{"04": ok}), "04": _edge(**{"1a": ok}),
@@ -7237,12 +7337,13 @@ DRILL_RESULT_CODE = _source(fabric_reading, drill_result, call='drill_result(jso
 def diagnose_fabric_bgp_outage() -> dict:
     ok, fail, err = "success", "failure", "error"
     nothing = "nothing was changed"
-    tasks = {
+    tasks = sectioned({
+        **step("empty answers: a step that never runs leaves {} behind, which its judge reads as no answer"),
         "01": empty("no far-end reading yet", "far_result", x=0),
         "02": empty("no agent answer yet", "agent_result", x=20),
         "03": empty("no fix answer yet", "fix_result", x=40),
         "04": empty("no session reading after the fix yet", "check_result", x=60),
-        # the plan: the alerting end must be a declared session; its far end and both ends' reads
+        **step("the plan: the alerting end must be a declared session; its far end and both ends' reads"),
         "1a": set_key("the plan: the alerting device", {}, "device", "$var.job.device", x=100),
         "1b": set_key("the plan: its neighbor", "$var.1a.object", "neighbor", "$var.job.neighbor", x=125),
         "1c": set_key("the plan: the VRF", "$var.1b.object", "vrf", "$var.job.vrf", x=150),
@@ -7251,7 +7352,7 @@ def diagnose_fabric_bgp_outage() -> dict:
                        "$var.1d.object", "fabric_plan", x=200),
         "10": evaluate("a declared session?", "1e", "result", "stdout_json.ok", "==", True, x=250),
         "19": jq("why there is no plan", "$var.1e.result", "stdout_json.message", x=300, y=-600, to_job="error"),
-        # one incident per device pair: an open one is only noted
+        **step("one incident per pair: an open one is only noted, and the job ends"),
         "2a": jq("the open-incident query", "$var.job.fabric_plan", "stdout_json.open_query", x=600),
         "2b": sni("listIncidents", "an open incident for this pair? (correlation_id)",
                   {"sysparm_query": "$var.2a.return_data", "sysparm_fields": "sys_id,number", "sysparm_limit": 1},
@@ -7269,7 +7370,7 @@ def diagnose_fabric_bgp_outage() -> dict:
                   x=900, y=600),
         "23": note("still down: noted", "the pair already has an open incident: noted it, opened none", "outcome",
                    x=925, y=600),
-        # the evidence: both ends, read by fabric-bgp (a far end that cannot be read is evidence too)
+        **step("the evidence: both ends read by fabric-bgp; a session Established again ends the job"),
         "3a": jq("the alerting end's read params", "$var.job.fabric_plan", "stdout_json.near_read", x=950),
         "3b": run_service("the alerting end (fabric-bgp read: the session, the link, AS against NetBox)", "fabric-bgp",
                           "$var.3a.return_data", "near_result", x=1000),
@@ -7282,7 +7383,7 @@ def diagnose_fabric_bgp_outage() -> dict:
                        x=1125),
         "30": note("the session is up again", "the session read Established again when Itential checked: no incident "
                    "opened, nothing was changed", "outcome", x=1150, y=600),
-        # the incident
+        **step("the incident: one ServiceNow incident opened from the evidence, the agent's request made"),
         "31": set_key("the incident: the plan", {}, "plan", "$var.job.fabric_plan", x=1200),
         "32": set_key("the incident: the alerting end", "$var.31.object", "near", "$var.job.near_result", x=1225),
         "33": set_key("the incident: the far end", "$var.32.object", "far", "$var.job.far_result", x=1250),
@@ -7298,7 +7399,7 @@ def diagnose_fabric_bgp_outage() -> dict:
         "c1": run_code("the agent's request (Python on the runner)", OUTAGE_REQUEST_CODE, "$var.39.object",
                        "fabric_request", x=1425),
         "c2": evaluate("the incident opened?", "c1", "result", "stdout_json.ok", "==", True, x=1450),
-        # A6: the agent diagnoses, notes the incident and picks one fix on one end
+        **step("the agent: fabric-diagnostics confirms both ends, notes the incident and picks one fix on one end, checked against the workflow's own reads"),
         "4a": jq("the agent's request", "$var.job.fabric_request", "stdout_json.request", x=1500),
         "4b": run_agent("fabric-diagnostics: confirm both ends, note the incident, pick one fix", FABRIC_AGENT_MARKER,
                         "$var.4a.return_data", "agent_result", x=1550),
@@ -7320,12 +7421,12 @@ def diagnose_fabric_bgp_outage() -> dict:
                   x=1775, y=600),
         "44": note("escalated", "the agent found no fix from the menu: the incident is escalated to a person", "error",
                    x=1800, y=600),
-        # the card's exact lines: fabric-bgp plan for the picked fix (no device): what the card shows is what runs
+        **step("the exact lines: fabric-bgp plans the picked fix with no device; what the card shows is what runs"),
         "46": jq("the plan's params (the picked fix)", "$var.job.fabric_fix", "stdout_json.plan_params", x=1720),
         "47": run_service("the fix's exact lines (fabric-bgp plan: no device)", "fabric-bgp", "$var.46.return_data",
                           "fix_plan", x=1740),
         "48": evaluate("the lines read?", "47", "result", "result.return_code", "==", 0, x=1760),
-        # the card: one HTML page from both ends' readings (fabric_card), the engineer's note comes back
+        **step("the card: both ends' readings, the fix and its lines on a Work Center page; a rejection is noted on the incident"),
         "4e": jq("the incident number", "$var.job.fabric_request", "stdout_json.number", x=1800),
         "5a": set_key("the card: the fix", "$var.34.object", "fix", "$var.job.fabric_fix", x=1810),
         "5b": set_key("the card: the incident number", "$var.5a.object", "number", "$var.4e.return_data", x=1820),
@@ -7347,14 +7448,14 @@ def diagnose_fabric_bgp_outage() -> dict:
                   x=1925, y=900),
         "52": note("rejected", "the fix was rejected in Work Center: nothing was run, the incident stays open",
                    "outcome", x=1950, y=900),
-        # the approved fix, exactly one, on the end the agent named (fabric-bgp proves it Established, then saves)
+        **step("the fix: exactly one, on the end the agent named; fabric-bgp proves it Established, then saves"),
         "60": jq("the fix's params (one end, one action)", "$var.job.fabric_fix", "stdout_json.params", x=1950),
         "61": run_service("run the approved fix (fabric-bgp: one change, Established, then save)", "fabric-bgp",
                           "$var.60.return_data", "fix_result", x=2000),
         "62": evaluate("the fix exited 0?", "61", "result", "result.return_code", "==", 0, x=2025),
         "54": note("the fix did not complete", "the approved fix exited non-zero or could not run (fix_result): the "
                    "session is read again", "fix_note", x=2050, y=300),
-        # the session again at the alerting end, then the incident
+        **step("the session again: up to four reads at the alerting end, then the incident resolved or noted"),
         "70": jq("the alerting end's read params", "$var.job.fabric_plan", "stdout_json.near_read", x=2100),
         "80": note("the session could not be read", "fabric-bgp could not read the session after the fix "
                    "(check_result)", "check_note", x=2140, y=-300),
@@ -7376,7 +7477,7 @@ def diagnose_fabric_bgp_outage() -> dict:
                   {"sys_id": "$var.77.return_data", "sysparm_fields": "number", **nbi_body("$var.7c.return_data")},
                   x=2425, y=-300),
         "7e": jq("why it needs a look", "$var.76.result", "stdout_json.message", x=2450, y=-300, to_job="error"),
-        # failures: the reason, then one Work Center task
+        **step("where it stops: the reason in error, then one Work Center task"),
         "8b": note("a step could not run", f"the Gateway could not run a step before the evidence (see fabric_plan): "
                    f"{nothing}", "error", x=500, y=-600),
         "8c": note("the alerting end could not be read", f"fabric-bgp could not read the alerting end (near_result): "
@@ -7388,7 +7489,7 @@ def diagnose_fabric_bgp_outage() -> dict:
                    "error", x=1700, y=-900),
         "f0": view("Work Center task", "Diagnose Fabric BGP Outage needs a look", "$var.job.error", "$var.job.fabric_fix",
                    "Seen", "Seen", x=2600, y=0),
-    }
+    })
     # the session after the fix: fabric-bgp already waited for Established before it saved, so these reads confirm it
     # from the alerting end - up to four over about two and a half minutes, unrolled (no cycle); the first that reads
     # Established goes to the result, the last read is check_result either way
@@ -7409,6 +7510,7 @@ def diagnose_fabric_bgp_outage() -> dict:
                        f"last read (about {sum(r[3] for r in FABRIC_RECHECKS)} s after the fix): the result says so",
                        "check_note", x=2240, y=300)
     recheck_tr["bc"] = _edge(**{"72": ok})
+    stepped(tasks, "the session again: up to four reads at the alerting end, then the incident resolved or noted", "bc", *(tid for r in FABRIC_RECHECKS for tid in r[:3]))
     tr = {
         "workflow_start": _edge(**{"01": ok}),
         "01": _edge(**{"02": ok}), "02": _edge(**{"03": ok}), "03": _edge(**{"04": ok}), "04": _edge(**{"1a": ok}),
@@ -7512,12 +7614,13 @@ def diagnose_fabric_bgp_outage() -> dict:
 def break_fabric_bgp() -> dict:
     ok, fail, err = "success", "failure", "error"
     nothing = "nothing was changed"
-    tasks = {
+    tasks = sectioned({
+        **step("empty answers: a step that never runs leaves {} behind, which its judge reads as no answer"),
         "01": empty("no inject answer yet", "inject_result", x=0),
         "02": empty("no confirm answer yet", "confirm_result", x=20),
         "03": empty("no read after the timer yet", "after_timer_result", x=40),
         "04": empty("no far-end reading yet", "far_result", x=60),
-        # the plan: a declared vEOS session end and a drill fault
+        **step("the plan: a declared vEOS session end and the drill fault"),
         "1a": set_key("the plan: the device", {}, "device", "$var.job.device", x=100),
         "1b": set_key("the plan: its neighbor", "$var.1a.object", "neighbor", "$var.job.neighbor", x=125),
         "1c": set_key("the plan: the fault", "$var.1b.object", "fault", "$var.job.fault", x=150),
@@ -7525,7 +7628,7 @@ def break_fabric_bgp() -> dict:
                        "drill_plan", x=200),
         "10": evaluate("a declared vEOS session?", "1e", "result", "stdout_json.ok", "==", True, x=250),
         "19": jq("why there is no drill", "$var.1e.result", "stdout_json.message", x=300, y=600, to_job="outcome"),
-        # both ends now: only a healthy session is broken on purpose
+        **step("the health check: both ends now; only a healthy session is broken on purpose"),
         "2a": jq("the session's read params", "$var.job.drill_plan", "stdout_json.near_read", x=350),
         "2b": run_service("the session now (fabric-bgp read)", "fabric-bgp", "$var.2a.return_data", "near_result", x=400),
         "2c": evaluate("Established now?", "2b", "result", "result.stdout_json.session.state", "==", "Established",
@@ -7537,12 +7640,12 @@ def break_fabric_bgp() -> dict:
         "2f": run_service("the far end now (fabric-bgp read)", "fabric-bgp", "$var.2e.return_data", "far_result", x=550),
         "29": evaluate("the far end Established now?", "2f", "result", "result.stdout_json.session.state", "==",
                        "Established", x=575),
-        # the exact lines: fabric-bgp plan (no device)
+        **step("the exact lines: fabric-bgp plans the fault with no device"),
         "3a": jq("the plan's params", "$var.job.drill_plan", "stdout_json.plan_params", x=600),
         "3b": run_service("the drill's exact lines (fabric-bgp plan: no device)", "fabric-bgp", "$var.3a.return_data",
                           "drill_lines", x=650),
         "3c": evaluate("the lines read?", "3b", "result", "result.return_code", "==", 0, x=700),
-        # the card
+        **step("the card: the session, both ends and the exact lines on a Work Center page"),
         "4a": set_key("the card: the plan", {}, "plan", "$var.job.drill_plan", x=750),
         "4b": set_key("the card: the session", "$var.4a.object", "near", "$var.job.near_result", x=775),
         "4c": set_key("the card: the far end", "$var.4b.object", "far", "$var.job.far_result", x=800),
@@ -7556,7 +7659,7 @@ def break_fabric_bgp() -> dict:
                    {"export": "$var.job.card_decision"}, kind="manual", display="Work Center",
                    view="/work-center/task/InteractiveHTML", x=900),
         "48": note("rejected", f"the drill was rejected in Work Center: {nothing}", "outcome", x=950, y=600),
-        # the fault, under the commit timer
+        **step("the fault: applied under an EOS commit timer, never saved"),
         "5a": jq("the inject's params", "$var.job.drill_plan", "stdout_json.inject", x=950),
         "5b": run_service("break it (fabric-bgp inject: a configuration session under a commit timer, never saved)",
                           "fabric-bgp", "$var.5a.return_data", "inject_result", x=1000),
@@ -7567,11 +7670,11 @@ def break_fabric_bgp() -> dict:
         "5f": jq("the confirm's params", "$var.job.drill_plan", "stdout_json.confirm", x=1100),
         "50": set_key("confirm params: the drill session", "$var.5f.return_data", "drill_session", "$var.5e.return_data",
                       x=1125),
-        # confirmed only once the outage loop brought it back
+        **step("the confirm: the commit timer cancelled only once the outage loop brought the session back"),
         "7a": run_service("cancel the commit timer (fabric-bgp confirm-drill: only when Established)", "fabric-bgp",
                           "$var.50.object", "confirm_result", x=1600),
         "7b": evaluate("confirmed?", "7a", "result", "result.return_code", "==", 0, x=1625),
-        # not back by the last read: the timer's, then read again
+        **step("the timer: not back by the last read, so EOS rolls it back; read again after the timer"),
         "8a": note("not back by the last read", "the session was not Established by the last read: the commit timer "
                    "rolls the drill back", "timer_note", x=1600, y=300),
         "8b": task("delay", "WorkFlowEngine", "wait for the commit timer (and a margin)", {"time": DRILL_AFTER_TIMER},
@@ -7579,7 +7682,7 @@ def break_fabric_bgp() -> dict:
         "8c": run_service("the session after the timer (fabric-bgp read)", "fabric-bgp", "$var.2a.return_data",
                           "after_timer_result", x=1650, y=300),
         "8d": evaluate("read after the timer?", "8c", "result", "result.return_code", "==", 0, x=1675, y=300),
-        # the outcome
+        **step("the outcome: a clean ending, or why it needs a look"),
         "9a": set_key("the result: the inject", {}, "inject", "$var.job.inject_result", x=1700),
         "9b": set_key("the result: the last read", "$var.9a.object", "check", "$var.job.check_result", x=1725),
         "9c": set_key("the result: the confirm", "$var.9b.object", "confirm", "$var.job.confirm_result", x=1750),
@@ -7590,6 +7693,7 @@ def break_fabric_bgp() -> dict:
         "9f": evaluate("a clean ending?", "9e", "result", "stdout_json.ok", "==", True, x=1825),
         "90": jq("the outcome", "$var.9e.result", "stdout_json.message", x=1850, to_job="outcome"),
         "91": jq("why it needs a look", "$var.9e.result", "stdout_json.message", x=1850, y=300, to_job="error"),
+        **step("where it stops: the reason in error, then one Work Center task"),
         "e0": note("a step could not run", f"a step before the card could not run (see drill_plan, near_result, "
                    f"drill_lines): {nothing}", "error", x=650, y=-600),
         "e1": note("a step after the drill could not run", "a step after the drill was applied could not run (see "
@@ -7598,7 +7702,7 @@ def break_fabric_bgp() -> dict:
                    "error", x=1400, y=-600),
         "f0": view("Work Center task", "Break Fabric BGP needs a look", "$var.job.error", "$var.job.drill_plan", "Seen",
                    "Seen", x=1950, y=0),
-    }
+    })
     # the patient wait for the outage loop: four reads over 18 minutes, unrolled (no cycle); the first that reads
     # Established goes to the confirm, the last read is check_result either way
     reads_tr = {}
@@ -7615,6 +7719,7 @@ def break_fabric_bgp() -> dict:
         reads_tr[delay] = _edge(**{read: ok})
         reads_tr[read] = _edge(**{up: ok, nxt: err})
         reads_tr[up] = _edge(**{"7a": ok, nxt: fail})
+    stepped(tasks, "the wait: four reads over 18 minutes for the outage loop to bring the session back", *(tid for r in DRILL_READS for tid in r[:3]))
     tr = {
         "workflow_start": _edge(**{"01": ok}),
         "01": _edge(**{"02": ok}), "02": _edge(**{"03": ok}), "03": _edge(**{"04": ok}), "04": _edge(**{"1a": ok}),

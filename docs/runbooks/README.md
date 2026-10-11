@@ -29,6 +29,11 @@ They build a complete network-automation lab: an out-of-band network, a Kubernet
 twelve-device nested topology and a full observability stack. Chapters 05, 06, 08 and 09 need access to
 Itential's container registry.
 
+## The workflow guides
+
+The chapters build the lab; [`docs/workflows/`](../workflows/README.md) says what each Itential workflow does
+once it is there, from start to end, generated from the workflow's own document.
+
 ## What these are not
 
 They are not a substitute for the vendors' documentation, and they are not a promise that a command will
