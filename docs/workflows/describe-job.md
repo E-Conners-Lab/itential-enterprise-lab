@@ -6,7 +6,8 @@ Describes one job of this Platform: which path the run took through its workflow
 
 ## How it runs
 
-- By hand, from the Platform: the Studio's run button or the API. No automation, form, endpoint or schedule starts it.
+- Through the Operations Manager automation "Describe Job": One job's run laid over its workflow's steps, on a Work Center card; reads only (ADR 0082).
+- From the endpoint trigger "Describe Job from NetClaw" (route `describe-job`).
 
 ## Inputs
 

@@ -254,6 +254,13 @@
       ansible.builtin.include_tasks: tasks/outage-trigger.yml
       vars: {otr_key: ask_platform_guide}
 
+    # ADR 0082: NetClaw's three workflow endpoints, on both tiers; its custom tools post to exactly these routes
+    - name: NetClaw's endpoints - an automation and an endpoint trigger for each of its workflows
+      ansible.builtin.include_tasks: tasks/outage-trigger.yml
+      vars: {otr_key: "{{ ncl_key }}"}
+      loop: [show_command, describe_job, branch_vlan]
+      loop_control: {loop_var: ncl_key}
+
     # ADR 0070: the tier that does not run the AWS VPN keeps no way to start it - no trigger, no automation, no schedule
     - name: AWS VPN retired on this tier - its triggers and automations removed
       ansible.builtin.include_tasks: tasks/aws-vpn-retire.yml
@@ -267,3 +274,11 @@
     - name: External integrations' credentials as Vault references (only the authentication value changes)
       ansible.builtin.include_tasks: tasks/vault-external-integrations.yml
       when: vault_enabled | default(false) | bool
+
+    # ADR 0082: NetClaw's own account and role, before the automations' gbac names its group
+    - name: NetClaw's service account, its group and its role
+      ansible.builtin.include_tasks: tasks/netclaw-access.yml
+
+    # ADR 0082: last, so every automation this play made is covered; flowai-assets.yml repeats it for the agents' own
+    - name: Who may read and start each automation (gbac from versions.yaml automation_access)
+      ansible.builtin.include_tasks: tasks/automation-access.yml

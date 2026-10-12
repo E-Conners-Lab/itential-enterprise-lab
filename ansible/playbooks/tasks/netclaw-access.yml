@@ -1,0 +1,125 @@
+---
+# ADR 0082: svc-netclaw, NetClaw's Itential service account, on both tiers. Included from platform.yml before
+# tasks/automation-access.yml, so the netclaw group exists when an automation's gbac names it.
+#
+# What it writes, and nothing else:
+#  - the custom role netclaw-run, created when absent and reset to itential/netclaw/roles.yaml when it differs (it is
+#    this play's own role; unlike copilot-access.yml there is nothing a person tunes by hand)
+#  - the svc-netclaw entry and the netclaw group in the tier's directory, the account's first login and the group's
+#    assignedRoles (tasks/ldap-service-account.yml, svc_kind netclaw)
+# Needs: login, platform_local, admin_pw, netclaw (versions.yaml), dev_overlay on dev.
+
+- name: NetClaw access - the oracle and the tier
+  ansible.builtin.set_fact:
+    ncl_oracle: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/../../itential/netclaw/roles.yaml') | from_yaml }}"
+    ncl_tier: "{{ 'dev' if dev_overlay | default(false) | bool else 'prod' }}"
+
+- name: NetClaw access - the oracle names the netclaw group, netclaw- custom roles and exact method names
+  ansible.builtin.assert:
+    that:
+      - ncl_oracle[ncl_tier].group == netclaw.group
+      - ncl_oracle[ncl_tier].custom | map(attribute='name') | reject('match', 'netclaw-') | list | length == 0
+      - >-
+        ncl_oracle[ncl_tier].custom | map(attribute='methods') | flatten | map(attribute='name')
+        | select('search', '[*]') | list | length == 0
+    fail_msg: itential/netclaw/roles.yaml names another group, a non-netclaw custom role or a method glob
+    quiet: true
+
+- name: NetClaw access - every role, page by page
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/authorization/roles?limit=100&skip={{ item }}"
+    headers: {Cookie: "{{ login.cookies_string }}"}
+  register: ncl_role_pages
+  loop: [0, 100, 200, 300, 400]
+  loop_control:
+    label: "skip={{ item }}"
+
+- name: NetClaw access - the role list and the methods the Platform's own roles name, per application
+  ansible.builtin.set_fact:
+    ncl_roles: "{{ ncl_role_pages.results | map(attribute='json.results') | flatten }}"
+    ncl_known: >-
+      {{ ncl_role_pages.results | map(attribute='json.results') | flatten | map(attribute='allowedMethods') | flatten
+         | map(attribute='provenance') | zip(ncl_role_pages.results | map(attribute='json.results') | flatten
+         | map(attribute='allowedMethods') | flatten | map(attribute='name')) | map('join', '/') | unique | list }}
+
+# A method name nobody's role lists is a typo or an upgrade's rename: stop before creating a role that grants nothing
+- name: NetClaw access - every method of every custom role exists on this Platform
+  ansible.builtin.assert:
+    that:
+      - ncl_roles | length == ncl_role_pages.results[0].json.total | int
+      - wanted | difference(ncl_known) | length == 0
+    fail_msg: "{{ item.name }}: not a method of any role here: {{ wanted | difference(ncl_known) }}"
+    quiet: true
+  vars:
+    wanted: "{{ item.methods | map(attribute='provenance') | zip(item.methods | map(attribute='name')) | map('join', '/') | list }}"
+  loop: "{{ ncl_oracle[ncl_tier].custom }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: NetClaw access - the custom role, created when absent or reset to the oracle when it differs
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/authorization/roles{{ '/' ~ have[0]._id if have else '' }}"
+    method: "{{ 'PATCH' if have else 'POST' }}"
+    headers: {Cookie: "{{ login.cookies_string }}"}
+    body_format: json
+    body: "{{ {'updates': doc} if have else {'role': doc | combine({'name': item.name, 'provenance': 'Custom'})} }}"
+    status_code: [200, 201]
+  vars:
+    have: "{{ ncl_roles | selectattr('provenance', 'equalto', 'Custom') | selectattr('name', 'equalto', item.name) | list }}"
+    doc:
+      description: "{{ item.description }}"
+      allowedMethods: "{{ item.methods }}"
+      allowedViews: []
+    differs: >-
+      {{ (have[0].allowedMethods | default([]) | map(attribute='provenance')
+          | zip(have[0].allowedMethods | default([]) | map(attribute='name')) | map('join', '/') | sort)
+         != (item.methods | map(attribute='provenance') | zip(item.methods | map(attribute='name')) | map('join', '/') | sort)
+         if have else true }}
+  loop: "{{ ncl_oracle[ncl_tier].custom }}"
+  loop_control:
+    label: "{{ item.name }}"
+  when: differs | bool
+  changed_when: true
+
+- name: NetClaw access - roles re-read
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/authorization/roles?limit=100&skip={{ item }}"
+    headers: {Cookie: "{{ login.cookies_string }}"}
+  register: ncl_role_pages2
+  loop: [0, 100, 200, 300, 400]
+  loop_control:
+    label: "skip={{ item }}"
+
+- name: NetClaw access - each custom role exists once with exactly the oracle's methods
+  ansible.builtin.assert:
+    that:
+      - found | length == 1
+      - >-
+        found[0].allowedMethods | map(attribute='provenance') | zip(found[0].allowedMethods | map(attribute='name'))
+        | map('join', '/') | sort
+        == item.methods | map(attribute='provenance') | zip(item.methods | map(attribute='name')) | map('join', '/') | sort
+    fail_msg: "{{ item.name }}: {{ found | length }} role(s) by that name, or methods other than the oracle's"
+    quiet: true
+  vars:
+    found: >-
+      {{ ncl_role_pages2.results | map(attribute='json.results') | flatten
+         | selectattr('provenance', 'equalto', 'Custom') | selectattr('name', 'equalto', item.name) | list }}
+  loop: "{{ ncl_oracle[ncl_tier].custom }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+# --- The account and its group (the same task svc-copilot uses) ------------------------------------------------
+- name: NetClaw access - svc-netclaw in the netclaw group
+  ansible.builtin.include_tasks: tasks/ldap-service-account.yml
+  vars:
+    svc_kind: netclaw
+    svc_user: "{{ netclaw.user }}"
+    svc_group: "{{ netclaw.group }}"
+    password_env: "{{ netclaw.password_env[ncl_tier] }}"
+    svc_role_set: "{{ ncl_tier }}"
+    # production's directory is on tools-01 and takes ITENTIAL_ADMIN_PASSWORD (tools.compose.yml.j2); dev's runs on
+    # the stack VM with the upstream default
+    ldap_container_host: "{{ inventory_hostname if ncl_tier == 'dev' else 'tools-01' }}"
+    ldap_bind_password: "{{ admin_pw if ncl_tier == 'prod' else '' }}" # '' -> the task's default, `admin`
+    # as for svc-copilot: production stops instead of writing a fallback group nobody measured; dev keeps it
+    ldap_service_account_fallback: "{{ ncl_tier == 'dev' }}"

@@ -1,0 +1,84 @@
+---
+# ADR 0082: group-based access (gbac) on every automation of the tier, from versions.yaml automation_access. On 6.6.0 an
+# automation whose gbac is empty can be started by ANY account that may run triggers (measured by the department-agents
+# delivery, 2026-10-11), and nothing in the plays set gbac before, so a replay left each new automation open. Read =
+# the tier's admin and copilot groups, plus `netclaw` on the automations NetClaw's tools start; write = admin_group.
+# Automations listed as unmanaged (the department delivery's own) are never touched. PATCH only when the set differs.
+# Included at the end of platform.yml and of tasks/flowai-assets.yml. Needs: login, platform_local, automation_access,
+# netclaw, dev_overlay on dev.
+
+- name: Automation access - every automation and every group now
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/{{ item }}"
+    headers: {Cookie: "{{ login.cookies_string }}"}
+  loop:
+    - operations-manager/automations?limit=200
+    - authorization/groups?limit=100
+  register: aac_now
+
+- name: Automation access - what each automation should carry
+  ansible.builtin.set_fact:
+    aac_tier: "{{ 'dev' if dev_overlay | default(false) | bool else 'prod' }}"
+    aac_autos: "{{ aac_now.results[0].json.data | rejectattr('name', 'in', automation_access.unmanaged) | list }}"
+    aac_group_ids: "{{ aac_now.results[1].json.results | items2dict(key_name='name', value_name='_id') }}"
+
+- name: Automation access - the groups it names exist on this tier
+  ansible.builtin.assert:
+    that: missing | length == 0
+    fail_msg: >-
+      groups named by versions.yaml automation_access but absent here: {{ missing }} (netclaw appears at svc-netclaw's
+      first login: platform.yml, tasks/netclaw-access.yml, runs before this)
+    quiet: true
+  vars:
+    named: >-
+      {{ automation_access.read[aac_tier] + automation_access.write
+         + ([netclaw.group] if aac_autos | selectattr('name', 'in', automation_access.netclaw) | list else []) }}
+    missing: "{{ named | unique | reject('in', aac_group_ids) | list }}"
+
+- name: Automation access - gbac set where it differs
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/operations-manager/automations/{{ item._id }}"
+    method: PATCH
+    headers: {Cookie: "{{ login.cookies_string }}"}
+    body_format: json
+    body: {gbac: "{{ want }}"}
+    status_code: 200
+  vars:
+    read_names: >-
+      {{ automation_access.read[aac_tier] + ([netclaw.group] if item.name in automation_access.netclaw else []) }}
+    want:
+      read: "{{ read_names | map('extract', aac_group_ids) | list }}"
+      write: "{{ automation_access.write | map('extract', aac_group_ids) | list }}"
+  loop: "{{ aac_autos }}"
+  loop_control:
+    label: "{{ item.name }}"
+  when: >-
+    ((item.gbac | default({})).read | default([]) | sort) != (want.read | sort)
+    or ((item.gbac | default({})).write | default([]) | sort) != (want.write | sort)
+  changed_when: true
+
+- name: Automation access - automations re-read
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/operations-manager/automations?limit=200"
+    headers: {Cookie: "{{ login.cookies_string }}"}
+  register: aac_after
+
+- name: Automation access - every managed automation carries exactly its gbac
+  ansible.builtin.assert:
+    that: wrong | length == 0
+    fail_msg: "gbac not as versions.yaml automation_access says on: {{ wrong }}"
+    quiet: true
+  vars:
+    base: "{{ automation_access.read[aac_tier] | map('extract', aac_group_ids) | sort }}"
+    with_netclaw: "{{ (automation_access.read[aac_tier] + [netclaw.group]) | map('extract', aac_group_ids) | sort }}"
+    write_ids: "{{ automation_access.write | map('extract', aac_group_ids) | sort }}"
+    wrong: >-
+      {%- set out = [] -%}
+      {%- for a in aac_after.json.data if a.name not in automation_access.unmanaged -%}
+        {%- set want_read = with_netclaw if a.name in automation_access.netclaw else base -%}
+        {%- set g = a.gbac | default({}) -%}
+        {%- if (g.read | default([]) | sort) != want_read or (g.write | default([]) | sort) != write_ids -%}
+          {%- set _ = out.append(a.name) -%}
+        {%- endif -%}
+      {%- endfor -%}
+      {{ out }}

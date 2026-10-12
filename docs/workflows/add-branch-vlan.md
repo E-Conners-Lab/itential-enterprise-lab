@@ -6,7 +6,8 @@ Reserves a VLAN in NetBox for a branch, asks for approval on the JSON form lab-b
 
 ## How it runs
 
-- By hand, from the Platform: the Studio's run button or the API. No automation, form, endpoint or schedule starts it.
+- Through the Operations Manager automation "Add Branch VLAN": A user VLAN on a branch switch, after a Work Center approval (ADR 0082).
+- From the endpoint trigger "Add Branch VLAN from NetClaw" (route `add-branch-vlan`).
 
 ## Inputs
 

@@ -220,3 +220,7 @@
   loop_control:
     loop_var: agent
     label: "{{ agent.name }}"
+
+# ADR 0082: the agent automations (expose_route) exist only now, so the gbac platform.yml set is applied once more
+- name: Who may read and start each automation, the agents' own included (gbac from versions.yaml automation_access)
+  ansible.builtin.include_tasks: tasks/automation-access.yml

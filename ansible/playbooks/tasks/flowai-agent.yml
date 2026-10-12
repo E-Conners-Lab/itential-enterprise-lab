@@ -57,6 +57,21 @@
     existing_agent: "{{ agents_now.json.data['items'] | selectattr('name', 'equalto', agent.name) | list }}"
     agent_project_id: "{{ (projects2.json.data['items'] | selectattr('name', 'equalto', agent.project) | first)._id }}"
 
+# ADR 0082: admin_group operates every agent; a document's operator_groups adds groups that may also start it (the
+# netclaw group on platform-guide and its twin). A named group that does not exist stops the play rather than
+# silently leaving the agent unreachable.
+- name: "Agent operators for {{ agent.name }}"
+  ansible.builtin.set_fact:
+    agent_operators: >-
+      {{ [admin_group_id] + (auth_groups.json.results | selectattr('name', 'in', agent.operator_groups | default([]))
+         | map(attribute='_id') | list) }}
+
+- name: "Agent operator groups exist for {{ agent.name }}"
+  ansible.builtin.assert:
+    that: agent_operators | length == 1 + (agent.operator_groups | default([]) | length)
+    fail_msg: "{{ agent.name }}: operator_groups {{ agent.operator_groups | default([]) }} not all on this Platform"
+    quiet: true
+
 - name: "Agent create for {{ agent.name }}"
   ansible.builtin.uri:
     url: "{{ platform_local }}/agent-project-service/projects/{{ agent_project_id }}/agents"
@@ -70,7 +85,7 @@
       inputSchema: "{{ agent.input_schema }}"
       provider: {profile: "{{ profile_ids[agent.profile] }}", model: "{{ model_ids[agent.profile] }}"}
       tools: "{{ agent_tool_ids | map('community.general.dict_kv', 'referenceId') | list }}"
-      operators: ["{{ admin_group_id }}"]
+      operators: "{{ agent_operators }}"
     status_code: [200, 201]
   when: existing_agent | length == 0
 
@@ -84,7 +99,7 @@
       {{ {'description': agent.description,
           'prompt': {'instructions': agent.instructions, 'inputSchema': agent.input_schema},
           'provider': {'profile': profile_ids[agent.profile], 'model': model_ids[agent.profile]},
-          'operators': [admin_group_id]}
+          'operators': agent_operators}
          | combine({'addTools': new_tools | map('community.general.dict_kv', 'referenceId') | list} if new_tools else {})
          | combine({'removeTools': gone_tools | map('community.general.dict_kv', 'referenceId') | list} if gone_tools else {}) }}
     status_code: 200

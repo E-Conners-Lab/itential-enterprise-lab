@@ -6,8 +6,9 @@
 # existing trigger's schema is PATCHed when it differs (Operations Manager updates are PATCH). The automation follows
 # the workflow's id, which every import changes. Caller sets `otr_key`, the loop's key in versions.yaml workflows and
 # operations_manager (diagnose_aws_vpn_outage, diagnose_fabric_bgp_outage; ask_platform_guide reuses it with the Slack
-# bot's endpoint, ADR 0081 decision 6: `endpoint.description` then names the caller). Needs: login, platform_local,
-# workflows, operations_manager.
+# bot's endpoint, ADR 0081 decision 6, and NetClaw's three with its endpoints, ADR 0082: `endpoint.description` then
+# names the caller). The workflow's document is found by its name (tests/test_workflow_names.py: lowercase, dashes), so
+# the key need not spell the name. Needs: login, platform_local, workflows, operations_manager.
 - name: Outage loop - workflows and automations now
   ansible.builtin.uri:
     url: "{{ platform_local }}/{{ item }}"
@@ -28,8 +29,8 @@
           | selectattr('name', 'equalto', operations_manager[otr_key].automation) | first) | default({}) }}
     # the workflow's own input gate, from the generated document (one source: build.py INPUT_GATES)
     otr_schema: >-
-      {{ (lookup('ansible.builtin.file', playbook_dir ~ '/../../itential/workflows/' ~ otr_key | replace('_', '-')
-          ~ '.json') | from_json).tasks['9a0a'].variables.incoming.schema }}
+      {{ (lookup('ansible.builtin.file', playbook_dir ~ '/../../itential/workflows/'
+          ~ workflows[otr_key] | lower | replace(' ', '-') ~ '.json') | from_json).tasks['9a0a'].variables.incoming.schema }}
 
 - name: Outage loop - the workflow names its agent by UUID
   ansible.builtin.assert:
