@@ -22,11 +22,14 @@ prod: &netclaw
   # exact method names, no globs: a trigger-run method is not a read, so nothing here may be widened by a pattern
   custom:
     - name: netclaw-run
-      description: "NetClaw: start the endpoint triggers its group may read, and read the jobs (ADR 0082)"
+      description: "NetClaw: start the endpoint triggers its group may read, read the jobs and their cards (ADR 0082)"
       methods:
         - {provenance: OperationsManager, name: runEndpointTriggerWithPost} # the four starters
         - {provenance: OperationsManager, name: getJob} # job_result
         - {provenance: OperationsManager, name: getJobs} # latest_job
+        # the waiting card's Work Center id for its link (GET /work-center-service/work-items?rootExecutionId=<job>);
+        # the only built-in Work Center service role (work-items:write) also claims, completes and cancels cards
+        - {provenance: WorkCenterService, name: getContextHistory} # job_result
   # Never in the set. Globs over "<provenance>/<name>"; the shared task asserts the resolved built-ins against it.
   deny:
     - {provenance: "*", name: admin}

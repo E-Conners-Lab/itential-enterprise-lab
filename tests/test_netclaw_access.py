@@ -23,7 +23,8 @@ AGENTS = ROOT / "itential" / "agents"
 
 # exactly what NetClaw's tools need (itential-deliveries/netclaw/itential-tools): start an endpoint trigger, read the job
 # it started, find a workflow's newest job, read an agent session
-METHODS = {"OperationsManager/runEndpointTriggerWithPost", "OperationsManager/getJob", "OperationsManager/getJobs"}
+METHODS = {"OperationsManager/runEndpointTriggerWithPost", "OperationsManager/getJob", "OperationsManager/getJobs",
+           "WorkCenterService/getContextHistory"}  # the card's id for its link; never claim, complete or cancel
 BUILTIN = {"AgentSessionManager/session:read", "AgentSessionManager/operator"}  # read sessions; start one (runAgent)
 # never: write-shaped roles, every device path but the workflows, workflow documents and starts, identity
 DENY = ["*/admin", "*/apiwrite", "*/designer", "*/engineering", "*/operations", "*/support", "*/builder", "*/*:create",
@@ -70,7 +71,7 @@ def test_the_oracle_is_the_same_on_both_tiers_and_names_the_netclaw_group() -> N
     assert roles["prod"]["group"] == _versions()["netclaw"]["group"] == "netclaw"
 
 
-def test_the_custom_role_holds_exactly_the_three_methods() -> None:
+def test_the_custom_role_holds_exactly_the_four_methods() -> None:
     custom = yaml.safe_load(ROLES.read_text())["prod"]["custom"]
     assert [c["name"] for c in custom] == ["netclaw-run"]
     assert {f"{m['provenance']}/{m['name']}" for m in custom[0]["methods"]} == METHODS
