@@ -15,6 +15,10 @@ prod: &netclaw
   group: netclaw
   builtin:
     - {provenance: AgentSessionManager, name: "session:read"} # getSession, getMessages (describe_session)
+    # runAgent, startSession: an agent automation's trigger starts the session as the caller (measured on dev
+    # 2026-10-11: 403 "does not have operator rights" without it). Scoped by each agent's operators, which name the
+    # netclaw group on platform-guide and platform-guide-local only (itential/agents/*.yaml operator_groups)
+    - {provenance: AgentSessionManager, name: operator}
   # exact method names, no globs: a trigger-run method is not a read, so nothing here may be widened by a pattern
   custom:
     - name: netclaw-run

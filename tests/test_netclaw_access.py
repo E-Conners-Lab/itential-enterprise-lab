@@ -24,7 +24,7 @@ AGENTS = ROOT / "itential" / "agents"
 # exactly what NetClaw's tools need (itential-deliveries/netclaw/itential-tools): start an endpoint trigger, read the job
 # it started, find a workflow's newest job, read an agent session
 METHODS = {"OperationsManager/runEndpointTriggerWithPost", "OperationsManager/getJob", "OperationsManager/getJobs"}
-BUILTIN = {"AgentSessionManager/session:read"}
+BUILTIN = {"AgentSessionManager/session:read", "AgentSessionManager/operator"}  # read sessions; start one (runAgent)
 # never: write-shaped roles, every device path but the workflows, workflow documents and starts, identity
 DENY = ["*/admin", "*/apiwrite", "*/designer", "*/engineering", "*/operations", "*/support", "*/builder", "*/*:create",
         "*/*:update", "*/*:delete", "*/*:run", "*/*:code", "*/*:manage", "MOP/*", "ConfigurationManager/*",
@@ -77,7 +77,7 @@ def test_the_custom_role_holds_exactly_the_three_methods() -> None:
     assert not any("*" in m["name"] for m in custom[0]["methods"]), "exact names, never a glob"
 
 
-def test_the_builtins_are_the_session_read_only_and_nothing_denied() -> None:
+def test_the_builtins_are_the_session_reads_and_the_agent_start_and_nothing_denied() -> None:
     prod = yaml.safe_load(ROLES.read_text())["prod"]
     keys = {f"{b['provenance']}/{b['name']}" for b in prod["builtin"]}
     assert keys == BUILTIN
@@ -126,7 +126,14 @@ def test_platform_guide_is_an_agent_automation_on_each_route() -> None:
         doc = yaml.safe_load((AGENTS / f"{agent}.yaml").read_text())
         assert doc["expose_route"] == agent, "flowai-agent.yml names the automation after the agent"
         assert doc["tools"] == [{"reference": "Describe for an Agent", "kind": "workflow"}], "still one read-only tool"
+        assert doc["operator_groups"] == ["netclaw"], "svc-netclaw may start it (runAgent is scoped by operators)"
     assert routes == {"twin": "platform-guide-local", "claude": "platform-guide"}
+    # no other agent names an operator group: NetClaw reaches no agent but platform-guide
+    others = [p.name for p in AGENTS.glob("*.yaml") if p.stem not in routes.values()
+              and "operator_groups" in yaml.safe_load(p.read_text())]
+    assert others == []
+    task = (TASKS / "flowai-agent.yml").read_text()
+    assert "operators: \"{{ agent_operators }}\"" in task and "'operators': agent_operators" in task
 
 
 def test_the_password_env_keys_are_netclaw_keys_and_documented() -> None:

@@ -6,6 +6,7 @@ profile: ollama-mac
 # ADR 0082: an agent automation with an endpoint trigger, so NetClaw's ask_platform_guide starts a session here and
 # reads the answer with describe_session (the lab-netops exposure, S4c.6); gbac lets the netclaw group start it
 expose_route: platform-guide-local
+operator_groups: [netclaw] # ADR 0082: svc-netclaw's group may start it, besides admin_group
 input_schema:
   type: object
   additionalProperties: false
