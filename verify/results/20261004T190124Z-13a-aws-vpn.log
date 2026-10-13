@@ -1,0 +1,2 @@
+SKIP  test-13a-aws-vpn: needs a live AWS deployment; run with AWS_VPN=1
+RESULT: PASS

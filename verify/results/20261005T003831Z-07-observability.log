@@ -1,0 +1,15 @@
+# test-07-observability 20261005T003831Z
+FAIL  S7.1 expiries in Prometheus agree with the YAML and the live sources; SNMPv3 answers from the workstation; every Ubuntu machine forwards syslog and runs no Zabbix agent
+      5 expiry series agree with the YAML dates; NetBox token and lab CA dates match the live sources
+      snmpget sysName over SNMPv3 from the workstation: br1-wan01, dc1-spine01
+      iag-01: rsyslog not active, or zabbix-agent2 still installed
+SKIP  S7.2 Prometheus target count per job equals observability.yaml (NetBox-sized); no target down; lab rules loaded
+SKIP  S7.5-prep Grafana provisions the lab dashboards and the Prometheus/Alertmanager/Loki datasources, and no Zabbix one (login via Keycloak: phase 9)
+SKIP  S7.3 gNMIc BGP session count for dc1-spine01 equals show bgp summary (and Prometheus agrees)
+SKIP  S7.4 Loki returns a syslog line from each vendor within 60 s of a governed no-op config push (device log agrees)
+SKIP  S7.7 Prometheus holds the Platform job metrics (jobsComplete per workflow equals the API) and every application/adapter is up
+SKIP  S7.8 the official Itential Platform Monitoring dashboard (grafana.com 25527) is provisioned and every metric family it queries has data
+DEFER S7.5 Grafana login via Keycloak and every dashboard renders with data: identity phase (ADR 0050)
+SKIP  S7.6 drill (set VERIFY_DRILLS=1 to run; stops br1-wan01 for a few minutes)
+
+passed=0 failed=1 deferred=1

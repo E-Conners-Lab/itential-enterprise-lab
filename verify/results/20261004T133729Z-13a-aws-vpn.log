@@ -1,0 +1,19 @@
+# test-13a-aws-vpn 20261004T133729Z
+FAIL  S13.2e the sweep holds every AWS VPN secret in Vault (each live version) and counts a planted copy, whole and cut
+      SweepError: aws/vpn-psk: Vault answered 403 for its versions
+PASS  S13.4a Verify AWS VPN through its endpoint trigger: router, AWS monitor and data plane all say up
+        Verify AWS VPN on dc1-wan01: job f39111da7b33462b82267001, status complete, outcome: tunnel up: router up, data plane up, AWS monitor up
+FAIL  S13.2f no secret in any job document or task record of the AWS VPN and lab-edge workflows
+      SweepError: aws/vpn-psk: Vault answered 403 for its versions
+FAIL  S13.2g no secret in the platform logs of both Platform nodes or the gateway5 and gateway5-runner logs of the Gateway VM
+      SweepError: aws/vpn-psk: Vault answered 403 for its versions
+FAIL  S13.2h no secret in a tracked file of this repository or of cloud-devops-pipeline main
+      SweepError: aws/vpn-psk: Vault answered 403 for its versions
+PASS  S13.2i no secret in the router's log, change log or running config, counted on the Gateway; the key is type 6
+        dc1-wan01: logging read 943 lines, key {'whole': 0, 'pieces': 0}, password {'whole': 0, 'pieces': 0}; archive_log refused 1 lines, key {'whole': 0, 'pieces': 0}, password {'whole': 0, 'pieces': 0}; running_config read 527 lines, key {'whole': 0, 'pieces': 0}, password {'whole': 0, 'pieces': 0}; pre-shared-key lines {'total': 3, 'type6': 3}; change log kept: False
+          ok   the sweep ran on the Gateway (exit 0)
+          ok   every record read (the change log only if one is kept) and not empty
+          ok   no copy of the key or the password
+          ok   the deployment's key is on the router as type 6
+
+passed=2 failed=4

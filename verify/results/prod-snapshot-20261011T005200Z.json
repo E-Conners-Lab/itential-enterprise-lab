@@ -1,0 +1,178 @@
+{
+  "fingerprint": {
+    "adapters": [
+      "InventoryBroker",
+      "LDAP",
+      "NetBox"
+    ],
+    "agents": {
+      "cloud-status": null,
+      "cloud-status-local": null,
+      "compliance": null,
+      "compliance-local": null,
+      "device-ops": null,
+      "device-ops-local": null,
+      "diagnostics": null,
+      "diagnostics-local": null,
+      "fabric-diagnostics": null,
+      "fabric-diagnostics-local": null,
+      "lab-netops": null,
+      "lab-netops-local": null,
+      "netbox-sot": null,
+      "netbox-sot-local": null,
+      "remediation": null,
+      "remediation-local": null,
+      "tunnel-diagnostics": null,
+      "tunnel-diagnostics-local": null
+    },
+    "authorization": {
+      "admin_group_roles": 196,
+      "groups": {
+        "admin_group": 196,
+        "admins": 0,
+        "builders": 0,
+        "operators": 0
+      },
+      "groups_total": 4,
+      "roles_total": 196
+    },
+    "device_groups": {
+      "role-access": [
+        "dc1-acc01"
+      ],
+      "role-branch-switch": [
+        "br1-sw01",
+        "br2-sw01"
+      ],
+      "role-isp-core": [
+        "isp-core01"
+      ],
+      "role-leaf": [
+        "dc1-leaf01",
+        "dc1-leaf02"
+      ],
+      "role-spine": [
+        "dc1-spine01",
+        "dc1-spine02"
+      ],
+      "role-wan-edge": [
+        "br1-wan01",
+        "br2-wan01",
+        "dc1-wan01",
+        "dc1-wan02"
+      ],
+      "site-br1": [
+        "br1-sw01",
+        "br1-wan01"
+      ],
+      "site-br2": [
+        "br2-sw01",
+        "br2-wan01"
+      ],
+      "site-dc1": [
+        "dc1-acc01",
+        "dc1-leaf01",
+        "dc1-leaf02",
+        "dc1-spine01",
+        "dc1-spine02",
+        "dc1-wan01",
+        "dc1-wan02"
+      ],
+      "site-wan": [
+        "isp-core01"
+      ]
+    },
+    "integrations": [
+      "netbox-api",
+      "netbox-latest",
+      "servicenow-api"
+    ],
+    "inventories": {
+      "lab": {
+        "groups": [
+          "6aa2adafdd92a98c6d310e2d"
+        ],
+        "nodes": [
+          "br1-sw01",
+          "br1-wan01",
+          "br2-sw01",
+          "br2-wan01",
+          "dc1-acc01",
+          "dc1-leaf01",
+          "dc1-leaf02",
+          "dc1-spine01",
+          "dc1-spine02",
+          "dc1-wan01",
+          "dc1-wan02",
+          "isp-core01"
+        ]
+      },
+      "lab-hosts": {
+        "groups": [
+          "6aa2adafdd92a98c6d310e2d"
+        ],
+        "nodes": [
+          "br1-host01",
+          "br2-host01",
+          "dc1-srv01"
+        ]
+      },
+      "nxos": {
+        "groups": [
+          "6aa2adafdd92a98c6d310e2d"
+        ],
+        "nodes": [
+          "dc1-nxos01",
+          "dc1-nxos02"
+        ]
+      }
+    },
+    "netbox": {
+      "devices": 24,
+      "vlans": 1
+    },
+    "profiles": [
+      "anthropic",
+      "ollama-mac"
+    ],
+    "workflows": {
+      "@66d0304521161b4df2717497: Clear & Delete Inventory": "2026-09-22T15:14:41.828Z",
+      "@66d0304521161b4df2717497: Create & Update Inventory from NetBox": "2026-09-22T15:14:41.828Z",
+      "@66d0304521161b4df2717497: IOS Upgrade": "2026-09-22T15:14:41.828Z",
+      "@66d0304521161b4df2717497: Port Turn Up": "2026-09-22T15:14:41.828Z",
+      "@66d0304521161b4df2717497: Run Compliance": "2026-09-22T15:14:41.828Z",
+      "@66d0d1ba21161b4df27174c2: Clear & Delete Inventory": "2026-09-22T16:05:27.025Z",
+      "@66d0d1ba21161b4df27174c2: Create & Update Inventory from NetBox": "2026-09-22T16:13:25.115Z",
+      "@66d0d1ba21161b4df27174c2: NX-OS Upgrade": "2026-09-22T16:05:27.025Z",
+      "@66d0d1ba21161b4df27174c2: Port Turn Up": "2026-09-22T16:13:24.552Z",
+      "@66d0d1ba21161b4df27174c2: Run Compliance": "2026-09-22T16:13:24.794Z",
+      "Add Branch VLAN": "2026-10-11T00:43:12.186Z",
+      "Back Up All Device Configs": "2026-10-11T00:43:12.191Z",
+      "Break Fabric BGP": "2026-10-11T00:43:12.239Z",
+      "Check AWS Drift": "2026-10-11T00:43:12.246Z",
+      "Count Devices in NetBox": "2026-10-11T00:43:12.190Z",
+      "Deploy AWS VPN": "2026-10-11T00:43:12.192Z",
+      "Diagnose AWS VPN Outage": "2026-10-11T00:43:12.201Z",
+      "Diagnose Fabric BGP Outage": "2026-10-11T00:43:12.195Z",
+      "Drill Batfish Gate": "2026-10-11T00:43:12.200Z",
+      "Get AWS VPN Status": "2026-10-11T00:43:12.198Z",
+      "Get Device Software Version": "2026-10-11T00:43:12.205Z",
+      "Hand Off AWS VPN": "2026-10-11T00:43:12.208Z",
+      "List Devices from NetBox": "2026-10-11T00:43:12.209Z",
+      "Probe Run Agent Shape (1)": "2026-10-05T03:21:46.137Z",
+      "Push Configuration with Approval": "2026-10-11T00:43:12.210Z",
+      "Push Configuration with Revert Timer": "2026-10-11T00:43:12.222Z",
+      "Remove Branch VLAN": "2026-10-11T00:43:12.226Z",
+      "Rotate AWS VPN Key": "2026-10-11T00:43:12.233Z",
+      "Rotate AWS VPN Key Monthly": "2026-10-11T00:43:12.230Z",
+      "Run Nightly Compliance Check": "2026-10-11T00:43:12.256Z",
+      "Run Show Command on All Devices": "2026-10-11T00:43:12.242Z",
+      "Run Show Command on a Device": "2026-10-11T00:43:12.241Z",
+      "Summarize Compliance Results": "2026-10-11T00:43:12.247Z",
+      "Tear Down AWS VPN": "2026-10-11T00:43:12.254Z",
+      "Tear Down Expired AWS VPN": "2026-10-11T00:43:12.243Z",
+      "Verify AWS VPN": "2026-10-11T00:43:12.248Z"
+    }
+  },
+  "taken": "20261011T005200Z"
+}

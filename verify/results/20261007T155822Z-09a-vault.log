@@ -1,0 +1,27 @@
+# test-09a-vault 20261007T155822Z
+administrator token renewed: 60 min left
+SKIP  S8.2a Vault answers at vault.lab.internal over the lab CA and is unsealed
+SKIP  S8.2g the service name resolves to the VIP versions.yaml gives it
+SKIP  S8.2b a read of lab/devices/automation with no token is refused
+SKIP  S8.2c each reader's policy reads only its own paths (Gateway: devices yes; Platform: devices no, NetBox yes)
+SKIP  S8.2e each AppRole is bound to its own hosts (iap-01/02, iag-01): a valid secret ID from this machine is refused
+SKIP  S13.2a lab/aws/vpn-psk: the Gateway reads, the Platform cannot; the PSK writer's credentials are in Vault (writer policy: make vault-config on iag-01)
+FAIL  S13.2b terraform-run on the Gateway: clones with the Vault deploy key, gets the IAM key from Vault, reaches AWS as itential-terraform (probe: no plan)
+      clone at 71d522382fca, argv ['--action', 'probe'], uid 1001; caller arn:aws:iam::<account>:user/itential/itential-terraform
+        ok   return code 0
+        ok   AWS key from Vault
+        ok   caller itential-terraform
+        ok   backend init
+        ok   terraform 1.5.7
+        FAIL clone at the pinned commit
+SKIP  S13.2c the Gateway's cloud-devops-pipeline pin is a commit on its protected main, every required check passed on it (GitHub read via gh)
+SKIP  S13.2d each open lab edge target's key: in Vault, the Gateway reads it, the Platform cannot; lab-edge renders the pinned block, lab-edge-push and aws-vpn-monitor run with their aliases and refuse (no device, no AWS)
+SKIP  S8.2d the device password in Vault equals the .env seed (seeded one way)
+SKIP  S8.2f an off-host Raft snapshot exists on this workstation (ADR 0065 decision 8)
+SKIP  S8.3a no credential on the Platform: lab and lab-hosts nodes, the NetBox adapter and integrations carry Vault references
+SKIP  S8.3b the Gateway's Vault provider and aliases match the oracle (export compared)
+SKIP  S8.3c the NetBox adapter reads NetBox with the token the Platform resolves from Vault
+SKIP  S8.3d every lab device logs in with its password resolved from Vault (show clock)
+SKIP  S8.3e every lab host logs in with its password resolved from Vault (hostname)
+
+passed=0 failed=1 skipped=15

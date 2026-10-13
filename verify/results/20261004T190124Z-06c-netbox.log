@@ -1,0 +1,41 @@
+# test-06c-netbox 20261004T192634Z
+Anthropic token meter, last 7 days (30 sessions; prices per MTok in=2.0 out=10.0, anthropic only is billed)
+  anthropic  claude-sonnet-5    sessions=  20 in=   270926 out=   5929  $  0.60
+  ollama     gemma4:26b         sessions=  10 in=    32842 out=   1887  $  0.00
+spent $0.60 of the $15.00 weekly budget; $14.40 left
+  largest: netbox-sot 2026-10-04T19:07 in=29929 (COMPLETE)
+  largest: diagnostics 2026-10-04T19:09 in=26317 (COMPLETE)
+  largest: lab-netops 2026-10-04T19:04 in=24289 (COMPLETE)
+FAIL  S4e.1 every addressed interface of the 12 network devices is in NetBox with its address, VRF and 'to <peer>' description; the devices agree (Run Show Command on All Devices + direct SSH)
+      dc1-wan01 Tunnel10: device description 'AWS VPN (strongSwan)' != NetBox 'IPsec VTI to AWS (Hand Off AWS VPN)'
+PASS  S4e.2 VRFs with route targets, prefixes in PROD, the 7 ASNs on their sites, BGP neighbours and RDs in each device's config context equal to the device (direct SSH), the transit virtual router as an FHRP group
+      VRFs MGMT/WAN/PROD (PROD RT 50001:50001), 7 ASNs on their sites, FHRP group ['dc1-vlan100-varp'] with its members and address, 38 BGP neighbours in the device contexts equal the devices' own tables over direct SSH (12 devices)
+PASS  S4e.3 one location and one rack per site, every device racked at its derived position (role order top down, unique U)
+      4 locations and racks, 21 devices at their positions (wan-rack01: 1U, dc1-rack01: 10U, br1-rack01: 5U, br2-rack01: 5U)
+PASS  S4e.4 provider circuits with terminations at their sites; the cable trace from each edge port crosses the circuit to the isp-core01 port; no direct provider cable remains
+      4 circuits of ['Simulated ISP'] with A/Z terminations at their sites; every edge port traces through its circuit to the isp-core01 port; 37 cables (no direct cable to the provider core)
+PASS  S4e.5 journal entries: every site carries netbox-enrich.yml entries naming a real commit; br2-sw01 carries the LCM create and delete entries
+      81 play entries over 6 sites naming commits ['0a208fe', '75cf9a2', '7fde422', '8bff499', 'b4dca82', 'f07f84c', 'fff885b']; br2-sw01 carries 35 LCM entries (newest: 'Lifecycle Manager branch-vlan delete: VLAN 11 (lcm-20261004t191522z) r')
+PASS  S4e.6 the play re-runs with changed=0; netbox-sot answers address/VRF/peer, site ASNs, rack position, circuit and context questions equal to the NetBox API; the compliance plan stays clean with the interface intent in the device leaves
+      netbox-enrich.yml re-run (2nd of 2): localhost : ok=36 changed=0 unreachable=0 failed=0 skipped=14 rescued=0 ignored=0 
+      netbox-sot: 'Which address does interface GigabitEthernet2 of br1-wan01 carry, in which VRF, and what does its description say?' -> Here's what NetBox reports for **br1-wan01**, interface **GigabitEthernet2**:
+      
+      - **IP address:** `10.103.0.10/ (tokens in=11213 out=478)
+      netbox-sot: 'Which autonomous system numbers are assigned to site br1?' -> Site **br1** (Branch 1) has one assigned ASN:
+      
+      - **AS65201** (asn: 65201) — RIR: private, description "br1 (br (tokens in=9019 out=152)
+      netbox-sot: 'In which rack and at which rack unit position is dc1-leaf01 installed?' -> **dc1-leaf01** is installed in rack **dc1-rack01** (located in DC1 hall A, site DC1) at rack unit **position 3 (tokens in=10984 out=179)
+      netbox-sot: 'Which circuit terminates at site br1 and who is its provider?' -> One circuit terminates at site **br1**:
+      
+      - **Circuit ID (CID):** ISP-BR1-01
+      - **Provider:** Simulated ISP (slu (tokens in=9608 out=301)
+      netbox-sot: 'What NTP server and domain does the rendered config context of br2-sw01 give?' -> According to the rendered `config_context` for **br2-sw01** (device id 19):
+      
+      - **NTP server:** `10.100.0.1`
+      -  (tokens in=10308 out=177)
+      compliance lab-baseline: 12 device reports, 0 errors, 0 warnings (passes: 552) with the interface intent rendered from NetBox
+
+tokens spent this run: in=51132 out=1287 (Anthropic)
+
+passed=5 failed=1
+RESULT: FAIL

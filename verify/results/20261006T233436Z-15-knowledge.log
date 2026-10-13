@@ -1,0 +1,14 @@
+# test-15-knowledge 20261006T233436Z
+SKIP  S15.1 the pod runs the pinned digest, non-root, read-only, no capabilities or service-account token, in a restricted namespace
+SKIP  S15.2 the VIP refuses this workstation (data plane: only the Gateway is admitted)
+SKIP  S15.3 iag-01 reaches it over lab-CA TLS, and a request without the token gets 401
+SKIP  S15.4 the pod cannot open a connection (Vault inside the lab, a public address outside): no egress
+SKIP  S15.5 Gateway Manager lists a service for each tool netops-knowledge advertises (FlowMCP discovery: DNS, TLS, token, policy)
+FAIL  S15.6 the four diagnostics agents hold netops-knowledge_search_scenarios and nothing wider (no get_scenario, no runService)
+      Traceback (most recent call last):
+        File "<string>", line 9, in <module>
+          assert refs.count(want) == 1, f"{name}: lacks {want}"
+                 ^^^^^^^^^^^^^^^^^^^^^
+      AssertionError: tunnel-diagnostics: lacks gatewayService:lab:python-script:netops-knowledge_search_scenarios
+
+passed=0 failed=1

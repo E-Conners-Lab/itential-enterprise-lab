@@ -1,0 +1,71 @@
+# test-06-flowai 20261011T000431Z
+Anthropic token meter, last 7 days (119 sessions; prices per MTok in=2.0 out=10.0, anthropic only is billed)
+  anthropic  claude-sonnet-5    sessions=  52 in=  1455059 out=  52877  $  3.44
+  ollama     gemma4:26b         sessions=  31 in=   895470 out= 210185  $  0.00
+  ollama     qwen3.8:27b        sessions=  36 in=   573494 out=  18163  $  0.00
+spent $3.44 of the $15.00 weekly budget; $11.56 left
+  largest: fabric-diagnostics 2026-10-10T17:33 in=86177 (COMPLETE)
+  largest: fabric-diagnostics 2026-10-07T09:42 in=86129 (COMPLETE)
+  largest: fabric-diagnostics 2026-10-08T00:53 in=85813 (COMPLETE)
+SKIP  S4c.1 provider profiles anthropic (claude-sonnet-5) and ollama-mac (qwen3.8:27b) answer and list their pinned models
+SKIP  S4c.2 lab-netops answers the running version of br1-wan01 and br1-sw01 via the Gateway 5 tool; equals direct SSH
+SKIP  S4c.3 lab-netops adds agent-20261011t000431z to br1 through Add Branch VLAN with the approval; second request is a no-op
+SKIP  S4c.4 lab-netops refuses core-router-99 (not in the inventory) without touching the gateway; session records token usage
+PASS  S4c.5 lab-netops-local (ollama-mac qwen3.8:27b) answers the br1-sw01 version; response time and what the Mac has loaded recorded
+      tokens in=2818 out=75
+        File "<string>", line 4
+          print(", ".join(f"{x.get(\"name\")} {round(x.get(\"size\",0)/1e9,1)}GB" for x in m) or "nothing loaded")
+                                    ^
+      SyntaxError: unexpected character after line continuation character
+      ollama-mac (qwen3.8:27b) answered in 25 s; loaded on the Mac: 
+SKIP  S4c.6 Claude Code's MCP tools start a lab-netops session (trigger_automation) and read the answer back (describe_session)
+SKIP  S4c.7 Run Show Command on a Device returns structured 'show version': Genie on br1-wan01, TextFSM on br1-sw01, equal to direct SSH
+SKIP  S4d.5a netbox-sot counts the active devices of dc1 through the NetBox integration; equals the NetBox API
+SKIP  S4d.5b device-ops reports br2-sw01's software version through the show-command workflow; equals direct SSH
+SKIP  S4d.5c compliance runs lab-baseline and reports the result; the batch reports read directly agree
+PASS  S4d.5d diagnostics reads a verify-created incident about br2-sw01, checks the device and writes one 'Proposed fix' work note
+      tokens in=26407 out=1075
+      diagnostics: INC0010054 got the note 'Proposed fix: host'; tools ['Run Show Command on a Device', 'dcim_devices_list', 'listIncidents', 'updateIncident']; push job 84e23f45b300427bbbf0f293 made the drift
+SKIP  S4d.5e remediation fixes the br2-sw01 hostname drift only through Push Configuration with Approval; the card approved here; direct SSH confirms
+PASS  S4d.5f netbox-sot-local (ollama-mac qwen3.8:27b) answers br2-sw01's site; response time and what the Mac has loaded recorded
+      tokens in=2958 out=61
+        File "<string>", line 4
+          print(", ".join(f"{x.get(\"name\")} {round(x.get(\"size\",0)/1e9,1)}GB" for x in m) or "nothing loaded")
+                                    ^
+      SyntaxError: unexpected character after line continuation character
+      netbox-sot-local (qwen3.8:27b) answered in 21 s; loaded on the Mac: 
+PASS  S4d.5g Run Show Command on All Devices parses 'show version' on every lab device in one call (direct SSH agrees); lab-netops-local answers an all-devices question from it
+      Run Show Command on All Devices: 12 devices, parsers ['genie', 'textfsm']
+      tokens in=5434 out=52
+      lab-netops-local counted 12 devices from one Run Show Command on All Devices call in 56 s; tools ['Run Show Command on All Devices']
+PASS  S4d.5h an unknown device ends Run Show Command on a Device with device_error instead of hanging; device-ops-local reports br2-sw01's version
+      unknown device ends the job with device_error
+      tokens in=2744 out=121
+      device-ops-local: ['Run Show Command on a Device']
+FAIL  S4d.5i compliance-local reports the plan results per device through Summarize Compliance Results
+      tokens in=2663 out=105
+      compliance-local named no device: COMPLIANT - all 12 devices clean
+PASS  S4d.5j diagnostics-local reads the verify incident and checks the device it names
+      tokens in=7555 out=428
+      diagnostics-local read INC0010054 and checked the device; tools ['Run Show Command on a Device', 'listIncidents', 'updateIncident']
+PASS  S4d.5k remediation-local refuses anything that is not a hostname and calls no tool
+      tokens in=753 out=34
+      remediation-local refused a non-hostname change without calling a tool
+SKIP  S4d.5l cloud-status reports what is deployed in AWS, until when and an estimated cost through Get AWS VPN Status; terraform-run outputs agree
+FAIL  S4d.5m cloud-status-local names the deployed strongSwan address through Get AWS VPN Status
+      terraform-run outputs gave no strongSwan address (nothing deployed?)
+SKIP  S4d.5n tunnel-diagnostics reads dc1-wan01, notes its verify incident once and proposes escalate on a healthy tunnel
+FAIL  S4d.5o tunnel-diagnostics-local reads dc1-wan01, notes its verify incident and answers escalate on a healthy tunnel
+      tokens in=17287 out=632
+      tunnel-diagnostics-local answered fix 'repush-router-block' for a healthy tunnel (want escalate):  or non500-isakmp (4500) — only deny entries with log counts — matching the ike-blocked cause.
+      
+      {"fix": "repush-router-block", "cause": "ike-blocked", "evidence": "INET-IN has no permit for udp eq isakmp/500 or non500-isakmp/4500 (only deny entries with log counts), while IKEv2 SAs are READY."}
+SKIP  S4d.5p fabric-diagnostics reads the devices itself, notes its verify incident once and proposes escalate on an Established session
+PASS  S4d.5q fabric-diagnostics-local reads the devices itself, notes its verify incident and answers escalate on an Established session
+      tokens in=42352 out=2121
+      fabric-diagnostics-local: INC0010056 noted, fix escalate on an Established session; tools ['Run Show Command on a Device', 'netops-knowledge_search_scenarios', 'updateIncident']
+closed INC0010054
+restoring br2-sw01 after a failed run
+
+tokens spent this run: in=110971 out=4704 (Anthropic + local)
+passed=8 failed=3
