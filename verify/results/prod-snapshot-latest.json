@@ -6,29 +6,48 @@
       "NetBox"
     ],
     "agents": {
+      "audit-evidence": null,
+      "audit-evidence-local": null,
+      "cloud-status": null,
+      "cloud-status-local": null,
       "compliance": null,
       "compliance-local": null,
       "device-ops": null,
       "device-ops-local": null,
       "diagnostics": null,
       "diagnostics-local": null,
+      "fabric-diagnostics": null,
+      "fabric-diagnostics-local": null,
+      "finance-analyst": null,
+      "finance-analyst-local": null,
+      "hr-onboarding": null,
+      "hr-onboarding-local": null,
       "lab-netops": null,
       "lab-netops-local": null,
       "netbox-sot": null,
       "netbox-sot-local": null,
+      "platform-guide": null,
+      "platform-guide-local": null,
       "remediation": null,
-      "remediation-local": null
+      "remediation-local": null,
+      "tunnel-diagnostics": null,
+      "tunnel-diagnostics-local": null
     },
     "authorization": {
-      "admin_group_roles": 192,
+      "admin_group_roles": 200,
       "groups": {
-        "admin_group": 192,
+        "admin_group": 200,
         "admins": 0,
         "builders": 0,
+        "copilot-readonly": 37,
+        "dept-audit": 6,
+        "dept-finance": 5,
+        "dept-hr": 5,
+        "netclaw": 3,
         "operators": 0
       },
-      "groups_total": 4,
-      "roles_total": 192
+      "groups_total": 9,
+      "roles_total": 201
     },
     "device_groups": {
       "role-access": [
@@ -122,7 +141,7 @@
       }
     },
     "netbox": {
-      "devices": 23,
+      "devices": 24,
       "vlans": 1
     },
     "profiles": [
@@ -140,18 +159,44 @@
       "@66d0d1ba21161b4df27174c2: NX-OS Upgrade": "2026-09-22T16:05:27.025Z",
       "@66d0d1ba21161b4df27174c2: Port Turn Up": "2026-09-22T16:13:24.552Z",
       "@66d0d1ba21161b4df27174c2: Run Compliance": "2026-09-22T16:13:24.794Z",
-      "Add Branch VLAN": "2026-09-24T19:56:43.904Z",
-      "Back Up All Device Configs": "2026-09-24T19:56:43.909Z",
-      "Count Devices in NetBox": "2026-09-24T19:56:43.929Z",
-      "Get Device Software Version": "2026-09-24T19:56:43.930Z",
-      "List Devices from NetBox": "2026-09-24T19:56:43.910Z",
-      "Push Configuration with Approval": "2026-09-24T19:56:43.916Z",
-      "Remove Branch VLAN": "2026-09-24T19:56:43.915Z",
-      "Run Nightly Compliance Check": "2026-09-24T19:56:43.923Z",
-      "Run Show Command on All Devices": "2026-09-24T19:56:43.925Z",
-      "Run Show Command on a Device": "2026-09-24T19:56:43.945Z",
-      "Summarize Compliance Results": "2026-09-24T19:56:43.948Z"
+      "Add Branch VLAN": "2026-10-12T01:56:40.082Z",
+      "Ask Audit Agent": "2026-10-11T22:53:31.399Z",
+      "Ask Finance Agent": "2026-10-11T22:53:29.432Z",
+      "Ask HR Agent": "2026-10-11T22:53:33.184Z",
+      "Ask Platform Guide": "2026-10-12T01:56:40.084Z",
+      "Back Up All Device Configs": "2026-10-12T01:56:40.146Z",
+      "Break Fabric BGP": "2026-10-12T01:56:40.144Z",
+      "Build Audit Evidence Pack": "2026-10-11T19:33:36.865Z",
+      "Check AWS Drift": "2026-10-12T01:56:40.097Z",
+      "Count Devices in NetBox": "2026-10-12T01:56:40.091Z",
+      "Deploy AWS VPN": "2026-10-12T01:56:40.093Z",
+      "Describe Job": "2026-10-12T01:56:40.105Z",
+      "Describe Workflow": "2026-10-12T01:56:40.100Z",
+      "Describe for an Agent": "2026-10-12T01:56:40.095Z",
+      "Diagnose AWS VPN Outage": "2026-10-12T01:56:40.102Z",
+      "Diagnose Fabric BGP Outage": "2026-10-12T01:56:40.106Z",
+      "Drill Batfish Gate": "2026-10-12T01:56:40.116Z",
+      "Get AWS VPN Status": "2026-10-12T01:56:40.109Z",
+      "Get Device Software Version": "2026-10-12T01:56:40.110Z",
+      "Hand Off AWS VPN": "2026-10-12T01:56:40.111Z",
+      "List Devices from NetBox": "2026-10-12T01:56:40.123Z",
+      "Probe Run Agent Shape (1)": "2026-10-05T03:21:46.137Z",
+      "Push Configuration with Approval": "2026-10-12T01:56:40.122Z",
+      "Push Configuration with Revert Timer": "2026-10-12T01:56:40.124Z",
+      "Reconcile Carrier Invoices": "2026-10-11T18:50:04.682Z",
+      "Release New Hire Port": "2026-10-11T23:26:58.591Z",
+      "Remove Branch VLAN": "2026-10-12T01:56:40.129Z",
+      "Request New Hire Access": "2026-10-11T23:26:57.530Z",
+      "Rotate AWS VPN Key": "2026-10-12T01:56:40.136Z",
+      "Rotate AWS VPN Key Monthly": "2026-10-12T01:56:40.133Z",
+      "Run Nightly Compliance Check": "2026-10-12T01:56:40.135Z",
+      "Run Show Command on All Devices": "2026-10-12T01:56:40.149Z",
+      "Run Show Command on a Device": "2026-10-12T01:56:40.140Z",
+      "Summarize Compliance Results": "2026-10-12T01:56:40.143Z",
+      "Tear Down AWS VPN": "2026-10-12T01:56:40.158Z",
+      "Tear Down Expired AWS VPN": "2026-10-12T01:56:40.162Z",
+      "Verify AWS VPN": "2026-10-12T01:56:40.152Z"
     }
   },
-  "taken": "20260928T143937Z"
+  "taken": "20261012T021016Z"
 }

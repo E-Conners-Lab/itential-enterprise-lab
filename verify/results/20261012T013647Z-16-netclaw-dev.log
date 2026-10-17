@@ -1,0 +1,10 @@
+# test-16-netclaw-dev 20261012T013647Z
+SKIP  S17.1 svc-netclaw logs in and holds exactly the netclaw group
+SKIP  S17.2 every automation carries the gbac versions.yaml names; netclaw reads exactly its tools' automations
+SKIP  S17.3 svc-netclaw is refused everywhere else, and the show gate refuses a non-show command before a job
+PASS  S17.4 (a) platform-guide's twin answers through its route with the guide's counts, through its one tool
+      session f94f7d92-5e58-4ed7-a594-7f6b080d6967 (platform-guide-local): the answer carries 12 steps and 116 tasks (the guide's 2 stops named: yes); tools ['Describe for an Agent']
+SKIP  S17.5 (b) one show job as svc-netclaw
+SKIP  S17.6 (c) the newest show job described; svc-netclaw finds the card; closed
+SKIP  S17.7 (d) Add Branch VLAN: production only - dev runs no ServiceNow adapter, so the Platform refuses the route (400)
+# 1 passed, 0 failed

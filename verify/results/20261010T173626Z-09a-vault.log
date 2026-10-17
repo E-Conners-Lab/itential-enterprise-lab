@@ -1,0 +1,66 @@
+# test-09a-vault 20261010T173626Z
+administrator token renewed: 60 min left
+PASS  S8.2a Vault answers at vault.lab.internal over the lab CA and is unsealed
+      sys/health 200: initialized=True sealed=False version=2.0.4
+PASS  S8.2g the service name resolves to the VIP versions.yaml gives it
+      vault.lab.internal -> 10.100.0.41 (want 10.100.0.41)
+PASS  S8.2b a read of lab/devices/automation with no token is refused
+      read of lab/data/devices/automation with no token -> 403
+PASS  S8.2c each reader's policy reads only its own paths (Gateway: devices yes; Platform: devices no, NetBox yes)
+      itential-gateway   policy reads devices/automation   -> 200 (want 200)  keys ['password', 'username']
+      itential-platform  policy reads devices/automation   -> 403 (want 403)
+      itential-platform  policy reads services/netbox      -> 200 (want 200)  keys ['header', 'token']
+PASS  S8.2e each AppRole is bound to its own hosts (iap-01/02, iag-01): a valid secret ID from this machine is refused
+      itential-platform  bound to {'secret_id_bound_cidrs': ['10.100.0.72', '10.100.0.73'], 'token_bound_cidrs': ['10.100.0.72', '10.100.0.73']} (want ['10.100.0.72', '10.100.0.73'])
+      itential-platform  login with a valid secret ID from this machine -> 400 (want refused)
+      itential-gateway   bound to {'secret_id_bound_cidrs': ['10.100.0.80'], 'token_bound_cidrs': ['10.100.0.80']} (want ['10.100.0.80'])
+      itential-gateway   login with a valid secret ID from this machine -> 400 (want refused)
+      itential-aws-psk-writer bound to {'secret_id_bound_cidrs': ['10.100.0.80'], 'token_bound_cidrs': ['10.100.0.80']} (want ['10.100.0.80'])
+      itential-aws-psk-writer login with a valid secret ID from this machine -> 400 (want refused)
+PASS  S13.2a lab/aws/vpn-psk: the Gateway reads, the Platform cannot; the PSK writer's credentials are in Vault (writer policy: make vault-config on iag-01)
+      itential-gateway         may ['read'] on lab/data/aws/vpn-psk (want ['read'])
+      itential-platform        may ['deny'] on lab/data/aws/vpn-psk (want ['deny'])
+      itential-platform        may ['deny'] on lab/data/aws/terraform (want ['deny'])
+      writer credentials at aws/psk-writer: role ID current True, secret ID known to Vault True
+PASS  S13.2b terraform-run on the Gateway: clones with the Vault deploy key, gets the IAM key from Vault, reaches AWS as itential-terraform (probe: no plan)
+      clone at 71d522382fca, argv ['--action', 'probe'], uid 1001; caller arn:aws:iam::<account>:user/itential/itential-terraform
+        ok   return code 0
+        ok   AWS key from Vault
+        ok   caller itential-terraform
+        ok   backend init
+        ok   terraform 1.5.7
+        ok   clone at the pinned commit
+PASS  S13.2c the Gateway's cloud-devops-pipeline pin is a commit on its protected main, every required check passed on it (GitHub read via gh)
+      pin 71d522382fca vs main: identical; required account-ids@15368, checkov@15368, ci-guard@15368, gitleaks@15368, pytest@15368, terraform@15368; not passed on the pin: none
+        ok   the pin is on main
+        ok   main requires checks, admins included
+        ok   every required check passed on the pin, from its bound app
+FAIL  S13.2d each open lab edge target's key: in Vault, the Gateway reads it, the Platform cannot; lab-edge renders the pinned block, lab-edge-push and aws-vpn-monitor run with their aliases and refuse (no device, no AWS)
+        ok   aws/vpn-psk holds a key lab-edge-push accepts
+        ok   aws/vpn-psk holds a valid key version
+        ok   itential-gateway may ['read'] on aws/vpn-psk (has ['read'])
+        ok   itential-platform may ['deny'] on aws/vpn-psk (has ['deny'])
+        FAIL the deployment's outputs read for dc1-wan01 (terraform-run outputs)
+        ok   aws-vpn-monitor ran with its aliases and refused before AWS
+PASS  S8.2d the device password in Vault equals the .env seed (seeded one way)
+      devices/automation equals the .env seed: True (version 1)
+PASS  S8.2f an off-host Raft snapshot exists on this workstation (ADR 0065 decision 8)
+      newest off-host snapshot: vault-raft-20261006T200500Z.snap, 93 h old,  48K
+PASS  S8.3a no credential on the Platform: lab and lab-hosts nodes, the NetBox adapter and integrations carry Vault references
+      inventory lab: 12/12 nodes carry $GATEWAYSECRET_(lab-automation-password)
+      inventory lab-hosts: 3/3 nodes carry $GATEWAYSECRET_(lab-automation-password)
+      adapter NetBox token = $SECRET_services/netbox $KEY_token
+      integration netbox-api value = $SECRET_services/netbox $KEY_header
+      integration netbox-latest value = $SECRET_services/netbox $KEY_header
+PASS  S8.3b the Gateway's Vault provider and aliases match the oracle (export compared)
+      provider lab-vault: as the oracle says, role ID matches Vault
+      inert leftovers (not compared): ['netops-knowledge-token']
+      aliases: ['aws-psk-writer-role-id', 'aws-psk-writer-secret-id', 'aws-terraform-access-key-id', 'aws-terraform-secret-access-key', 'aws-vpn-psk-dc1-wan01', 'aws-vpn-psk-version-dc1-wan01', 'cloud-devops-pipeline-deploy-key', 'dc1-wan01-aws-vpn-password', 'lab-automation-password', 'lab-netbox-token']
+PASS  S8.3c the NetBox adapter reads NetBox with the token the Platform resolves from Vault
+      NetBox adapter (token from Vault through the Platform): 24 devices
+PASS  S8.3d every lab device logs in with its password resolved from Vault (show clock)
+      show clock with the Vault-held password: {'br1-sw01': True, 'br1-wan01': True, 'br2-sw01': True, 'br2-wan01': True, 'dc1-acc01': True, 'dc1-leaf01': True, 'dc1-leaf02': True, 'dc1-spine01': True, 'dc1-spine02': True, 'dc1-wan01': True, 'dc1-wan02': True, 'isp-core01': True}
+PASS  S8.3e every lab host logs in with its password resolved from Vault (hostname)
+      hostname on lab-hosts with the Vault-held password: {'br1-host01': True, 'br2-host01': True, 'dc1-srv01': True}
+
+passed=15 failed=1 skipped=0

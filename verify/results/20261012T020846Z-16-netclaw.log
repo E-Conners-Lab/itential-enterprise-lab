@@ -1,0 +1,23 @@
+# test-16-netclaw 20261012T020846Z
+PASS  S17.1 svc-netclaw logs in and holds exactly the netclaw group
+      svc-netclaw logs in on https://itential.lab.internal; its session holds exactly ['netclaw']
+PASS  S17.2 every automation carries the gbac versions.yaml names; netclaw reads exactly its tools' automations
+      18 automations as versions.yaml says; netclaw reads exactly ['Add Branch VLAN', 'Describe Job', 'Run Show Command on a Device', 'platform-guide', 'platform-guide-local']
+PASS  S17.3 svc-netclaw is refused everywhere else, and the show gate refuses a non-show command before a job
+      refused: another automation's endpoint (HTTP 401)
+      refused: a direct workflow start (HTTP 403)
+      refused: MOP run command (HTTP 403)
+      refused: Configuration Manager devices (HTTP 403)
+      refused: Automation Studio workflows (HTTP 403)
+      refused: the Work Center search (HTTP 403)
+      refused before any job: run-show-command 'configure terminal' (HTTP 400)
+PASS  S17.4 (a) platform-guide's twin answers through its route with the guide's counts, through its one tool
+      session 5ebe7e99-6aa3-40ce-9dfa-51b62560a97e (platform-guide-local): the answer carries 12 steps and 116 tasks (the guide's 2 stops named: yes); tools ['Describe for an Agent']
+PASS  S17.5 (b) one show job as svc-netclaw; dc1-spine01's parsed BGP neighbors = the topology's
+      job b163514f47d444dea0e6cda7: dc1-spine01 'show ip bgp summary' parsed by textfsm; neighbors ['10.101.255.1', '10.101.255.3'] = the topology's; one job
+PASS  S17.6 (c) the newest BGP drill job described; svc-netclaw finds the card; closed
+      newest Diagnose Fabric BGP Outage job c1a83f4f773447c6b51e939c described by job 011b543e889a40f4b6b5971c; card /work-center/#/01a12ddf-81b3-7758-a448-39a92bbcbaf2; outcome: Diagnose Fabric BGP Outage, job c1a83f4f: complete in 3 min 25 s; 56 of 116 tasks ran through 8 of 12 steps; ended after
+      card closed (Seen); job 011b543e889a40f4b6b5971c complete
+PASS  S17.7 (d) one Add Branch VLAN job stops on its approval; rejected and rolled back; NetBox unchanged
+      job eae8fbb950464875a39eb8fa: stopped on approval 4a, rejected, rolled back; NetBox holds no VLAN netclaw-verify-220950; one job
+# 7 passed, 0 failed

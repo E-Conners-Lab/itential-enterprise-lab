@@ -1,0 +1,92 @@
+# test-06-flowai 20261010T171937Z
+Anthropic token meter, last 7 days (60 sessions; prices per MTok in=2.0 out=10.0, anthropic only is billed)
+  anthropic  claude-sonnet-5    sessions=  33 in=  1034742 out=  39279  $  2.46
+  ollama     gemma4:26b         sessions=  27 in=   963811 out= 233039  $  0.00
+spent $2.46 of the $15.00 weekly budget; $12.54 left
+  largest: fabric-diagnostics 2026-10-07T09:42 in=86129 (COMPLETE)
+  largest: fabric-diagnostics 2026-10-08T00:53 in=85813 (COMPLETE)
+  largest: fabric-diagnostics 2026-10-07T10:07 in=83589 (COMPLETE)
+PASS  S4c.1 provider profiles anthropic (claude-sonnet-5) and ollama-mac (gemma4:26b) answer and list their pinned models
+      profiles: ['anthropic', 'ollama-mac']
+      anthropic: claude-sonnet-5 enabled (id b2f044fe...)
+      anthropic provider answered: True 14 models listed
+      ollama-mac: gemma4:26b enabled (id a4accfe7...)
+      ollama-mac provider answered: False 0 models listed
+PASS  S4c.2 lab-netops answers the running version of br1-wan01 and br1-sw01 via the Gateway 5 tool; equals direct SSH
+      tokens in=24263 out=223
+      br1-wan01: agent said 17.13.01a; tools ['Get Device Software Version', 'dcim_devices_list']
+      tokens in=12292 out=102
+      br1-sw01: agent said 4.33.1.1F; tools ['Get Device Software Version']
+PASS  S4c.3 lab-netops adds agent-20261010t171937z to br1 through Add Branch VLAN with the approval; second request is a no-op
+      approved job 1d5348efcdaf41cfb9aaad18
+      tokens in=13742 out=340
+      run 1: VLAN 12 agent-20261010t171937z reserved, approved, configured
+      tokens in=12090 out=321
+      run 2: no-op (still exactly VLAN 12)
+PASS  S4c.4 lab-netops refuses core-router-99 (not in the inventory) without touching the gateway; session records token usage
+      tokens in=12094 out=182
+      refused: core-router-99 is not found in NetBox, so it isn't a device in the "lab" inventory. I won't call any gateway tool for it. Please confirm the correct device name
+FAIL  S4c.5 lab-netops-local (ollama-mac gemma4:26b) answers the br1-sw01 version; response time and what the Mac has loaded recorded
+      9e6f2e99-a0b6-4ad6-bcc9-eafa04f644eb
+      session 9e6f2e99-a0b6-4ad6-bcc9-eafa04f644eb failed
+PASS  S4c.6 Claude Code's MCP tools start a lab-netops session (trigger_automation) and read the answer back (describe_session)
+      tokens in=12302 out=102
+      MCP trigger_automation(lab-netops) -> session db24aa16-c81f-4924-9529-7d53277a7a11 -> 4.33.1.1F via describe_session
+PASS  S4c.7 Run Show Command on a Device returns structured 'show version': Genie on br1-wan01, TextFSM on br1-sw01, equal to direct SSH
+      br1-wan01: genie -> version.xe_version = 17.13.01a; matches direct SSH
+      br1-sw01: textfsm -> 0.image = 4.33.1.1F; matches direct SSH
+PASS  S4d.5a netbox-sot counts the active devices of dc1 through the NetBox integration; equals the NetBox API
+      tokens in=28586 out=109
+      netbox-sot: dc1 has 10 active devices (NetBox agrees); tools ['dcim_devices_list']
+PASS  S4d.5b device-ops reports br2-sw01's software version through the show-command workflow; equals direct SSH
+      tokens in=11933 out=287
+      device-ops: br2-sw01 runs 4.33.1.1F (direct SSH agrees); tools ['Run Show Command on a Device', 'dcim_devices_list']
+PASS  S4d.5c compliance runs lab-baseline and reports the result; the batch reports read directly agree
+      tokens in=3789 out=120
+      compliance: lab-baseline clean on 12 devices; agent said 'all compliant'; tools ['Summarize Compliance Results']
+PASS  S4d.5d diagnostics reads a verify-created incident about br2-sw01, checks the device and writes one 'Proposed fix' work note
+      tokens in=26412 out=1119
+      diagnostics: INC0010035 got the note 'Proposed fix: host'; tools ['Run Show Command on a Device', 'dcim_devices_list', 'listIncidents', 'updateIncident']; push job d1fe57569cb543a79ace5b8b made the drift
+PASS  S4d.5e remediation fixes the br2-sw01 hostname drift only through Push Configuration with Approval; the card approved here; direct SSH confirms
+      tokens in=12725 out=835
+      remediation: proposed 'hostname br2-sw01', push job 964fc4ccfac2477a94d177bd approved here, br2-sw01 restored (direct SSH); tools ['Push Configuration with Approval', 'Summarize Compliance Results', 'dcim_devices_list']
+FAIL  S4d.5f netbox-sot-local (ollama-mac gemma4:26b) answers br2-sw01's site; response time and what the Mac has loaded recorded
+      8ccdca4e-e97e-4082-b365-c4c50fbbf493
+      session 8ccdca4e-e97e-4082-b365-c4c50fbbf493 failed
+FAIL  S4d.5g Run Show Command on All Devices parses 'show version' on every lab device in one call (direct SSH agrees); lab-netops-local answers an all-devices question from it
+      Run Show Command on All Devices: 12 devices, parsers ['genie', 'textfsm']
+      a620a4d3-6bbb-4fef-8264-b29838e9be81
+      session a620a4d3-6bbb-4fef-8264-b29838e9be81 failed
+FAIL  S4d.5h an unknown device ends Run Show Command on a Device with device_error instead of hanging; device-ops-local reports br2-sw01's version
+      unknown device ends the job with device_error
+      dd008fff-bb8d-46b0-b7bb-fb49c89983db
+      session dd008fff-bb8d-46b0-b7bb-fb49c89983db failed
+FAIL  S4d.5i compliance-local reports the plan results per device through Summarize Compliance Results
+      07f62b4f-d5a4-455d-9229-57e6a49abb79
+      session 07f62b4f-d5a4-455d-9229-57e6a49abb79 failed
+FAIL  S4d.5j diagnostics-local reads the verify incident and checks the device it names
+      1ebcc10f-eac5-4d93-8de8-55a365cc567f
+      session 1ebcc10f-eac5-4d93-8de8-55a365cc567f failed
+FAIL  S4d.5k remediation-local refuses anything that is not a hostname and calls no tool
+      9a884fec-af7e-44de-baeb-378e98a0e69a
+      session 9a884fec-af7e-44de-baeb-378e98a0e69a failed
+FAIL  S4d.5l cloud-status reports what is deployed in AWS, until when and an estimated cost through Get AWS VPN Status; terraform-run outputs agree
+      terraform-run outputs gave no strongSwan address (nothing deployed?)
+FAIL  S4d.5m cloud-status-local names the deployed strongSwan address through Get AWS VPN Status
+      terraform-run outputs gave no strongSwan address (nothing deployed?)
+FAIL  S4d.5n tunnel-diagnostics reads dc1-wan01, notes its verify incident once and proposes escalate on a healthy tunnel
+      tokens in=32051 out=1824
+      tunnel-diagnostics answered fix 'repush-router-block' for a healthy tunnel (want escalate): {"fix": "repush-router-block", "cause": "ike-blocked", "evidence": "INET-IN on dc1-wan01 has only deny entries (with logged hits) for udp 500/4500 from the AWS peer and no permit entries, blocking IKE despite the Tunnel10 state read failing and other IKEv2 SAs showing READY."}
+FAIL  S4d.5o tunnel-diagnostics-local reads dc1-wan01, notes its verify incident and answers escalate on a healthy tunnel
+      a8c92f37-cae1-4682-af33-da79793e2714
+      session a8c92f37-cae1-4682-af33-da79793e2714 failed
+PASS  S4d.5p fabric-diagnostics reads the devices itself, notes its verify incident once and proposes escalate on an Established session
+      tokens in=86177 out=3367
+      fabric-diagnostics: INC0010038 noted, fix escalate on an Established session; tools ['Run Show Command on a Device', 'netops-knowledge_search_scenarios', 'updateIncident']
+FAIL  S4d.5q fabric-diagnostics-local reads the devices itself, notes its verify incident and answers escalate on an Established session
+      3b7a377a-633a-43c3-a2d9-a6c484c110f6
+      session 3b7a377a-633a-43c3-a2d9-a6c484c110f6 failed
+closed INC0010035
+
+tokens spent this run: in=288456 out=8931 (Anthropic + local)
+passed=12 failed=12

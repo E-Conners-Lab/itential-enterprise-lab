@@ -1,0 +1,19 @@
+# test-15-knowledge 20261006T225343Z
+PASS  S15.1 the pod runs the pinned digest, non-root, read-only, no capabilities or service-account token, in a restricted namespace
+      namespace enforces restricted
+      one pod on sha256:c92465ec1f9b non-root, read-only, no capabilities, no service-account token
+PASS  S15.2 the VIP refuses this workstation (data plane: only the Gateway is admitted)
+      no answer from 10.100.0.43:8443 to this workstation (only 10.100.0.80 is admitted)
+PASS  S15.3 iag-01 reaches it over lab-CA TLS, and a request without the token gets 401
+      iag-01: TLS verified against the lab CA, health ok, tools/list without a token = 401
+PASS  S15.4 the pod cannot open a connection (Vault inside the lab, a public address outside): no egress
+      blocked 10.100.0.41 8200
+      blocked 1.1.1.1 443
+FAIL  S15.5 Gateway Manager lists a service for each tool netops-knowledge advertises (FlowMCP discovery: DNS, TLS, token, policy)
+      Traceback (most recent call last):
+        File "<string>", line 6, in <module>
+          assert all(found.values()), f"missing: {[t for t, f in found.items() if not f]}"
+                 ~~~^^^^^^^^^^^^^^^^
+      AssertionError: missing: ['search_scenarios', 'get_scenario']
+
+passed=4 failed=1

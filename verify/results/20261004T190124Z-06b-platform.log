@@ -1,0 +1,54 @@
+# test-06b-platform 20261004T191522Z
+PASS  S4d.1 Golden Config: plan clean on 12 devices; hostname drift on br1-wan01 and br1-sw01 flagged with no false positive; restored through Push Configuration with Approval
+      schedule: nightly compliance lab-baseline every 1 day first run 1789095600000
+      run 1: 12 reports, 0 errors, 0 warnings (passes: 552)
+      pushed to br1-wan01 (job 41b269b8a37547e38db10028)
+      pushed to br1-sw01 (job 847d101e05d04318b9affa72)
+      run 2: exactly br1-wan01 and br1-sw01 flagged:
+      br1-wan01 1 0 44 | hostname br1-wan01
+      br1-sw01 1 0 31 | hostname br1-sw01
+      pushed to br1-wan01 (job 6b36baf4dd2045d3a4ffbba9)
+      pushed to br1-sw01 (job c46199e85d9c4be793bcb62a)
+      run 3: clean again on 12 devices; hostnames restored and confirmed over direct SSH
+      run 4: Run Nightly Compliance Check (the schedule trigger's target) found plan 6aa2c63214cb2fc10a3682a8 and started instance 6ac2a73bfbacb55764c91f5a
+PASS  S4d.2 command templates on br1-wan01 and br1-sw01 with every rule evaluated; analytic pre/post green; nightly backup schedule and a run whose backups equal the running configs
+      br1-wan01: lab-cisco-ios-checks passed, 6 rules over 3 commands
+      2 pre/post rules equal
+      br1-wan01: lab-cisco-ios-prepost pre/post equal
+      br1-sw01: lab-arista-eos-checks passed, 6 rules over 4 commands
+      2 pre/post rules equal
+      br1-sw01: lab-arista-eos-prepost pre/post equal
+      schedule: nightly backups lab every 1 day first run 1789093800000
+      backups: Back Up All Device Configs job 3da0ec39a1b34b6fbfe2e91f; 12/12 devices' newest backup equals the running config over direct SSH
+PASS  S4d.3 Lifecycle Manager branch-vlan: instances from NetBox; create -> JSON form approval (Work Center shows branch, VLAN, switch, NetBox reservation) -> instance; rejected push changes nothing; delete -> governed push; history; no-op; rejected create retired
+      actions runnable: Create -> workflow 593e2ef1, Delete -> workflow 7d65fb92
+      form fields: ['branch', 'decision', 'netbox_vlan_id', 'status', 'switch', 'vid', 'vlan_name']
+      instances cover every NetBox branch VLAN: br1-approve-demo 
+      Work Center item 01a1085f-7fa3-77a8-8da4-bd1f2066ccb7 shows {'branch': 'br2', 'vid': 11, 'vlan_name': 'lcm-20261004t191522z', 'switch': 'br2-sw01', 'netbox_vlan_id': 113, 'status': 'reserved'}
+      instance br2-lcm-20261004t191522z {'branch': 'br2', 'vid': 11, 'vlan_name': 'lcm-20261004t191522z', 'switch': 'br2-sw01', 'netbox_vlan_id': 113, 'status': 'active'}
+      create: VLAN 11 lcm-20261004t191522z active in NetBox (id 113) and on br2-sw01; instance br2-lcm-20261004t191522z recorded (execution 6ac2a7c92a32f2ad08fc1555)
+      rejected push: job 9354bf35748d40428d6bfb37 in error, delete job 37a1fdd3db7b40e8903d064b waited, NetBox and br2-sw01 untouched, both cancelled
+      delete: push job 94570b5e45014094861cd3a2 removed VLAN 11 from br2-sw01 after the approval; NetBox VLAN gone; instance br2-lcm-20261004t191522z retired (execution 6ac2a7ef2a32f2ad08fc1557)
+      journal: br2-sw01 carries the create and the delete entry for VLAN 11
+      history: [('Create', 'complete', '40262d046e8b4dc5b46e7981'), ('Delete', 'complete', '25db13867ca349b2b2da205e')]
+      no-op: Remove Branch VLAN on the retired VLAN changed nothing and started no push (job 66daa9be734f46a2885b62f0)
+      rejected create: reservation 114 rolled back, child e309dd6584b640059b252562 in error, execution 6ac2a81a2a32f2ad08fc1558 cancelled, instance retired
+PASS  S4d.4 Integration Models lab-netbox and lab-servicenow: instances netbox-api/servicenow-api, every operation an authorized tool; lab-netops reads br1-sw01 and INC0000060 through the integration tools (not the adapters)
+      model lab-netbox:1.0.0: 15 operations
+      integration netbox-api: server http 10.100.0.64 8080 auth ['tokenAuth']
+      tools netbox-api: 15 authorized
+      model lab-servicenow:1.0.0: 8 operations
+      integration servicenow-api: server https dev409097.service-now.com 443 auth ['BasicAuth']
+      tools servicenow-api: 8 authorized
+      NetBox: br1-sw01 is br1 / branch-switch through ['dcim_devices_list']; tokens in=13815 out=115
+      ServiceNow: INC0000060 = 'Unable to connect to email' through ['listIncidents']; tokens in=12368 out=160
+      tokens spent by S4d.4: in=26183 out=275
+PASS  S4d.6 the three Ubuntu hosts are lab-hosts inventory nodes, reachable through Gateway 5 with their uptime (direct SSH agrees), and unknown to Configuration Manager
+      Configuration Manager sees 12 devices, no host
+      br1-host01 (10.100.0.195): reachable, up 3 weeks, 6 days, 19 hours, 29 minutes through Gateway 5; direct SSH agrees
+      br2-host01 (10.100.0.196): reachable, up 3 weeks, 6 days, 19 hours, 29 minutes through Gateway 5; direct SSH agrees
+      dc1-srv01 (10.100.0.192): reachable, up 3 weeks, 6 days, 19 hours, 29 minutes through Gateway 5; direct SSH agrees
+DEFER S4d.6 firewalls: PA-VM image not staged (S3.4 deferral)
+
+passed=5 failed=0 deferred=1
+RESULT: PASS

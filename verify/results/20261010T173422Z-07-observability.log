@@ -1,0 +1,33 @@
+# test-07-observability 20261010T173422Z
+PASS  S7.1 expiries in Prometheus agree with the YAML and the live sources; SNMPv3 answers from the workstation; every Ubuntu machine forwards syslog and runs no Zabbix agent
+      5 expiry series agree with the YAML dates; NetBox token and lab CA dates match the live sources
+      snmpget sysName over SNMPv3 from the workstation: br1-wan01, dc1-spine01
+      rsyslog active and no zabbix-agent2 on all 20 managed Ubuntu machines (systemctl, dpkg over SSH)
+PASS  S7.2 Prometheus target count per job equals observability.yaml (NetBox-sized); no target down; lab rules loaded
+      76 active targets in 25 declared jobs, all up
+      44 ServiceMonitor/Probe/ScrapeConfig objects in observability
+      lab alert rules loaded: ['LabAwsTunnelDown', 'LabBgpSessionDown', 'LabDeviceDown', 'LabExpirySoon', 'LabTargetDown', 'LabUiDown', 'VaultSealed', 'lab:bgp_neighbor_intent', 'lab:bgp_neighbor_intent', 'lab:bgp_neighbor_intent', 'lab:bgp_neighbor_intent', 'lab:bgp_neighbor_intent', 'lab:bgp_neighbor_intent', 'lab:bgp_neighbor_intent', 'lab:bgp_neighbor_intent', 'lab:bgp_neighbor_intent', 'lab:bgp_neighbor_intent', 'lab:bgp_neighbor_intent', 'lab:bgp_neighbor_intent', 'lab:bgp_neighbor_intent', 'lab:bgp_neighbor_intent', 'lab:bgp_neighbor_intent', 'lab:bgp_neighbor_intent', 'lab:bgp_neighbor_intent', 'lab:bgp_neighbor_intent', 'lab:bgp_neighbor_intent', 'lab:bgp_neighbor_intent', 'lab:bgp_neighbor_intent', 'lab:bgp_neighbor_intent', 'lab:bgp_neighbor_intent', 'lab:bgp_neighbor_intent', 'lab:bgp_neighbor_intent', 'lab:bgp_neighbor_intent', 'lab:bgp_neighbor_intent', 'lab:bgp_neighbor_intent', 'lab:bgp_neighbor_intent', 'lab:bgp_neighbor_intent', 'lab:bgp_neighbor_intent', 'lab:bgp_neighbor_intent', 'lab:bgp_neighbor_intent', 'lab:bgp_neighbor_intent', 'lab:bgp_neighbor_intent', 'lab:bgp_neighbor_intent', 'lab:bgp_neighbor_intent', 'lab:bgp_neighbor_intent', 'lab:bgp_session_up', 'lab:bgp_session_up:gnmic', 'lab:bgp_session_up:snmp', 'lab:expiry_days_left', 'lab:expiry_days_left', 'lab:expiry_days_left', 'lab:expiry_days_left', 'lab:expiry_days_left']
+PASS  S7.5-prep Grafana provisions the lab dashboards and the Prometheus/Alertmanager/Loki datasources, Prometheus and Loki answer, and no Zabbix one (login via Keycloak: phase 9)
+      dashboards ['Expiries', 'Fabric', 'Lab health', 'WAN']; datasources ['alertmanager', 'loki', 'prometheus']; prometheus and loki answer their health checks
+PASS  S7.3 gNMIc BGP session count for dc1-spine01 equals show bgp summary (and Prometheus agrees)
+      dc1-spine01: 4 Established sessions on the device, 4 in gNMIc, 4 in Prometheus
+PASS  S7.3b every BGP session the topology declares is up in lab:bgp_session_up, and the C8000v ones agree with SNMP from the workstation
+      38 declared BGP sessions up in lab:bgp_session_up (topology = Prometheus); 20 C8000v sessions agree with BGP4-MIB walked from the workstation
+PASS  S7.4 Loki returns a syslog line from each vendor within 60 s of a governed no-op config push (device log agrees)
+      pushed to br1-wan01 (job dbff7e7226ab481cbb1238da)
+      br1-wan01 -> Loki: 3252: br1-wan01: Oct 10 17:35:06.592: %SYS-5-CONFIG_I: Configured from console by automation on vty0 (10.100.0.80)
+      br1-wan01 device log: Oct 10 17:35:06.592: %SYS-5-CONFIG_I: Configured from console by automation on vty0 (10.100.0.80)
+      pushed to dc1-spine01 (job c39e9ee713df4413a1854839)
+      dc1-spine01 -> Loki: Oct 10 17:35:29 dc1-spine01 ConfigAgent: %SYS-5-CONFIG_E: Enter configuration mode from console by automation on vty4 (10.100.0.80)
+      dc1-spine01 device log: Oct 10 17:35:34 dc1-spine01 ConfigAgent: %SYS-5-CONFIG_STARTUP: Startup config saved from system:/running-config by auto
+PASS  S7.7 Prometheus holds the Platform job metrics (jobsComplete per workflow equals the API) and every application/adapter is up
+      Push Configuration with Approval: API 49 vs Prometheus 47.0
+      (retry after the exporter's next refresh)
+      43 workflows: jobsComplete equal in the API and Prometheus; 23 applications running, 3 adapters online in both
+PASS  S7.8 the official Itential Platform Monitoring dashboard (grafana.com 25527) is provisioned and every metric family it queries has data
+      provisioned: Itential Platform Monitoring rows ['Overview', 'Workflow Engine', 'Platform Process', 'Redis', 'MongoDB']
+      every dashboard family has data (MongoDB replica-set family excluded: standalone dev-stack database); jobs total 1503 in the API, 1503 in Prometheus
+DEFER S7.5 Grafana login via Keycloak and every dashboard renders with data: identity phase (ADR 0050)
+SKIP  S7.6 drill (set VERIFY_DRILLS=1 to run; stops br1-wan01 for a few minutes)
+
+passed=8 failed=0 deferred=1

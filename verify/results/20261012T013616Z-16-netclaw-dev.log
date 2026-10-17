@@ -1,0 +1,23 @@
+# test-16-netclaw-dev 20261012T013616Z
+PASS  S17.1 svc-netclaw logs in and holds exactly the netclaw group
+      svc-netclaw logs in on https://itential-dev.lab.internal; its session holds exactly ['netclaw']
+PASS  S17.2 every automation carries the gbac versions.yaml names; netclaw reads exactly its tools' automations
+      6 automations as versions.yaml says; netclaw reads exactly ['Add Branch VLAN', 'Describe Job', 'Run Show Command on a Device', 'platform-guide-local']
+PASS  S17.3 svc-netclaw is refused everywhere else, and the show gate refuses a non-show command before a job
+      refused: another automation's endpoint (HTTP 401)
+      refused: a direct workflow start (HTTP 403)
+      refused: MOP run command (HTTP 403)
+      refused: Configuration Manager devices (HTTP 403)
+      refused: Automation Studio workflows (HTTP 403)
+      refused: the Work Center search (HTTP 403)
+      refused before any job: run-show-command 'configure terminal' (HTTP 400)
+FAIL  S17.4 (a) platform-guide's twin answers through its route with the guide's counts, through its one tool
+      guide: session a181569e-db7e-4d3d-9a91-2ac757342676: 
+PASS  S17.5 (b) one show job as svc-netclaw
+      job 72265407a54f4684ac35ea6f: clab-rtr1 'show version' answered (Cisco IOS XE); one job
+PASS  S17.6 (c) the newest show job described; svc-netclaw finds the card; closed
+      newest Run Show Command on a Device job 72265407a54f4684ac35ea6f described by job 107194dc2ce4446eb7c14625; card /work-center/#/01a12dc1-2d20-75fd-b32f-f0bede8ecf42; outcome: Run Show Command on a Device, job 72265407: complete in 5.0 s; 14 of 21 tasks ran through 5 of 5 steps; ended after step
+      card closed (Seen); job 107194dc2ce4446eb7c14625 complete
+PASS  S17.7 (d) one Add Branch VLAN job stops on its approval; rejected and rolled back; NetBox unchanged
+      SKIP on dev: Add Branch VLAN needs the ServiceNow adapter, which dev does not run (the trigger answers 400)
+# 6 passed, 1 failed

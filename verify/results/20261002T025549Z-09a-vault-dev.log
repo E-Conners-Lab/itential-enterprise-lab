@@ -1,0 +1,97 @@
+# test-09a-vault-dev 20261002T025549Z (SKIP_ROTATION=0)
+PASS  S8.2a Vault answers over the lab CA and is unsealed
+      sys/health 200: initialized=True sealed=False version=2.0.4
+PASS  S8.2b a read of lab/devices/automation with no token is refused
+      read of lab/data/devices/automation with no token -> 403
+PASS  S8.2c each reader's policy reads only its own paths (Gateway: devices yes; Platform: devices no, NetBox yes)
+      itential-gateway   policy reads devices/automation   -> 200 (want 200)  keys ['password', 'username']
+      itential-platform  policy reads devices/automation   -> 403 (want 403)
+      itential-platform  policy reads services/netbox      -> 200 (want 200)  keys ['header', 'token']
+PASS  S8.2e the AppRoles are bound to the dev VM: a login with a valid secret ID from this machine is refused
+      itential-platform  bound to {'secret_id_bound_cidrs': ['172.31.65.1'], 'token_bound_cidrs': ['172.31.65.1']} (want ['172.31.65.1'])
+      itential-platform  login with a valid secret ID from this machine -> 400 (want refused)
+      itential-gateway   bound to {'secret_id_bound_cidrs': ['172.31.65.1'], 'token_bound_cidrs': ['172.31.65.1']} (want ['172.31.65.1'])
+      itential-gateway   login with a valid secret ID from this machine -> 400 (want refused)
+      itential-aws-psk-writer bound to {'secret_id_bound_cidrs': ['172.31.65.1'], 'token_bound_cidrs': ['172.31.65.1']} (want ['172.31.65.1'])
+      itential-aws-psk-writer login with a valid secret ID from this machine -> 400 (want refused)
+PASS  S13.2a lab/aws/vpn-psk: the PSK writer may create/update and never read, the Gateway reads, the Platform cannot; its credentials are in Vault
+      itential-gateway         may ['read'] on lab/data/aws/vpn-psk (want ['read'])
+      itential-platform        may ['deny'] on lab/data/aws/vpn-psk (want ['deny'])
+      itential-platform        may ['deny'] on lab/data/aws/terraform (want ['deny'])
+      itential-aws-psk-writer  may ['create', 'update'] on lab/data/aws/vpn-psk (want ['create', 'update'])
+      itential-aws-psk-writer  may ['deny'] on lab/metadata/aws/vpn-psk (want ['deny'])
+      itential-aws-psk-writer  may ['deny'] on lab/data/aws/terraform (want ['deny'])
+      writer credentials at aws/psk-writer: role ID current True, secret ID known to Vault True
+PASS  S13.2b terraform-run on the Gateway: clones with the Vault deploy key, gets the IAM key from Vault, reaches AWS as itential-terraform (probe: no plan)
+      clone at 590cd0a20f32, argv ['--action', 'probe'], uid 1001; caller arn:aws:iam::<account>:user/itential/itential-terraform
+        ok   return code 0
+        ok   AWS key from Vault
+        ok   caller itential-terraform
+        ok   backend init
+        ok   terraform 1.5.7
+        ok   clone at the pinned commit
+PASS  S13.2c the Gateway's cloud-devops-pipeline pin is a commit on its protected main, every required check passed on it (GitHub read via gh)
+      pin 590cd0a20f32 vs main: identical; required account-ids@15368, checkov@15368, ci-guard@15368, gitleaks@15368, pytest@15368, terraform@15368; not passed on the pin: none
+        ok   the pin is on main
+        ok   main requires checks, admins included
+        ok   every required check passed on the pin, from its bound app
+PASS  S13.2d each open lab edge target's key: in Vault, the Gateway reads it, the Platform cannot; lab-edge renders the pinned block, lab-edge-push and aws-vpn-monitor run with their aliases and refuse (no device, no AWS)
+        ok   devices/aws-vpn-clab-rtr1 holds a key lab-edge-push accepts
+        ok   devices/aws-vpn-clab-rtr1 holds a valid key version
+        ok   itential-gateway may ['read'] on devices/aws-vpn-clab-rtr1 (has ['read'])
+        ok   itential-platform may ['deny'] on devices/aws-vpn-clab-rtr1 (has ['deny'])
+        ok   lab-edge render answers 0 for clab-rtr1
+        ok   lab-edge's SHA-256 equals the pinned module's (cd44ca2748ae)
+        ok   the masked block holds no key
+        ok   lab-edge-push ran with its aliases and refused before the device
+        ok   aws/vpn-psk holds a key lab-edge-push accepts
+        ok   aws/vpn-psk holds a valid key version
+        ok   itential-gateway may ['read'] on aws/vpn-psk (has ['read'])
+        ok   itential-platform may ['deny'] on aws/vpn-psk (has ['deny'])
+        ok   the deployment's outputs read for dc1-wan01 (terraform-run outputs)
+        ok   lab-edge render answers 0 for dc1-wan01
+        ok   lab-edge's SHA-256 equals the pinned module's (0790982c316e)
+        ok   the masked block holds no key
+        ok   lab-edge-push ran with its aliases and refused before the device
+        ok   aws-vpn-monitor ran with its aliases and refused before AWS
+PASS  S8.2d the device password in Vault equals the .env seed (seeded one way)
+      devices/automation equals the .env seed: True (version 23)
+PASS  S8.3a no credential on the Platform: nodes, NetBox adapter and integration carry Vault references
+      inventory lab: 4/4 nodes carry $GATEWAYSECRET_(lab-automation-password)
+      adapter NetBox token = $SECRET_services/netbox $KEY_token
+      integration netbox-api value = $SECRET_services/netbox $KEY_header
+      integration netbox-latest value = $SECRET_services/netbox $KEY_header
+PASS  S8.3b the Gateway's Vault provider and aliases match the oracle (export compared, role ID from Vault)
+      provider lab-vault: as the oracle says, role ID matches Vault
+      aliases: ['aws-psk-writer-role-id', 'aws-psk-writer-secret-id', 'aws-terraform-access-key-id', 'aws-terraform-secret-access-key', 'aws-vpn-psk-clab-rtr1', 'aws-vpn-psk-dc1-wan01', 'aws-vpn-psk-version-clab-rtr1', 'aws-vpn-psk-version-dc1-wan01', 'cloud-devops-pipeline-deploy-key', 'dc1-wan01-aws-vpn-password', 'lab-automation-password', 'lab-netbox-token']
+PASS  S8.3c the NetBox adapter reads NetBox with the token the Platform resolves from Vault
+      NetBox adapter (token from Vault through the Platform): 24 devices
+PASS  S8.3d every clab device logs in with its password resolved from Vault (job result and Gateway log)
+      show clock with the Vault-held password: {'clab-rtr1': True, 'clab-rtr2': True, 'clab-sw1': True, 'clab-sw2': True}
+      Gateway log since 2026-10-02T02:56:28Z: 4 successful resolutions for 4 devices
+PASS  E15 rotation: device only -> next job fails; Vault only -> next job succeeds; both restored
+      node clab-rtr1
+        baseline show clock                                          PASS (job succeeded: True)
+        password changed on the device only (running config)         PASS (job succeeded: True)
+        next job must FAIL: Vault still holds the old value          PASS (job succeeded: False)
+        same password written to Vault only                          PASS (job succeeded: True)
+        next job must SUCCEED: nothing changed on Platform/Gateway   PASS (job succeeded: True)
+        restore: device back to the original password                PASS (job succeeded: True)
+        restore: Vault back to the .env value                        PASS (job succeeded: True)
+        final show clock with the original password                  PASS (job succeeded: True)
+PASS  E15 restored: Vault equals the .env seed again
+      devices/automation equals the .env seed: True (version 25)
+PASS  E14 sealed Vault: device and NetBox jobs reach their end via the error path; unsealed, both succeed
+      baseline   Get Device Software Version  complete    6s
+      baseline   List Devices from NetBox     complete    3s
+      Vault sealed: PUT sys/seal -> 204; health sealed=True
+      sealed     Get Device Software Version  complete    3s  reached end via error path: True  (device_error)  errors=[]
+      sealed     List Devices from NetBox     complete    3s  reached end via error path: True  (netbox_error)  errors=[('1a', "{'message': 'log is not defined', 'stack': 'ReferenceError: log is not defined\\n    at Encryption.decryptProperties (/opt/itential/platform/")]
+      Vault unsealed: 200 sealed=False
+      unsealed   Get Device Software Version  complete    6s
+      unsealed   List Devices from NetBox     complete    3s
+      clab-rtr1 running config unchanged: True
+PASS  E14 unsealed afterwards
+      sys/health 200: initialized=True sealed=False version=2.0.4
+
+passed=17 failed=0
