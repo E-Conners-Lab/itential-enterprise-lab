@@ -132,6 +132,9 @@ services:
       ITENTIAL_MCP_SERVER_EXCLUDE_TAGS: "experimental,beta,describe_inventory,get_devices"
       ITENTIAL_MCP_PLATFORM_USER: ${MCP_PLATFORM_USER}
       ITENTIAL_MCP_PLATFORM_PASSWORD: ${MCP_PLATFORM_PASSWORD}
+      # log in again before the Platform's 60-minute idle limit ends the session (itential/ha2/versions.yaml
+      # tools.mcp_platform_ttl, the production value; tests/test_itential.py holds them equal)
+      ITENTIAL_MCP_PLATFORM_TTL: "1800"
 
   # --- Platform host exporters for the official Itential Platform Monitoring dashboard (ADR 0052), profile
   # `monitoring`: job names and series exactly as grafana.com 25527 queries them. Each listens on the OOB

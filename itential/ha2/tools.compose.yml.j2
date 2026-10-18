@@ -21,6 +21,8 @@ services:
       ITENTIAL_MCP_PLATFORM_PORT: "{{ loadbalancer.listen_port }}"
       ITENTIAL_MCP_PLATFORM_USER: ${ITENTIAL_ADMIN_USER:-admin@itential}
       ITENTIAL_MCP_PLATFORM_PASSWORD: ${ITENTIAL_ADMIN_PASSWORD:?}
+      # log in again before the Platform's 60-minute idle limit ends the session (versions.yaml tools.mcp_platform_ttl)
+      ITENTIAL_MCP_PLATFORM_TTL: "{{ tools.mcp_platform_ttl }}"
       ITENTIAL_MCP_PLATFORM_USE_TLS: "true"
       # the lab CA is trusted system-wide on this VM and mounted for the container
       SSL_CERT_FILE: "/etc/ssl/lab/ca.crt"
