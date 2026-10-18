@@ -1035,7 +1035,7 @@
       },
       "variables": {
         "incoming": {
-          "input": "fabric-bgp did not break the session (inject_result). If inject_result names an unconfirmed_session, or is {}, a configuration session may still hold the fault on the switch: read show configuration sessions there and abort it by hand. Never confirm it: that commits the fault with no timer. A change committed under the commit timer EOS rolls back by itself",
+          "input": "fabric-bgp did not break the session. Unless inject_result.result.stdout_json says aborted: true, a configuration session holding the fault may still be open on the drill's device (drill_plan.stdout_json.near.device): read show configuration sessions there and abort any r10-drill session by hand. Never commit or confirm it: that makes the fault permanent. fabric-bgp's own reason is inject_result.result.stdout_json.error",
           "outputType": "string",
           "variables": ""
         },

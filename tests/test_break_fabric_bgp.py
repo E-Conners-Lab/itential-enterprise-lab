@@ -191,11 +191,14 @@ def test_a_session_not_back_is_left_to_the_timer_and_read_after_it() -> None:
 
 
 def test_a_drill_that_did_not_apply_says_how_to_clear_a_pending_session() -> None:
-    # cdp #45: an abort fabric-bgp cannot prove answers aborted: false and names the session as unconfirmed_session
+    # cdp #45: only a proven abort answers aborted: true; an unproven one, a drill the Gateway stopped mid-push and a
+    # drill committed under the timer that did not break the session all may leave a session open, so every other
+    # ending reads as one to abort by hand, and none as one to confirm
     assert TR["5c"]["5d"]["state"] == "failure" and TR["5b"]["5d"]["state"] == "error"
     text = TASKS["5d"]["variables"]["incoming"]["input"]
-    assert "unconfirmed_session" in text and "show configuration sessions" in text
-    assert "abort it by hand" in text and "Never confirm it" in text
+    assert "Unless inject_result.result.stdout_json says aborted: true" in text
+    assert "show configuration sessions" in text and "abort any r10-drill session by hand" in text
+    assert "Never commit or confirm it" in text and "drill_plan.stdout_json.near.device" in text
     assert TR["5d"] == {"f0": {"state": "success", "type": "standard"}}  # the text reaches the Work Center task
 
 
