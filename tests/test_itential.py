@@ -330,6 +330,21 @@ def test_mcp_server_hides_the_tools_that_return_node_credentials() -> None:
     assert "describe_inventory" in VERIFY.read_text(), "verify 05 S4.7 must prove the tool is hidden"
 
 
+def test_both_mcp_servers_log_in_again_before_the_platform_session_ends() -> None:
+    """The Platform ends a session after 60 idle minutes (auth_session_ttl's default, sliding: GET /myTtl answered
+    3600 after any call, measured 2026-10-18) and itential-mcp logs in only once unless ITENTIAL_MCP_PLATFORM_TTL > 0:
+    without it every tool answers 401 after an idle hour until the container restarts."""
+    platform_session_seconds = 3600
+    for f in (COMPOSE, OVERRIDE, ROOT / "itential" / "ha2" / "platform.compose.yml.j2"):
+        assert "AUTH_SESSION_TTL" not in f.read_text(), f"{f.name} changes the session lifetime: recheck the MCP TTL"
+    ttl = yaml.safe_load((ROOT / "itential" / "ha2" / "versions.yaml").read_text())["tools"]["mcp_platform_ttl"]
+    assert 0 < ttl < platform_session_seconds
+    tools = (ROOT / "itential" / "ha2" / "tools.compose.yml.j2").read_text()
+    assert 'ITENTIAL_MCP_PLATFORM_TTL: "{{ tools.mcp_platform_ttl }}"' in tools
+    ov = yaml.safe_load(OVERRIDE.read_text())
+    assert int(ov["services"]["mcp"]["environment"]["ITENTIAL_MCP_PLATFORM_TTL"]) == ttl
+
+
 def test_verify_script_covers_every_criterion() -> None:
     assert VERIFY.exists() and VERIFY.stat().st_mode & 0o111, "verify/test-05-itential.sh missing or not executable"
     text = VERIFY.read_text()
