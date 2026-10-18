@@ -99,6 +99,12 @@ def test_pybatfish_is_installed_only_with_hashes_next_to_netmiko() -> None:
     assert VERSIONS["stack"]["runner_image"].endswith("-pb2025.7.7.2423")
 
 
+def test_the_check_gets_the_time_batfish_check_demands() -> None:
+    # cdp #44 (4a11f3d): --timeout is required and at least 240 s, so the check can stop 30 s early and delete its
+    # snapshots; a shorter one is refused and every Hand Off card would read "not proven"
+    assert int(build.BATFISH_TIMEOUT) >= 240
+
+
 def test_the_service_is_pinned_with_the_edge_services_and_holds_only_the_password_alias() -> None:
     svc = next(s for s in VERSIONS["terraform_run"]["edge_services"] if s["name"] == "batfish-check")
     assert svc["filename"] == "itential/batfish-check.py" and svc["working-directory"] == "."
