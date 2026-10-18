@@ -214,7 +214,7 @@ One line per task, in canvas order; the task's id first, then its label as the c
 | Step | Task | What `error` says |
 |---|---|---|
 | 1 | `9a0c` the inputs were refused | the inputs were refused before anything ran (see input_check for which input and why): nothing was sent to a device |
-| 7 | `5d` the drill did not apply | fabric-bgp did not break the session (inject_result): if its commit timer was armed, EOS rolls the change back by itself |
+| 7 | `5d` the drill did not apply | fabric-bgp did not break the session (inject_result). If inject_result names an unconfirmed_session, or is {}, a configuration session may still hold the fault on the switch: read show configuration sessions there and abort it by hand. Never confirm it: that commits the fault with no timer. A change committed under the commit timer EOS rolls back by itself |
 | 11 | `91` why it needs a look | `stdout_json.message` of task 9e's `result` |
 | 12 | `e0` a step could not run | a step before the card could not run (see drill_plan, near_result, drill_lines): nothing was changed |
 | 12 | `e1` a step after the drill could not run | a step after the drill was applied could not run (see inject_result, check_result, confirm_result, after_timer_result): the commit timer still rolls the drill back |

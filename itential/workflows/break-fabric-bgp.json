@@ -1035,7 +1035,7 @@
       },
       "variables": {
         "incoming": {
-          "input": "fabric-bgp did not break the session (inject_result): if its commit timer was armed, EOS rolls the change back by itself",
+          "input": "fabric-bgp did not break the session (inject_result). If inject_result names an unconfirmed_session, or is {}, a configuration session may still hold the fault on the switch: read show configuration sessions there and abort it by hand. Never confirm it: that commits the fault with no timer. A change committed under the commit timer EOS rolls back by itself",
           "outputType": "string",
           "variables": ""
         },

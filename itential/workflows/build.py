@@ -7716,8 +7716,11 @@ def break_fabric_bgp() -> dict:
         "5b": run_service("break it (fabric-bgp inject: a configuration session under a commit timer, never saved)",
                           "fabric-bgp", "$var.5a.return_data", "inject_result", x=1000),
         "5c": evaluate("broken?", "5b", "result", "result.return_code", "==", 0, x=1025),
-        "5d": note("the drill did not apply", "fabric-bgp did not break the session (inject_result): if its commit "
-                   "timer was armed, EOS rolls the change back by itself", "error", x=1050, y=600),
+        "5d": note("the drill did not apply", "fabric-bgp did not break the session (inject_result). If inject_result "
+                   "names an unconfirmed_session, or is {}, a configuration session may still hold the fault on the "
+                   "switch: read show configuration sessions there and abort it by hand. Never confirm it: that "
+                   "commits the fault with no timer. A change committed under the commit timer EOS rolls back by "
+                   "itself", "error", x=1050, y=600),
         "5e": jq("the drill session's name", "$var.5b.result", "result.stdout_json.drill_session", x=1075),
         "5f": jq("the confirm's params", "$var.job.drill_plan", "stdout_json.confirm", x=1100),
         "50": set_key("confirm params: the drill session", "$var.5f.return_data", "drill_session", "$var.5e.return_data",
