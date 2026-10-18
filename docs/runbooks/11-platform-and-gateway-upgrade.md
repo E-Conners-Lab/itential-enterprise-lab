@@ -106,8 +106,9 @@ new image's `npm`. `ansible/playbooks/platform.yml` re-points every trigger at t
 which is where an API tightening shows up. `ansible/playbooks/flowai.yml` needs the inference host; if it is
 down the first two plays have already proved the upgrade.
 
-After the Platform restarts, **restart the MCP container**: it holds a session token from the old process
-and never logs in again, so every tool answers 401 until it does.
+After the Platform restarts, **restart the MCP container**: it holds a session token from the old process,
+and it logs in again only once 30 minutes have passed since its last login (`tools.mcp_platform_ttl`), so
+until then every tool answers 401. A restart logs it in at once.
 
 ```
 ssh ubuntu@<dev vm> 'cd /opt/itential && docker compose restart mcp'
@@ -195,8 +196,9 @@ that still passes after a pin change is proof, not habit.
 
 **Every MCP tool answers `401 Unauthorized ... does not correspond with an active session` after the
 upgrade.** The MCP container logged in to the old Platform process and keeps that token; the new process does
-not know it. Restart the container. On production this had already happened days before the upgrade for the
-same reason (a Platform restart), so check it after *any* Platform restart, not only an upgrade.
+not know it. Restart the container, or wait: it logs in again 30 minutes after its last login
+(`tools.mcp_platform_ttl`). Before that setting the container never logged in again, so an idle hour (the
+Platform's session limit) left it answering 401 too; check it after *any* Platform restart, not only an upgrade.
 
 **The Gateway play fails `Each edge alias's Vault entry exists before it is bound` with every item censored.**
 The administrator token is missing or expired: the task reads Vault with it. Run `make vault-login` in your
