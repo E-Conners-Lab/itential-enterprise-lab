@@ -1,8 +1,10 @@
 ---
 # ADR 0083: svc-mcp, the account production's MCP server (tools-01) logs in to the Platform as, instead of the platform
-# administrator. Included at the start of platform-ha2-replay.yml (before tasks/platform-assets.yml creates the
-# inventories with vars/itential-prod.yml inventory_groups, and before tasks/automation-access.yml names the group) and
-# at the end of tasks/flowai-assets.yml (the agents exist by then); `make mcp-access` runs it alone (mcp-access.yml).
+# administrator. Wherever a production play needs the group to exist, it includes this first: the start of
+# platform-ha2-replay.yml (tasks/platform-assets.yml creates the inventories with it), platform.yml (before
+# tasks/automation-access.yml names it) and tasks/flowai-assets.yml (once the agents' project exists, before
+# tasks/flowai-agent.yml names it as an operator), so platform.yml or flowai.yml run alone on production work too.
+# `make mcp-access` runs it on its own (mcp-access.yml).
 #
 # What it writes, and nothing else:
 #  - the svc-mcp entry and the mcp-builders group in production's directory (tools-01), the account's first login and
@@ -26,6 +28,35 @@
     quiet: true
 
 # --- The account and its group (the same task svc-copilot and svc-netclaw use) ----------------------------------
+# The oracle is an exclude half (every role but these), so a role an upgrade renames or moves would no longer match and
+# would land in mcp-builders unnoticed: Adapters/admin again, the lockout this account exists to prevent. Each excluded
+# role must therefore exist on this Platform before anything is assigned.
+- name: MCP access - every role, page by page
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/authorization/roles?limit=100&skip={{ item }}"
+    headers: {Cookie: "{{ login.cookies_string }}"}
+  register: mca_role_pages
+  loop: [0, 100, 200, 300, 400]
+  loop_control:
+    label: "skip={{ item }}"
+
+- name: MCP access - every role the oracle excludes exists here (an upgrade's rename stops the play)
+  ansible.builtin.assert:
+    that:
+      - all_roles | length == mca_role_pages.results[0].json.total | int
+      - absent | length == 0
+    fail_msg: >-
+      itential/mcp/roles.yaml excludes roles this Platform does not have: {{ absent }}. A renamed role would be
+      assigned to {{ mcp_access.group }}; find its new name and update the oracle before re-running.
+    quiet: true
+  vars:
+    all_roles: "{{ mca_role_pages.results | map(attribute='json.results') | flatten }}"
+    have: "{{ all_roles | map(attribute='provenance') | zip(all_roles | map(attribute='name')) | map('join', '/') | list }}"
+    oracle: "{{ (lookup('ansible.builtin.file', playbook_dir ~ '/../../itential/mcp/roles.yaml') | from_yaml).prod.exclude }}"
+    absent: >-
+      {{ oracle | map(attribute='provenance') | zip(oracle | map(attribute='name')) | map('join', '/')
+         | reject('in', have) | list }}
+
 - name: MCP access - svc-mcp in the mcp-builders group
   ansible.builtin.include_tasks: tasks/ldap-service-account.yml
   vars:
@@ -73,8 +104,9 @@
     fail_msg: "groups missing on this Platform: admin_group or {{ mcp_access.group }} (svc-mcp's first login makes it)"
     quiet: true
 
-# The gateway's PUT replaces the document with the payload (Update Gateway, 6.6.0 OpenAPI), so every field it takes is
-# sent back as read and only the group list grows.
+# The gateway's PUT takes exactly these six fields (Update Gateway, 6.6.0 OpenAPI; 6.6.0 refuses gateway_name as an
+# additional property), so each is sent back as read and only the group list grows. Measured on a scratch gateway
+# (2026-10-18): this PUT changes `groups` and nothing else; type, created and virtual_cluster_links are kept.
 - name: MCP access - the group on the Gateway cluster {{ stack.gateway5_cluster_id }}
   ansible.builtin.uri:
     url: "{{ platform_local }}/gateway_manager/v1/gateways/{{ item._id }}"
@@ -139,10 +171,12 @@
     headers: {Cookie: "{{ login.cookies_string }}"}
     body_format: json
     body:
-      # the PATCH takes the whole list as {type, reference, role}; a read adds username and provenance to each member
+      # the PATCH takes the whole list as {type, reference, role}; a read adds username and provenance to each member.
+      # The group's own entry is replaced, so a role changed by hand (viewer) becomes editor again instead of failing
+      # the proof below on every run.
       members: >-
         {%- set out = [] -%}
-        {%- for m in item.members -%}
+        {%- for m in item.members if not (m.type == 'group' and m.reference == mca_ids[mcp_access.group]) -%}
           {%- set _ = out.append({'type': m.type, 'reference': m.reference, 'role': m.role}) -%}
         {%- endfor -%}
         {{ out + [{'type': 'group', 'reference': mca_ids[mcp_access.group], 'role': 'editor'}] }}
@@ -150,7 +184,9 @@
   loop: "{{ mca_projects }}"
   loop_control:
     label: "{{ item.name }}"
-  when: mca_ids[mcp_access.group] not in item.members | selectattr('type', 'equalto', 'group') | map(attribute='reference')
+  when: >-
+    mca_ids[mcp_access.group] not in item.members | selectattr('type', 'equalto', 'group')
+    | selectattr('role', 'equalto', 'editor') | map(attribute='reference')
   changed_when: true
 
 # --- Proof: re-read every object and check the group is on each one that admin_group reaches -------------------

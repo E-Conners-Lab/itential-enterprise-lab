@@ -279,6 +279,11 @@
     - name: NetClaw's service account, its group and its role
       ansible.builtin.include_tasks: tasks/netclaw-access.yml
 
+    # ADR 0083: production's automation_access names the MCP server's group, so it must exist before the gbac below
+    - name: The production MCP server's account and group (svc-mcp, mcp-builders)
+      ansible.builtin.include_tasks: tasks/mcp-access.yml
+      when: not (dev_overlay | default(false) | bool)
+
     # ADR 0082: last, so every automation this play made is covered; flowai-assets.yml repeats it for the agents' own
     - name: Who may read and start each automation (gbac from versions.yaml automation_access)
       ansible.builtin.include_tasks: tasks/automation-access.yml

@@ -205,14 +205,25 @@
         state: "{{ 'restarted' if (mcp_script is changed or mcp_unit is changed) else 'started' }}"
         daemon_reload: "{{ mcp_unit is changed }}"
 
-    - name: The MCP allowlist is live (jump first in DOCKER-USER for its port, one ACCEPT per allowed source)
-      ansible.builtin.command: iptables -w -S TOOLS-MCP
+    # Both halves are read: the chain's rules alone would still look right with DOCKER-USER flushed or the jump gone
+    - name: The MCP allowlist's rules (one ACCEPT per allowed source, then DROP) and DOCKER-USER's jump to them
+      ansible.builtin.command: "iptables -w -S {{ item }}"
+      loop: [TOOLS-MCP, DOCKER-USER]
       register: mcp_rules
       changed_when: false
-      failed_when: >-
-        (mcp_rules.stdout_lines | select('search', ' -s .* -j ACCEPT') | list)
-        != (mcp_allow | map('regex_replace', '^', '-A TOOLS-MCP -s ') | map('regex_replace', '$', ' -j ACCEPT') | list)
-        or (mcp_rules.stdout_lines | last) != '-A TOOLS-MCP -j DROP'
+
+    - name: The MCP allowlist is live (DOCKER-USER sends port 8000 to it exactly once; it admits only tools.mcp_allow)
+      ansible.builtin.assert:
+        that:
+          - (chain | select('search', ' -s .* -j ACCEPT') | list) == want
+          - (chain | last) == '-A TOOLS-MCP -j DROP'
+          - (user | select('equalto', '-A DOCKER-USER -p tcp -m tcp --dport 8000 -j TOOLS-MCP') | list | length) == 1
+        fail_msg: "TOOLS-MCP: {{ chain }}; DOCKER-USER: {{ user }}"
+        quiet: true
+      vars:
+        chain: "{{ mcp_rules.results[0].stdout_lines }}"
+        user: "{{ mcp_rules.results[1].stdout_lines }}"
+        want: "{{ mcp_allow | map('regex_replace', '^', '-A TOOLS-MCP -s ') | map('regex_replace', '$', ' -j ACCEPT') | list }}"
 
     - name: Batfish answers (its v2 API lists the networks it holds; from this VM the allowlist does not apply)
       ansible.builtin.uri:

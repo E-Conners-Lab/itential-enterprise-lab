@@ -27,7 +27,8 @@
     that: missing | length == 0
     fail_msg: >-
       groups named by versions.yaml automation_access but absent here: {{ missing }} (netclaw appears at svc-netclaw's
-      first login: platform.yml, tasks/netclaw-access.yml, runs before this)
+      first login: platform.yml, tasks/netclaw-access.yml, runs before this; mcp-builders at svc-mcp's:
+      tasks/mcp-access.yml, or make mcp-access)
     quiet: true
   vars:
     named: >-

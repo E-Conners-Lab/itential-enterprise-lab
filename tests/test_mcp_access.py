@@ -196,7 +196,15 @@ def test_the_tools_play_installs_the_allowlist_bound_to_docker_and_checks_it_liv
     assert 'mcp_allow: "{{ tools.mcp_allow }}"' in play
     unit = play.split("mcp-access.service", 1)[1].split("register: mcp_unit")[0]
     assert "PartOf=docker.service" in unit and "After=docker.service" in unit
-    assert "iptables -w -S TOOLS-MCP" in play and "'-A TOOLS-MCP -j DROP'" in play
+    assert "'-A TOOLS-MCP -j DROP'" in play
+    # both halves: the chain, and DOCKER-USER's jump to it (the chain alone looks right with DOCKER-USER flushed)
+    check = next(
+        t
+        for t in _tasks(PLAYS / "platform-ha2-tools.yml")
+        if t.get("register") == "mcp_rules"
+    )
+    assert check["loop"] == ["TOOLS-MCP", "DOCKER-USER"]
+    assert "'-A DOCKER-USER -p tcp -m tcp --dport 8000 -j TOOLS-MCP'" in play
 
 
 # --- what the group may reach ------------------------------------------------------------------------------------
@@ -230,7 +238,8 @@ def test_mcp_access_adds_the_group_and_never_removes_anything() -> None:
     assert "inventory_manager/v1/inventories/{{" not in text, (
         "6.6.0 cannot change an inventory's groups in place"
     )
-    assert "authorization/groups/" not in text and "authorization/roles" not in text
+    # roles and groups are only ever read here; the group's roles are tasks/ldap-service-account.yml's one write
+    assert not any("authorization" in _module(w)[1]["url"] for w in writes)
     include = next(
         t
         for t in _tasks(task_file)
@@ -299,10 +308,46 @@ def test_the_replay_makes_the_group_before_the_inventories_and_after_the_agents(
     assert order.index("tasks/mcp-access.yml") < order.index(
         "tasks/platform-assets.yml"
     )
+    # flowai-assets.yml: after the agents' project exists, before tasks/flowai-agent.yml names the group as an operator
     flowai = _tasks(TASKS / "flowai-assets.yml")
-    assert flowai[-2]["ansible.builtin.include_tasks"] == "tasks/mcp-access.yml"
-    assert flowai[-2]["when"] == "not (dev_overlay | default(false) | bool)"
+    names = [t.get("name") for t in flowai]
+    inc = next(
+        i
+        for i, t in enumerate(flowai)
+        if t.get("ansible.builtin.include_tasks") == "tasks/mcp-access.yml"
+    )
+    agents = next(
+        i
+        for i, t in enumerate(flowai)
+        if "flowai-agent.yml" in str(t.get("ansible.builtin.include_tasks", ""))
+    )
+    assert names.index("Project id") < inc < agents
+    assert flowai[inc]["when"] == "not (dev_overlay | default(false) | bool)"
     assert flowai[-1]["ansible.builtin.include_tasks"] == "tasks/automation-access.yml"
+    # platform.yml: before automation_access names the group, production only
+    platform = _tasks(PLAYS / "platform.yml")
+    includes = [t.get("ansible.builtin.include_tasks") for t in platform]
+    assert includes[-2:] == ["tasks/mcp-access.yml", "tasks/automation-access.yml"]
+    assert platform[-2]["when"] == "not (dev_overlay | default(false) | bool)"
+
+
+def test_every_excluded_role_must_exist_before_any_role_is_assigned() -> None:
+    """An exclude half widens silently when an upgrade renames an excluded role; the play stops instead."""
+    tasks = _tasks(TASKS / "mcp-access.yml")
+    names = [t["name"] for t in tasks]
+    guard = names.index(
+        "MCP access - every role the oracle excludes exists here (an upgrade's rename stops the play)"
+    )
+    include = next(
+        i
+        for i, t in enumerate(tasks)
+        if t.get("ansible.builtin.include_tasks") == "tasks/ldap-service-account.yml"
+    )
+    assert guard < include
+    gvars = tasks[guard]["vars"]
+    assert "itential/mcp/roles.yaml" in gvars["oracle"] and ".prod.exclude" in gvars["oracle"]
+    assert "reject('in', have)" in gvars["absent"]
+    assert "absent | length == 0" in tasks[guard]["ansible.builtin.assert"]["that"]
 
 
 def test_every_agent_update_keeps_the_mcp_group_on_production() -> None:

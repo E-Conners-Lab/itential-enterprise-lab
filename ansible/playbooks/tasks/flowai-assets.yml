@@ -194,6 +194,12 @@
     headers: {Cookie: "{{ login.cookies_string }}"}
   register: projects2
 
+# ADR 0083: the agents' project exists now, and tasks/flowai-agent.yml below names the production MCP server's group as
+# an operator of every agent, so the group is made (and given the project) first
+- name: The production MCP server's account and group, before the agents name it
+  ansible.builtin.include_tasks: tasks/mcp-access.yml
+  when: not (dev_overlay | default(false) | bool)
+
 - name: Tool discovery (creates registry entries for platform assets)
   ansible.builtin.uri:
     url: "{{ platform_local }}/{{ tool_registry_base }}/discover"
@@ -220,11 +226,6 @@
   loop_control:
     loop_var: agent
     label: "{{ agent.name }}"
-
-# ADR 0083: the agents and their project exist only now, so the production MCP server's group is given them here
-- name: The production MCP server's group on the agents and their project
-  ansible.builtin.include_tasks: tasks/mcp-access.yml
-  when: not (dev_overlay | default(false) | bool)
 
 # ADR 0082: the agent automations (expose_route) exist only now, so the gbac platform.yml set is applied once more
 - name: Who may read and start each automation, the agents' own included (gbac from versions.yaml automation_access)
