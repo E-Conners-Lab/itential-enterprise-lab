@@ -136,6 +136,7 @@ interface {{ ifname }}
    no switchport
    vrf PROD
    ip address {{ my_ip }}/30
+   bfd interval 1000 min-rx 1000 multiplier 5
 {%- elif lk.get('bypass') and lk.vlan is defined %}
    switchport mode access
    switchport access vlan {{ lk.vlan }}

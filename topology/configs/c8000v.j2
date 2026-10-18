@@ -138,7 +138,13 @@ interface {{ ifname }}
  vrf forwarding WAN
 {%- endif %}
  ip address {{ base[0] }}.{{ base[1] }}.{{ base[2] }}.{{ my_last }} 255.255.255.252
-{%- if pname.startswith('dc1-fw') or pname.startswith('dc1-leaf') %}
+{#- the bypass to a vEOS leaf: software BFD on both ends stalls for seconds (measured 2026-10-18: echo replies up to
+    3.65 s apart, async up to 4.36 s, the leaf sending late past 3 intervals 100 times), which flapped BGP with a 900 ms
+    echo / 3 s async detect; no echo and a 5 s detect on both ends (veos.j2) -#}
+{%- if pname.startswith('dc1-leaf') %}
+ bfd interval 1000 min_rx 1000 multiplier 5
+ no bfd echo
+{%- elif pname.startswith('dc1-fw') %}
  bfd interval 300 min_rx 300 multiplier 3
 {%- endif %}
 {%- if lab_edge and pname != 'isp-core01' %}

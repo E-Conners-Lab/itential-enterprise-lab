@@ -4,6 +4,8 @@
 # router before (dc1-wan01-before.cfg: the render before this change, which the 2026-10-01 Configuration Manager backup
 # matches apart from display noise) and the new render: every new line is sent, every line the render dropped is
 # removed, and nothing else is sent.
+# A later change outside this set is applied to dc1-wan01-before.cfg as well, so the set stays the lab edge's own
+# lines: 2026-10-18, the bypass BFD timers (Gi6: 1000 ms x 5, no echo).
 #
 # Each step is the input of a workflow, as given: device, config (one line per line), reason, and for the revert
 # steps revert_minutes and checks. The checks ping every global BGP neighbour - a broken path still shows

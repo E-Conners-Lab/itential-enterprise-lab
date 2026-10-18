@@ -267,6 +267,31 @@ def _render_all(topo: dict) -> dict[str, str]:
     }
 
 
+def _bypass_interface(cfg: str) -> str:
+    """The routed firewall-bypass interface's lines (IOS-XE ends a block at '!', EOS at the next unindented line)."""
+    for block in cfg.split("\ninterface ")[1:]:
+        lines = []
+        for line in block.splitlines()[1:]:
+            if not line.startswith(" "):
+                break
+            lines.append(line.strip())
+        if any("(firewall bypass)" in ln for ln in lines) and any(ln.startswith("ip address") for ln in lines):
+            return "\n".join(lines)
+    raise AssertionError("no routed firewall-bypass interface")
+
+
+def test_the_firewall_bypass_bfd_is_slow_enough_for_a_virtual_leaf() -> None:
+    """dc1-wan01/02 to dc1-leaf01/02 (VRF PROD): software BFD on vEOS stalls for seconds (measured 2026-10-18: echo
+    replies up to 3.65 s apart, async up to 4.36 s), which flapped BGP at a 900 ms echo / 3 s async detect. Both ends
+    run 1000 ms x 5 (each end's detect time is its peer's multiplier times the agreed interval) and the router sends no
+    echo, which the leaf would loop back through its software data plane."""
+    for wan, leaf in (("dc1-wan01", "dc1-leaf01"), ("dc1-wan02", "dc1-leaf02")):
+        router = _bypass_interface((REFERENCE / f"{wan}.cfg").read_text())
+        switch = _bypass_interface((REFERENCE / f"{leaf}.cfg").read_text())
+        assert "bfd interval 1000 min_rx 1000 multiplier 5" in router and "no bfd echo" in router, wan
+        assert "bfd interval 1000 min-rx 1000 multiplier 5" in switch, leaf
+
+
 def test_rendered_configs_match_reference(topo: dict) -> None:
     """The lift of the addresses into the YAML (ADR 0048) must not change one byte of any startup config.
     The reference was rendered from the pre-lift templates with the placeholder password."""
