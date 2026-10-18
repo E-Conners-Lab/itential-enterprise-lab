@@ -117,7 +117,8 @@ def test_the_netclaw_group_reads_exactly_its_tools_automations() -> None:
     for tier in ("prod", "dev"):
         assert "admin_group" in access["read"][tier], "the plays' admin login holds admin_group (measured)"
         assert v["netclaw"]["group"] not in access["read"][tier], "netclaw only where automation_access.netclaw says"
-    assert access["read"]["prod"] == ["admin_group", "copilot-readonly"], "the values the department session set by hand"
+    # the values the department session set by hand, plus the production MCP server's group (ADR 0083)
+    assert access["read"]["prod"] == ["admin_group", "copilot-readonly", "mcp-builders"]
     assert access["read"]["dev"] == ["admin_group", v["dev"]["copilot"]["group"]]
 
 

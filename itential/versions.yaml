@@ -29,7 +29,8 @@ images:
   # Public
   mongodb: {repository: docker.io/library/mongo, tag: "7.0.40"} # Platform 6 fully supports 7.0 (manifest 3.2); Docker Hub 2026-09-07
   redis: {repository: docker.io/library/redis, tag: "7.4.11"}
-  mcp: {repository: ghcr.io/itential/itential-mcp, tag: v0.14.0} # release 2026-08-13; streamable HTTP transport
+  # v0.14.1 (2026-10-15): PyJWT 2.13.0 -> 2.15.1 for advisory GHSA-ffc3-869f-jxw9, before the JWT check (ADR 0083)
+  mcp: {repository: ghcr.io/itential/itential-mcp, tag: v0.14.1} # streamable HTTP transport
   # upstream dev-stack OpenLDAP: admin@itential and the group membership Gateway Manager needs (until Phase 7 AD)
   ldap: {repository: docker.io/osixia/openldap, tag: 1.4.0}
   # Gateway 5 distributed execution (ADR 0038): etcd is the shared store a runner node needs
@@ -456,9 +457,10 @@ operations_manager:
 # and a replay never leaves one open. Every group named here must exist on the tier, or the task stops.
 automation_access:
   # the plays' admin login and the alert relay hold admin_group (measured on both tiers); the copilot group keeps
-  # svc-copilot's reads (production's values are the ones the department session set by hand)
+  # svc-copilot's reads (production's values are the ones the department session set by hand); mcp-builders is the
+  # production MCP server's account (ADR 0083: it reads and starts every automation the plays make, edits none)
   read:
-    prod: [admin_group, copilot-readonly]
+    prod: [admin_group, copilot-readonly, mcp-builders]
     dev: [admin_group, copilot-builders]
   write: [admin_group]
   # the automations NetClaw's group may also read and start: exactly the routes of its tools
@@ -475,6 +477,14 @@ netclaw:
   password_env: {prod: SVC_NETCLAW_PROD_PASSWORD, dev: SVC_NETCLAW_DEV_PASSWORD}
   # platform-guide as an agent automation (itential/agents/*.yaml expose_route): the twin every day, Claude for the demo
   platform_guide_routes: {twin: platform-guide-local, claude: platform-guide}
+
+# ADR 0083: production's MCP server (tools-01) logs in as its own account, never the platform administrator: builder
+# without administration (itential/mcp/roles.yaml). Made by tasks/mcp-access.yml (start of the replay, end of
+# flowai-assets.yml, or `make mcp-access`); the password is generated once and kept in .env like svc-copilot's.
+mcp_access:
+  user: svc-mcp
+  group: mcp-builders
+  password_env: SVC_MCP_PROD_PASSWORD
 
 vm:
   # itential-dev, never `itential` or `mcp`: since the S11 cut-over those names belong to production's load

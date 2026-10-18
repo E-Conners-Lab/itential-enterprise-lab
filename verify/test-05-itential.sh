@@ -200,6 +200,37 @@ c7() {
 }
 check "S4.7 mcp.lab.internal answers streamable HTTP from this Mac; get_health returns Platform ${PLATFORM_VER}; .mcp.json matches" c7
 
+# --- S4.7b production's MCP server acts on the Platform as svc-mcp, never the administrator (ADR 0083) -----------
+# Control plane: the container's login name, read on the host so its password line never leaves it. Data plane: after a
+# tool call through the server, svc-mcp's own last login is no older than the container, so the server logged in as it.
+c7b() {
+  local user started last
+  user=$($SSH ubuntu@"${MCP_IP}" "sudo docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' mcp | grep '^ITENTIAL_MCP_PLATFORM_USER='")
+  [ "$user" = ITENTIAL_MCP_PLATFORM_USER=svc-mcp ] || { echo "the mcp container logs in as '${user#*=}', not svc-mcp"; return 1; }
+  started=$($SSH ubuntu@"${MCP_IP}" "sudo docker inspect -f '{{.State.StartedAt}}' mcp")
+  ${PY} verify/mcpcall.py "http://${MCP_HOST}:8000/mcp" call get_health >/dev/null || return 1
+  iap_login || { echo "admin login failed"; return 1; }
+  last=$(iap "${PLATFORM}/authorization/accounts?limit=100" | ${PY} -c 'import sys,json;print(next((a.get("lastLogin","") for a in json.load(sys.stdin)["results"] if a.get("username")=="svc-mcp"),""))')
+  [ -n "$last" ] || { echo "svc-mcp has never logged in to the Platform"; return 1; }
+  # both ISO 8601 in UTC; the first 19 characters compare in time order
+  [ "${last:0:19}" \> "${started:0:19}" ] || [ "${last:0:19}" = "${started:0:19}" ] || {
+    echo "svc-mcp last logged in ${last}, before the container started ${started}"; return 1; }
+  echo "container user svc-mcp; svc-mcp last login ${last} (container started ${started})"
+}
+check "S4.7b the production MCP server logs in to the Platform as svc-mcp (container env and the account's last login)" c7b
+
+# --- S4.7c only versions.yaml tools.mcp_allow reaches the MCP port: a lab VM outside it is dropped (ADR 0083) -------
+c7c() {
+  local probe rc
+  # this Mac is in the allowlist (S4.7 just reached the server from it); the Gateway VM is not, so its connection must
+  # time out (curl 28: DOCKER-USER drops it), not be refused or answered
+  probe=$(${PY} -c "import yaml;d=yaml.safe_load(open('itential/ha2/versions.yaml'));print(next(v['ip'] for v in d['vms'] if v['role']=='gateway'))")
+  rc=$($SSH ubuntu@"${probe}" "curl -s -o /dev/null -m 5 http://${MCP_IP}:8000/mcp; echo \$?")
+  [ "$rc" = 28 ] || { echo "from the Gateway VM ${probe}: curl exit ${rc}, want 28 (dropped)"; return 1; }
+  echo "the Gateway VM ${probe} is dropped at ${MCP_IP}:8000 (curl 28); this Mac is admitted (S4.7)"
+}
+check "S4.7c the MCP port admits only tools.mcp_allow: a lab VM outside it is dropped" c7c
+
 # =============================== S4b ServiceNow PDI ==============================================
 snow() { curl -s -m 30 -u "${SNOW_USER}:${SNOW_PASSWORD}" -H "Accept: application/json" "$@"; }
 if [ -z "${SNOW_INSTANCE:-}" ] || [ -z "${SNOW_USER:-}" ] || [ -z "${SNOW_PASSWORD:-}" ]; then

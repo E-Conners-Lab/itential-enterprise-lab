@@ -48,6 +48,10 @@
       until: login.status | default(0) == 200
       no_log: true
 
+    # ADR 0083: before the inventories are created with inventory_groups, and before automation_access names the group
+    - name: The production MCP server's account (svc-mcp), its group, and the group on what exists so far
+      ansible.builtin.include_tasks: tasks/mcp-access.yml
+
     - name: The Platform assets of phase 5 (shared with the dev-stack play, ADR 0055)
       ansible.builtin.import_tasks: tasks/platform-assets.yml
 

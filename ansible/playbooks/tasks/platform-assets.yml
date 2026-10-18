@@ -257,8 +257,10 @@
     body:
       name: "{{ stack.inventory }}"
       description: "Lab network devices from NetBox (ansible/playbooks/itential.yml)"
-      # production keeps admin_group alone; dev adds copilot-builders (ADR 0055 group rule, ADR 0063)
-      groups: "{{ inventory_groups | default(['admin_group']) }}"
+      # production: admin_group and the production MCP server's group, from creation, because 6.6.0's Inventory Manager
+      # cannot add a group to an existing inventory (ADR 0083; tasks/mcp-access.yml makes the group at the start of the
+      # replay); dev sets inventory_groups and adds copilot-builders (ADR 0055 group rule, ADR 0063)
+      groups: "{{ inventory_groups | default(['admin_group'] + ([] if dev_overlay | default(false) | bool else [mcp_access.group])) }}"
       createBrokerActions: true
       defaultClusterId: "{{ stack.gateway5_cluster_id }}"
     status_code: [200, 201]
@@ -345,7 +347,7 @@
     body:
       name: "{{ stack.host_inventory }}"
       description: "Lab Ubuntu hosts from NetBox for Gateway 5 (ansible/playbooks/itential.yml, PID S4d.6)"
-      groups: "{{ inventory_groups | default(['admin_group']) }}"
+      groups: "{{ inventory_groups | default(['admin_group'] + ([] if dev_overlay | default(false) | bool else [mcp_access.group])) }}"
       createBrokerActions: false
       defaultClusterId: "{{ stack.gateway5_cluster_id }}"
     status_code: [200, 201]

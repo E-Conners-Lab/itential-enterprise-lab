@@ -1,0 +1,30 @@
+# The role oracle for svc-mcp, the account production's MCP server on tools-01 logs in to the Platform as (ADR 0083).
+# One file decides what every MCP client can do on the Platform: itential-mcp has one Platform identity per server
+# process (no per-caller passthrough), so this account is the ceiling for every caller. Read by:
+#  - ansible/playbooks/tasks/ldap-service-account.yml (svc_kind mcp: the group's assignedRoles)
+#  - ansible/playbooks/tasks/mcp-access.yml (the account, its group, and the group's access to devices and automations)
+#  - tests/test_mcp_access.py (the exclusions, written into the test independently)
+#
+# Builder without administration (owner decision 2026-10-18): every role on the Platform except
+#  - identity, sessions and the server itself (the dev copilot-builders exclusions, ADR 0063), so no MCP caller can
+#    change who has access, end sessions or reconfigure the server;
+#  - adapter and application control: Adapters/admin can update, stop or delete the LDAP adapter every login goes
+#    through, and Applications/admin stops applications - either locks every user out (measured on production 6.6.0,
+#    2026-10-18: Adapters/admin holds deleteAdapter, stopAdapter, updateAdapter; Applications/admin stopApplication).
+#    The read roles (apiread) stay, and the server hides the six start/stop/restart tools (tools.compose.yml.j2).
+prod:
+  group: mcp-builders
+  exclude:
+    - {provenance: Authorization, name: admin}
+    - {provenance: UserManagement, name: admin}
+    - {provenance: AdminEssentials, name: admin}
+    - {provenance: OAuth, name: admin}
+    - {provenance: SSO, name: admin}
+    - {provenance: SSOGroupMappings, name: admin}
+    - {provenance: Customization, name: admin}
+    - {provenance: Profiles, name: admin}
+    - {provenance: Server, name: admin}
+    - {provenance: Indexes, name: admin}
+    - {provenance: LDAP, name: admin}
+    - {provenance: Adapters, name: admin}
+    - {provenance: Applications, name: admin}

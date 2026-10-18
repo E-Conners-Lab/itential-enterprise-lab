@@ -237,19 +237,22 @@ def test_every_password_task_is_no_log() -> None:
     assert checked >= 20
 
 
-def test_the_task_writes_only_copilot_or_netclaw_groups() -> None:
-    """ADR 0082 widened the task from svc-copilot alone to a closed set of two service accounts; nothing else."""
+def test_the_task_writes_only_copilot_netclaw_or_mcp_groups() -> None:
+    """ADR 0082 widened the task from svc-copilot alone to a closed set of service accounts, and ADR 0083 added svc-mcp;
+    nothing else."""
     tasks = _tasks(LDAP_TASK)
     kinds = tasks[0]["vars"]["svc_kinds"]
-    assert {k: v["group_prefix"] for k, v in kinds.items()} == {"copilot": "copilot-", "netclaw": "netclaw"}
-    assert {k: v["password_prefix"] for k, v in kinds.items()} == {"copilot": "SVC_COPILOT_", "netclaw": "SVC_NETCLAW_"}
+    assert {k: v["group_prefix"] for k, v in kinds.items()} == {"copilot": "copilot-", "netclaw": "netclaw", "mcp": "mcp-"}
+    assert {k: v["password_prefix"] for k, v in kinds.items()} == {"copilot": "SVC_COPILOT_", "netclaw": "SVC_NETCLAW_",
+                                                                  "mcp": "SVC_MCP_"}
     assert {k: v["oracle"] for k, v in kinds.items()} == {"copilot": "itential/copilot/roles.yaml",
-                                                         "netclaw": "itential/netclaw/roles.yaml"}
+                                                         "netclaw": "itential/netclaw/roles.yaml",
+                                                         "mcp": "itential/mcp/roles.yaml"}
     assert "svc_kind | default('copilot')" in json.dumps(tasks[0]), "a caller that names no kind is svc-copilot"
-    guard = next(t for t in tasks if t["name"].startswith("Only a copilot- or netclaw group"))
+    guard = next(t for t in tasks if t["name"].startswith("Only a copilot-, netclaw or mcp- group"))
     that = guard["ansible.builtin.assert"]["that"]
-    assert "svc_kind | default('copilot') in ['copilot', 'netclaw']" in that
-    assert "svc_prefix in ['copilot-', 'netclaw']" in that and "svc_group is match(svc_prefix)" in that
+    assert "svc_kind | default('copilot') in ['copilot', 'netclaw', 'mcp']" in that
+    assert "svc_prefix in ['copilot-', 'netclaw', 'mcp-']" in that and "svc_group is match(svc_prefix)" in that
     assert "password_env is match(svc_def.password_prefix)" in that
     for task in tasks:
         if not _is_write_uri(task):

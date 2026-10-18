@@ -1,0 +1,220 @@
+---
+# ADR 0083: svc-mcp, the account production's MCP server (tools-01) logs in to the Platform as, instead of the platform
+# administrator. Included at the start of platform-ha2-replay.yml (before tasks/platform-assets.yml creates the
+# inventories with vars/itential-prod.yml inventory_groups, and before tasks/automation-access.yml names the group) and
+# at the end of tasks/flowai-assets.yml (the agents exist by then); `make mcp-access` runs it alone (mcp-access.yml).
+#
+# What it writes, and nothing else:
+#  - the svc-mcp entry and the mcp-builders group in production's directory (tools-01), the account's first login and
+#    the group's assignedRoles: every role but identity, session, server, adapter and application administration
+#    (tasks/ldap-service-account.yml, svc_kind mcp, itential/mcp/roles.yaml)
+#  - the group, added next to admin_group, on what the plays made: the Gateway cluster and its default service group,
+#    the agents admin_group operates, and the agents' project (as editor). Measured on production 6.6.0 (2026-10-18):
+#    each filters by group membership, so roles alone see none of them. Nothing is removed, and what the plays did not
+#    make (the department agents and their project, hand-imported Studio projects, the NX-OS pack's inventory) is never
+#    touched. Automations get the group through versions.yaml automation_access (tasks/automation-access.yml).
+#  - nothing on the inventories: 6.6.0's Inventory Manager cannot change an existing inventory's groups (its OpenAPI
+#    offers GET and DELETE only, and no role holds an update method, measured 2026-10-18), so they are created with
+#    the group (inventory_groups); an older inventory without it is reported here and recreated by
+#    `make mcp-access RECREATE_INVENTORIES=1` plus a replay (runbook 08).
+# Needs: login, platform_local, admin_pw, mcp_access, stack, agents (versions.yaml). Skips what does not exist yet.
+
+- name: MCP access - production only
+  ansible.builtin.assert:
+    that: not (dev_overlay | default(false) | bool)
+    fail_msg: "svc-mcp is production's MCP account (ADR 0083); the dev MCP server runs as svc-copilot (ADR 0063)"
+    quiet: true
+
+# --- The account and its group (the same task svc-copilot and svc-netclaw use) ----------------------------------
+- name: MCP access - svc-mcp in the mcp-builders group
+  ansible.builtin.include_tasks: tasks/ldap-service-account.yml
+  vars:
+    svc_kind: mcp
+    svc_user: "{{ mcp_access.user }}"
+    svc_group: "{{ mcp_access.group }}"
+    password_env: "{{ mcp_access.password_env }}"
+    svc_role_set: prod
+    # production's directory is on tools-01 and takes ITENTIAL_ADMIN_PASSWORD (tools.compose.yml.j2)
+    ldap_container_host: tools-01
+    ldap_bind_password: "{{ admin_pw }}"
+    # as for svc-netclaw on production: stop instead of writing a fallback group nobody measured
+    ldap_service_account_fallback: false
+
+# --- The group on what the plays made ---------------------------------------------------------------------------
+- name: MCP access - groups, inventories, gateways, service groups, agents and agent projects now
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/{{ item }}"
+    headers: {Cookie: "{{ login.cookies_string }}"}
+  loop:
+    - authorization/groups?limit=100
+    - inventory_manager/v1/inventories # three on production; the default page holds 25
+    - gateway_manager/v1/gateways
+    - gateway_manager/v1/service-groups
+    - agent-project-service/operable-agents
+    - agent-project-service/projects
+  register: mca_now
+
+- name: MCP access - what each object should carry
+  ansible.builtin.set_fact:
+    mca_ids: "{{ mca_now.results[0].json.results | items2dict(key_name='name', value_name='_id') }}"
+    mca_inventories: >-
+      {{ mca_now.results[1].json.result.data | selectattr('name', 'in', [stack.inventory, stack.host_inventory]) | list }}
+    mca_gateways: "{{ mca_now.results[2].json.results | selectattr('cluster_id', 'equalto', stack.gateway5_cluster_id) | list }}"
+    mca_service_groups: >-
+      {{ mca_now.results[3].json.results | selectattr('cluster_id', 'equalto', stack.gateway5_cluster_id) | list }}
+    mca_agents: "{{ mca_now.results[4].json.data['items'] }}"
+    mca_projects: "{{ mca_now.results[5].json.data['items'] | selectattr('name', 'equalto', agents.project) | list }}"
+
+- name: MCP access - admin_group and the MCP group exist
+  ansible.builtin.assert:
+    that:
+      - "'admin_group' in mca_ids"
+      - mcp_access.group in mca_ids
+    fail_msg: "groups missing on this Platform: admin_group or {{ mcp_access.group }} (svc-mcp's first login makes it)"
+    quiet: true
+
+# The gateway's PUT replaces the document with the payload (Update Gateway, 6.6.0 OpenAPI), so every field it takes is
+# sent back as read and only the group list grows.
+- name: MCP access - the group on the Gateway cluster {{ stack.gateway5_cluster_id }}
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/gateway_manager/v1/gateways/{{ item._id }}"
+    method: PUT
+    headers: {Cookie: "{{ login.cookies_string }}"}
+    body_format: json
+    body:
+      payload:
+        cluster_id: "{{ item.cluster_id }}"
+        enabled: "{{ item.enabled }}"
+        readonly: "{{ item.readonly }}"
+        description: "{{ item.description }}"
+        certificates: "{{ item.certificates }}"
+        groups: "{{ item.groups + [mcp_access.group] }}"
+    status_code: 200
+  loop: "{{ mca_gateways }}"
+  loop_control:
+    label: "{{ item.cluster_id }}"
+  when:
+    - "'admin_group' in item.groups"
+    - mcp_access.group not in item.groups
+  changed_when: true
+
+- name: MCP access - the group on the cluster's service groups
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/gateway_manager/v1/service-groups/{{ item._id }}"
+    method: PATCH
+    headers: {Cookie: "{{ login.cookies_string }}"}
+    body_format: json
+    body: {patches: {groups: "{{ item.groups | map(attribute='name') | list + [mcp_access.group] }}"}}
+    status_code: 200
+  loop: "{{ mca_service_groups }}"
+  loop_control:
+    label: "{{ item.name }}"
+  when:
+    - "'admin_group' in item.groups | map(attribute='name')"
+    - mcp_access.group not in item.groups | map(attribute='name')
+  changed_when: true
+
+# Only the agents admin_group operates: those are the plays' (tasks/flowai-agent.yml); a department agent's operators
+# are its own department's group alone. flowai-agent.yml sends the same list on every update, so a replay keeps it.
+- name: MCP access - the group operates the plays' agents
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/agent-project-service/agents/{{ item._id }}"
+    method: PATCH
+    headers: {Cookie: "{{ login.cookies_string }}"}
+    body_format: json
+    body: {operators: "{{ item.operators | map(attribute='_id') | list + [mca_ids[mcp_access.group]] }}"}
+    status_code: 200
+  loop: "{{ mca_agents }}"
+  loop_control:
+    label: "{{ item.name }}"
+  when:
+    - mca_ids['admin_group'] in item.operators | map(attribute='_id')
+    - mca_ids[mcp_access.group] not in item.operators | map(attribute='_id')
+  changed_when: true
+
+- name: MCP access - the group edits the agents' project {{ agents.project }}
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/agent-project-service/projects/{{ item._id }}"
+    method: PATCH
+    headers: {Cookie: "{{ login.cookies_string }}"}
+    body_format: json
+    body:
+      # the PATCH takes the whole list as {type, reference, role}; a read adds username and provenance to each member
+      members: >-
+        {%- set out = [] -%}
+        {%- for m in item.members -%}
+          {%- set _ = out.append({'type': m.type, 'reference': m.reference, 'role': m.role}) -%}
+        {%- endfor -%}
+        {{ out + [{'type': 'group', 'reference': mca_ids[mcp_access.group], 'role': 'editor'}] }}
+    status_code: 200
+  loop: "{{ mca_projects }}"
+  loop_control:
+    label: "{{ item.name }}"
+  when: mca_ids[mcp_access.group] not in item.members | selectattr('type', 'equalto', 'group') | map(attribute='reference')
+  changed_when: true
+
+# --- Proof: re-read every object and check the group is on each one that admin_group reaches -------------------
+- name: MCP access - the same objects re-read
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/{{ item }}"
+    headers: {Cookie: "{{ login.cookies_string }}"}
+  loop:
+    - gateway_manager/v1/gateways
+    - gateway_manager/v1/service-groups
+    - agent-project-service/operable-agents
+    - agent-project-service/projects
+  register: mca_after
+
+- name: MCP access - the group is on the cluster, its service groups, the plays' agents and their project
+  ansible.builtin.assert:
+    that:
+      - gw_missing | length == 0
+      - sg_missing | length == 0
+      - agent_missing | length == 0
+      - project_missing | length == 0
+    fail_msg: >-
+      {{ mcp_access.group }} missing on gateways {{ gw_missing }}, service groups {{ sg_missing }}, agents
+      {{ agent_missing }}, projects {{ project_missing }}
+    quiet: true
+  vars:
+    gw_missing: >-
+      {{ mca_after.results[0].json.results | selectattr('cluster_id', 'equalto', stack.gateway5_cluster_id)
+         | selectattr('groups', 'contains', 'admin_group') | rejectattr('groups', 'contains', mcp_access.group)
+         | map(attribute='cluster_id') | list }}
+    sg_missing: >-
+      {%- set out = [] -%}
+      {%- for s in mca_after.results[1].json.results if s.cluster_id == stack.gateway5_cluster_id -%}
+        {%- set names = s.groups | map(attribute='name') | list -%}
+        {%- if 'admin_group' in names and mcp_access.group not in names -%}{%- set _ = out.append(s.name) -%}{%- endif -%}
+      {%- endfor -%}
+      {{ out }}
+    agent_missing: >-
+      {%- set out = [] -%}
+      {%- for a in mca_after.results[2].json.data['items'] -%}
+        {%- set ids = a.operators | map(attribute='_id') | list -%}
+        {%- if mca_ids['admin_group'] in ids and mca_ids[mcp_access.group] not in ids -%}
+          {%- set _ = out.append(a.name) -%}
+        {%- endif -%}
+      {%- endfor -%}
+      {{ out }}
+    project_missing: >-
+      {%- set out = [] -%}
+      {%- for pj in mca_after.results[3].json.data['items'] if pj.name == agents.project -%}
+        {%- set editors = pj.members | selectattr('type', 'equalto', 'group') | selectattr('role', 'equalto', 'editor')
+                          | map(attribute='reference') | list -%}
+        {%- if mca_ids[mcp_access.group] not in editors -%}{%- set _ = out.append(pj.name) -%}{%- endif -%}
+      {%- endfor -%}
+      {{ out }}
+
+# Reported, not changed: the fix is a recreation (header), which the caller asks for explicitly
+- name: MCP access - inventories created before the group (recreate with `make mcp-access RECREATE_INVENTORIES=1`)
+  ansible.builtin.set_fact:
+    mca_inventories_without_group: >-
+      {{ mca_inventories | rejectattr('groups', 'contains', mca_ids[mcp_access.group]) | map(attribute='name') | list }}
+
+- name: MCP access - what remains to do for the inventories
+  ansible.builtin.debug:
+    msg: >-
+      {{ 'Inventories ' ~ (mca_inventories_without_group | join(', ')) ~ ' lack ' ~ mcp_access.group
+         ~ ': svc-mcp cannot reach their nodes until they are recreated (runbook 08)'
+         if mca_inventories_without_group else 'Every lab inventory carries ' ~ mcp_access.group }}

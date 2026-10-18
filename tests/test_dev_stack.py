@@ -302,7 +302,12 @@ def test_the_service_account_task_reports_the_group_it_really_used() -> None:
 def test_platform_assets_defaults_are_production() -> None:
     text = (TASKS / "platform-assets.yml").read_text()
     assert "device_source | default('netbox') == 'netbox'" in text
-    assert text.count("groups: \"{{ inventory_groups | default(['admin_group']) }}\"") == 2, "lab and lab-hosts"
+    # production's default adds its MCP server's group (ADR 0083: 6.6.0 cannot add one to an existing inventory)
+    prod_default = (
+        "groups: \"{{ inventory_groups | default(['admin_group'] + ([] if dev_overlay | default(false) | bool"
+        " else [mcp_access.group])) }}\""
+    )
+    assert text.count(prod_default) == 2, "lab and lab-hosts"
     assert "groups: [admin_group]" not in text
     assert "netbox_vlan_groups_managed | default(true)" in text
     tasks = yaml.safe_load(text)

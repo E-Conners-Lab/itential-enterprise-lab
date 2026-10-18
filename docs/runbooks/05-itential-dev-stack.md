@@ -227,7 +227,7 @@ next day.
 | Itential Platform | 6.5.2 (private ECR, pulled by digest) |
 | Itential Gateway 5 | 5.5.2-amd64 |
 | Itential Gateway 4 | 4.4.1 — staged, **not deployed** |
-| Itential MCP server | `ghcr.io/itential/itential-mcp` v0.14.0, streamable HTTP |
+| Itential MCP server | `ghcr.io/itential/itential-mcp` v0.14.1, streamable HTTP |
 | MongoDB | 7.0.40, wiredTiger cache capped at 4 GB |
 | Redis | 7.4.11 |
 | OpenLDAP | `osixia/openldap` 1.4.0 (upstream dev-stack) |

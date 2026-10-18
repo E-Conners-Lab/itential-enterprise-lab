@@ -221,6 +221,11 @@
     loop_var: agent
     label: "{{ agent.name }}"
 
+# ADR 0083: the agents and their project exist only now, so the production MCP server's group is given them here
+- name: The production MCP server's group on the agents and their project
+  ansible.builtin.include_tasks: tasks/mcp-access.yml
+  when: not (dev_overlay | default(false) | bool)
+
 # ADR 0082: the agent automations (expose_route) exist only now, so the gbac platform.yml set is applied once more
 - name: Who may read and start each automation, the agents' own included (gbac from versions.yaml automation_access)
   ansible.builtin.include_tasks: tasks/automation-access.yml

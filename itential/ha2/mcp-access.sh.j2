@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# Managed by ansible/playbooks/platform-ha2-tools.yml (ADR 0083). Do not edit.
+# The MCP server answers whoever reaches its port, and the home router routes the whole home LAN into the lab, so only
+# the client machines in versions.yaml tools.mcp_allow may open a connection to it. Docker evaluates DOCKER-USER before
+# its own FORWARD rules, and a published port is DNATed before that, so the destination here is the container's own
+# port (8000, tools.compose.yml.j2). Run at boot by mcp-access.service (after docker, which rebuilds FORWARD on every
+# start) and by the play. Idempotent: the chain is rebuilt and the jump kept exactly once, first. The same shape as
+# batfish-access.sh.j2.
+set -euo pipefail
+CHAIN=TOOLS-MCP
+PORT=8000
+
+iptables -w -N "$CHAIN" 2>/dev/null || true
+iptables -w -F "$CHAIN"
+# replies to flows already allowed
+iptables -w -A "$CHAIN" -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+{% for src in mcp_allow %}
+iptables -w -A "$CHAIN" -s {{ src }} -j ACCEPT
+{% endfor %}
+iptables -w -A "$CHAIN" -j DROP
+
+iptables -w -N DOCKER-USER 2>/dev/null || true
+while iptables -w -D DOCKER-USER -p tcp --dport "$PORT" -j "$CHAIN" 2>/dev/null; do :; done
+iptables -w -I DOCKER-USER 1 -p tcp --dport "$PORT" -j "$CHAIN"
