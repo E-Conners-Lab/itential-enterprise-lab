@@ -91,7 +91,11 @@ terraform_run:
     # new connections only (drill 6, 2026-10-07); plan carries the reset as `then`.
     # cfa2bea = main after cdp #42 (R7, ADR 0076): batfish-check, the block proven in Batfish before the Hand Off card.
     # 71d5223 (above) descends from it: one pin carries both.
-    reference: "71d522382fca7d09d63d3579500a9bc43fc31da3"
+    # 4a11f3d = main after cdp #44/#45 (code review 2026-10-15): batfish-check scrubs more secret shapes and stops 30 s
+    # before --timeout (now required, at least 240 s) to delete its snapshots; a rejected fabric-bgp drill is aborted,
+    # and an abort it cannot prove names the session to clear by hand (a drill's timeout: at least 240 s). The lab
+    # passes 300 to both.
+    reference: "4a11f3d58aabed65d3e0629331c491cca164757a"
   executable_object:
     name: python-3-12
     description: "the runner image's Python 3.12 (ADR 0038)"
