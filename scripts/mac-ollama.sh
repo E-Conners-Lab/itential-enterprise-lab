@@ -44,8 +44,11 @@ cat > "$PLIST" <<PL
          anyway (wrongly); qwen3.8's template refuses with "no user query found in messages" and the
          session FAILS. Measured 2026-10-10 on production: a 5.7k-token turn plus a 35 kB show-command
          result crossed 16384 and failed tunnel-diagnostics-local. The Platform sends no num_ctx of
-         its own (options: {} on the wire), so this default is the only place the limit is set. -->
-    <key>OLLAMA_CONTEXT_LENGTH</key><string>32768</string>
+         its own (options: {} on the wire), so this default is the only place the limit is set.
+         131072 since 2026-10-21 (ADR 0079 amendment): qwen3.8 runs on Ollama's MLX runner, which
+         never truncates history (an over-long request errors instead), its KV cache is 64 KiB per
+         token (131072 is about 8 GiB), and Ollama advises at least 64K for agent harnesses. -->
+    <key>OLLAMA_CONTEXT_LENGTH</key><string>131072</string>
     <!-- One model resident at a time. The lab's Ollama container had this; the guard did not move to
          the Mac with the inference (ADR 0060), and the gap bit on 2026-09-12: a benchmark loaded
          qwen3.6:35b-32k (27.0 GB) beside gemma4:26b (25.8 GB), KEEP_ALIVE pinned both, 52.8 GB of

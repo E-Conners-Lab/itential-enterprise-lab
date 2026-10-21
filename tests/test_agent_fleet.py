@@ -215,9 +215,10 @@ def test_show_all_workflow_fans_out_deterministically(versions: dict) -> None:
     # 32768 since ADR 0079: past num_ctx Ollama drops the oldest messages, which in a tool loop is the
     # user's question; qwen3.8's template then fails the session ("no user query found in messages").
     # A 5.7k-token turn plus one 35 kB show-command result crossed 16384 on production (2026-10-10).
-    assert "OLLAMA_CONTEXT_LENGTH" in mac_script and "32768" in mac_script, (
+    # 131072 since the ADR 0079 amendment of 2026-10-21: agent harnesses need at least 64K.
+    assert "OLLAMA_CONTEXT_LENGTH" in mac_script and "131072" in mac_script, (
         "the local model must hold a twelve-device result AND a tool loop with a large show-command "
-        "result: set OLLAMA_CONTEXT_LENGTH=32768 on the Mac's ollama LaunchAgent (scripts/mac-ollama.sh)"
+        "result: set OLLAMA_CONTEXT_LENGTH=131072 on the Mac's ollama LaunchAgent (scripts/mac-ollama.sh)"
     )
 
 
@@ -500,7 +501,7 @@ def test_the_inference_host_holds_one_model_at_a_time() -> None:
         "the Mac must hold one model at a time: a second large model beside the fleet's model has "
         "already caused a failed agent run"
     )
-    assert "OLLAMA_CONTEXT_LENGTH</key><string>32768<" in script, "ADR 0079: 16384 fails qwen3.8 tool loops"
+    assert "OLLAMA_CONTEXT_LENGTH</key><string>131072<" in script, "ADR 0079 + 2026-10-21 amendment"
     assert "OLLAMA_HOST</key><string>0.0.0.0:11434<" in script, (
         "bound to loopback only, the lab cannot reach it at all"
     )
