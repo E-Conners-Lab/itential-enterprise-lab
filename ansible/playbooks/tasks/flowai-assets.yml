@@ -194,6 +194,12 @@
     headers: {Cookie: "{{ login.cookies_string }}"}
   register: projects2
 
+# ADR 0083: the agents' project exists now, and tasks/flowai-agent.yml below names the production MCP server's group as
+# an operator of every agent, so the group is made (and given the project) first
+- name: The production MCP server's account and group, before the agents name it
+  ansible.builtin.include_tasks: tasks/mcp-access.yml
+  when: not (dev_overlay | default(false) | bool)
+
 - name: Tool discovery (creates registry entries for platform assets)
   ansible.builtin.uri:
     url: "{{ platform_local }}/{{ tool_registry_base }}/discover"

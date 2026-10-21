@@ -8,7 +8,7 @@ SHELL := /bin/bash
 
 PHASES := oob-network platform network-topology itential flowai observability platform-ha2 config-secrets-code identity ddi containerlab firewall-track
 
-.PHONY: help bootstrap lint test up verify vault-dev vault vault-status vault-init vault-unseal vault-config vault-snapshot vault-revoke-root vault-admin-user vault-login vault-logout vault-cutover aws-key deploy-key twin-key edge-account edge-account-line knowledge-token knowledge-pull-token knowledge-mcp-secret netops-knowledge discover netbox-enrich tokens agents-push observability-refresh plan-oob plan-platform plan-itential plan-platform-ha2 plan-clab \
+.PHONY: help bootstrap lint test up verify mcp-access platform-ha2-tools vault-dev vault vault-status vault-init vault-unseal vault-config vault-snapshot vault-revoke-root vault-admin-user vault-login vault-logout vault-cutover aws-key deploy-key twin-key edge-account edge-account-line knowledge-token knowledge-pull-token knowledge-mcp-secret netops-knowledge discover netbox-enrich tokens agents-push observability-refresh plan-oob plan-platform plan-itential plan-platform-ha2 plan-clab \
 	netbox-token-dev clab-dev dev-stack verify-dev prod-snapshot copilot-prod $(addprefix phase-,$(PHASES))
 
 help: ## Show targets
@@ -285,6 +285,14 @@ prod-snapshot: ## GET-only fingerprint of production: MODE=save before a dev bui
 # and the copilot-readonly group with its read roles. Additive; touches no existing group or role.
 copilot-prod: ## svc-copilot on production: LDAP user, 3 custom read roles, copilot-readonly group (ADR 0063)
 	$(load_env) cd ansible && ansible-playbook -i inventory/netbox.yml playbooks/copilot-access.yml
+
+# ADR 0083: the account production's MCP server logs in as. RECREATE_INVENTORIES=1 also deletes the lab inventories that
+# lack its group (6.6.0 cannot add one in place); run the replay straight after, which recreates them (runbook 08).
+platform-ha2-tools: ## The production tools VM alone: MCP server, directory, Batfish and their allowlists (ADR 0083)
+	$(load_env) cd ansible && ansible-playbook -i inventory/netbox.yml playbooks/platform-ha2-tools.yml
+
+mcp-access: ## svc-mcp on production: LDAP user, mcp-builders group, its access (RECREATE_INVENTORIES=1, then replay)
+	$(load_env) cd ansible && ansible-playbook -i inventory/netbox.yml playbooks/mcp-access.yml $(if $(RECREATE_INVENTORIES),-e mcp_recreate_inventories=true,)
 
 # A prompt-only change: PATCH prompt.instructions on agents that already exist, touching no tool
 # binding (itential/agents/push.py). `make phase-flowai` is still the path after a workflow import,

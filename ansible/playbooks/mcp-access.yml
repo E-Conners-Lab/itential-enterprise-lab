@@ -1,0 +1,63 @@
+---
+# ADR 0083: svc-mcp on production, run on its own (`make mcp-access`). The replay does the same through
+# tasks/mcp-access.yml at its start and at the end of tasks/flowai-assets.yml; this play is for changing it alone.
+#
+# What it writes: everything tasks/mcp-access.yml lists, then gbac on every automation from versions.yaml
+# automation_access (tasks/automation-access.yml, which now names the MCP group). With -e mcp_recreate_inventories=true
+# (`make mcp-access RECREATE_INVENTORIES=1`) it also deletes the lab inventories that lack the group, which 6.6.0 cannot
+# add in place; the replay that must follow recreates them with inventory_groups and every node from NetBox (runbook 08).
+# It never writes admin_group, an existing role, or an object the plays did not make.
+- name: The svc-mcp account on production (builder without administration)
+  hosts: ha2-platform[0]
+  become: true
+  gather_facts: false
+  vars_files:
+    - ../../itential/ha2/versions.yaml
+    - ../../itential/versions.yaml
+  vars:
+    ansible_ssh_common_args: -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/dev/null
+    # production login, exactly as copilot-access.yml reaches the Platform
+    platform_local: "http://{{ (vms | selectattr('name', 'equalto', inventory_hostname) | first).ip }}:{{ platform.http_port }}"
+    admin_user: "{{ platform.admin_user }}"
+    admin_pw: "{{ lookup('ansible.builtin.env', 'ITENTIAL_ADMIN_PASSWORD') }}"
+  tasks:
+    - name: Log in as {{ admin_user }}
+      ansible.builtin.uri:
+        url: "{{ platform_local }}/login"
+        method: POST
+        body_format: json
+        body: {username: "{{ admin_user }}", password: "{{ admin_pw }}"}
+        status_code: 200
+      register: login
+      no_log: true
+
+    - name: The directory answers on tools-01
+      ansible.builtin.wait_for:
+        host: "{{ (vms | selectattr('role', 'equalto', 'tools') | first).ip }}"
+        port: "{{ ldap.port }}"
+        timeout: 60
+
+    - name: The svc-mcp account, its group, and the group on what the plays made
+      ansible.builtin.include_tasks: tasks/mcp-access.yml
+
+    - name: Who may read and start each automation (gbac from versions.yaml automation_access)
+      ansible.builtin.include_tasks: tasks/automation-access.yml
+
+    # --- Only on request: the inventories 6.6.0 cannot give the group in place ----------------------------------
+    - name: Lab inventories without the group deleted, for the replay to recreate (asked for)
+      ansible.builtin.uri:
+        url: "{{ platform_local }}/inventory_manager/v1/inventories/{{ item }}"
+        method: DELETE
+        headers: {Cookie: "{{ login.cookies_string }}"}
+        status_code: 200
+      loop: "{{ mca_inventories_without_group }}"
+      when: mcp_recreate_inventories | default(false) | bool
+      changed_when: true
+
+    - name: Next step
+      ansible.builtin.debug:
+        msg: >-
+          {{ 'Deleted ' ~ (mca_inventories_without_group | join(', ')) ~ '. Run the replay now (runbook 08): it recreates'
+             ~ ' them with ' ~ mcp_access.group ~ ' and re-adds every node from NetBox.'
+             if (mcp_recreate_inventories | default(false) | bool) and mca_inventories_without_group
+             else 'Nothing deleted.' }}

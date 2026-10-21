@@ -18,6 +18,9 @@
     service_name: "{{ (vms | selectattr('role', 'equalto', 'loadbalancer') | first).name }}"
     # R7 (ADR 0076 decision 1): who may reach Batfish's unauthenticated API - the Gateway VM, whose runner asks
     batfish_allow: "{{ vms | selectattr('role', 'equalto', 'gateway') | map(attribute='ip') | list }}"
+    # ADR 0083: who may reach the MCP server - the client machines in versions.yaml tools.mcp_allow
+    mcp_allow: "{{ tools.mcp_allow }}"
+    env_file: "{{ playbook_dir }}/../../.env"
   tasks:
     - name: Compose file
       ansible.builtin.template:
@@ -59,6 +62,32 @@
         group: ubuntu
         mode: "0644"
 
+    # ADR 0083: the MCP server logs in as svc-mcp. On a fresh build this play runs before the replay makes the account,
+    # so the password is generated here when none exists and persisted to .env before anything uses it; the replay's
+    # tasks/ldap-service-account.yml then reads the same value (lab-build-lessons: persist before use).
+    - name: The svc-mcp password (the environment, else .env, else a new one)
+      ansible.builtin.set_fact:
+        mcp_pw: >-
+          {{ lookup('ansible.builtin.env', mcp_access.password_env)
+             | default((lookup('ansible.builtin.file', env_file, errors='ignore') | default('', true)
+                        | regex_findall('^' ~ mcp_access.password_env ~ '=([A-Za-z0-9]+)', multiline=True) or [''])[0], true)
+             | default(lookup('ansible.builtin.password', '/dev/null', length=32, chars=['ascii_letters', 'digits']), true) }}
+      delegate_to: localhost
+      become: false
+      run_once: true
+      no_log: true
+
+    - name: The svc-mcp password persisted to .env before use
+      ansible.builtin.lineinfile:
+        path: "{{ env_file }}"
+        regexp: "^{{ mcp_access.password_env }}="
+        line: "{{ mcp_access.password_env }}={{ mcp_pw }}"
+        create: false
+      delegate_to: localhost
+      become: false
+      run_once: true
+      no_log: true
+
     - name: Environment for compose
       ansible.builtin.copy:
         dest: "{{ dir }}/.env"
@@ -66,9 +95,10 @@
         group: ubuntu
         mode: "0600"
         content: |
-          # Rendered by ansible/playbooks/platform-ha2-gateway.yml; do not edit.
+          # Rendered by ansible/playbooks/platform-ha2-tools.yml; do not edit.
           ITENTIAL_ADMIN_USER={{ platform.admin_user }}
           ITENTIAL_ADMIN_PASSWORD={{ lookup('ansible.builtin.env', 'ITENTIAL_ADMIN_PASSWORD') }}
+          SVC_MCP_PASSWORD={{ mcp_pw }}
       no_log: true
 
     - name: Containers up
@@ -138,6 +168,62 @@
         (batfish_rules.stdout_lines | select('search', ' -s .* -j ACCEPT') | list)
         != (batfish_allow | map('regex_replace', '^', '-A TOOLS-BATFISH -s ')
             | map('regex_replace', '$', '/32 -j ACCEPT') | list)
+
+    # ADR 0083: the MCP server's port admits only tools.mcp_allow, the same mechanism as Batfish's above (a script plus
+    # a unit bound to docker.service, which rebuilds its FORWARD chains on every start)
+    - name: DOCKER-USER allowlist for the MCP server (itential/ha2/mcp-access.sh.j2)
+      ansible.builtin.template:
+        src: ../../itential/ha2/mcp-access.sh.j2
+        dest: /usr/local/sbin/mcp-access.sh
+        mode: "0755"
+      register: mcp_script
+
+    - name: Unit that re-applies the MCP allowlist whenever Docker starts
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/mcp-access.service
+        mode: "0644"
+        content: |
+          [Unit]
+          Description=DOCKER-USER allowlist for the MCP server on the tools VM (ADR 0083)
+          After=docker.service
+          Requires=docker.service
+          PartOf=docker.service
+
+          [Service]
+          Type=oneshot
+          RemainAfterExit=true
+          ExecStart=/usr/local/sbin/mcp-access.sh
+
+          [Install]
+          WantedBy=docker.service
+      register: mcp_unit
+
+    - name: MCP allowlist unit enabled and applied now
+      ansible.builtin.systemd:
+        name: mcp-access
+        enabled: true
+        state: "{{ 'restarted' if (mcp_script is changed or mcp_unit is changed) else 'started' }}"
+        daemon_reload: "{{ mcp_unit is changed }}"
+
+    # Both halves are read: the chain's rules alone would still look right with DOCKER-USER flushed or the jump gone
+    - name: The MCP allowlist's rules (one ACCEPT per allowed source, then DROP) and DOCKER-USER's jump to them
+      ansible.builtin.command: "iptables -w -S {{ item }}"
+      loop: [TOOLS-MCP, DOCKER-USER]
+      register: mcp_rules
+      changed_when: false
+
+    - name: The MCP allowlist is live (DOCKER-USER sends port 8000 to it exactly once; it admits only tools.mcp_allow)
+      ansible.builtin.assert:
+        that:
+          - (chain | select('search', ' -s .* -j ACCEPT') | list) == want
+          - (chain | last) == '-A TOOLS-MCP -j DROP'
+          - (user | select('equalto', '-A DOCKER-USER -p tcp -m tcp --dport 8000 -j TOOLS-MCP') | list | length) == 1
+        fail_msg: "TOOLS-MCP: {{ chain }}; DOCKER-USER: {{ user }}"
+        quiet: true
+      vars:
+        chain: "{{ mcp_rules.results[0].stdout_lines }}"
+        user: "{{ mcp_rules.results[1].stdout_lines }}"
+        want: "{{ mcp_allow | map('regex_replace', '^', '-A TOOLS-MCP -s ') | map('regex_replace', '$', ' -j ACCEPT') | list }}"
 
     - name: Batfish answers (its v2 API lists the networks it holds; from this VM the allowlist does not apply)
       ansible.builtin.uri:

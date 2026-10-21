@@ -14,13 +14,17 @@ services:
       ITENTIAL_MCP_SERVER_LOG_LEVEL: "INFO"
       # ADR 0039 amendment: the tools that return Inventory Manager node attributes carry the device
       # credentials in their reply, so they are hidden from MCP clients - the same list the dev-stack
-      # excludes (itential/compose.override.yml), asserted by verify/test-05 S4.7
-      ITENTIAL_MCP_SERVER_EXCLUDE_TAGS: "experimental,beta,describe_inventory,get_devices"
+      # excludes (itential/compose.override.yml), asserted by verify/test-05 S4.7. ADR 0083: the six adapter and
+      # application start/stop/restart tools too, whose roles svc-mcp does not hold (itential/mcp/roles.yaml). Every tool
+      # is tagged with its own name, and a hidden tool is refused if called, not only left out of tools/list.
+      ITENTIAL_MCP_SERVER_EXCLUDE_TAGS: "experimental,beta,describe_inventory,get_devices,start_adapter,stop_adapter,restart_adapter,start_application,stop_application,restart_application"
       # the load balancer's own name: correct before and after the cut-over
       ITENTIAL_MCP_PLATFORM_HOST: "{{ service_name }}.{{ domain }}"
       ITENTIAL_MCP_PLATFORM_PORT: "{{ loadbalancer.listen_port }}"
-      ITENTIAL_MCP_PLATFORM_USER: ${ITENTIAL_ADMIN_USER:-admin@itential}
-      ITENTIAL_MCP_PLATFORM_PASSWORD: ${ITENTIAL_ADMIN_PASSWORD:?}
+      # ADR 0083: its own account (builder without administration, itential/mcp/roles.yaml), never the administrator:
+      # itential-mcp has one Platform identity for every caller, so this account is what any MCP client can do
+      ITENTIAL_MCP_PLATFORM_USER: "{{ mcp_access.user }}"
+      ITENTIAL_MCP_PLATFORM_PASSWORD: ${SVC_MCP_PASSWORD:?}
       # log in again before the Platform's 60-minute idle limit ends the session (versions.yaml tools.mcp_platform_ttl)
       ITENTIAL_MCP_PLATFORM_TTL: "{{ tools.mcp_platform_ttl }}"
       ITENTIAL_MCP_PLATFORM_USE_TLS: "true"

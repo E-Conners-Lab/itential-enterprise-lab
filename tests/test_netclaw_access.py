@@ -117,7 +117,8 @@ def test_the_netclaw_group_reads_exactly_its_tools_automations() -> None:
     for tier in ("prod", "dev"):
         assert "admin_group" in access["read"][tier], "the plays' admin login holds admin_group (measured)"
         assert v["netclaw"]["group"] not in access["read"][tier], "netclaw only where automation_access.netclaw says"
-    assert access["read"]["prod"] == ["admin_group", "copilot-readonly"], "the values the department session set by hand"
+    # the values the department session set by hand, plus the production MCP server's group (ADR 0083)
+    assert access["read"]["prod"] == ["admin_group", "copilot-readonly", "mcp-builders"]
     assert access["read"]["dev"] == ["admin_group", v["dev"]["copilot"]["group"]]
 
 
@@ -153,8 +154,10 @@ def test_platform_yml_builds_the_endpoints_then_the_account_then_the_gbac() -> N
     endpoints = next(t for t in tasks if t.get("loop") == NETCLAW_WORKFLOW_KEYS)
     assert endpoints["ansible.builtin.include_tasks"] == "tasks/outage-trigger.yml" and "when" not in endpoints
     includes = [t.get("ansible.builtin.include_tasks") for t in tasks]
-    assert includes[-2:] == ["tasks/netclaw-access.yml", "tasks/automation-access.yml"], "last: every automation exists"
-    assert all("when" not in t for t in tasks[-2:]), "both tiers"
+    # ADR 0083 puts the production MCP server's account between them (production only): its group is in the gbac too
+    assert includes[-3:] == ["tasks/netclaw-access.yml", "tasks/mcp-access.yml", "tasks/automation-access.yml"], (
+        "last: every automation exists")
+    assert "when" not in tasks[-3] and "when" not in tasks[-1], "both tiers"
     flowai = _tasks(TASKS / "flowai-assets.yml")
     assert flowai[-1].get("ansible.builtin.include_tasks") == "tasks/automation-access.yml", "the agents' automations"
 

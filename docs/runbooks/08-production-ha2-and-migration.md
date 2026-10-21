@@ -160,6 +160,29 @@ lists, and `ansible/playbooks/observability.yml` deletes a Zabbix host it stampe
 the documents no longer name. That filter fails safe — Zabbix's built-ins and anything added by hand are
 never candidates.
 
+### 6. Give the MCP server its own account
+
+Built after the migration: [ADR 0083](../adr/0083-the-production-mcp-server-has-its-own-account-an-allowlist-and-vault-issued-tokens.md).
+Production's MCP server used to log in as the platform administrator and answered anyone on the home network.
+It now logs in as `svc-mcp`, a builder that holds no identity, session, server, adapter or application
+administration, and its port admits only the client machines in `itential/ha2/versions.yaml` `tools.mcp_allow`.
+Run these from the main checkout, on `main`:
+
+```
+make mcp-access                          # svc-mcp, mcp-builders, and the group on the gateway, agents and automations
+make mcp-access RECREATE_INVENTORIES=1   # once: deletes the lab inventories created before the group existed
+make replay-platform-ha2                 # recreates them with the group and every node from NetBox
+make platform-ha2-tools                  # the server logs in as svc-mcp, hides eight tools, the port allowlist
+```
+
+The second line exists because 6.6.0's Inventory Manager cannot change an existing inventory's groups: its
+API offers create, read and delete only. Device jobs fail between the delete and the end of the replay's
+first play, so run the two back to back. Take `make prod-snapshot MODE=save` before and compare after.
+
+**To add a client machine:** reserve its address on the home router, add it to `tools.mcp_allow` as a
+`/32`, and run `make platform-ha2-tools`. A phone needs no entry: Remote Control of Claude Code on one of
+these machines makes the calls from that machine.
+
 ---
 
 ## What "done" looks like
@@ -201,6 +224,10 @@ verify/test-08-platform-ha2.sh
 | S11.8 | The dev-stack VM is retired and every trace of it removed |
 | S11.9 | A `mongodump` newer than 24 h exists on the backup member **and restores** — into a throw-away `mongod`, with its collection count equal to the live database (ADR 0058) |
 | S11.6a/b/c | The three failover drills, behind `VERIFY_DRILLS=1` |
+
+Chapter 05's script also holds the MCP server to ADR 0083: S4.7b reads the container's login name and checks
+that `svc-mcp` itself logged in after the container started, and S4.7c checks that the Gateway VM, which is
+not in `tools.mcp_allow`, is dropped at the MCP port.
 
 The final run was **7 passed, 0 failed, 0 deferred** — the first run in the whole series with nothing
 deferred.
@@ -385,7 +412,7 @@ the released-reservation cleanup had silently done nothing for a phase.
 | Redis | 7.4.11, one master + two replicas, three Sentinels, quorum 2, ACL users only |
 | nginx | 1.30.4-alpine — HTTP upstream `ip_hash`, gateway stream primary + backup |
 | OpenLDAP | `osixia/openldap` 1.4.0, on the tools VM |
-| MCP server | `ghcr.io/itential/itential-mcp` v0.14.0, on the tools VM |
+| MCP server | `ghcr.io/itential/itential-mcp` v0.14.1, on the tools VM, as `svc-mcp` (ADR 0083) |
 | Exporters | node `v1.12.1`, process `0.8.7`, plus Redis and MongoDB exporters per server |
 | Environment | Eleven VMs, 49 GB, Active/Standby |
 | Backup | Nightly `mongodump` on the last replica-set member, 7-day rotation, restore-verified by S11.9 |

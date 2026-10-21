@@ -119,6 +119,12 @@ tools:
   # 2026-10-18), so every tool answered 401 after an idle hour until the container restarted. Logging in again once 30
   # minutes have passed means no token idle long enough to expire is ever sent. The dev MCP server takes the same value.
   mcp_platform_ttl: 1800
+  # ADR 0083: who may open a connection to the MCP server's port (the play's DOCKER-USER allowlist, mcp-access.sh.j2).
+  # The home router routes the whole home LAN into the lab (oob-gw admits 192.168.68.0/22), so without this any device
+  # on the home network reached every tool. One /32 per client machine, each with a DHCP reservation on the router;
+  # a phone reaches it through Remote Control on one of these. From tools-01 itself the allowlist does not apply.
+  mcp_allow:
+    - 192.168.68.142/32 # the Mac Mini (en0 reservation, lab-build-lessons)
   # R7 (ADR 0076 decision 1): Batfish's API, published on the OOB address and admitted from the Gateway VM only (the
   # play's DOCKER-USER allowlist); a 2 GB heap inside a 3 GB limit (measured: about 3 GB at a 2 GB heap)
   batfish_port: 9996
