@@ -130,3 +130,39 @@ characters. Decision 2 is therefore reversed: `model_variables: {think: true, te
 is the extra output tokens of the traces (dev: 480-600 per session against about 260), which the
 Platform shows under "Agent Reasoning" rather than in the conclusion. A minimal reproduction for Ollama
 is in the session notes; the lab's own measurement is the one above.
+
+## Amendment (owner, 2026-10-21): Ollama 0.40.7 and a 131072 context
+
+The Mac's Ollama moves from `0.40.2` to `0.40.7` (Homebrew stable on 2026-10-21) and
+`OLLAMA_CONTEXT_LENGTH` from 32768 to 131072. What the context value does depends on the runner:
+
+- `qwen3.8:27b` runs on Ollama's MLX runner on this Mac (`ollama ps` shows `RUNNER mlx`). There the value
+  is advisory: it is the context Ollama reports to clients, and a longer prompt is read in full (measured
+  below). Per Ollama's source the MLX runner never truncates history; the only hard cap is the model's own
+  maximum (262,144 tokens), past which a request fails with an explicit error (not tested here). The
+  dropped-turn failure above belongs to the llama.cpp runner (Ollama issue #17778). So for the twins this
+  change moves the advertised number, not their behaviour.
+- For a model on the llama.cpp runner (a gemma fallback, bakeoff candidates) the value is a real
+  allocation and the point where the oldest messages start to drop. With one model resident
+  (`OLLAMA_MAX_LOADED_MODELS` 1) the larger window costs memory only while such a model is loaded.
+- For qwen3.8, only 16 of its 64 layers keep a KV cache (64 KiB per token), so even the full window fits
+  in 64 GB. Ollama advises at least 64K for agent and coding harnesses; Qwen advises at least 128K for
+  this model family. Anything that must cap a conversation on MLX has to do it itself.
+
+The cost is unchanged per token: a longer prompt still reads at about 95-110 tokens/s cold. The firewall
+check after the Homebrew upgrade (Consequences above) still applies.
+
+Measured after the upgrade (2026-10-21):
+
+- `ollama show qwen3.8:27b` reports renderer `qwen3.8`, parser `qwen3.5`, template source
+  `renderer_parser` (built in, no custom template); `ollama ps` shows `CONTEXT 131072`, `RUNNER mlx`.
+  The model digest is unchanged (`47951e4a6661`).
+- From oob-gw, `curl http://ollama.lab.internal:11434/api/version` answers HTTP 200 `{"version":"0.40.7"}`:
+  the new Cellar path did not trip the macOS firewall.
+- `verify/agent-probe.sh platform-guide-local` completed on production in 51 s with one read-only tool
+  call and a correct answer.
+- A 9,123-token prompt sent with `num_ctx` 4096 returned HTTP 200 and was read in full
+  (`prompt_eval_count` 9123, about 112 tokens/s): on the MLX runner the context setting is advisory.
+- Decision 4's re-take, `scripts/model-bakeoff.py --runs 3 qwen3.8:27b` (thinking on, as the profile
+  runs it): 9/9, median 2.8 s and 64 output tokens per tool call (6.7 s and 62 tokens on 0.40.2), traces
+  on every run as configured.
