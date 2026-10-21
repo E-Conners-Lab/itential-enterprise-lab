@@ -269,15 +269,42 @@ def test_the_gateway_put_sends_back_every_field_it_replaces() -> None:
     }
 
 
+def test_the_default_service_group_is_never_sent_and_is_checked_after_the_gateway() -> (
+    None
+):
+    # 6.6.0 answers 400 "Cannot modify a default service group" (production 2026-10-21)
+    tasks = _tasks(TASKS / "mcp-access.yml")
+    names = [t["name"] for t in tasks]
+    writes = _writes(TASKS / "mcp-access.yml")
+    patch = next(t for t in writes if "service-groups" in _module(t)[1]["url"])
+    gateway = next(
+        t for t in writes if "gateway_manager/v1/gateways" in _module(t)[1]["url"]
+    )
+    assert "not (item.is_default | default(false))" in patch["when"]
+    check = next(
+        t
+        for t in tasks
+        if _module(t)[0] == "assert" and "default service group" in t["name"]
+    )
+    assert _module(check)[1]["that"] == "mcp_access.group in default_groups"
+    assert "selectattr('is_default')" in check["vars"]["default_groups"]
+    assert names.index(check["name"]) > names.index(gateway["name"])
+    assert names.index(check["name"]) > names.index(patch["name"])
+
+
 def test_inventories_are_created_with_the_group_and_recreated_only_on_request() -> None:
     assets = (TASKS / "platform-assets.yml").read_text()
     default = (
         "groups: \"{{ inventory_groups | default(['admin_group'] + ([] if dev_overlay | default(false) | bool"
-        " else [mcp_access.group])) }}\""
+        ' else [mcp_access.group])) }}"'
     )
-    assert assets.count(default) == 2, "both lab inventories, on production's defaults (the dev overlay sets its own)"
+    assert assets.count(default) == 2, (
+        "both lab inventories, on production's defaults (the dev overlay sets its own)"
+    )
     deletes = [
-        t for t in _writes(PLAYS / "mcp-access.yml") if _module(t)[1]["method"] == "DELETE"
+        t
+        for t in _writes(PLAYS / "mcp-access.yml")
+        if _module(t)[1]["method"] == "DELETE"
     ]
     assert len(deletes) == 1
     args = _module(deletes[0])[1]
@@ -345,7 +372,10 @@ def test_every_excluded_role_must_exist_before_any_role_is_assigned() -> None:
     )
     assert guard < include
     gvars = tasks[guard]["vars"]
-    assert "itential/mcp/roles.yaml" in gvars["oracle"] and ".prod.exclude" in gvars["oracle"]
+    assert (
+        "itential/mcp/roles.yaml" in gvars["oracle"]
+        and ".prod.exclude" in gvars["oracle"]
+    )
     assert "reject('in', have)" in gvars["absent"]
     assert "absent | length == 0" in tasks[guard]["ansible.builtin.assert"]["that"]
 
