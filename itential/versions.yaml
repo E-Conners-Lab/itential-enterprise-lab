@@ -465,8 +465,10 @@ automation_access:
   write: [admin_group]
   # the automations NetClaw's group may also read and start: exactly the routes of its tools
   netclaw: [Run Show Command on a Device, Describe Job, Add Branch VLAN, platform-guide, platform-guide-local]
-  # never touched by the plays: the department-agents delivery gates its own Ask automations per department
-  unmanaged: [Ask Finance, Ask Audit, Ask HR]
+  # never touched by the plays: the department-agents delivery gates its own Ask automations per department (read =
+  # the department's group and IT). Ask R&D came later (2026-10-13) and was missing, so mcp-access reset it on
+  # 2026-10-21 and took dept-rnd's access away.
+  unmanaged: [Ask Finance, Ask Audit, Ask HR, Ask R&D]
 
 # ADR 0082: NetClaw, the Slack interface to the lab (itential-deliveries/netclaw). Its own account in its own group,
 # never the platform admin and never the lab MCP server; its role is itential/netclaw/roles.yaml; it may start exactly

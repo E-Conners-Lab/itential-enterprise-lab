@@ -31,7 +31,7 @@ DENY = ["*/admin", "*/apiwrite", "*/designer", "*/engineering", "*/operations", 
         "*/*:update", "*/*:delete", "*/*:run", "*/*:code", "*/*:manage", "MOP/*", "ConfigurationManager/*",
         "GatewayManager/*", "InventoryManager/*", "AutomationStudio/*", "WorkFlowEngine/*", "Authorization/*"]
 # the department-agents delivery's own Ask automations: the lab's plays never set their gbac
-DEPARTMENT_ASK = {"Ask Finance", "Ask Audit", "Ask HR"}
+DEPARTMENT_ASK = {"Ask Finance", "Ask Audit", "Ask HR", "Ask R&D"}
 NETCLAW_WORKFLOW_KEYS = ["show_command", "describe_job", "branch_vlan"]
 
 
