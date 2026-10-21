@@ -134,18 +134,20 @@ is in the session notes; the lab's own measurement is the one above.
 ## Amendment (owner, 2026-10-21): Ollama 0.40.7 and a 131072 context
 
 The Mac's Ollama moves from `0.40.2` to `0.40.7` (Homebrew stable on 2026-10-21) and
-`OLLAMA_CONTEXT_LENGTH` from 32768 to 131072, so agent harnesses that carry their own system prompt and
-tool definitions (Claude Code, Codex) have room on top of the twins' own needs. What changed the picture
-since the As-built section:
+`OLLAMA_CONTEXT_LENGTH` from 32768 to 131072. What the context value does depends on the runner:
 
-- `qwen3.8:27b` runs on Ollama's MLX runner on this Mac (`ollama ps` shows `RUNNER mlx`). Per Ollama's
-  source, the MLX runner never truncates history: a request past the limit fails with an explicit error
-  instead of silently dropping the user's turn. The dropped-turn failure above belongs to the llama.cpp
-  runner (Ollama issue #17778).
-- Only 16 of the model's 64 layers keep a KV cache (64 KiB per token), so 131072 is about 8 GiB on top of
-  the loaded model, well inside 64 GB with one model resident.
-- Ollama advises at least 64K for agent and coding harnesses; Qwen advises at least 128K for this model
-  family.
+- `qwen3.8:27b` runs on Ollama's MLX runner on this Mac (`ollama ps` shows `RUNNER mlx`). There the value
+  is advisory: it is the context Ollama reports to clients, and a longer prompt is read in full (measured
+  below). Per Ollama's source the MLX runner never truncates history; the only hard cap is the model's own
+  maximum (262,144 tokens), past which a request fails with an explicit error (not tested here). The
+  dropped-turn failure above belongs to the llama.cpp runner (Ollama issue #17778). So for the twins this
+  change moves the advertised number, not their behaviour.
+- For a model on the llama.cpp runner (a gemma fallback, bakeoff candidates) the value is a real
+  allocation and the point where the oldest messages start to drop. With one model resident
+  (`OLLAMA_MAX_LOADED_MODELS` 1) the larger window costs memory only while such a model is loaded.
+- For qwen3.8, only 16 of its 64 layers keep a KV cache (64 KiB per token), so even the full window fits
+  in 64 GB. Ollama advises at least 64K for agent and coding harnesses; Qwen advises at least 128K for
+  this model family. Anything that must cap a conversation on MLX has to do it itself.
 
 The cost is unchanged per token: a longer prompt still reads at about 95-110 tokens/s cold. The firewall
 check after the Homebrew upgrade (Consequences above) still applies.
@@ -161,4 +163,6 @@ Measured after the upgrade (2026-10-21):
   call and a correct answer.
 - A 9,123-token prompt sent with `num_ctx` 4096 returned HTTP 200 and was read in full
   (`prompt_eval_count` 9123, about 112 tokens/s): on the MLX runner the context setting is advisory.
-  Anything that must cap a conversation has to do it itself.
+- Decision 4's re-take, `scripts/model-bakeoff.py --runs 3 qwen3.8:27b` (thinking on, as the profile
+  runs it): 9/9, median 2.8 s and 64 output tokens per tool call (6.7 s and 62 tokens on 0.40.2), traces
+  on every run as configured.
