@@ -130,6 +130,9 @@
     - mcp_access.group not in item.groups
   changed_when: true
 
+# A cluster's default service group (`is_default: true`) takes every group on the gateway cluster by itself, and 6.6.0
+# refuses to change it (400 "Cannot modify a default service group", production 2026-10-21), so only the plays' own
+# service groups are sent. The proof at the end still holds the default group to carrying the group (sg_missing).
 - name: MCP access - the group on the cluster's service groups
   ansible.builtin.uri:
     url: "{{ platform_local }}/gateway_manager/v1/service-groups/{{ item._id }}"
@@ -142,6 +145,7 @@
   loop_control:
     label: "{{ item.name }}"
   when:
+    - not (item.is_default | default(false))
     - "'admin_group' in item.groups | map(attribute='name')"
     - mcp_access.group not in item.groups | map(attribute='name')
   changed_when: true

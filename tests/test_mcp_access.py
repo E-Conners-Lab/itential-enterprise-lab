@@ -12,6 +12,7 @@ import json
 import re
 from pathlib import Path
 
+import jinja2
 import yaml
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -269,15 +270,45 @@ def test_the_gateway_put_sends_back_every_field_it_replaces() -> None:
     }
 
 
+def test_the_service_group_write_skips_the_default_group() -> None:
+    # 6.6.0 answers 400 "Cannot modify a default service group" (production 2026-10-21); its record carries is_default
+    patch = next(
+        t
+        for t in _writes(TASKS / "mcp-access.yml")
+        if "service-groups" in _module(t)[1]["url"]
+    )
+    conditions = [jinja2.Environment().compile_expression(c) for c in patch["when"]]
+
+    def sent(group: dict) -> bool:
+        return all(
+            c(item=group, mcp_access={"group": "mcp-builders"}) for c in conditions
+        )
+
+    admin = [{"name": "admin_group"}]
+    assert not sent(
+        {"name": "lab Default Service Group", "is_default": True, "groups": admin}
+    )
+    assert sent({"name": "lab ops", "is_default": False, "groups": admin})
+    assert sent({"name": "lab ops", "groups": admin}), (
+        "a record without the flag is not a default group"
+    )
+    assert not sent({"name": "lab ops", "groups": admin + [{"name": "mcp-builders"}]})
+    assert not sent({"name": "department", "groups": [{"name": "finance"}]})
+
+
 def test_inventories_are_created_with_the_group_and_recreated_only_on_request() -> None:
     assets = (TASKS / "platform-assets.yml").read_text()
     default = (
         "groups: \"{{ inventory_groups | default(['admin_group'] + ([] if dev_overlay | default(false) | bool"
-        " else [mcp_access.group])) }}\""
+        ' else [mcp_access.group])) }}"'
     )
-    assert assets.count(default) == 2, "both lab inventories, on production's defaults (the dev overlay sets its own)"
+    assert assets.count(default) == 2, (
+        "both lab inventories, on production's defaults (the dev overlay sets its own)"
+    )
     deletes = [
-        t for t in _writes(PLAYS / "mcp-access.yml") if _module(t)[1]["method"] == "DELETE"
+        t
+        for t in _writes(PLAYS / "mcp-access.yml")
+        if _module(t)[1]["method"] == "DELETE"
     ]
     assert len(deletes) == 1
     args = _module(deletes[0])[1]
@@ -345,7 +376,10 @@ def test_every_excluded_role_must_exist_before_any_role_is_assigned() -> None:
     )
     assert guard < include
     gvars = tasks[guard]["vars"]
-    assert "itential/mcp/roles.yaml" in gvars["oracle"] and ".prod.exclude" in gvars["oracle"]
+    assert (
+        "itential/mcp/roles.yaml" in gvars["oracle"]
+        and ".prod.exclude" in gvars["oracle"]
+    )
     assert "reject('in', have)" in gvars["absent"]
     assert "absent | length == 0" in tasks[guard]["ansible.builtin.assert"]["that"]
 
