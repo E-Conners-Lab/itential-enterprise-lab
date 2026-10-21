@@ -12,6 +12,7 @@ import json
 import re
 from pathlib import Path
 
+import jinja2
 import yaml
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -269,27 +270,30 @@ def test_the_gateway_put_sends_back_every_field_it_replaces() -> None:
     }
 
 
-def test_the_default_service_group_is_never_sent_and_is_checked_after_the_gateway() -> (
-    None
-):
-    # 6.6.0 answers 400 "Cannot modify a default service group" (production 2026-10-21)
-    tasks = _tasks(TASKS / "mcp-access.yml")
-    names = [t["name"] for t in tasks]
-    writes = _writes(TASKS / "mcp-access.yml")
-    patch = next(t for t in writes if "service-groups" in _module(t)[1]["url"])
-    gateway = next(
-        t for t in writes if "gateway_manager/v1/gateways" in _module(t)[1]["url"]
-    )
-    assert "not (item.is_default | default(false))" in patch["when"]
-    check = next(
+def test_the_service_group_write_skips_the_default_group() -> None:
+    # 6.6.0 answers 400 "Cannot modify a default service group" (production 2026-10-21); its record carries is_default
+    patch = next(
         t
-        for t in tasks
-        if _module(t)[0] == "assert" and "default service group" in t["name"]
+        for t in _writes(TASKS / "mcp-access.yml")
+        if "service-groups" in _module(t)[1]["url"]
     )
-    assert _module(check)[1]["that"] == "mcp_access.group in default_groups"
-    assert "selectattr('is_default')" in check["vars"]["default_groups"]
-    assert names.index(check["name"]) > names.index(gateway["name"])
-    assert names.index(check["name"]) > names.index(patch["name"])
+    conditions = [jinja2.Environment().compile_expression(c) for c in patch["when"]]
+
+    def sent(group: dict) -> bool:
+        return all(
+            c(item=group, mcp_access={"group": "mcp-builders"}) for c in conditions
+        )
+
+    admin = [{"name": "admin_group"}]
+    assert not sent(
+        {"name": "lab Default Service Group", "is_default": True, "groups": admin}
+    )
+    assert sent({"name": "lab ops", "is_default": False, "groups": admin})
+    assert sent({"name": "lab ops", "groups": admin}), (
+        "a record without the flag is not a default group"
+    )
+    assert not sent({"name": "lab ops", "groups": admin + [{"name": "mcp-builders"}]})
+    assert not sent({"name": "department", "groups": [{"name": "finance"}]})
 
 
 def test_inventories_are_created_with_the_group_and_recreated_only_on_request() -> None:
