@@ -10,6 +10,10 @@
     brN-wan01 (AS 6520N): tunnels to both DC edges; the firewall is the LAN gateway - or, while
       bypassed, the router's spare port is the VLAN 10 gateway with a DHCP pool. -#}
 {%- set site = node.site %}
+{#- scratch (lab.scratch, topology/skills-lab.yaml, ADR 0084): the eval suite's routers get management, the
+    automation user, NETCONF/RESTCONF/SSH and the config-change log, and nothing a skill configures itself (no
+    loopback, no WAN VRF, no BGP, no data-port addressing); the runner restores their baseline between runs. -#}
+{%- set scratch = lab.scratch | default(false) %}
 {#- lo, asn, isp_peer, wan_ip, lan, tunnels, ibgp, agg, isp_neighbors come from topology/derive.py (ADR 0048) -#}
 {#- routed eBGP neighbours on this router's links: firewalls (AS from routing) and leaf bypass (AS dc1_leaf) -#}
 {%- set ns = namespace(ebgp=[], links=[]) %}
@@ -82,6 +86,22 @@ zone security INSIDE
 zone security AWS
 !
 {%- endif %}
+{%- if scratch %}
+{#- The scratch routers keep the config-change log the lab edge deliberately lacks (its IKEv2 PSK line was logged in
+    clear): they hold no production secret, and the eval suite compares every change a run made with the log, sent
+    to the lab syslog receiver. The archive also gives `configure replace` its rollback path. #}
+archive
+ path bootflash:archive-
+ maximum 5
+ log config
+  logging enable
+  notify syslog contenttype plaintext
+  hidekeys
+!
+login on-failure log
+login on-success log
+!
+{%- endif %}
 {% include 'c8000v-observability.j2' %}
 !
 vrf definition MGMT
@@ -90,7 +110,7 @@ vrf definition MGMT
 {#- issue #18: IOS-XE drops `ntp server vrf MGMT` when the VRF is not defined yet (all five routers booted without it,
     while `ip name-server vrf MGMT` above was accepted), so NTP follows the VRF definition. #}
 ntp server vrf MGMT {{ lab.ntp }}
-{%- if site != 'wan' %}
+{%- if site != 'wan' and not scratch %}
 vrf definition WAN
  description front-door VRF: provider transport only
  rd {{ asn }}:1
@@ -111,9 +131,11 @@ interface GigabitEthernet1
 !
 ip route vrf MGMT 0.0.0.0 0.0.0.0 {{ lab.mgmt_gateway }}
 !
+{%- if not scratch %}
 interface Loopback0
  ip address {{ lo }} 255.255.255.255
 !
+{%- endif %}
 {%- if lan and not firewalls %}
 ip dhcp excluded-address {{ lan.gw }} {{ lan.net[:-1] }}99
 ip dhcp pool USERS
@@ -240,6 +262,7 @@ ip prefix-list NO-AWS-VPC seq 5 deny {{ lab_edge.aws_vpc }} le 32
 ip prefix-list NO-AWS-VPC seq 10 permit 0.0.0.0/0 le 32
 !
 {%- endif %}
+{%- if not scratch %}
 router bgp {{ asn }}
  bgp router-id {{ lo }}
  bgp log-neighbor-changes
@@ -298,6 +321,7 @@ router bgp {{ asn }}
   neighbor {{ isp_peer }} description provider (transport only)
   neighbor {{ isp_peer }} activate
  exit-address-family
+{%- endif %}
 {%- endif %}
 !
 {%- if agg %}
