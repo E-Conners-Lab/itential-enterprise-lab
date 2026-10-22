@@ -7,6 +7,11 @@ are rendered from topology/configs/<platform>.j2 and uploaded when present.
   eve/build.py apply                # create lab, networks, nodes, links, configs (no start)
   eve/build.py start [--waves]      # start nodes: non-firewalls, then firewalls in two waves
   eve/build.py stop | status
+  eve/build.py --topology topology/skills-lab.yaml plan|apply|start|stop|status
+  eve/build.py --topology topology/skills-lab.yaml delete --yes   # removes that lab; never the enterprise lab
+
+A topology other than enterprise.yaml writes its generated files under topology/generated/<lab name>/, so the
+enterprise lab's eve-nodes.yaml and reference configs are never overwritten (ADR 0084).
 
 Credentials from the environment (.env via make): EVE_HOST, EVE_USERNAME, EVE_PASSWORD.
 """
@@ -241,8 +246,15 @@ class Eve:
         self._req("GET", f"/labs{self.lab}/nodes/{node_id}/stop/stopmode=3")
 
 
-def load_topology() -> dict:
-    return yaml.safe_load(TOPO.read_text())
+def load_topology(path: Path | None = None) -> dict:
+    return yaml.safe_load((path or TOPO).read_text())
+
+
+def generated_dir(topo: dict) -> Path:
+    """Where a topology's generated files live: the enterprise lab keeps topology/generated/, any other lab (the
+    scratch lab, ADR 0084) gets its own folder so it can never overwrite the enterprise lab's MAC table or configs."""
+    base = ROOT / "topology" / "generated"
+    return base if topo["lab"]["name"] == "enterprise" else base / topo["lab"]["name"]
 
 
 def _template_context(name: str, node: dict, topo: dict) -> dict:
@@ -298,10 +310,12 @@ def render_config(platform: str, name: str, node: dict, topo: dict) -> str | Non
     import secrets as _secrets
     import subprocess
 
-    secret = os.environ.get("AUTOMATION_PASSWORD")
+    # the scratch lab (ADR 0084) names its own variable so the production device password never reaches it
+    secret_env = topo["lab"].get("automation_password_env", "AUTOMATION_PASSWORD")
+    secret = os.environ.get(secret_env)
     if not secret:
         raise SystemExit(
-            "AUTOMATION_PASSWORD missing in .env (device-local automation account, moved to Vault in phase 9)"
+            f"{secret_env} missing in .env (device-local automation account, moved to Vault in phase 9)"
         )
     return _jinja().get_template(f"{platform}.j2").render(
         **_template_context(name, node, topo),
@@ -548,8 +562,8 @@ def export_nodes(eve: Eve, topo: dict) -> Path:
     """Write topology/generated/eve-nodes.yaml: EVE-NG node ids and management MACs
     (EVE-NG derives MAC 50:00:00:<node id>:00:<interface index>). Consumed by the oob-gw
     DHCP reservations for endpoints that cannot take a startup config."""
-    out = ROOT / "topology" / "generated" / "eve-nodes.yaml"
-    out.parent.mkdir(exist_ok=True)
+    out = generated_dir(topo) / "eve-nodes.yaml"
+    out.parent.mkdir(parents=True, exist_ok=True)
     rows = {}
     for name, n in sorted(eve.nodes().items()):
         if name not in topo["nodes"]:
@@ -573,8 +587,15 @@ def main() -> None:
     )
     ap.add_argument(
         "action",
-        choices=["plan", "apply", "start", "stop", "status", "export", "push-configs", "render", "snippet"],
+        choices=["plan", "apply", "start", "stop", "status", "export", "push-configs", "render", "snippet", "delete"],
     )
+    ap.add_argument(
+        "--topology",
+        type=Path,
+        default=TOPO,
+        help="topology file (default topology/enterprise.yaml); the scratch lab is topology/skills-lab.yaml",
+    )
+    ap.add_argument("--yes", action="store_true", help="delete: confirm removing the lab and its nodes")
     ap.add_argument("--only", nargs="*", help="push-configs / snippet: limit to these node names")
     ap.add_argument(
         "--with-snmpv3",
@@ -592,7 +613,13 @@ def main() -> None:
         help="start: firewalls last, in two waves 300 s apart",
     )
     a = ap.parse_args()
-    topo = load_topology()
+    topo = load_topology(a.topology)
+    if a.action == "delete":
+        # checked before any EVE-NG login: the enterprise lab is never deleted by this tool
+        if topo["lab"]["path"] == "/enterprise.unl" or a.topology.resolve() == TOPO.resolve():
+            raise SystemExit("refusing to delete the enterprise lab; delete only takes --topology of a scratch lab")
+        if not a.yes:
+            raise SystemExit(f"delete removes {topo['lab']['path']} and every node in it from EVE-NG; re-run with --yes")
     if a.action == "snippet":
         # the observability lines of one node for the governed push (ansible/playbooks/observability-devices.yml)
         names = a.only or []
@@ -606,8 +633,9 @@ def main() -> None:
         return
     if a.action == "render":
         # the committed reference tests/test_topology.py compares against (placeholder password, never the real one)
-        os.environ["AUTOMATION_PASSWORD"] = "__AUTOMATION_PASSWORD__"
-        out = ROOT / "topology" / "generated" / "configs"
+        os.environ[topo["lab"].get("automation_password_env", "AUTOMATION_PASSWORD")] = "__AUTOMATION_PASSWORD__"
+        out = generated_dir(topo) / "configs"
+        out.mkdir(parents=True, exist_ok=True)
         for name, node in sorted(topo["nodes"].items()):
             if node["platform"] in ("c8000v", "veos"):
                 (out / f"{name}.cfg").write_text(render_config(node["platform"], name, node, topo))
@@ -634,6 +662,15 @@ def main() -> None:
         push_configs(eve, topo, a.only)
     elif a.action == "export":
         print(export_nodes(eve, topo))
+    elif a.action == "delete":
+        if not eve.lab_exists():
+            print(f"no lab {eve.lab}")
+            return
+        for name, n in eve.nodes().items():
+            eve.stop(n["id"])
+            print(f"stop {name}")
+        eve._req("DELETE", f"/labs{eve.lab}")
+        print(f"deleted lab {eve.lab}")
     elif a.action == "status":
         for name, n in sorted(eve.nodes().items()):
             print(
