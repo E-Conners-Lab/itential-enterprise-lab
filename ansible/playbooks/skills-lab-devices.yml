@@ -1,0 +1,101 @@
+---
+# ADR 0084: bootstrap of the skills eval suite's scratch routers (topology/skills-lab.yaml), run once after
+# `make skills-lab-up` has built and started them. Per router it creates the two read accounts at privilege 1
+# (restconf-reader for the Gateway's restconf-get service, judge for the eval suite's independent judge), applies
+# Cisco's NACM read rules for privilege 1 (IOS XE 17.9.1+), records the HTTPS certificate and SSH host key
+# fingerprints for the pins the later steps enforce, proves each reader can read and is refused a write, and captures
+# the running configuration as bootflash:baseline.cfg, the state the eval runner restores before every run.
+#
+# The scratch routers are lab-only and outside production: this play talks to them directly over SSH and RESTCONF
+# (scripts/skills-lab-device.py), not through the governed Platform path the eval agents use. Passwords come from
+# .env, the one-way source the Vault config play seeds (itential/versions.yaml vault.secrets, added with the
+# restconf-get service); none is printed. Re-running it is safe: accounts and NACM rules are re-applied, the
+# baseline is re-captured, and the pins are printed again.
+- name: Scratch routers for the skills eval suite (read accounts, NACM read rules, pins, baseline)
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    ansible_python_interpreter: "{{ playbook_dir }}/../../.venv/bin/python"
+    repo: "{{ playbook_dir }}/../.."
+    helper: "{{ repo }}/scripts/skills-lab-device.py"
+    scratch: "{{ lookup('ansible.builtin.file', repo ~ '/topology/skills-lab.yaml') | from_yaml }}"
+    enterprise: "{{ lookup('ansible.builtin.file', repo ~ '/topology/enterprise.yaml') | from_yaml }}"
+    # [[name, management address], ...] in topology order
+    routers: >-
+      {{ scratch.nodes | dict2items | map(attribute='key')
+         | zip(scratch.nodes | dict2items | map(attribute='value.mgmt_ip')) | list }}
+    secret_env:
+      SKILLS_LAB_AUTOMATION_PASSWORD: "{{ lookup('ansible.builtin.env', 'SKILLS_LAB_AUTOMATION_PASSWORD') }}"
+      SKILLS_LAB_READER_PASSWORD: "{{ lookup('ansible.builtin.env', 'SKILLS_LAB_READER_PASSWORD') }}"
+      SKILLS_LAB_JUDGE_PASSWORD: "{{ lookup('ansible.builtin.env', 'SKILLS_LAB_JUDGE_PASSWORD') }}"
+  tasks:
+    - name: The scratch passwords are in .env (make skills-lab-up generates them)
+      ansible.builtin.assert:
+        that:
+          - secret_env.SKILLS_LAB_AUTOMATION_PASSWORD | length >= 16
+          - secret_env.SKILLS_LAB_READER_PASSWORD | length >= 16
+          - secret_env.SKILLS_LAB_JUDGE_PASSWORD | length >= 16
+        quiet: true
+      no_log: true
+
+    - name: The firewalls are off (the scratch lab borrows their memory, docs/resource-budget.md 3a)
+      ansible.builtin.assert:
+        that: not (enterprise.lab.firewalls | bool)
+        fail_msg: "topology/enterprise.yaml has lab.firewalls true: delete the scratch lab first (make skills-lab-down)"
+        quiet: true
+
+    - name: Each router accepts the automation login (up to 20 minutes after boot)
+      ansible.builtin.command:
+        argv: ["{{ ansible_python_interpreter }}", "{{ helper }}", wait-ssh, "{{ item[1] }}"]
+      environment: "{{ secret_env }}"
+      loop: "{{ routers }}"
+      loop_control:
+        label: "{{ item[0] }}"
+      changed_when: false
+
+    - name: Read accounts at privilege 1 and the NACM read rules
+      ansible.builtin.command:
+        argv: ["{{ ansible_python_interpreter }}", "{{ helper }}", accounts, "{{ item[1] }}"]
+      environment: "{{ secret_env }}"
+      loop: "{{ routers }}"
+      loop_control:
+        label: "{{ item[0] }}"
+      changed_when: true
+      no_log: true
+
+    - name: HTTPS certificate and SSH host key fingerprints (not secret)
+      ansible.builtin.command:
+        argv: ["{{ ansible_python_interpreter }}", "{{ helper }}", pins, "{{ item[1] }}"]
+      environment: "{{ secret_env }}"
+      loop: "{{ routers }}"
+      loop_control:
+        label: "{{ item[0] }}"
+      register: pin_runs
+      changed_when: false
+
+    - name: Fingerprints per router
+      ansible.builtin.set_fact:
+        pins: "{{ pin_runs.results | map(attribute='stdout') | map('from_json') | list }}"
+
+    - name: Each reader reads and is refused a write (proves the NACM rules before the baseline keeps them)
+      ansible.builtin.command:
+        argv: ["{{ ansible_python_interpreter }}", "{{ helper }}", check-readers, "{{ item[0][1] }}", "{{ item[1].https_cert_sha256 }}"]
+      environment: "{{ secret_env }}"
+      loop: "{{ routers | zip(pins) | list }}"
+      loop_control:
+        label: "{{ item[0][0] }}"
+      changed_when: false
+
+    - name: Running configuration saved and captured as bootflash:baseline.cfg
+      ansible.builtin.command:
+        argv: ["{{ ansible_python_interpreter }}", "{{ helper }}", baseline, "{{ item[1] }}"]
+      environment: "{{ secret_env }}"
+      loop: "{{ routers }}"
+      loop_control:
+        label: "{{ item[0] }}"
+      changed_when: true
+
+    - name: Pins to commit (itential/versions.yaml skills_lab.nodes, in the lab PR that adds restconf-get)
+      ansible.builtin.debug:
+        msg: "{{ routers | map('first') | zip(pins) | list }}"
