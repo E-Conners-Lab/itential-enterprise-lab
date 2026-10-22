@@ -19,8 +19,9 @@ import paramiko
 DEFAULT_TIMEOUT = int(os.environ.get("DEVCMD_TIMEOUT", "150"))
 
 
-def run(ip: str, command: str, user: str = "automation", timeout: int = DEFAULT_TIMEOUT) -> str:
-    pw = os.environ.get("AUTOMATION_PASSWORD")
+def run(ip: str, command: str, user: str = "automation", timeout: int = DEFAULT_TIMEOUT,
+        password: str | None = None) -> str:
+    pw = password or os.environ.get("AUTOMATION_PASSWORD")
     if not pw:
         raise SystemExit("AUTOMATION_PASSWORD missing in .env")
     c = paramiko.SSHClient()
@@ -34,11 +35,11 @@ def run(ip: str, command: str, user: str = "automation", timeout: int = DEFAULT_
         c.close()
 
 
-def reload(ip: str, user: str = "automation", timeout: int = 20) -> None:
+def reload(ip: str, user: str = "automation", timeout: int = 20, password: str | None = None) -> None:
     """IOS XE `reload` needs an interactive confirm; use a shell channel and drop the session."""
     c = paramiko.SSHClient()
     c.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    c.connect(ip, username=user, password=os.environ["AUTOMATION_PASSWORD"], look_for_keys=False, allow_agent=False, timeout=timeout)
+    c.connect(ip, username=user, password=password or os.environ["AUTOMATION_PASSWORD"], look_for_keys=False, allow_agent=False, timeout=timeout)
     try:
         sh = c.invoke_shell()
         sh.send("reload\n")

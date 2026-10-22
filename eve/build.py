@@ -7,6 +7,11 @@ are rendered from topology/configs/<platform>.j2 and uploaded when present.
   eve/build.py apply                # create lab, networks, nodes, links, configs (no start)
   eve/build.py start [--waves]      # start nodes: non-firewalls, then firewalls in two waves
   eve/build.py stop | status
+  eve/build.py --topology topology/skills-lab.yaml plan|apply|start|stop|status
+  eve/build.py --topology topology/skills-lab.yaml delete --yes   # removes that lab; never the enterprise lab
+
+A topology other than enterprise.yaml writes its generated files under topology/generated/<lab name>/, so the
+enterprise lab's eve-nodes.yaml and reference configs are never overwritten (ADR 0084).
 
 Credentials from the environment (.env via make): EVE_HOST, EVE_USERNAME, EVE_PASSWORD.
 """
@@ -241,8 +246,111 @@ class Eve:
         self._req("GET", f"/labs{self.lab}/nodes/{node_id}/stop/stopmode=3")
 
 
-def load_topology() -> dict:
-    return yaml.safe_load(TOPO.read_text())
+def load_topology(path: Path | None = None) -> dict:
+    return yaml.safe_load((path or TOPO).read_text())
+
+
+def generated_dir(topo: dict) -> Path:
+    """Where a topology's generated files live: the enterprise lab keeps topology/generated/, any other lab (the
+    scratch lab, ADR 0084) gets its own folder so it can never overwrite the enterprise lab's MAC table or configs."""
+    base = ROOT / "topology" / "generated"
+    return base if topo["lab"]["name"] == "enterprise" else base / topo["lab"]["name"]
+
+
+SCRATCH_TOPO = ROOT / "topology" / "skills-lab.yaml"
+# EVE-NG derives a node's MAC as 50:00:00:<node id>:00:<interface> unless the node carries its own first MAC
+# (the `firstmac` node field, read back from EVE-NG Pro). Node ids restart at 1 in every lab, so a second lab on pnet1
+# without its own MACs duplicates the enterprise routers' management MACs (ADR 0084).
+EVE_DERIVED_MAC = re.compile(r"^50:00:00:[0-9a-f]{2}:00:[0-9a-f]{2}$")
+MAC = re.compile(r"^[0-9a-f]{2}(:[0-9a-f]{2}){5}$")
+
+
+def enterprise_macs() -> set[str]:
+    """The enterprise lab's management MACs, from its generated node file (eve/build.py export)."""
+    path = ROOT / "topology" / "generated" / "eve-nodes.yaml"
+    if not path.exists():
+        return set()
+    rows = (yaml.safe_load(path.read_text()) or {}).get("nodes") or {}
+    return {str(r.get("mac0", "")).lower() for r in rows.values()}
+
+
+def mac_guard(topo: dict) -> None:
+    """A lab other than the enterprise lab must give every node its own first MAC: locally administered, unique, and
+    never one the enterprise lab uses or EVE-NG would derive."""
+    if topo["lab"]["name"] == "enterprise":
+        return
+    taken, seen = enterprise_macs(), set()
+    for name, n in topo["nodes"].items():
+        mac = str((n.get("eve") or {}).get("firstmac", "")).lower()
+        if not MAC.match(mac) or not int(mac[:2], 16) & 2 or int(mac[:2], 16) & 1:
+            raise SystemExit(f"{name}: needs eve.firstmac, a locally administered unicast MAC (ADR 0084)")
+        if EVE_DERIVED_MAC.match(mac) or mac in taken or mac in seen:
+            raise SystemExit(f"{name}: firstmac {mac} collides with an EVE-derived or enterprise MAC on pnet1")
+        seen.add(mac)
+
+
+def check_firstmac(eve: Eve, name: str, node: dict) -> None:
+    """After creating a node, confirm EVE-NG kept the requested first MAC; stop before anything starts if not."""
+    want = (node.get("eve") or {}).get("firstmac")
+    if not want:
+        return
+    got = str((eve.nodes().get(name) or {}).get("firstmac", "")).lower()
+    if got != want.lower():
+        raise SystemExit(
+            f"{name}: EVE-NG kept firstmac {got or 'none'!r}, not {want!r}; stopping before any node starts "
+            "(a duplicate management MAC would break production management on pnet1)"
+        )
+
+
+def memory_guard(topo: dict) -> None:
+    """The scratch lab borrows the Palo Alto VMs' RAM (ADR 0084, docs/resource-budget.md 3a): never both at once."""
+    if topo["lab"]["name"] == "enterprise":
+        if topo["lab"].get("firewalls", True) and SCRATCH_TOPO.exists():
+            raise SystemExit(
+                "lab.firewalls is true while topology/skills-lab.yaml exists: the scratch lab uses the firewalls' "
+                "RAM. Run `make skills-lab-down` and remove the scratch topology first (ADR 0084)."
+            )
+    elif load_topology(TOPO)["lab"].get("firewalls", True):
+        raise SystemExit(
+            "topology/enterprise.yaml has lab.firewalls true: the scratch lab borrows the firewalls' RAM and "
+            "cannot be built or started while they are on (ADR 0084)."
+        )
+
+
+def device_password(topo: dict) -> str:
+    """The automation password for this lab's routers: the scratch lab's own variable, never the production one."""
+    var = topo["lab"].get("automation_password_env", "AUTOMATION_PASSWORD")
+    value = os.environ.get(var, "")
+    if not value:
+        raise SystemExit(f"{var} missing in .env")
+    return value
+
+
+def node_payload(name: str, n: dict) -> dict:
+    """The EVE-NG node create payload for one topology node."""
+    payload = {
+        "type": "qemu",
+        "template": TEMPLATE[n["platform"]],
+        "image": n["image"],
+        "name": name,
+        "cpu": n["cpu"],
+        "ram": n["ram"],
+        "ethernet": n["ethernet"],
+        "console": CONSOLE[n["platform"]],
+        "left": n["eve"]["left"],
+        "top": n["eve"]["top"],
+        "config": 0,
+        "delay": 0,
+    }
+    # per-node QEMU overrides (Windows 11 needs q35 + OVMF: the image is a UEFI/GPT install); firstmac (ADR 0084)
+    payload.update(
+        {
+            k: n["eve"][k]
+            for k in ("qemu_version", "qemu_arch", "qemu_options", "qemu_nic", "firstmac")
+            if k in n["eve"]
+        }
+    )
+    return payload
 
 
 def _template_context(name: str, node: dict, topo: dict) -> dict:
@@ -298,10 +406,12 @@ def render_config(platform: str, name: str, node: dict, topo: dict) -> str | Non
     import secrets as _secrets
     import subprocess
 
-    secret = os.environ.get("AUTOMATION_PASSWORD")
+    # the scratch lab (ADR 0084) names its own variable so the production device password never reaches it
+    secret_env = topo["lab"].get("automation_password_env", "AUTOMATION_PASSWORD")
+    secret = os.environ.get(secret_env)
     if not secret:
         raise SystemExit(
-            "AUTOMATION_PASSWORD missing in .env (device-local automation account, moved to Vault in phase 9)"
+            f"{secret_env} missing in .env (device-local automation account, moved to Vault in phase 9)"
         )
     return _jinja().get_template(f"{platform}.j2").render(
         **_template_context(name, node, topo),
@@ -346,6 +456,8 @@ def plan(eve: Eve, topo: dict) -> dict:
 
 
 def apply(eve: Eve, topo: dict, allow_missing: bool) -> None:
+    memory_guard(topo)
+    mac_guard(topo)
     p = plan(eve, topo)
     if p["missing_images"] and not allow_missing:
         raise SystemExit(
@@ -399,29 +511,8 @@ def apply(eve: Eve, topo: dict, allow_missing: bool) -> None:
         if name in skipped:
             print(f"SKIP {name}: image {n['image']} not on EVE-NG")
             continue
-        payload = {
-            "type": "qemu",
-            "template": TEMPLATE[n["platform"]],
-            "image": n["image"],
-            "name": name,
-            "cpu": n["cpu"],
-            "ram": n["ram"],
-            "ethernet": n["ethernet"],
-            "console": CONSOLE[n["platform"]],
-            "left": n["eve"]["left"],
-            "top": n["eve"]["top"],
-            "config": 0,
-            "delay": 0,
-        }
-        # per-node QEMU overrides (Windows 11 needs q35 + OVMF: the image is a UEFI/GPT install)
-        payload.update(
-            {
-                k: n["eve"][k]
-                for k in ("qemu_version", "qemu_arch", "qemu_options", "qemu_nic")
-                if k in n["eve"]
-            }
-        )
-        nid = eve.add_node(payload)
+        nid = eve.add_node(node_payload(name, n))
+        check_firstmac(eve, name, n)
         print(f"created node {name} (id {nid})")
     have = eve.nodes()
     # interfaces: index 0 -> mgmt cloud; link ends -> their bridge
@@ -466,7 +557,12 @@ def apply(eve: Eve, topo: dict, allow_missing: bool) -> None:
 
 
 def start(eve: Eve, topo: dict, waves: bool) -> None:
+    memory_guard(topo)
+    mac_guard(topo)
     have = eve.nodes()
+    for name, n in topo["nodes"].items():
+        if name in have:
+            check_firstmac(eve, name, n)
     order = [n for n in topo["nodes"] if topo["nodes"][n]["role"] != "firewall"]
     fws = [n for n in topo["nodes"] if topo["nodes"][n]["role"] == "firewall"]
     groups = [order, fws[:2], fws[2:]] if waves else [order + fws]
@@ -485,7 +581,10 @@ def start(eve: Eve, topo: dict, waves: bool) -> None:
 def push_configs(eve: Eve, topo: dict, only: list[str] | None) -> None:
     """Re-render every network node's startup config into the config set, wipe the node so the
     new config is what boots, and start it. Stops running nodes first (hard stop; the running
-    config is disposable, the template is the source of truth). Endpoints are untouched."""
+    config is disposable, the template is the source of truth). Endpoints are untouched.
+    Runs the same guards as apply and start before any node is wiped or booted (ADR 0084)."""
+    memory_guard(topo)
+    mac_guard(topo)
     have = eve.nodes()
     cfsid = eve.config_set()
     targets = [
@@ -495,6 +594,8 @@ def push_configs(eve: Eve, topo: dict, only: list[str] | None) -> None:
         and n in have
         and (not only or n in only)
     ]
+    for name in targets:
+        check_firstmac(eve, name, topo["nodes"][name])
     for name in targets:
         node = have[name]
         cfg = render_config(
@@ -519,6 +620,8 @@ def push_configs(eve: Eve, topo: dict, only: list[str] | None) -> None:
         sys.path.insert(0, str(ROOT / "verify"))
         import devcmd
 
+        password = device_password(topo)  # the scratch lab's own; never the production password (ADR 0084)
+
         deadline = time.time() + 900
         pending = set(routers)
         while pending and time.time() < deadline:
@@ -526,15 +629,15 @@ def push_configs(eve: Eve, topo: dict, only: list[str] | None) -> None:
                 ip = topo["nodes"][name]["mgmt_ip"]
                 try:
                     out = devcmd.run(
-                        ip, "show version | include License Level", timeout=10
+                        ip, "show version | include License Level", timeout=10, password=password
                     )
                 except Exception:
                     continue
                 if "License Level: network-advantage" in out:
                     print(f"{name}: licence level active")
                 elif "License Level:" in out:
-                    devcmd.run(ip, "write memory", timeout=30)
-                    devcmd.reload(ip)
+                    devcmd.run(ip, "write memory", timeout=30, password=password)
+                    devcmd.reload(ip, password=password)
                     print(f"reload {name} (licence level applies on the next boot)")
                 else:
                     continue
@@ -548,15 +651,15 @@ def export_nodes(eve: Eve, topo: dict) -> Path:
     """Write topology/generated/eve-nodes.yaml: EVE-NG node ids and management MACs
     (EVE-NG derives MAC 50:00:00:<node id>:00:<interface index>). Consumed by the oob-gw
     DHCP reservations for endpoints that cannot take a startup config."""
-    out = ROOT / "topology" / "generated" / "eve-nodes.yaml"
-    out.parent.mkdir(exist_ok=True)
+    out = generated_dir(topo) / "eve-nodes.yaml"
+    out.parent.mkdir(parents=True, exist_ok=True)
     rows = {}
     for name, n in sorted(eve.nodes().items()):
         if name not in topo["nodes"]:
             continue
         rows[name] = {
             "id": n["id"],
-            "mac0": f"50:00:00:{n['id']:02x}:00:00",
+            "mac0": str(n.get("firstmac") or f"50:00:00:{n['id']:02x}:00:00").lower(),
             "mgmt_ip": topo["nodes"][name]["mgmt_ip"],
             "platform": topo["nodes"][name]["platform"],
         }
@@ -573,8 +676,15 @@ def main() -> None:
     )
     ap.add_argument(
         "action",
-        choices=["plan", "apply", "start", "stop", "status", "export", "push-configs", "render", "snippet"],
+        choices=["plan", "apply", "start", "stop", "status", "export", "push-configs", "render", "snippet", "delete"],
     )
+    ap.add_argument(
+        "--topology",
+        type=Path,
+        default=TOPO,
+        help="topology file (default topology/enterprise.yaml); the scratch lab is topology/skills-lab.yaml",
+    )
+    ap.add_argument("--yes", action="store_true", help="delete: confirm removing the lab and its nodes")
     ap.add_argument("--only", nargs="*", help="push-configs / snippet: limit to these node names")
     ap.add_argument(
         "--with-snmpv3",
@@ -592,7 +702,13 @@ def main() -> None:
         help="start: firewalls last, in two waves 300 s apart",
     )
     a = ap.parse_args()
-    topo = load_topology()
+    topo = load_topology(a.topology)
+    if a.action == "delete":
+        # checked before any EVE-NG login: the enterprise lab is never deleted by this tool
+        if topo["lab"]["path"] == "/enterprise.unl" or a.topology.resolve() == TOPO.resolve():
+            raise SystemExit("refusing to delete the enterprise lab; delete only takes --topology of a scratch lab")
+        if not a.yes:
+            raise SystemExit(f"delete removes {topo['lab']['path']} and every node in it from EVE-NG; re-run with --yes")
     if a.action == "snippet":
         # the observability lines of one node for the governed push (ansible/playbooks/observability-devices.yml)
         names = a.only or []
@@ -606,8 +722,9 @@ def main() -> None:
         return
     if a.action == "render":
         # the committed reference tests/test_topology.py compares against (placeholder password, never the real one)
-        os.environ["AUTOMATION_PASSWORD"] = "__AUTOMATION_PASSWORD__"
-        out = ROOT / "topology" / "generated" / "configs"
+        os.environ[topo["lab"].get("automation_password_env", "AUTOMATION_PASSWORD")] = "__AUTOMATION_PASSWORD__"
+        out = generated_dir(topo) / "configs"
+        out.mkdir(parents=True, exist_ok=True)
         for name, node in sorted(topo["nodes"].items()):
             if node["platform"] in ("c8000v", "veos"):
                 (out / f"{name}.cfg").write_text(render_config(node["platform"], name, node, topo))
@@ -634,6 +751,15 @@ def main() -> None:
         push_configs(eve, topo, a.only)
     elif a.action == "export":
         print(export_nodes(eve, topo))
+    elif a.action == "delete":
+        if not eve.lab_exists():
+            print(f"no lab {eve.lab}")
+            return
+        for name, n in eve.nodes().items():
+            eve.stop(n["id"])
+            print(f"stop {name}")
+        eve._req("DELETE", f"/labs{eve.lab}")
+        print(f"deleted lab {eve.lab}")
     elif a.action == "status":
         for name, n in sorted(eve.nodes().items()):
             print(

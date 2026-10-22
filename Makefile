@@ -122,6 +122,30 @@ phase-network-topology: ## Phase 4: NetBox topology -> EVE-NG plan/apply -> star
 	$(load_env) cd ansible && ansible-playbook -i inventory/netbox.yml playbooks/lab-endpoints.yml
 	verify/run.sh
 
+# The skills eval suite's scratch lab (ADR 0084): three C8000v in their own EVE-NG lab (topology/skills-lab.yaml), on
+# memory lent from the Palo Alto reservation while lab.firewalls is false (docs/resource-budget.md 3a). Lab-only:
+# nothing in production depends on it, it is not in NetBox's device records, and the eval runner restores each router
+# to bootflash:baseline.cfg before every run. Up builds and starts it (generating the scratch passwords into .env
+# once); devices creates the read accounts and NACM read rules, prints the pins and captures the baseline; down
+# deletes it; creds copies the eval credentials into an untracked .env outside this repository (DEST=...).
+.PHONY: skills-lab-up skills-lab-devices skills-lab-down skills-lab-creds
+skills-lab-up: ## Skills eval scratch lab: passwords into .env if missing -> EVE-NG plan/apply/start -> node export (ADR 0084)
+	.venv/bin/python scripts/skills-lab-device.py ensure-secrets
+	$(load_env) .venv/bin/python eve/build.py --topology topology/skills-lab.yaml plan
+	$(load_env) .venv/bin/python eve/build.py --topology topology/skills-lab.yaml apply
+	$(load_env) .venv/bin/python eve/build.py --topology topology/skills-lab.yaml start
+	$(load_env) .venv/bin/python eve/build.py --topology topology/skills-lab.yaml export
+
+skills-lab-devices: ## Skills eval scratch lab: read accounts, NACM read rules, certificate pins, baseline capture (ADR 0084)
+	$(load_env) cd ansible && ansible-playbook playbooks/skills-lab-devices.yml
+
+skills-lab-down: ## Skills eval scratch lab: delete it from EVE-NG (the enterprise lab is refused by the builder)
+	$(load_env) .venv/bin/python eve/build.py --topology topology/skills-lab.yaml delete --yes
+
+skills-lab-creds: ## Skills eval scratch lab: the eval credentials into DEST=<untracked .env outside this repo>, never printed
+	@test -n "$(DEST)" || { echo "usage: make skills-lab-creds DEST=<path to an untracked .env outside this repository>"; exit 2; }
+	$(load_env) .venv/bin/python scripts/skills-lab-device.py creds "$(DEST)"
+
 # Phase 5. NetBox registration first (inventory source), then the VM, then the images (staged on the host;
 # a missing one needs `aws sso login --profile itential-ecr`), then the stack, adapters and workflows.
 # Since ADR 0063 this is the dev stack (itential-dev, .65): every Platform play carries $(DEV) and the

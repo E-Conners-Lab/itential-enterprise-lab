@@ -1,0 +1,77 @@
+# The skills eval suite's scratch lab (ADR 0084). Three C8000v routers the eval runner restores to a baseline
+# before every run; nothing in production depends on them. eve/build.py builds it with
+#   eve/build.py --topology topology/skills-lab.yaml plan|apply|start|stop|status|delete
+# Management addresses must equal topology/ipam.yaml; node sizes must equal docs/resource-budget.md section 3; the
+# RAM it uses is lent from the Palo Alto reservation while enterprise.yaml has lab.firewalls false
+# (tests/test_skills_lab.py). The routers stay out of NetBox's device records (owner decision 2026-10-22).
+# Interface index 0 of every node is management on pnet1 (Gi1).
+# Every node carries its own first MAC (eve.firstmac, locally administered 52:5c:00:0n:00:00): EVE-NG derives
+# 50:00:00:<node id>:00:<if> otherwise, node ids restart at 1 in every lab, and skl-r1..3 would duplicate the
+# management MACs of isp-core01, dc1-wan01 and dc1-wan02 on pnet1. eve/build.py refuses a node without one and
+# checks EVE-NG kept it before anything starts.
+version: 1
+lab:
+  name: skills-lab
+  path: /skills-lab.unl
+  domain: lab.internal
+  mgmt_network: pnet1
+  mgmt_gateway: 10.100.0.1
+  dns: [10.100.0.1]
+  ntp: 10.100.0.1
+  firewalls: false
+  # the scratch routers' own automation password (.env; `make skills-lab-up` generates it if missing), never the
+  # production AUTOMATION_PASSWORD
+  automation_password_env: SKILLS_LAB_AUTOMATION_PASSWORD
+  # scratch: true renders the scratch day-0 (topology/configs/c8000v.j2): management, the automation user, NETCONF,
+  # RESTCONF, SSH, the config-change log; no loopback, no BGP and no addressing on the data ports, because each skill
+  # configures those itself and the runner returns the routers to their captured baseline afterwards.
+  scratch: true
+  observability:
+    syslog: 10.100.0.38
+    snmp: {user: zabbix, group: LAB, view: LAB}
+    gnmi: {port: 6030}
+
+sites:
+  scratch: {name: Skills scratch lab, description: "Eval suite routers; restored to a baseline between runs"}
+
+routing:
+  # topology/derive.py looks up a site ASN for every C8000v; the scratch day-0 renders no BGP, so this is unused.
+  asn: {scratch: 64512}
+
+nodes:
+  skl-r1:
+    site: scratch
+    role: scratch-router
+    platform: c8000v
+    image: c8000v-17.13.01a
+    mgmt_ip: 10.100.0.152
+    cpu: 2
+    ram: 6144
+    ethernet: 4
+    eve: {left: 300, top: 120, firstmac: "52:5c:00:01:00:00"}
+  skl-r2:
+    site: scratch
+    role: scratch-router
+    platform: c8000v
+    image: c8000v-17.13.01a
+    mgmt_ip: 10.100.0.153
+    cpu: 2
+    ram: 6144
+    ethernet: 4
+    eve: {left: 540, top: 120, firstmac: "52:5c:00:02:00:00"}
+  skl-r3:
+    site: scratch
+    role: scratch-router
+    platform: c8000v
+    image: c8000v-17.13.01a
+    mgmt_ip: 10.100.0.154
+    cpu: 2
+    ram: 6144
+    ethernet: 4
+    eve: {left: 420, top: 320, firstmac: "52:5c:00:03:00:00"}
+
+# A triangle, so a skill can show a path change when one link goes down. No prefixes: skills address the ports.
+links:
+  - {a: "skl-r1:Gi2", b: "skl-r2:Gi2"}
+  - {a: "skl-r2:Gi3", b: "skl-r3:Gi2"}
+  - {a: "skl-r1:Gi3", b: "skl-r3:Gi3"}
