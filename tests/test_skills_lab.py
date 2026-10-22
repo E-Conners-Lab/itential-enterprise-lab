@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import copy
 import importlib.util
+import json
 import re
 import stat
 import sys
@@ -443,6 +444,7 @@ def test_only_nacm_access_denied_proves_read_only(status: int, monkeypatch: pyte
 def test_nacm_403_passes_and_a_write_that_succeeds_fails(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("SKILLS_LAB_READER_PASSWORD", "r")
     monkeypatch.setenv("SKILLS_LAB_JUDGE_PASSWORD", "j")
+    monkeypatch.setenv("SKILLS_LAB_AUTOMATION_PASSWORD", "a")
     answers = {"PATCH": 403}
 
     def fake_restconf(ip, pin, user, password, method, body=None):
@@ -455,6 +457,71 @@ def test_nacm_403_passes_and_a_write_that_succeeds_fails(monkeypatch: pytest.Mon
     answers["PATCH"] = 204
     with pytest.raises(SystemExit, match="allowed to write"):
         device.check_readers("10.100.0.152", "a" * 64)
+
+
+def test_the_write_probe_asks_for_a_real_change(monkeypatch: pytest.MonkeyPatch) -> None:
+    # IOS XE skips the NACM write check when a write changes nothing, so a same-value PATCH proves nothing
+    monkeypatch.setenv("SKILLS_LAB_READER_PASSWORD", "r")
+    monkeypatch.setenv("SKILLS_LAB_JUDGE_PASSWORD", "j")
+    bodies = []
+
+    def fake_restconf(ip, pin, user, password, method, body=None):
+        if method == "GET":
+            return 200, b'{"Cisco-IOS-XE-native:hostname": "skl-r1"}'
+        bodies.append(json.loads(body)["Cisco-IOS-XE-native:hostname"])
+        return 403, b""
+
+    monkeypatch.setattr(device, "_restconf", fake_restconf)
+    device.check_readers("10.100.0.152", "a" * 64)
+    assert len(bodies) == 2 and all(name != "skl-r1" for name in bodies)
+
+
+@pytest.mark.parametrize(("revert_status", "message"), [(204, "hostname put back to skl-r1"), (500, "got HTTP 500: fix it by hand")])
+def test_a_write_that_lands_is_put_back_by_the_automation_account(
+    revert_status: int, message: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("SKILLS_LAB_READER_PASSWORD", "r")
+    monkeypatch.setenv("SKILLS_LAB_JUDGE_PASSWORD", "j")
+    monkeypatch.setenv("SKILLS_LAB_AUTOMATION_PASSWORD", "a")
+    patches = []
+
+    def fake_restconf(ip, pin, user, password, method, body=None):
+        if method == "GET":
+            return 200, b'{"Cisco-IOS-XE-native:hostname": "skl-r1"}'
+        patches.append((user, json.loads(body)["Cisco-IOS-XE-native:hostname"]))
+        return (revert_status if user == "automation" else 204), b""
+
+    monkeypatch.setattr(device, "_restconf", fake_restconf)
+    with pytest.raises(SystemExit, match=message):
+        device.check_readers("10.100.0.152", "a" * 64)
+    assert patches[-1] == ("automation", "skl-r1")
+
+
+class _Client:
+    def close(self) -> None:
+        pass
+
+
+REFUSED = "skl-r1#request platform software yang-management nacm populate-read-rules privilege 1\n% NACM not ready\nskl-r1#"
+ACCEPTED = "skl-r1#request platform software yang-management nacm populate-read-rules privilege 1\nskl-r1#"
+
+
+def test_nacm_read_rules_are_retried_until_the_router_accepts_them(monkeypatch: pytest.MonkeyPatch) -> None:
+    replies = [REFUSED, REFUSED, ACCEPTED]
+    sleeps = []
+    monkeypatch.setattr(device, "_ssh", lambda ip: _Client())
+    monkeypatch.setattr(device, "_shell", lambda client, commands: replies.pop(0))
+    monkeypatch.setattr(device.time, "sleep", sleeps.append)
+    device.populate_read_rules("10.100.0.153", attempts=5, wait=15)
+    assert replies == [] and sleeps == [15, 15]
+
+
+def test_nacm_read_rules_give_up_after_the_last_attempt(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(device, "_ssh", lambda ip: _Client())
+    monkeypatch.setattr(device, "_shell", lambda client, commands: REFUSED)
+    monkeypatch.setattr(device.time, "sleep", lambda seconds: None)
+    with pytest.raises(SystemExit, match="refused the NACM read rules 3 times .*NACM not ready"):
+        device.populate_read_rules("10.100.0.153", attempts=3, wait=0)
 
 
 @pytest.mark.parametrize(
