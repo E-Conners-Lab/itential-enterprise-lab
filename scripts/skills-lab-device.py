@@ -48,6 +48,12 @@ READERS = {
 TIMEOUT = 60
 PROMPT = re.compile(r"[\r\n][\w.-]+(\(config[^)]*\))?[#>]\s*$")
 HOSTNAME_PATH = "/restconf/data/Cisco-IOS-XE-native:native/hostname"
+# spelling from Cisco's Programmability Command Reference, IOS XE 17.13.x:
+# https://www.cisco.com/c/en/us/td/docs/ios-xml/ios/prog/command/1713/b_1713_programmability_cr/programmability.html
+NACM_POPULATE = "request platform software yang-management nacm populate-read-rules privilege 1"
+NACM_ATTEMPTS = 8
+NACM_RETRY_SECONDS = 15
+PROBE_SUFFIX = "-nacm-check"
 
 
 def env(name: str) -> str:
@@ -192,15 +198,7 @@ def accounts(ip: str) -> None:
             (f"username {user} privilege 1 secret 0 {env(var)}", None)
             for user, var in READERS.items()
         ]
-        lines += [
-            ("end", None),
-            # spelling from Cisco's Programmability Command Reference, IOS XE 17.13.x:
-            # https://www.cisco.com/c/en/us/td/docs/ios-xml/ios/prog/command/1713/b_1713_programmability_cr/programmability.html
-            (
-                "request platform software yang-management nacm populate-read-rules privilege 1",
-                None,
-            ),
-        ]
+        lines += [("end", None)]
         transcript = _shell(client, lines)
     finally:
         client.close()
@@ -209,9 +207,29 @@ def accounts(ip: str) -> None:
     problem = command_refusal(transcript)
     if problem:
         raise SystemExit(f"{ip}: the router refused a command ({problem!r}):\n{transcript}")
+    populate_read_rules(ip)
     print(
         f"{ip}: restconf-reader and judge at privilege 1; NACM read rules for privilege 1"
     )
+
+
+def populate_read_rules(ip: str, attempts: int = NACM_ATTEMPTS, wait: float = NACM_RETRY_SECONDS) -> None:
+    """Cisco's NACM read rules for privilege 1, retried: a router initialises NACM a few minutes after boot, and one
+    that answers SSH before that refuses the first try (skl-r2, 2026-10-22: DMI-5-NACM_INIT at 13:00:18, after the
+    refused populate at 13:00:04; skl-r1 and skl-r3 had initialised at 12:59; the retry loaded the rules)."""
+    problem = None
+    for attempt in range(1, attempts + 1):
+        client = _ssh(ip)
+        try:
+            transcript = _shell(client, [(NACM_POPULATE, None)])
+        finally:
+            client.close()
+        problem = command_refusal(transcript)
+        if problem is None:
+            return
+        if attempt < attempts:
+            time.sleep(wait)
+    raise SystemExit(f"{ip}: the router refused the NACM read rules {attempts} times (last: {problem!r})")
 
 
 def command_refusal(transcript: str) -> str | None:
@@ -288,7 +306,10 @@ def _restconf(
 
 
 def check_readers(ip: str, cert_sha256: str) -> None:
-    """Each reader reads the hostname, and a PATCH of that same hostname (a no-op even if NACM failed) is refused."""
+    """Each reader reads the hostname and is refused a PATCH that would change it. IOS XE applies no NACM write check
+    to a write that changes nothing (2026-10-22: a same-value PATCH by a privilege-1 reader got 204 while a real change
+    got 403), so only a real change proves the rules; if the router takes it, the automation account puts the hostname
+    back before the check fails."""
     for user, var in READERS.items():
         password = env(var)
         status, payload = _restconf(ip, cert_sha256, user, password, "GET")
@@ -297,11 +318,12 @@ def check_readers(ip: str, cert_sha256: str) -> None:
                 f"{ip}: {user} could not read over RESTCONF (HTTP {status})"
             )
         hostname = json.loads(payload)["Cisco-IOS-XE-native:hostname"]
-        body = json.dumps({"Cisco-IOS-XE-native:hostname": hostname})
+        body = json.dumps({"Cisco-IOS-XE-native:hostname": hostname + PROBE_SUFFIX})
         refused, _ = _restconf(ip, cert_sha256, user, password, "PATCH", body)
-        if refused in (200, 204):
+        if refused in (200, 201, 204):
             raise SystemExit(
                 f"{ip}: {user} was allowed to write over RESTCONF: NACM read rules are not in force"
+                f" ({_put_hostname_back(ip, cert_sha256, hostname)})"
             )
         if refused != 403:
             # only NACM's access-denied (RFC 8040 4.2, HTTP 403) proves the read-only rules refused the write; a 400,
@@ -310,6 +332,14 @@ def check_readers(ip: str, cert_sha256: str) -> None:
                 f"{ip}: {user}'s write got HTTP {refused}, not 403 (NACM access denied): read-only not proven"
             )
         print(f"{ip}: {user} reads (200) and is refused a write (HTTP {refused})")
+
+
+def _put_hostname_back(ip: str, cert_sha256: str, hostname: str) -> str:
+    body = json.dumps({"Cisco-IOS-XE-native:hostname": hostname})
+    status, _ = _restconf(ip, cert_sha256, "automation", env("SKILLS_LAB_AUTOMATION_PASSWORD"), "PATCH", body)
+    if status in (200, 204):
+        return f"hostname put back to {hostname}"
+    return f"putting the hostname back to {hostname} got HTTP {status}: fix it by hand"
 
 
 def baseline(ip: str) -> None:
