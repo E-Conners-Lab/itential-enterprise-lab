@@ -109,9 +109,9 @@ def test_the_service_is_pinned_with_the_edge_services_and_holds_only_the_passwor
     svc = next(s for s in VERSIONS["terraform_run"]["edge_services"] if s["name"] == "batfish-check")
     assert svc["filename"] == "itential/batfish-check.py" and svc["working-directory"] == "."
     assert svc["secrets"] == [{"name": "dc1-wan01-aws-vpn-password", "type": "env", "target": "LAB_EDGE_PASSWORD_DC1_WAN01"}]
-    # cfa2bea (cdp #42) brought batfish-check; the pin moved on to its descendants 71d5223 (cdp #43) on the rebase and
-    # 4a11f3d (cdp #44: the wider scrub and the deadline, #45)
-    assert VERSIONS["terraform_run"]["repository"]["reference"] == "4a11f3d58aabed65d3e0629331c491cca164757a"
+    # cfa2bea (cdp #42) brought batfish-check; the pin moved on to its descendants 71d5223 (cdp #43) on the rebase,
+    # 4a11f3d (cdp #44: the wider scrub and the deadline, #45) and d2e2a46 (cdp #46: restconf-get, ADR 0084)
+    assert VERSIONS["terraform_run"]["repository"]["reference"] == "d2e2a468e455df2a59eb522fb41a83d76da5b5b7"
 
 
 # ── Hand Off: the section between the render and the card (ADR 0076 decision 4) ──

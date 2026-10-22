@@ -96,7 +96,9 @@ terraform_run:
     # before --timeout (now required, at least 240 s) to delete its snapshots; a rejected fabric-bgp drill is aborted,
     # and an abort it cannot prove names the session to clear by hand (a drill's timeout: at least 240 s). The lab
     # passes 300 to both.
-    reference: "4a11f3d58aabed65d3e0629331c491cca164757a"
+    # d2e2a46 = main after cdp #46 (ADR 0084): restconf-get, one allowlisted RESTCONF read from a scratch router,
+    # trusted only through the certificate pin skills_lab.nodes carries; `%` only as %2F in a path.
+    reference: "d2e2a468e455df2a59eb522fb41a83d76da5b5b7"
   executable_object:
     name: python-3-12
     description: "the runner image's Python 3.12 (ADR 0038)"
@@ -130,6 +132,14 @@ terraform_run:
       working-directory: "."
       secrets:
         - {name: lab-automation-password, type: env, target: FABRIC_BGP_PASSWORD}
+    # ADR 0084: the skills eval suite's RESTCONF read (Get RESTCONF Data from a Scratch Device), as the scratch routers'
+    # read-only restconf-reader; it talks only to a router whose certificate matches skills_lab.nodes
+    - name: restconf-get
+      description: "One allowlisted RESTCONF read from a scratch router, trusted only by its certificate pin (ADR 0084)"
+      filename: itential/restconf-get.py
+      working-directory: "."
+      secrets:
+        - {name: skills-lab-reader-password, type: env, target: RESTCONF_GET_PASSWORD}
   # The edge services (Hand Off, Verify, Tear Down AWS VPN): imported on the tier that runs the AWS VPN (aws_vpn.tier,
   # tasks/gateway-terraform-run.yml). Each binds exactly the aliases of the targets that are open (aws_vpn.targets):
   # the Gateway resolves every bound alias on every run, so a secret whose alias is not bound yet (after_deploy, below)
@@ -232,6 +242,17 @@ revert_push:
                                  {target: 10.103.100.6}, {target: 10.102.17.1, source: Loopback0},
                                  {target: 10.102.33.1, source: Loopback0}],
                          settle_seconds: 60}}
+
+# The skills eval suite's scratch routers (ADR 0084, topology/skills-lab.yaml), outside NetBox's device records. Each
+# node with its name is the target restconf-get takes (cloud-devops-pipeline itential/restconf-get.py --target_json:
+# exactly name, mgmt_host, cert_sha256). The pin is the router's HTTPS certificate SHA-256 (owner: no trust on first
+# use): recorded by make skills-lab-devices AND read again from a TLS handshake from the workstation, equal on
+# 2026-10-22 for all three. A rebuilt router gets a new certificate: refused until pinned again.
+skills_lab:
+  nodes:
+    skl-r1: {mgmt_host: 10.100.0.152, cert_sha256: c3c1c8dc11d12242ba496b3e6ac4d9e0371ac466861e9d2189499f1372e1b94f}
+    skl-r2: {mgmt_host: 10.100.0.153, cert_sha256: 2a4ecc0b9f14c01146c4a0ba399ed089a91490eb610229319f65c26ae6dbd1bb}
+    skl-r3: {mgmt_host: 10.100.0.154, cert_sha256: f082ba3a1c65f6cff22a00567fa1ef42acf0a48d00ebf9b0e9ba858e94f57a53}
 
 # The lab edge targets Hand Off and Verify AWS VPN may name (step 6; the workflows' target enum). `target` is exactly
 # what cloud-devops-pipeline's lab_edge_render.check_target takes (passed as --target_json, every value checked again
@@ -795,6 +816,18 @@ vault:
     # the password to .env); under platform/, which only the Gateway's reader resolves (never the Platform's)
     platform/svc-copilot:
       password: {env: SVC_COPILOT_PROD_PASSWORD, dev_env: SVC_COPILOT_DEV_PASSWORD}
+    # ADR 0084: the skills eval suite's scratch routers are production's, so dev gets none of these. make skills-lab-up
+    # generates the passwords into .env. The automation and restconf-reader passwords are under devices/*, which the
+    # Gateway resolves; the judge's is under eval/, which no reader's policy reaches, so the Gateway never can
+    devices/skills-lab:
+      password: {env: SKILLS_LAB_AUTOMATION_PASSWORD}
+      prod_only: true
+    devices/skills-lab-reader:
+      password: {env: SKILLS_LAB_READER_PASSWORD}
+      prod_only: true
+    eval/skills-lab-judge:
+      password: {env: SKILLS_LAB_JUDGE_PASSWORD}
+      prod_only: true
   # the two readers (ADR 0065 decisions 5 and 6) and the one writer (ADR 0068 decision 5); `bound_hosts` are the
   # addresses a secret ID works from. A role's policy grants `capabilities` (default [read]) on each path.
   approles:
@@ -871,6 +904,10 @@ vault:
     # aws-vpn-psk (ADR 0068 d5): the write-only writer's own credentials, which the vault config play keeps here
     aws-psk-writer-role-id: {path: aws/psk-writer, key: role_id}
     aws-psk-writer-secret-id: {path: aws/psk-writer, key: secret_id}
+    # ADR 0084: the scratch routers' automation login (the skills-lab inventory's nodes) and restconf-get's reader.
+    # Bound on every tier like every base alias; their entries are production's only, and nothing on dev binds them
+    skills-lab-automation-password: {path: devices/skills-lab, key: password}
+    skills-lab-reader-password: {path: devices/skills-lab-reader, key: password}
   # The edge aliases, bound on the tier that runs the AWS VPN (aws_vpn.tier, tasks/gateway-vault.yml), from that tier's
   # Vault. Under devices/* or aws/*, so the Gateway reads them and the Platform cannot (approles above). The Gateway
   # resolves every bound alias on every run, so each entry must exist before its alias is bound: the guard refuses the

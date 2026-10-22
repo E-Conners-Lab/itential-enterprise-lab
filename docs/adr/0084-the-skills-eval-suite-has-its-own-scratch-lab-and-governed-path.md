@@ -45,6 +45,10 @@ to evaluation work.
    Gateway's `restconf-get` service) and `judge` (for the workbench's independent judge only) at privilege 1, applies
    Cisco's NACM read rules for privilege 1 (IOS XE 17.9.1+), proves each reader can read and is refused a write,
    records the HTTPS certificate and SSH host key fingerprints for pinning, and captures `bootflash:baseline.cfg`.
+   The HTTPS pins live in `itential/versions.yaml` `skills_lab.nodes`, in the form `restconf-get` takes. The three
+   passwords are seeded into production's Vault only (`prod_only`): the automation and reader passwords under
+   `devices/*`, bound to the Gateway as `skills-lab-automation-password` and `skills-lab-reader-password`; the judge's
+   under `eval/`, which no reader's policy reaches, so the Gateway can never resolve it.
 5. **Outside NetBox's device records.** The scratch routers are not NetBox devices (owner decision 2026-10-22), so no
    inventory, compliance, backup, monitoring or MCP client picks them up. Their three addresses are reserved in
    `topology/ipam.yaml` (placement `eve-router`), which seeds NetBox IP address records and the oob-gw DNS names.
