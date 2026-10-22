@@ -581,7 +581,10 @@ def start(eve: Eve, topo: dict, waves: bool) -> None:
 def push_configs(eve: Eve, topo: dict, only: list[str] | None) -> None:
     """Re-render every network node's startup config into the config set, wipe the node so the
     new config is what boots, and start it. Stops running nodes first (hard stop; the running
-    config is disposable, the template is the source of truth). Endpoints are untouched."""
+    config is disposable, the template is the source of truth). Endpoints are untouched.
+    Runs the same guards as apply and start before any node is wiped or booted (ADR 0084)."""
+    memory_guard(topo)
+    mac_guard(topo)
     have = eve.nodes()
     cfsid = eve.config_set()
     targets = [
@@ -591,6 +594,8 @@ def push_configs(eve: Eve, topo: dict, only: list[str] | None) -> None:
         and n in have
         and (not only or n in only)
     ]
+    for name in targets:
+        check_firstmac(eve, name, topo["nodes"][name])
     for name in targets:
         node = have[name]
         cfg = render_config(

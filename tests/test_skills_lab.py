@@ -478,3 +478,83 @@ def test_a_clean_transcript_has_no_refusal() -> None:
         "skl-r1#request platform software yang-management nacm populate-read-rules privilege 1\nskl-r1#"
     )
     assert device.command_refusal(transcript) is None
+
+
+WRITE_OK = "skl-r1#write memory\nBuilding configuration...\n[OK]\n"
+COPY_OK = (
+    "skl-r1#copy running-config bootflash:baseline.cfg\nDestination filename [baseline.cfg]? \n"
+    "5321 bytes copied in 0.123 secs (43260 bytes/sec)\n"
+)
+DIR_OK = (
+    "skl-r1#dir bootflash:baseline.cfg\nDirectory of bootflash:/baseline.cfg\n\n"
+    "   21  -rw-             5321  Oct 22 2026 06:01:02 +00:00  baseline.cfg\n\n"
+    "6286540800 bytes total (5000000000 bytes free)\nskl-r1#"
+)
+
+
+def test_baseline_capture_is_proved_by_each_command_output() -> None:
+    assert device.baseline_problem(WRITE_OK + COPY_OK + DIR_OK) is None
+    overwrite = COPY_OK.replace(
+        "Destination filename [baseline.cfg]? \n",
+        "Destination filename [baseline.cfg]? \n%Warning: There is a file already existing with this name\n"
+        "Do you want to over write? [confirm]\n",
+    )
+    assert device.baseline_problem(WRITE_OK + overwrite + DIR_OK) is None
+
+
+@pytest.mark.parametrize(
+    ("transcript", "reason"),
+    [
+        (WRITE_OK + "skl-r1#copy running-config bootflash:baseline.cfg\n"
+         "%Error copying nvram:startup-config (Not enough space on device)\n" + DIR_OK, "refused"),
+        (WRITE_OK + "skl-r1#copy running-config bootflash:baseline.cfg\nDestination filename [baseline.cfg]? \n"
+         + DIR_OK, "bytes copied"),
+        (WRITE_OK + COPY_OK + "skl-r1#dir bootflash:baseline.cfg\n"
+         "%Error opening bootflash:baseline.cfg (No such file or directory)\nskl-r1#", "listing failed"),
+        (WRITE_OK + COPY_OK + DIR_OK.replace("5321  Oct", "0  Oct"), "with a size"),
+        ("skl-r1#write memory\n%Error: NVRAM full\n" + COPY_OK + DIR_OK, "[OK]"),
+        (COPY_OK + DIR_OK, "missing one of the three commands"),
+    ],
+)
+def test_a_failed_baseline_capture_is_never_reported_as_captured(transcript: str, reason: str) -> None:
+    problem = device.baseline_problem(transcript)
+    assert problem is not None and reason in problem
+
+
+def test_push_configs_runs_the_guards_before_touching_any_node(
+    scratch: dict, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    touched: list[str] = []
+
+    class PushEve(FakeEve):
+        lab = "/skills-lab.unl"
+
+        def config_set(self) -> int:
+            return 1
+
+        def upload_config(self, *_a) -> None:
+            touched.append("upload")
+
+        def enable_config(self, *_a) -> None:
+            touched.append("enable")
+
+        def _req(self, *_a, **_k) -> dict:
+            touched.append("wipe")
+            return {}
+
+        def stop(self, *_a) -> None:
+            touched.append("stop")
+
+    monkeypatch.setattr(build.time, "sleep", lambda _s: None)
+    # EVE-NG dropped the first MAC: the node runs on the derived 50:00:00:01:00:00, an enterprise MAC
+    dropped = PushEve({n: {"id": i, "firstmac": f"50:00:00:{i:02x}:00:00", "status": 0}
+                       for i, n in enumerate(scratch["nodes"], 1)})
+    with pytest.raises(SystemExit):
+        build.push_configs(dropped, scratch, only=None)
+    assert touched == [] and dropped.started == []
+    # a topology node without its own MAC is refused before EVE-NG is asked anything
+    no_mac = copy.deepcopy(scratch)
+    no_mac["nodes"]["skl-r1"]["eve"].pop("firstmac")
+    with pytest.raises(SystemExit):
+        build.push_configs(PushEve({}), no_mac, only=None)
+    assert touched == []

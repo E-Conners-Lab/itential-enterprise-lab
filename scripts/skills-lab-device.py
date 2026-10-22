@@ -327,11 +327,44 @@ def baseline(ip: str) -> None:
         )
     finally:
         client.close()
-    if "baseline.cfg" not in transcript.split("dir bootflash:baseline.cfg", 1)[-1]:
-        raise SystemExit(
-            f"{ip}: bootflash:baseline.cfg is not on the router after the copy"
-        )
+    problem = baseline_problem(transcript)
+    if problem:
+        raise SystemExit(f"{ip}: baseline not captured: {problem}")
     print(f"{ip}: running configuration saved and captured as bootflash:baseline.cfg")
+
+
+# The one warning the copy is expected to print (and then answer) when it overwrites an earlier baseline.
+OVERWRITE_WARNING = "%Warning: There is a file already existing with this name"
+
+
+def baseline_problem(transcript: str) -> str | None:
+    """Why the save-and-capture did not succeed, or None. Each command's own output must prove it: write memory
+    reports [OK]; the copy reports bytes copied and no error; the listing shows baseline.cfg with a size. (A
+    listing error such as `%Error opening bootflash:baseline.cfg` also contains the file name, so a name match
+    proves nothing.)"""
+    try:
+        _, rest = transcript.split("write memory", 1)
+        write, rest = rest.split("copy running-config bootflash:baseline.cfg", 1)
+        copied, listing = rest.split("dir bootflash:baseline.cfg", 1)
+    except ValueError:
+        return "the transcript is missing one of the three commands"
+    if "[OK]" not in write:
+        return "write memory did not report [OK]"
+    for line in copied.splitlines():
+        stripped = line.strip()
+        if stripped.startswith(OVERWRITE_WARNING) or "[confirm]" in stripped:
+            continue  # the overwrite question, answered by _shell
+        if stripped.startswith("%") or re.search(r"\berror\b", stripped, re.IGNORECASE):
+            return f"the copy was refused: {stripped}"
+    if not re.search(r"\b\d+ bytes copied\b", copied):
+        return "the copy did not report bytes copied"
+    for line in listing.splitlines():
+        if line.strip().startswith("%"):
+            return f"the listing failed: {line.strip()}"
+    size = re.search(r"^\s*\d+\s+-r\S*\s+(\d+)\s.*\bbaseline\.cfg\s*$", listing, re.MULTILINE)
+    if not size or int(size.group(1)) == 0:
+        return "bootflash:baseline.cfg is not listed with a size"
+    return None
 
 
 def creds(dest: Path) -> None:
