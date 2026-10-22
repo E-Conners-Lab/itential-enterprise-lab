@@ -3,8 +3,12 @@ resource-budget loan, the scratch day-0 and the EVE builder's guards."""
 
 from __future__ import annotations
 
+import copy
+import importlib.util
 import re
+import stat
 import sys
+import types
 from pathlib import Path
 
 import pytest
@@ -263,3 +267,214 @@ def test_env_example_declares_the_scratch_passwords() -> None:
         "SKILLS_LAB_JUDGE_PASSWORD",
     ):
         assert re.search(rf"^{var}=\s", env, re.MULTILINE), var
+
+
+# --- review fixes (2026-10-22): behaviour tests ---------------------------------------------------------------------
+
+_spec = importlib.util.spec_from_file_location("skills_lab_device", ROOT / "scripts" / "skills-lab-device.py")
+device = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(device)
+
+
+class FakeEve:
+    """Just enough of eve/build.py's Eve for the guards: nodes by name, a create that may drop firstmac."""
+
+    def __init__(self, nodes: dict | None = None, keep_firstmac: bool = True) -> None:
+        self._nodes = dict(nodes or {})
+        self.keep_firstmac = keep_firstmac
+        self.started: list[int] = []
+
+    def nodes(self) -> dict:
+        return self._nodes
+
+    def add_node(self, payload: dict) -> int:
+        nid = len(self._nodes) + 1
+        mac = payload.get("firstmac") if self.keep_firstmac else f"50:00:00:{nid:02x}:00:00"
+        self._nodes[payload["name"]] = {"id": nid, "firstmac": mac, "status": 0}
+        return nid
+
+    def start(self, node_id: int) -> None:
+        self.started.append(node_id)
+
+
+def test_scratch_management_macs_never_collide_with_the_enterprise_lab(scratch: dict) -> None:
+    enterprise_macs = build.enterprise_macs()
+    assert enterprise_macs, "topology/generated/eve-nodes.yaml must list the enterprise lab's MACs"
+    scratch_macs = [n["eve"]["firstmac"].lower() for n in scratch["nodes"].values()]
+    assert len(set(scratch_macs)) == len(scratch_macs)
+    for mac in scratch_macs:
+        assert mac not in enterprise_macs
+        assert not build.EVE_DERIVED_MAC.match(mac), "EVE-NG could derive this MAC for some node id"
+        first = int(mac[:2], 16)
+        assert first & 2 and not first & 1, "locally administered unicast"
+    build.mac_guard(scratch)  # the shipped topology passes the builder's own guard
+
+
+def test_builder_refuses_a_scratch_node_without_its_own_mac(scratch: dict) -> None:
+    topo = copy.deepcopy(scratch)
+    del topo["nodes"]["skl-r2"]["eve"]["firstmac"]
+    with pytest.raises(SystemExit, match="skl-r2: needs eve.firstmac"):
+        build.mac_guard(topo)
+    topo["nodes"]["skl-r2"]["eve"]["firstmac"] = "50:00:00:02:00:00"  # dc1-wan01's
+    with pytest.raises(SystemExit, match="skl-r2"):
+        build.mac_guard(topo)
+    topo["nodes"]["skl-r2"]["eve"]["firstmac"] = topo["nodes"]["skl-r1"]["eve"]["firstmac"]
+    with pytest.raises(SystemExit, match="collides"):
+        build.mac_guard(topo)
+
+
+def test_node_payload_carries_firstmac_and_a_dropped_mac_stops_the_build(scratch: dict) -> None:
+    node = scratch["nodes"]["skl-r1"]
+    assert build.node_payload("skl-r1", node)["firstmac"] == "52:5c:00:01:00:00"
+    kept = FakeEve()
+    kept.add_node(build.node_payload("skl-r1", node))
+    build.check_firstmac(kept, "skl-r1", node)
+    dropped = FakeEve(keep_firstmac=False)
+    dropped.add_node(build.node_payload("skl-r1", node))
+    with pytest.raises(SystemExit, match="stopping before any node starts"):
+        build.check_firstmac(dropped, "skl-r1", node)
+
+
+def test_start_refuses_a_scratch_node_running_on_an_enterprise_mac(
+    scratch: dict, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    eve = FakeEve({"skl-r1": {"id": 1, "firstmac": "50:00:00:01:00:00", "status": 0}})
+    with pytest.raises(SystemExit, match="skl-r1: EVE-NG kept firstmac"):
+        build.start(eve, scratch, waves=False)
+    assert eve.started == []
+
+
+def test_memory_guard_both_directions(scratch: dict, enterprise: dict, monkeypatch: pytest.MonkeyPatch,
+                                      tmp_path: Path) -> None:
+    on = copy.deepcopy(enterprise)
+    on["lab"]["firewalls"] = True
+    build.memory_guard(enterprise)  # firewalls off: fine
+    with pytest.raises(SystemExit, match="skills-lab.yaml exists"):
+        build.memory_guard(on)  # the scratch topology exists in this repository
+    monkeypatch.setattr(build, "SCRATCH_TOPO", tmp_path / "absent.yaml")
+    build.memory_guard(on)  # no scratch lab: the firewalls may come back
+    build.memory_guard(scratch)
+    monkeypatch.setattr(build, "load_topology", lambda _path=None: on)
+    with pytest.raises(SystemExit, match="lab.firewalls true"):
+        build.memory_guard(scratch)
+
+
+def test_push_configs_logs_in_with_the_scratch_password_only(
+    scratch: dict, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("AUTOMATION_PASSWORD", "production-secret")
+    monkeypatch.setenv("SKILLS_LAB_AUTOMATION_PASSWORD", "scratch-secret")
+    assert build.device_password(scratch) == "scratch-secret"
+    seen: list[str | None] = []
+
+    def fake_run(ip: str, command: str, user: str = "automation", timeout: int = 0, password=None) -> str:
+        seen.append(password)
+        return "License Level: network-advantage"
+
+    monkeypatch.setitem(sys.modules, "devcmd", types.SimpleNamespace(run=fake_run, reload=None))
+    monkeypatch.setattr(build.time, "sleep", lambda _s: None)
+
+    class PushEve(FakeEve):
+        lab = "/skills-lab.unl"
+
+        def config_set(self) -> int:
+            return 1
+
+        def upload_config(self, *_a) -> None: ...
+        def enable_config(self, *_a) -> None: ...
+        def _req(self, *_a, **_k) -> dict:
+            return {}
+
+        def stop(self, *_a) -> None: ...
+
+    eve = PushEve({n: {"id": i, "firstmac": scratch["nodes"][n]["eve"]["firstmac"], "status": 0}
+                   for i, n in enumerate(scratch["nodes"], 1)})
+    build.push_configs(eve, scratch, only=None)
+    assert seen and set(seen) == {"scratch-secret"}
+
+
+def test_ensure_secrets_fills_empty_lines_and_writes_mode_600(tmp_path: Path) -> None:
+    env_file = tmp_path / ".env"
+    env_file.write_text(
+        "AUTOMATION_PASSWORD=keep-me\n"
+        "SKILLS_LAB_AUTOMATION_PASSWORD=  # generated by make skills-lab-up\n"
+        "SKILLS_LAB_READER_PASSWORD=existing-value\n"
+    )
+    env_file.chmod(0o644)
+    added = device.ensure_secrets(env_file)
+    assert added == ["SKILLS_LAB_AUTOMATION_PASSWORD", "SKILLS_LAB_JUDGE_PASSWORD"]
+    values = dict(line.split("=", 1) for line in env_file.read_text().splitlines() if "=" in line)
+    assert values["AUTOMATION_PASSWORD"] == "keep-me"
+    assert values["SKILLS_LAB_READER_PASSWORD"] == "existing-value"
+    assert len(values["SKILLS_LAB_AUTOMATION_PASSWORD"]) >= 16
+    assert len(values["SKILLS_LAB_JUDGE_PASSWORD"]) >= 16
+    assert env_file.read_text().count("SKILLS_LAB_AUTOMATION_PASSWORD=") == 1
+    assert stat.S_IMODE(env_file.stat().st_mode) == 0o600
+    assert device.ensure_secrets(env_file) == []
+
+
+def test_creds_file_is_private_from_the_start(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("SKILLS_LAB_JUDGE_PASSWORD", "judge-secret")
+    dest = tmp_path / "workbench.env"
+    dest.write_text("OTHER=1\n")
+    dest.chmod(0o644)
+    device.creds(dest)
+    assert stat.S_IMODE(dest.stat().st_mode) == 0o600
+    assert "SKILLEVAL_JUDGE_PASSWORD=judge-secret" in dest.read_text()
+    with pytest.raises(SystemExit, match="public repository"):
+        device.creds(ROOT / "tmp-creds.env")
+
+
+@pytest.mark.parametrize("status", [400, 401, 405, 500])
+def test_only_nacm_access_denied_proves_read_only(status: int, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("SKILLS_LAB_READER_PASSWORD", "r")
+    monkeypatch.setenv("SKILLS_LAB_JUDGE_PASSWORD", "j")
+
+    def fake_restconf(ip, pin, user, password, method, body=None):
+        if method == "GET":
+            return 200, b'{"Cisco-IOS-XE-native:hostname": "skl-r1"}'
+        return status, b""
+
+    monkeypatch.setattr(device, "_restconf", fake_restconf)
+    with pytest.raises(SystemExit, match=f"HTTP {status}, not 403"):
+        device.check_readers("10.100.0.152", "a" * 64)
+
+
+def test_nacm_403_passes_and_a_write_that_succeeds_fails(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("SKILLS_LAB_READER_PASSWORD", "r")
+    monkeypatch.setenv("SKILLS_LAB_JUDGE_PASSWORD", "j")
+    answers = {"PATCH": 403}
+
+    def fake_restconf(ip, pin, user, password, method, body=None):
+        if method == "GET":
+            return 200, b'{"Cisco-IOS-XE-native:hostname": "skl-r1"}'
+        return answers["PATCH"], b""
+
+    monkeypatch.setattr(device, "_restconf", fake_restconf)
+    device.check_readers("10.100.0.152", "a" * 64)
+    answers["PATCH"] = 204
+    with pytest.raises(SystemExit, match="allowed to write"):
+        device.check_readers("10.100.0.152", "a" * 64)
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        "% Invalid input detected at '^' marker.",
+        "  % Incomplete command.",
+        "Error: NACM rules could not be populated",
+        "Populate read rules? [confirm]",
+    ],
+)
+def test_command_refusals_are_detected(line: str) -> None:
+    transcript = f"skl-r1#request platform software yang-management nacm populate-read-rules privilege 1\n{line}\nskl-r1#"
+    assert device.command_refusal(transcript) == line.strip()
+
+
+def test_a_clean_transcript_has_no_refusal() -> None:
+    transcript = (
+        "skl-r1#configure terminal\nEnter configuration commands, one per line.  End with CNTL/Z.\n"
+        "skl-r1(config)#username judge privilege 1 secret 0 <redacted>\nskl-r1(config)#end\n"
+        "skl-r1#request platform software yang-management nacm populate-read-rules privilege 1\nskl-r1#"
+    )
+    assert device.command_refusal(transcript) is None

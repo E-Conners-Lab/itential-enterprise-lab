@@ -28,10 +28,15 @@ to evaluation work.
    a triangle, in their own EVE-NG lab (`/skills-lab.unl`). `eve/build.py --topology` builds it; `delete` removes it
    and refuses the enterprise lab. Generated files for any lab but the enterprise one go under
    `topology/generated/<lab name>/`, so the enterprise MAC table and reference configs are never overwritten.
+   Every scratch node carries its own first MAC (`eve.firstmac`, locally administered `52:5c:00:0n:00:00`): EVE-NG
+   derives `50:00:00:<node id>:00:<if>` otherwise, node ids restart at 1 in every lab, and `skl-r1..3` would
+   duplicate the management MACs of isp-core01, dc1-wan01 and dc1-wan02 on pnet1. The builder refuses a non-enterprise
+   node without one, checks EVE-NG kept it right after creating the node, and checks again before starting.
 2. **Memory on loan.** The scratch lab borrows 18 GB of the 32 GB reserved for the four PA-VMs while `lab.firewalls`
    is false (`docs/resource-budget.md` 3a): 73 + 18 + 6 = 97 GB of the 115 GB ceiling. Turning the firewalls on means
-   deleting the scratch lab first; `tests/test_skills_lab.py` refuses `firewalls: true` while the scratch topology
-   exists.
+   deleting the scratch lab first. `eve/build.py` enforces it on apply and start in both directions (a scratch
+   build refuses while the enterprise firewalls are on; an enterprise build with firewalls on refuses while
+   `topology/skills-lab.yaml` exists), and `tests/test_skills_lab.py` holds both.
 3. **A scratch day-0.** `topology/configs/c8000v.j2` with `lab.scratch: true` renders management, the automation user
    (its own password, `SKILLS_LAB_AUTOMATION_PASSWORD`, never the production device password), NETCONF, RESTCONF, SSH
    and the config-change log to the lab syslog receiver, and nothing a skill configures itself (no loopback, no WAN

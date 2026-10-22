@@ -5,6 +5,10 @@
 # RAM it uses is lent from the Palo Alto reservation while enterprise.yaml has lab.firewalls false
 # (tests/test_skills_lab.py). The routers stay out of NetBox's device records (owner decision 2026-10-22).
 # Interface index 0 of every node is management on pnet1 (Gi1).
+# Every node carries its own first MAC (eve.firstmac, locally administered 52:5c:00:0n:00:00): EVE-NG derives
+# 50:00:00:<node id>:00:<if> otherwise, node ids restart at 1 in every lab, and skl-r1..3 would duplicate the
+# management MACs of isp-core01, dc1-wan01 and dc1-wan02 on pnet1. eve/build.py refuses a node without one and
+# checks EVE-NG kept it before anything starts.
 version: 1
 lab:
   name: skills-lab
@@ -44,7 +48,7 @@ nodes:
     cpu: 2
     ram: 6144
     ethernet: 4
-    eve: {left: 300, top: 120}
+    eve: {left: 300, top: 120, firstmac: "52:5c:00:01:00:00"}
   skl-r2:
     site: scratch
     role: scratch-router
@@ -54,7 +58,7 @@ nodes:
     cpu: 2
     ram: 6144
     ethernet: 4
-    eve: {left: 540, top: 120}
+    eve: {left: 540, top: 120, firstmac: "52:5c:00:02:00:00"}
   skl-r3:
     site: scratch
     role: scratch-router
@@ -64,7 +68,7 @@ nodes:
     cpu: 2
     ram: 6144
     ethernet: 4
-    eve: {left: 420, top: 320}
+    eve: {left: 420, top: 320, firstmac: "52:5c:00:03:00:00"}
 
 # A triangle, so a skill can show a path change when one link goes down. No prefixes: skills address the ports.
 links:
