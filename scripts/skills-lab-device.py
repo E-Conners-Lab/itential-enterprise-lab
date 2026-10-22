@@ -59,25 +59,58 @@ def env(name: str) -> str:
     return value
 
 
+def _value(line: str) -> str:
+    """The value of a `NAME=value  # comment` line as `. ./.env` sees it (empty when only a comment follows)."""
+    value = line.split("=", 1)[1].strip()
+    if value.startswith("#"):
+        return ""
+    value = re.split(r"\s+#", value, maxsplit=1)[0].strip()
+    return value.strip("'\"")
+
+
+def write_private(path: Path, text: str) -> None:
+    """Write a file that holds secrets: created at mode 600 (a temporary file then an atomic replace), so it is never
+    readable by others, not even for a moment, and an existing file's looser mode does not survive."""
+    tmp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    try:
+        with os.fdopen(fd, "w") as fh:
+            fh.write(text)
+        os.replace(tmp, path)
+    except BaseException:
+        tmp.unlink(missing_ok=True)
+        raise
+
+
 def ensure_secrets(env_file: Path = ENV_FILE) -> list[str]:
-    """Append any missing scratch password to .env; return the names added. URL-safe characters only: IOS treats '?'
-    as help and a space as an argument separator in `username ... secret 0 <password>`."""
-    text = env_file.read_text() if env_file.exists() else ""
-    present = {
-        line.split("=", 1)[0]
-        for line in text.splitlines()
-        if "=" in line and not line.startswith("#")
+    """Give every scratch password a value in .env; return the names generated. A `NAME=` line with no value (as
+    .env.example ships) counts as missing and gets the value in place. URL-safe characters only: IOS treats '?' as
+    help and a space as an argument separator in `username ... secret 0 <password>`."""
+    lines = env_file.read_text().splitlines() if env_file.exists() else []
+    has_value = {
+        line.split("=", 1)[0].strip()
+        for line in lines
+        if "=" in line and not line.lstrip().startswith("#") and _value(line)
     }
-    added = [name for name in SECRET_VARS if name not in present]
-    if added:
-        lines = [
-            "",
-            "# Skills eval scratch lab (ADR 0084): generated once; never the production device password",
-        ]
-        lines += [f"{name}={secrets.token_urlsafe(24)}" for name in added]
-        with env_file.open("a") as fh:
-            fh.write("\n".join(lines) + "\n")
-        env_file.chmod(0o600)
+    added = [name for name in SECRET_VARS if name not in has_value]
+    if not added:
+        return []
+    fresh = {name: secrets.token_urlsafe(24) for name in added}
+    out, placed = [], set()
+    for line in lines:
+        name = line.split("=", 1)[0].strip() if "=" in line and not line.lstrip().startswith("#") else ""
+        if name in fresh and name not in placed:
+            out.append(f"{name}={fresh[name]}")
+            placed.add(name)
+        elif name in fresh:
+            continue  # a second empty assignment would override the value when .env is sourced
+        else:
+            out.append(line)
+    missing = [n for n in added if n not in placed]
+    if missing:
+        out += ["", "# Skills eval scratch lab (ADR 0084): generated once; never the production device password"]
+        out += [f"{name}={fresh[name]}" for name in missing]
+    write_private(env_file, "\n".join(out) + "\n")
     return added
 
 
@@ -117,6 +150,9 @@ def _shell(client: paramiko.SSHClient, commands: list[tuple[str, str | None]]) -
                     chan.send(answer + "\n")
                     answered = len(buf)
                     continue
+                if answer is None and "[confirm]" in fresh:
+                    chan.send("\x03")  # do not let an unexpected question default to yes
+                    raise SystemExit("the router asked for confirmation unexpectedly: " + fresh[-200:])
                 if PROMPT.search(buf):
                     return buf
             else:
@@ -158,6 +194,8 @@ def accounts(ip: str) -> None:
         ]
         lines += [
             ("end", None),
+            # spelling from Cisco's Programmability Command Reference, IOS XE 17.13.x:
+            # https://www.cisco.com/c/en/us/td/docs/ios-xml/ios/prog/command/1713/b_1713_programmability_cr/programmability.html
             (
                 "request platform software yang-management nacm populate-read-rules privilege 1",
                 None,
@@ -168,11 +206,24 @@ def accounts(ip: str) -> None:
         client.close()
     for var in READERS.values():
         transcript = transcript.replace(env(var), "<redacted>")
-    if re.search(r"% ?(Invalid|Incomplete|Ambiguous)", transcript):
-        raise SystemExit(f"{ip}: the router refused a command:\n{transcript}")
+    problem = command_refusal(transcript)
+    if problem:
+        raise SystemExit(f"{ip}: the router refused a command ({problem!r}):\n{transcript}")
     print(
         f"{ip}: restconf-reader and judge at privilege 1; NACM read rules for privilege 1"
     )
+
+
+def command_refusal(transcript: str) -> str | None:
+    """The first sign that IOS XE did not accept a command: a line starting with '%', a line mentioning an error, or a
+    [confirm] question left unanswered. None when the transcript is clean."""
+    for line in transcript.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("%") or re.search(r"\berror\b", stripped, re.IGNORECASE):
+            return stripped
+        if "[confirm]" in stripped:
+            return stripped
+    return None
 
 
 def pins(ip: str) -> dict[str, str]:
@@ -252,6 +303,12 @@ def check_readers(ip: str, cert_sha256: str) -> None:
             raise SystemExit(
                 f"{ip}: {user} was allowed to write over RESTCONF: NACM read rules are not in force"
             )
+        if refused != 403:
+            # only NACM's access-denied (RFC 8040 4.2, HTTP 403) proves the read-only rules refused the write; a 400,
+            # 401, 405 or 500 says nothing about them
+            raise SystemExit(
+                f"{ip}: {user}'s write got HTTP {refused}, not 403 (NACM access denied): read-only not proven"
+            )
         print(f"{ip}: {user} reads (200) and is refused a write (HTTP {refused})")
 
 
@@ -295,8 +352,7 @@ def creds(dest: Path) -> None:
             wanted[name] = os.environ[name]
     lines = dest.read_text().splitlines() if dest.exists() else []
     kept = [line for line in lines if line.split("=", 1)[0] not in wanted]
-    dest.write_text("\n".join(kept + [f"{k}={v}" for k, v in wanted.items()]) + "\n")
-    dest.chmod(0o600)
+    write_private(dest, "\n".join(kept + [f"{k}={v}" for k, v in wanted.items()]) + "\n")
     print(f"wrote {', '.join(wanted)} to {dest}")
 
 
