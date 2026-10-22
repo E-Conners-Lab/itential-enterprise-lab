@@ -125,6 +125,9 @@ topology; "k3s VIP" means a MetalLB address.
 | 10.100.0.146 | br1-wan01 | EVE-NG | C8000v branch 1 WAN edge |
 | 10.100.0.147 | br2-wan01 | EVE-NG | C8000v branch 2 WAN edge |
 | 10.100.0.148 | isp-core01 | EVE-NG | C8000v simulated provider core |
+| 10.100.0.152 | skl-r1 | EVE-NG | C8000v scratch router for skill evals (ADR 0084) |
+| 10.100.0.153 | skl-r2 | EVE-NG | C8000v scratch router for skill evals (ADR 0084) |
+| 10.100.0.154 | skl-r3 | EVE-NG | C8000v scratch router for skill evals (ADR 0084) |
 | 10.100.0.160 | dc1-spine01 | EVE-NG | vEOS spine |
 | 10.100.0.161 | dc1-spine02 | EVE-NG | vEOS spine |
 | 10.100.0.162 | dc1-leaf01 | EVE-NG | vEOS leaf |

@@ -66,7 +66,7 @@ drill (PID E3) is what proves the CPU figure is survivable.
 | Node | Image | Count | vCPU each | RAM each (GB) | vCPU total | RAM total (GB) |
 |---|---|---|---|---|---|---|
 | `dc1-fw01/02`, `br1-fw01`, `br2-fw01` | `pa-vm` 11.1 | 4 | 4 | 8 | 16 | 32 |
-| `dc1-wan01/02`, `br1-wan01`, `br2-wan01`, `isp-core01` | `c8000v` 17.18.4 | 5 | 2 | 6 | 10 | 30 |
+| `dc1-wan01/02`, `br1-wan01`, `br2-wan01`, `isp-core01` | `c8000v` 17.13.01a | 5 | 2 | 6 | 10 | 30 |
 | `dc1-spine01/02`, `dc1-leaf01/02`, `dc1-acc01`, `br1-sw01`, `br2-sw01` | `veos` 4.35.6M | 7 | 2 | 4 | 14 | 28 |
 | `br1-pc01`, `br2-pc01` | `win11` 25H2 | 2 | 2 | 6 | 4 | 12 |
 | `dc1-srv01` | `ubuntu` 24.04 | 1 | 1 | 1 | 1 | 1 |
@@ -77,6 +77,20 @@ drill (PID E3) is what proves the CPU figure is survivable.
 
 Adding a node inside EVE-NG is a change to this table and to `topology/`;
 the builder refuses a topology whose RAM sum exceeds the ceiling.
+
+### 3a. The scratch lab, on loan from the Palo Alto reservation (ADR 0084)
+
+The skills eval suite's scratch lab (`topology/skills-lab.yaml`) runs only while `lab.firewalls` is false in
+`topology/enterprise.yaml`. It borrows 18 GB of the 32 GB the four PA-VMs would use; turning the firewalls on means
+deleting the scratch lab first (`make skills-lab-down`). `tests/test_skills_lab.py` refuses `firewalls: true` while
+the scratch topology exists, and checks the sum below.
+
+| Node | Image | Count | vCPU each | RAM each (GB) | vCPU total | RAM total (GB) |
+|---|---|---|---|---|---|---|
+| `skl-r1`, `skl-r2`, `skl-r3` (scratch) | `c8000v` 17.13.01a | 3 | 2 | 6 | 6 | 18 |
+
+With the loan: enterprise nodes without the firewalls (73) + scratch (18) + EVE-NG host (~6) = **97 GB** of the
+115 GB ceiling; vCPU 31 + 6 = 37 on 24 (oversubscribed as above).
 
 ## 4. k3s workload budget (inside the three 4 vCPU / 12 GB nodes)
 

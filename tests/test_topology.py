@@ -61,8 +61,11 @@ def test_every_eve_placement_in_ipam_is_a_node(topo: dict, ipam: dict) -> None:
     eve_hosts = {
         a["hostname"] for a in ipam["addresses"] if a["placement"].startswith("eve-")
     }
-    assert eve_hosts == set(topo["nodes"]), (
-        f"missing: {eve_hosts - set(topo['nodes'])}; extra: {set(topo['nodes']) - eve_hosts}"
+    # the skills eval suite's scratch routers live in their own EVE-NG lab (topology/skills-lab.yaml, ADR 0084)
+    scratch = set(yaml.safe_load((ROOT / "topology" / "skills-lab.yaml").read_text())["nodes"])
+    nodes = set(topo["nodes"]) | scratch
+    assert eve_hosts == nodes, (
+        f"missing: {eve_hosts - nodes}; extra: {nodes - eve_hosts}"
     )
 
 
