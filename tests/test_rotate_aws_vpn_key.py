@@ -300,6 +300,6 @@ def test_the_gateway_runs_a_commit_with_reload_restore_and_prune() -> None:
     # 3e3f032 (cdp #33) brought them; 691531d (cdp #34), 9ab2290 (cdp #35, R6), e7a6f67 (cdp #36) and 60839ab
     # (cdp #37, R10's fabric-bgp), 02b62f1 (cdp #38, R10 PR C: plan and the drill), e7a8648 (cdp #39) and acc9646
     # (cdp #40/#41: the AS and MD5 drills), cfa2bea (cdp #42, R7's batfish-check), 71d5223 (cdp #43: the MD5 drill resets the neighbor)
-    # 4a11f3d (cdp #44/#45: batfish-check's scrub and deadline, the drill's abort) and d2e2a46 (cdp #46: restconf-get)
-    # are its descendants
-    assert VERSIONS["terraform_run"]["repository"]["reference"] == "d2e2a468e455df2a59eb522fb41a83d76da5b5b7"
+    # 4a11f3d (cdp #44/#45: batfish-check's scrub and deadline, the drill's abort), d2e2a46 (cdp #46: restconf-get)
+    # and 10ead8d (cdp #47: restconf-get's three routers) are its descendants
+    assert VERSIONS["terraform_run"]["repository"]["reference"] == "10ead8db9384758d4fd8201c07d67800272896fa"

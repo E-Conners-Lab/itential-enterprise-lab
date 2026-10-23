@@ -644,6 +644,13 @@ def test_pinned_nodes_are_the_scratch_routers_as_restconf_get_takes_them(scratch
         assert node["mgmt_host"] == scratch["nodes"][name]["mgmt_ip"], name
         assert re.fullmatch(r"[0-9a-f]{64}", node["cert_sha256"]), name
     assert len({node["cert_sha256"] for node in nodes.values()}) == len(nodes)  # one certificate per router
+    # restconf-get logs in only to these names at these addresses (cloud-devops-pipeline SCRATCH_ROUTERS): a router
+    # added or moved here needs the same change there, then a pin bump
+    assert {name: node["mgmt_host"] for name, node in nodes.items()} == {
+        "skl-r1": "10.100.0.152",
+        "skl-r2": "10.100.0.153",
+        "skl-r3": "10.100.0.154",
+    }
 
 
 def test_restconf_get_logs_in_as_the_reader_and_the_inventory_alias_is_the_scratch_account() -> None:
