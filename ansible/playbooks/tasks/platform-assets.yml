@@ -695,6 +695,21 @@
   when: item.name in (wf_existing.json['items'] | map(attribute='name') | list)
   changed_when: true
 
+# The bulk import refuses a manual task whose groups are set ("/tasks/<id>/name must be equal to constant pending",
+# measured on production 6.6.0, 2026-10-23), while validate and create take the same document: a workflow with such a
+# card (ADR 0084's push) is created on its own below, the rest imported together as before
+- name: Workflows whose cards name groups
+  ansible.builtin.set_fact:
+    wf_grouped: >-
+      {%- set out = [] -%}
+      {%- for w in wf_bodies -%}
+        {%- if w.tasks.values() | selectattr('type', 'defined') | selectattr('type', 'equalto', 'manual')
+              | map(attribute='groups', default=[]) | select | list -%}
+          {%- set _ = out.append(w.name) -%}
+        {%- endif -%}
+      {%- endfor -%}
+      {{ out }}
+
 - name: Import the workflows
   ansible.builtin.uri:
     url: "{{ platform_local }}/automation-studio/automations/import"
@@ -702,10 +717,27 @@
     headers: {Cookie: "{{ login.cookies_string }}"}
     body_format: json
     body:
-      automations: "{{ wf_bodies }}"
+      automations: "{{ wf_bodies | rejectattr('name', 'in', wf_grouped) | list }}"
     status_code: 200
   register: wf_import
   failed_when: wf_import.json.imported | rejectattr('success') | list | length > 0
+  changed_when: true
+
+- name: Create each workflow whose cards name groups
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/automation-studio/automations"
+    method: POST
+    headers: {Cookie: "{{ login.cookies_string }}"}
+    body_format: json
+    body:
+      automation: "{{ item }}"
+    status_code: 200
+  register: wf_create
+  # an HTTP 200 without the new workflow's id is a failed create (the department agents' builder measured it on 6.6.0)
+  failed_when: wf_create.status != 200 or not (wf_create.json.created._id | default(''))
+  loop: "{{ wf_bodies | selectattr('name', 'in', wf_grouped) | list }}"
+  loop_control:
+    label: "{{ item.name }}"
   changed_when: true
 
 # ADR 0067: the pre-rename copies go once their successors are in. The agents drop their links to them in
