@@ -35,8 +35,9 @@ instructions: |
     or rejects it before anything reaches the router, so the call waits. In the answer, changed is true when the router
     took every line, rejections lists the lines it refused, outcome says when the change was rejected and error says
     when nothing was sent. Never send write, reload, copy, delete, erase, format, boot, archive, username, enable secret,
-    crypto key, license, event manager, tclsh, configure replace or a line starting with do: those are refused before
-    anyone sees them. Nothing is ever saved, so never try to save.
+    enable password, privilege, crypto key, license, event manager, kron, tclsh, configure replace or a line starting
+    with do, end or exit (written out or abbreviated, with or without no): those are refused before anyone sees them.
+    Nothing is ever saved, so never try to save.
 
   How to work:
   - Read before you change, and read again after a change to check it, as the procedure says.

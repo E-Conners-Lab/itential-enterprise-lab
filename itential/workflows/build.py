@@ -8271,14 +8271,23 @@ def restconf_params(d: dict, nodes: dict, user: str, timeout: str) -> dict:
                        "timeout": timeout}}
 
 
-def scratch_push_plan(d: dict, forbidden: list) -> dict:
-    """Every proposed line against the forbidden set (case-insensitive, anywhere in the line) before any card exists;
-    when none is refused, the lines joined for send-config and the card's body. Pure: runCode runs this source."""
+def scratch_push_plan(d: dict, forbidden: list, commands: list) -> dict:
+    """Every proposed line against the forbidden set before any card exists: a pattern anywhere in the line
+    (case-insensitive), or a forbidden command at its start as IOS XE reads it - each word abbreviated to any prefix,
+    a leading `no` or `default` set aside. When none is refused, the lines joined for send-config and the card's body.
+    Pure: runCode runs this function's own source on the Gateway."""
     lines = d.get("lines")
     if not isinstance(lines, list) or not lines or not all(isinstance(x, str) for x in lines):
         return {"ok": False, "refused": [], "message": "the lines are not a list of strings: nothing was sent"}
     patterns = [re.compile(p, re.IGNORECASE) for p in forbidden]
-    refused = [x for x in lines if any(p.search(x) for p in patterns)]
+
+    def is_command(line: str) -> bool:
+        words = line.lower().split()
+        while words and words[0] in ("no", "default"):
+            words = words[1:]
+        return any(len(words) >= len(cmd) and all(c.startswith(w) for w, c in zip(words, cmd)) for cmd in commands)
+
+    refused = [x for x in lines if any(p.search(x) for p in patterns) or is_command(x)]
     if refused:
         return {"ok": False, "refused": refused,
                 "message": "refused before any approval, forbidden on the scratch routers: " + "; ".join(refused)
@@ -8327,8 +8336,9 @@ RESTCONF_PARAMS_CODE = _source(restconf_params, call='restconf_params(json.loads
                                'TIMEOUT)', extra="NODES = " + repr(SCRATCH_NODES) + "\nUSER = " + repr(RESTCONF_USER)
                                + "\nTIMEOUT = " + repr(RESTCONF_TIMEOUT) + "\n\n\n")
 SCRATCH_PUSH_PLAN_CODE = _source(scratch_push_plan, call='scratch_push_plan(json.loads(sys.stdin.read() or "{}"), '
-                                 'FORBIDDEN)', extra="import re\n\nFORBIDDEN = " + repr(SKILLS_LAB["forbidden_lines"])
-                                 + "\n\n\n")
+                                 'FORBIDDEN, COMMANDS)', extra="import re\n\nFORBIDDEN = "
+                                 + repr(SKILLS_LAB["forbidden_lines"]) + "\nCOMMANDS = "
+                                 + repr(SKILLS_LAB["forbidden_commands"]) + "\n\n\n")
 REPLACE_DONE_CODE = _source(replace_done, call='replace_done(json.loads(sys.stdin.read() or "{}"))')
 RESTORE_PROOF_CODE = _source(restore_proof, call='restore_proof(json.loads(sys.stdin.read() or "{}"), VOLATILE)',
                              extra="import hashlib\nimport re\n\nVOLATILE = " + repr(RESTORE_VOLATILE) + "\n\n\n")

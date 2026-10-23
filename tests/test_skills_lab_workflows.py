@@ -169,16 +169,25 @@ def test_the_push_gate_takes_a_list_of_single_lines(lines: list, ok: bool) -> No
     "username eve privilege 15 secret x", "enable secret x", "copy running-config startup-config",
     "delete bootflash:baseline.cfg", "erase nvram:", "format bootflash:", "boot system bootflash:x.bin",
     "license boot level network-advantage", "event manager applet X", "tclsh", "  DO wr",
+    # as IOS XE reads a line: abbreviated, or behind `no` / `default` (code review 2026-10-23)
+    "usern evil priv 15 secret x", "user evil", "cry key zer rsa", "enable sec x", "en pass x", "wr", "w mem",
+    "conf rep bootflash:x force", "rel", "del bootflash:baseline.cfg", "no username automation", "no usern automation",
+    "default username restconf-reader", "priv exec level 1 configure terminal", "kron policy-list x", "arch",
+    # leaving configuration mode: the lines after it would run as exec commands
+    "end", "exit", " ex", "EXIT",
 ])
 def test_a_forbidden_line_is_refused_before_any_card(line: str) -> None:
     plan = wf.scratch_push_plan({"device": "skl-r1", "reason": "r", "lines": ["router ospf 1", line]},
-                                SKILLS["forbidden_lines"])
+                                SKILLS["forbidden_lines"], SKILLS["forbidden_commands"])
     assert plan["ok"] is False and plan["refused"] == [line] and "card" not in plan and "config" not in plan
 
 
 def test_allowed_lines_are_joined_for_send_config_and_shown_on_the_card() -> None:
-    lines = ["router ospf 1", "network 10.0.12.0 0.0.0.3 area 0", "interface GigabitEthernet2", " ip ospf cost 10"]
-    plan = wf.scratch_push_plan({"device": "skl-r2", "reason": "lab", "lines": lines}, SKILLS["forbidden_lines"])
+    lines = ["router ospf 1", "network 10.0.12.0 0.0.0.3 area 0", "interface GigabitEthernet2", " ip ospf cost 10",
+             "no shutdown", "passive-interface default", "default-information originate", "exit-address-family",
+             "ip ospf 1 area 0", "logging buffered 64000", "enable", "no ip ospf cost"]
+    plan = wf.scratch_push_plan({"device": "skl-r2", "reason": "lab", "lines": lines}, SKILLS["forbidden_lines"],
+                                SKILLS["forbidden_commands"])
     assert plan == {"ok": True, "refused": [], "config": "\n".join(lines),
                     "card": {"device": "skl-r2", "reason": "lab", "lines": lines}}
 
@@ -188,6 +197,7 @@ def test_the_runner_code_carries_the_forbidden_set_from_versions() -> None:
     code = wf.SCRATCH_PUSH_PLAN_CODE.rsplit("\nprint(", 1)[0]
     exec(compile(code, "plan", "exec"), namespace)
     assert namespace["FORBIDDEN"] == SKILLS["forbidden_lines"]
+    assert namespace["COMMANDS"] == SKILLS["forbidden_commands"]
 
 
 def test_the_card_names_eval_approvers_and_admin_group_and_nothing_else_has_groups() -> None:
@@ -364,6 +374,8 @@ def test_the_instructions_name_every_allowlisted_path_and_every_forbidden_comman
     for pattern in SKILLS["forbidden_lines"]:
         words = re.findall(r"[a-z]+", pattern.replace("\\b", " ").replace("\\s", " "))
         assert " ".join(words) in text, f"{pattern}: not named in the instructions"
+    for command in SKILLS["forbidden_commands"]:
+        assert re.search(rf"\b{' '.join(command)}\b", text), f"{command}: not named in the instructions"
     assert "never ask for or repeat a password, a key or a vault path" in text
 
 

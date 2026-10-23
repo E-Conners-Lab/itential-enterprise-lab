@@ -288,6 +288,33 @@ skills_lab:
     - '\bevent\s+manager\b'
     - '\btclsh\b'
     - '^\s*do\s'
+  # ... and refuses a line that BEGINS with one of these commands as IOS XE reads it: every word may be abbreviated to
+  # any prefix (`usern`, `wr`, `cry key`) and a leading `no` or `default` does not change what the line is. `end` and
+  # `exit` leave configuration mode, after which send-config would run the following lines as exec commands (`exit`
+  # inside a sub-mode is never needed: IOS XE changes mode by itself). kron runs exec commands on a schedule and
+  # privilege changes what an account may run, so both are refused with the commands they would reach.
+  forbidden_commands:
+    - [write]
+    - [reload]
+    - [configure, replace]
+    - [archive]
+    - [crypto, key]
+    - [username]
+    - [enable, secret]
+    - [enable, password]
+    - [privilege]
+    - [copy]
+    - [delete]
+    - [erase]
+    - [format]
+    - [boot]
+    - [license]
+    - [event, manager]
+    - [kron]
+    - [tclsh]
+    - [do]
+    - [end]
+    - [exit]
   nodes:
     skl-r1: {mgmt_host: 10.100.0.152, cert_sha256: c3c1c8dc11d12242ba496b3e6ac4d9e0371ac466861e9d2189499f1372e1b94f}
     skl-r2: {mgmt_host: 10.100.0.153, cert_sha256: 2a4ecc0b9f14c01146c4a0ba399ed089a91490eb610229319f65c26ae6dbd1bb}
