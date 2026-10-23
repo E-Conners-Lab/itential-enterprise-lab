@@ -152,6 +152,7 @@
 
 # Only the agents admin_group operates: those are the plays' (tasks/flowai-agent.yml); a department agent's operators
 # are its own department's group alone. flowai-agent.yml sends the same list on every update, so a replay keeps it.
+# The skills lab's agents never get it (ADR 0084 decision 7: only the eval accounts reach the scratch routers).
 - name: MCP access - the group operates the plays' agents
   ansible.builtin.uri:
     url: "{{ platform_local }}/agent-project-service/agents/{{ item._id }}"
@@ -166,6 +167,7 @@
   when:
     - mca_ids['admin_group'] in item.operators | map(attribute='_id')
     - mca_ids[mcp_access.group] not in item.operators | map(attribute='_id')
+    - item.name not in skills_lab.agents
   changed_when: true
 
 - name: MCP access - the group edits the agents' project {{ agents.project }}

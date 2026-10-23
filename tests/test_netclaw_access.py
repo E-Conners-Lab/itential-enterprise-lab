@@ -130,10 +130,12 @@ def test_platform_guide_is_an_agent_automation_on_each_route() -> None:
         assert doc["tools"] == [{"reference": "Describe for an Agent", "kind": "workflow"}], "still one read-only tool"
         assert doc["operator_groups"] == ["netclaw"], "svc-netclaw may start it (runAgent is scoped by operators)"
     assert routes == {"twin": "platform-guide-local", "claude": "platform-guide"}
-    # no other agent names an operator group: NetClaw reaches no agent but platform-guide
-    others = [p.name for p in AGENTS.glob("*.yaml") if p.stem not in routes.values()
-              and "operator_groups" in yaml.safe_load(p.read_text())]
-    assert others == []
+    # no other agent names the netclaw group: NetClaw reaches no agent but platform-guide. The skills eval suite's pair
+    # names its own eval group only (ADR 0084)
+    skills_lab = _versions()["skills_lab"]["agents"]
+    others = {p.stem: yaml.safe_load(p.read_text()).get("operator_groups") for p in AGENTS.glob("*.yaml")
+              if p.stem not in routes.values() and "operator_groups" in yaml.safe_load(p.read_text())}
+    assert others == {name: [_versions()["eval_access"]["run"]["group"]] for name in skills_lab}
     task = (TASKS / "flowai-agent.yml").read_text()
     assert "operators: \"{{ agent_operators }}\"" in task and "'operators': agent_operators" in task
 

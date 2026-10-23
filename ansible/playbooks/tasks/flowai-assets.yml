@@ -219,10 +219,12 @@
 - name: Agents created or updated from the documents
   ansible.builtin.include_tasks: tasks/flowai-agent.yml
   # agent_exclude defaults to none (production builds every agent); dev drops diagnostics-local, whose
-  # lab-servicenow tools do not exist there with ServiceNow off (ADR 0063)
+  # lab-servicenow tools do not exist there with ServiceNow off (ADR 0063), and the skills lab's agents, whose tools
+  # and operator group are production's alone (ADR 0084)
   loop: >-
     {{ agent_defs | selectattr('profile', 'in', llm_profiles | map(attribute='name') | list)
-       | rejectattr('name', 'in', agent_exclude | default([])) | list }}
+       | rejectattr('name', 'in', agent_exclude | default([])
+                    + (skills_lab.agents if dev_overlay | default(false) | bool else [])) | list }}
   loop_control:
     loop_var: agent
     label: "{{ agent.name }}"

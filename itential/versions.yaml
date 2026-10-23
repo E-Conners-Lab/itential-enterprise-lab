@@ -752,11 +752,20 @@ llm:
   # The Anthropic key is the owner's company key (ADR 0049): about $15 a week. verify/tokens.sh meters the last
   # 7 days from the Agent Session Manager at these list prices (claude-sonnet-5, 2026-09-09) and the agent
   # verifies refuse to start Anthropic sessions once the week is spent (ANTHROPIC_VERIFY=force overrides).
-  budget: {provider: anthropic, weekly_usd: 15, input_usd_per_mtok: 2.00, output_usd_per_mtok: 10.00}
+  # ADR 0084: the skills eval suite's sessions are metered by the workbench's own ledger (an alert at each $100), so the
+  # meter leaves them out (exclude_agents = skills_lab.agents): eval runs never stop the verifies, nor the reverse
+  budget: {provider: anthropic, weekly_usd: 15, input_usd_per_mtok: 2.00, output_usd_per_mtok: 10.00,
+           exclude_agents: [skill-eval, skill-eval-local]}
   profiles:
     - name: anthropic
       provider: anthropic
       model: claude-sonnet-5 # Model Registry listed 11 Claude models for the key on 2026-09-07
+      env_key: ANTHROPIC_API_KEY
+    # ADR 0084: skill-eval's own profile, on the model the eval suite's Claude column certifies. Created once by name by
+    # the flowai play, never edited; nothing but skill-eval is bound to it (`anthropic` stays as it is)
+    - name: anthropic-sonnet-5-5
+      provider: anthropic
+      model: claude-sonnet-5-5
       env_key: ANTHROPIC_API_KEY
     # The Mac Mini's Ollama is Homebrew-managed, so it is recorded rather than pinned from here:
     # tested against ollama 0.40.2 (ADR 0079; 0.23.3 could not load qwen3.8 at all - "unable to load

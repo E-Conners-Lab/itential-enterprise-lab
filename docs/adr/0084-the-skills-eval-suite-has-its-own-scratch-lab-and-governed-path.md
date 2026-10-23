@@ -60,7 +60,20 @@ to evaluation work.
    an allowlist; accounts `svc-eval` (runs the three agent tools, cannot finish tasks) and `svc-eval-approver`
    (releases cards and runs the restore); a new model profile for claude-sonnet-5-5 and agents `skill-eval` /
    `skill-eval-local` whose instructions are generic; skill text reaches the agents only in each session's request
-   and is never stored on the Platform or in this repository.
+   and is never stored in an agent definition or in this repository. Each session's record on the Platform (Agent
+   Session Manager) keeps its inputs and its instructions with the request filled in (measured 2026-10-23), so a
+   run's procedure stays in production's session history until that session is deleted.
+
+   As built (production only; the dev tier imports, triggers and builds none of it): the `skills-lab` inventory is
+   created once with `admin_group`, `eval` and `eval-approvers` and holds `skills_lab.nodes`, its password the Gateway
+   alias; the RESTCONF workflow's gate is restconf-get's own rule (the allowlist in `skills_lab.restconf_allowlist`,
+   `%` only as %2F, never `..`); the push refuses `skills_lab.forbidden_lines` on the runner before any card, its card
+   names the two groups by `__GROUP_ID` markers the import fills in (and refuses to import when it cannot), and nothing
+   is ever saved; the restore proves itself with two hashes and never publishes the configuration. The scratch
+   automations' gbac is `admin_group` plus one eval group and none of the base read groups, and the eval agents are
+   operated by `admin_group` and `eval` only: the MCP server's group, which operates every other agent, is kept off
+   them. `verify/tokens.sh` leaves their sessions out (`llm.budget.exclude_agents`). Probes:
+   `verify/skillslabcheck.py`.
 7. **Two owner decisions (2026-10-22).** The owner approves scratch changes with the existing administrator login
    (`admin_group`) alongside the runner's approver account, instead of a new LDAP membership. Only eval accounts reach
    the scratch workflows: their automations carry `admin_group` plus `eval` or `eval-approvers` and none of the base
@@ -87,6 +100,8 @@ workflow names, then the inventory, accounts, agents and profile by hand).
 
 ## Verification
 
-`tests/test_skills_lab.py` (topology, IPAM, budget loan, firewall guard, day-0, builder refusal); then, per the
-design, a probe per acceptance criterion after converge: inventory, gbac, hold, forbidden lines, RESTCONF, restore,
-agents, profile and the production snapshot compare.
+`tests/test_skills_lab.py` (topology, IPAM, budget loan, firewall guard, day-0, builder refusal),
+`tests/test_eval_access.py` (the two role oracles) and `tests/test_skills_lab_workflows.py` (gates, forbidden lines,
+card groups, restore proof, inventory, agents); then a probe per acceptance criterion after converge,
+`verify/skillslabcheck.py`: accounts, inventory, gbac, forbidden, restconf, hold, restore, agents and profile, and the
+production snapshot compare.

@@ -387,7 +387,9 @@ def test_every_excluded_role_must_exist_before_any_role_is_assigned() -> None:
 
 def test_every_agent_update_keeps_the_mcp_group_on_production() -> None:
     text = (TASKS / "flowai-agent.yml").read_text()
-    assert "([] if dev_overlay | default(false) | bool else [mcp_access.group])" in text
+    # every agent but the skills eval suite's pair (ADR 0084 decision 7: only the eval accounts reach the scratch routers)
+    assert ("([] if dev_overlay | default(false) | bool or agent.name in skills_lab.agents else [mcp_access.group])"
+            in text)
     assert "selectattr('name', 'in', agent_operator_names)" in text
     assert (
         'operators: "{{ agent_operators }}"' in text

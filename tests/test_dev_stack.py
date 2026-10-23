@@ -382,7 +382,10 @@ def test_flowai_defaults_are_production() -> None:
     play = (PLAYS / "flowai.yml").read_text()
     assert "llm_profile_names | default(llm.profiles | map(attribute='name') | list)" in play
     assets = (TASKS / "flowai-assets.yml").read_text()
-    assert "rejectattr('name', 'in', agent_exclude | default([]))" in assets
+    # production builds every agent: nothing excluded unless the dev overlay names it (ADR 0084 adds the skills lab's
+    # pair on dev only)
+    assert "rejectattr('name', 'in', agent_exclude | default([])" in assets
+    assert "+ (skills_lab.agents if dev_overlay | default(false) | bool else [])) | list" in assets
 
 
 # --- the dev VM's names: never production's --------------------------------------------------------------

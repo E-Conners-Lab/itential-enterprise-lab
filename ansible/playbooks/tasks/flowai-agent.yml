@@ -59,13 +59,16 @@
 
 # ADR 0082: admin_group operates every agent; a document's operator_groups adds groups that may also start it (the
 # netclaw group on platform-guide and its twin). On production the MCP server's group operates every agent too (ADR
-# 0083): this update sends the whole list, so leaving it out here would take it away on every replay. A named group
-# that does not exist stops the play rather than silently leaving the agent unreachable.
+# 0083): this update sends the whole list, so leaving it out here would take it away on every replay. The skills lab's
+# agents are the exception (ADR 0084 decision 7): admin_group and the eval group only, so the MCP account cannot reach
+# the scratch routers through them. A named group that does not exist stops the play rather than silently leaving the
+# agent unreachable.
 - name: "Agent operators for {{ agent.name }}"
   ansible.builtin.set_fact:
     agent_operator_names: >-
       {{ (agent.operator_groups | default([])
-          + ([] if dev_overlay | default(false) | bool else [mcp_access.group])) | unique }}
+          + ([] if dev_overlay | default(false) | bool or agent.name in skills_lab.agents else [mcp_access.group]))
+         | unique }}
 
 - name: "Agent operator ids for {{ agent.name }}"
   ansible.builtin.set_fact:

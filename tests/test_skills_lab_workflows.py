@@ -333,3 +333,54 @@ def test_the_probes_cover_every_criterion_as_the_runners_accounts_and_read_the_r
     # cards are released the way the runner releases them: Work Center claim, then complete
     assert "/claim" in text and "/complete" in text and "/tasks/" not in text
     assert 'choices=["prod"]' in text, "production only"
+
+
+# --- the agents and their profile (build item 7) ----------------------------------------------------------------------
+
+AGENTS = ROOT / "itential" / "agents"
+TOOLS = [NAMES["scratch_show"], NAMES["scratch_restconf"], NAMES["scratch_push"]]
+
+
+def _agent(name: str) -> dict:
+    return yaml.safe_load((AGENTS / f"{name}.yaml").read_text())
+
+
+def test_the_pair_has_the_three_tools_the_same_generic_instructions_and_no_route() -> None:
+    assert SKILLS["agents"] == ["skill-eval", "skill-eval-local"]
+    claude, twin = (_agent(n) for n in SKILLS["agents"])
+    assert (claude["profile"], twin["profile"]) == ("anthropic-sonnet-5-5", "ollama-mac")
+    assert claude["instructions"] == twin["instructions"], "the suite compares models, not prompts"
+    for doc in (claude, twin):
+        assert [t["reference"] for t in doc["tools"]] == TOOLS and all(t["kind"] == "workflow" for t in doc["tools"])
+        assert "expose_route" not in doc, "the runner starts sessions by agent id; no automation, no route"
+        assert doc["operator_groups"] == [VERSIONS["eval_access"]["run"]["group"]]
+        assert doc["input_schema"]["required"] == ["request"] and doc["instructions"].rstrip().endswith("{{request}}")
+
+
+def test_the_instructions_name_every_allowlisted_path_and_every_forbidden_command() -> None:
+    text = _agent("skill-eval")["instructions"].lower()
+    for prefix in SKILLS["restconf_allowlist"]:
+        assert prefix.lower() in text, prefix
+    for pattern in SKILLS["forbidden_lines"]:
+        words = re.findall(r"[a-z]+", pattern.replace("\\b", " ").replace("\\s", " "))
+        assert " ".join(words) in text, f"{pattern}: not named in the instructions"
+    assert "never ask for or repeat a password, a key or a vault path" in text
+
+
+def test_the_profile_is_new_and_the_meter_leaves_the_pair_out() -> None:
+    profiles = {p["name"]: p for p in VERSIONS["llm"]["profiles"]}
+    assert profiles["anthropic-sonnet-5-5"] == {"name": "anthropic-sonnet-5-5", "provider": "anthropic",
+                                                "model": "claude-sonnet-5-5", "env_key": "ANTHROPIC_API_KEY"}
+    assert profiles["anthropic"]["model"] == "claude-sonnet-5", "the existing profile is not edited"
+    assert VERSIONS["llm"]["budget"]["exclude_agents"] == SKILLS["agents"]
+    meter = (ROOT / "verify" / "tokens.sh").read_text()
+    assert 'budget.get("exclude_agents")' in meter and '(s.get("agentSnapshot") or {}).get("name") in excluded' in meter
+
+
+def test_no_play_gives_the_pair_to_the_mcp_account_or_builds_it_on_dev() -> None:
+    agent = (TASKS / "flowai-agent.yml").read_text()
+    assert "or agent.name in skills_lab.agents else [mcp_access.group]" in agent
+    assets = (TASKS / "flowai-assets.yml").read_text()
+    assert "(skills_lab.agents if dev_overlay | default(false) | bool else [])" in assets
+    mcp = next(t for t in _tasks(TASKS / "mcp-access.yml") if t["name"] == "MCP access - the group operates the plays' agents")
+    assert "item.name not in skills_lab.agents" in mcp["when"]

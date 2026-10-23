@@ -47,6 +47,11 @@ for s in sessions:
     started = datetime.datetime.fromisoformat((s.get("startedAt") or s.get("createdAt")).replace("Z", "+00:00"))
     if started >= since:
         rows.append(s)
+# ADR 0084: the skills eval suite's agents are metered by the workbench's own ledger, not this budget (the session
+# names its agent in agentSnapshot.name, measured 2026-10-23)
+excluded = set(budget.get("exclude_agents") or [])
+left_out = [s for s in rows if (s.get("agentSnapshot") or {}).get("name") in excluded]
+rows = [s for s in rows if s not in left_out]
 per = {}
 for s in rows:
     key = (s.get("provider") or "?", s.get("modelVersion") or "?")
@@ -62,6 +67,8 @@ for (prov, model), p in sorted(per.items(), key=lambda kv: -kv[1]["in"]):
     print(f"  {prov:10} {model:18} sessions={p['sessions']:4d} in={p['in']:9d} out={p['out']:7d}  ${cost:6.2f}")
 left = budget["weekly_usd"] - usd
 print(f"spent ${usd:.2f} of the ${budget['weekly_usd']:.2f} weekly budget; ${left:.2f} left")
+if left_out:
+    print(f"left out: {len(left_out)} session(s) of {', '.join(sorted(excluded))} (the workbench meters them)")
 big = sorted((s for s in rows if (s.get("provider") == budget["provider"])), key=lambda s: -(s.get("totalInputTokens") or 0))[:3]
 for s in big:
     print(f"  largest: {s['agentSnapshot'].get('name') if s.get('agentSnapshot') else '?'} {s.get('startedAt','')[:16]} in={s.get('totalInputTokens')} ({s.get('status')})")
