@@ -188,11 +188,38 @@
     status_code: [200, 201]
   when: agents.project not in (projects.json.data['items'] | map(attribute='name') | list)
 
+# ADR 0084: the skills lab's agents sit in a project of their own on production. tasks/mcp-access.yml makes the MCP
+# server's group an editor of agents.project alone, and a project this play creates lists only the administrator who
+# created it (measured on 6.6.0, 2026-10-23), so no group but admin_group's administrator can edit the eval agents
+- name: "The skills lab's agent project, production only: {{ skills_lab.project }}"
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/agent-project-service/projects"
+    method: POST
+    headers: {Cookie: "{{ login.cookies_string }}"}
+    body_format: json
+    body: {name: "{{ skills_lab.project }}", description: "The skills eval suite's agents (ADR 0084); documents in itential/agents/"}
+    status_code: [200, 201]
+  when:
+    - not (dev_overlay | default(false) | bool)
+    - skills_lab.project not in (projects.json.data['items'] | map(attribute='name') | list)
+
 - name: Project id
   ansible.builtin.uri:
     url: "{{ platform_local }}/agent-project-service/projects"
     headers: {Cookie: "{{ login.cookies_string }}"}
   register: projects2
+
+# a group added to it by hand (the MCP server's, say) would edit the agents that reach the scratch routers
+- name: "The skills lab's agent project exists once with no group member, production only: {{ skills_lab.project }}"
+  ansible.builtin.assert:
+    that:
+      - eval_project | length == 1
+      - eval_project | map(attribute='members') | flatten | selectattr('type', 'equalto', 'group') | list | length == 0
+    fail_msg: "{{ skills_lab.project }}: {{ eval_project | length }} project(s), or a group is a member (ADR 0084)"
+    quiet: true
+  vars:
+    eval_project: "{{ projects2.json.data['items'] | selectattr('name', 'equalto', skills_lab.project) | list }}"
+  when: not (dev_overlay | default(false) | bool)
 
 # ADR 0083: the agents' project exists now, and tasks/flowai-agent.yml below names the production MCP server's group as
 # an operator of every agent, so the group is made (and given the project) first

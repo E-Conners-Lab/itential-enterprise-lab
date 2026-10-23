@@ -1,7 +1,7 @@
 # ADR 0084: the skills eval suite's agent on Claude (claude-sonnet-5-5, its own profile). Production only
 # (versions.yaml skills_lab.agents): the eval runner starts its sessions by id as svc-eval, with the procedure under
 # test in the request. The instructions are generic and the same as skill-eval-local's; no procedure is ever here.
-project: lab-netops
+project: skills-lab # versions.yaml skills_lab.project
 name: skill-eval
 description: "Follows the procedure in its request on the skills eval suite's scratch routers with three governed tools"
 profile: anthropic-sonnet-5-5
@@ -36,8 +36,10 @@ instructions: |
     or rejects it before anything reaches the router, so the call waits. In the answer, changed is true when the router
     took every line, rejections lists the lines it refused, outcome says when the change was rejected and error says
     when nothing was sent. Never send write, reload, copy, delete, erase, format, boot, archive, username, enable secret,
-    enable password, privilege, crypto key, license, event manager, kron, tclsh, configure replace or a line starting
-    with do, end or exit (written out or abbreviated, with or without no): those are refused before anyone sees them.
+    enable password, privilege, crypto key, license, event manager, kron, tclsh, configure replace, alias or a line
+    starting with do, end or exit (written out or abbreviated, with or without no): those are refused before anyone sees
+    them. GigabitEthernet1 and the MGMT VRF are the routers' management path, so a line naming either is refused, and
+    so is line, aaa, login, restconf, netconf, ip http, ip ssh, crypto pki, crypto ca, control-plane and ip routing.
     Nothing is ever saved, so never try to save.
 
   How to work:

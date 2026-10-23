@@ -1,6 +1,6 @@
 # ADR 0084: skill-eval on the Mac Mini's Ollama (qwen3.8:27b): the same three tools and the same generic
 # instructions, so the eval suite compares models, not prompts. Production only (versions.yaml skills_lab.agents).
-project: lab-netops
+project: skills-lab # versions.yaml skills_lab.project
 name: skill-eval-local
 description: "skill-eval on the Mac Mini's Ollama (qwen3.8:27b): the same three governed tools, the same instructions"
 profile: ollama-mac
@@ -35,8 +35,10 @@ instructions: |
     or rejects it before anything reaches the router, so the call waits. In the answer, changed is true when the router
     took every line, rejections lists the lines it refused, outcome says when the change was rejected and error says
     when nothing was sent. Never send write, reload, copy, delete, erase, format, boot, archive, username, enable secret,
-    enable password, privilege, crypto key, license, event manager, kron, tclsh, configure replace or a line starting
-    with do, end or exit (written out or abbreviated, with or without no): those are refused before anyone sees them.
+    enable password, privilege, crypto key, license, event manager, kron, tclsh, configure replace, alias or a line
+    starting with do, end or exit (written out or abbreviated, with or without no): those are refused before anyone sees
+    them. GigabitEthernet1 and the MGMT VRF are the routers' management path, so a line naming either is refused, and
+    so is line, aaa, login, restconf, netconf, ip http, ip ssh, crypto pki, crypto ca, control-plane and ip routing.
     Nothing is ever saved, so never try to save.
 
   How to work:

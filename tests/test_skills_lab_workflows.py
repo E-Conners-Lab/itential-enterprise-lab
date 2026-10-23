@@ -175,6 +175,17 @@ def test_the_push_gate_takes_a_list_of_single_lines(lines: list, ok: bool) -> No
     "default username restconf-reader", "priv exec level 1 configure terminal", "kron policy-list x", "arch",
     # leaving configuration mode: the lines after it would run as exec commands
     "end", "exit", " ex", "EXIT",
+    # an alias stands for any command
+    "alias configure x interface", "alias exec wm show running-config",
+    # the management path a restore needs: GigabitEthernet1 in VRF MGMT, its protocols and its logins (owner 2026-10-23)
+    "interface GigabitEthernet1", "int gi1", "int g1", "interface Gig 1", "default interface GigabitEthernet1",
+    "int gi01", "interface GigabitEthernet 001",
+    "interface GigabitEthernet1.100", "interface range gi1 - 3", "int ran g2-3,gi1", "no vrf definition MGMT",
+    "ip route vrf MGMT 0.0.0.0 0.0.0.0 Null0", "line vty 0 4", "lin con 0", "no aaa new-model",
+    "aaa authentication login default none", "login block-for 600 attempts 1 within 60", "no restconf",
+    "no netconf-yang", "no ip http secure-server", "ip http access-class 99", "no ip h secure-server", "ip ssh version 1",
+    "ip ssh server algorithm encryption aes128-ctr", "no crypto pki trustpoint TP-self-signed-1", "crypto ca trustpoint X",
+    "control-plane", "no ip routing",
 ])
 def test_a_forbidden_line_is_refused_before_any_card(line: str) -> None:
     plan = wf.scratch_push_plan({"device": "skl-r1", "reason": "r", "lines": ["router ospf 1", line]},
@@ -190,6 +201,23 @@ def test_allowed_lines_are_joined_for_send_config_and_shown_on_the_card() -> Non
                                 SKILLS["forbidden_commands"])
     assert plan == {"ok": True, "refused": [], "config": "\n".join(lines),
                     "card": {"device": "skl-r2", "reason": "lab", "lines": lines}}
+
+
+@pytest.mark.parametrize("line", [
+    "interface GigabitEthernet2", "interface GigabitEthernet10", " ip address 10.1.12.1 255.255.255.252",
+    "net 49.0001.0000.0000.0001.00", "router isis", " ip router isis", "ip route 10.9.9.0 255.255.255.0 Null0",
+    "vrf definition RED", " rd 65000:1", " ip vrf forwarding RED", " channel-group 1 mode active",
+    " glbp 1 ip 10.1.1.254", " standby 1 ip 10.1.1.254", "ip prefix-list P seq 5 permit 10.0.0.0/8 ge 16 le 24",
+    " log-adjacency-changes", "router bgp 65001", " neighbor 10.1.12.2 remote-as 65002", " encapsulation dot1Q 10",
+    "ip sla 1", "crypto isakmp policy 10", "crypto call admission limit ike sa 10", "ip host r2 10.1.12.2",
+    " ip helper-address 10.1.1.1", " ip policy route-map PBR",
+])
+def test_a_lab_line_beside_the_management_words_is_taken(line: str) -> None:
+    """The management refusals leave the CCNP topics a skill teaches: IS-IS's net, FHRPs, port channels, VRF-lite,
+    static routes in the global table, IPsec, SLA, the other interfaces."""
+    plan = wf.scratch_push_plan({"device": "skl-r3", "reason": "r", "lines": [line]}, SKILLS["forbidden_lines"],
+                                SKILLS["forbidden_commands"])
+    assert plan["ok"] is True, plan["refused"]
 
 
 def test_the_runner_code_carries_the_forbidden_set_from_versions() -> None:
@@ -335,7 +363,8 @@ def test_the_inventory_is_made_once_with_the_eval_groups_from_versions_only() ->
 
 def test_the_probes_cover_every_criterion_as_the_runners_accounts_and_read_the_router_as_judge() -> None:
     text = (ROOT / "verify" / "skillslabcheck.py").read_text()
-    for check in ("accounts", "inventory", "gbac", "forbidden", "restconf", "hold", "restore", "agents", "profile"):
+    for check in ("accounts", "inventory", "gbac", "forbidden", "restconf", "hold", "restore", "agents", "profile",
+                  "project"):
         assert re.search(rf"^    {check}\s", text, re.M), f"the docstring does not list {check}"
     assert 'ACCESS["run"]["password_env"]' in text and 'ACCESS["approve"]["password_env"]' in text
     # the outcome on the router is read directly, as judge, on a pinned connection - never through the Platform
@@ -343,6 +372,9 @@ def test_the_probes_cover_every_criterion_as_the_runners_accounts_and_read_the_r
     # cards are released the way the runner releases them: Work Center claim, then complete
     assert "/claim" in text and "/complete" in text and "/tasks/" not in text
     assert 'choices=["prod"]' in text, "production only"
+    # each scored session is deleted as the runner deletes it, and its absence read back as the administrator
+    assert 'evl.req("DELETE", f"/agent-session-manager/sessions/{sid}")' in text
+    assert 'adm.req("GET", f"/agent-session-manager/sessions/{sid}")' in text
 
 
 # --- the agents and their profile (build item 7) ----------------------------------------------------------------------
@@ -372,7 +404,9 @@ def test_the_instructions_name_every_allowlisted_path_and_every_forbidden_comman
     for prefix in SKILLS["restconf_allowlist"]:
         assert prefix.lower() in text, prefix
     for pattern in SKILLS["forbidden_lines"]:
-        words = re.findall(r"[a-z]+", pattern.replace("\\b", " ").replace("\\s", " "))
+        # the GigabitEthernet1 pattern spells out every abbreviation; the instructions name the interface
+        words = (["gigabitethernet1"] if "(?:i(?:g" in pattern
+                 else re.findall(r"[a-z]+", pattern.replace("\\b", " ").replace("\\s", " ")))
         assert " ".join(words) in text, f"{pattern}: not named in the instructions"
     for command in SKILLS["forbidden_commands"]:
         assert re.search(rf"\b{' '.join(command)}\b", text), f"{command}: not named in the instructions"
@@ -389,6 +423,21 @@ def test_the_profile_is_new_and_the_meter_leaves_the_pair_out() -> None:
     assert 'budget.get("exclude_agents")' in meter and '(s.get("agentSnapshot") or {}).get("name") in excluded' in meter
 
 
+def test_the_pair_has_a_project_of_its_own_that_only_production_makes_and_no_group_edits() -> None:
+    assert SKILLS["project"] != VERSIONS["agents"]["project"]
+    in_project = {p.stem for p in AGENTS.glob("*.yaml") if _agent(p.stem)["project"] == SKILLS["project"]}
+    assert in_project == set(SKILLS["agents"])
+    assets = _tasks(TASKS / "flowai-assets.yml")
+    create = next(t for t in assets if t["name"] == "The skills lab's agent project, production only: "
+                                                     "{{ skills_lab.project }}")
+    assert "not (dev_overlay | default(false) | bool)" in create["when"]
+    guard = next(t for t in assets if t["name"].startswith("The skills lab's agent project exists once"))
+    assert "selectattr('type', 'equalto', 'group')" in json.dumps(guard) and "dev_overlay" in guard["when"]
+    assert assets.index(create) < assets.index(guard)
+    # the MCP server's group is made an editor of agents.project alone
+    assert "skills_lab.project" not in (TASKS / "mcp-access.yml").read_text()
+
+
 def test_no_play_gives_the_pair_to_the_mcp_account_or_builds_it_on_dev() -> None:
     agent = (TASKS / "flowai-agent.yml").read_text()
     assert "or agent.name in skills_lab.agents else [mcp_access.group]" in agent
@@ -396,3 +445,6 @@ def test_no_play_gives_the_pair_to_the_mcp_account_or_builds_it_on_dev() -> None
     assert "(skills_lab.agents if dev_overlay | default(false) | bool else [])" in assets
     mcp = next(t for t in _tasks(TASKS / "mcp-access.yml") if t["name"] == "MCP access - the group operates the plays' agents")
     assert "item.name not in skills_lab.agents" in mcp["when"]
+    # ... and the proof after it does not count the pair as missing the group (else every replay after the first fails)
+    proof = next(t for t in _tasks(TASKS / "mcp-access.yml") if t["name"].startswith("MCP access - the group is on"))
+    assert "if a.name not in skills_lab.agents" in proof["vars"]["agent_missing"]

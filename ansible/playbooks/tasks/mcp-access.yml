@@ -232,7 +232,8 @@
       {{ out }}
     agent_missing: >-
       {%- set out = [] -%}
-      {%- for a in mca_after.results[2].json.data['items'] -%}
+      {#- the skills lab's agents are operated by admin_group and eval alone (ADR 0084): no MCP group to miss -#}
+      {%- for a in mca_after.results[2].json.data['items'] if a.name not in skills_lab.agents -%}
         {%- set ids = a.operators | map(attribute='_id') | list -%}
         {%- if mca_ids['admin_group'] in ids and mca_ids[mcp_access.group] not in ids -%}
           {%- set _ = out.append(a.name) -%}

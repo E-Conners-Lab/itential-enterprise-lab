@@ -11,14 +11,18 @@ the Platform it is checking).
     inventory  1  skills-lab holds exactly skl-r1..3 with its groups; none in lab, Configuration Manager or NetBox
     gbac       2  the agent-tool routes answer svc-eval; the restore, a production route and a direct start refuse it;
                   the approver may start none of the agent tools; each scratch automation's gbac as versions.yaml says
-    forbidden  4  `write memory` and `do copy running-config startup-config` refused before any card
+    forbidden  4  `write memory`, `do copy running-config startup-config` and `int gi1` (the management path)
+                  refused before any card
     restconf   5  an allowlisted path returns JSON; the username path is refused by the gate; no password in the job
     hold       3  a push waits on its card, svc-eval cannot claim it, the router is unchanged; released, the change is
                   on the router; a second push rejected leaves it off; then the baseline is restored
     restore    6  after a probe change, the restore reports restored with equal hashes and the change is gone
     agents     7  one skill-eval-local session (--claude: skill-eval too) follows a probe procedure with the scratch
-                  tools only; no agent document holds the procedure
+                  tools only; no agent document holds the procedure; svc-eval deletes each session once scored and
+                  the administrator reads it gone; then how far the delete reaches, on a throwaway session the
+                  administrator starts (skill-eval-local)
     profile    8  anthropic-sonnet-5-5 serves skill-eval; every agent document is operable
+    project       the pair sits in skills_lab.project alone, which has no group among its members
     all           every check but agents, in the order above
 
 Production only: the scratch lab is production's. Reads .env (ITENTIAL_ADMIN_*, SVC_EVAL_PROD_PASSWORD,
@@ -193,7 +197,7 @@ def gbac() -> None:
 
 def forbidden() -> None:
     evl, adm = runner(), admin()
-    for lines in (["write memory"], ["do copy running-config startup-config"]):
+    for lines in (["write memory"], ["do copy running-config startup-config"], ["int gi1", " shutdown"]):
         d = propose(evl, lines, "forbidden probe")
         v = d.get("variables") or {}
         assert d.get("status") == "complete" and not d["_waiting"], f"job {d['_id']}: {d.get('status')} {d['_waiting']}"
@@ -271,13 +275,7 @@ def agents(claude: bool) -> None:
                             {"agentDefinitionId": ids[name], "inputs": {"request": PROBE_PROCEDURE}})
         sid = out.get("sessionId") if isinstance(out, dict) else None
         assert code in (200, 201) and sid, f"{name}: HTTP {code} {str(out)[:200]}"
-        deadline, status = time.time() + 900, ""
-        while time.time() < deadline:
-            doc = evl.req("GET", f"/agent-session-manager/sessions/{sid}")[1]
-            status = str(((doc.get("data") or doc) if isinstance(doc, dict) else {}).get("status") or "")
-            if status.upper() != "RUNNING":
-                break
-            time.sleep(5)
+        status = session_end(evl, sid)
         assert status.upper().startswith("COMPLETE"), f"{name} session {sid}: {status}"
         msgs = evl.req("GET", f"/agent-session-manager/sessions/{sid}/messages?limit=500&sortBy=eventId&sortOrder=asc")[1]
         msgs = (msgs.get("data") or msgs.get("items") or []) if isinstance(msgs, dict) else msgs
@@ -286,6 +284,71 @@ def agents(claude: bool) -> None:
         assert called and called <= tools, f"{name}: tools {called}"
         assert texts and "DIAGNOSIS: 4" in texts[-1], f"{name}: {texts[-1][-200:] if texts else 'no answer'}"
         print(f"{name} session {sid}: tools {sorted(called)}; DIAGNOSIS: 4")
+        # the runner's last step: the record keeps the request, so the scored session is deleted as svc-eval
+        code, out = evl.req("DELETE", f"/agent-session-manager/sessions/{sid}")
+        assert code in (200, 204), f"svc-eval could not delete session {sid}: HTTP {code} {str(out)[:200]}"
+        assert gone(adm, sid), f"session {sid}: deleted, but the administrator still reads it"
+        print(f"{name} session {sid}: deleted by svc-eval; the administrator reads neither it nor its messages")
+    reach(evl, adm, ids["skill-eval-local"])
+
+
+def session_end(p: Platform, sid: str, seconds: int = 900) -> str:
+    deadline, status = time.time() + seconds, ""
+    while time.time() < deadline:
+        doc = p.req("GET", f"/agent-session-manager/sessions/{sid}")[1]
+        status = str(((doc.get("data") or doc) if isinstance(doc, dict) else {}).get("status") or "")
+        if status.upper() != "RUNNING":
+            break
+        time.sleep(5)
+    return status
+
+
+def gone(adm: Platform, sid: str) -> bool:
+    """The session is gone for the administrator: its record answers 404 or empty, and it has no messages. Any other
+    answer (an expired login, a server error) is not an absence: the probe stops rather than record a wrong reach."""
+    code, doc = adm.req("GET", f"/agent-session-manager/sessions/{sid}")
+    assert code in (200, 404), f"session {sid}: the administrator's read answered HTTP {code}"
+    record = (doc["data"] if isinstance(doc, dict) and "data" in doc else doc) if code == 200 else None
+    code, msgs = adm.req("GET", f"/agent-session-manager/sessions/{sid}/messages?limit=5")
+    assert code in (200, 404), f"session {sid} messages: the administrator's read answered HTTP {code}"
+    msgs = ((msgs.get("data") or msgs.get("items") or []) if isinstance(msgs, dict) else msgs) if code == 200 else []
+    return not record and not msgs
+
+
+def reach(evl: Platform, adm: Platform, agent_id: str) -> None:
+    """How far svc-eval's deleteSession reaches: a measurement, recorded in ADR 0084 decision 6. The session is a
+    throwaway the administrator starts on the local twin; whichever way it goes, the probe removes it."""
+    code, out = adm.req("POST", "/agent-session-manager/sessions",
+                        {"agentDefinitionId": agent_id, "inputs": {"request": "Reply with the single word OK. Call no tool."}})
+    sid = out.get("sessionId") if isinstance(out, dict) else None
+    assert code in (200, 201) and sid, f"the administrator's throwaway session: HTTP {code} {str(out)[:200]}"
+    session_end(adm, sid)
+    code, _ = evl.req("DELETE", f"/agent-session-manager/sessions/{sid}")
+    if gone(adm, sid):
+        print(f"measured: svc-eval deleted a session the administrator started ({sid}, HTTP {code}): the delete "
+              "reaches every session")
+        return
+    adm.req("DELETE", f"/agent-session-manager/sessions/{sid}")
+    assert gone(adm, sid), f"throwaway session {sid} is still there: delete it by hand"
+    print(f"measured: svc-eval could not delete a session the administrator started ({sid}, HTTP {code}); "
+          "the administrator removed it")
+
+
+def project() -> None:
+    adm = admin()
+    projects = adm.req("GET", "/agent-project-service/projects")[1]["data"]["items"]
+    ours = [pj for pj in projects if pj["name"] == SKILLS["project"]]
+    assert len(ours) == 1, f"{SKILLS['project']}: {len(ours)} project(s)"
+    groups = [m for m in ours[0].get("members", []) if m.get("type") == "group"]
+    assert not groups, f"{SKILLS['project']}: group members {groups}"
+    ids = {i["name"]: i["_id"] for i in adm.req("GET", "/agent-project-service/operable-agents")[1]["data"]["items"]}
+    pair = {ids[name] for name in SKILLS["agents"]}
+    held = {c["reference"] for c in ours[0].get("components", []) if c.get("type") == "agent"}
+    assert held == pair, f"{SKILLS['project']} holds {held}, not exactly {sorted(SKILLS['agents'])}"
+    elsewhere = [pj["name"] for pj in projects if pj is not ours[0]
+                 and pair & {c["reference"] for c in pj.get("components", [])}]
+    assert not elsewhere, f"the pair is also in {elsewhere}"
+    print(f"{SKILLS['project']}: exactly {SKILLS['agents']}, no group among its members, the pair in no other project")
 
 
 def profile() -> None:
@@ -304,7 +367,7 @@ def profile() -> None:
 
 
 CHECKS = {"accounts": accounts, "inventory": inventory, "gbac": gbac, "forbidden": forbidden, "restconf": restconf,
-          "hold": hold, "restore": restore_check, "profile": profile}
+          "hold": hold, "restore": restore_check, "profile": profile, "project": project}
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)

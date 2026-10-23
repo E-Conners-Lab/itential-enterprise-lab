@@ -3,8 +3,9 @@ them.
 
 itential/eval/run-roles.yaml (svc-eval) and approve-roles.yaml (svc-eval-approver) are the role oracles. The methods and
 the deny lists below are written here independently of those files, so an edit to an oracle cannot quietly widen what
-either account holds. The runner's account starts the agent tools and reads jobs and sessions, and can never release a
-card; the approver releases cards, cancels a stuck job and runs the restore, and never starts an agent. No lab access."""
+either account holds. The runner's account starts the agent tools, reads jobs and sessions and deletes the sessions it
+scored, and can never release a card; the approver releases or rejects cards and runs the restore, cancels no job and
+never starts an agent. No lab access."""
 
 from __future__ import annotations
 
@@ -22,10 +23,11 @@ VERSIONS = yaml.safe_load((ROOT / "itential" / "versions.yaml").read_text())
 PLAYS = ROOT / "ansible" / "playbooks"
 TASKS = PLAYS / "tasks"
 
-RUN_METHODS = {"OperationsManager/runEndpointTriggerWithPost", "OperationsManager/getJob", "OperationsManager/getJobs"}
+RUN_METHODS = {"OperationsManager/runEndpointTriggerWithPost", "OperationsManager/getJob", "OperationsManager/getJobs",
+               "AgentSessionManager/deleteSession"}  # a scored session's record keeps the procedure
 RUN_BUILTIN = {"AgentSessionManager/session:read", "AgentSessionManager/operator"}
 APPROVE_METHODS = {"OperationsManager/runEndpointTriggerWithPost", "OperationsManager/getJob",
-                   "OperationsManager/getJobs", "OperationsManager/cancelJobs"}
+                   "OperationsManager/getJobs"}  # no cancelJobs: it reaches every job on production
 APPROVE_BUILTIN = {"WorkCenterService/work-items:write"}  # claim, complete, cancel a card (measured 2026-10-23)
 DENY = ["*/admin", "*/apiwrite", "*/designer", "*/engineering", "*/operations", "*/support", "*/builder", "*/*:create",
         "*/*:update", "*/*:delete", "*/*:run", "*/*:code", "*/*:manage", "MOP/*", "ConfigurationManager/*",
@@ -105,6 +107,21 @@ def test_the_runner_can_never_release_move_or_cancel_a_held_job() -> None:
     methods = _keys([m for c in prod["custom"] for m in c["methods"]])
     assert not methods & TASK_METHODS
     assert not any(b["provenance"] == "WorkCenterService" for b in prod["builtin"])
+
+
+def test_the_approver_cancels_no_job_and_rejects_a_card_instead() -> None:
+    prod = _oracle("approve-roles.yaml")["prod"]
+    methods = _keys([m for c in prod["custom"] for m in c["methods"]])
+    assert not methods & TASK_METHODS, "a waiting push is rejected through its card, which Work Center scopes"
+
+
+def test_the_only_delete_either_account_holds_is_the_runners_session_delete() -> None:
+    deletes = {account: {k for k in _keys([m for c in _oracle(spec[0])["prod"]["custom"] for m in c["methods"]])
+                         if "delete" in k.split("/")[1].lower()}
+               for account, spec in ACCOUNTS.items()}
+    assert deletes == {"run": {"AgentSessionManager/deleteSession"}, "approve": set()}
+    # a method, not the built-in session:delete role, so the deny list's */*:delete keeps holding for every role
+    assert "*:delete" in {d["name"] for d in _oracle("run-roles.yaml")["prod"]["deny"]}
 
 
 def test_the_two_accounts_share_no_group_and_neither_is_an_admin() -> None:
