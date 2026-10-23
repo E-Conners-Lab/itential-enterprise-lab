@@ -226,8 +226,9 @@ def test_terraform_run_uses_reviewed_code_and_vault_secrets_only() -> None:
     assert re.fullmatch(r"[0-9a-f]{40}", tr["repository"]["reference"]), tr["repository"]["reference"]
     aliases = VAULT["gateway_aliases"]
     services = {s["name"]: s for s in tr["services"]}
-    # fabric-bgp (R10, ADR 0073) shares the repository and pin; it binds only the shared device password
-    assert set(services) == {"terraform-run", "aws-vpn-psk", "fabric-bgp"}
+    # fabric-bgp (R10, ADR 0073) and restconf-get (ADR 0084) share the repository and pin; each binds one device
+    # password (tests/test_skills_lab.py holds restconf-get's)
+    assert set(services) == {"terraform-run", "aws-vpn-psk", "fabric-bgp", "restconf-get"}
     for svc in services.values():
         for secret in svc["secrets"]:
             assert secret["name"] in aliases and secret["type"] == "env", secret

@@ -96,6 +96,6 @@
         label: "{{ item[0] }}"
       changed_when: true
 
-    - name: Pins to commit (itential/versions.yaml skills_lab.nodes, in the lab PR that adds restconf-get)
+    - name: Pins read now (compare with itential/versions.yaml skills_lab.nodes; a rebuilt router needs its new pin there)
       ansible.builtin.debug:
         msg: "{{ routers | map('first') | zip(pins) | list }}"

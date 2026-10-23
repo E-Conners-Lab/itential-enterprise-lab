@@ -625,3 +625,79 @@ def test_push_configs_runs_the_guards_before_touching_any_node(
     with pytest.raises(SystemExit):
         build.push_configs(PushEve({}), no_mac, only=None)
     assert touched == []
+
+
+# --- ADR 0084's second change: the certificate pins, restconf-get and the scratch passwords in Vault ----------------
+
+VERSIONS = yaml.safe_load((ROOT / "itential" / "versions.yaml").read_text())
+VAULT = VERSIONS["vault"]
+EXPORT = ROOT / "topology" / "generated" / "skills-lab" / "eve-nodes.yaml"
+JUDGE_PATH = "eval/skills-lab-judge"
+
+
+def test_pinned_nodes_are_the_scratch_routers_as_restconf_get_takes_them(scratch: dict) -> None:
+    nodes = VERSIONS["skills_lab"]["nodes"]
+    assert set(nodes) == set(scratch["nodes"])
+    for name, node in nodes.items():
+        # with its name added, exactly restconf-get's --target_json fields (cloud-devops-pipeline itential/restconf-get.py)
+        assert set(node) == {"mgmt_host", "cert_sha256"}, name
+        assert node["mgmt_host"] == scratch["nodes"][name]["mgmt_ip"], name
+        assert re.fullmatch(r"[0-9a-f]{64}", node["cert_sha256"]), name
+    assert len({node["cert_sha256"] for node in nodes.values()}) == len(nodes)  # one certificate per router
+    # restconf-get logs in only to these names at these addresses (cloud-devops-pipeline SCRATCH_ROUTERS): a router
+    # added or moved here needs the same change there, then a pin bump
+    assert {name: node["mgmt_host"] for name, node in nodes.items()} == {
+        "skl-r1": "10.100.0.152",
+        "skl-r2": "10.100.0.153",
+        "skl-r3": "10.100.0.154",
+    }
+
+
+def test_restconf_get_logs_in_as_the_reader_and_the_inventory_alias_is_the_scratch_account() -> None:
+    (svc,) = [s for s in VERSIONS["terraform_run"]["services"] if s["name"] == "restconf-get"]
+    assert svc["filename"] == "itential/restconf-get.py" and svc["working-directory"] == "."
+    assert svc["secrets"] == [{"name": "skills-lab-reader-password", "type": "env", "target": "RESTCONF_GET_PASSWORD"}]
+    aliases = VAULT["gateway_aliases"]
+    assert aliases["skills-lab-reader-password"] == {"path": "devices/skills-lab-reader", "key": "password"}
+    assert aliases["skills-lab-automation-password"] == {"path": "devices/skills-lab", "key": "password"}
+    # never the production device account's entry
+    assert VAULT["secrets"]["devices/skills-lab-reader"]["password"] == {"env": "SKILLS_LAB_READER_PASSWORD"}
+    assert VAULT["secrets"]["devices/skills-lab"]["password"] == {"env": "SKILLS_LAB_AUTOMATION_PASSWORD"}
+
+
+def test_the_scratch_passwords_are_seeded_on_production_only() -> None:
+    # the scratch lab is production's (ADR 0084): a dev Vault never gets them, and dev has no dev_env to swap in
+    scratch_paths = sorted(
+        path for path, keys in VAULT["secrets"].items()
+        if any(isinstance(src, dict) and str(src.get("env", "")).startswith("SKILLS_LAB_") for src in keys.values())
+    )
+    assert scratch_paths == ["devices/skills-lab", "devices/skills-lab-reader", JUDGE_PATH]
+    for path in scratch_paths:
+        keys = VAULT["secrets"][path]
+        assert keys.get("prod_only") is True, path
+        assert not any(isinstance(src, dict) and "dev_env" in src for src in keys.values()), path
+
+
+def test_the_judge_password_is_where_no_gateway_or_platform_reader_reaches() -> None:
+    # the judge stays independent of the governed path it judges: no alias names its entry, no AppRole policy covers it.
+    # Found by its .env source, so moving the entry cannot slip past this test
+    (judge,) = [path for path, keys in VAULT["secrets"].items()
+                if any(isinstance(src, dict) and src.get("env") == "SKILLS_LAB_JUDGE_PASSWORD" for src in keys.values())]
+    every_alias = {**VAULT["gateway_aliases"], **VAULT["edge_gateway_aliases"]}
+    assert all(ref["path"] != judge for ref in every_alias.values())
+    for role, cfg in VAULT["approles"].items():
+        for granted in cfg["policy_paths"]:
+            covers = judge == granted or (granted.endswith("*") and judge.startswith(granted[:-1]))
+            assert not covers, (role, granted)
+        assert not any(judge in endpoint for endpoint in cfg.get("kv_endpoints", {})), role
+
+
+def test_the_exported_node_file_is_the_lab_the_topology_asks_for(scratch: dict) -> None:
+    # eve/build.py export after make skills-lab-up (2026-10-22): names, addresses and each node's own first MAC
+    export = yaml.safe_load(EXPORT.read_text())
+    assert export["lab"] == f"/{scratch['lab']['name']}.unl"
+    assert set(export["nodes"]) == set(scratch["nodes"])
+    for name, node in export["nodes"].items():
+        want = scratch["nodes"][name]
+        assert (node["mgmt_ip"], node["platform"]) == (want["mgmt_ip"], want["platform"]), name
+        assert node["mac0"] == want["eve"]["firstmac"], name
