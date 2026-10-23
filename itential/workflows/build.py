@@ -16,6 +16,7 @@ the itentialopensource pre-built automations:
 from __future__ import annotations
 
 import base64
+import hashlib
 import html
 import importlib.util
 import inspect
@@ -54,6 +55,7 @@ def task(
     location_type: str | None = None,
     display: str | None = None,
     view: str | None = None,
+    groups: list[str] | None = None,
     x: int = 0,
     y: int = 0,
 ) -> dict:
@@ -67,7 +69,9 @@ def task(
         "app": app,
         "type": kind,
         "displayName": display or app,
-        "groups": [],
+        # a manual task's groups: who may claim it in Work Center (group ids; generated documents carry
+        # `__GROUP_ID:<name>__` markers that the import fills in by name, tasks/workflow-group-ids.yml)
+        "groups": list(groups or []),
         "nodeLocation": {"x": x, "y": y},
         "variables": {
             "incoming": incoming,
@@ -408,6 +412,33 @@ REVERT_CHECKS = {
     },
 }
 FABRIC_DEVICES = set(VERSIONS["fabric_bgp"]["host_keys"])
+# ADR 0084: the skills eval suite's scratch routers (versions.yaml skills_lab), reached only through their own inventory
+SKILLS_LAB = VERSIONS["skills_lab"]
+SCRATCH_INVENTORY = SKILLS_LAB["inventory"]
+SCRATCH_NODES = SKILLS_LAB["nodes"]
+SCRATCH_DEVICE = {"type": "string", "enum": sorted(SCRATCH_NODES)}
+
+
+def js_literal(text: str) -> str:
+    """`text` as a literal inside a JSON Schema pattern. The Platform checks patterns as JavaScript regular expressions
+    in unicode mode, where Python's re.escape output (`\\-`, `\\:`) is a syntax error: only the characters that are
+    special outside a class are escaped."""
+    return re.sub(r"([\\^$.*+?()[\]{}|])", r"\\\1", text)
+
+
+# restconf-get's own rule (cloud-devops-pipeline PATH, MAX_PATH and checked_path): an allowlisted prefix, then optionally
+# a `/` path of these characters only - `%` only as %2F, the encoded `/` a list key needs - and never `..`
+RESTCONF_PATH = {
+    "type": "string",
+    "maxLength": 300,
+    "pattern": r"^(?!.*\.\.)(?:" + "|".join(js_literal(p) for p in SKILLS_LAB["restconf_allowlist"])
+    + r")(?:/(?:[A-Za-z0-9=:._,/-]|%2[Ff])*)?$",
+}
+# the lines a skill proposes, one per item, at most 50: no control character inside one (no newline, carriage return or
+# tab), so a line can never carry a second command past the forbidden-line check
+CONFIG_LINES = {"type": "array", "minItems": 1, "maxItems": 50,
+                "items": {"type": "string", "minLength": 1, "maxLength": 200, "pattern": r"^[^\x00-\x1f\x7f]+$"}}
+REASON = {"type": "string", "maxLength": 500, "pattern": r"^[^<>]*$"}
 INPUT_GATES = {
     WF["show_version"]: {"device": NODE_NAME},
     # ADR 0080: a workflow name, as versions.yaml spells them; the service checks it again
@@ -487,9 +518,15 @@ INPUT_GATES = {
         "revert_minutes": {"type": "integer", "minimum": 2, "maximum": 15},
         "checks": REVERT_CHECKS,
     },
+    # ADR 0084: the scratch routers' four workflows; the router is one of skills_lab.nodes, never a lab device
+    WF["scratch_show"]: {"device": SCRATCH_DEVICE, "command": SHOW_COMMAND},
+    WF["scratch_restconf"]: {"device": SCRATCH_DEVICE, "path": RESTCONF_PATH},
+    WF["scratch_push"]: {"device": SCRATCH_DEVICE, "lines": CONFIG_LINES, "reason": REASON},
+    WF["scratch_restore"]: {"device": SCRATCH_DEVICE},
 }
 # where a refusal is reported: the device workflows already say "did not run" in device_error, which the agents read
-GATE_ERROR_VAR = {WF[k]: "device_error" for k in ("show_version", "show_command", "show_all", "config_push")}
+GATE_ERROR_VAR = {WF[k]: "device_error" for k in ("show_version", "show_command", "show_all", "config_push",
+                                                  "scratch_show")}
 # the field copies; then 9a0a validate, 9a0b evaluate, 9a0c refuse
 GATE_IDS = ("9a01", "9a02", "9a03", "9a04", "9a05", "9a06", "9a07", "9a08", "9a09")
 
@@ -699,11 +736,12 @@ def nbi(
     )
 
 
-def selector(device_ref: str, x: int) -> tuple[dict, dict]:
+def selector(device_ref: str, x: int, inventory: str = INVENTORY) -> tuple[dict, dict]:
     """Two tasks that render the Gateway Manager inventory selector for one node. $var references
     are substituted only at the top level of a task's inputs, so the node name is spliced into a
-    JSON string with Tools.replace and the string is parsed with Tools.parse."""
-    template = '[{"inventory": "%s", "nodeNames": ["__DEVICE__"]}]' % INVENTORY
+    JSON string with Tools.replace and the string is parsed with Tools.parse. `inventory`: the lab's own
+    unless a workflow names another (the scratch routers' skills-lab, ADR 0084)."""
+    template = '[{"inventory": "%s", "nodeNames": ["__DEVICE__"]}]' % inventory
     rep = task(
         "replace",
         "WorkFlowEngine",
@@ -6101,11 +6139,12 @@ def guide_card(d: dict) -> dict:
 
 
 def approval(tid: str, header: str, message_ref: str, body_ref: str, ok: str, cancel: str, x: int, var: str,
-             y: int = 0) -> dict:
+             y: int = 0, groups: list[str] | None = None) -> dict:
     """An approval as a branded page (ADR 0077): three setObjectKey tasks gather header, message and body, runCode
     renders approval_card on the Gateway, a query takes the HTML, and the InteractiveHTML task `tid` shows it with the
     same two buttons the ViewData had. `tid` keeps its id, so the workflow's edges out of the approval are unchanged;
-    the five helper tasks are tid1..tid5 (approval_edges wires them)."""
+    the five helper tasks are tid1..tid5 (approval_edges wires them). `groups`: who may release the card (ADR 0084's
+    scratch push names eval-approvers and admin_group); none means any account Work Center lets claim it."""
     a, b, c, d, f = (f"{tid}{i}" for i in "12345")
     hx, hy = APPROVAL_HELPER_OFFSET  # the five helpers sit on their own row, so the straight arrows miss the other tasks
     return {
@@ -6119,7 +6158,7 @@ def approval(tid: str, header: str, message_ref: str, body_ref: str, ok: str, ca
                   {"header": header, "body": f"$var.{f}.return_data", "variables": {}, "btn_success": ok,
                    "btn_failure": cancel},
                   {"export": f"$var.job.{var}_decision"}, kind="manual", display="Work Center",
-                  view="/work-center/task/InteractiveHTML", x=x, y=y),
+                  view="/work-center/task/InteractiveHTML", groups=groups, x=x, y=y),
     }
 
 
@@ -8208,12 +8247,340 @@ def ask_platform_guide() -> dict:
     )
 
 
+# --- The skills eval suite's governed path to its scratch routers (ADR 0084) ---------------------------------------
+# Four workflows, production only, on the scratch routers' own inventory (versions.yaml skills_lab), each behind its
+# input gate and with every Gateway answer checked (ADR 0066). The eval runner in the private workbench sequences them:
+# the agents call the first three as tools (svc-eval), the runner releases the push card and restores the baseline
+# (svc-eval-approver). Nothing here starts another workflow (no child jobs) and nothing is ever saved on a router.
+SCRATCH_GROUP_MARKERS = ["__GROUP_ID:eval-approvers__", "__GROUP_ID:admin_group__"]  # filled in at import
+RESTCONF_USER = "restconf-reader"  # the privilege-1 reader skills-lab-devices.yml made; restconf-get binds its password
+RESTCONF_TIMEOUT = "60"
+SCRATCH_APPROVAL_MESSAGE = ("A proposed change to __D__, a scratch router of the skills eval suite. Nothing is saved on "
+                            "the router: the runner restores its baseline after the run.")
+RESTORE_VOLATILE = (r"^Building configuration", r"^Current configuration :", r"^! Last configuration change",
+                    r"^! NVRAM config last updated")
+
+
+def restconf_params(d: dict, nodes: dict, user: str, timeout: str) -> dict:
+    """restconf-get's params for one scratch router: its pinned target exactly as skills_lab.nodes holds it, the path
+    and the reader (the service checks every one of them again). Pure: runCode runs this function's own source."""
+    name = d.get("device")
+    node = nodes[name]  # the input gate allows only these names; anything else is an error, not a guess
+    target = {"name": name, "mgmt_host": node["mgmt_host"], "cert_sha256": node["cert_sha256"]}
+    return {"params": {"target_json": json.dumps(target), "path": d.get("path"), "username": user,
+                       "timeout": timeout}}
+
+
+def scratch_push_plan(d: dict, forbidden: list) -> dict:
+    """Every proposed line against the forbidden set (case-insensitive, anywhere in the line) before any card exists;
+    when none is refused, the lines joined for send-config and the card's body. Pure: runCode runs this source."""
+    lines = d.get("lines")
+    if not isinstance(lines, list) or not lines or not all(isinstance(x, str) for x in lines):
+        return {"ok": False, "refused": [], "message": "the lines are not a list of strings: nothing was sent"}
+    patterns = [re.compile(p, re.IGNORECASE) for p in forbidden]
+    refused = [x for x in lines if any(p.search(x) for p in patterns)]
+    if refused:
+        return {"ok": False, "refused": refused,
+                "message": "refused before any approval, forbidden on the scratch routers: " + "; ".join(refused)
+                           + ". Nothing was sent to the router"}
+    return {"ok": True, "refused": [], "config": "\n".join(lines),
+            "card": {"device": d.get("device"), "reason": d.get("reason") or "", "lines": lines}}
+
+
+def replace_done(d: dict) -> dict:
+    """configure replace's answer: done only when the Gateway ran it and IOS XE printed "Rollback Done". Only that is
+    published, never the router's text. Pure: runCode runs this function's own source."""
+    r = ((d.get("result") or {}).get("results") or [{}])[0]
+    if not r.get("success"):
+        return {"done": False, "error": "the Gateway did not run configure replace on the router"}
+    if "Rollback Done" not in str(r.get("output") or ""):
+        return {"done": False, "error": "configure replace did not report Rollback Done: the router may still hold "
+                                        "part of the change; run the restore again or check the router"}
+    return {"done": True, "error": ""}
+
+
+def restore_proof(d: dict, volatile: tuple) -> dict:
+    """The baseline file and the running configuration, each without blank lines and the lines that change by
+    themselves (the header, the change and save stamps), hashed and compared. Only the two hashes and the counts of
+    differing lines leave the runner, never the configuration. Pure: runCode runs this function's own source."""
+    results = (d.get("result") or {}).get("results") or []
+    if len(results) != 2 or not all(r.get("success") for r in results):
+        return {"restored": False, "baseline_sha256": "", "running_sha256": "",
+                "error": "the Gateway could not read the baseline file and the running configuration"}
+    skip = [re.compile(v) for v in volatile]
+    kept = [[ln.rstrip() for ln in str(r.get("output") or "").splitlines()
+             if ln.strip() and not any(s.match(ln.strip()) for s in skip)] for r in results]
+    baseline, running = kept
+    digests = [hashlib.sha256("\n".join(k).encode()).hexdigest() for k in kept]
+    out = {"restored": bool(baseline) and digests[0] == digests[1], "baseline_sha256": digests[0],
+           "running_sha256": digests[1], "error": ""}
+    if not baseline:
+        out["error"] = "bootflash:baseline.cfg is empty or could not be read: capture it again (make skills-lab-devices)"
+    elif not out["restored"]:
+        out["error"] = (f"the running configuration differs from bootflash:baseline.cfg after the replace: "
+                        f"{len(set(running) - set(baseline))} line(s) only in the running configuration, "
+                        f"{len(set(baseline) - set(running))} only in the baseline")
+    return out
+
+
+RESTCONF_PARAMS_CODE = _source(restconf_params, call='restconf_params(json.loads(sys.stdin.read() or "{}"), NODES, USER, '
+                               'TIMEOUT)', extra="NODES = " + repr(SCRATCH_NODES) + "\nUSER = " + repr(RESTCONF_USER)
+                               + "\nTIMEOUT = " + repr(RESTCONF_TIMEOUT) + "\n\n\n")
+SCRATCH_PUSH_PLAN_CODE = _source(scratch_push_plan, call='scratch_push_plan(json.loads(sys.stdin.read() or "{}"), '
+                                 'FORBIDDEN)', extra="import re\n\nFORBIDDEN = " + repr(SKILLS_LAB["forbidden_lines"])
+                                 + "\n\n\n")
+REPLACE_DONE_CODE = _source(replace_done, call='replace_done(json.loads(sys.stdin.read() or "{}"))')
+RESTORE_PROOF_CODE = _source(restore_proof, call='restore_proof(json.loads(sys.stdin.read() or "{}"), VOLATILE)',
+                             extra="import hashlib\nimport re\n\nVOLATILE = " + repr(RESTORE_VOLATILE) + "\n\n\n")
+SCRATCH_DEVICE_INPUT = {"type": "string", "required": True, "enum": sorted(SCRATCH_NODES),
+                        "description": "The scratch router (skills_lab.nodes), e.g. skl-r1"}
+
+
+def scratch_show() -> dict:
+    ok, fail, err = "success", "failure", "error"
+    tasks = sectioned({
+        **step("the command: the list built from the input, sent to the scratch router through the Gateway; the answer checked"),
+        "1a": replace("commands JSON", '["__C__"]', "__C__", "$var.job.command", x=0),
+        "1b": parse("commands list", "$var.1a.replacedString", x=300),
+        "2a": task("sendCommand", "GatewayManager", "run the command through Gateway 5",
+                   {"clusterId": CLUSTER, "commands": "$var.1b.textObject", "inventory": "$var.0b.textObject"},
+                   {"result": None}, x=600),
+        "2b": evaluate("did the router answer?", "2a", "result", "result.results[0].success", "==", True, x=900),
+        **step("the answer: the router's output, published as it came (no parser: the scratch routers are not in NetBox)"),
+        "3a": jq("the raw output", "$var.2a.result", "result.results[0].output", x=1200, to_job="raw"),
+        **step("where it stops: a router the Gateway could not run it on, or one that did not answer, each with its reason"),
+        "5a": note("the Gateway could not run it", "the command did not run: the Gateway could not reach the router "
+                   "in the skills-lab inventory; report this and do not retry", "device_error", x=600, y=300),
+        "5b": note("the router did not answer", "the command did not run on the router (credential or connection "
+                   "error); report this and do not retry", "device_error", x=900, y=-600),
+    })
+    tasks["0a"], tasks["0b"] = selector("$var.job.device", x=-600, inventory=SCRATCH_INVENTORY)
+    stepped(tasks, "the selector: the one scratch router, in the shape the Gateway wants", "0a", "0b")
+    tr = {
+        "workflow_start": _edge(**{"0a": ok}), "0a": _edge(**{"0b": ok}), "0b": _edge(**{"1a": ok}),
+        "1a": _edge(**{"1b": ok}), "1b": _edge(**{"2a": ok}),
+        # ADR 0066: a Gateway JSON-RPC error finishes sendCommand `success`, so the answer is checked (2b)
+        "2a": _edge(**{"2b": ok, "5a": err}),
+        "2b": _edge(**{"3a": ok, "5b": fail}),
+        "3a": _edge(**{"workflow_end": ok, "5b": err}),
+        "5a": _edge(**{"workflow_end": ok}), "5b": _edge(**{"workflow_end": ok}),
+    }
+    return workflow(
+        WF["scratch_show"],
+        "Runs one show command on one scratch router of the skills eval suite through Gateway 5 and returns its raw "
+        "output; reads only (ADR 0084)",
+        {"device": SCRATCH_DEVICE_INPUT,
+         "command": {"type": "string", "required": True, "description": "One show command, e.g. show ip ospf neighbor"}},
+        tasks,
+        tr,
+        {"raw": {"type": "string"}, "device_error": {"type": "string"}},
+    )
+
+
+def scratch_restconf() -> dict:
+    ok, fail, err = "success", "failure", "error"
+    tasks = sectioned({
+        **step("the read's inputs: the router's pinned target from skills_lab.nodes, the path and the reader account"),
+        "1a": set_key("params input: device", {}, "device", "$var.job.device", x=0),
+        "1b": set_key("params input: path", "$var.1a.object", "path", "$var.job.path", x=100),
+        "1c": run_code("restconf-get's params from the router's pin (Python on the runner)", RESTCONF_PARAMS_CODE,
+                       "$var.1b.object", "restconf_params", x=200),
+        "1d": jq("the params", "$var.1c.result", "stdout_json.params", x=300),
+        **step("the read: restconf-get on the Gateway, one GET of the allowlisted path, trusted only through the pin"),
+        "2a": run_service("one allowlisted RESTCONF read (restconf-get)", "restconf-get", "$var.1d.return_data", None,
+                          x=400),
+        "2b": evaluate("restconf-get read it?", "2a", "result", "result.return_code", "==", 0, x=500),
+        **step("the answer: the data the router returned, as JSON"),
+        "3a": jq("the data", "$var.2a.result", "result.stdout_json.data", x=600, to_job="data"),
+        **step("where it stops: restconf-get could not run, or refused or failed the read with an error class (never device text)"),
+        "5c": note("the read could not be prepared", "the Gateway could not prepare restconf-get's params: nothing "
+                   "was read; report this and do not retry", "error", x=200, y=300),
+        "5a": note("restconf-get could not run", "the Gateway could not run restconf-get or read its answer: nothing "
+                   "was read; report this and do not retry", "error", x=400, y=-600),
+        "5b": jq("why the read failed (an error class)", "$var.2a.result", "result.stdout_json.error", x=500, y=-600,
+                 to_job="error"),
+    })
+    tr = {
+        "workflow_start": _edge(**{"1a": ok}),
+        "1a": _edge(**{"1b": ok}), "1b": _edge(**{"1c": ok}),
+        "1c": _edge(**{"1d": ok, "5c": err}), "1d": _edge(**{"2a": ok, "5c": err}),
+        "2a": _edge(**{"2b": ok, "5a": err}),
+        "2b": _edge(**{"3a": ok, "5b": fail}),
+        "3a": _edge(**{"workflow_end": ok, "5a": err}),
+        "5a": _edge(**{"workflow_end": ok}), "5b": _edge(**{"workflow_end": ok, "5a": err}),
+        "5c": _edge(**{"workflow_end": ok}),
+    }
+    return workflow(
+        WF["scratch_restconf"],
+        "Reads one allowlisted RESTCONF path from one scratch router of the skills eval suite through the Gateway's "
+        "restconf-get service, trusted only through the router's certificate pin, and returns the data as JSON; reads "
+        "only (ADR 0084)",
+        {"device": SCRATCH_DEVICE_INPUT,
+         "path": {"type": "string", "required": True,
+                  "description": "An allowlisted RESTCONF path (skills_lab.restconf_allowlist), e.g. "
+                                 "/restconf/data/Cisco-IOS-XE-interfaces-oper:interfaces"}},
+        tasks,
+        tr,
+        {"data": {"type": ["object", "null"]}, "error": {"type": "string"}, "restconf_params": {"type": "object"}},
+    )
+
+
+def scratch_push() -> dict:
+    ok, fail, err = "success", "failure", "error"
+    tasks = sectioned({
+        **step("the check: every proposed line against the forbidden set on the runner, before any card exists"),
+        "10": flag("changed = false", "false", "changed", x=0),
+        "1a": set_key("check input: device", {}, "device", "$var.job.device", x=100),
+        "1b": set_key("check input: reason", "$var.1a.object", "reason", "$var.job.reason", x=150),
+        "1c": set_key("check input: lines", "$var.1b.object", "lines", "$var.job.lines", x=200),
+        "1d": run_code("the forbidden-line check and the card's body (Python on the runner)", SCRATCH_PUSH_PLAN_CODE,
+                       "$var.1c.object", "push_plan", x=250),
+        "1e": evaluate("every line allowed?", "1d", "result", "stdout_json.ok", "==", True, x=300),
+        **step("the approval: the router, the reason and the exact lines on a card only eval-approvers and admin_group can release"),
+        "2a": jq("the card's body", "$var.1d.result", "stdout_json.card", x=350),
+        "2b": replace("the card's message", SCRATCH_APPROVAL_MESSAGE, "__D__", "$var.job.device", x=400),
+        **approval("2c", "Approve a scratch change", "$var.2b.replacedString", "$var.2a.return_data", "Approve",
+                   "Reject", x=450, var="approval", groups=SCRATCH_GROUP_MARKERS),
+        **step("the push: the joined lines through the Gateway's send-config, never saved; the router's reply read for refused lines"),
+        "3a": jq("the lines, joined", "$var.1d.result", "stdout_json.config", x=500),
+        "3b": task("sendConfig", "GatewayManager", "push the lines through Gateway 5 (never saved)",
+                   {"clusterId": CLUSTER, "config": "$var.3a.return_data", "inventory": "$var.0b.textObject"},
+                   {"result": "$var.job.config_result"}, x=550),
+        "3c": evaluate("config applied?", "3b", "result", "result.results[0].success", "==", True, x=600),
+        "3d": jq("the router's reply", "$var.3b.result", "result.results[0].output", x=650),
+        "3e": set_key("reply for the runner", {}, "output", "$var.3d.return_data", x=700),
+        "3f": run_code("did the router refuse a line? (Python on the runner)", REPLY_CODE, "$var.3e.object",
+                       "reply_check", x=750),
+        "30": evaluate("every line accepted?", "3f", "result", "stdout_json.rejected", "==", False, x=800),
+        "4a": flag("changed = true", "true", "changed", x=850),
+        **step("the router's refusals: the lines it refused, published; the lines before them are live, unsaved, until the restore"),
+        "6a": jq("the refused lines", "$var.3f.result", "stdout_json.rejections", x=850, y=300, to_job="rejections"),
+        "6b": jq("what the router refused", "$var.3f.result", "stdout_json.message", x=900, y=300, to_job="error"),
+        **step("the rejection: nothing sent"),
+        "9a": note("the rejection", "rejected on the card: nothing was sent to the router", "outcome", x=500, y=600),
+        **step("where it stops: a forbidden line before any card, a Gateway that could not push, or a reply it could not read"),
+        "5c": jq("the forbidden lines (no card was made)", "$var.1d.result", "stdout_json.message", x=300, y=-300,
+                 to_job="error"),
+        "5a": note("nothing was sent", "the Gateway could not prepare the change: nothing was sent to the router",
+                   "error", x=250, y=-600),
+        "5b": note("the push did not apply", "the Gateway could not apply the lines, or could not say whether it did: "
+                   "read the router with a show command; the restore puts its baseline back", "error", x=600, y=-300),
+        "5e": note("the reply could not be checked", "the lines were sent but the router's reply could not be checked: "
+                   "read the router with a show command; the restore puts its baseline back", "error", x=750, y=-300),
+        "5f": flag("changed = true (unknown)", "true", "changed", x=800, y=-300),
+    })
+    tasks["0a"], tasks["0b"] = selector("$var.job.device", x=-600, inventory=SCRATCH_INVENTORY)
+    stepped(tasks, "the selector: the one scratch router, in the shape the Gateway wants", "0a", "0b")
+    tr = {
+        "workflow_start": _edge(**{"0a": ok}), "0a": _edge(**{"0b": ok}), "0b": _edge(**{"10": ok}),
+        "10": _edge(**{"1a": ok}),
+        "1a": _edge(**{"1b": ok}), "1b": _edge(**{"1c": ok}), "1c": _edge(**{"1d": ok}),
+        "1d": _edge(**{"1e": ok, "5a": err}),
+        "1e": _edge(**{"2a": ok, "5c": fail}),
+        "2a": _edge(**{"2b": ok, "5a": err}),
+        "2b": _edge(**{"2c1": ok}), **approval_edges("2c"),
+        "2c": _edge(**{"3a": ok, "9a": fail}),
+        "3a": _edge(**{"3b": ok, "5a": err}),
+        # ADR 0066: a Gateway JSON-RPC error finishes sendConfig `success`, so the answer is checked (3c)
+        "3b": _edge(**{"3c": ok, "5b": err}),
+        "3c": _edge(**{"3d": ok, "5b": fail}),
+        "3d": _edge(**{"3e": ok, "5e": err}), "3e": _edge(**{"3f": ok}),
+        "3f": _edge(**{"30": ok, "5e": err}),
+        "30": _edge(**{"4a": ok, "6a": fail}),
+        "4a": _edge(**{"workflow_end": ok}),
+        "6a": _edge(**{"6b": ok}), "6b": _edge(**{"workflow_end": ok}),
+        "9a": _edge(**{"workflow_end": ok}),
+        "5a": _edge(**{"workflow_end": ok}), "5b": _edge(**{"workflow_end": ok}),
+        "5c": _edge(**{"workflow_end": ok, "5a": err}),
+        "5e": _edge(**{"5f": ok}), "5f": _edge(**{"workflow_end": ok}),
+    }
+    return workflow(
+        WF["scratch_push"],
+        "Pushes proposed configuration lines to one scratch router of the skills eval suite after a Work Center card "
+        "that only eval-approvers and admin_group can release; a forbidden line is refused before the card, and nothing "
+        "is ever saved (ADR 0084)",
+        {"device": SCRATCH_DEVICE_INPUT,
+         "lines": {"type": "array", "required": True, "items": {"type": "string"},
+                   "description": "The configuration lines, one per item, e.g. [\"router ospf 1\", \"network 10.0.12.0 0.0.0.3 area 0\"]"},
+         "reason": {"type": "string", "required": True, "description": "Why, shown on the card"}},
+        tasks,
+        tr,
+        {"changed": {"type": "boolean"}, "error": {"type": "string"}, "outcome": {"type": "string"},
+         "rejections": {"type": "array"}, "config_result": {"type": "object"}, "push_plan": {"type": "object"},
+         "reply_check": {"type": "object"}, "approval_card": {"type": "object"},
+         "approval_decision": {"type": ["object", "null"]}},
+    )
+
+
+def scratch_restore() -> dict:
+    ok, fail, err = "success", "failure", "error"
+    tasks = sectioned({
+        **step("the replace: the router's configuration replaced with bootflash:baseline.cfg, its answer checked"),
+        "10": flag("restored = false", "false", "restored", x=0),
+        "2a": task("sendCommand", "GatewayManager", "configure replace bootflash:baseline.cfg force",
+                   {"clusterId": CLUSTER, "commands": ["configure replace bootflash:baseline.cfg force"],
+                    "inventory": "$var.0b.textObject"}, {"result": None}, x=100),
+        "21": evaluate("did the Gateway run it?", "2a", "result", "result.results[0].success", "==", True, x=150),
+        "2b": run_code("did it say Rollback Done? (Python on the runner)", REPLACE_DONE_CODE, "$var.2a.result",
+                       "replace_check", x=200),
+        "2c": evaluate("Rollback Done?", "2b", "result", "stdout_json.done", "==", True, x=300),
+        **step("the proof: the baseline file and the running configuration read back, compared as hashes only"),
+        "3a": task("sendCommand", "GatewayManager", "the baseline file and the running configuration",
+                   {"clusterId": CLUSTER, "commands": ["more bootflash:baseline.cfg", "show running-config"],
+                    "inventory": "$var.0b.textObject"}, {"result": None}, x=400),
+        "31": evaluate("did the router answer both?", "3a", "result", "result.results[1].success", "==", True,
+                       x=450),
+        "3b": run_code("normalised, hashed and compared (Python on the runner)", RESTORE_PROOF_CODE, "$var.3a.result",
+                       "restore_proof", x=500),
+        "3c": jq("the baseline's hash", "$var.3b.result", "stdout_json.baseline_sha256", x=600, to_job="baseline_sha256"),
+        "3d": jq("the running configuration's hash", "$var.3b.result", "stdout_json.running_sha256", x=700,
+                 to_job="running_sha256"),
+        "3e": evaluate("equal to the baseline?", "3b", "result", "stdout_json.restored", "==", True, x=800),
+        "4a": flag("restored = true", "true", "restored", x=900),
+        **step("where it stops: the Gateway could not run it, the replace did not finish, or the router differs from its baseline"),
+        "5a": note("the Gateway could not run it", "the Gateway could not run the replace or read the router: check "
+                   "the router before the next run", "error", x=100, y=-300),
+        "5b": jq("why the replace did not finish", "$var.2b.result", "stdout_json.error", x=300, y=-300, to_job="error"),
+        "5c": jq("why the router is not its baseline", "$var.3b.result", "stdout_json.error", x=800, y=-300,
+                 to_job="error"),
+    })
+    tasks["0a"], tasks["0b"] = selector("$var.job.device", x=-600, inventory=SCRATCH_INVENTORY)
+    stepped(tasks, "the selector: the one scratch router, in the shape the Gateway wants", "0a", "0b")
+    tr = {
+        "workflow_start": _edge(**{"0a": ok}), "0a": _edge(**{"0b": ok}), "0b": _edge(**{"10": ok}),
+        "10": _edge(**{"2a": ok}),
+        # ADR 0066: a Gateway JSON-RPC error finishes sendCommand `success`, so each answer is checked first
+        "2a": _edge(**{"21": ok, "5a": err}),
+        "21": _edge(**{"2b": ok, "5a": fail}),
+        "2b": _edge(**{"2c": ok, "5a": err}),
+        "2c": _edge(**{"3a": ok, "5b": fail}),
+        "3a": _edge(**{"31": ok, "5a": err}),
+        "31": _edge(**{"3b": ok, "5a": fail}),
+        "3b": _edge(**{"3c": ok, "5a": err}),
+        "3c": _edge(**{"3d": ok, "5a": err}), "3d": _edge(**{"3e": ok, "5a": err}),
+        "3e": _edge(**{"4a": ok, "5c": fail}),
+        "4a": _edge(**{"workflow_end": ok}),
+        "5a": _edge(**{"workflow_end": ok}),
+        "5b": _edge(**{"workflow_end": ok, "5a": err}), "5c": _edge(**{"workflow_end": ok, "5a": err}),
+    }
+    return workflow(
+        WF["scratch_restore"],
+        "Replaces one scratch router's configuration with its bootflash:baseline.cfg and proves it: Rollback Done, then "
+        "the running configuration equal to the baseline as hashes; the eval runner's alone, between runs (ADR 0084)",
+        {"device": SCRATCH_DEVICE_INPUT},
+        tasks,
+        tr,
+        {"restored": {"type": "boolean"}, "baseline_sha256": {"type": "string"}, "running_sha256": {"type": "string"},
+         "error": {"type": "string"}, "replace_check": {"type": "object"}, "restore_proof": {"type": "object"}},
+    )
+
+
 BUILDERS = (device_count, show_version, show_command, show_all, branch_vlan, branch_vlan_delete, config_push,
             compliance_run, compliance_report, netbox_devices, backup_all, deploy_aws_vpn, verify_aws_vpn,
             hand_off_aws_vpn, config_push_revert, tear_down_aws_vpn, tear_down_expired_aws_vpn, get_aws_vpn_status,
             check_aws_drift, rotate_aws_vpn_key, rotate_aws_vpn_key_monthly, diagnose_aws_vpn_outage,
             diagnose_fabric_bgp_outage, break_fabric_bgp, drill_batfish_gate, describe_workflow, describe_job, describe_for_agent,
-            ask_platform_guide)
+            ask_platform_guide, scratch_show, scratch_restconf, scratch_push, scratch_restore)
 
 
 if __name__ == "__main__":

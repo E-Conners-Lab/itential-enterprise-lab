@@ -1,0 +1,999 @@
+{
+  "name": "Restore Baseline on a Scratch Device",
+  "type": "automation",
+  "description": "Replaces one scratch router's configuration with its bootflash:baseline.cfg and proves it: Rollback Done, then the running configuration equal to the baseline as hashes; the eval runner's alone, between runs (ADR 0084)",
+  "tasks": {
+    "10": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "restored = false",
+      "description": "the replace: the router's configuration replaced with bootflash:baseline.cfg, its answer checked",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": -70,
+        "y": 900
+      },
+      "variables": {
+        "incoming": {
+          "input": "false",
+          "outputType": "boolean",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.restored"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "2a": {
+      "name": "sendCommand",
+      "canvasName": "sendCommand",
+      "summary": "configure replace bootflash:baseline.cfg force",
+      "description": "the replace: the router's configuration replaced with bootflash:baseline.cfg, its answer checked",
+      "location": "Application",
+      "locationType": null,
+      "app": "GatewayManager",
+      "type": "automatic",
+      "displayName": "GatewayManager",
+      "groups": [],
+      "nodeLocation": {
+        "x": -360,
+        "y": 1050
+      },
+      "variables": {
+        "incoming": {
+          "clusterId": "lab",
+          "commands": [
+            "configure replace bootflash:baseline.cfg force"
+          ],
+          "inventory": "$var.0b.textObject"
+        },
+        "outgoing": {
+          "result": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "21": {
+      "name": "evaluation",
+      "canvasName": "evaluation",
+      "summary": "did the Gateway run it?",
+      "description": "the replace: the router's configuration replaced with bootflash:baseline.cfg, its answer checked",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": -440,
+        "y": 1200
+      },
+      "variables": {
+        "incoming": {
+          "all_true_flag": true,
+          "evaluation_groups": [
+            {
+              "all_true_flag": true,
+              "evaluations": [
+                {
+                  "query": "result.results[0].success",
+                  "operand_1": {
+                    "variable": "result",
+                    "task": "2a"
+                  },
+                  "operator": "==",
+                  "operand_2": {
+                    "variable": true,
+                    "task": "static"
+                  }
+                }
+              ]
+            }
+          ],
+          "options": {}
+        },
+        "outgoing": {
+          "return_value": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "2b": {
+      "name": "runCode",
+      "canvasName": "runCode",
+      "summary": "did it say Rollback Done? (Python on the runner)",
+      "description": "the replace: the router's configuration replaced with bootflash:baseline.cfg, its answer checked",
+      "location": "Application",
+      "locationType": null,
+      "app": "GatewayManager",
+      "type": "automatic",
+      "displayName": "GatewayManager",
+      "groups": [],
+      "nodeLocation": {
+        "x": 200,
+        "y": 1350
+      },
+      "variables": {
+        "incoming": {
+          "clusterId": "lab",
+          "language": "python",
+          "code": "import json, sys\n\n\ndef replace_done(d: dict) -> dict:\n    \"\"\"configure replace's answer: done only when the Gateway ran it and IOS XE printed \"Rollback Done\". Only that is\n    published, never the router's text. Pure: runCode runs this function's own source.\"\"\"\n    r = ((d.get(\"result\") or {}).get(\"results\") or [{}])[0]\n    if not r.get(\"success\"):\n        return {\"done\": False, \"error\": \"the Gateway did not run configure replace on the router\"}\n    if \"Rollback Done\" not in str(r.get(\"output\") or \"\"):\n        return {\"done\": False, \"error\": \"configure replace did not report Rollback Done: the router may still hold \"\n                                        \"part of the change; run the restore again or check the router\"}\n    return {\"done\": True, \"error\": \"\"}\n\n\nprint(json.dumps(replace_done(json.loads(sys.stdin.read() or \"{}\"))))\n",
+          "data": "$var.2a.result",
+          "safety": {
+            "timeout": 30
+          },
+          "packages": []
+        },
+        "outgoing": {
+          "result": "$var.job.replace_check"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "2c": {
+      "name": "evaluation",
+      "canvasName": "evaluation",
+      "summary": "Rollback Done?",
+      "description": "the replace: the router's configuration replaced with bootflash:baseline.cfg, its answer checked",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 550,
+        "y": 1500
+      },
+      "variables": {
+        "incoming": {
+          "all_true_flag": true,
+          "evaluation_groups": [
+            {
+              "all_true_flag": true,
+              "evaluations": [
+                {
+                  "query": "stdout_json.done",
+                  "operand_1": {
+                    "variable": "result",
+                    "task": "2b"
+                  },
+                  "operator": "==",
+                  "operand_2": {
+                    "variable": true,
+                    "task": "static"
+                  }
+                }
+              ]
+            }
+          ],
+          "options": {}
+        },
+        "outgoing": {
+          "return_value": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "3a": {
+      "name": "sendCommand",
+      "canvasName": "sendCommand",
+      "summary": "the baseline file and the running configuration",
+      "description": "the proof: the baseline file and the running configuration read back, compared as hashes only",
+      "location": "Application",
+      "locationType": null,
+      "app": "GatewayManager",
+      "type": "automatic",
+      "displayName": "GatewayManager",
+      "groups": [],
+      "nodeLocation": {
+        "x": 860,
+        "y": 1650
+      },
+      "variables": {
+        "incoming": {
+          "clusterId": "lab",
+          "commands": [
+            "more bootflash:baseline.cfg",
+            "show running-config"
+          ],
+          "inventory": "$var.0b.textObject"
+        },
+        "outgoing": {
+          "result": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "31": {
+      "name": "evaluation",
+      "canvasName": "evaluation",
+      "summary": "did the router answer both?",
+      "description": "the proof: the baseline file and the running configuration read back, compared as hashes only",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 1160,
+        "y": 1800
+      },
+      "variables": {
+        "incoming": {
+          "all_true_flag": true,
+          "evaluation_groups": [
+            {
+              "all_true_flag": true,
+              "evaluations": [
+                {
+                  "query": "result.results[1].success",
+                  "operand_1": {
+                    "variable": "result",
+                    "task": "3a"
+                  },
+                  "operator": "==",
+                  "operand_2": {
+                    "variable": true,
+                    "task": "static"
+                  }
+                }
+              ]
+            }
+          ],
+          "options": {}
+        },
+        "outgoing": {
+          "return_value": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "3b": {
+      "name": "runCode",
+      "canvasName": "runCode",
+      "summary": "normalised, hashed and compared (Python on the runner)",
+      "description": "the proof: the baseline file and the running configuration read back, compared as hashes only",
+      "location": "Application",
+      "locationType": null,
+      "app": "GatewayManager",
+      "type": "automatic",
+      "displayName": "GatewayManager",
+      "groups": [],
+      "nodeLocation": {
+        "x": 1360,
+        "y": 1950
+      },
+      "variables": {
+        "incoming": {
+          "clusterId": "lab",
+          "language": "python",
+          "code": "import json, sys\n\n\nimport hashlib\nimport re\n\nVOLATILE = ('^Building configuration', '^Current configuration :', '^! Last configuration change', '^! NVRAM config last updated')\n\n\ndef restore_proof(d: dict, volatile: tuple) -> dict:\n    \"\"\"The baseline file and the running configuration, each without blank lines and the lines that change by\n    themselves (the header, the change and save stamps), hashed and compared. Only the two hashes and the counts of\n    differing lines leave the runner, never the configuration. Pure: runCode runs this function's own source.\"\"\"\n    results = (d.get(\"result\") or {}).get(\"results\") or []\n    if len(results) != 2 or not all(r.get(\"success\") for r in results):\n        return {\"restored\": False, \"baseline_sha256\": \"\", \"running_sha256\": \"\",\n                \"error\": \"the Gateway could not read the baseline file and the running configuration\"}\n    skip = [re.compile(v) for v in volatile]\n    kept = [[ln.rstrip() for ln in str(r.get(\"output\") or \"\").splitlines()\n             if ln.strip() and not any(s.match(ln.strip()) for s in skip)] for r in results]\n    baseline, running = kept\n    digests = [hashlib.sha256(\"\\n\".join(k).encode()).hexdigest() for k in kept]\n    out = {\"restored\": bool(baseline) and digests[0] == digests[1], \"baseline_sha256\": digests[0],\n           \"running_sha256\": digests[1], \"error\": \"\"}\n    if not baseline:\n        out[\"error\"] = \"bootflash:baseline.cfg is empty or could not be read: capture it again (make skills-lab-devices)\"\n    elif not out[\"restored\"]:\n        out[\"error\"] = (f\"the running configuration differs from bootflash:baseline.cfg after the replace: \"\n                        f\"{len(set(running) - set(baseline))} line(s) only in the running configuration, \"\n                        f\"{len(set(baseline) - set(running))} only in the baseline\")\n    return out\n\n\nprint(json.dumps(restore_proof(json.loads(sys.stdin.read() or \"{}\"), VOLATILE)))\n",
+          "data": "$var.3a.result",
+          "safety": {
+            "timeout": 30
+          },
+          "packages": []
+        },
+        "outgoing": {
+          "result": "$var.job.restore_proof"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "3c": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "the baseline's hash",
+      "description": "the proof: the baseline file and the running configuration read back, compared as hashes only",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 1660,
+        "y": 2100
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "stdout_json.baseline_sha256",
+          "obj": "$var.3b.result"
+        },
+        "outgoing": {
+          "return_data": "$var.job.baseline_sha256"
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "3d": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "the running configuration's hash",
+      "description": "the proof: the baseline file and the running configuration read back, compared as hashes only",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 1900,
+        "y": 2250
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "stdout_json.running_sha256",
+          "obj": "$var.3b.result"
+        },
+        "outgoing": {
+          "return_data": "$var.job.running_sha256"
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "3e": {
+      "name": "evaluation",
+      "canvasName": "evaluation",
+      "summary": "equal to the baseline?",
+      "description": "the proof: the baseline file and the running configuration read back, compared as hashes only",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 2780,
+        "y": 2400
+      },
+      "variables": {
+        "incoming": {
+          "all_true_flag": true,
+          "evaluation_groups": [
+            {
+              "all_true_flag": true,
+              "evaluations": [
+                {
+                  "query": "stdout_json.restored",
+                  "operand_1": {
+                    "variable": "result",
+                    "task": "3b"
+                  },
+                  "operator": "==",
+                  "operand_2": {
+                    "variable": true,
+                    "task": "static"
+                  }
+                }
+              ]
+            }
+          ],
+          "options": {}
+        },
+        "outgoing": {
+          "return_value": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "4a": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "restored = true",
+      "description": "the proof: the baseline file and the running configuration read back, compared as hashes only",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 3150,
+        "y": 2550
+      },
+      "variables": {
+        "incoming": {
+          "input": "true",
+          "outputType": "boolean",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.restored"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "5a": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "the Gateway could not run it",
+      "description": "where it stops: the Gateway could not run it, the replace did not finish, or the router differs from its baseline",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 1040,
+        "y": 2700
+      },
+      "variables": {
+        "incoming": {
+          "input": "the Gateway could not run the replace or read the router: check the router before the next run",
+          "outputType": "string",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.error"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "5b": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "why the replace did not finish",
+      "description": "where it stops: the Gateway could not run it, the replace did not finish, or the router differs from its baseline",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 550,
+        "y": 1650
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "stdout_json.error",
+          "obj": "$var.2b.result"
+        },
+        "outgoing": {
+          "return_data": "$var.job.error"
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "5c": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "why the router is not its baseline",
+      "description": "where it stops: the Gateway could not run it, the replace did not finish, or the router differs from its baseline",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 2850,
+        "y": 2550
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "stdout_json.error",
+          "obj": "$var.3b.result"
+        },
+        "outgoing": {
+          "return_data": "$var.job.error"
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "0a": {
+      "name": "replace",
+      "canvasName": "replace",
+      "summary": "selector JSON with the node name",
+      "description": "the selector: the one scratch router, in the shape the Gateway wants",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": -90,
+        "y": 600
+      },
+      "variables": {
+        "incoming": {
+          "str": "[{\"inventory\": \"skills-lab\", \"nodeNames\": [\"__DEVICE__\"]}]",
+          "substr": "__DEVICE__",
+          "newSubstr": "$var.job.device"
+        },
+        "outgoing": {
+          "replacedString": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "0b": {
+      "name": "parse",
+      "canvasName": "parse",
+      "summary": "selector JSON -> object",
+      "description": "the selector: the one scratch router, in the shape the Gateway wants",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": -80,
+        "y": 750
+      },
+      "variables": {
+        "incoming": {
+          "text": "$var.0a.replacedString"
+        },
+        "outgoing": {
+          "textObject": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "9a01": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "input to check: device",
+      "description": "the input gate: every input checked against its schema before anything runs; a refusal ends the job with nothing sent",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 0,
+        "y": 150
+      },
+      "variables": {
+        "incoming": {
+          "obj": {},
+          "path": [
+            "device"
+          ],
+          "value": "$var.job.device"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "9a0a": {
+      "name": "validateJsonSchema",
+      "canvasName": "validateJsonSchema",
+      "summary": "check the inputs",
+      "description": "the input gate: every input checked against its schema before anything runs; a refusal ends the job with nothing sent",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 0,
+        "y": 300
+      },
+      "variables": {
+        "incoming": {
+          "jsonData": "$var.9a01.object",
+          "schema": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "device"
+            ],
+            "properties": {
+              "device": {
+                "type": "string",
+                "enum": [
+                  "skl-r1",
+                  "skl-r2",
+                  "skl-r3"
+                ]
+              }
+            }
+          }
+        },
+        "outgoing": {
+          "result": "$var.job.input_check"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "9a0b": {
+      "name": "evaluation",
+      "canvasName": "evaluation",
+      "summary": "inputs valid?",
+      "description": "the input gate: every input checked against its schema before anything runs; a refusal ends the job with nothing sent",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": -100,
+        "y": 450
+      },
+      "variables": {
+        "incoming": {
+          "all_true_flag": true,
+          "evaluation_groups": [
+            {
+              "all_true_flag": true,
+              "evaluations": [
+                {
+                  "query": "valid",
+                  "operand_1": {
+                    "variable": "result",
+                    "task": "9a0a"
+                  },
+                  "operator": "==",
+                  "operand_2": {
+                    "variable": true,
+                    "task": "static"
+                  }
+                }
+              ]
+            }
+          ],
+          "options": {}
+        },
+        "outgoing": {
+          "return_value": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "9a0c": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "the inputs were refused",
+      "description": "the input gate: every input checked against its schema before anything runs; a refusal ends the job with nothing sent",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 210,
+        "y": 600
+      },
+      "variables": {
+        "incoming": {
+          "input": "the inputs were refused before anything ran (see input_check for which input and why): nothing was sent to a device",
+          "outputType": "string",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.error"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "workflow_start": {
+      "name": "workflow_start",
+      "summary": "workflow_start",
+      "groups": [],
+      "nodeLocation": {
+        "x": 0,
+        "y": 0
+      }
+    },
+    "workflow_end": {
+      "name": "workflow_end",
+      "summary": "workflow_end",
+      "groups": [],
+      "nodeLocation": {
+        "x": 2760,
+        "y": 2850
+      }
+    }
+  },
+  "transitions": {
+    "workflow_start": {
+      "9a01": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "0a": {
+      "0b": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "0b": {
+      "10": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "10": {
+      "2a": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "2a": {
+      "21": {
+        "state": "success",
+        "type": "standard"
+      },
+      "5a": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "21": {
+      "2b": {
+        "state": "success",
+        "type": "standard"
+      },
+      "5a": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "2b": {
+      "2c": {
+        "state": "success",
+        "type": "standard"
+      },
+      "5a": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "2c": {
+      "3a": {
+        "state": "success",
+        "type": "standard"
+      },
+      "5b": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "3a": {
+      "31": {
+        "state": "success",
+        "type": "standard"
+      },
+      "5a": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "31": {
+      "3b": {
+        "state": "success",
+        "type": "standard"
+      },
+      "5a": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "3b": {
+      "3c": {
+        "state": "success",
+        "type": "standard"
+      },
+      "5a": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "3c": {
+      "3d": {
+        "state": "success",
+        "type": "standard"
+      },
+      "5a": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "3d": {
+      "3e": {
+        "state": "success",
+        "type": "standard"
+      },
+      "5a": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "3e": {
+      "4a": {
+        "state": "success",
+        "type": "standard"
+      },
+      "5c": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "4a": {
+      "workflow_end": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "5a": {
+      "workflow_end": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "5b": {
+      "workflow_end": {
+        "state": "success",
+        "type": "standard"
+      },
+      "5a": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "5c": {
+      "workflow_end": {
+        "state": "success",
+        "type": "standard"
+      },
+      "5a": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "9a01": {
+      "9a0a": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "9a0a": {
+      "9a0b": {
+        "state": "success",
+        "type": "standard"
+      },
+      "9a0c": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "9a0b": {
+      "0a": {
+        "state": "success",
+        "type": "standard"
+      },
+      "9a0c": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "9a0c": {
+      "workflow_end": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "workflow_end": {}
+  },
+  "groups": [],
+  "canvasVersion": 3,
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "device": {
+        "type": "string",
+        "required": true,
+        "enum": [
+          "skl-r1",
+          "skl-r2",
+          "skl-r3"
+        ],
+        "description": "The scratch router (skills_lab.nodes), e.g. skl-r1"
+      }
+    },
+    "required": [
+      "device"
+    ]
+  },
+  "outputSchema": {
+    "type": "object",
+    "properties": {
+      "restored": {
+        "type": "boolean"
+      },
+      "baseline_sha256": {
+        "type": "string"
+      },
+      "running_sha256": {
+        "type": "string"
+      },
+      "error": {
+        "type": "string"
+      },
+      "replace_check": {
+        "type": "object"
+      },
+      "restore_proof": {
+        "type": "object"
+      },
+      "input_check": {
+        "type": "object"
+      }
+    }
+  },
+  "tags": [],
+  "preAutomationTime": 300000,
+  "sla": 600000,
+  "font_size": 12,
+  "decorators": []
+}

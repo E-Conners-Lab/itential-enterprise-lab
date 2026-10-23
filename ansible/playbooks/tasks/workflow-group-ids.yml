@@ -1,0 +1,23 @@
+---
+# The groups' ids by name (ADR 0084). A manual task's `groups` are group ids - who may claim it in Work Center - and an
+# id exists only on the Platform that made the group, so a generated workflow carries a marker `__GROUP_ID:<group>__`
+# that the import fills in from this map (as tasks/workflow-agent-ids.yml does for agents). A marker whose group does
+# not exist stays in the document, and tasks/platform-assets.yml then refuses to import that workflow: a card nobody may
+# claim. Needs: login, platform_local.
+- name: Groups now (for the workflows whose cards name who may release them)
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/authorization/groups?limit=100"
+    headers: {Cookie: "{{ login.cookies_string }}"}
+  register: wgi_groups
+
+- name: Every group collected
+  ansible.builtin.assert:
+    that: wgi_groups.json.results | length == wgi_groups.json.total | int
+    fail_msg: "collected {{ wgi_groups.json.results | length }} of {{ wgi_groups.json.total }} groups (add a page)"
+    quiet: true
+
+- name: Group ids by name
+  ansible.builtin.set_fact:
+    wgi_ids: >-
+      {{ dict(wgi_groups.json.results | map(attribute='name')
+              | zip(wgi_groups.json.results | map(attribute='_id'))) }}

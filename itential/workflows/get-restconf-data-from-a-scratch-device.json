@@ -1,0 +1,717 @@
+{
+  "name": "Get RESTCONF Data from a Scratch Device",
+  "type": "automation",
+  "description": "Reads one allowlisted RESTCONF path from one scratch router of the skills eval suite through the Gateway's restconf-get service, trusted only through the router's certificate pin, and returns the data as JSON; reads only (ADR 0084)",
+  "tasks": {
+    "1a": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "params input: device",
+      "description": "the read's inputs: the router's pinned target from skills_lab.nodes, the path and the reader account",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": -100,
+        "y": 750
+      },
+      "variables": {
+        "incoming": {
+          "obj": {},
+          "path": [
+            "device"
+          ],
+          "value": "$var.job.device"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "1b": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "params input: path",
+      "description": "the read's inputs: the router's pinned target from skills_lab.nodes, the path and the reader account",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": -90,
+        "y": 900
+      },
+      "variables": {
+        "incoming": {
+          "obj": "$var.1a.object",
+          "path": [
+            "path"
+          ],
+          "value": "$var.job.path"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "1c": {
+      "name": "runCode",
+      "canvasName": "runCode",
+      "summary": "restconf-get's params from the router's pin (Python on the runner)",
+      "description": "the read's inputs: the router's pinned target from skills_lab.nodes, the path and the reader account",
+      "location": "Application",
+      "locationType": null,
+      "app": "GatewayManager",
+      "type": "automatic",
+      "displayName": "GatewayManager",
+      "groups": [],
+      "nodeLocation": {
+        "x": -80,
+        "y": 1050
+      },
+      "variables": {
+        "incoming": {
+          "clusterId": "lab",
+          "language": "python",
+          "code": "import json, sys\n\n\nNODES = {'skl-r1': {'mgmt_host': '10.100.0.152', 'cert_sha256': 'c3c1c8dc11d12242ba496b3e6ac4d9e0371ac466861e9d2189499f1372e1b94f'}, 'skl-r2': {'mgmt_host': '10.100.0.153', 'cert_sha256': '2a4ecc0b9f14c01146c4a0ba399ed089a91490eb610229319f65c26ae6dbd1bb'}, 'skl-r3': {'mgmt_host': '10.100.0.154', 'cert_sha256': 'f082ba3a1c65f6cff22a00567fa1ef42acf0a48d00ebf9b0e9ba858e94f57a53'}}\nUSER = 'restconf-reader'\nTIMEOUT = '60'\n\n\ndef restconf_params(d: dict, nodes: dict, user: str, timeout: str) -> dict:\n    \"\"\"restconf-get's params for one scratch router: its pinned target exactly as skills_lab.nodes holds it, the path\n    and the reader (the service checks every one of them again). Pure: runCode runs this function's own source.\"\"\"\n    name = d.get(\"device\")\n    node = nodes[name]  # the input gate allows only these names; anything else is an error, not a guess\n    target = {\"name\": name, \"mgmt_host\": node[\"mgmt_host\"], \"cert_sha256\": node[\"cert_sha256\"]}\n    return {\"params\": {\"target_json\": json.dumps(target), \"path\": d.get(\"path\"), \"username\": user,\n                       \"timeout\": timeout}}\n\n\nprint(json.dumps(restconf_params(json.loads(sys.stdin.read() or \"{}\"), NODES, USER, TIMEOUT)))\n",
+          "data": "$var.1b.object",
+          "safety": {
+            "timeout": 30
+          },
+          "packages": []
+        },
+        "outgoing": {
+          "result": "$var.job.restconf_params"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "1d": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "the params",
+      "description": "the read's inputs: the router's pinned target from skills_lab.nodes, the path and the reader account",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": -180,
+        "y": 1200
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "stdout_json.params",
+          "obj": "$var.1c.result"
+        },
+        "outgoing": {
+          "return_data": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "2a": {
+      "name": "runService",
+      "canvasName": "runService",
+      "summary": "one allowlisted RESTCONF read (restconf-get)",
+      "description": "the read: restconf-get on the Gateway, one GET of the allowlisted path, trusted only through the pin",
+      "location": "Application",
+      "locationType": null,
+      "app": "GatewayManager",
+      "type": "automatic",
+      "displayName": "GatewayManager",
+      "groups": [],
+      "nodeLocation": {
+        "x": -330,
+        "y": 1350
+      },
+      "variables": {
+        "incoming": {
+          "serviceName": "restconf-get",
+          "clusterId": "lab",
+          "params": "$var.1d.return_data"
+        },
+        "outgoing": {
+          "result": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "2b": {
+      "name": "evaluation",
+      "canvasName": "evaluation",
+      "summary": "restconf-get read it?",
+      "description": "the read: restconf-get on the Gateway, one GET of the allowlisted path, trusted only through the pin",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": -130,
+        "y": 1500
+      },
+      "variables": {
+        "incoming": {
+          "all_true_flag": true,
+          "evaluation_groups": [
+            {
+              "all_true_flag": true,
+              "evaluations": [
+                {
+                  "query": "result.return_code",
+                  "operand_1": {
+                    "variable": "result",
+                    "task": "2a"
+                  },
+                  "operator": "==",
+                  "operand_2": {
+                    "variable": 0,
+                    "task": "static"
+                  }
+                }
+              ]
+            }
+          ],
+          "options": {}
+        },
+        "outgoing": {
+          "return_value": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "3a": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "the data",
+      "description": "the answer: the data the router returned, as JSON",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 30,
+        "y": 1650
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "result.stdout_json.data",
+          "obj": "$var.2a.result"
+        },
+        "outgoing": {
+          "return_data": "$var.job.data"
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "5c": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "the read could not be prepared",
+      "description": "where it stops: restconf-get could not run, or refused or failed the read with an error class (never device text)",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 120,
+        "y": 1350
+      },
+      "variables": {
+        "incoming": {
+          "input": "the Gateway could not prepare restconf-get's params: nothing was read; report this and do not retry",
+          "outputType": "string",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.error"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "5a": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "restconf-get could not run",
+      "description": "where it stops: restconf-get could not run, or refused or failed the read with an error class (never device text)",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": -410,
+        "y": 1800
+      },
+      "variables": {
+        "incoming": {
+          "input": "the Gateway could not run restconf-get or read its answer: nothing was read; report this and do not retry",
+          "outputType": "string",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.error"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "5b": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "why the read failed (an error class)",
+      "description": "where it stops: restconf-get could not run, or refused or failed the read with an error class (never device text)",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": -270,
+        "y": 1650
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "result.stdout_json.error",
+          "obj": "$var.2a.result"
+        },
+        "outgoing": {
+          "return_data": "$var.job.error"
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "9a01": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "input to check: device",
+      "description": "the input gate: every input checked against its schema before anything runs; a refusal ends the job with nothing sent",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 0,
+        "y": 150
+      },
+      "variables": {
+        "incoming": {
+          "obj": {},
+          "path": [
+            "device"
+          ],
+          "value": "$var.job.device"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "9a02": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "input to check: path",
+      "description": "the input gate: every input checked against its schema before anything runs; a refusal ends the job with nothing sent",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 0,
+        "y": 300
+      },
+      "variables": {
+        "incoming": {
+          "obj": "$var.9a01.object",
+          "path": [
+            "path"
+          ],
+          "value": "$var.job.path"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "9a0a": {
+      "name": "validateJsonSchema",
+      "canvasName": "validateJsonSchema",
+      "summary": "check the inputs",
+      "description": "the input gate: every input checked against its schema before anything runs; a refusal ends the job with nothing sent",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 0,
+        "y": 450
+      },
+      "variables": {
+        "incoming": {
+          "jsonData": "$var.9a02.object",
+          "schema": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "device",
+              "path"
+            ],
+            "properties": {
+              "device": {
+                "type": "string",
+                "enum": [
+                  "skl-r1",
+                  "skl-r2",
+                  "skl-r3"
+                ]
+              },
+              "path": {
+                "type": "string",
+                "maxLength": 300,
+                "pattern": "^(?!.*\\.\\.)(?:/restconf/data/Cisco-IOS-XE-ospf-oper:ospf-oper-data|/restconf/data/Cisco-IOS-XE-interfaces-oper:interfaces|/restconf/data/Cisco-IOS-XE-native:native/router/Cisco-IOS-XE-ospf:router-ospf|/restconf/data/Cisco-IOS-XE-native:native/interface)(?:/(?:[A-Za-z0-9=:._,/-]|%2[Ff])*)?$"
+              }
+            }
+          }
+        },
+        "outgoing": {
+          "result": "$var.job.input_check"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "9a0b": {
+      "name": "evaluation",
+      "canvasName": "evaluation",
+      "summary": "inputs valid?",
+      "description": "the input gate: every input checked against its schema before anything runs; a refusal ends the job with nothing sent",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": -100,
+        "y": 600
+      },
+      "variables": {
+        "incoming": {
+          "all_true_flag": true,
+          "evaluation_groups": [
+            {
+              "all_true_flag": true,
+              "evaluations": [
+                {
+                  "query": "valid",
+                  "operand_1": {
+                    "variable": "result",
+                    "task": "9a0a"
+                  },
+                  "operator": "==",
+                  "operand_2": {
+                    "variable": true,
+                    "task": "static"
+                  }
+                }
+              ]
+            }
+          ],
+          "options": {}
+        },
+        "outgoing": {
+          "return_value": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "9a0c": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "the inputs were refused",
+      "description": "the input gate: every input checked against its schema before anything runs; a refusal ends the job with nothing sent",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 350,
+        "y": 750
+      },
+      "variables": {
+        "incoming": {
+          "input": "the inputs were refused before anything ran (see input_check for which input and why): nothing was sent to a device",
+          "outputType": "string",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.error"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "workflow_start": {
+      "name": "workflow_start",
+      "summary": "workflow_start",
+      "groups": [],
+      "nodeLocation": {
+        "x": 0,
+        "y": 0
+      }
+    },
+    "workflow_end": {
+      "name": "workflow_end",
+      "summary": "workflow_end",
+      "groups": [],
+      "nodeLocation": {
+        "x": 190,
+        "y": 1950
+      }
+    }
+  },
+  "transitions": {
+    "workflow_start": {
+      "9a01": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "1a": {
+      "1b": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "1b": {
+      "1c": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "1c": {
+      "1d": {
+        "state": "success",
+        "type": "standard"
+      },
+      "5c": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "1d": {
+      "2a": {
+        "state": "success",
+        "type": "standard"
+      },
+      "5c": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "2a": {
+      "2b": {
+        "state": "success",
+        "type": "standard"
+      },
+      "5a": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "2b": {
+      "3a": {
+        "state": "success",
+        "type": "standard"
+      },
+      "5b": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "3a": {
+      "workflow_end": {
+        "state": "success",
+        "type": "standard"
+      },
+      "5a": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "5a": {
+      "workflow_end": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "5b": {
+      "workflow_end": {
+        "state": "success",
+        "type": "standard"
+      },
+      "5a": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "5c": {
+      "workflow_end": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "9a01": {
+      "9a02": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "9a02": {
+      "9a0a": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "9a0a": {
+      "9a0b": {
+        "state": "success",
+        "type": "standard"
+      },
+      "9a0c": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "9a0b": {
+      "1a": {
+        "state": "success",
+        "type": "standard"
+      },
+      "9a0c": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "9a0c": {
+      "workflow_end": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "workflow_end": {}
+  },
+  "groups": [],
+  "canvasVersion": 3,
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "device": {
+        "type": "string",
+        "required": true,
+        "enum": [
+          "skl-r1",
+          "skl-r2",
+          "skl-r3"
+        ],
+        "description": "The scratch router (skills_lab.nodes), e.g. skl-r1"
+      },
+      "path": {
+        "type": "string",
+        "required": true,
+        "description": "An allowlisted RESTCONF path (skills_lab.restconf_allowlist), e.g. /restconf/data/Cisco-IOS-XE-interfaces-oper:interfaces"
+      }
+    },
+    "required": [
+      "device",
+      "path"
+    ]
+  },
+  "outputSchema": {
+    "type": "object",
+    "properties": {
+      "data": {
+        "type": [
+          "object",
+          "null"
+        ]
+      },
+      "error": {
+        "type": "string"
+      },
+      "restconf_params": {
+        "type": "object"
+      },
+      "input_check": {
+        "type": "object"
+      }
+    }
+  },
+  "tags": [],
+  "preAutomationTime": 300000,
+  "sla": 600000,
+  "font_size": 12,
+  "decorators": []
+}
