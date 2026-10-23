@@ -33,6 +33,7 @@ import time
 from pathlib import Path
 
 import paramiko
+import yaml
 
 ROOT = Path(__file__).resolve().parent.parent
 ENV_FILE = ROOT / ".env"
@@ -407,12 +408,13 @@ def creds(dest: Path) -> None:
         "SKILLEVAL_JUDGE_USER": "judge",
         "SKILLEVAL_JUDGE_PASSWORD": env("SKILLS_LAB_JUDGE_PASSWORD"),
     }
-    for name in (
-        "SVC_EVAL_PROD_PASSWORD",
-        "SVC_EVAL_APPROVER_PROD_PASSWORD",
-    ):  # exist once the accounts are built
-        if os.environ.get(name):
-            wanted[name] = os.environ[name]
+    # the two Platform accounts (versions.yaml eval_access), under the names the workbench reads; their passwords
+    # exist once the replay has built the accounts
+    accounts = yaml.safe_load((ROOT / "itential" / "versions.yaml").read_text())["eval_access"]
+    for role, account in (("RUNNER", accounts["run"]), ("APPROVER", accounts["approve"])):
+        if os.environ.get(account["password_env"]):
+            wanted[f"SKILLEVAL_{role}_USER"] = account["user"]
+            wanted[f"SKILLEVAL_{role}_PASSWORD"] = os.environ[account["password_env"]]
     lines = dest.read_text().splitlines() if dest.exists() else []
     kept = [line for line in lines if line.split("=", 1)[0] not in wanted]
     write_private(dest, "\n".join(kept + [f"{k}={v}" for k, v in wanted.items()]) + "\n")

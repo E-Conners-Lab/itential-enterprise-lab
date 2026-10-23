@@ -511,6 +511,17 @@ mcp_access:
   group: mcp-builders
   password_env: SVC_MCP_PROD_PASSWORD
 
+# ADR 0084: the skills eval suite's two accounts, production only (the scratch lab is production's). `run` is the
+# runner's agent-tool account: it starts the three agent-tool automations and the eval agents' sessions, reads their
+# jobs, and can neither release a card nor restore a router. `approve` releases or rejects the push card (Work Center
+# claim + complete, scoped by the card's groups), cancels a stuck job and runs the baseline restore. Role oracles:
+# itential/eval/run-roles.yaml and approve-roles.yaml. Made by tasks/eval-access.yml (start of the replay and
+# platform.yml); passwords generated once into .env, copied to the workbench by make skills-lab-creds.
+eval_access:
+  run: {user: svc-eval, group: eval, password_env: SVC_EVAL_PROD_PASSWORD, kind: eval}
+  approve: {user: svc-eval-approver, group: eval-approvers, password_env: SVC_EVAL_APPROVER_PROD_PASSWORD,
+            kind: eval-approver}
+
 vm:
   # itential-dev, never `itential` or `mcp`: since the S11 cut-over those names belong to production's load
   # balancer (.71) and tools VM (.81), and reusing either would repoint Claude Code or a verify at the sandbox.

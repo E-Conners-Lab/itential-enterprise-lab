@@ -416,12 +416,23 @@ def test_ensure_secrets_fills_empty_lines_and_writes_mode_600(tmp_path: Path) ->
 
 def test_creds_file_is_private_from_the_start(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("SKILLS_LAB_JUDGE_PASSWORD", "judge-secret")
+    for name in ("SVC_EVAL_PROD_PASSWORD", "SVC_EVAL_APPROVER_PROD_PASSWORD"):
+        monkeypatch.delenv(name, raising=False)  # a shell with .env loaded must not change the test
     dest = tmp_path / "workbench.env"
     dest.write_text("OTHER=1\n")
     dest.chmod(0o644)
     device.creds(dest)
     assert stat.S_IMODE(dest.stat().st_mode) == 0o600
     assert "SKILLEVAL_JUDGE_PASSWORD=judge-secret" in dest.read_text()
+    assert "SKILLEVAL_RUNNER_PASSWORD" not in dest.read_text(), "no runner key before the account has a password"
+    # once the replay has built the accounts: the names the workbench reads, never the lab's own key names
+    monkeypatch.setenv("SVC_EVAL_PROD_PASSWORD", "runner-secret")
+    monkeypatch.setenv("SVC_EVAL_APPROVER_PROD_PASSWORD", "approver-secret")
+    device.creds(dest)
+    values = dict(line.split("=", 1) for line in dest.read_text().splitlines())
+    assert values == {"OTHER": "1", "SKILLEVAL_JUDGE_USER": "judge", "SKILLEVAL_JUDGE_PASSWORD": "judge-secret",
+                      "SKILLEVAL_RUNNER_USER": "svc-eval", "SKILLEVAL_RUNNER_PASSWORD": "runner-secret",
+                      "SKILLEVAL_APPROVER_USER": "svc-eval-approver", "SKILLEVAL_APPROVER_PASSWORD": "approver-secret"}
     with pytest.raises(SystemExit, match="public repository"):
         device.creds(ROOT / "tmp-creds.env")
 

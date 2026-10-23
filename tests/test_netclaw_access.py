@@ -154,10 +154,11 @@ def test_platform_yml_builds_the_endpoints_then_the_account_then_the_gbac() -> N
     endpoints = next(t for t in tasks if t.get("loop") == NETCLAW_WORKFLOW_KEYS)
     assert endpoints["ansible.builtin.include_tasks"] == "tasks/outage-trigger.yml" and "when" not in endpoints
     includes = [t.get("ansible.builtin.include_tasks") for t in tasks]
-    # ADR 0083 puts the production MCP server's account between them (production only): its group is in the gbac too
-    assert includes[-3:] == ["tasks/netclaw-access.yml", "tasks/mcp-access.yml", "tasks/automation-access.yml"], (
-        "last: every automation exists")
-    assert "when" not in tasks[-3] and "when" not in tasks[-1], "both tiers"
+    # ADR 0083 puts the production MCP server's account between them, ADR 0084 the eval accounts (production only):
+    # their groups are in the gbac too
+    assert includes[-4:] == ["tasks/netclaw-access.yml", "tasks/mcp-access.yml", "tasks/eval-access.yml",
+                             "tasks/automation-access.yml"], "last: every automation exists"
+    assert "when" not in tasks[-4] and "when" not in tasks[-1], "both tiers"
     flowai = _tasks(TASKS / "flowai-assets.yml")
     assert flowai[-1].get("ansible.builtin.include_tasks") == "tasks/automation-access.yml", "the agents' automations"
 

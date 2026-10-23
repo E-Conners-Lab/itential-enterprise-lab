@@ -112,8 +112,8 @@ def test_the_service_account_task_knows_the_mcp_kind_and_only_its_group_prefix()
         "password_prefix": "SVC_MCP_",
         "description": "Production MCP server service account (ADR 0083)",
     }
-    assert "svc_kind | default('copilot') in ['copilot', 'netclaw', 'mcp']" in text
-    assert "svc_prefix in ['copilot-', 'netclaw', 'mcp-']" in text
+    assert "svc_kind | default('copilot') in ['copilot', 'netclaw', 'mcp', 'eval', 'eval-approver']" in text
+    assert "svc_prefix in ['copilot-', 'netclaw', 'mcp-', 'eval', 'eval-approvers']" in text
     access = _versions()["mcp_access"]
     assert access["group"].startswith(kind["group_prefix"]) and access[
         "password_env"
@@ -358,8 +358,9 @@ def test_the_replay_makes_the_group_before_the_inventories_and_after_the_agents(
     # platform.yml: before automation_access names the group, production only
     platform = _tasks(PLAYS / "platform.yml")
     includes = [t.get("ansible.builtin.include_tasks") for t in platform]
-    assert includes[-2:] == ["tasks/mcp-access.yml", "tasks/automation-access.yml"]
-    assert platform[-2]["when"] == "not (dev_overlay | default(false) | bool)"
+    # ADR 0084's eval accounts sit between them, production only as well
+    assert includes[-3:] == ["tasks/mcp-access.yml", "tasks/eval-access.yml", "tasks/automation-access.yml"]
+    assert platform[-3]["when"] == "not (dev_overlay | default(false) | bool)"
 
 
 def test_every_excluded_role_must_exist_before_any_role_is_assigned() -> None:

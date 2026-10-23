@@ -1,0 +1,141 @@
+---
+# ADR 0084: the skills eval suite's two accounts on production (the scratch lab is production's; the dev tier gets
+# nothing). Included from platform-ha2-replay.yml before tasks/platform-assets.yml (the skills-lab inventory is created
+# with the eval groups, and the push card's group markers are filled from them at import) and from platform.yml before
+# tasks/automation-access.yml (the scratch automations' gbac names them).
+#
+# What it writes, and nothing else:
+#  - the custom roles eval-run and eval-approve, created when absent and reset to their oracle when they differ
+#    (itential/eval/run-roles.yaml, itential/eval/approve-roles.yaml: this play's own roles)
+#  - svc-eval in the eval group and svc-eval-approver in eval-approvers in production's directory, each account's
+#    first login and its group's assignedRoles (tasks/ldap-service-account.yml, svc_kind eval / eval-approver)
+# Needs: login, platform_local, admin_pw, eval_access (versions.yaml).
+
+- name: Eval access - production only
+  ansible.builtin.assert:
+    that: not (dev_overlay | default(false) | bool)
+    fail_msg: the eval accounts exist on production only (ADR 0084); the dev tier gets nothing
+    quiet: true
+
+- name: Eval access - the two oracles
+  ansible.builtin.set_fact:
+    eva_oracles:
+      run: "{{ (lookup('ansible.builtin.file', playbook_dir ~ '/../../itential/eval/run-roles.yaml') | from_yaml).prod }}"
+      approve: "{{ (lookup('ansible.builtin.file', playbook_dir ~ '/../../itential/eval/approve-roles.yaml') | from_yaml).prod }}"
+
+- name: Eval access - each oracle names its account's group, eval- custom roles and exact method names
+  ansible.builtin.assert:
+    that:
+      - eva_oracles[item].group == eval_access[item].group
+      - eva_oracles[item].custom | map(attribute='name') | reject('match', 'eval-') | list | length == 0
+      - >-
+        eva_oracles[item].custom | map(attribute='methods') | flatten | map(attribute='name')
+        | select('search', '[*]') | list | length == 0
+    fail_msg: "itential/eval/{{ item }}-roles.yaml names another group, a non-eval custom role or a method glob"
+    quiet: true
+  loop: [run, approve]
+
+- name: Eval access - the custom roles of both oracles
+  ansible.builtin.set_fact:
+    eva_custom: "{{ eva_oracles.run.custom + eva_oracles.approve.custom }}"
+
+- name: Eval access - every role, page by page
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/authorization/roles?limit=100&skip={{ item }}"
+    headers: {Cookie: "{{ login.cookies_string }}"}
+  register: eva_role_pages
+  loop: [0, 100, 200, 300, 400]
+  loop_control:
+    label: "skip={{ item }}"
+
+- name: Eval access - the role list and the methods the Platform's own roles name, per application
+  ansible.builtin.set_fact:
+    eva_roles: "{{ eva_role_pages.results | map(attribute='json.results') | flatten }}"
+    eva_known: >-
+      {{ eva_role_pages.results | map(attribute='json.results') | flatten | map(attribute='allowedMethods') | flatten
+         | map(attribute='provenance') | zip(eva_role_pages.results | map(attribute='json.results') | flatten
+         | map(attribute='allowedMethods') | flatten | map(attribute='name')) | map('join', '/') | unique | list }}
+
+# A method name nobody's role lists is a typo or an upgrade's rename: stop before creating a role that grants nothing
+- name: Eval access - every method of every custom role exists on this Platform
+  ansible.builtin.assert:
+    that:
+      - eva_roles | length == eva_role_pages.results[0].json.total | int
+      - wanted | difference(eva_known) | length == 0
+    fail_msg: "{{ item.name }}: not a method of any role here: {{ wanted | difference(eva_known) }}"
+    quiet: true
+  vars:
+    wanted: "{{ item.methods | map(attribute='provenance') | zip(item.methods | map(attribute='name')) | map('join', '/') | list }}"
+  loop: "{{ eva_custom }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: Eval access - the custom role, created when absent or reset to the oracle when it differs
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/authorization/roles{{ '/' ~ have[0]._id if have else '' }}"
+    method: "{{ 'PATCH' if have else 'POST' }}"
+    headers: {Cookie: "{{ login.cookies_string }}"}
+    body_format: json
+    body: "{{ {'updates': doc} if have else {'role': doc | combine({'name': item.name, 'provenance': 'Custom'})} }}"
+    status_code: [200, 201]
+  vars:
+    have: "{{ eva_roles | selectattr('provenance', 'equalto', 'Custom') | selectattr('name', 'equalto', item.name) | list }}"
+    doc:
+      description: "{{ item.description }}"
+      allowedMethods: "{{ item.methods }}"
+      allowedViews: []
+    differs: >-
+      {{ (have[0].allowedMethods | default([]) | map(attribute='provenance')
+          | zip(have[0].allowedMethods | default([]) | map(attribute='name')) | map('join', '/') | sort)
+         != (item.methods | map(attribute='provenance') | zip(item.methods | map(attribute='name')) | map('join', '/') | sort)
+         if have else true }}
+  loop: "{{ eva_custom }}"
+  loop_control:
+    label: "{{ item.name }}"
+  when: differs | bool
+  changed_when: true
+
+- name: Eval access - roles re-read
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/authorization/roles?limit=100&skip={{ item }}"
+    headers: {Cookie: "{{ login.cookies_string }}"}
+  register: eva_role_pages2
+  loop: [0, 100, 200, 300, 400]
+  loop_control:
+    label: "skip={{ item }}"
+
+- name: Eval access - each custom role exists once with exactly the oracle's methods
+  ansible.builtin.assert:
+    that:
+      - found | length == 1
+      - >-
+        found[0].allowedMethods | map(attribute='provenance') | zip(found[0].allowedMethods | map(attribute='name'))
+        | map('join', '/') | sort
+        == item.methods | map(attribute='provenance') | zip(item.methods | map(attribute='name')) | map('join', '/') | sort
+    fail_msg: "{{ item.name }}: {{ found | length }} role(s) by that name, or methods other than the oracle's"
+    quiet: true
+  vars:
+    found: >-
+      {{ eva_role_pages2.results | map(attribute='json.results') | flatten
+         | selectattr('provenance', 'equalto', 'Custom') | selectattr('name', 'equalto', item.name) | list }}
+  loop: "{{ eva_custom }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+# --- The two accounts and their groups (the same task svc-copilot, svc-netclaw and svc-mcp use) -------------------
+- name: Eval access - svc-eval in eval, svc-eval-approver in eval-approvers
+  ansible.builtin.include_tasks: tasks/ldap-service-account.yml
+  vars:
+    svc_kind: "{{ eval_access[eva_account].kind }}"
+    svc_user: "{{ eval_access[eva_account].user }}"
+    svc_group: "{{ eval_access[eva_account].group }}"
+    password_env: "{{ eval_access[eva_account].password_env }}"
+    svc_role_set: prod
+    # production's directory is on tools-01 and takes ITENTIAL_ADMIN_PASSWORD (tools.compose.yml.j2)
+    ldap_container_host: tools-01
+    ldap_bind_password: "{{ admin_pw }}"
+    # as for svc-netclaw on production: stop instead of writing a fallback group nobody measured
+    ldap_service_account_fallback: false
+  loop: [run, approve]
+  loop_control:
+    loop_var: eva_account

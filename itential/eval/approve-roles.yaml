@@ -1,0 +1,49 @@
+# The role oracle for svc-eval-approver, the skills eval suite's approver account (ADR 0084). Production only. Read by:
+#  - ansible/playbooks/tasks/eval-access.yml (the custom role, created or reset to exactly these methods)
+#  - ansible/playbooks/tasks/ldap-service-account.yml (svc_kind eval-approver: the group's assignedRoles)
+#  - tests/test_eval_access.py (the deny list and the exact methods, written into the test independently)
+#
+# What the runner does with it: release or reject a held push (Work Center claim, then complete with finishState
+# success or failure; Work Center scopes both by the card's groups, eval-approvers and admin_group, measured on 6.6.0),
+# cancel a job a run left waiting, and start Restore Baseline on a Scratch Device (its automation's gbac names
+# eval-approvers: versions.yaml automation_access.eval_runner). It starts no agent session.
+prod:
+  group: eval-approvers
+  builtin:
+    # claim, complete, cancel and read work items; the only built-in Work Center service role (measured 2026-10-23)
+    - {provenance: WorkCenterService, name: "work-items:write"}
+  # exact method names, no globs
+  custom:
+    - name: eval-approve
+      description: "Skills eval approver: start the restore endpoint, read and cancel the suite's jobs (ADR 0084)"
+      methods:
+        - {provenance: OperationsManager, name: runEndpointTriggerWithPost} # the restore
+        - {provenance: OperationsManager, name: getJob}
+        - {provenance: OperationsManager, name: getJobs}
+        - {provenance: OperationsManager, name: cancelJobs} # a job a run left waiting on its card
+  # Never in the set. Globs over "<provenance>/<name>"; the shared task asserts the resolved built-ins against it.
+  deny:
+    - {provenance: "*", name: admin}
+    - {provenance: "*", name: apiwrite}
+    - {provenance: "*", name: designer}
+    - {provenance: "*", name: engineering}
+    - {provenance: "*", name: operations}
+    - {provenance: "*", name: support}
+    - {provenance: "*", name: builder}
+    - {provenance: "*", name: "*:create"}
+    - {provenance: "*", name: "*:update"}
+    - {provenance: "*", name: "*:delete"}
+    - {provenance: "*", name: "*:run"}
+    - {provenance: "*", name: "*:code"}
+    - {provenance: "*", name: "*:manage"}
+    # the approver releases cards; it never runs an agent
+    - {provenance: AgentSessionManager, name: "*"}
+    # no device path but the workflows: MOP runs commands, Configuration Manager and the Gateway reach devices
+    - {provenance: MOP, name: "*"}
+    - {provenance: ConfigurationManager, name: "*"}
+    - {provenance: GatewayManager, name: "*"}
+    - {provenance: InventoryManager, name: "*"}
+    # no workflow documents, no direct workflow start, no identity
+    - {provenance: AutomationStudio, name: "*"}
+    - {provenance: WorkFlowEngine, name: "*"}
+    - {provenance: Authorization, name: "*"}
