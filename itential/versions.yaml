@@ -251,6 +251,94 @@ revert_push:
 # use): recorded by make skills-lab-devices AND read again from a TLS handshake from the workstation, equal on
 # 2026-10-22 for all three. A rebuilt router gets a new certificate: refused until pinned again.
 skills_lab:
+  # ADR 0084 decision 6: the scratch routers' own Inventory Manager inventory, production only. Its groups are fixed at
+  # creation (6.6.0 cannot change them later; deleting the inventory removes its nodes), so they are named here.
+  inventory: skills-lab
+  inventory_groups: [admin_group, eval, eval-approvers]
+  # the eval agents (itential/agents/skill-eval*.yaml): production only, operated by admin_group and the eval group
+  # alone (no MCP group, unlike every other agent: decision 7), never built on the dev tier
+  agents: [skill-eval, skill-eval-local]
+  # their own agent project (tasks/flowai-assets.yml, production only): the MCP server's group edits the agents' shared
+  # project (ADR 0083), so in it the group could make itself an operator of the eval agents. This one is the
+  # administrator's alone
+  project: skills-lab
+  # the four workflows' keys (workflows, operations_manager): imported and triggered on production only
+  workflows: [scratch_show, scratch_restconf, scratch_push, scratch_restore]
+  # restconf-get's ALLOWLIST (cloud-devops-pipeline itential/restconf-get.py), held here for Get RESTCONF Data from a
+  # Scratch Device's input gate: the same four prefixes, the same character rule (`%` only as %2F), no `..`. A change
+  # is a CDP pull request plus a pin bump plus this list
+  restconf_allowlist:
+    - /restconf/data/Cisco-IOS-XE-ospf-oper:ospf-oper-data
+    - /restconf/data/Cisco-IOS-XE-interfaces-oper:interfaces
+    - /restconf/data/Cisco-IOS-XE-native:native/router/Cisco-IOS-XE-ospf:router-ospf
+    - /restconf/data/Cisco-IOS-XE-native:native/interface
+  # Push Configuration to a Scratch Device with Approval refuses a line matching any of these (case-insensitive, searched
+  # anywhere in the line) on the runner before a card exists: no save, reload, replace, archive, keys, accounts, file
+  # operations, boot, licence, EEM or Tcl, and no exec command through `do`. Nor anything that reaches the management
+  # path a restore needs (topology/configs/c8000v.j2: GigabitEthernet1 in VRF MGMT): the VRF by name, GigabitEthernet1
+  # however it is abbreviated or zero-padded (g1, gi 1, gi01, gig1.10, a range from gi1), and NETCONF. The workbench's device tool refuses
+  # the same
+  forbidden_lines:
+    - '\bwrite\b'
+    - '\breload\b'
+    - '\bconfigure\s+replace\b'
+    - '\barchive\b'
+    - '\bcrypto\s+key\b'
+    - '\busername\b'
+    - '\benable\s+secret\b'
+    - '\bcopy\b'
+    - '\bdelete\b'
+    - '\berase\b'
+    - '\bformat\b'
+    - '\bboot\b'
+    - '\blicense\b'
+    - '\bevent\s+manager\b'
+    - '\btclsh\b'
+    - '^\s*do\s'
+    - '\bmgmt\b'
+    - '\bg(?:i(?:g(?:a(?:b(?:i(?:t(?:e(?:t(?:h(?:e(?:r(?:n(?:e(?:t)?)?)?)?)?)?)?)?)?)?)?)?)?)?\s*0*1(?![0-9/])'
+    - '\bnetconf'
+  # ... and refuses a line that BEGINS with one of these commands as IOS XE reads it: every word may be abbreviated to
+  # any prefix (`usern`, `wr`, `cry key`) and a leading `no` or `default` does not change what the line is. `end` and
+  # `exit` leave configuration mode, after which send-config would run the following lines as exec commands (`exit`
+  # inside a sub-mode is never needed: IOS XE changes mode by itself). kron runs exec commands on a schedule and
+  # privilege changes what an account may run, so both are refused with the commands they would reach. An alias can
+  # stand for any command, so none is defined. The rest keep the management path a restore needs: the vty and console
+  # lines, AAA and login (block-for locks every login out), RESTCONF and its HTTPS server, SSH, the trustpoint whose
+  # certificate the judge pins, control-plane policing and IP routing itself.
+  forbidden_commands:
+    - [write]
+    - [reload]
+    - [configure, replace]
+    - [archive]
+    - [crypto, key]
+    - [username]
+    - [enable, secret]
+    - [enable, password]
+    - [privilege]
+    - [copy]
+    - [delete]
+    - [erase]
+    - [format]
+    - [boot]
+    - [license]
+    - [event, manager]
+    - [kron]
+    - [tclsh]
+    - [do]
+    - [end]
+    - [exit]
+    - [alias]
+    - [line]
+    - [aaa]
+    - [login]
+    - [restconf]
+    - [ip, http]
+    - [ip, ssh]
+    - [crypto, pki]
+    - [crypto, ca]
+    - [control-plane]
+    - [ip, routing]
   nodes:
     skl-r1: {mgmt_host: 10.100.0.152, cert_sha256: c3c1c8dc11d12242ba496b3e6ac4d9e0371ac466861e9d2189499f1372e1b94f}
     skl-r2: {mgmt_host: 10.100.0.153, cert_sha256: 2a4ecc0b9f14c01146c4a0ba399ed089a91490eb610229319f65c26ae6dbd1bb}
@@ -466,6 +554,29 @@ operations_manager:
     description: "A user VLAN on a branch switch, after a Work Center approval (ADR 0082)"
     endpoint: {name: Add Branch VLAN from NetClaw, route: add-branch-vlan,
                description: "NetClaw posts a branch and a VLAN name here as svc-netclaw; the change waits for its approval"}
+  # ADR 0084: the skills eval suite's four endpoints, production only (the scratch lab is production's). The runner
+  # posts to the three agent tools as svc-eval and to the restore as svc-eval-approver (automation_access.eval and
+  # eval_runner below). No form and no manual trigger: the schema is the workflow's own input gate (tasks/outage-trigger.yml)
+  scratch_show:
+    automation: Run Show Command on a Scratch Device
+    description: "One show command on one scratch router, raw output; reads only (ADR 0084)"
+    endpoint: {name: Run Show Command on a Scratch Device from the eval runner, route: skills-lab-show,
+               description: "The eval runner posts a scratch router and one show command here as svc-eval"}
+  scratch_restconf:
+    automation: Get RESTCONF Data from a Scratch Device
+    description: "One allowlisted RESTCONF read from one scratch router through restconf-get; reads only (ADR 0084)"
+    endpoint: {name: Get RESTCONF Data from a Scratch Device from the eval runner, route: skills-lab-restconf,
+               description: "The eval runner posts a scratch router and an allowlisted path here as svc-eval"}
+  scratch_push:
+    automation: Push Configuration to a Scratch Device with Approval
+    description: "Configuration lines to one scratch router after a card for eval-approvers; never saved (ADR 0084)"
+    endpoint: {name: Push Configuration to a Scratch Device from the eval runner, route: skills-lab-push,
+               description: "The eval runner posts a scratch router, the lines and a reason here as svc-eval; it waits for its card"}
+  scratch_restore:
+    automation: Restore Baseline on a Scratch Device
+    description: "Replaces a scratch router's configuration with its baseline and proves it; the runner only (ADR 0084)"
+    endpoint: {name: Restore Baseline on a Scratch Device from the eval runner, route: skills-lab-restore,
+               description: "The eval runner posts a scratch router here as svc-eval-approver between runs"}
   # R4 (owner decisions 2026-10-04): monthly and unattended, no card. Operations Manager repeats by minute, hour, day or
   # week only (no month), so this runs every day and the workflow rotates on the 1st (UTC) only; off the hour, so it
   # never starts with Tear Down Expired AWS VPN (top of the hour) or Check AWS Drift (07:00)
@@ -488,6 +599,12 @@ automation_access:
   write: [admin_group]
   # the automations NetClaw's group may also read and start: exactly the routes of its tools
   netclaw: [Run Show Command on a Device, Describe Job, Add Branch VLAN, platform-guide, platform-guide-local]
+  # ADR 0084 (owner decision 2026-10-22: only the eval accounts reach the scratch routers): these carry admin_group plus
+  # exactly one eval group and none of the read groups above, so Copilot, the production MCP account and the other
+  # agents cannot start them. `eval` = the agent tools (svc-eval); `eval_runner` = the restore (svc-eval-approver)
+  eval: [Run Show Command on a Scratch Device, Get RESTCONF Data from a Scratch Device,
+         Push Configuration to a Scratch Device with Approval]
+  eval_runner: [Restore Baseline on a Scratch Device]
   # never touched by the plays: the department-agents delivery gates its own Ask automations per department (read =
   # the department's group and IT). Ask R&D came later (2026-10-13) and was missing, so tasks/automation-access.yml
   # (platform.yml, flowai-assets, mcp-access) reset it and took dept-rnd's access away; found 2026-10-21.
@@ -510,6 +627,18 @@ mcp_access:
   user: svc-mcp
   group: mcp-builders
   password_env: SVC_MCP_PROD_PASSWORD
+
+# ADR 0084: the skills eval suite's two accounts, production only (the scratch lab is production's). `run` is the
+# runner's agent-tool account: it starts the three agent-tool automations and the eval agents' sessions, reads their
+# jobs, deletes each session once scored, and can neither release a card nor restore a router. `approve` releases or
+# rejects the push card (Work Center claim + complete, scoped by the card's groups) and runs the baseline restore; it
+# cancels no job. Role oracles: itential/eval/run-roles.yaml and approve-roles.yaml. Made by tasks/eval-access.yml
+# (start of the replay and platform.yml); passwords generated once into .env, copied to the workbench by make
+# skills-lab-creds.
+eval_access:
+  run: {user: svc-eval, group: eval, password_env: SVC_EVAL_PROD_PASSWORD, kind: eval}
+  approve: {user: svc-eval-approver, group: eval-approvers, password_env: SVC_EVAL_APPROVER_PROD_PASSWORD,
+            kind: eval-approver}
 
 vm:
   # itential-dev, never `itential` or `mcp`: since the S11 cut-over those names belong to production's load
@@ -633,6 +762,11 @@ workflows:
   describe_job: Describe Job # ADR 0080 decision 6: one job's run laid over its workflow's steps; reads only
   describe_for_agent: Describe for an Agent # ADR 0081: the agent's one tool - the list, a workflow or a job, no card; reads only
   ask_platform_guide: Ask Platform Guide # ADR 0081 decision 6: the Slack front door - platform-guide answers, on a card and published
+  # ADR 0084: the skills eval suite's governed path to the scratch routers (skills_lab), production only
+  scratch_show: Run Show Command on a Scratch Device # one show command on a skills-lab router, raw output; reads only
+  scratch_restconf: Get RESTCONF Data from a Scratch Device # one allowlisted RESTCONF read through restconf-get; reads only
+  scratch_push: Push Configuration to a Scratch Device with Approval # forbidden lines refused, a card for eval-approvers, never saved
+  scratch_restore: Restore Baseline on a Scratch Device # configure replace from bootflash:baseline.cfg, proved by hashes; runner only
 
 # The names before ADR 0067. The play deletes each one it still finds on a Platform, after importing the
 # renamed documents, so a replay leaves no stale copy behind. Nothing may reuse one of these names.
@@ -670,11 +804,20 @@ llm:
   # The Anthropic key is the owner's company key (ADR 0049): about $15 a week. verify/tokens.sh meters the last
   # 7 days from the Agent Session Manager at these list prices (claude-sonnet-5, 2026-09-09) and the agent
   # verifies refuse to start Anthropic sessions once the week is spent (ANTHROPIC_VERIFY=force overrides).
-  budget: {provider: anthropic, weekly_usd: 15, input_usd_per_mtok: 2.00, output_usd_per_mtok: 10.00}
+  # ADR 0084: the skills eval suite's sessions are metered by the workbench's own ledger (an alert at each $100), so the
+  # meter leaves them out (exclude_agents = skills_lab.agents): eval runs never stop the verifies, nor the reverse
+  budget: {provider: anthropic, weekly_usd: 15, input_usd_per_mtok: 2.00, output_usd_per_mtok: 10.00,
+           exclude_agents: [skill-eval, skill-eval-local]}
   profiles:
     - name: anthropic
       provider: anthropic
       model: claude-sonnet-5 # Model Registry listed 11 Claude models for the key on 2026-09-07
+      env_key: ANTHROPIC_API_KEY
+    # ADR 0084: skill-eval's own profile, on the model the eval suite's Claude column certifies. Created once by name by
+    # the flowai play, never edited; nothing but skill-eval is bound to it (`anthropic` stays as it is)
+    - name: anthropic-sonnet-5-5
+      provider: anthropic
+      model: claude-sonnet-5-5
       env_key: ANTHROPIC_API_KEY
     # The Mac Mini's Ollama is Homebrew-managed, so it is recorded rather than pinned from here:
     # tested against ollama 0.40.2 (ADR 0079; 0.23.3 could not load qwen3.8 at all - "unable to load

@@ -130,10 +130,12 @@ def test_platform_guide_is_an_agent_automation_on_each_route() -> None:
         assert doc["tools"] == [{"reference": "Describe for an Agent", "kind": "workflow"}], "still one read-only tool"
         assert doc["operator_groups"] == ["netclaw"], "svc-netclaw may start it (runAgent is scoped by operators)"
     assert routes == {"twin": "platform-guide-local", "claude": "platform-guide"}
-    # no other agent names an operator group: NetClaw reaches no agent but platform-guide
-    others = [p.name for p in AGENTS.glob("*.yaml") if p.stem not in routes.values()
-              and "operator_groups" in yaml.safe_load(p.read_text())]
-    assert others == []
+    # no other agent names the netclaw group: NetClaw reaches no agent but platform-guide. The skills eval suite's pair
+    # names its own eval group only (ADR 0084)
+    skills_lab = _versions()["skills_lab"]["agents"]
+    others = {p.stem: yaml.safe_load(p.read_text()).get("operator_groups") for p in AGENTS.glob("*.yaml")
+              if p.stem not in routes.values() and "operator_groups" in yaml.safe_load(p.read_text())}
+    assert others == {name: [_versions()["eval_access"]["run"]["group"]] for name in skills_lab}
     task = (TASKS / "flowai-agent.yml").read_text()
     assert "operators: \"{{ agent_operators }}\"" in task and "'operators': agent_operators" in task
 
@@ -154,10 +156,11 @@ def test_platform_yml_builds_the_endpoints_then_the_account_then_the_gbac() -> N
     endpoints = next(t for t in tasks if t.get("loop") == NETCLAW_WORKFLOW_KEYS)
     assert endpoints["ansible.builtin.include_tasks"] == "tasks/outage-trigger.yml" and "when" not in endpoints
     includes = [t.get("ansible.builtin.include_tasks") for t in tasks]
-    # ADR 0083 puts the production MCP server's account between them (production only): its group is in the gbac too
-    assert includes[-3:] == ["tasks/netclaw-access.yml", "tasks/mcp-access.yml", "tasks/automation-access.yml"], (
-        "last: every automation exists")
-    assert "when" not in tasks[-3] and "when" not in tasks[-1], "both tiers"
+    # ADR 0083 puts the production MCP server's account between them, ADR 0084 the eval accounts (production only):
+    # their groups are in the gbac too
+    assert includes[-4:] == ["tasks/netclaw-access.yml", "tasks/mcp-access.yml", "tasks/eval-access.yml",
+                             "tasks/automation-access.yml"], "last: every automation exists"
+    assert "when" not in tasks[-4] and "when" not in tasks[-1], "both tiers"
     flowai = _tasks(TASKS / "flowai-assets.yml")
     assert flowai[-1].get("ansible.builtin.include_tasks") == "tasks/automation-access.yml", "the agents' automations"
 

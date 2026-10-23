@@ -1,0 +1,60 @@
+# The role oracle for svc-eval, the skills eval suite's runner account (ADR 0084). One file decides what the account
+# that drives the agents under test can do; production only (the scratch lab is production's). Read by:
+#  - ansible/playbooks/tasks/eval-access.yml (the custom role, created or reset to exactly these methods)
+#  - ansible/playbooks/tasks/ldap-service-account.yml (svc_kind eval: the group's assignedRoles)
+#  - tests/test_eval_access.py (the deny list and the exact methods, written into the test independently)
+#
+# What the runner does with it: post to the endpoint triggers of the three agent-tool automations its group may read
+# (versions.yaml automation_access.eval: gbac is the boundary, the methods only make the call possible), read the jobs
+# they start, start the eval agents' sessions, read them, and delete each one once it is scored: a session's record
+# keeps the request, so the procedure under test would otherwise stay in production's session history. It can never
+# release a card (no Work Center role, no Operations Manager task method) and never run the restore (its automation's
+# gbac names eval-approvers only).
+#
+# Neither session method is scoped to the eval agents (measured on 6.6.0, 2026-10-23): session:read lists every
+# session on the Platform (svc-netclaw, holding the same role, sees what the administrator sees), so deleteSession is
+# taken to reach any session too. The runner deletes only the sessions it started; verify/skillslabcheck.py agents
+# measures the delete's reach on a throwaway session.
+prod:
+  group: eval
+  builtin:
+    - {provenance: AgentSessionManager, name: "session:read"} # the session and its messages, for scoring
+    # startSession: scoped by each agent's operators, which name the eval group on skill-eval and skill-eval-local only
+    # (itential/agents/*.yaml operator_groups; versions.yaml skills_lab.agents keeps every other group off them)
+    - {provenance: AgentSessionManager, name: operator}
+  # exact method names, no globs: a trigger-run method is not a read, so nothing here may be widened by a pattern
+  custom:
+    - name: eval-run
+      description: "Skills eval runner: start its agent-tool endpoints, read their jobs, delete its scored sessions (ADR 0084)"
+      methods:
+        - {provenance: OperationsManager, name: runEndpointTriggerWithPost} # the three agent tools
+        - {provenance: OperationsManager, name: getJob} # a job's result (get_job_result)
+        - {provenance: OperationsManager, name: getJobs}
+        # the built-in session:delete holds this one method; named here so the deny list keeps refusing every *:delete
+        - {provenance: AgentSessionManager, name: deleteSession}
+  # Never in the set. Globs over "<provenance>/<name>"; the shared task asserts the resolved built-ins against it.
+  deny:
+    - {provenance: "*", name: admin}
+    - {provenance: "*", name: apiwrite}
+    - {provenance: "*", name: designer}
+    - {provenance: "*", name: engineering}
+    - {provenance: "*", name: operations}
+    - {provenance: "*", name: support}
+    - {provenance: "*", name: builder}
+    - {provenance: "*", name: "*:create"}
+    - {provenance: "*", name: "*:update"}
+    - {provenance: "*", name: "*:delete"}
+    - {provenance: "*", name: "*:run"}
+    - {provenance: "*", name: "*:code"}
+    - {provenance: "*", name: "*:manage"}
+    # the card is the approver's: no Work Center role at all, so the runner's agent account can never release it
+    - {provenance: WorkCenterService, name: "*"}
+    # no device path but the workflows: MOP runs commands, Configuration Manager and the Gateway reach devices
+    - {provenance: MOP, name: "*"}
+    - {provenance: ConfigurationManager, name: "*"}
+    - {provenance: GatewayManager, name: "*"}
+    - {provenance: InventoryManager, name: "*"}
+    # no workflow documents, no direct workflow start, no identity
+    - {provenance: AutomationStudio, name: "*"}
+    - {provenance: WorkFlowEngine, name: "*"}
+    - {provenance: Authorization, name: "*"}

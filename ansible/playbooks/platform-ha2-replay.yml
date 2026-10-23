@@ -52,6 +52,11 @@
     - name: The production MCP server's account (svc-mcp), its group, and the group on what exists so far
       ansible.builtin.include_tasks: tasks/mcp-access.yml
 
+    # ADR 0084: before the skills-lab inventory is created with the eval groups and before the import fills the push
+    # card's group markers from them
+    - name: The skills eval suite's accounts (svc-eval, svc-eval-approver), their groups and roles
+      ansible.builtin.include_tasks: tasks/eval-access.yml
+
     - name: The Platform assets of phase 5 (shared with the dev-stack play, ADR 0055)
       ansible.builtin.import_tasks: tasks/platform-assets.yml
 

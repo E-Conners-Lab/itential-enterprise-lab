@@ -462,8 +462,14 @@ def test_the_verify_runs_every_local_twin(docs: dict) -> None:
     the untested ones - and that is exactly where the unfollowable prompt survived (device-ops-local,
     measured 2026-09-11). Every ollama-mac document runs in the verify."""
     text = VERIFY.read_text()
+    skills_lab = set(yaml.safe_load(VERSIONS.read_text())["skills_lab"]["agents"])
+    probes = (ROOT / "verify" / "skillslabcheck.py").read_text()
     for name, doc in sorted(docs.items()):
         if doc["profile"] != "ollama-mac":
+            continue
+        if name in skills_lab:
+            # ADR 0084: production only, and its request is a procedure: verify/skillslabcheck.py agents runs the twin
+            assert 'SKILLS["agents"]' in probes and 'n.endswith("-local")' in probes, name
             continue
         assert re.search(rf"run_agent {re.escape(name)}\b", text), (
             f"{name} is never exercised by verify/test-06-flowai.sh"

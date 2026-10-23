@@ -403,6 +403,111 @@
   changed_when: false
   when: host_nodes | default([]) | length > 0
 
+# --- The skills eval suite's scratch routers (ADR 0084): their own inventory, production only ---------------------
+# Not from NetBox (the routers are not NetBox devices, owner decision 2026-10-22): from versions.yaml skills_lab.nodes.
+# Its groups are set at creation and 6.6.0 cannot change them later (deleting the inventory removes its nodes), so the
+# eval groups exist first (tasks/eval-access.yml runs before this file in the replay) and are checked after. /nodes/bulk
+# REPLACES an inventory's node set, so it is called with this inventory and these nodes only. Configuration Manager
+# never sees them: the Device Broker below publishes the lab inventory alone.
+- name: Group ids by name (the skills lab inventory's groups are checked by id)
+  ansible.builtin.include_tasks: workflow-group-ids.yml
+  when: not (dev_overlay | default(false) | bool)
+
+- name: Skills lab inventory exists?
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/inventory_manager/v1/inventories/{{ skills_lab.inventory }}"
+    headers: {Cookie: "{{ login.cookies_string }}"}
+    status_code: [200, 404]
+  register: skl_inv_state
+  when: not (dev_overlay | default(false) | bool)
+
+- name: Skills lab inventory with the eval groups, created once, on cluster {{ stack.gateway5_cluster_id }}
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/inventory_manager/v1/inventories"
+    method: POST
+    headers: {Cookie: "{{ login.cookies_string }}"}
+    body_format: json
+    body:
+      name: "{{ skills_lab.inventory }}"
+      description: "The skills eval suite's scratch routers (versions.yaml skills_lab, ADR 0084); not from NetBox"
+      groups: "{{ skills_lab.inventory_groups }}"
+      createBrokerActions: true
+      defaultClusterId: "{{ stack.gateway5_cluster_id }}"
+    status_code: [200, 201]
+  when:
+    - not (dev_overlay | default(false) | bool)
+    - skl_inv_state.status != 200
+  changed_when: true
+
+- name: Skills lab inventory read back
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/inventory_manager/v1/inventories/{{ skills_lab.inventory }}"
+    headers: {Cookie: "{{ login.cookies_string }}"}
+  register: skl_inv
+  when: not (dev_overlay | default(false) | bool)
+
+- name: Skills lab inventory carries exactly the groups versions.yaml names
+  ansible.builtin.assert:
+    that: skl_inv.json.result.groups | sort == skills_lab.inventory_groups | map('extract', wgi_ids) | sort
+    fail_msg: >-
+      {{ skills_lab.inventory }} has groups {{ skl_inv.json.result.groups }}, not {{ skills_lab.inventory_groups }}:
+      6.6.0 cannot change them, so the inventory has to be deleted and made again (by hand; it holds only these nodes)
+    quiet: true
+  when: not (dev_overlay | default(false) | bool)
+
+- name: Skills lab nodes (the scratch automation account, its password through the Gateway's Vault alias)
+  ansible.builtin.set_fact:
+    skl_nodes: >-
+      {%- set out = [] -%}
+      {%- for name, node in skills_lab.nodes.items() -%}
+        {%- set _ = out.append({'name': name, 'tags': ['skills-lab'],
+                                'attributes': {'itential_host': node.mgmt_host,
+                                               'itential_platform': 'cisco_ios',
+                                               'itential_user': 'automation',
+                                               'itential_password': '$GATEWAYSECRET_(skills-lab-automation-password)'
+                                                   if vault_on else lookup('ansible.builtin.env', 'SKILLS_LAB_AUTOMATION_PASSWORD'),
+                                               'cluster_id': stack.gateway5_cluster_id}}) -%}
+      {%- endfor -%}
+      {{ out }}
+  no_log: true
+  when: not (dev_overlay | default(false) | bool)
+
+- name: Existing skills lab nodes
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/inventory_manager/v1/inventories/{{ skills_lab.inventory }}/nodes"
+    headers: {Cookie: "{{ login.cookies_string }}"}
+  register: skl_inv_existing
+  no_log: true
+  when: not (dev_overlay | default(false) | bool)
+
+- name: Skills lab nodes populated from versions.yaml (this inventory only; replaces its set when it differs)
+  ansible.builtin.uri:
+    url: "{{ platform_local }}/inventory_manager/v1/nodes/bulk"
+    method: POST
+    headers: {Cookie: "{{ login.cookies_string }}"}
+    body_format: json
+    body:
+      inventory_identifier: "{{ skills_lab.inventory }}"
+      nodes: "{{ skl_nodes }}"
+    status_code: 200
+  vars:
+    # name, address and password: a moved router or a rotated alias must reach the Platform
+    have: >-
+      {{ skl_inv_existing.json.result.data | map(attribute='name')
+         | zip(skl_inv_existing.json.result.data | map(attribute='attributes.itential_host', default=''),
+               skl_inv_existing.json.result.data | map(attribute='attributes.itential_password', default=''))
+         | map('list') | sort }}
+    want: >-
+      {{ skl_nodes | map(attribute='name')
+         | zip(skl_nodes | map(attribute='attributes.itential_host'),
+               skl_nodes | map(attribute='attributes.itential_password'))
+         | map('list') | sort }}
+  when:
+    - not (dev_overlay | default(false) | bool)
+    - have != want
+  changed_when: true
+  no_log: true
+
 # --- Device Broker (ADR 0039): the built-in Inventory Manager adapter publishes the inventory's
 # nodes to Device Broker, which is where Configuration Manager (backups, Golden Config,
 # compliance), command templates and the MCP device tools read devices. Gateway 5 only.
@@ -526,10 +631,22 @@
   ansible.builtin.set_fact:
     wf_docs: "{{ lookup('ansible.builtin.fileglob', playbook_dir ~ '/../../itential/workflows/*.json', wantlist=True) | sort }}"
 
+# ADR 0084: the scratch routers' workflows are production's alone; the dev tier gets nothing of the skills lab
+- name: The dev tier leaves out the skills lab's workflows
+  ansible.builtin.set_fact:
+    wf_docs: "{{ wf_docs | reject('search', '/(' ~ scratch_files | join('|') ~ ')[.]json$') | list }}"
+  vars:
+    scratch_files: "{{ skills_lab.workflows | map('extract', workflows) | map('lower') | map('replace', ' ', '-') | list }}"
+  when: dev_overlay | default(false) | bool
+
 - name: Agent UUIDs for the workflows that run an agent (R6)
   ansible.builtin.include_tasks: workflow-agent-ids.yml
 
-# a marker `__AGENT_ID:<agent>__` becomes that agent's UUID; a marker whose agent does not exist yet stays as it is
+- name: Group ids for the workflows whose cards name who may release them (ADR 0084)
+  ansible.builtin.include_tasks: workflow-group-ids.yml
+
+# a marker `__AGENT_ID:<agent>__` becomes that agent's UUID; a marker whose agent does not exist yet stays as it is.
+# A marker `__GROUP_ID:<group>__` becomes that group's id the same way (ADR 0084: who may release a card)
 - name: Workflow documents parsed
   ansible.builtin.set_fact:
     wf_bodies: >-
@@ -538,10 +655,26 @@
       {%- for m in raw | regex_findall('__AGENT_ID:([a-z0-9-]+)__') | unique -%}
       {%- if m in wai_ids -%}{%- set ns.t = ns.t | replace('__AGENT_ID:' ~ m ~ '__', wai_ids[m]) -%}{%- endif -%}
       {%- endfor -%}
+      {%- for m in raw | regex_findall('__GROUP_ID:([A-Za-z0-9_-]+)__') | unique -%}
+      {%- if m in wgi_ids -%}{%- set ns.t = ns.t | replace('__GROUP_ID:' ~ m ~ '__', wgi_ids[m]) -%}{%- endif -%}
+      {%- endfor -%}
       {{ wf_bodies | default([]) + [ns.t | from_json] }}
   loop: "{{ wf_docs }}"
   loop_control:
     label: "{{ item | basename }}"
+
+# a card whose group marker is still there would hold a group id that names nobody, and only an administrator could
+# release it: stop before the import instead (the eval groups come from tasks/eval-access.yml)
+- name: Every card names groups this Platform has
+  ansible.builtin.assert:
+    that: unfilled | length == 0
+    fail_msg: "{{ unfilled }}: a card names a group this Platform does not have (a __GROUP_ID marker is left)"
+    quiet: true
+  vars:
+    unfilled: >-
+      {%- set out = [] -%}
+      {%- for w in wf_bodies if (w | to_json) is search('__GROUP_ID:') -%}{%- set _ = out.append(w.name) -%}{%- endfor -%}
+      {{ out }}
 
 - name: Existing workflows
   ansible.builtin.uri:

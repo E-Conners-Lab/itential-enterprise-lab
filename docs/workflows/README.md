@@ -33,5 +33,9 @@ What each workflow does from start to end, for someone who is about to run one o
 | [Describe Job](describe-job.md) | 5 | 18 | 1 |
 | [Describe for an Agent](describe-for-an-agent.md) | 4 | 15 | 0 |
 | [Ask Platform Guide](ask-platform-guide.md) | 4 | 15 | 1 |
+| [Run Show Command on a Scratch Device](run-show-command-on-a-scratch-device.md) | 5 | 14 | 0 |
+| [Get RESTCONF Data from a Scratch Device](get-restconf-data-from-a-scratch-device.md) | 5 | 15 | 0 |
+| [Push Configuration to a Scratch Device with Approval](push-configuration-to-a-scratch-device-with-approval.md) | 8 | 38 | 1 |
+| [Restore Baseline on a Scratch Device](restore-baseline-on-a-scratch-device.md) | 5 | 21 | 0 |
 
 A workflow is listed here as soon as versions.yaml names it: its builder in `build.py` names the steps (`step(...)`), and the renderer needs nothing else.
