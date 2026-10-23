@@ -318,3 +318,18 @@ def test_the_inventory_is_made_once_with_the_eval_groups_from_versions_only() ->
     text = json.dumps(nodes)
     assert "$GATEWAYSECRET_(skills-lab-automation-password)" in text and "skills_lab.nodes.items()" in text
     assert "skills-lab-automation-password" in VERSIONS["vault"]["gateway_aliases"]
+
+
+# --- the probes ------------------------------------------------------------------------------------------------------
+
+
+def test_the_probes_cover_every_criterion_as_the_runners_accounts_and_read_the_router_as_judge() -> None:
+    text = (ROOT / "verify" / "skillslabcheck.py").read_text()
+    for check in ("accounts", "inventory", "gbac", "forbidden", "restconf", "hold", "restore", "agents", "profile"):
+        assert re.search(rf"^    {check}\s", text, re.M), f"the docstring does not list {check}"
+    assert 'ACCESS["run"]["password_env"]' in text and 'ACCESS["approve"]["password_env"]' in text
+    # the outcome on the router is read directly, as judge, on a pinned connection - never through the Platform
+    assert 'presented == node["cert_sha256"]' in text and "judge:{os.environ['SKILLS_LAB_JUDGE_PASSWORD']}" in text
+    # cards are released the way the runner releases them: Work Center claim, then complete
+    assert "/claim" in text and "/complete" in text and "/tasks/" not in text
+    assert 'choices=["prod"]' in text, "production only"
