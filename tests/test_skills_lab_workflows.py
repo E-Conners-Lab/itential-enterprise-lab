@@ -248,6 +248,19 @@ def test_the_import_fills_the_group_markers_and_refuses_one_it_cannot() -> None:
     assert names.index("Every card names groups this Platform has") < names.index("Import the workflows")
 
 
+def test_a_workflow_with_a_grouped_card_is_created_not_bulk_imported() -> None:
+    """6.6.0's bulk import refuses a manual task with groups (measured on production 2026-10-23); create takes it."""
+    tasks = _tasks(TASKS / "platform-assets.yml")
+    names = [t["name"] for t in tasks]
+    imp = tasks[names.index("Import the workflows")]
+    create = tasks[names.index("Create each workflow whose cards name groups")]
+    assert imp["ansible.builtin.uri"]["body"]["automations"] == "{{ wf_bodies | rejectattr('name', 'in', wf_grouped) | list }}"
+    assert create["ansible.builtin.uri"]["url"].endswith("/automation-studio/automations")
+    assert create["loop"] == "{{ wf_bodies | selectattr('name', 'in', wf_grouped) | list }}"
+    assert names.index("Workflows whose cards name groups") < names.index("Import the workflows") < names.index(
+        "Create each workflow whose cards name groups")
+
+
 def test_nothing_on_the_scratch_path_is_ever_saved() -> None:
     for key in KEYS:
         text = json.dumps(_doc(key))
