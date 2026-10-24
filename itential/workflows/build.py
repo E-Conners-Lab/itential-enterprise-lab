@@ -8453,7 +8453,7 @@ def scratch_push() -> dict:
         # 404 to a claim from any other account; on the automation's gbac, read or write, eval-approvers could start
         # the push itself (both measured on 6.6.0, 2026-10-23). So the approvers' group joins this one job, here.
         "2d": task("addJobGroup", "OperationsManager", "let eval-approvers read this job and so its card",
-                   {"jobId": "$var.job._id", "groupId": "__GROUP_ID:eval-approvers__"}, {}, x=420),
+                   {"jobId": "$var.job._id", "groupId": "__GROUP_ID:eval-approvers__"}, {"result": None}, x=420),
         **approval("2c", "Approve a scratch change", "$var.2b.replacedString", "$var.2a.return_data", "Approve",
                    "Reject", x=450, var="approval", groups=SCRATCH_GROUP_MARKERS),
         **step("the push: the joined lines through the Gateway's send-config, never saved; the router's reply read for refused lines"),

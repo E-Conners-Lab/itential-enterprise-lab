@@ -166,3 +166,14 @@ def test_branch_vlan_reads_the_switch_reply_before_netbox_marks_the_vlan_active(
     for tid in ("5e", "5f", "50"):
         assert tr[tid]["8c"]["state"] == "error", tid
     assert tr["8c"] == {}, "an unreadable reply keeps the designed error-end and does not roll back"
+
+
+def test_every_automatic_task_maps_its_output() -> None:
+    """The platform refuses to START a job whose automatic task leaves its declared output unmapped (HTTP 400
+    'Output: "undefined" does not match model output: "result"', measured on production 2026-10-24: an addJobGroup
+    with no outgoing passed every other check and import). An unused output is mapped to null, as everywhere else."""
+    import json
+    for path in sorted((ROOT / "itential" / "workflows").glob("*.json")):
+        for tid, task in json.loads(path.read_text())["tasks"].items():
+            if isinstance(task, dict) and task.get("type") == "automatic":
+                assert task["variables"]["outgoing"], f"{path.name}: {tid} {task.get('name')} maps no output"
