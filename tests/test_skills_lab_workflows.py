@@ -186,6 +186,8 @@ def test_the_push_gate_takes_a_list_of_single_lines(lines: list, ok: bool) -> No
     "no netconf-yang", "no ip http secure-server", "ip http access-class 99", "no ip h secure-server", "ip ssh version 1",
     "ip ssh server algorithm encryption aes128-ctr", "no crypto pki trustpoint TP-self-signed-1", "crypto ca trustpoint X",
     "control-plane", "no ip routing",
+    # `default` abbreviated: IOS XE reads `defa line vty 0 4` as `default line vty 0 4`
+    "defa line vty 0 4", "def aaa new-model", "de interface GigabitEthernet1", "defau no ip routing",
 ])
 def test_a_forbidden_line_is_refused_before_any_card(line: str) -> None:
     plan = wf.scratch_push_plan({"device": "skl-r1", "reason": "r", "lines": ["router ospf 1", line]},
