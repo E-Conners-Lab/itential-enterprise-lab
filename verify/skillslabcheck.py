@@ -14,8 +14,9 @@ the Platform it is checking).
     forbidden  4  `write memory`, `do copy running-config startup-config` and `int gi1` (the management path)
                   refused before any card
     restconf   5  an allowlisted path returns JSON; the username path is refused by the gate; no password in the job
-    hold       3  a push waits on its card, svc-eval cannot claim it, the router is unchanged; released, the change is
-                  on the router; a second push rejected leaves it off; then the baseline is restored
+    hold       3  a push waits on its card, svc-eval cannot claim it, the router is unchanged; the approver finds the
+                  card itself and releases it, and the change is on the router; a second push rejected leaves it off;
+                  then the baseline is restored
     restore    6  after a probe change, the restore reports restored with equal hashes and the change is gone
     agents     7  one skill-eval-local session (--claude: skill-eval too) follows a probe procedure with the scratch
                   tools only; no agent document holds the procedure; svc-eval deletes each session once scored and
@@ -111,9 +112,11 @@ def run(p: Platform, key: str, body: dict, seconds: int = 300) -> dict:
 
 
 def decide(adm: Platform, appr: Platform, job: str, approve: bool) -> None:
-    """Release or reject the job's card as svc-eval-approver: Work Center claim, then complete (the runner's path)."""
-    item = card_id(adm, job)
-    assert item, f"job {job}: no pending card"
+    """Release or reject the job's card as svc-eval-approver: it finds the card itself, then Work Center claim and
+    complete (the runner's path). On 6.6.0 the card is visible only to its job's groups, which the push opens to
+    eval-approvers just before the card."""
+    item = card_id(appr, job)
+    assert item, f"job {job}: the approver sees no pending card (the administrator sees {card_id(adm, job)})"
     code, out = appr.req("PATCH", f"/work-center-service/work-items/{item}/claim", {})
     assert code == 200, f"the approver could not claim card {item}: HTTP {code} {str(out)[:200]}"
     code, out = appr.req("PATCH", f"/work-center-service/work-items/{item}/complete",
@@ -280,7 +283,9 @@ def agents(claude: bool) -> None:
         msgs = evl.req("GET", f"/agent-session-manager/sessions/{sid}/messages?limit=500&sortBy=eventId&sortOrder=asc")[1]
         msgs = (msgs.get("data") or msgs.get("items") or []) if isinstance(msgs, dict) else msgs
         called = {m["data"].get("toolName", "") for m in msgs if m.get("category") == "TOOL_CALLED"}
-        texts = [m["text"] for m in msgs if m.get("type") == "inference-succeeded" and m.get("text")]
+        # the eventIds are UUIDs, so the server's eventId order is not the session's (measured 2026-10-23): time order
+        texts = [m["text"] for m in sorted(msgs, key=lambda m: m.get("timestamp", 0))
+                 if m.get("type") == "inference-succeeded" and m.get("text")]
         assert called and called <= tools, f"{name}: tools {called}"
         assert texts and "DIAGNOSIS: 4" in texts[-1], f"{name}: {texts[-1][-200:] if texts else 'no answer'}"
         print(f"{name} session {sid}: tools {sorted(called)}; DIAGNOSIS: 4")

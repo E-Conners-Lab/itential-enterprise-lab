@@ -68,7 +68,8 @@ to evaluation work.
    (measured with svc-netclaw, which holds the same role), so while a run lasts, every account with that role can
    read its procedure: svc-netclaw, svc-copilot, svc-eval and the production MCP account (`mcp-builders` holds every
    role but administration, ADR 0083, so it can delete any session already). How far svc-eval's delete reaches is
-   measured at converge on a throwaway session (`verify/skillslabcheck.py agents`).
+   measured at converge on a throwaway session (`verify/skillslabcheck.py agents`): it reaches every session, since
+   svc-eval deleted one the administrator started (measured 2026-10-23).
 
    As built (production only; the dev tier imports, triggers and builds none of it): the `skills-lab` inventory is
    created once with `admin_group`, `eval` and `eval-approvers` and holds `skills_lab.nodes`, its password the Gateway
@@ -84,8 +85,12 @@ to evaluation work.
    operated by `admin_group` and `eval` only: the MCP server's group, which operates every other agent, is kept off
    them, and they sit in a project of their own, `skills_lab.project`, so the group's editor role on the agents'
    shared project cannot reach them (owner decision 2026-10-23). The approver holds no `cancelJobs`, which reaches
-   every job on production: a push a run leaves waiting is rejected through its card, which Work Center scopes to the
-   card's groups (owner decision 2026-10-23). `verify/tokens.sh` leaves their sessions out
+   every job on production: a push a run leaves waiting is rejected through its card (owner decision 2026-10-23).
+   Work Center lets an account claim a card only when it is in the card's groups and also in its job's groups, which
+   are the automation's gbac read plus write; it answers 404 otherwise. Either gbac list would let eval-approvers
+   start the push itself (both measured at converge, 2026-10-23), so the push adds eval-approvers to its own job
+   (`addJobGroup`) just before the card, and a push refused before its card never opens to the approver.
+   `verify/tokens.sh` leaves their sessions out
    (`llm.budget.exclude_agents`). Probes: `verify/skillslabcheck.py`.
 7. **Two owner decisions (2026-10-22).** The owner approves scratch changes with the existing administrator login
    (`admin_group`) alongside the runner's approver account, instead of a new LDAP membership. Only eval accounts reach

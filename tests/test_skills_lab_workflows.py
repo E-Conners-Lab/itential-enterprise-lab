@@ -240,6 +240,29 @@ def test_the_card_names_eval_approvers_and_admin_group_and_nothing_else_has_grou
                 assert task.get("groups", []) == [], (key, tid)
 
 
+def test_the_push_opens_its_job_to_the_approvers_on_every_path_to_its_card() -> None:
+    """6.6.0 Work Center shows a card only to its job's groups (the automation's gbac read + write), and either gbac
+    list would let eval-approvers start the push (measured on production 2026-10-23): the push adds the group to its
+    own job, and the card cannot be reached any other way."""
+    doc = _doc("scratch_push")
+    add = doc["tasks"]["2d"]
+    assert (add["app"], add["name"], add.get("groups", [])) == ("OperationsManager", "addJobGroup", [])
+    assert add["variables"]["incoming"] == {
+        "jobId": "$var.job._id", "groupId": f"__GROUP_ID:{VERSIONS['eval_access']['approve']['group']}__"}
+    edges = doc["transitions"]
+    reached, todo = set(), ["workflow_start"]
+    while todo:  # walk the workflow without 2d: neither the card nor its helpers may be reached
+        n = todo.pop()
+        if n not in reached and n != "2d":
+            reached.add(n)
+            todo.extend(edges.get(n, {}))
+    assert not {"2c", "2c1"} & reached
+    assert edges["2d"]["5d"]["state"] == "error" and list(edges["5d"]) == ["workflow_end"]
+    assert "nothing was sent" in json.dumps(doc["tasks"]["5d"])
+    # a forbidden line ends the job before the group is added
+    assert "5c" in edges["1e"] and edges["1e"]["5c"]["state"] == "failure"
+
+
 def test_the_import_fills_the_group_markers_and_refuses_one_it_cannot() -> None:
     text = (TASKS / "platform-assets.yml").read_text()
     assert "include_tasks: workflow-group-ids.yml" in text

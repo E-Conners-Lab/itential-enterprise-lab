@@ -4,7 +4,9 @@
 #  - tests/test_eval_access.py (the deny list and the exact methods, written into the test independently)
 #
 # What the runner does with it: release or reject a held push (Work Center claim, then complete with finishState
-# success or failure; Work Center scopes both by the card's groups, eval-approvers and admin_group, measured on 6.6.0)
+# success or failure). Work Center lets an account claim a card when it is in the card's groups (eval-approvers,
+# admin_group) and also in its job's groups; the push adds eval-approvers to its own job just before the card, since
+# the automation's gbac, read or write, would let the account start the push itself (measured on 6.6.0, 2026-10-23)
 # and start Restore Baseline on a Scratch Device (its automation's gbac names eval-approvers: versions.yaml
 # automation_access.eval_runner). It starts no agent session. A push a run leaves waiting is rejected, never cancelled:
 # Operations Manager's cancelJobs reaches every job on production, so the account does not hold it.
