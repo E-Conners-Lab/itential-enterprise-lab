@@ -8449,6 +8449,11 @@ def scratch_push() -> dict:
         **step("the approval: the router, the reason and the exact lines on a card only eval-approvers and admin_group can release"),
         "2a": jq("the card's body", "$var.1d.result", "stdout_json.card", x=350),
         "2b": replace("the card's message", SCRATCH_APPROVAL_MESSAGE, "__D__", "$var.job.device", x=400),
+        # Work Center shows a card only to its job's groups, which are the automation's gbac read + write, and answers
+        # 404 to a claim from any other account; on the automation's gbac, read or write, eval-approvers could start
+        # the push itself (both measured on 6.6.0, 2026-10-23). So the approvers' group joins this one job, here.
+        "2d": task("addJobGroup", "OperationsManager", "let eval-approvers read this job and so its card",
+                   {"jobId": "$var.job._id", "groupId": "__GROUP_ID:eval-approvers__"}, {}, x=420),
         **approval("2c", "Approve a scratch change", "$var.2b.replacedString", "$var.2a.return_data", "Approve",
                    "Reject", x=450, var="approval", groups=SCRATCH_GROUP_MARKERS),
         **step("the push: the joined lines through the Gateway's send-config, never saved; the router's reply read for refused lines"),
@@ -8475,6 +8480,9 @@ def scratch_push() -> dict:
                    "error", x=250, y=-600),
         "5b": note("the push did not apply", "the Gateway could not apply the lines, or could not say whether it did: "
                    "read the router with a show command; the restore puts its baseline back", "error", x=600, y=-300),
+        "5d": note("the card could not be opened to its approvers", "the approvers' group could not be added to the "
+                   "job, so nobody but admin_group could release its card: nothing was sent to the router", "error",
+                   x=1600),
         "5e": note("the reply could not be checked", "the lines were sent but the router's reply could not be checked: "
                    "read the router with a show command; the restore puts its baseline back", "error", x=750, y=-300),
         "5f": flag("changed = true (unknown)", "true", "changed", x=800, y=-300),
@@ -8488,7 +8496,7 @@ def scratch_push() -> dict:
         "1d": _edge(**{"1e": ok, "5a": err}),
         "1e": _edge(**{"2a": ok, "5c": fail}),
         "2a": _edge(**{"2b": ok, "5a": err}),
-        "2b": _edge(**{"2c1": ok}), **approval_edges("2c"),
+        "2b": _edge(**{"2d": ok}), "2d": _edge(**{"2c1": ok, "5d": err}), **approval_edges("2c"),
         "2c": _edge(**{"3a": ok, "9a": fail}),
         "3a": _edge(**{"3b": ok, "5a": err}),
         # ADR 0066: a Gateway JSON-RPC error finishes sendConfig `success`, so the answer is checked (3c)
@@ -8502,6 +8510,7 @@ def scratch_push() -> dict:
         "9a": _edge(**{"workflow_end": ok}),
         "5a": _edge(**{"workflow_end": ok}), "5b": _edge(**{"workflow_end": ok}),
         "5c": _edge(**{"workflow_end": ok, "5a": err}),
+        "5d": _edge(**{"workflow_end": ok}),
         "5e": _edge(**{"5f": ok}), "5f": _edge(**{"workflow_end": ok}),
     }
     return workflow(

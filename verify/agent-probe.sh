@@ -74,7 +74,7 @@ for x in m:
         if e: print('      ERROR:', str(e)[:400])
     u=d.get('tokenUsage') or {}
     tin+=u.get('inputTokens',0); tout+=u.get('outputTokens',0)
-t=[x for x in m if x.get('type')=='inference-succeeded' and x.get('text')]
+t=sorted([x for x in m if x.get('type')=='inference-succeeded' and x.get('text')],key=lambda x:x.get('timestamp',0))
 print('ANSWER:', t[-1]['text'][:800] if t else '(none)')
 print(f'tokens  in={tin} out={tout}')
 "

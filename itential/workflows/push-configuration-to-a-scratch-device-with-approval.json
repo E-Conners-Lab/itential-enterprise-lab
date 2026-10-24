@@ -176,7 +176,7 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 140,
+        "x": 200,
         "y": 1950
       },
       "variables": {
@@ -222,7 +222,7 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 440,
+        "x": 650,
         "y": 2100
       },
       "variables": {
@@ -250,7 +250,7 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 740,
+        "x": 800,
         "y": 2250
       },
       "variables": {
@@ -262,6 +262,33 @@
         "outgoing": {
           "replacedString": null
         },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "2d": {
+      "name": "addJobGroup",
+      "canvasName": "addJobGroup",
+      "summary": "let eval-approvers read this job and so its card",
+      "description": "the approval: the router, the reason and the exact lines on a card only eval-approvers and admin_group can release",
+      "location": "Application",
+      "locationType": null,
+      "app": "OperationsManager",
+      "type": "automatic",
+      "displayName": "OperationsManager",
+      "groups": [],
+      "nodeLocation": {
+        "x": 820,
+        "y": 2400
+      },
+      "variables": {
+        "incoming": {
+          "jobId": "$var.job._id",
+          "groupId": "__GROUP_ID:eval-approvers__"
+        },
+        "outgoing": {},
         "error": "",
         "decorators": []
       },
@@ -280,8 +307,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 690,
-        "y": 2400
+        "x": 740,
+        "y": 2550
       },
       "variables": {
         "incoming": {
@@ -312,8 +339,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 760,
-        "y": 2550
+        "x": 800,
+        "y": 2700
       },
       "variables": {
         "incoming": {
@@ -344,8 +371,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 820,
-        "y": 2700
+        "x": 730,
+        "y": 2850
       },
       "variables": {
         "incoming": {
@@ -376,8 +403,8 @@
       "displayName": "GatewayManager",
       "groups": [],
       "nodeLocation": {
-        "x": 440,
-        "y": 2850
+        "x": 230,
+        "y": 3000
       },
       "variables": {
         "incoming": {
@@ -411,8 +438,8 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 90,
-        "y": 3000
+        "x": 210,
+        "y": 3150
       },
       "variables": {
         "incoming": {
@@ -442,8 +469,8 @@
         "__GROUP_ID:admin_group__"
       ],
       "nodeLocation": {
-        "x": 210,
-        "y": 3150
+        "x": 350,
+        "y": 3300
       },
       "variables": {
         "incoming": {
@@ -473,8 +500,8 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 170,
-        "y": 3300
+        "x": 330,
+        "y": 3450
       },
       "variables": {
         "incoming": {
@@ -501,8 +528,8 @@
       "displayName": "GatewayManager",
       "groups": [],
       "nodeLocation": {
-        "x": 310,
-        "y": 3450
+        "x": 340,
+        "y": 3600
       },
       "variables": {
         "incoming": {
@@ -531,8 +558,8 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 410,
-        "y": 3600
+        "x": 440,
+        "y": 3750
       },
       "variables": {
         "incoming": {
@@ -577,8 +604,8 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 270,
-        "y": 3750
+        "x": 450,
+        "y": 3900
       },
       "variables": {
         "incoming": {
@@ -605,8 +632,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 800,
-        "y": 3900
+        "x": 510,
+        "y": 4050
       },
       "variables": {
         "incoming": {
@@ -637,8 +664,8 @@
       "displayName": "GatewayManager",
       "groups": [],
       "nodeLocation": {
-        "x": 870,
-        "y": 4050
+        "x": 570,
+        "y": 4200
       },
       "variables": {
         "incoming": {
@@ -672,8 +699,8 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 780,
-        "y": 4200
+        "x": 630,
+        "y": 4350
       },
       "variables": {
         "incoming": {
@@ -718,8 +745,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 780,
-        "y": 4350
+        "x": 630,
+        "y": 4500
       },
       "variables": {
         "incoming": {
@@ -749,7 +776,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 1080,
-        "y": 4350
+        "y": 4500
       },
       "variables": {
         "incoming": {
@@ -777,7 +804,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 1130,
-        "y": 4500
+        "y": 4650
       },
       "variables": {
         "incoming": {
@@ -804,8 +831,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 470,
-        "y": 3300
+        "x": 780,
+        "y": 3450
       },
       "variables": {
         "incoming": {
@@ -834,7 +861,7 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 140,
+        "x": 350,
         "y": 2100
       },
       "variables": {
@@ -862,8 +889,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": -640,
-        "y": 3450
+        "x": -600,
+        "y": 3600
       },
       "variables": {
         "incoming": {
@@ -892,12 +919,42 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": -30,
-        "y": 3750
+        "x": 150,
+        "y": 3900
       },
       "variables": {
         "incoming": {
           "input": "the Gateway could not apply the lines, or could not say whether it did: read the router with a show command; the restore puts its baseline back",
+          "outputType": "string",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.error"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "5d": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "the card could not be opened to its approvers",
+      "description": "where it stops: a forbidden line before any card, a Gateway that could not push, or a reply it could not read",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 1190,
+        "y": 2550
+      },
+      "variables": {
+        "incoming": {
+          "input": "the approvers' group could not be added to the job, so nobody but admin_group could release its card: nothing was sent to the router",
           "outputType": "string",
           "variables": ""
         },
@@ -922,8 +979,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 480,
-        "y": 4200
+        "x": 30,
+        "y": 4350
       },
       "variables": {
         "incoming": {
@@ -952,8 +1009,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 180,
-        "y": 4350
+        "x": 330,
+        "y": 4500
       },
       "variables": {
         "incoming": {
@@ -1245,7 +1302,7 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 510,
+        "x": 360,
         "y": 900
       },
       "variables": {
@@ -1277,8 +1334,8 @@
       "summary": "workflow_end",
       "groups": [],
       "nodeLocation": {
-        "x": 680,
-        "y": 4650
+        "x": 830,
+        "y": 4800
       }
     }
   },
@@ -1356,8 +1413,18 @@
       }
     },
     "2b": {
+      "2d": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "2d": {
       "2c1": {
         "state": "success",
+        "type": "standard"
+      },
+      "5d": {
+        "state": "error",
         "type": "standard"
       }
     },
@@ -1510,6 +1577,12 @@
       },
       "5a": {
         "state": "error",
+        "type": "standard"
+      }
+    },
+    "5d": {
+      "workflow_end": {
+        "state": "success",
         "type": "standard"
       }
     },
