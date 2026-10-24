@@ -1,7 +1,6 @@
 # 0084 — The skills eval suite has its own scratch lab, accounts and governed device path
 
-- **Status:** proposed (owner approved the design 2026-10-22; this ADR lands with the first of its changes and is
-  accepted when the last one converges)
+- **Status:** accepted (2026-10-24, when its last change converged; the owner approved the design 2026-10-22)
 - **Date:** 2026-10-22
 - **Related:** ADR 0034 (the topology and the Palo Alto deferral), ADR 0039 (InventoryBroker reads `lab` only), ADR 0046
   (agent twins), ADR 0065 (Vault aliases), ADR 0066 (evaluate every Gateway result), ADR 0067 (workflow names), ADR 0077
@@ -93,7 +92,8 @@ to evaluation work.
    The Platform's Anthropic provider sends `thinking: {type: disabled}`, which claude-sonnet-5-5 refuses (HTTP 400,
    "send between_tools instead"), so skill-eval failed at its first inference; the profile's Model Variables reach the
    API as-is and override it, so the profile carries `thinking: {type: between_tools}` and the flowai play keeps it in
-   step on that profile alone, never on `anthropic` (measured 2026-10-24).
+   step on that profile alone once it exists, never on `anthropic` (measured 2026-10-24; a newly created profile gets
+   them only on the next run, see As built).
    `verify/tokens.sh` leaves their sessions out
    (`llm.budget.exclude_agents`). Probes: `verify/skillslabcheck.py`.
 7. **Two owner decisions (2026-10-22).** The owner approves scratch changes with the existing administrator login
@@ -127,3 +127,74 @@ workflow names, then the inventory, accounts, agents and profile by hand).
 card groups, restore proof, inventory, agents); then a probe per acceptance criterion after converge,
 `verify/skillslabcheck.py`: accounts, inventory, gbac, forbidden, restconf, hold, restore, agents (with the session
 delete and its measured reach), profile and project, and the production snapshot compare.
+
+## As built (2026-10-24, production)
+
+Eight lab changes converged it: #189 (topology, builder, day-0, devices play, budget loan, this ADR), #190 (the NACM
+read rules retried on first boot, read-only proven with a real write), #191 (the `restconf-get` pin, the scratch Vault
+secrets and the HTTPS pins), #192 (accounts, inventory, the four workflows, the profile, the agents and the probes),
+then four fixes the converge found: #193, #194, #195 and #196. The Vault and Gateway plays ran once, after #191; every
+later change was a replay from main behind a production snapshot, which showed only the intended additions after #192
+and only workflow re-import timestamps after #194 to #196.
+
+Measured at converge:
+
+- **A grouped manual task does not import in bulk.** 6.6.0's bulk workflow import refuses a workflow whose manual task
+  carries groups, and the first replay left 15 automations pointing at no workflow. Workflows with grouped cards are
+  created one at a time (#193).
+- **A card's readers are its job's groups.** Work Center lets an account claim a card only when it is in the card's
+  groups and in its job's, and a job's groups are the automation's gbac read plus write: an account outside the job's
+  groups gets 404, one in them but not in the card's (`svc-eval`) gets 403. Either
+  gbac list also lets the account start the automation: the approver started a push, which the gate refused before any
+  card. So the push adds `eval-approvers` to its own job with Operations Manager's `addJobGroup` just before the card,
+  and a push refused before its card never opens to the approver (#194).
+- **An unmapped task output imports but cannot start.** `addJobGroup` declares the output `result`; with nothing
+  mapped, the workflow imported cleanly and every start answered HTTP 400 (`Output: "undefined" does not match model
+  output: "result"`). `POST /automation-studio/workflows/validate` reports it and the import does not (#195, with a test
+  that every automatic task maps an output in `tests/test_workflow_failure_paths.py`).
+- **Session messages are not in eventId order.** Agent Session Manager's eventIds are UUIDs, so `sortBy=eventId`
+  returns a session's messages out of order; the probes take the last answer by timestamp (#194; no unit test holds
+  it, the agents probe does).
+- **Sonnet 5.5 refuses the Platform's thinking setting.** The Anthropic provider sends `thinking: {type: disabled}`;
+  claude-sonnet-5-5 answers HTTP 400 and asks for `between_tools`. The profile's Model Variables override it (#196). A
+  profile `models[]` PATCH reissues the model id, so the play re-binds the agent after it, as it does for Ollama.
+
+The design's unverified items:
+
+| Item | As built |
+|---|---|
+| `configure replace` output returns through `sendCommand` | Settled: the restore runs `configure replace bootflash:baseline.cfg force` and reads both hashes through `sendCommand` |
+| `bootflash:baseline.cfg` equals the running configuration after normalization | Settled: the restore probe's baseline and running hashes match |
+| The Anthropic key lists `claude-sonnet-5-5` | Yes; serving it needed the thinking override above |
+| Inventory access for jobs run by `svc-eval` and `svc-eval-approver` | Settled: every scratch workflow ran as its account |
+| The session field for the budget exclusion | `agentSnapshot.name` (`verify/tokens.sh`, measured 2026-10-23) |
+| An Operations Manager finish by a non-member is refused | Not relied on and not probed: the hold probe tries the Work Center claim, which `svc-eval` is refused (403) |
+| Session messages page with `page` | Left to the workbench runner's first live run |
+
+Probes after the last replay (2026-10-24 04:06-04:10Z, `verify/skillslabcheck.py all` then `agents --claude`): all passed. `accounts`: each account's session holds exactly its one eval group. `inventory`: exactly `skl-r1..3`,
+none in `lab`, Configuration Manager or NetBox's devices. `gbac`: `svc-eval` runs the show and RESTCONF routes and
+is refused the restore route, a production route and a direct workflow start; the approver is refused the show and
+push routes. `forbidden`: `write memory`, `do copy running-config startup-config` and `int gi1` / ` shutdown` refused
+before any card. `restconf`: JSON for the allowlisted path, the username path refused before any job, no password in
+the record. `hold`: held on its card, `svc-eval`'s claim refused (403), released by the approver and read on the
+router as `judge`; a rejected push never reached it. `restore`: baseline and running hashes equal, the probe change
+gone. `profile`: claude-sonnet-5-5 with `between_tools`, all 22 agent documents operable. `project`: exactly the
+pair, no group among its members. `agents`: `skill-eval` and `skill-eval-local` each answered from the RESTCONF
+tool alone with `DIAGNOSIS: 4` (the probe's fixed expectation; `judge` read the same 4 GigabitEthernet interfaces
+on skl-r1 by hand that morning), and `svc-eval` deleted both sessions; its delete also removed a session the
+administrator started. The snapshot compare after that replay showed only workflow re-import timestamps.
+
+Still open:
+
+- The scratch routers send no syslog: the day-0 renders `logging host 10.100.0.38 vrf MGMT` before
+  `vrf definition MGMT`, IOS XE drops it at boot (as it dropped `ntp server vrf MGMT` in issue #18), and Loki holds
+  no line from them. The router's own `show archive log config all` is the change log meanwhile: after the QA hold run
+  it showed the released Loopback99 lines entered by `automation@vty0`, the restore's removal, and no Loopback98 line.
+- Acceptance criterion 3 asks for the router's config-change log as the proof; the hold probe reads the router through
+  RESTCONF as `judge` instead, which is independent of the agent and of the Platform path, but is not that log.
+- The flowai play creates a profile without its Model Variables and corrects them only on its next run (Ollama
+  profiles too).
+- The replay imports a workflow that the validate endpoint rejects; validating before import would have stopped #195's
+  fault before production.
+- The workbench runner must read session messages in time order, find cards as the approver, reject rather than cancel
+  a card a run leaves waiting, and delete each session once it is scored.
