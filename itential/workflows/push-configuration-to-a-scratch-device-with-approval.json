@@ -940,7 +940,7 @@
     "5d": {
       "name": "makeData",
       "canvasName": "makeData",
-      "summary": "the card could not be opened to its approvers",
+      "summary": "the push stopped before its card",
       "description": "where it stops: a forbidden line before any card, a Gateway that could not push, or a reply it could not read",
       "location": "Application",
       "locationType": null,
@@ -954,7 +954,7 @@
       },
       "variables": {
         "incoming": {
-          "input": "the approvers' group could not be added to the job, so nobody but admin_group could release its card: nothing was sent to the router",
+          "input": "the approvers' group could not be added to the job, so the push stopped before making its card: nothing was sent to the router",
           "outputType": "string",
           "variables": ""
         },

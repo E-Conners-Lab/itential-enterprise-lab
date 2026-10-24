@@ -98,7 +98,7 @@ One line per task, in canvas order; the task's id first, then its label as the c
 
 - `2a` the card's body. Could not run → nothing was sent (step 7).
 - `2b` the card's message
-- `2d` let eval-approvers read this job and so its card — OperationsManager `addJobGroup`. Could not run → the card could not be opened to its approvers (step 7).
+- `2d` let eval-approvers read this job and so its card — OperationsManager `addJobGroup`. Could not run → the push stopped before its card (step 7).
 - `2c1` the card: header
 - `2c2` the card: message
 - `2c3` the card: body
@@ -124,7 +124,7 @@ One line per task, in canvas order; the task's id first, then its label as the c
 ### 7. where it stops: a forbidden line before any card, a Gateway that could not push, or a reply it could not read
 
 - `5c` the forbidden lines (no card was made). Then → done. Could not run → nothing was sent.
-- `5d` the card could not be opened to its approvers. Then → done.
+- `5d` the push stopped before its card. Then → done.
 - `5a` nothing was sent. Then → done.
 - `5b` the push did not apply. Then → done.
 - `5e` the reply could not be checked
@@ -155,7 +155,7 @@ One line per task, in canvas order; the task's id first, then its label as the c
 | 7 | `5a` nothing was sent | the Gateway could not prepare the change: nothing was sent to the router |
 | 7 | `5b` the push did not apply | the Gateway could not apply the lines, or could not say whether it did: read the router with a show command; the restore puts its baseline back |
 | 7 | `5c` the forbidden lines (no card was made) | `stdout_json.message` of task 1d's `result` |
-| 7 | `5d` the card could not be opened to its approvers | the approvers' group could not be added to the job, so nobody but admin_group could release its card: nothing was sent to the router |
+| 7 | `5d` the push stopped before its card | the approvers' group could not be added to the job, so the push stopped before making its card: nothing was sent to the router |
 | 7 | `5e` the reply could not be checked | the lines were sent but the router's reply could not be checked: read the router with a show command; the restore puts its baseline back |
 | 8 | `6b` what the router refused | `stdout_json.message` of task 3f's `result` |
 

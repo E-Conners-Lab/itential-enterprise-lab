@@ -8480,9 +8480,8 @@ def scratch_push() -> dict:
                    "error", x=250, y=-600),
         "5b": note("the push did not apply", "the Gateway could not apply the lines, or could not say whether it did: "
                    "read the router with a show command; the restore puts its baseline back", "error", x=600, y=-300),
-        "5d": note("the card could not be opened to its approvers", "the approvers' group could not be added to the "
-                   "job, so nobody but admin_group could release its card: nothing was sent to the router", "error",
-                   x=1600),
+        "5d": note("the push stopped before its card", "the approvers' group could not be added to the job, so the "
+                   "push stopped before making its card: nothing was sent to the router", "error", x=1600),
         "5e": note("the reply could not be checked", "the lines were sent but the router's reply could not be checked: "
                    "read the router with a show command; the restore puts its baseline back", "error", x=750, y=-300),
         "5f": flag("changed = true (unknown)", "true", "changed", x=800, y=-300),
