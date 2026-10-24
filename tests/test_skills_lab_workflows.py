@@ -453,7 +453,8 @@ def test_the_instructions_name_every_allowlisted_path_and_every_forbidden_comman
 def test_the_profile_is_new_and_the_meter_leaves_the_pair_out() -> None:
     profiles = {p["name"]: p for p in VERSIONS["llm"]["profiles"]}
     assert profiles["anthropic-sonnet-5-5"] == {"name": "anthropic-sonnet-5-5", "provider": "anthropic",
-                                                "model": "claude-sonnet-5-5", "env_key": "ANTHROPIC_API_KEY"}
+                                                "model": "claude-sonnet-5-5", "env_key": "ANTHROPIC_API_KEY",
+                                                "model_variables": {"thinking": {"type": "between_tools"}}}
     assert profiles["anthropic"]["model"] == "claude-sonnet-5", "the existing profile is not edited"
     assert VERSIONS["llm"]["budget"]["exclude_agents"] == SKILLS["agents"]
     meter = (ROOT / "verify" / "tokens.sh").read_text()

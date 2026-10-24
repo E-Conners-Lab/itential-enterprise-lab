@@ -362,13 +362,17 @@ def profile() -> None:
     profiles = adm.req("GET", "/model-registry-service/profiles")[1]
     found = [p for p in (profiles.get("profiles") or profiles.get("data") or []) if p.get("name") == want["name"]]
     assert len(found) == 1, f"{want['name']}: {len(found)} profile(s)"
-    detail = json.dumps(adm.req("GET", f"/model-registry-service/profiles/{found[0]['id']}")[1])
-    assert want["model"] in detail, f"{want['name']} does not list {want['model']}"
+    detail = adm.req("GET", f"/model-registry-service/profiles/{found[0]['id']}")[1]
+    model = next((m for m in detail.get("models") or [] if m.get("name") == want["model"]), None)
+    assert model, f"{want['name']} does not list {want['model']}"
+    # without them the Platform sends thinking disabled, which claude-sonnet-5-5 refuses (measured 2026-10-24)
+    assert model.get("modelVariables") == want["model_variables"], f"{want['name']}: {model.get('modelVariables')}"
     operable = {i["name"]: i for i in adm.req("GET", "/agent-project-service/operable-agents")[1]["data"]["items"]}
     documents = {yaml.safe_load(p.read_text())["name"] for p in (ROOT / "itential" / "agents").glob("*.yaml")}
     assert documents <= set(operable), f"not operable: {sorted(documents - set(operable))}"
     assert found[0]["id"] in json.dumps(operable["skill-eval"]), "skill-eval is not bound to the new profile"
-    print(f"{want['name']} lists {want['model']} and serves skill-eval; all {len(documents)} agent documents operable")
+    print(f"{want['name']} lists {want['model']} with {want['model_variables']} and serves skill-eval; "
+          f"all {len(documents)} agent documents operable")
 
 
 CHECKS = {"accounts": accounts, "inventory": inventory, "gbac": gbac, "forbidden": forbidden, "restconf": restconf,

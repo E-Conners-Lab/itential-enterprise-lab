@@ -90,6 +90,10 @@ to evaluation work.
    are the automation's gbac read plus write; it answers 404 otherwise. Either gbac list would let eval-approvers
    start the push itself (both measured at converge, 2026-10-23), so the push adds eval-approvers to its own job
    (`addJobGroup`) just before the card, and a push refused before its card never opens to the approver.
+   The Platform's Anthropic provider sends `thinking: {type: disabled}`, which claude-sonnet-5-5 refuses (HTTP 400,
+   "send between_tools instead"), so skill-eval failed at its first inference; the profile's Model Variables reach the
+   API as-is and override it, so the profile carries `thinking: {type: between_tools}` and the flowai play keeps it in
+   step on that profile alone, never on `anthropic` (measured 2026-10-24).
    `verify/tokens.sh` leaves their sessions out
    (`llm.budget.exclude_agents`). Probes: `verify/skillslabcheck.py`.
 7. **Two owner decisions (2026-10-22).** The owner approves scratch changes with the existing administrator login
