@@ -191,6 +191,11 @@ after the VRF and its interface; the three running routers got the same lines ov
 baselines (skl-r1 `632e0ef7340d`). A re-run of the hold probe put the released Loopback99 lines, their removal by the
 restore and no Loopback98 line in Loki under `host="skl-r1"`.
 
+Fixed after acceptance (2026-10-24): the push set aside only the full words `no` and `default`, so `defa line vty
+0 4` (IOS XE's `default line vty 0 4`) reached the card. The check now reads a line both as written and with a
+leading `no` or any prefix of `default` set aside, so `defa` is refused while `d` and `de` still match `do` and
+`delete`.
+
 Still open:
 
 - Acceptance criterion 3 asks for the router's config-change log as the proof; the hold probe reads the router through
