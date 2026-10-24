@@ -150,3 +150,54 @@ def test_removing_ollama_counts_as_a_change_only_when_a_container_went() -> None
         assert changed(ollama_gone={"rc": 0, "stdout": ""}) is False, name
         assert changed(ollama_gone={"rc": 1, "stdout": ""}) is False, name
         assert task["failed_when"] is False, name
+
+
+def _assets_task(name: str) -> dict:
+    tasks = yaml.safe_load((ROOT / "ansible" / "playbooks" / "tasks" / "flowai-assets.yml").read_text())
+    return next(t for t in tasks if t.get("name") == name)
+
+
+def _native(template: str, **context: object) -> object:
+    """One of the play's templates rendered to a value, with Ansible's `combine` (the only non-Jinja filter it uses)."""
+    from jinja2 import StrictUndefined
+    from jinja2.nativetypes import NativeEnvironment
+
+    env = NativeEnvironment(undefined=StrictUndefined)
+    env.filters["combine"] = lambda base, *more: {k: v for d in (base, *more) for k, v in d.items()}
+    return env.from_string(template).render(**context)
+
+
+def _drifted(versions: dict, live: dict) -> bool:
+    """The drift check exactly as the play evaluates it for one live profile document."""
+    task = _assets_task("Profiles whose base URL or pinned model has drifted from the repo")
+    context = {"llm_profiles": versions["llm"]["profiles"], "item": {"json": live}}
+    context["want"] = _native(task["vars"]["want"], **context)
+    context["live_variables"] = _native(task["vars"]["live_variables"], **context)
+    return not _native(task["vars"]["ok"], **context)
+
+
+def test_the_play_keeps_an_anthropic_profiles_model_variables_and_leaves_the_rest_alone(versions: dict) -> None:
+    """ADR 0084: the Platform's anthropic provider sends thinking disabled, which claude-sonnet-5-5 refuses, so its
+    profile's Model Variables are drift the play corrects; the `anthropic` profile declares none and is never touched,
+    and an anthropic PATCH carries no credential (that shape keeps the write-only key, measured 2026-10-24)."""
+    profiles = {p["name"]: p for p in versions["llm"]["profiles"]}
+    sonnet, mac = profiles["anthropic-sonnet-5-5"], profiles["ollama-mac"]
+
+    def live(profile: dict, variables: object, base_url: str = "") -> dict:
+        return {"name": profile["name"], "provider": profile["provider"], "credential": {"baseUrl": base_url},
+                "models": [{"name": profile["model"], "modelVariables": variables}]}
+
+    assert _drifted(versions, live(sonnet, None)), "a profile created without its variables is corrected"
+    assert not _drifted(versions, live(sonnet, sonnet["model_variables"]))
+    assert not _drifted(versions, live(profiles["anthropic"], None)), "the default anthropic profile is never touched"
+    assert not _drifted(versions, live(mac, mac["model_variables"], mac["base_url"]))
+    assert _drifted(versions, live(mac, mac["model_variables"], "http://elsewhere:11434"))
+    assert _drifted(versions, live(mac, {}, mac["base_url"]))
+
+    update = _assets_task("Drifted profiles updated in place")
+    for want, credential in ((sonnet, None), (mac, {"type": "ollama", "baseURL": mac["base_url"]})):
+        item = {"id": "p1", "name": want["name"], "want": want}
+        body = _native(update["ansible.builtin.uri"]["body"], item=item)
+        model = {"name": want["model"], "enabled": True, "modelVariables": want["model_variables"]}
+        assert body == {"update": {"models": [model], **({"credential": credential} if credential else {})}}
+        assert want["model"] in _native(update["loop_control"]["label"], item=item)

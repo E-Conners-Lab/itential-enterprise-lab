@@ -814,11 +814,16 @@ llm:
       model: claude-sonnet-5 # Model Registry listed 11 Claude models for the key on 2026-09-07
       env_key: ANTHROPIC_API_KEY
     # ADR 0084: skill-eval's own profile, on the model the eval suite's Claude column certifies. Created once by name by
-    # the flowai play, never edited; nothing but skill-eval is bound to it (`anthropic` stays as it is)
+    # the flowai play, which keeps only its model variables in step; nothing but skill-eval is bound to it (`anthropic`
+    # stays as it is)
     - name: anthropic-sonnet-5-5
       provider: anthropic
       model: claude-sonnet-5-5
       env_key: ANTHROPIC_API_KEY
+      # The Platform's anthropic provider sends thinking {type: disabled}, which claude-sonnet-5-5 refuses (HTTP 400:
+      # "send between_tools instead"); the profile's Model Variables reach the API as-is and override it (measured on
+      # production 2026-10-24: skill-eval failed at its first inference without them and passed the agents probe with them)
+      model_variables: {thinking: {type: between_tools}}
     # The Mac Mini's Ollama is Homebrew-managed, so it is recorded rather than pinned from here:
     # tested against ollama 0.40.2 (ADR 0079; 0.23.3 could not load qwen3.8 at all - "unable to load
     # model" on a fully pulled blob is the version, not the download).

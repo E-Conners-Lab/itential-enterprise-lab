@@ -79,17 +79,19 @@
     label: "{{ item.json.name }}: {{ 'ok' if ok else 'update' }}"
   vars:
     want: "{{ llm_profiles | selectattr('name', 'equalto', item.json.name) | first }}"
-    # anthropic profiles carry a write-only key and nothing comparable, so they are never touched
     # ADR 0079: a model's modelVariables (think and temperature for the Qwen family) count as drift too -
     # the Platform passes them to Ollama as-is, so a stale entry changes how every session decodes.
+    # An anthropic profile carries a write-only key and nothing else comparable, so it is compared only when it
+    # declares model_variables (ADR 0084: thinking between_tools for claude-sonnet-5-5); `anthropic` never is.
     live_variables: >-
       {{ item.json.models | default([]) | selectattr('name', 'equalto', want.model)
          | map(attribute='modelVariables') | map('default', {}) | first | default({}) }}
     ok: >-
-      {{ item.json.provider != 'ollama'
-         or ((item.json.credential.baseUrl | default('')) == want.base_url
-             and want.model in (item.json.models | default([]) | map(attribute='name') | list)
-             and live_variables == (want.model_variables | default({}))) }}
+      {{ (want.model_variables is not defined or live_variables == want.model_variables)
+         if item.json.provider != 'ollama'
+         else ((item.json.credential.baseUrl | default('')) == want.base_url
+               and want.model in (item.json.models | default([]) | map(attribute='name') | list)
+               and live_variables == (want.model_variables | default({}))) }}
 
 - name: Drifted profiles updated in place
   ansible.builtin.uri:
@@ -97,14 +99,16 @@
     method: PATCH
     headers: {Cookie: "{{ login.cookies_string }}"}
     body_format: json
-    body:
-      update:
-        credential: {type: ollama, baseURL: "{{ item.want.base_url }}"}
-        models: [{name: "{{ item.want.model }}", enabled: true, modelVariables: "{{ item.want.model_variables | default({}) }}"}]
+    # an anthropic profile is sent its models alone: that PATCH keeps the stored key (measured 2026-10-24, ADR 0084)
+    body: >-
+      {{ {'update': {'models': [{'name': item.want.model, 'enabled': true,
+                                 'modelVariables': item.want.model_variables | default({})}]}
+                    | combine({'credential': {'type': 'ollama', 'baseURL': item.want.base_url}}
+                              if item.want.provider == 'ollama' else {})} }}
     status_code: 200
   loop: "{{ drifted_profiles | default([]) }}"
   loop_control:
-    label: "{{ item.name }} -> {{ item.want.model }} at {{ item.want.base_url }}"
+    label: "{{ item.name }} -> {{ item.want.model }}{{ (' at ' ~ item.want.base_url) if item.want.base_url is defined else '' }}"
   changed_when: true
 
 - name: Existing provider profiles after the update sweep
