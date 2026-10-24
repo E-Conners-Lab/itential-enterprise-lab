@@ -102,8 +102,6 @@ login on-failure log
 login on-success log
 !
 {%- endif %}
-{% include 'c8000v-observability.j2' %}
-!
 vrf definition MGMT
  address-family ipv4
 !
@@ -130,6 +128,12 @@ interface GigabitEthernet1
  no shutdown
 !
 ip route vrf MGMT 0.0.0.0 0.0.0.0 {{ lab.mgmt_gateway }}
+!
+{#- ADR 0084: IOS-XE also dropped `logging source-interface GigabitEthernet1 vrf MGMT` and `logging host ... vrf MGMT`
+    placed before the VRF, so the scratch routers booted without syslog (the production routers got the lines later
+    from the governed push, ansible/playbooks/observability-devices.yml). The observability lines follow the VRF and
+    the interface they name. #}
+{% include 'c8000v-observability.j2' %}
 !
 {%- if not scratch %}
 interface Loopback0

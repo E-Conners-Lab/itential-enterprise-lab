@@ -570,11 +570,14 @@ DIR_OK = (
 )
 
 
-def test_baseline_capture_is_proved_by_each_command_output() -> None:
+@pytest.mark.parametrize("warning", ["%Warning:There", "%Warning: There"])
+def test_baseline_capture_is_proved_by_each_command_output(warning: str) -> None:
+    """An overwrite of an earlier baseline prints one warning, then asks to confirm; 17.13.01a spells it with no space
+    after the colon (the helper refused its own successful copy on 2026-10-24 when it expected the space)."""
     assert device.baseline_problem(WRITE_OK + COPY_OK + DIR_OK) is None
     overwrite = COPY_OK.replace(
         "Destination filename [baseline.cfg]? \n",
-        "Destination filename [baseline.cfg]? \n%Warning: There is a file already existing with this name\n"
+        f"Destination filename [baseline.cfg]? \n{warning} is a file already existing with this name\n"
         "Do you want to over write? [confirm]\n",
     )
     assert device.baseline_problem(WRITE_OK + overwrite + DIR_OK) is None

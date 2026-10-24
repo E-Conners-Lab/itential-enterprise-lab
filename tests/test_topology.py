@@ -369,17 +369,26 @@ def test_routing_tunnels_vrfs_and_prefixes_in_the_yaml(topo: dict) -> None:
     ]
 
 
-def test_c8000v_ntp_server_follows_its_vrf_definition_and_the_verify_checks_it(topo: dict) -> None:
+def test_c8000v_lines_naming_vrf_mgmt_follow_its_definition_and_the_verify_checks_ntp(
+    topo: dict, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Issue #18: IOS-XE dropped `ntp server vrf MGMT` placed before `vrf definition MGMT` on all five routers' first
-    boot. The rendered config keeps NTP after the VRF, and test-04 S3.2b compares the live lines with the rendering."""
-    rendered = _render_all(topo)
-    routers = [n for n, node in topo["nodes"].items() if node["platform"] == "c8000v"]
-    assert routers
+    boot; ADR 0084: it dropped the two `logging ... vrf MGMT` lines the same way, so the scratch routers booted without
+    syslog. Every C8000v in both labs renders NTP and the logging lines after the VRF, the logging source after the
+    interface it names, and test-04 S3.2b compares the live NTP lines with the rendering."""
+    scratch = yaml.safe_load((ROOT / "topology" / "skills-lab.yaml").read_text())
+    monkeypatch.setenv(scratch["lab"]["automation_password_env"], "__AUTOMATION_PASSWORD__")
+    rendered = {**_render_all(topo), **_render_all(scratch)}
+    routers = [n for t in (topo, scratch) for n, node in t["nodes"].items() if node["platform"] == "c8000v"]
+    assert {"dc1-wan01", "skl-r1"} <= set(routers)
     for name in routers:
         lines = rendered[name].splitlines()
         vrf = lines.index("vrf definition MGMT")
-        ntp = next(i for i, ln in enumerate(lines) if ln.startswith("ntp server vrf MGMT"))
-        assert ntp > vrf, f"{name}: ntp server before its VRF is defined"
+        for prefix in ("ntp server vrf MGMT", "logging source-interface", "logging host"):
+            at = next(i for i, ln in enumerate(lines) if ln.startswith(prefix))
+            assert at > vrf, f"{name}: {prefix!r} before its VRF is defined"
+        source = next(i for i, ln in enumerate(lines) if ln.startswith("logging source-interface GigabitEthernet1 "))
+        assert source > lines.index("interface GigabitEthernet1"), f"{name}: logging source before its interface"
     verify = (ROOT / "verify" / "test-04-topology.sh").read_text()
     assert 'check "S3.2b ' in verify and "topology/generated/configs/${n_name}.cfg" in verify
 

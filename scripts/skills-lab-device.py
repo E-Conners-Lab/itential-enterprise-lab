@@ -364,8 +364,9 @@ def baseline(ip: str) -> None:
     print(f"{ip}: running configuration saved and captured as bootflash:baseline.cfg")
 
 
-# The one warning the copy is expected to print (and then answer) when it overwrites an earlier baseline.
-OVERWRITE_WARNING = "%Warning: There is a file already existing with this name"
+# The one warning the copy is expected to print (and then answer) when it overwrites an earlier baseline. 17.13.01a
+# prints it with no space after the colon (measured 2026-10-24, the first overwrite by this helper).
+OVERWRITE_WARNING = re.compile(r"%Warning:\s*There is a file already existing with this name")
 
 
 def baseline_problem(transcript: str) -> str | None:
@@ -383,7 +384,7 @@ def baseline_problem(transcript: str) -> str | None:
         return "write memory did not report [OK]"
     for line in copied.splitlines():
         stripped = line.strip()
-        if stripped.startswith(OVERWRITE_WARNING) or "[confirm]" in stripped:
+        if OVERWRITE_WARNING.match(stripped) or "[confirm]" in stripped:
             continue  # the overwrite question, answered by _shell
         if stripped.startswith("%") or re.search(r"\berror\b", stripped, re.IGNORECASE):
             return f"the copy was refused: {stripped}"
