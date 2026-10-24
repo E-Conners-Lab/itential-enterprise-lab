@@ -184,12 +184,15 @@ tool alone with `DIAGNOSIS: 4` (the probe's fixed expectation; `judge` read the 
 on skl-r1 by hand that morning), and `svc-eval` deleted both sessions; its delete also removed a session the
 administrator started. The snapshot compare after that replay showed only workflow re-import timestamps.
 
+Fixed after acceptance (2026-10-24): the scratch routers sent no syslog. The day-0 rendered both `logging ... vrf
+MGMT` lines before `vrf definition MGMT` and IOS XE dropped them at boot, as it dropped `ntp server vrf MGMT` in issue
+#18 (the production routers had the lines from the governed push). The template now renders the observability lines
+after the VRF and its interface; the three running routers got the same lines over SSH as `automation`, then new
+baselines (skl-r1 `632e0ef7340d`). A re-run of the hold probe put the released Loopback99 lines, their removal by the
+restore and no Loopback98 line in Loki under `host="skl-r1"`.
+
 Still open:
 
-- The scratch routers send no syslog: the day-0 renders `logging host 10.100.0.38 vrf MGMT` before
-  `vrf definition MGMT`, IOS XE drops it at boot (as it dropped `ntp server vrf MGMT` in issue #18), and Loki holds
-  no line from them. The router's own `show archive log config all` is the change log meanwhile: after the QA hold run
-  it showed the released Loopback99 lines entered by `automation@vty0`, the restore's removal, and no Loopback98 line.
 - Acceptance criterion 3 asks for the router's config-change log as the proof; the hold probe reads the router through
   RESTCONF as `judge` instead, which is independent of the agent and of the Platform path, but is not that log.
 - The flowai play creates a profile without its Model Variables and corrects them only on its next run (Ollama
