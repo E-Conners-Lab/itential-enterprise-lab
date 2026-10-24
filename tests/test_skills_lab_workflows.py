@@ -186,6 +186,9 @@ def test_the_push_gate_takes_a_list_of_single_lines(lines: list, ok: bool) -> No
     "no netconf-yang", "no ip http secure-server", "ip http access-class 99", "no ip h secure-server", "ip ssh version 1",
     "ip ssh server algorithm encryption aes128-ctr", "no crypto pki trustpoint TP-self-signed-1", "crypto ca trustpoint X",
     "control-plane", "no ip routing",
+    # `default` abbreviated: IOS XE reads `defa line vty 0 4` as `default line vty 0 4`; `d` and `de` stay `do` and
+    # `delete` as well
+    "defa line vty 0 4", "def aaa new-model", "defau no ip routing", "d sh run", "de bootflash:baseline.cfg", "no d",
 ])
 def test_a_forbidden_line_is_refused_before_any_card(line: str) -> None:
     plan = wf.scratch_push_plan({"device": "skl-r1", "reason": "r", "lines": ["router ospf 1", line]},
@@ -196,7 +199,7 @@ def test_a_forbidden_line_is_refused_before_any_card(line: str) -> None:
 def test_allowed_lines_are_joined_for_send_config_and_shown_on_the_card() -> None:
     lines = ["router ospf 1", "network 10.0.12.0 0.0.0.3 area 0", "interface GigabitEthernet2", " ip ospf cost 10",
              "no shutdown", "passive-interface default", "default-information originate", "exit-address-family",
-             "ip ospf 1 area 0", "logging buffered 64000", "enable", "no ip ospf cost"]
+             "ip ospf 1 area 0", "logging buffered 64000", "enable", "no ip ospf cost", "def interface GigabitEthernet2"]
     plan = wf.scratch_push_plan({"device": "skl-r2", "reason": "lab", "lines": lines}, SKILLS["forbidden_lines"],
                                 SKILLS["forbidden_commands"])
     assert plan == {"ok": True, "refused": [], "config": "\n".join(lines),

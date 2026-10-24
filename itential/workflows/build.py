@@ -8274,7 +8274,8 @@ def restconf_params(d: dict, nodes: dict, user: str, timeout: str) -> dict:
 def scratch_push_plan(d: dict, forbidden: list, commands: list) -> dict:
     """Every proposed line against the forbidden set before any card exists: a pattern anywhere in the line
     (case-insensitive), or a forbidden command at its start as IOS XE reads it - each word abbreviated to any prefix,
-    a leading `no` or `default` set aside. When none is refused, the lines joined for send-config and the card's body.
+    read both as written and with a leading `no` or `default` (to any prefix: `defa` is `default`, while `d` and `de`
+    can still be `do` and `delete`) set aside. When none is refused, the lines joined for send-config and the card's body.
     Pure: runCode runs this function's own source on the Gateway."""
     lines = d.get("lines")
     if not isinstance(lines, list) or not lines or not all(isinstance(x, str) for x in lines):
@@ -8283,9 +8284,13 @@ def scratch_push_plan(d: dict, forbidden: list, commands: list) -> dict:
 
     def is_command(line: str) -> bool:
         words = line.lower().split()
-        while words and words[0] in ("no", "default"):
+        while words:
+            if any(len(words) >= len(cmd) and all(c.startswith(w) for w, c in zip(words, cmd)) for cmd in commands):
+                return True
+            if words[0] != "no" and not "default".startswith(words[0]):
+                return False
             words = words[1:]
-        return any(len(words) >= len(cmd) and all(c.startswith(w) for w, c in zip(words, cmd)) for cmd in commands)
+        return False
 
     refused = [x for x in lines if any(p.search(x) for p in patterns) or is_command(x)]
     if refused:
