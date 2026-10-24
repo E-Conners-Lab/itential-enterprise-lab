@@ -288,7 +288,9 @@
           "jobId": "$var.job._id",
           "groupId": "__GROUP_ID:eval-approvers__"
         },
-        "outgoing": {},
+        "outgoing": {
+          "result": null
+        },
         "error": "",
         "decorators": []
       },

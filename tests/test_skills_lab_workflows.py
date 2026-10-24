@@ -249,6 +249,7 @@ def test_the_push_opens_its_job_to_the_approvers_on_every_path_to_its_card() -> 
     assert (add["app"], add["name"], add.get("groups", [])) == ("OperationsManager", "addJobGroup", [])
     assert add["variables"]["incoming"] == {
         "jobId": "$var.job._id", "groupId": f"__GROUP_ID:{VERSIONS['eval_access']['approve']['group']}__"}
+    assert add["variables"]["outgoing"] == {"result": None}  # an unmapped output refuses the job's start (HTTP 400)
     edges = doc["transitions"]
     reached, todo = set(), ["workflow_start"]
     while todo:  # walk the workflow without 2d: neither the card nor its helpers may be reached
