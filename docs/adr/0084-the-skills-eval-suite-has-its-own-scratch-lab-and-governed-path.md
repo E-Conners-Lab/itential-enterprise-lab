@@ -200,7 +200,9 @@ Fixed after acceptance (2026-10-24): the FlowAI push tool asked the agent for an
 workflow's tool schema from its tasks, so the push's `$var.job._id` (its own job id, for `addJobGroup`) became a
 required input, and an agent that left it out got `invalid-tool-input` before any job started. A Tools Service
 decorator does not help: the call is still validated against the inferred schema. The push now reads its own id through
-`merge`'s task/variable form, which the import leaves out of the schema (both measured on production).
+`merge`'s task/variable form in an automatic task, which the import leaves out of the schema. The same form in an
+operation task is inferred like `$var.job._id`: #200 shipped the merge as an operation task, and the replay still showed
+`_id` required (all measured on production).
 
 Still open:
 

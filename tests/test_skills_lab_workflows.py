@@ -254,6 +254,7 @@ def test_the_push_opens_its_job_to_the_approvers_on_every_path_to_its_card() -> 
         "jobId": "$var.2f.return_data", "groupId": f"__GROUP_ID:{VERSIONS['eval_access']['approve']['group']}__"}
     # the job's own id, through merge's task/variable form (see the test below)
     merge, query = doc["tasks"]["2e"], doc["tasks"]["2f"]
+    assert merge["type"] == "automatic"  # an operation merge makes `_id` a required tool input
     assert merge["variables"]["incoming"] == {
         "data_to_merge": [{"key": "jobId", "value": {"task": "job", "variable": "_id"}}]}
     assert query["variables"]["incoming"]["obj"] == "$var.2e.merged_object"
@@ -284,6 +285,26 @@ def _job_refs(value) -> set:
     return set()
 
 
+def _object_job_refs(task: dict) -> set:
+    """`{task: "job", variable: X}` in an operation task's incoming: the import infers these as well, and leaves an
+    automatic task's out (measured on 6.6.0, 2026-10-24, with the push's merge)."""
+    found: set = set()
+
+    def walk(value) -> None:
+        if isinstance(value, dict):
+            if value.get("task") == "job" and isinstance(value.get("variable"), str):
+                found.add(value["variable"])
+            for item in value.values():
+                walk(item)
+        elif isinstance(value, list):
+            for item in value:
+                walk(item)
+
+    if task.get("type") == "operation":
+        walk(task.get("variables", {}).get("incoming", {}))
+    return found
+
+
 AGENT_WORKFLOW_TOOLS = sorted({t["reference"] for p in (ROOT / "itential" / "agents").glob("*.yaml")
                                for t in yaml.safe_load(p.read_text())["tools"] if t.get("kind") == "workflow"})
 
@@ -296,7 +317,8 @@ def test_an_agent_tool_asks_only_for_its_declared_inputs(name: str) -> None:
     the agent would have to invent, as `_id` was for the push."""
     doc = json.loads((WORKFLOWS / wf.file_name(name)).read_text())
     variables = [t.get("variables", {}) for t in doc["tasks"].values()]
-    read = set().union(*(_job_refs(v.get("incoming", {})) for v in variables))
+    read = set().union(*(_job_refs(v.get("incoming", {})) for v in variables),
+                       *(_object_job_refs(t) for t in doc["tasks"].values()))
     written = set().union(*(_job_refs(v.get("outgoing", {})) for v in variables))
     assert read - written <= set(doc["inputSchema"]["properties"]), (name, read - written)
 
