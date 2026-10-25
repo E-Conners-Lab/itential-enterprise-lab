@@ -8457,8 +8457,15 @@ def scratch_push() -> dict:
         # Work Center shows a card only to its job's groups, which are the automation's gbac read + write, and answers
         # 404 to a claim from any other account; on the automation's gbac, read or write, eval-approvers could start
         # the push itself (both measured on 6.6.0, 2026-10-23). So the approvers' group joins this one job, here.
+        # The job reads its own id through merge's task/variable form: the import makes every `$var.job.X` a required
+        # input of the agents' tool, so `$var.job._id` asked the FlowAI agent for an id (measured on 6.6.0, 2026-10-24).
+        "2e": task("merge", "WorkFlowEngine", "this job's own id",
+                   {"data_to_merge": [{"key": "jobId", "value": {"task": "job", "variable": "_id"}}]},
+                   {"merged_object": None}, kind="operation", display="WorkFlowEngine", x=405),
+        "2f": jq("the job id", "$var.2e.merged_object", "jobId", x=420),
         "2d": task("addJobGroup", "OperationsManager", "let eval-approvers read this job and so its card",
-                   {"jobId": "$var.job._id", "groupId": "__GROUP_ID:eval-approvers__"}, {"result": None}, x=420),
+                   {"jobId": "$var.2f.return_data", "groupId": "__GROUP_ID:eval-approvers__"}, {"result": None},
+                   x=420),
         **approval("2c", "Approve a scratch change", "$var.2b.replacedString", "$var.2a.return_data", "Approve",
                    "Reject", x=450, var="approval", groups=SCRATCH_GROUP_MARKERS),
         **step("the push: the joined lines through the Gateway's send-config, never saved; the router's reply read for refused lines"),
@@ -8500,7 +8507,9 @@ def scratch_push() -> dict:
         "1d": _edge(**{"1e": ok, "5a": err}),
         "1e": _edge(**{"2a": ok, "5c": fail}),
         "2a": _edge(**{"2b": ok, "5a": err}),
-        "2b": _edge(**{"2d": ok}), "2d": _edge(**{"2c1": ok, "5d": err}), **approval_edges("2c"),
+        # merge copies the id the engine set at the start; a missing one fails the query (pass_on_null false) into 5d
+        "2b": _edge(**{"2e": ok}), "2e": _edge(**{"2f": ok}), "2f": _edge(**{"2d": ok, "5d": err}),
+        "2d": _edge(**{"2c1": ok, "5d": err}), **approval_edges("2c"),
         "2c": _edge(**{"3a": ok, "9a": fail}),
         "3a": _edge(**{"3b": ok, "5a": err}),
         # ADR 0066: a Gateway JSON-RPC error finishes sendConfig `success`, so the answer is checked (3c)
