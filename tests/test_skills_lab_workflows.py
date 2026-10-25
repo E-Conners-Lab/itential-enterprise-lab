@@ -284,14 +284,21 @@ def _job_refs(value) -> set:
     return set()
 
 
-@pytest.mark.parametrize("key", ["scratch_show", "scratch_restconf", "scratch_push"])
-def test_an_agent_tool_reads_only_its_declared_inputs_from_the_job(key: str) -> None:
-    """The import infers a workflow's stored inputSchema, and so its FlowAI tool's, from the tasks: every `$var.job.X`
-    a task reads becomes a required input (measured on 6.6.0, 2026-10-24). One that is not a declared input is an input
+AGENT_WORKFLOW_TOOLS = sorted({t["reference"] for p in (ROOT / "itential" / "agents").glob("*.yaml")
+                               for t in yaml.safe_load(p.read_text())["tools"] if t.get("kind") == "workflow"})
+
+
+@pytest.mark.parametrize("name", AGENT_WORKFLOW_TOOLS)
+def test_an_agent_tool_asks_only_for_its_declared_inputs(name: str) -> None:
+    """The import infers a workflow's stored inputSchema, and so its FlowAI tool's, from the tasks: a `$var.job.X` that a
+    task reads and no task writes becomes a required input (measured on 6.6.0, 2026-10-24: the push's `$var.job._id`
+    was; the job variables Verify AWS VPN writes and reads back were not). One that is not a declared input is an input
     the agent would have to invent, as `_id` was for the push."""
-    doc = _doc(key)
-    read = set().union(*(_job_refs(t.get("variables", {}).get("incoming", {})) for t in doc["tasks"].values()))
-    assert read == set(doc["inputSchema"]["properties"]), (key, read)
+    doc = json.loads((WORKFLOWS / wf.file_name(name)).read_text())
+    variables = [t.get("variables", {}) for t in doc["tasks"].values()]
+    read = set().union(*(_job_refs(v.get("incoming", {})) for v in variables))
+    written = set().union(*(_job_refs(v.get("outgoing", {})) for v in variables))
+    assert read - written <= set(doc["inputSchema"]["properties"]), (name, read - written)
 
 
 def test_the_import_fills_the_group_markers_and_refuses_one_it_cannot() -> None:
