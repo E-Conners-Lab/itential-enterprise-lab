@@ -272,7 +272,13 @@ def agents(claude: bool) -> None:
     operable = adm.req("GET", "/agent-project-service/operable-agents")[1]["data"]["items"]
     for item in operable:
         assert "a probe of the lab's governed path" not in json.dumps(item), f"{item['name']} holds the probe text"
-    ids = {i["name"]: i["_id"] for i in operable}
+    # the runner looks the eval agents up itself, as the workbench does
+    code, mine = evl.req("GET", "/agent-project-service/operable-agents")
+    assert code == 200, f"svc-eval cannot list the agents it operates: HTTP {code}"
+    ids = {i["name"]: i["_id"] for i in mine["data"]["items"]}
+    # scoped by the agents' operators: exactly the eval agents (measured on production, 2026-10-25)
+    assert set(ids) == set(SKILLS["agents"]), f"svc-eval operates {sorted(ids)}, not exactly the eval agents"
+    print(f"svc-eval operates exactly the eval agents: {', '.join(sorted(ids))}")
     for name in SKILLS["agents"] if claude else [n for n in SKILLS["agents"] if n.endswith("-local")]:
         code, out = evl.req("POST", "/agent-session-manager/sessions",
                             {"agentDefinitionId": ids[name], "inputs": {"request": PROBE_PROCEDURE}})

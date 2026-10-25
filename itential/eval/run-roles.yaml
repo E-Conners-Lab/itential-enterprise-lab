@@ -32,6 +32,10 @@ prod:
         - {provenance: OperationsManager, name: getJobs}
         # the built-in session:delete holds this one method; named here so the deny list keeps refusing every *:delete
         - {provenance: AgentSessionManager, name: deleteSession}
+        # the runner finds the eval agents' ids by name (GET /agent-project-service/operable-agents); the list holds the
+        # agents the account may operate: exactly skill-eval and skill-eval-local (granted, read and rolled back on
+        # production, 2026-10-25; without it the call is HTTP 403 and every FlowAI run is void)
+        - {provenance: AgentProjectService, name: listOperableAgents}
   # Never in the set. Globs over "<provenance>/<name>"; the shared task asserts the resolved built-ins against it.
   deny:
     - {provenance: "*", name: admin}

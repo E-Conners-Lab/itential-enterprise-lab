@@ -24,7 +24,8 @@ PLAYS = ROOT / "ansible" / "playbooks"
 TASKS = PLAYS / "tasks"
 
 RUN_METHODS = {"OperationsManager/runEndpointTriggerWithPost", "OperationsManager/getJob", "OperationsManager/getJobs",
-               "AgentSessionManager/deleteSession"}  # a scored session's record keeps the procedure
+               "AgentSessionManager/deleteSession",  # a scored session's record keeps the procedure
+               "AgentProjectService/listOperableAgents"}  # the eval agents' ids, by name
 RUN_BUILTIN = {"AgentSessionManager/session:read", "AgentSessionManager/operator"}
 APPROVE_METHODS = {"OperationsManager/runEndpointTriggerWithPost", "OperationsManager/getJob",
                    "OperationsManager/getJobs"}  # no cancelJobs: it reaches every job on production
