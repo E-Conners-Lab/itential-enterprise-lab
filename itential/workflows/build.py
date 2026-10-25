@@ -8459,9 +8459,11 @@ def scratch_push() -> dict:
         # the push itself (both measured on 6.6.0, 2026-10-23). So the approvers' group joins this one job, here.
         # The job reads its own id through merge's task/variable form: the import makes every `$var.job.X` a required
         # input of the agents' tool, so `$var.job._id` asked the FlowAI agent for an id (measured on 6.6.0, 2026-10-24).
+        # automatic, not operation: the import makes an operation task's {task: job, variable: _id} a required tool
+        # input, as it does $var.job._id, and leaves an automatic task's out (measured on production, 2026-10-24)
         "2e": task("merge", "WorkFlowEngine", "this job's own id",
                    {"data_to_merge": [{"key": "jobId", "value": {"task": "job", "variable": "_id"}}]},
-                   {"merged_object": None}, kind="operation", display="WorkFlowEngine", x=405),
+                   {"merged_object": None}, display="WorkFlowEngine", x=405),
         "2f": jq("the job id", "$var.2e.merged_object", "jobId", x=420),
         "2d": task("addJobGroup", "OperationsManager", "let eval-approvers read this job and so its card",
                    {"jobId": "$var.2f.return_data", "groupId": "__GROUP_ID:eval-approvers__"}, {"result": None},

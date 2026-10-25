@@ -276,7 +276,7 @@
       "location": "Application",
       "locationType": null,
       "app": "WorkFlowEngine",
-      "type": "operation",
+      "type": "automatic",
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
@@ -300,7 +300,9 @@
         },
         "error": "",
         "decorators": []
-      }
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
     },
     "2f": {
       "name": "query",
