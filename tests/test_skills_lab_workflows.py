@@ -251,7 +251,13 @@ def test_the_push_opens_its_job_to_the_approvers_on_every_path_to_its_card() -> 
     add = doc["tasks"]["2d"]
     assert (add["app"], add["name"], add.get("groups", [])) == ("OperationsManager", "addJobGroup", [])
     assert add["variables"]["incoming"] == {
-        "jobId": "$var.job._id", "groupId": f"__GROUP_ID:{VERSIONS['eval_access']['approve']['group']}__"}
+        "jobId": "$var.2f.return_data", "groupId": f"__GROUP_ID:{VERSIONS['eval_access']['approve']['group']}__"}
+    # the job's own id, through merge's task/variable form (see the test below)
+    merge, query = doc["tasks"]["2e"], doc["tasks"]["2f"]
+    assert merge["variables"]["incoming"] == {
+        "data_to_merge": [{"key": "jobId", "value": {"task": "job", "variable": "_id"}}]}
+    assert query["variables"]["incoming"]["obj"] == "$var.2e.merged_object"
+    assert query["variables"]["incoming"]["query"] == "jobId"
     assert add["variables"]["outgoing"] == {"result": None}  # an unmapped output refuses the job's start (HTTP 400)
     edges = doc["transitions"]
     reached, todo = set(), ["workflow_start"]
@@ -261,10 +267,38 @@ def test_the_push_opens_its_job_to_the_approvers_on_every_path_to_its_card() -> 
             reached.add(n)
             todo.extend(edges.get(n, {}))
     assert not {"2c", "2c1"} & reached
-    assert edges["2d"]["5d"]["state"] == "error" and list(edges["5d"]) == ["workflow_end"]
+    assert all(edges[t]["5d"]["state"] == "error" for t in ("2f", "2d")) and list(edges["5d"]) == ["workflow_end"]
+    assert query["variables"]["incoming"]["pass_on_null"] is False  # a missing id fails into 5d, never a null jobId
     assert "nothing was sent" in json.dumps(doc["tasks"]["5d"])
     # a forbidden line ends the job before the group is added
     assert "5c" in edges["1e"] and edges["1e"]["5c"]["state"] == "failure"
+
+
+def _job_refs(value) -> set:
+    if isinstance(value, str):
+        return set(re.findall(r"^\$var\.job\.(\w+)", value))
+    if isinstance(value, dict):
+        return set().union(*map(_job_refs, value.values()))
+    if isinstance(value, list):
+        return set().union(*map(_job_refs, value))
+    return set()
+
+
+AGENT_WORKFLOW_TOOLS = sorted({t["reference"] for p in (ROOT / "itential" / "agents").glob("*.yaml")
+                               for t in yaml.safe_load(p.read_text())["tools"] if t.get("kind") == "workflow"})
+
+
+@pytest.mark.parametrize("name", AGENT_WORKFLOW_TOOLS)
+def test_an_agent_tool_asks_only_for_its_declared_inputs(name: str) -> None:
+    """The import infers a workflow's stored inputSchema, and so its FlowAI tool's, from the tasks: a `$var.job.X` that a
+    task reads and no task writes becomes a required input (measured on 6.6.0, 2026-10-24: the push's `$var.job._id`
+    was; the job variables Verify AWS VPN writes and reads back were not). One that is not a declared input is an input
+    the agent would have to invent, as `_id` was for the push."""
+    doc = json.loads((WORKFLOWS / wf.file_name(name)).read_text())
+    variables = [t.get("variables", {}) for t in doc["tasks"].values()]
+    read = set().union(*(_job_refs(v.get("incoming", {})) for v in variables))
+    written = set().union(*(_job_refs(v.get("outgoing", {})) for v in variables))
+    assert read - written <= set(doc["inputSchema"]["properties"]), (name, read - written)
 
 
 def test_the_import_fills_the_group_markers_and_refuses_one_it_cannot() -> None:

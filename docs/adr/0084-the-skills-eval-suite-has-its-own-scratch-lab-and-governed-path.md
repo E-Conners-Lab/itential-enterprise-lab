@@ -196,6 +196,12 @@ Fixed after acceptance (2026-10-24): the push set aside only the full words `no`
 leading `no` or any prefix of `default` set aside, so `defa` is refused while `d` and `de` still match `do` and
 `delete`.
 
+Fixed after acceptance (2026-10-24): the FlowAI push tool asked the agent for an `_id`. The import infers a
+workflow's tool schema from its tasks, so the push's `$var.job._id` (its own job id, for `addJobGroup`) became a
+required input, and an agent that left it out got `invalid-tool-input` before any job started. A Tools Service
+decorator does not help: the call is still validated against the inferred schema. The push now reads its own id through
+`merge`'s task/variable form, which the import leaves out of the schema (both measured on production).
+
 Still open:
 
 - Acceptance criterion 3 asks for the router's config-change log as the proof; the hold probe reads the router through

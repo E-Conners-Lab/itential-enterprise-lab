@@ -176,7 +176,7 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 200,
+        "x": 250,
         "y": 1950
       },
       "variables": {
@@ -222,7 +222,7 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 650,
+        "x": 550,
         "y": 2100
       },
       "variables": {
@@ -250,7 +250,7 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 800,
+        "x": 850,
         "y": 2250
       },
       "variables": {
@@ -268,6 +268,68 @@
       "actor": "Pronghorn",
       "scheduled": false
     },
+    "2e": {
+      "name": "merge",
+      "canvasName": "merge",
+      "summary": "this job's own id",
+      "description": "the approval: the router, the reason and the exact lines on a card only eval-approvers and admin_group can release",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 870,
+        "y": 2400
+      },
+      "variables": {
+        "incoming": {
+          "data_to_merge": [
+            {
+              "key": "jobId",
+              "value": {
+                "task": "job",
+                "variable": "_id"
+              }
+            }
+          ]
+        },
+        "outgoing": {
+          "merged_object": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "2f": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "the job id",
+      "description": "the approval: the router, the reason and the exact lines on a card only eval-approvers and admin_group can release",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 870,
+        "y": 2550
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "jobId",
+          "obj": "$var.2e.merged_object"
+        },
+        "outgoing": {
+          "return_data": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
     "2d": {
       "name": "addJobGroup",
       "canvasName": "addJobGroup",
@@ -280,12 +342,12 @@
       "displayName": "OperationsManager",
       "groups": [],
       "nodeLocation": {
-        "x": 820,
-        "y": 2400
+        "x": 600,
+        "y": 2700
       },
       "variables": {
         "incoming": {
-          "jobId": "$var.job._id",
+          "jobId": "$var.2f.return_data",
           "groupId": "__GROUP_ID:eval-approvers__"
         },
         "outgoing": {
@@ -309,8 +371,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 740,
-        "y": 2550
+        "x": 260,
+        "y": 2850
       },
       "variables": {
         "incoming": {
@@ -341,8 +403,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 800,
-        "y": 2700
+        "x": 190,
+        "y": 3000
       },
       "variables": {
         "incoming": {
@@ -373,8 +435,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 730,
-        "y": 2850
+        "x": 310,
+        "y": 3150
       },
       "variables": {
         "incoming": {
@@ -405,8 +467,8 @@
       "displayName": "GatewayManager",
       "groups": [],
       "nodeLocation": {
-        "x": 230,
-        "y": 3000
+        "x": 310,
+        "y": 3300
       },
       "variables": {
         "incoming": {
@@ -440,8 +502,8 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 210,
-        "y": 3150
+        "x": 330,
+        "y": 3450
       },
       "variables": {
         "incoming": {
@@ -471,8 +533,8 @@
         "__GROUP_ID:admin_group__"
       ],
       "nodeLocation": {
-        "x": 350,
-        "y": 3300
+        "x": 360,
+        "y": 3600
       },
       "variables": {
         "incoming": {
@@ -502,8 +564,8 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 330,
-        "y": 3450
+        "x": 360,
+        "y": 3750
       },
       "variables": {
         "incoming": {
@@ -530,8 +592,8 @@
       "displayName": "GatewayManager",
       "groups": [],
       "nodeLocation": {
-        "x": 340,
-        "y": 3600
+        "x": 380,
+        "y": 3900
       },
       "variables": {
         "incoming": {
@@ -560,8 +622,8 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 440,
-        "y": 3750
+        "x": 480,
+        "y": 4050
       },
       "variables": {
         "incoming": {
@@ -606,8 +668,8 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 450,
-        "y": 3900
+        "x": 490,
+        "y": 4200
       },
       "variables": {
         "incoming": {
@@ -634,8 +696,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 510,
-        "y": 4050
+        "x": 540,
+        "y": 4350
       },
       "variables": {
         "incoming": {
@@ -666,8 +728,8 @@
       "displayName": "GatewayManager",
       "groups": [],
       "nodeLocation": {
-        "x": 570,
-        "y": 4200
+        "x": 590,
+        "y": 4500
       },
       "variables": {
         "incoming": {
@@ -702,7 +764,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 630,
-        "y": 4350
+        "y": 4650
       },
       "variables": {
         "incoming": {
@@ -748,7 +810,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 630,
-        "y": 4500
+        "y": 4800
       },
       "variables": {
         "incoming": {
@@ -778,7 +840,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 1080,
-        "y": 4500
+        "y": 4800
       },
       "variables": {
         "incoming": {
@@ -806,7 +868,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 1130,
-        "y": 4650
+        "y": 4950
       },
       "variables": {
         "incoming": {
@@ -833,8 +895,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 780,
-        "y": 3450
+        "x": 810,
+        "y": 3750
       },
       "variables": {
         "incoming": {
@@ -863,7 +925,7 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 350,
+        "x": 250,
         "y": 2100
       },
       "variables": {
@@ -891,8 +953,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": -600,
-        "y": 3600
+        "x": -570,
+        "y": 3900
       },
       "variables": {
         "incoming": {
@@ -921,8 +983,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 150,
-        "y": 3900
+        "x": 190,
+        "y": 4200
       },
       "variables": {
         "incoming": {
@@ -951,8 +1013,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 1190,
-        "y": 2550
+        "x": 1010,
+        "y": 2850
       },
       "variables": {
         "incoming": {
@@ -981,8 +1043,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 30,
-        "y": 4350
+        "x": 180,
+        "y": 4650
       },
       "variables": {
         "incoming": {
@@ -1012,7 +1074,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 330,
-        "y": 4500
+        "y": 4800
       },
       "variables": {
         "incoming": {
@@ -1304,7 +1366,7 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 360,
+        "x": 210,
         "y": 900
       },
       "variables": {
@@ -1337,7 +1399,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 830,
-        "y": 4800
+        "y": 5100
       }
     }
   },
@@ -1415,8 +1477,24 @@
       }
     },
     "2b": {
+      "2e": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "2e": {
+      "2f": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "2f": {
       "2d": {
         "state": "success",
+        "type": "standard"
+      },
+      "5d": {
+        "state": "error",
         "type": "standard"
       }
     },
