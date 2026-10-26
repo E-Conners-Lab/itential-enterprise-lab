@@ -136,7 +136,7 @@ skills-lab-up: ## Skills eval scratch lab: passwords into .env if missing -> EVE
 	$(load_env) .venv/bin/python eve/build.py --topology topology/skills-lab.yaml start
 	$(load_env) .venv/bin/python eve/build.py --topology topology/skills-lab.yaml export
 
-skills-lab-devices: ## Skills eval scratch lab: read accounts, NACM read rules, certificate pins, baseline capture (ADR 0084)
+skills-lab-devices: ## Skills eval scratch lab: read accounts, NACM read rules, certificate pins, OSPF baseline, baseline capture (ADR 0084)
 	$(load_env) cd ansible && ansible-playbook playbooks/skills-lab-devices.yml
 
 skills-lab-down: ## Skills eval scratch lab: delete it from EVE-NG (the enterprise lab is refused by the builder)

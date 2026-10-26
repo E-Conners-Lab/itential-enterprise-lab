@@ -11,9 +11,11 @@
       bypassed, the router's spare port is the VLAN 10 gateway with a DHCP pool. -#}
 {%- set site = node.site %}
 {#- scratch (lab.scratch, topology/skills-lab.yaml, ADR 0084): the eval suite's routers get management, the
-    automation user, NETCONF/RESTCONF/SSH and the config-change log, and nothing a skill configures itself (no
-    loopback, no WAN VRF, no BGP, no data-port addressing); the runner restores their baseline between runs. -#}
+    automation user, NETCONF/RESTCONF/SSH, the config-change log and, while lab.ospf.state is present, the standing
+    OSPF baseline (link addresses, Loopback0, area 0: the ADR's 2026-10-26 amendment); nothing else a skill configures
+    itself (no WAN VRF, no BGP). The runner restores their baseline between runs. -#}
 {%- set scratch = lab.scratch | default(false) %}
+{%- set scratch_ospf = lab.ospf if scratch and lab.ospf is defined and lab.ospf.state == 'present' else none %}
 {#- lo, asn, isp_peer, wan_ip, lan, tunnels, ibgp, agg, isp_neighbors come from topology/derive.py (ADR 0048) -#}
 {#- routed eBGP neighbours on this router's links: firewalls (AS from routing) and leaf bypass (AS dc1_leaf) -#}
 {%- set ns = namespace(ebgp=[], links=[]) %}
@@ -139,6 +141,11 @@ ip route vrf MGMT 0.0.0.0 0.0.0.0 {{ lab.mgmt_gateway }}
 interface Loopback0
  ip address {{ lo }} 255.255.255.255
 !
+{%- elif scratch_ospf %}
+interface Loopback0
+ ip address {{ node.loopback }} 255.255.255.255
+ ip ospf {{ scratch_ospf.process }} area {{ scratch_ospf.area }}
+!
 {%- endif %}
 {%- if lan and not firewalls %}
 ip dhcp excluded-address {{ lan.gw }} {{ lan.net[:-1] }}99
@@ -156,7 +163,8 @@ ip dhcp pool USERS
 {%- set pname = peer.split(':')[0] %}
 interface {{ ifname }}
  description to {{ peer }}{{ ' (firewall bypass)' if lk.get('bypass') else '' }}
-{%- if lk.prefix is defined %}
+{#- a scratch router's link addresses belong to its OSPF baseline: with lab.ospf.state absent it has none -#}
+{%- if lk.prefix is defined and (scratch_ospf or not scratch) %}
 {%- set base = lk.prefix.split('/')[0].split('.') %}
 {%- set last = base[3] | int %}
 {%- set my_last = (last + 1) if mine == lk.a else (last + 2) %}
@@ -164,6 +172,9 @@ interface {{ ifname }}
  vrf forwarding WAN
 {%- endif %}
  ip address {{ base[0] }}.{{ base[1] }}.{{ base[2] }}.{{ my_last }} 255.255.255.252
+{%- if scratch_ospf %}
+ ip ospf {{ scratch_ospf.process }} area {{ scratch_ospf.area }}
+{%- endif %}
 {#- the bypass to a vEOS leaf: software BFD on both ends stalls for seconds (measured 2026-10-18: echo replies up to
     3.65 s apart, async up to 4.36 s, the leaf sending late past 3 intervals 100 times), which flapped BGP with a 900 ms
     echo / 3 s async detect; no echo and a 5 s detect on both ends (veos.j2) -#}
@@ -328,6 +339,11 @@ router bgp {{ asn }}
 {%- endif %}
 {%- endif %}
 !
+{%- if scratch_ospf %}
+router ospf {{ scratch_ospf.process }}
+ router-id {{ node.loopback }}
+!
+{%- endif %}
 {%- if agg %}
 ip route {{ agg.net }} {{ agg.mask }} Null0 250
 {%- endif %}

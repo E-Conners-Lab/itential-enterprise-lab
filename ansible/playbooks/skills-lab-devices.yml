@@ -3,15 +3,16 @@
 # `make skills-lab-up` has built and started them. Per router it creates the two read accounts at privilege 1
 # (restconf-reader for the Gateway's restconf-get service, judge for the eval suite's independent judge), applies
 # Cisco's NACM read rules for privilege 1 (IOS XE 17.9.1+), records the HTTPS certificate and SSH host key
-# fingerprints for the pins the later steps enforce, proves each reader can read and is refused a write, and captures
-# the running configuration as bootflash:baseline.cfg, the state the eval runner restores before every run.
+# fingerprints for the pins the later steps enforce, proves each reader can read and is refused a write, applies the
+# standing OSPF baseline (lab.ospf, the ADR's 2026-10-26 amendment), and captures the running configuration as
+# bootflash:baseline.cfg, the state the eval runner restores before every run.
 #
 # The scratch routers are lab-only and outside production: this play talks to them directly over SSH and RESTCONF
 # (scripts/skills-lab-device.py), not through the governed Platform path the eval agents use. Passwords come from
 # .env, the one-way source the Vault config play seeds (itential/versions.yaml vault.secrets, added with the
-# restconf-get service); none is printed. Re-running it is safe: accounts and NACM rules are re-applied, the
-# baseline is re-captured, and the pins are printed again.
-- name: Scratch routers for the skills eval suite (read accounts, NACM read rules, pins, baseline)
+# restconf-get service); none is printed. Re-running it is safe: accounts, NACM rules and the OSPF lines are
+# re-applied, the baseline is re-captured, and the pins are printed again.
+- name: Scratch routers for the skills eval suite (read accounts, NACM read rules, pins, OSPF, baseline)
   hosts: localhost
   connection: local
   gather_facts: false
@@ -86,6 +87,17 @@
       loop_control:
         label: "{{ item[0][0] }}"
       changed_when: false
+
+    # ADR 0084 amendment (2026-10-26): before the capture, so the baseline the runner restores carries it; with
+    # lab.ospf.state absent this takes it off instead (the rollback)
+    - name: The standing OSPF baseline from topology/skills-lab.yaml
+      ansible.builtin.command:
+        argv: ["{{ ansible_python_interpreter }}", "{{ helper }}", ospf, "{{ item[1] }}", "{{ item[0] }}"]
+      environment: "{{ secret_env }}"
+      loop: "{{ routers }}"
+      loop_control:
+        label: "{{ item[0] }}"
+      changed_when: true
 
     - name: Running configuration saved and captured as bootflash:baseline.cfg
       ansible.builtin.command:

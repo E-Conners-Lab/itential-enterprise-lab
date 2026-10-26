@@ -23,9 +23,15 @@ lab:
   # production AUTOMATION_PASSWORD
   automation_password_env: SKILLS_LAB_AUTOMATION_PASSWORD
   # scratch: true renders the scratch day-0 (topology/configs/c8000v.j2): management, the automation user, NETCONF,
-  # RESTCONF, SSH, the config-change log; no loopback, no BGP and no addressing on the data ports, because each skill
-  # configures those itself and the runner returns the routers to their captured baseline afterwards.
+  # RESTCONF, SSH, the config-change log, and the standing OSPF baseline below; no BGP and nothing else a skill
+  # configures itself, and the runner returns the routers to their captured baseline after every run.
   scratch: true
+  # ADR 0084 amendment (2026-10-26): a standing OSPF baseline, so a test case that needs OSPF injects only its
+  # fault. Area 0 on every link and on a Loopback0 per router, which is also its router ID, enabled per interface
+  # (`ip ospf <process> area <area>`). Links are 10.250.<a><b>.0/30 and loopbacks 10.255.0.<n>, outside every prefix of
+  # the enterprise lab (tests/test_skills_lab.py). state: absent takes it off the running routers at the next
+  # `make skills-lab-devices`, which re-captures the baseline: that is the rollback.
+  ospf: {process: 1, area: 0, state: present}
   observability:
     syslog: 10.100.0.38
     snmp: {user: zabbix, group: LAB, view: LAB}
@@ -45,6 +51,7 @@ nodes:
     platform: c8000v
     image: c8000v-17.13.01a
     mgmt_ip: 10.100.0.152
+    loopback: 10.255.0.1
     cpu: 2
     ram: 6144
     ethernet: 4
@@ -55,6 +62,7 @@ nodes:
     platform: c8000v
     image: c8000v-17.13.01a
     mgmt_ip: 10.100.0.153
+    loopback: 10.255.0.2
     cpu: 2
     ram: 6144
     ethernet: 4
@@ -65,13 +73,14 @@ nodes:
     platform: c8000v
     image: c8000v-17.13.01a
     mgmt_ip: 10.100.0.154
+    loopback: 10.255.0.3
     cpu: 2
     ram: 6144
     ethernet: 4
     eve: {left: 420, top: 320, firstmac: "52:5c:00:03:00:00"}
 
-# A triangle, so a skill can show a path change when one link goes down. No prefixes: skills address the ports.
+# A triangle, so a skill can show a path change when one link goes down. Each /30 gives the a end .1 and the b end .2.
 links:
-  - {a: "skl-r1:Gi2", b: "skl-r2:Gi2"}
-  - {a: "skl-r2:Gi3", b: "skl-r3:Gi2"}
-  - {a: "skl-r1:Gi3", b: "skl-r3:Gi3"}
+  - {a: "skl-r1:Gi2", b: "skl-r2:Gi2", prefix: 10.250.12.0/30}
+  - {a: "skl-r2:Gi3", b: "skl-r3:Gi2", prefix: 10.250.23.0/30}
+  - {a: "skl-r1:Gi3", b: "skl-r3:Gi3", prefix: 10.250.13.0/30}

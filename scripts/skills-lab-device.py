@@ -7,6 +7,7 @@ ansible/playbooks/skills-lab-devices.yml and the Makefile. Never prints a passwo
   scripts/skills-lab-device.py accounts <ip>                  # restconf-reader + judge at privilege 1, NACM read rules
   scripts/skills-lab-device.py pins <ip>                       # HTTPS certificate and SSH host key SHA-256 (not secret)
   scripts/skills-lab-device.py check-readers <ip> <cert-sha256>  # each reader can GET and is refused a PATCH
+  scripts/skills-lab-device.py ospf <ip> <name>                # the standing OSPF baseline, present or absent
   scripts/skills-lab-device.py baseline <ip>                   # write memory; copy running-config bootflash:baseline.cfg
   scripts/skills-lab-device.py creds <dest .env>               # the eval credentials into an untracked file, no echo
 
@@ -22,6 +23,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import http.client
+import ipaddress
 import json
 import os
 import re
@@ -37,6 +39,7 @@ import yaml
 
 ROOT = Path(__file__).resolve().parent.parent
 ENV_FILE = ROOT / ".env"
+SCRATCH_TOPOLOGY = ROOT / "topology" / "skills-lab.yaml"
 SECRET_VARS = (
     "SKILLS_LAB_AUTOMATION_PASSWORD",
     "SKILLS_LAB_READER_PASSWORD",
@@ -343,6 +346,78 @@ def _put_hostname_back(ip: str, cert_sha256: str, hostname: str) -> str:
     return f"putting the hostname back to {hostname} got HTTP {status}: fix it by hand"
 
 
+def ospf_lines(topo: dict, name: str) -> list[str]:
+    """The lines that bring one scratch router to topology/skills-lab.yaml's standing OSPF baseline (ADR 0084, the
+    2026-10-26 amendment): the same lines the day-0 template renders. With `state: absent`, the lines that take it
+    away again: the rollback. Empty when the topology has no OSPF block."""
+    ospf = topo["lab"].get("ospf")
+    if not ospf:
+        return []
+    if ospf.get("state") not in ("present", "absent"):
+        raise SystemExit(f"lab.ospf.state must be present or absent, not {ospf.get('state')!r}")
+    process, area = ospf["process"], ospf["area"]
+    ports = []
+    for link in topo["links"]:
+        for end in (link["a"], link["b"]):
+            node, port = end.split(":")
+            if node == name:
+                net = ipaddress.ip_network(link["prefix"])
+                # the template's rule: the a end takes the first host, the b end the second
+                host = list(net.hosts())[0 if end == link["a"] else 1]
+                ports.append((port.replace("Gi", "GigabitEthernet"), host, net.netmask))
+    enable = f" ip ospf {process} area {area}"
+    if ospf["state"] == "absent":
+        lines = []
+        for ifname, _, _ in ports:
+            lines += [f"interface {ifname}", f" no{enable}", " no ip address"]
+        return [*lines, f"no router ospf {process}", "no interface Loopback0"]
+    loopback = topo["nodes"][name]["loopback"]
+    lines = ["interface Loopback0", f" ip address {loopback} 255.255.255.255", enable]
+    for ifname, host, mask in ports:
+        lines += [f"interface {ifname}", f" ip address {host} {mask}", enable]
+    return [*lines, f"router ospf {process}", f" router-id {loopback}"]
+
+
+LOOPBACK_SHOW = "show running-config | include ^interface Loopback0$"
+
+
+def removals_needed(lines: list[str], shown: str) -> list[str]:
+    """The removal lines without `no interface Loopback0` once the loopback is gone: IOS XE 17.13.01a refuses it with
+    "% Invalid input" (measured 2026-10-26), while the other removals are accepted twice. So the rollback can run
+    again. `shown` is the transcript of LOOPBACK_SHOW; its echo of the command never counts as the interface."""
+    present = any(line.strip() == "interface Loopback0" for line in shown.splitlines())
+    return lines if present else [line for line in lines if line != "no interface Loopback0"]
+
+
+def ospf(ip: str, name: str, topology: Path = SCRATCH_TOPOLOGY) -> None:
+    """Apply the standing OSPF baseline (or take it away) on a running scratch router, before `baseline` captures
+    the configuration the runner restores. Applying it twice changes nothing."""
+    topo = yaml.safe_load(topology.read_text())
+    lines = ospf_lines(topo, name)
+    if not lines:
+        print(f"{ip}: no OSPF block in {topology.name}; nothing to apply")
+        return
+    if topo["lab"]["ospf"]["state"] == "absent":
+        # a connection of its own: IOS XE closes the session with its first shell (measured 2026-10-26)
+        client = _ssh(ip)
+        try:
+            lines = removals_needed(lines, _shell(client, [(LOOPBACK_SHOW, None)]))
+        finally:
+            client.close()
+    client = _ssh(ip)
+    try:
+        transcript = _shell(
+            client, [("configure terminal", None), *[(line, None) for line in lines], ("end", None)]
+        )
+    finally:
+        client.close()
+    refusal = command_refusal(transcript)
+    if refusal:
+        raise SystemExit(f"{ip}: the OSPF baseline was refused: {refusal}")
+    done = "removed" if topo["lab"]["ospf"]["state"] == "absent" else "applied"
+    print(f"{ip} ({name}): OSPF baseline {done}, {len(lines)} lines")
+
+
 def baseline(ip: str) -> None:
     """Save, then capture the running configuration as the baseline the eval runner restores before every run. Runs
     after `accounts`, so the baseline keeps the two read accounts (a replace to it never removes them)."""
@@ -441,6 +516,8 @@ def main(argv: list[str]) -> None:
         pins(args[0])
     elif command == "check-readers" and len(args) == 2:
         check_readers(args[0], args[1])
+    elif command == "ospf" and len(args) == 2:
+        ospf(args[0], args[1])
     elif command == "baseline" and len(args) == 1:
         baseline(args[0])
     elif command == "creds" and len(args) == 1:
