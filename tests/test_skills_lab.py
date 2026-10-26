@@ -67,9 +67,8 @@ def test_shape_three_c8000v_in_a_triangle(scratch: dict) -> None:
     }
     triangle = (("skl-r1", "skl-r2"), ("skl-r2", "skl-r3"), ("skl-r1", "skl-r3"))
     assert pairs == {frozenset(p) for p in triangle}
-    assert all("prefix" not in lk for lk in scratch["links"]), (
-        "skills address the data ports themselves"
-    )
+    # the ADR's 2026-10-26 amendment: the standing OSPF baseline addresses every link
+    assert all("prefix" in lk for lk in scratch["links"]), "every link carries its /30"
 
 
 def test_ports_exist_and_are_used_once(scratch: dict) -> None:
@@ -134,12 +133,19 @@ def test_the_loan_needs_the_firewalls_off_and_fits_the_ceiling(
     )
 
 
-def test_scratch_day0_keeps_management_and_the_change_log_and_nothing_else(
+def test_scratch_day0_keeps_management_the_change_log_and_the_ospf_baseline_and_nothing_else(
     scratch: dict, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     lines = render("skl-r1", scratch, monkeypatch).splitlines()
     for line in (
         "hostname skl-r1",
+        "interface Loopback0",
+        " ip address 10.255.0.1 255.255.255.255",
+        " ip address 10.250.12.1 255.255.255.252",
+        " ip address 10.250.13.1 255.255.255.252",
+        " ip ospf 1 area 0",
+        "router ospf 1",
+        " router-id 10.255.0.1",
         "netconf-yang",
         "restconf",
         "ip http secure-server",
@@ -156,7 +162,6 @@ def test_scratch_day0_keeps_management_and_the_change_log_and_nothing_else(
     cfg = "\n".join(lines)
     for absent in (
         "router bgp",
-        "interface Loopback0",
         "vrf definition WAN",
         "crypto ikev2",
     ):
@@ -715,3 +720,75 @@ def test_the_exported_node_file_is_the_lab_the_topology_asks_for(scratch: dict) 
         want = scratch["nodes"][name]
         assert (node["mgmt_ip"], node["platform"]) == (want["mgmt_ip"], want["platform"]), name
         assert node["mac0"] == want["eve"]["firstmac"], name
+
+
+# --- the standing OSPF baseline (ADR 0084 amendment, 2026-10-26) ----------------------------------------------------
+
+_CIDR = re.compile(r"\b(\d{1,3}(?:\.\d{1,3}){3}/\d{1,2})\b")
+
+
+def _sections(config: str) -> dict[str, list[str]]:
+    """Each top-level line of a configuration with the indented lines under it."""
+    found: dict[str, list[str]] = {}
+    head = ""
+    for line in config.splitlines():
+        if line and not line.startswith(" ") and line != "!":
+            head = line
+            found.setdefault(head, [])
+        elif line.startswith(" ") and head:
+            found[head].append(line)
+    return found
+
+
+def _helper_sections(lines: list[str]) -> dict[str, list[str]]:
+    return _sections("\n".join(lines))
+
+
+def test_ospf_addresses_are_unique_and_clear_of_the_enterprise_lab(scratch: dict) -> None:
+    import ipaddress
+
+    links = [ipaddress.ip_network(link["prefix"]) for link in scratch["links"]]
+    assert all(net.prefixlen == 30 for net in links) and len(set(links)) == len(links)
+    loopbacks = [ipaddress.ip_address(node["loopback"]) for node in scratch["nodes"].values()]
+    assert len(set(loopbacks)) == len(loopbacks)
+    ours = links + [ipaddress.ip_network(f"{lo}/32") for lo in loopbacks]
+    # every prefix the enterprise lab names, less the plan's supernets and default routes
+    theirs = {
+        ipaddress.ip_network(cidr, strict=False)
+        for path in (ENTERPRISE, IPAM)
+        for cidr in _CIDR.findall(path.read_text())
+        if int(cidr.split("/")[1]) > 8
+    }
+    clashes = [(str(a), str(b)) for a in ours for b in theirs if a.overlaps(b)]
+    assert clashes == []
+
+
+def test_the_helper_applies_exactly_what_the_day0_renders(
+    scratch: dict, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    for name in scratch["nodes"]:
+        rendered = _sections(render(name, scratch, monkeypatch))
+        for head, body in _helper_sections(device.ospf_lines(scratch, name)).items():
+            assert head in rendered, f"{name}: {head!r} not in the day-0"
+            assert set(body) <= set(rendered[head]), f"{name}: {head!r}"
+
+
+def test_state_absent_renders_no_ospf_and_the_helper_takes_it_away(
+    scratch: dict, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    topo = copy.deepcopy(scratch)
+    topo["lab"]["ospf"]["state"] = "absent"
+    cfg = render("skl-r2", topo, monkeypatch)
+    assert "router ospf" not in cfg and "interface Loopback0" not in cfg and "ip ospf" not in cfg
+    lines = device.ospf_lines(topo, "skl-r2")
+    assert lines[-2:] == ["no router ospf 1", "no interface Loopback0"]
+    assert lines.count(" no ip ospf 1 area 0") == 2 and lines.count(" no ip address") == 2
+    topo["lab"]["ospf"]["state"] = "maybe"
+    with pytest.raises(SystemExit, match="present or absent"):
+        device.ospf_lines(topo, "skl-r2")
+
+
+def test_the_play_applies_ospf_before_it_captures_the_baseline() -> None:
+    tasks = [task["name"] for task in yaml.safe_load(PLAY.read_text())[0]["tasks"]]
+    ospf = tasks.index("The standing OSPF baseline from topology/skills-lab.yaml")
+    assert ospf < tasks.index("Running configuration saved and captured as bootflash:baseline.cfg")

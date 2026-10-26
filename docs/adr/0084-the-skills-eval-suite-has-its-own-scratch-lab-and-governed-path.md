@@ -39,7 +39,8 @@ to evaluation work.
 3. **A scratch day-0.** `topology/configs/c8000v.j2` with `lab.scratch: true` renders management, the automation user
    (its own password, `SKILLS_LAB_AUTOMATION_PASSWORD`, never the production device password), NETCONF, RESTCONF, SSH
    and the config-change log to the lab syslog receiver, and nothing a skill configures itself (no loopback, no WAN
-   VRF, no BGP, no data-port addressing). The enterprise configs render byte-identically.
+   VRF, no BGP, no data-port addressing). The enterprise configs render byte-identically. (Amended 2026-10-26: the
+   scratch day-0 also carries a standing OSPF baseline; see the amendment below.)
 4. **Read accounts locked to reads.** `ansible/playbooks/skills-lab-devices.yml` creates `restconf-reader` (for the
    Gateway's `restconf-get` service) and `judge` (for the workbench's independent judge only) at privilege 1, applies
    Cisco's NACM read rules for privilege 1 (IOS XE 17.9.1+), proves each reader can read and is refused a write,
@@ -203,6 +204,26 @@ decorator does not help: the call is still validated against the inferred schema
 `merge`'s task/variable form in an automatic task, which the import leaves out of the schema. The same form in an
 operation task is inferred like `$var.job._id`: #200 shipped the merge as an operation task, and the replay still showed
 `_id` required (all measured on production).
+
+## Amendment (2026-10-26): a standing OSPF baseline
+
+Decision 3 kept the scratch routers bare, so a test case brought up whatever it needed. The eval suite's next cases
+all need OSPF running before their fault goes in: pushing addresses, loopbacks and area 0 in every case's setup made
+each setup and restore a dozen lines, and left every healthy case depending on a fresh adjacency forming in time.
+
+The scratch day-0 now carries a standing OSPF baseline, from `lab.ospf` in `topology/skills-lab.yaml`: each link a
+/30 from 10.250.0.0/16 (the a end .1, the b end .2), a Loopback0 10.255.0.n per router that is also its router ID,
+and `ip ospf 1 area 0` on every one of those interfaces (process 1, area 0). `make skills-lab-devices` applies the
+same lines to the running routers before it captures `bootflash:baseline.cfg`, so every restore returns the routers
+to three FULL adjacencies and a case injects only its fault. Nothing else changes: no BGP, no WAN VRF, no new account.
+The addresses overlap no prefix of the enterprise lab and stay out of NetBox, like the routers
+(`tests/test_skills_lab.py`).
+
+Rollback: set `lab.ospf.state: absent` and run `make skills-lab-devices`. The helper takes the lines away
+(`scripts/skills-lab-device.py ospf`) and the baseline is re-captured without them; the day-0 renders none.
+
+Verification: read as `judge`, every router lists its two neighbors FULL and learns the other two loopbacks, and a
+restore of each router returns to its new baseline hash with its adjacencies FULL again.
 
 Still open:
 
