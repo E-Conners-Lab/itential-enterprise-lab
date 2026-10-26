@@ -378,13 +378,32 @@ def ospf_lines(topo: dict, name: str) -> list[str]:
     return [*lines, f"router ospf {process}", f" router-id {loopback}"]
 
 
+LOOPBACK_SHOW = "show running-config | include ^interface Loopback0$"
+
+
+def removals_needed(lines: list[str], shown: str) -> list[str]:
+    """The removal lines without `no interface Loopback0` once the loopback is gone: IOS XE 17.13.01a refuses it with
+    "% Invalid input" (measured 2026-10-26), while the other removals are accepted twice. So the rollback can run
+    again. `shown` is the transcript of LOOPBACK_SHOW; its echo of the command never counts as the interface."""
+    present = any(line.strip() == "interface Loopback0" for line in shown.splitlines())
+    return lines if present else [line for line in lines if line != "no interface Loopback0"]
+
+
 def ospf(ip: str, name: str, topology: Path = SCRATCH_TOPOLOGY) -> None:
     """Apply the standing OSPF baseline (or take it away) on a running scratch router, before `baseline` captures
     the configuration the runner restores. Applying it twice changes nothing."""
-    lines = ospf_lines(yaml.safe_load(topology.read_text()), name)
+    topo = yaml.safe_load(topology.read_text())
+    lines = ospf_lines(topo, name)
     if not lines:
         print(f"{ip}: no OSPF block in {topology.name}; nothing to apply")
         return
+    if topo["lab"]["ospf"]["state"] == "absent":
+        # a connection of its own: IOS XE closes the session with its first shell (measured 2026-10-26)
+        client = _ssh(ip)
+        try:
+            lines = removals_needed(lines, _shell(client, [(LOOPBACK_SHOW, None)]))
+        finally:
+            client.close()
     client = _ssh(ip)
     try:
         transcript = _shell(
@@ -395,7 +414,8 @@ def ospf(ip: str, name: str, topology: Path = SCRATCH_TOPOLOGY) -> None:
     refusal = command_refusal(transcript)
     if refusal:
         raise SystemExit(f"{ip}: the OSPF baseline was refused: {refusal}")
-    print(f"{ip} ({name}): OSPF baseline applied, {len(lines)} lines")
+    done = "removed" if topo["lab"]["ospf"]["state"] == "absent" else "applied"
+    print(f"{ip} ({name}): OSPF baseline {done}, {len(lines)} lines")
 
 
 def baseline(ip: str) -> None:

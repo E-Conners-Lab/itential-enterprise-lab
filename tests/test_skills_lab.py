@@ -780,6 +780,7 @@ def test_state_absent_renders_no_ospf_and_the_helper_takes_it_away(
     topo["lab"]["ospf"]["state"] = "absent"
     cfg = render("skl-r2", topo, monkeypatch)
     assert "router ospf" not in cfg and "interface Loopback0" not in cfg and "ip ospf" not in cfg
+    assert "10.250." not in cfg, "with the baseline absent the links carry no address (review finding)"
     lines = device.ospf_lines(topo, "skl-r2")
     assert lines[-2:] == ["no router ospf 1", "no interface Loopback0"]
     assert lines.count(" no ip ospf 1 area 0") == 2 and lines.count(" no ip address") == 2
@@ -792,3 +793,14 @@ def test_the_play_applies_ospf_before_it_captures_the_baseline() -> None:
     tasks = [task["name"] for task in yaml.safe_load(PLAY.read_text())[0]["tasks"]]
     ospf = tasks.index("The standing OSPF baseline from topology/skills-lab.yaml")
     assert ospf < tasks.index("Running configuration saved and captured as bootflash:baseline.cfg")
+
+
+def test_a_second_rollback_skips_the_loopback_that_is_already_gone(scratch: dict) -> None:
+    # review finding, measured on skl-r1: `no interface Loopback0` is refused once the loopback is gone
+    topo = copy.deepcopy(scratch)
+    topo["lab"]["ospf"]["state"] = "absent"
+    lines = device.ospf_lines(topo, "skl-r1")
+    echo_only = f"skl-r1#{device.LOOPBACK_SHOW}\nskl-r1#"
+    assert "no interface Loopback0" not in device.removals_needed(lines, echo_only)
+    still_there = f"skl-r1#{device.LOOPBACK_SHOW}\ninterface Loopback0\nskl-r1#"
+    assert device.removals_needed(lines, still_there) == lines

@@ -163,7 +163,8 @@ ip dhcp pool USERS
 {%- set pname = peer.split(':')[0] %}
 interface {{ ifname }}
  description to {{ peer }}{{ ' (firewall bypass)' if lk.get('bypass') else '' }}
-{%- if lk.prefix is defined %}
+{#- a scratch router's link addresses belong to its OSPF baseline: with lab.ospf.state absent it has none -#}
+{%- if lk.prefix is defined and (scratch_ospf or not scratch) %}
 {%- set base = lk.prefix.split('/')[0].split('.') %}
 {%- set last = base[3] | int %}
 {%- set my_last = (last + 1) if mine == lk.a else (last + 2) %}
