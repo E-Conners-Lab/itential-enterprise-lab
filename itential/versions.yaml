@@ -100,7 +100,9 @@ terraform_run:
     # trusted only through the certificate pin skills_lab.nodes carries; `%` only as %2F in a path.
     # 10ead8d = main after cdp #47: restconf-get logs in only to skl-r1..3, each at the address skills_lab.nodes
     # gives it (any other name or address is refused before a connection).
-    reference: "10ead8db9384758d4fd8201c07d67800272896fa"
+    # d269f20 = main after cdp #48 (A2): terraform-run plan also returns `review` (per changed resource: address,
+    # actions, replacement, allow-listed facts) and `review_withheld`; any public IPv4 or 12-digit id withholds it.
+    reference: "d269f2077486471d26ca01c5a343dd16f986d587"
   executable_object:
     name: python-3-12
     description: "the runner image's Python 3.12 (ADR 0038)"
