@@ -225,7 +225,14 @@
           # its routers are the open targets that are also revert targets: today the same list (a test holds it)
           - key: tear_down_aws_vpn
             description: "Tears the AWS VPN down (the router's block, then the AWS side); started by the branded page or the form (R2)"
-            schema: "{{ aws_vpn_target_schema }}"
+            # D9 (R5): the target plus the requester's note for the change request, Deploy's bound
+            schema:
+              type: object
+              additionalProperties: false
+              required: [target, change_note]
+              properties:
+                target: {type: string, enum: "{{ aws_vpn_open_targets }}"}
+                change_note: {type: string, maxLength: 280}
 
     # After the AWS VPN automations, on the tier that runs the AWS VPN with them (it owns the single AWS state):
     # the timed teardown every hour (R2b), the drift check every day (R3), the key rotation's daily due check (R4)

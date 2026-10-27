@@ -273,7 +273,7 @@ def test_deploy_plans_then_asks_then_applies_exactly_that_plan() -> None:
     assert names == [("runService", "terraform-run"), ("InteractiveHTML", None), ("runService", "terraform-run"),
                      ("runService", "aws-vpn-psk")]
     # the approver sees the plan summary, on the branded page (ADR 0077): the body task feeds the renderer
-    assert tasks["2b3"]["variables"]["incoming"]["value"] == "$var.job.plan"
+    assert build.card_input(tasks, "2b", 3) == "$var.job.plan"
     assert tasks["2b"]["variables"]["incoming"]["body"] == "$var.2b5.return_data"
     plan_fixed = tasks["1a"]["variables"]["incoming"]["text"]  # the inputs are added as data (WEB-01)
     assert '"job": "new"' in plan_fixed and '"enable_vpn": "true"' in plan_fixed and '"action": "plan"' in plan_fixed
@@ -283,7 +283,7 @@ def test_deploy_plans_then_asks_then_applies_exactly_that_plan() -> None:
     assert tasks["3b"]["variables"]["incoming"]["newSubstr"] == "$var.10.return_data"
     assert tasks["3c"]["variables"]["incoming"]["newSubstr"] == "$var.3a.return_data"
     tr = wf["transitions"]
-    assert tr["2b"] == {"3a": {"state": "success", "type": "standard"}, "7a": {"state": "failure", "type": "standard"}}
+    assert build.card_sides(tr, "2b") == ("3a", "7a")  # Approve -> the apply, Reject -> the discard (R5 between)
 
 
 def test_reject_discards_the_plan_and_says_nothing_changed() -> None:
@@ -348,10 +348,11 @@ def test_the_inputs_are_checked_before_anything_runs() -> None:
     # validateJsonSchema completes even for invalid data (measured): only the evaluate after it can refuse
     assert tasks["13"]["variables"]["incoming"]["evaluation_groups"][0]["evaluations"][0]["query"] == "valid"
     assert tr["12"] == {"13": {"state": "success", "type": "standard"}, "8f": {"state": "error", "type": "standard"}}
-    assert tr["13"] == {"1d": {"state": "success", "type": "standard"}, "8f": {"state": "failure", "type": "standard"}}
-    assert list(tr["8f"]) == ["8c"] and list(tr["8c"]) == ["workflow_end"]
-    # the plan step has one way in: through the check
-    assert [src for src, dst in tr.items() if "1d" in dst] == ["13"]
+    # passed, the change request opens (R5) and only then the plan; refused, the run ends with no change to close
+    assert tr["13"] == {"ce0": {"state": "success", "type": "standard"}, "8f": {"state": "failure", "type": "standard"}}
+    assert list(tr["8f"]) == ["81"] and list(tr["81"]) == ["workflow_end"]
+    # the plan step has one way in: through the check, then the opened change (its number read back)
+    assert [src for src, dst in tr.items() if "1d" in dst] == ["cee"]
     schema = build.PLAN_INPUTS_SCHEMA
     assert schema["additionalProperties"] is False and schema["properties"]["action"] == {"const": "plan"}
     ip = re.compile(schema["properties"]["onprem_public_ip"]["pattern"])
@@ -382,11 +383,20 @@ def test_the_trigger_refuses_what_the_workflow_refuses() -> None:
     for key in ("onprem_public_ip", "enable_nat_gateway", "change_note"):
         got = {k: v for k, v in schema["properties"][key].items() if k != "type"}
         assert got == {k: v for k, v in want[key].items() if k != "type"}, key
-    # Hand Off, Verify and Tear Down take only `target`, one of the open routers - the same as the workflows' own
-    # gates (Tear Down's routers are the open ones that are also revert targets: today every open one is)
-    for key in ("hand_off_aws_vpn", "verify_aws_vpn", "tear_down_aws_vpn"):
+    # Hand Off and Verify take only `target`, one of the open routers - the same as the workflows' own gates
+    for key in ("hand_off_aws_vpn", "verify_aws_vpn"):
         assert specs[key]["schema"] == "{{ aws_vpn_target_schema }}", key
         assert build.INPUT_GATES[VERSIONS["workflows"][key]] == {"target": {"enum": OPEN_TARGETS}}
+    # Tear Down also takes the requester's note for its change request (D9, R5), with Deploy's bound (its routers
+    # are the open ones that are also revert targets: today every open one is)
+    td = specs["tear_down_aws_vpn"]["schema"]
+    assert td["additionalProperties"] is False and set(td["required"]) == {"target", "change_note"}
+    assert td["properties"]["target"] == {"type": "string", "enum": "{{ aws_vpn_open_targets }}"}
+    assert td["properties"]["change_note"] == {"type": "string", **{k: v for k, v in want["change_note"].items() if k != "type"}}
+    # the gate holds both notes to one rule: no markup, one line (the trigger only bounds the length, as Deploy's)
+    assert build.INPUT_GATES[VERSIONS["workflows"]["tear_down_aws_vpn"]] == {
+        "target": {"enum": OPEN_TARGETS}, "change_note": build.CHANGE_NOTE_RULE}
+    assert build.INPUT_GATES[VERSIONS["workflows"]["deploy_aws_vpn"]]["change_note"] is build.CHANGE_NOTE_RULE
     target_schema = task["vars"]["aws_vpn_target_schema"]
     assert target_schema["additionalProperties"] is False and target_schema["required"] == ["target"]
     assert target_schema["properties"]["target"] == {"type": "string", "enum": "{{ aws_vpn_open_targets }}"}
@@ -465,7 +475,7 @@ def test_tear_downs_two_cards_each_reject_on_their_own_branch_and_the_page_never
     wf, tasks = _workflow("tear-down-aws-vpn.json")
     block = _mode_block(page, "teardown")
     assert 'reject: [{ stage: "tdapprove", task: "a0" }, { stage: "awsapprove", task: "a2" }]' in block
-    assert wf["transitions"]["2c"]["a0"]["state"] == "failure" and wf["transitions"]["5f"]["a2"]["state"] == "failure"
+    assert build.card_sides(wf["transitions"], "2c")[1] == "a0" and build.card_sides(wf["transitions"], "5f")[1] == "a2"
     assert 'trigger: "/operations-manager/triggers/endpoint/tear-down-aws-vpn"' in block
     render = page.split("function renderTeardown")[1].split("\n  }\n")[0]
     assert "removal.sha256" in render and "removal.lines" not in render  # the SHA-256 only, never the lines
@@ -507,7 +517,7 @@ def test_the_page_marks_a_stop_from_the_branches_the_workflow_takes() -> None:
     # Reject in Work Center: the approval's failure edge, for both workflows that ask
     for mode, file, approval, reject in (("deploy", "deploy-aws-vpn.json", "2b", "7a"), ("handoff", "hand-off-aws-vpn.json", "6f", "a0")):
         wf, _ = _workflow(file)
-        assert wf["transitions"][approval][reject]["state"] == "failure"
+        assert build.card_sides(wf["transitions"], approval)[1] == reject
         assert f'reject: {{ stage: "' in _mode_block(page, mode) and f'task: "{reject}" }}' in _mode_block(page, mode)
 
 
@@ -995,7 +1005,7 @@ def test_the_card_shows_the_end_time_and_what_approving_it_means() -> None:
     _, tasks = _deploy()
     end = tasks["2c"]["variables"]["incoming"]
     assert end["substr"] == "__END__" and end["newSubstr"] == "$var.job.expires_at" and end["str"] == "$var.2a.replacedString"
-    assert tasks["2b2"]["variables"]["incoming"]["value"] == "$var.2c.replacedString"  # the page's lede (ADR 0077)
+    assert build.card_input(tasks, "2b", 2) == "$var.2c.replacedString"  # the page's lede (ADR 0077)
     message = tasks["2a"]["variables"]["incoming"]["str"]
     assert "__END__" in message and "Tear Down Expired AWS VPN" in message and "no further card" in message
 

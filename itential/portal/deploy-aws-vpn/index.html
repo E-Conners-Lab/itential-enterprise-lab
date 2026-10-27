@@ -310,6 +310,10 @@
             <span>Lab edge router</span>
             <select id="teardown-target" name="target"></select>
           </label>
+          <label class="field">
+            <span>Change note</span>
+            <textarea id="teardown-note" name="change_note" maxlength="280" placeholder="Why this teardown, for the approver"></textarea>
+          </label>
           <button class="go" type="submit" id="go-teardown">Tear it down</button>
           <p class="fineprint">Nothing changes before each approval; AWS is never touched unless the router is clean first.</p>
         </form>
@@ -825,7 +829,7 @@
   $("teardown").addEventListener("submit", (ev) => {
     ev.preventDefault();
     status("Preparing.", "");
-    start("teardown", { target: $("teardown-target").value }, {});
+    start("teardown", { target: $("teardown-target").value, change_note: $("teardown-note").value.trim() }, {});
   });
 
   // --- where the journey stands: each leg from its workflow's latest job (the engineer's own session) -------------

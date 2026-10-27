@@ -112,7 +112,7 @@ def test_each_approval_is_an_interactive_html_task_fed_by_the_branded_page(name:
     assert inc["header"] == header and inc["btn_success"] == "Approve" and inc["btn_failure"] == "Reject"
     assert inc["body"] == f"$var.{tid}5.return_data"
     assert tasks[f"{tid}1"]["variables"]["incoming"]["value"] == header
-    assert tasks[f"{tid}3"]["variables"]["incoming"]["value"] == body_ref
+    assert build.card_input(tasks, tid, 3) == body_ref
     assert tasks[f"{tid}4"]["variables"]["incoming"]["code"] == build.APPROVAL_CARD_CODE
     assert tasks[f"{tid}4"]["variables"]["outgoing"]["result"] == f"$var.job.{var}_card"
     assert tasks[f"{tid}5"]["variables"]["incoming"]["query"] == "stdout_json.html"
@@ -128,7 +128,7 @@ def test_each_approval_is_an_interactive_html_task_fed_by_the_branded_page(name:
 def test_tear_downs_second_card_is_a_branded_page_too() -> None:
     tasks = _wf("Tear Down AWS VPN")["tasks"]
     assert tasks["5f"]["name"] == "InteractiveHTML" and tasks["5f"]["variables"]["incoming"]["body"] == "$var.5f5.return_data"
-    assert tasks["5f3"]["variables"]["incoming"]["value"] == "$var.job.destroy_plan"
+    assert build.card_input(tasks, "5f", 3) == "$var.job.destroy_plan"
     assert tasks["5f4"]["variables"]["outgoing"]["result"] == "$var.job.approval_2_card"
 
 
