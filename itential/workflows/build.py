@@ -3324,20 +3324,18 @@ def change_open(d: dict) -> dict:
     """The change's create body: short description `<Workflow>: <target> (itential-enterprise-lab, job <id>)` (the
     request tools find the CHG by that job id) and a first work note with the workflow, target, the requester's note,
     the planned window, how the run was started and the job link. `started` is the job's own record (getJob), {} when
-    the run cannot read itself (an automation started it through a trigger). Pure: runCode runs this source."""
+    the run cannot read itself (any trigger-started run: the page's, the form's, an automation's). Pure: runCode runs
+    this source."""
     job = str(d.get("job_id") or "")
     workflow, target = str(d.get("workflow") or ""), str(d.get("target") or "")
     record = (d.get("started") or {}).get("data") or {}
     how, who = str(record.get("description") or ""), record.get("created_by")
-    if not record:
-        started = "by an automation through an Itential trigger (the run cannot read its own record)"
-    elif "API trigger" in how:
-        started = "from the AWS VPN page"
-    elif "anual" in how:
-        started = "from the Operations Manager form"
-    else:
-        started = "from Operations Manager"
-    if who:
+    if not record:  # every trigger-started run, the page's too (measured 2026-10-27: getJob on its own id is 401)
+        started = ("through an Itential trigger: the page, the form or an automation (this run cannot read its own "
+                   "record to say which)")
+    else:  # only a run started on the Platform directly can read itself; its description says nothing more
+        started = "on the Platform"
+    if who and record:
         started += " by " + ((d.get("roles") or {}).get(who) or "Platform account ..." + str(who)[-6:])
     window = str(d.get("window") or "")
     if window == "none":
@@ -3355,16 +3353,21 @@ def change_open(d: dict) -> dict:
 
 def change_decision(d: dict) -> dict:
     """A card's decision as the change's work note: who decided (the card task's finisher, by role) and when, and
-    the note they wrote. `card` is the card task's own record (getTask), {} when the run could not read it (an
-    automation started it): then the note says where the decision is recorded. Pure: runCode runs this source."""
+    the note they wrote. `card` is the card task's own record (getTask), {} when the run could not read it (it was
+    started through a trigger): then the note says the card records who and when. Pure: runCode runs this source."""
     from datetime import datetime, timezone
 
     metrics = ((d.get("card") or {}).get("data") or {}).get("metrics") or {}
     user, end = metrics.get("user"), metrics.get("end_time")
     who = (d.get("roles") or {}).get(user) or ("Platform account ..." + str(user)[-6:] if user else "")
     link = f"{d.get('job_url', '')}{d.get('job_id', '')}"
-    by = f"by {who}" if who else f"(the decision is recorded on the card of job {link})"
-    when = datetime.fromtimestamp(end / 1000, timezone.utc) if isinstance(end, (int, float)) else datetime.now(timezone.utc)
+    now = f"{datetime.now(timezone.utc):%Y-%m-%d %H:%M} UTC"
+    if not metrics:  # a trigger-started run cannot read its card: the card records who and when
+        when = f"(the card on job {link} records who and when; noted {now})"
+    else:
+        at = f"at {datetime.fromtimestamp(end / 1000, timezone.utc):%Y-%m-%d %H:%M} UTC" \
+            if isinstance(end, (int, float)) else f"(noted {now})"
+        when = f"by {who} {at}" if who else f"{at} (the card on job {link} records who)"
 
     def written(x):  # the card's note box, wherever the export nests it
         if isinstance(x, dict):
@@ -3376,9 +3379,14 @@ def change_decision(d: dict) -> dict:
         return ""
 
     verb = "Approved" if d.get("decision") == "approved" else "Rejected"
-    note = " ".join(written(d.get("export")).split())[:500] or "(none)"
-    return {"work_note": f"{verb} in Itential Work Center {by} at {when:%Y-%m-%d %H:%M} UTC: {d.get('label', '')}. "
-                         f"Their note: {note}"}
+    note = " ".join(written(d.get("export")).split())
+    if not note:
+        note = "(none)."
+    elif len(note) > 500:
+        note = note[:500] + "..."
+    elif note[-1] not in ".!?)":
+        note += "."
+    return {"work_note": f"{verb} in Itential Work Center {when}: {d.get('label', '')}. Their note: {note}"}
 
 
 def change_close(d: dict) -> dict:
@@ -3386,13 +3394,16 @@ def change_close(d: dict) -> dict:
     rejected), failed or successful (after an approval); `reason` is the run's own error or outcome, `note` a
     rejection's decision note. Canceled takes one update, Review then Closed two. Pure: runCode runs this source."""
     kind, link = d.get("kind"), f"{d.get('job_url', '')}{d.get('job_id', '')}"
-    reason = " ".join(str(d.get("reason") or "").split())[:2500] or "(no reason recorded)"
+    reason = " ".join(str(d.get("reason") or "").split())
+    reason = (reason[:2500] + "...") if len(reason) > 2500 else reason or "(no reason recorded)"
+    reason = reason if reason[-1:] in ".!?)" else reason + "."
     if kind in ("failed", "successful"):
         code = "successful" if kind == "successful" else "unsuccessful"
         return {"two_steps": True, "first": {"state": "0"},
                 "second": {"state": "3", "close_code": code, "close_notes": f"{reason} Job: {link}",
                            "work_notes": f"Closed {code}: {reason}"}}
-    text = f"Canceled: {reason}" if kind != "rejected" else " ".join(f"{d.get('note') or ''} {reason}".split())
+    decided = " ".join(str(d.get("note") or "").split()) or "Rejected in Itential Work Center."
+    text = f"Canceled: {reason}" if kind != "rejected" else f"{decided} Outcome: {reason}"
     return {"two_steps": False, "first": {"state": "4", "work_notes": f"{text} Job: {link}"}, "second": None}
 
 
@@ -3425,7 +3436,7 @@ def _decision_chain(c: dict, decision: str, ids: tuple) -> dict:
         q: jq("the card's run", f"$var.{gj}.job", f"data.tasks.{c['card']}.iterations[0]", x=0),
         gt: task("getTask", "OperationsManager", f"who {decision} it: the card's run (its finisher)",
                  {"id": f"$var.{q}.return_data", "queryParameters": {}}, {"task": "$var.job.change_card"}),
-        unread: empty("the card's run could not be read (an automation started the job)", "change_card", x=0),
+        unread: empty("the card's run could not be read (the job was started through a trigger)", "change_card", x=0),
         k1: set_key("the decision: the card's run", f"$var.{d}.object", "card", "$var.job.change_card", x=0),
         k2: set_key("the decision: the card's note", f"$var.{k1}.object", "export", f"$var.job.{c['var']}_decision", x=0),
         k3: set_key("the decision: what was decided", f"$var.{k2}.object", "label", c["label"], x=0),
@@ -3471,7 +3482,7 @@ def change_request_section(name: str, target: str, note_ref: str, window: str, c
         "ce1": jq("the job id", "$var.ce0.merged_object", "jobId", x=0, to_job="change_job_id"),
         "ce2": task("getJob", "OperationsManager", "how this run was started (its own record)",
                     {"id": "$var.ce1.return_data", "queryParameters": {}}, {"job": "$var.job.change_started"}),
-        "ce3": empty("its own record could not be read (an automation started it)", "change_started", x=0),
+        "ce3": empty("its own record could not be read (started through a trigger)", "change_started", x=0),
         "ce4": set_key("the change: workflow", {}, "workflow", name, x=0),
         "ce5": set_key("the change: target", "$var.ce4.object", "target", target, x=0),
         "ce6": set_key("the change: the requester's note", "$var.ce5.object", "note", note_ref, x=0),

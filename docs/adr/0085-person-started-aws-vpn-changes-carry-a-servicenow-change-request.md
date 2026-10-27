@@ -29,8 +29,8 @@ Branch VLAN already walks a ServiceNow standard change; the AWS VPN workflows di
    (the AWS destroy) adds a work note; rejecting it closes the change `successful` (router removed, AWS kept).
 3. **The approver by role, never by name** (this repo is public): the card task's finisher (`metrics.user`, read from
    the job's own record) through `aws_vpn.change_request.approver_roles`; an unmapped account reads "Platform account
-   ...<last 6>". A run an automation starts through a trigger cannot read its own record (probe P2b), so its note says
-   the decision is on the job's card.
+   ...<last 6>". A run started through any trigger - the page's, the form's, an automation's - cannot read its own
+   record (measured below), so its notes say the card on the job records who and when.
 4. **One generator, no child jobs.** `with_change_request` writes the same tasks into all three workflows (`ce*` open,
    `c8*`-`cb*` per card, `cd*` close, `cc*` fix by hand; a test holds the copies identical). Each workflow names how
    each of its endings closes the change (canceled, rejected, failed, successful); the build refuses an ending it
@@ -51,3 +51,9 @@ Branch VLAN already walks a ServiceNow standard change; the AWS VPN workflows di
 - Each run makes four to seven ServiceNow calls; a slow or asleep PDI makes Deploy, Hand Off and Tear Down slower or,
   at the create, stops them. That is the intended trade (no unrecorded change).
 - No CR field is checked for secrets yet: the window's leak sweep (verify S13.2j) gains the change requests with A2-A5.
+- Measured live 2026-10-27 (Deploy job 1a5507b8, CHG0030030, rejected): a run started through an endpoint or manual
+  trigger - the page's and the form's too, not only an automation's - cannot read its own record (`getJob` on its own
+  id answers 401, though `created_by` is the person). Probe P2's readable run was started by the admin, how was not
+  recorded. So decision 3's approver by role applies only to a run that can read itself (started on the Platform
+  directly); every other note says the card on the job records who and when, and the first note says the run came
+  through a trigger without guessing which. Each such run leaves its getJob reads errored on the job (left for now).

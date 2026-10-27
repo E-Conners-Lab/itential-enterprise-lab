@@ -133,8 +133,8 @@ One line per task, in canvas order; the task's id first, then its label as the c
 
 - `ce0` this job's own id
 - `ce1` the job id. Failed → the change request was not opened.
-- `ce2` how this run was started (its own record) — OperationsManager `getJob`. Then → the change: workflow. Could not run → its own record could not be read (an automation started it).
-- `ce3` its own record could not be read (an automation started it)
+- `ce2` how this run was started (its own record) — OperationsManager `getJob`. Then → the change: workflow. Could not run → its own record could not be read (started through a trigger).
+- `ce3` its own record could not be read (started through a trigger)
 - `ce4` the change: workflow
 - `ce5` the change: target
 - `ce6` the change: the requester's note
@@ -245,14 +245,14 @@ One line per task, in canvas order; the task's id first, then its label as the c
 - `c82` the card's body: the change number. Then → the card: header (step 10).
 - `c85` the decision: rejected. Then → who rejected it: this job's record.
 - `ca0` the decision: approved. Then → who approved it: this job's record.
-- `c86` who rejected it: this job's record — OperationsManager `getJob`. Then → the card's run. Could not run → the card's run could not be read (an automation started the job).
-- `ca2` who approved it: this job's record — OperationsManager `getJob`. Then → the card's run. Could not run → the card's run could not be read (an automation started the job).
-- `c87` the card's run. Then → who rejected it: the card's run (its finisher). Failed → the card's run could not be read (an automation started the job).
-- `ca3` the card's run. Then → who approved it: the card's run (its finisher). Failed → the card's run could not be read (an automation started the job).
-- `c88` who rejected it: the card's run (its finisher) — OperationsManager `getTask`. Then → the decision: the card's run. Could not run → the card's run could not be read (an automation started the job).
-- `ca4` who approved it: the card's run (its finisher) — OperationsManager `getTask`. Then → the decision: the card's run. Could not run → the card's run could not be read (an automation started the job).
-- `c89` the card's run could not be read (an automation started the job). Then → the decision: the card's run.
-- `ca5` the card's run could not be read (an automation started the job). Then → the decision: the card's run.
+- `c86` who rejected it: this job's record — OperationsManager `getJob`. Then → the card's run. Could not run → the card's run could not be read (the job was started through a trigger).
+- `ca2` who approved it: this job's record — OperationsManager `getJob`. Then → the card's run. Could not run → the card's run could not be read (the job was started through a trigger).
+- `c87` the card's run. Then → who rejected it: the card's run (its finisher). Failed → the card's run could not be read (the job was started through a trigger).
+- `ca3` the card's run. Then → who approved it: the card's run (its finisher). Failed → the card's run could not be read (the job was started through a trigger).
+- `c88` who rejected it: the card's run (its finisher) — OperationsManager `getTask`. Then → the decision: the card's run. Could not run → the card's run could not be read (the job was started through a trigger).
+- `ca4` who approved it: the card's run (its finisher) — OperationsManager `getTask`. Then → the decision: the card's run. Could not run → the card's run could not be read (the job was started through a trigger).
+- `c89` the card's run could not be read (the job was started through a trigger). Then → the decision: the card's run.
+- `ca5` the card's run could not be read (the job was started through a trigger). Then → the decision: the card's run.
 - `c8a` the decision: the card's run. Then → the decision: the card's note.
 - `ca6` the decision: the card's run. Then → the decision: the card's note.
 - `c8b` the decision: the card's note. Then → the decision: what was decided.

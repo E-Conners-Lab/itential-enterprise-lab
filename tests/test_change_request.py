@@ -213,7 +213,8 @@ def test_the_open_texts_name_the_job_how_it_started_and_never_an_unmapped_person
     notes = page["work_notes"]
     assert "their own words, not checked): window for tests\n" in notes
     assert "until 2026-10-28T02:00:00Z (Tear Down Expired AWS VPN removes it then)" in notes
-    assert f"Started from the AWS VPN page by {build.CHANGE['approver_roles'][owner]}" in notes
+    # a run that can read itself (started on the Platform directly) names who started it, and guesses nothing more
+    assert f"Started on the Platform by {build.CHANGE['approver_roles'][owner]}" in notes
     assert notes.endswith(f"Job: {build.CHANGE['job_url']}{JOB}")
     stranger = _run(build.CHANGE_OPEN_CODE, {"workflow": "Tear Down AWS VPN", "target": "dc1-wan01", "note": "",
                                              "window": "", "job_id": JOB,
@@ -221,7 +222,8 @@ def test_the_open_texts_name_the_job_how_it_started_and_never_an_unmapped_person
     assert "Platform account ...abc123" in stranger["create"]["work_notes"] and "(none)" in stranger["create"]["work_notes"]
     automation = _run(build.CHANGE_OPEN_CODE, {"workflow": "Deploy AWS VPN", "target": "t", "job_id": JOB,
                                                "window": "none", "started": {}})["create"]["work_notes"]
-    assert "by an automation through an Itential trigger" in automation and "with no end time" in automation
+    assert "Started through an Itential trigger: the page, the form or an automation" in automation
+    assert "with no end time" in automation
 
 
 def test_the_decision_names_the_finisher_by_role_or_says_where_it_is_recorded() -> None:
@@ -231,11 +233,16 @@ def test_the_decision_names_the_finisher_by_role_or_says_where_it_is_recorded() 
         "card": {"data": {"metrics": {"user": owner, "end_time": 1793128859245}}},
         "export": {"decision": {"note": "looks right"}}})["work_note"]
     assert read.startswith(f"Approved in Itential Work Center by {build.CHANGE['approver_roles'][owner]} at ")
-    assert read.endswith("UTC: the AWS change. Their note: looks right")
+    assert read.endswith("UTC: the AWS change. Their note: looks right.")
+    no_end = _run(build.CHANGE_DECISION_CODE, {"decision": "approved", "label": "the AWS change", "job_id": JOB,
+                                               "card": {"data": {"metrics": {"user": owner}}},
+                                               "export": {"decision": {"note": "Is this right?"}}})["work_note"]
+    assert no_end.startswith(f"Approved in Itential Work Center by {build.CHANGE['approver_roles'][owner]} (noted ")
+    assert no_end.endswith("Their note: Is this right?")  # no period after a question
     unread = _run(build.CHANGE_DECISION_CODE, {"decision": "rejected", "label": "the router change", "job_id": JOB,
                                                "card": {}, "export": None})["work_note"]
-    assert unread.startswith(f"Rejected in Itential Work Center (the decision is recorded on the card of job "
-                             f"{build.CHANGE['job_url']}{JOB})") and unread.endswith("Their note: (none)")
+    assert unread.startswith(f"Rejected in Itential Work Center (the card on job {build.CHANGE['job_url']}{JOB} "
+                             "records who and when; noted ") and unread.endswith("UTC): the router change. Their note: (none).")
 
 
 @pytest.mark.parametrize("kind,states,code", [("canceled", ["4"], None), ("rejected", ["4"], None),
@@ -247,7 +254,10 @@ def test_the_close_follows_how_the_run_ended(kind: str, states: list, code: str 
     assert got == states
     link = f"Job: {build.CHANGE['job_url']}{JOB}"
     if code:
-        assert out["second"]["close_code"] == code and out["second"]["close_notes"] == f"why it ended {link}"
+        assert out["second"]["close_code"] == code and out["second"]["close_notes"] == f"why it ended. {link}"
     else:
-        want = "Canceled: why it ended" if kind == "canceled" else "Rejected by x. why it ended"
+        want = "Canceled: why it ended." if kind == "canceled" else "Rejected by x. Outcome: why it ended."
+    if kind == "rejected":  # with no decision note the work note still says it was rejected
+        bare = _run(build.CHANGE_CLOSE_CODE, {"kind": "rejected", "reason": "done!", "note": "", "job_id": JOB})
+        assert bare["first"]["work_notes"].startswith("Rejected in Itential Work Center. Outcome: done! Job: ")
         assert out["first"]["work_notes"] == f"{want} {link}" and out["second"] is None
