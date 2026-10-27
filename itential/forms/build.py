@@ -123,11 +123,11 @@ def deploy_aws_vpn() -> dict:
 OPEN_TARGETS = sorted(n for n, t in VERSIONS["aws_vpn"]["targets"].items() if t["window"] == "open")
 
 
-def target_form(key: str, description: str) -> dict:
+def target_form(key: str, description: str, extra: tuple = ()) -> dict:
     return form(VERSIONS["forms"][key], description,
                 [field("target", "Lab edge router", read_only=False, enum=OPEN_TARGETS, required=True,
                        default=OPEN_TARGETS[0] if OPEN_TARGETS else None,
-                       description="The router whose side of the AWS VPN this runs on (open targets only)")])
+                       description="The router whose side of the AWS VPN this runs on (open targets only)"), *extra])
 
 
 def hand_off_aws_vpn() -> dict:
@@ -142,7 +142,10 @@ def verify_aws_vpn() -> dict:
 
 def tear_down_aws_vpn() -> dict:
     return target_form("tear_down_aws_vpn", "Tear the AWS VPN down: the router's AWS block removed under a revert timer "
-                       "and proved gone, then the AWS side destroyed - each after its own Work Center approval (R2)")
+                       "and proved gone, then the AWS side destroyed - each after its own Work Center approval (R2)",
+                       # D9 (R5): the requester's words for the approver and the change request, as Deploy's
+                       (field("change_note", "Change note", read_only=False, required=True, max_length=280,
+                              description="Why, shown to the approver and written to the change request"),))
 
 
 def main(check: bool) -> int:

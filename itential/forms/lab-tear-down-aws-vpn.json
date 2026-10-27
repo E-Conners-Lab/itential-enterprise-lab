@@ -31,6 +31,19 @@
           }
         ],
         "default": "dc1-wan01"
+      },
+      {
+        "nodeId": "node-change_note",
+        "type": "string",
+        "title": "Change note",
+        "description": "Why, shown to the approver and written to the change request",
+        "placeholder": "",
+        "required": true,
+        "readOnly": false,
+        "binding": false,
+        "rel": "item",
+        "targetPointer": "/default",
+        "customKey": "change_note"
       }
     ]
   },
@@ -39,7 +52,8 @@
     "description": "Tear the AWS VPN down: the router's AWS block removed under a revert timer and proved gone, then the AWS side destroyed - each after its own Work Center approval (R2)",
     "type": "object",
     "required": [
-      "target"
+      "target",
+      "change_note"
     ],
     "properties": {
       "target": {
@@ -54,6 +68,13 @@
           "dc1-wan01"
         ],
         "default": "dc1-wan01"
+      },
+      "change_note": {
+        "type": "string",
+        "title": "Change note",
+        "_id": "/properties/change_note",
+        "description": "Why, shown to the approver and written to the change request",
+        "maxLength": 280
       }
     }
   },
@@ -61,8 +82,12 @@
     "target": {
       "ui:placeholder": "Select"
     },
+    "change_note": {
+      "ui:placeholder": "Enter a value"
+    },
     "ui:order": [
       "target",
+      "change_note",
       "*"
     ]
   },

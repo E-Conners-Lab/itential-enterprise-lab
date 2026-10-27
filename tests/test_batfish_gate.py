@@ -142,7 +142,7 @@ def test_the_proof_runs_after_the_render_and_before_the_card() -> None:
     assert tasks["69"]["variables"]["incoming"] == {"obj": "$var.6d.object", "path": ["batfish"], "value": "$var.job.batfish"}
     assert tr["6d"]["69"]["state"] == "success" and tr["69"]["6e"]["state"] == "success"
     # the branded approval (ADR 0077) renders 69's object: NetBox, then Batfish, as rows on the card
-    assert tasks["6f3"]["variables"]["incoming"]["value"] == "$var.69.object"
+    assert build.card_input(tasks, "6f", 3) == "$var.69.object"
     assert tasks["6f"]["variables"]["incoming"]["body"] == "$var.6f5.return_data"
 
 
@@ -152,7 +152,7 @@ def test_a_failed_proof_ends_hand_off_with_nothing_sent() -> None:
     assert tr["f6"] == {"f9": {"state": "success", "type": "standard"}}
     assert tasks["f9"]["variables"]["incoming"]["newSubstr"] == "$var.job.batfish_message"
     assert tasks["f9"]["variables"]["outgoing"]["replacedString"] == "$var.job.error"
-    assert tr["f9"] == {"workflow_end": {"state": "success", "type": "standard"}}
+    assert tr["f9"] == {build.CHANGE_ENTRIES["canceled"]: {"state": "success", "type": "standard"}}  # its change: canceled
     reached = _reach(HAND, "f6")
     assert "6f" not in reached and "7c" not in reached  # no card, no push
     # the error names the failed checks and says nothing was sent (batfish_summary's message)

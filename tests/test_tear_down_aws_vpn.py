@@ -123,7 +123,7 @@ def test_the_router_is_removed_and_proved_before_aws_is_touched() -> None:
     path = ["1e", "17", "19", "13", "14", "2c", "3b", "33", "4b", "4d", "4e", "5b", "5f", "6e"]
     for a, b in zip(path, path[1:]):
         assert b in _reach(a), (a, b)
-    assert TR["2c"]["a0"]["state"] == "failure" and TR["5f"]["a2"]["state"] == "failure"  # Reject on each card
+    assert build.card_sides(TR, "2c")[1] == "a0" and build.card_sides(TR, "5f")[1] == "a2"  # Reject on each card
 
 
 @pytest.mark.parametrize("start", ["a0", "b0", "b1", "b2", "b3", "b4", "c0", "c2", "c3", "c4", "4f"])
@@ -144,7 +144,7 @@ def test_the_destroy_plan_has_no_variables_and_the_apply_is_the_approved_plan() 
     assert TASKS["5a"]["variables"]["incoming"]["text"] == build.DESTROY_PLAN_PARAMS
     assert TASKS["6a"]["variables"]["incoming"]["obj"] == "$var.5b.result"  # the SHA-256 of the plan the card showed
     assert TASKS["6b"]["variables"]["incoming"]["str"] == build.APPLY_TPL or build.APPLY_TPL in json.dumps(TASKS["6b"])
-    assert TASKS["5f3"]["variables"]["incoming"]["value"] == "$var.job.destroy_plan"  # the page's body (ADR 0077)
+    assert build.card_input(TASKS, "5f", 3) == "$var.job.destroy_plan"  # the page's body (ADR 0077)
     assert TASKS["5f"]["variables"]["incoming"]["body"] == "$var.5f5.return_data"
     assert TASKS["a5"]["variables"]["incoming"]["serviceName"] == "terraform-run"  # a rejected plan is discarded
 

@@ -83,5 +83,9 @@ def test_arrows_stay_clear_of_the_tasks(file: str) -> None:
 # ADR 0077 (2026-10-07): the branded approval adds five helper tasks (header, message, body, render, HTML) in front of
 # Hand Off's approval; the layout engine places them the same for every offset tried (eight measured), 9 at best. Same
 # rule: canvas only, the job runs the same, the approval keeps its id and both edges.
-THROUGH_ALLOWED = {"hand-off-aws-vpn.json": 9, "tear-down-expired-aws-vpn.json": 4, "diagnose-aws-vpn-outage.json": 13,
+# R5 (ADR 0085, 2026-10-27): every ending of Deploy, Hand Off and Tear Down after the change request opens now meets at
+# one of the change's four close entries (canceled, rejected, failed, successful) instead of workflow_end, and each card
+# gains its two decision chains: Deploy 5, Hand Off 14, Tear Down 11 as measured. Same rule.
+THROUGH_ALLOWED = {"hand-off-aws-vpn.json": 14, "deploy-aws-vpn.json": 5, "tear-down-aws-vpn.json": 11,
+                   "tear-down-expired-aws-vpn.json": 4, "diagnose-aws-vpn-outage.json": 13,
                    "diagnose-fabric-bgp-outage.json": 6, "break-fabric-bgp.json": 4}

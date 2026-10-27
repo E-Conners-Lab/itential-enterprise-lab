@@ -87,12 +87,13 @@ def test_the_push_is_reached_only_through_an_approval() -> None:
     push = [tid for tid, t in tasks.items() if t["name"] == "runService"
             and t["variables"]["incoming"]["serviceName"] == "lab-edge-push"]
     assert push == ["7c"]
-    assert tasks["6f"]["name"] == "InteractiveHTML" and tr["6f"]["7a"]["state"] == "success"
-    # every way into the push chain comes from the approval's success edge
+    assert tasks["6f"]["name"] == "InteractiveHTML" and build.card_sides(tr, "6f")[0] == "7a"
+    # every way into the push chain comes from the approval's own chain: the change request moved to Implement (R5)
     into = {src for src, out in tr.items() if "7a" in out}
-    assert into == {"6f"}
-    # reject: ends with rejected = true and nothing sent; the push is not reachable from there
-    assert tr["6f"]["a0"]["state"] == "failure" and "7c" not in _reach(HAND, "a0")
+    assert into == {"caf"} and tasks["caf"]["name"] == "updateStandardChange"
+    # reject: ends with rejected = true and nothing sent; the push is not reachable from the reject edge at all
+    reject = next(d for d, e in tr["6f"].items() if e["state"] == "failure")
+    assert build.card_sides(tr, "6f")[1] == "a0" and "7c" not in _reach(HAND, "a0") and "7c" not in _reach(HAND, reject)
     assert tasks["a2"]["variables"]["incoming"]["input"].endswith("nothing was sent to the router")
 
 
@@ -110,7 +111,7 @@ def test_the_card_shows_the_masked_block_and_never_a_key() -> None:
     tasks = _tasks(HAND)
     assert tasks["5e"]["variables"]["incoming"]["query"] == "result.stdout_json.block_masked"
     assert tasks["6c"]["variables"]["incoming"]["value"] == "$var.job.block_masked"
-    assert tasks["6f3"]["variables"]["incoming"]["value"] == "$var.69.object"  # NetBox, then Batfish (R7), on the card
+    assert build.card_input(tasks, "6f", 3) == "$var.69.object"  # NetBox, then Batfish (R7), on the card
     assert tasks["6f"]["variables"]["incoming"]["body"] == "$var.6f5.return_data"
     assert "never shown" in build.APPROVAL_MESSAGE
     # only lab-edge-push is bound to the key aliases (versions.yaml), and no task names a Vault path or a key
@@ -121,8 +122,8 @@ def test_the_card_shows_the_masked_block_and_never_a_key() -> None:
 def test_every_failure_before_the_push_ends_saying_nothing_was_sent() -> None:
     tasks, tr = _tasks(HAND), HAND["transitions"]
     before = ("b0", "b1", "b2", "b3", "b4", "b5", "b6", "b7", "b8", "b9")
-    for b in before:
-        assert list(tr[b]) == ["workflow_end"], b
+    for b in before:  # each ends through the change request: canceled before the card, failed after it (b9)
+        assert list(tr[b]) == [build.CHANGE_ENTRIES["failed" if b == "b9" else "canceled"]], b
         assert tasks[b]["variables"]["incoming"]["input"].endswith("nothing was sent to the router"), b
         assert tasks[b]["variables"]["outgoing"]["output"] == "$var.job.error"
     # changed is false from the start; only the push's own answer changes it
@@ -148,7 +149,7 @@ def test_after_the_push_every_outcome_says_what_the_router_went_through() -> Non
     assert tasks["71"]["variables"]["outgoing"]["return_data"] == "$var.job.router_state"
     assert tr["72"] == {"8a": {"state": "success", "type": "standard"}, "73": {"state": "failure", "type": "standard"}}
     assert tasks["72"]["variables"]["incoming"]["evaluation_groups"][0]["evaluations"][0]["query"] == "stdout_json.state"
-    assert tasks["73"]["variables"]["outgoing"]["return_data"] == "$var.job.error" and "workflow_end" in tr["73"]
+    assert tasks["73"]["variables"]["outgoing"]["return_data"] == "$var.job.error" and build.CHANGE_ENTRIES["failed"] in tr["73"]
     # a push answer that cannot be read: changed = true (the router may differ), then "check the router"
     assert tr["7e"]["c5"]["state"] == "error" and tr["71"]["c5"]["state"] == "error" and tr["73"]["c5"]["state"] == "error"
     assert tr["8a"] == {"e0": {"state": "success", "type": "standard"}}  # the verify steps follow the push
