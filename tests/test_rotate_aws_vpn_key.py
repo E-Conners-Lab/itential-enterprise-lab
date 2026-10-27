@@ -301,5 +301,5 @@ def test_the_gateway_runs_a_commit_with_reload_restore_and_prune() -> None:
     # (cdp #37, R10's fabric-bgp), 02b62f1 (cdp #38, R10 PR C: plan and the drill), e7a8648 (cdp #39) and acc9646
     # (cdp #40/#41: the AS and MD5 drills), cfa2bea (cdp #42, R7's batfish-check), 71d5223 (cdp #43: the MD5 drill resets the neighbor)
     # 4a11f3d (cdp #44/#45: batfish-check's scrub and deadline, the drill's abort), d2e2a46 (cdp #46: restconf-get)
-    # and 10ead8d (cdp #47: restconf-get's three routers) are its descendants
-    assert VERSIONS["terraform_run"]["repository"]["reference"] == "10ead8db9384758d4fd8201c07d67800272896fa"
+    # 10ead8d (cdp #47: restconf-get's three routers) and d269f20 (cdp #48: the plan's review) are its descendants
+    assert VERSIONS["terraform_run"]["repository"]["reference"] == "d269f2077486471d26ca01c5a343dd16f986d587"
