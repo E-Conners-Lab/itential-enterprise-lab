@@ -201,7 +201,7 @@ def test_a_fenced_json_line_is_read_and_an_unreadable_dotted_quad_is_no_address(
 def test_a_review_that_cannot_be_used_says_review_unavailable_and_the_card_still_carries_the_plan() -> None:
     f = facts(CHURN)
     cases = {
-        "the reviewer did not run": {},
+        "the reviewer session ended without an answer (canceled, failed or not started)": {},
         "the reviewer did not finish (CANCELED)": answer({"text": "x"}, status="CANCELED"),
         "the reviewer did not finish (FAILED)": {"sessionId": "s", "sessionStatus": "FAILED"},
         "the reviewer's answer was not the JSON line": {"sessionStatus": "COMPLETE", "lastMessage": "Looks fine to me."},
@@ -218,7 +218,9 @@ def test_a_review_that_cannot_be_used_says_review_unavailable_and_the_card_still
 
 def test_the_card_renders_the_review_first_then_the_estimate_then_every_change() -> None:
     out = review(facts(CHURN), answer({"text": "Replaces the <b>instance</b>.", "addresses": [INSTANCE]}))
-    page = build.approval_card({"header": "Approve the AWS change", "message": "m", "body": out["card"]})["html"]
+    # the Platform hands the body over with its keys sorted (measured on Deploy 1a8c577d): the order holds anyway
+    body = dict(sorted(out["card"].items()))
+    page = build.approval_card({"header": "Approve the AWS change", "message": "m", "body": body})["html"]
     at = [page.index(label) for label in ("Plan review (advisory", "Estimated cost", "Every change in the plan")]
     assert at == sorted(at) and "Replaces the &lt;b&gt;instance&lt;/b&gt;." in page and "<b>instance" not in page
     assert '"review"' not in page  # the raw extract stays in the job's plan variable, off the card (E.1 finding)
