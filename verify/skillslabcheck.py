@@ -13,7 +13,9 @@ the Platform it is checking).
                   the approver may start none of the agent tools; each scratch automation's gbac as versions.yaml says
     forbidden  4  `write memory`, `do copy running-config startup-config` and `int gi1` (the management path)
                   refused before any card
-    restconf   5  an allowlisted path returns JSON; the username path is refused by the gate; no password in the job
+    restconf   5  an allowlisted path returns JSON; so does the routing table, every scratch loopback in it, and one
+                  route read by its key is the far loopback learned through OSPF, which the router confirms to
+                  judge; the username path is refused by the gate; no password in the job
     hold       3  a push waits on its card, svc-eval cannot claim it, the router is unchanged; the approver finds the
                   card itself and releases it, and the change is on the router; a second push rejected leaves it off;
                   then the baseline is restored
@@ -60,6 +62,11 @@ WF = VERSIONS["workflows"]
 ROUTE = {k: OM[k]["endpoint"]["route"] for k in SKILLS["workflows"]}
 PROBE_DEVICE = "skl-r1"
 INTERFACES = "/restconf/data/Cisco-IOS-XE-interfaces-oper:interfaces"
+ROUTES = "/restconf/data/ietf-routing:routing-state/routing-instance=default/ribs/rib=ipv4-default/routes"
+# the standing OSPF baseline (topology/skills-lab.yaml) puts every scratch loopback in each router's table; the probe
+# router learns skl-r3's through OSPF
+TOPOLOGY = yaml.safe_load((ROOT / "topology" / "skills-lab.yaml").read_text())
+FAR_ROUTER = "skl-r3"
 PROBE_PROCEDURE = ("Procedure (a probe of the lab's governed path, ADR 0084): 1. Read the operational interface list of "
                    f"{PROBE_DEVICE} with Get RESTCONF Data from a Scratch Device, path {INTERFACES}. 2. Count the "
                    "interfaces whose name starts with GigabitEthernet. Task: report that count. Finish with a final "
@@ -216,6 +223,24 @@ def restconf() -> None:
     names = [i.get("name") for i in (data.get("Cisco-IOS-XE-interfaces-oper:interfaces") or {}).get("interface", [])]
     assert d.get("status") == "complete" and "GigabitEthernet1" in names, f"job {d['_id']}: {names}"
     print(f"job {d['_id']}: {INTERFACES} on {PROBE_DEVICE} returned JSON ({len(names)} interfaces)")
+    # the routing table (cdp #49): the whole table, then one route by its key, the `/` of the prefix sent as %2F
+    loopbacks = {f"{n['loopback']}/32" for n in TOPOLOGY["nodes"].values()}
+    t = run(evl, "scratch_restconf", {"device": PROBE_DEVICE, "path": ROUTES})
+    table = ((t.get("variables") or {}).get("data") or {}).get("ietf-routing:routes") or {}
+    prefixes = {r.get("destination-prefix") for r in table.get("route", [])}
+    assert t.get("status") == "complete" and loopbacks <= prefixes, f"job {t['_id']}: {sorted(prefixes)}"
+    print(f"job {t['_id']}: {ROUTES} on {PROBE_DEVICE} returned JSON ({len(prefixes)} routes, every scratch loopback)")
+    far = f"{TOPOLOGY['nodes'][FAR_ROUTER]['loopback']}/32"
+    keyed = f"{ROUTES}/route={far.replace('/', '%2F')}"
+    k = run(evl, "scratch_restconf", {"device": PROBE_DEVICE, "path": keyed})
+    route = ((k.get("variables") or {}).get("data") or {}).get("ietf-routing:route") or []
+    assert k.get("status") == "complete" and [r.get("destination-prefix") for r in route] == [far], \
+        f"job {k['_id']}: {route}"
+    assert route[0].get("source-protocol") == "ietf-ospf:ospfv2", f"job {k['_id']}: {route[0]}"
+    assert judge(PROBE_DEVICE, keyed) == 200, f"{PROBE_DEVICE}: the router does not answer {far} to judge"
+    hop = route[0].get("next-hop") or {}
+    print(f"job {k['_id']}: route={far} alone, through OSPF ({hop.get('outgoing-interface')} via "
+          f"{hop.get('next-hop-address')}); the router answers it to judge too")
     before = evl.count(WF["scratch_restconf"])
     code, job, _ = evl.start(ROUTE["scratch_restconf"],
                              {"device": PROBE_DEVICE, "path": "/restconf/data/Cisco-IOS-XE-native:native/username"})

@@ -473,6 +473,8 @@ def test_the_probes_cover_every_criterion_as_the_runners_accounts_and_read_the_r
     assert 'ACCESS["run"]["password_env"]' in text and 'ACCESS["approve"]["password_env"]' in text
     # the outcome on the router is read directly, as judge, on a pinned connection - never through the Platform
     assert 'presented == node["cert_sha256"]' in text and "judge:{os.environ['SKILLS_LAB_JUDGE_PASSWORD']}" in text
+    # the routing table is read through the Platform as the runner reads it, the far loopback by its key (cdp #49)
+    assert f'ROUTES = "{CDP_ALLOWLIST[-1]}"' in text and "route={far.replace('/', '%2F')}" in text
     # cards are released the way the runner releases them: Work Center claim, then complete
     assert "/claim" in text and "/complete" in text and "/tasks/" not in text
     assert 'choices=["prod"]' in text, "production only"
