@@ -133,12 +133,31 @@ def test_deploy_discards_the_approved_plan_when_servicenow_refuses_implement() -
     assert "8c" in _reach(tr, "74") and not _reach(tr, "c83") & {"3e", "4d"}
 
 
-def test_tear_downs_second_card_only_notes_the_change() -> None:
+def test_tear_downs_second_card_notes_the_change_either_way() -> None:
+    """The AWS destroy card comes after the router change, so neither decision ends the change: an approval and a
+    rejection each add a work note (the decision, the card's note), and neither moves the state."""
     tasks, tr = CHANGED["tear-down-aws-vpn.json"]["tasks"], CHANGED["tear-down-aws-vpn.json"]["transitions"]
-    states = [json.dumps(t["variables"]["incoming"].get("requestBodyPayload")) for tid, t in tasks.items()
-              if tid.startswith("cb") and t["name"] == "updateStandardChange"]
-    assert states == ['"$var.cbd.object"']  # one work note, no state move
+    updates = {tid: t["variables"]["incoming"]["requestBodyPayload"] for tid, t in tasks.items()
+               if tid[:2] in ("cb", "c9") and t["name"] == "updateStandardChange"}
+    assert updates == {"cbe": "$var.cbd.object", "c9d": "$var.c9c.object"}
+    for body in ("cbd", "c9c"):
+        assert tasks[body]["variables"]["incoming"] == {"obj": {}, "path": ["work_notes"],
+                                                         "value": "$var.job.change_approval_note"}
+    approve, reject = (next(d for d, e in tr["5f"].items() if e["state"] == s) for s in ("success", "failure"))
+    assert "cbe" in _reach(tr, approve) and "c9d" in _reach(tr, reject) and "cbe" not in _reach(tr, reject)
     assert build.card_sides(tr, "5f") == ("6a", "a2")
+
+
+def test_tear_downs_cards_show_the_requesters_note() -> None:
+    tasks = CHANGED["tear-down-aws-vpn.json"]["tasks"]
+    for card, prep in (("2c", "c8"), ("5f", "c9")):
+        assert tasks[f"{card}2"]["variables"]["incoming"]["value"] == f"$var.{prep}5.replacedString"
+        note = tasks[f"{prep}5"]["variables"]["incoming"]
+        assert note["substr"] == "__N__" and note["newSubstr"] == "$var.job.change_note"
+        assert "The requester's note (their own words, not checked): __N__" in tasks[f"{prep}0"]["variables"]["incoming"]["str"]
+    # Deploy's card already carries its note in its own message, and Hand Off has none: no second copy
+    for name, card in (("deploy-aws-vpn.json", "2b"), ("hand-off-aws-vpn.json", "6f")):
+        assert "__N__" not in json.dumps(CHANGED[name]["tasks"]), name
 
 
 @pytest.mark.parametrize("name", sorted(CHANGED))
@@ -190,7 +209,7 @@ def test_the_change_tasks_are_the_same_in_all_three() -> None:
     own = {"ce4", "ce5", "ce6", "ce7"}
     first, *rest = CHANGED.values()
     shared = [tid for tid in first["tasks"] if tid[:2] in ("ce", "cd", "cc") and len(tid) == 3]
-    assert len(shared) == 16 + 16 + 6
+    assert len(shared) == 13 + 16 + 6
     for wf in rest:
         for tid in shared:
             a, b = strip(first["tasks"][tid]), strip(wf["tasks"][tid])
@@ -202,47 +221,43 @@ def test_the_change_tasks_are_the_same_in_all_three() -> None:
             assert first["transitions"][tid] == wf["transitions"][tid], (wf["name"], tid)
 
 
-def test_the_open_texts_name_the_job_how_it_started_and_never_an_unmapped_person() -> None:
-    owner = next(iter(build.CHANGE["approver_roles"]))
+def test_the_open_texts_name_the_job_and_the_ways_in_and_no_one() -> None:
     page = _run(build.CHANGE_OPEN_CODE, {"workflow": "Deploy AWS VPN", "target": "the AWS side (lab VPC)",
-                                         "note": "  window\nfor  tests ", "window": "2026-10-28T02:00:00Z", "job_id": JOB,
-                                         "started": {"data": {"description": "(Started from Operations Manager) API "
-                                                                             "trigger", "created_by": owner}}})["create"]
+                                         "note": "  window\nfor  tests ", "window": "2026-10-28T02:00:00Z",
+                                         "job_id": JOB})["create"]
     assert page["short_description"] == f"Deploy AWS VPN: the AWS side (lab VPC) (itential-enterprise-lab, job {JOB})"
     assert page["assignment_group"] == build.SNOW_GROUP
     notes = page["work_notes"]
     assert "their own words, not checked): window for tests\n" in notes
     assert "until 2026-10-28T02:00:00Z (Tear Down Expired AWS VPN removes it then)" in notes
-    # a run that can read itself (started on the Platform directly) names who started it, and guesses nothing more
-    assert f"Started on the Platform by {build.CHANGE['approver_roles'][owner]}" in notes
+    # a trigger-started run cannot read itself, so the note names the ways in and the job, which records who
+    assert "Started in Itential (the job records who and how)" in notes
     assert notes.endswith(f"Job: {build.CHANGE['job_url']}{JOB}")
-    stranger = _run(build.CHANGE_OPEN_CODE, {"workflow": "Tear Down AWS VPN", "target": "dc1-wan01", "note": "",
-                                             "window": "", "job_id": JOB,
-                                             "started": {"data": {"description": "x", "created_by": "f" * 18 + "abc123"}}})
-    assert "Platform account ...abc123" in stranger["create"]["work_notes"] and "(none)" in stranger["create"]["work_notes"]
-    automation = _run(build.CHANGE_OPEN_CODE, {"workflow": "Deploy AWS VPN", "target": "t", "job_id": JOB,
-                                               "window": "none", "started": {}})["create"]["work_notes"]
-    assert "Started through an Itential trigger: the page, the form or an automation" in automation
-    assert "with no end time" in automation
+    bare = _run(build.CHANGE_OPEN_CODE, {"workflow": "Tear Down AWS VPN", "target": "dc1-wan01", "note": "",
+                                         "window": "none", "job_id": JOB})["create"]["work_notes"]
+    assert "(none)" in bare and "with no end time" in bare
 
 
-def test_the_decision_names_the_finisher_by_role_or_says_where_it_is_recorded() -> None:
-    owner = next(iter(build.CHANGE["approver_roles"]))
-    read = _run(build.CHANGE_DECISION_CODE, {
-        "decision": "approved", "label": "the AWS change", "job_id": JOB,
-        "card": {"data": {"metrics": {"user": owner, "end_time": 1793128859245}}},
-        "export": {"decision": {"note": "looks right"}}})["work_note"]
-    assert read.startswith(f"Approved in Itential Work Center by {build.CHANGE['approver_roles'][owner]} at ")
-    assert read.endswith("UTC: the AWS change. Their note: looks right.")
-    no_end = _run(build.CHANGE_DECISION_CODE, {"decision": "approved", "label": "the AWS change", "job_id": JOB,
-                                               "card": {"data": {"metrics": {"user": owner}}},
-                                               "export": {"decision": {"note": "Is this right?"}}})["work_note"]
-    assert no_end.startswith(f"Approved in Itential Work Center by {build.CHANGE['approver_roles'][owner]} (noted ")
-    assert no_end.endswith("Their note: Is this right?")  # no period after a question
-    unread = _run(build.CHANGE_DECISION_CODE, {"decision": "rejected", "label": "the router change", "job_id": JOB,
-                                               "card": {}, "export": None})["work_note"]
-    assert unread.startswith(f"Rejected in Itential Work Center (the card on job {build.CHANGE['job_url']}{JOB} "
-                             "records who and when; noted ") and unread.endswith("UTC): the router change. Their note: (none).")
+@pytest.mark.parametrize("name", sorted(CHANGED))
+def test_no_change_request_task_reads_the_job_back(name: str) -> None:
+    """A trigger-started run (the page's, the form's) answers 401 to getJob on itself (measured 2026-10-27): the reads
+    are gone rather than left failing on every job."""
+    tasks = CHANGED[name]["tasks"]
+    assert not [t for t, v in tasks.items() if v.get("name") in ("getJob", "getTask")]
+    assert "approver_roles" not in build.CHANGE
+
+
+def test_the_decision_note_says_what_was_decided_and_where_the_card_records_who() -> None:
+    note = _run(build.CHANGE_DECISION_CODE, {"decision": "approved", "label": "the AWS change", "job_id": JOB,
+                                             "export": {"decision": {"note": "looks right"}}})["work_note"]
+    assert note.startswith(f"Approved in Itential Work Center (the card on job {build.CHANGE['job_url']}{JOB} records "
+                           "who and when; noted ")
+    assert note.endswith("UTC): the AWS change. Their note: looks right.")
+    asked = _run(build.CHANGE_DECISION_CODE, {"decision": "rejected", "label": "the router change", "job_id": JOB,
+                                              "export": {"decision": {"note": "Is this right?"}}})["work_note"]
+    assert asked.startswith("Rejected in Itential Work Center") and asked.endswith("Their note: Is this right?")
+    empty = _run(build.CHANGE_DECISION_CODE, {"decision": "rejected", "label": "x", "job_id": JOB, "export": None})
+    assert empty["work_note"].endswith("Their note: (none).")
 
 
 @pytest.mark.parametrize("kind,states,code", [("canceled", ["4"], None), ("rejected", ["4"], None),

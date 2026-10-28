@@ -11,10 +11,10 @@ What each workflow does from start to end, for someone who is about to run one o
 | [Run Show Command on All Devices](run-show-command-on-all-devices.md) | 6 | 19 | 0 |
 | [Push Configuration with Approval](push-configuration-with-approval.md) | 8 | 28 | 1 |
 | [Push Configuration with Revert Timer](push-configuration-with-revert-timer.md) | 8 | 53 | 1 |
-| [Deploy AWS VPN](deploy-aws-vpn.md) | 14 | 139 | 2 |
+| [Deploy AWS VPN](deploy-aws-vpn.md) | 14 | 126 | 2 |
 | [Verify AWS VPN](verify-aws-vpn.md) | 7 | 36 | 0 |
-| [Hand Off AWS VPN](hand-off-aws-vpn.md) | 17 | 190 | 2 |
-| [Tear Down AWS VPN](tear-down-aws-vpn.md) | 16 | 195 | 3 |
+| [Hand Off AWS VPN](hand-off-aws-vpn.md) | 17 | 177 | 2 |
+| [Tear Down AWS VPN](tear-down-aws-vpn.md) | 16 | 177 | 3 |
 | [Check AWS Drift](check-aws-drift.md) | 3 | 11 | 1 |
 | [Get AWS VPN Status](get-aws-vpn-status.md) | 2 | 8 | 0 |
 | [Diagnose AWS VPN Outage](diagnose-aws-vpn-outage.md) | 12 | 144 | 2 |

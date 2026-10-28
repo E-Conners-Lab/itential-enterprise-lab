@@ -3309,7 +3309,7 @@ def set_key(summary: str, obj_ref, key: str, value_ref: str, x: int, y: int = 0)
 # --- R5: the ServiceNow change request of every person-started AWS VPN change (ADR 0085) ---------------------------
 # Deploy, Hand Off and Tear Down each open one standard change from the "Lab AWS VPN change" template right after the
 # input check, before any plan, output read or device read, and walk it with the Work Center card: approved ->
-# Scheduled -> Implement with a note naming the approver; rejected -> Canceled; ended before any approval ->
+# Scheduled -> Implement with the decision's note; rejected -> Canceled; ended before any approval ->
 # Canceled with the reason; after an approval -> Review -> Closed successful or unsuccessful. ServiceNow refusing the
 # create stops the run (fail closed), refusing Implement applies nothing, refusing a later update leaves the change
 # done and puts a "Fix change request by hand" task in Work Center. with_change_request writes the same tasks into
@@ -3323,20 +3323,11 @@ CHANGE_END_TASKS = ("cdd", "cdf", "cc4", "cc5", "cef")  # the change's own ways 
 def change_open(d: dict) -> dict:
     """The change's create body: short description `<Workflow>: <target> (itential-enterprise-lab, job <id>)` (the
     request tools find the CHG by that job id) and a first work note with the workflow, target, the requester's note,
-    the planned window, how the run was started and the job link. `started` is the job's own record (getJob), {} when
-    the run cannot read itself (any trigger-started run: the page's, the form's, an automation's). Pure: runCode runs
-    this source."""
+    the planned window, how the run was started and the job link. A trigger-started run (the page's, the form's, an
+    automation's) cannot read its own record (measured 2026-10-27), so the note names the ways in and points at the job,
+    which records who started it. Pure: runCode runs this source."""
     job = str(d.get("job_id") or "")
     workflow, target = str(d.get("workflow") or ""), str(d.get("target") or "")
-    record = (d.get("started") or {}).get("data") or {}
-    how, who = str(record.get("description") or ""), record.get("created_by")
-    if not record:  # every trigger-started run, the page's too (measured 2026-10-27: getJob on its own id is 401)
-        started = ("through an Itential trigger: the page, the form or an automation (this run cannot read its own "
-                   "record to say which)")
-    else:  # only a run started on the Platform directly can read itself; its description says nothing more
-        started = "on the Platform"
-    if who and record:
-        started += " by " + ((d.get("roles") or {}).get(who) or "Platform account ..." + str(who)[-6:])
     window = str(d.get("window") or "")
     if window == "none":
         window = "from now, with no end time (it stays up until Tear Down)"
@@ -3346,28 +3337,19 @@ def change_open(d: dict) -> dict:
         window = "now, while the job runs"
     note = " ".join(str(d.get("note") or "").split()) or "(none)"
     work = (f"Workflow: {workflow}\nTarget: {target}\nThe requester's note (their own words, not checked): {note}\n"
-            f"Planned window: {window}\nStarted {started}\nJob: {d.get('job_url', '')}{job}")
+            f"Planned window: {window}\nStarted in Itential (the job records who and how)\nJob: {d.get('job_url', '')}{job}")
     return {"create": {"short_description": f"{workflow}: {target} (itential-enterprise-lab, job {job})",
                        "assignment_group": d.get("group"), "work_notes": work}}
 
 
 def change_decision(d: dict) -> dict:
-    """A card's decision as the change's work note: who decided (the card task's finisher, by role) and when, and
-    the note they wrote. `card` is the card task's own record (getTask), {} when the run could not read it (it was
-    started through a trigger): then the note says the card records who and when. Pure: runCode runs this source."""
+    """A card's decision as the change's work note: what was decided, the note the person wrote on the card, and where
+    the card (which records who and when) is. A trigger-started run cannot read its card back (measured 2026-10-27),
+    so the note does not name anyone. Pure: runCode runs this source."""
     from datetime import datetime, timezone
 
-    metrics = ((d.get("card") or {}).get("data") or {}).get("metrics") or {}
-    user, end = metrics.get("user"), metrics.get("end_time")
-    who = (d.get("roles") or {}).get(user) or ("Platform account ..." + str(user)[-6:] if user else "")
     link = f"{d.get('job_url', '')}{d.get('job_id', '')}"
-    now = f"{datetime.now(timezone.utc):%Y-%m-%d %H:%M} UTC"
-    if not metrics:  # a trigger-started run cannot read its card: the card records who and when
-        when = f"(the card on job {link} records who and when; noted {now})"
-    else:
-        at = f"at {datetime.fromtimestamp(end / 1000, timezone.utc):%Y-%m-%d %H:%M} UTC" \
-            if isinstance(end, (int, float)) else f"(noted {now})"
-        when = f"by {who} {at}" if who else f"{at} (the card on job {link} records who)"
+    when = f"(the card on job {link} records who and when; noted {datetime.now(timezone.utc):%Y-%m-%d %H:%M} UTC)"
 
     def written(x):  # the card's note box, wherever the export nests it
         if isinstance(x, dict):
@@ -3413,7 +3395,7 @@ def _pure_code(fn, consts: dict) -> str:
             + "({**json.loads(sys.stdin.read() or \"{}\"), **json.loads(%r)})))\n" % json.dumps(consts))
 
 
-_CHANGE_CONSTS = {"roles": CHANGE["approver_roles"], "job_url": CHANGE["job_url"]}
+_CHANGE_CONSTS = {"job_url": CHANGE["job_url"]}
 CHANGE_OPEN_CODE = _pure_code(change_open, {**_CHANGE_CONSTS, "group": SNOW_GROUP})
 CHANGE_DECISION_CODE = _pure_code(change_decision, _CHANGE_CONSTS)
 CHANGE_CLOSE_CODE = _pure_code(change_close, _CHANGE_CONSTS)
@@ -3424,21 +3406,22 @@ def _publish(t: dict, out: str, job_var: str) -> dict:
     return t
 
 
-def _decision_chain(c: dict, decision: str, ids: tuple) -> dict:
-    """One side of a card: the decision as data, the card's own run read back (who finished it, when), the work note
-    written on the runner into change_approval_note; ids = (decision, getJob, query, getTask, unread, the four keys,
-    runCode, note query, fallback note). An approval and a rejection each get their own chain."""
-    d, gj, q, gt, unread, k1, k2, k3, k4, rc, nq, fb = ids
+def _chain_ids(c: dict, decision: str) -> tuple:
+    """A decision chain's task ids, one place for both the tasks and their edges: (decision, the three keys, runCode,
+    note query, fallback note). Approve uses the card's `ids` prefix, reject its `prep` prefix; neither shares a task."""
+    p, q = c["ids"], c["prep"]
+    if decision == "approved":
+        return f"{p}0", f"{p}2", f"{p}3", f"{p}4", f"{p}5", f"{p}6", f"{q}4"
+    return f"{q}6", f"{q}7", f"{q}8", f"{q}9", f"{q}a", f"{q}b", f"{p}1"
+
+
+def _decision_chain(c: dict, decision: str) -> dict:
+    """One side of a card: the decision as data, with the card's note, and the work note written on the runner into
+    change_approval_note. An approval and a rejection each get their own chain (no task joins the two)."""
+    d, k2, k3, k4, rc, nq, fb = _chain_ids(c, decision)
     return {
         d: set_key(f"the decision: {decision}", {}, "decision", decision, x=0),
-        gj: task("getJob", "OperationsManager", f"who {decision} it: this job's record",
-                 {"id": "$var.job.change_job_id", "queryParameters": {}}, {"job": None}),
-        q: jq("the card's run", f"$var.{gj}.job", f"data.tasks.{c['card']}.iterations[0]", x=0),
-        gt: task("getTask", "OperationsManager", f"who {decision} it: the card's run (its finisher)",
-                 {"id": f"$var.{q}.return_data", "queryParameters": {}}, {"task": "$var.job.change_card"}),
-        unread: empty("the card's run could not be read (the job was started through a trigger)", "change_card", x=0),
-        k1: set_key("the decision: the card's run", f"$var.{d}.object", "card", "$var.job.change_card", x=0),
-        k2: set_key("the decision: the card's note", f"$var.{k1}.object", "export", f"$var.job.{c['var']}_decision", x=0),
+        k2: set_key("the decision: the card's note", f"$var.{d}.object", "export", f"$var.job.{c['var']}_decision", x=0),
         k3: set_key("the decision: what was decided", f"$var.{k2}.object", "label", c["label"], x=0),
         k4: set_key("the decision: the job id", f"$var.{k3}.object", "job_id", "$var.job.change_job_id", x=0),
         rc: run_code("the decision's work note (Python on the runner)", CHANGE_DECISION_CODE, f"$var.{k4}.object",
@@ -3450,16 +3433,11 @@ def _decision_chain(c: dict, decision: str, ids: tuple) -> dict:
     }
 
 
-def _decision_edges(go, ids: tuple, then: str) -> None:
-    """A decision chain's edges (ids as in _decision_chain), ending at `then`; a note that cannot be made falls back."""
+def _decision_edges(go, c: dict, decision: str, then: str) -> None:
+    """A decision chain's edges, ending at `then`; a note that cannot be made falls back."""
     ok, fail, err = "success", "failure", "error"
-    d, gj, q, gt, unread, k1, k2, k3, k4, rc, nq, fb = ids
-    go(d, **{gj: ok})
-    go(gj, **{q: ok, unread: err})
-    go(q, **{gt: ok, unread: fail})
-    go(gt, **{k1: ok, unread: err})
-    go(unread, **{k1: ok})
-    go(k1, **{k2: ok})
+    d, k2, k3, k4, rc, nq, fb = _chain_ids(c, decision)
+    go(d, **{k2: ok})
     go(k2, **{k3: ok})
     go(k3, **{k4: ok})
     go(k4, **{rc: ok})
@@ -3471,7 +3449,9 @@ def _decision_edges(go, ids: tuple, then: str) -> None:
 def change_request_section(name: str, target: str, note_ref: str, window: str, cards: list[dict]) -> dict:
     """The change's tasks for one workflow: the open (ce*), each card's decision (its two-letter `ids` prefix; `prep`
     the card's change number), the close (cd*) and the fix-by-hand task (cc*). `target`, `note_ref` and `window` are
-    refs or literals; each card: card, var, label, mode (implement: Scheduled -> Implement; note: a work note only)."""
+    refs or literals; each card: card, var, label, mode (implement: Scheduled -> Implement; note: a work note on
+    either decision, the rejection's in prep c-e), and optional note_ref (the requester's note appended to the card's
+    message, prep 5) for a card whose own message does not carry it. Approve uses ids 0, 2-6, reject prep 6-b."""
     s = {
         **step("the change request: a ServiceNow standard change opened before anything is planned or read (R5); "
                "if ServiceNow refuses, the run stops with nothing done"),
@@ -3480,15 +3460,11 @@ def change_request_section(name: str, target: str, note_ref: str, window: str, c
                     {"data_to_merge": [{"key": "jobId", "value": {"task": "job", "variable": "_id"}}]},
                     {"merged_object": None}, display="WorkFlowEngine"),
         "ce1": jq("the job id", "$var.ce0.merged_object", "jobId", x=0, to_job="change_job_id"),
-        "ce2": task("getJob", "OperationsManager", "how this run was started (its own record)",
-                    {"id": "$var.ce1.return_data", "queryParameters": {}}, {"job": "$var.job.change_started"}),
-        "ce3": empty("its own record could not be read (started through a trigger)", "change_started", x=0),
         "ce4": set_key("the change: workflow", {}, "workflow", name, x=0),
         "ce5": set_key("the change: target", "$var.ce4.object", "target", target, x=0),
         "ce6": set_key("the change: the requester's note", "$var.ce5.object", "note", note_ref, x=0),
         "ce7": set_key("the change: the planned window", "$var.ce6.object", "window", window, x=0),
-        "ce8": set_key("the change: how it was started", "$var.ce7.object", "started", "$var.job.change_started", x=0),
-        "ce9": set_key("the change: the job id", "$var.ce8.object", "job_id", "$var.ce1.return_data", x=0),
+        "ce9": set_key("the change: the job id", "$var.ce7.object", "job_id", "$var.ce1.return_data", x=0),
         "cea": run_code("the change's texts (Python on the runner)", CHANGE_OPEN_CODE, "$var.ce9.object",
                         "change_texts", x=0),
         "ceb": jq("the create body", "$var.cea.result", "stdout_json.create", x=0),
@@ -3504,16 +3480,18 @@ def change_request_section(name: str, target: str, note_ref: str, window: str, c
         s.update({
             **step(f"the change on the card: {c['label']} carries the change number; the decision is written to "
                    "the change, an approval moving it on"),
-            f"{q}0": replace("the card's message: the change number", "Change request __CHG__. __M__", "__CHG__",
-                             "$var.job.change_number", x=0),
+            f"{q}0": replace("the card's message: the change number", "Change request __CHG__. __M__"
+                             + (" The requester's note (their own words, not checked): __N__" if c.get("note_ref") else ""),
+                             "__CHG__", "$var.job.change_number", x=0),
             f"{q}1": replace("the card's message: the rest", f"$var.{q}0.replacedString", "__M__", c["message"], x=0),
             f"{q}2": set_key("the card's body: the change number", c["body"], "change_request",
                              "$var.job.change_number", x=0),
-            # approve (p*) and reject (q5-qf) each read the decision on their own chain: no task joins the two
-            **_decision_chain(c, "approved", (f"{p}0", f"{p}2", f"{p}3", f"{p}4", f"{p}5", f"{p}6", f"{p}7",
-                                              f"{p}8", f"{p}9", f"{p}a", f"{p}b", f"{q}4")),
-            **_decision_chain(c, "rejected", tuple(f"{q}{i}" for i in "56789abcdef") + (f"{p}1",)),
+            **_decision_chain(c, "approved"),
+            **_decision_chain(c, "rejected"),
         })
+        if c.get("note_ref"):  # a card whose own message does not carry the requester's note (Tear Down's)
+            s[f"{q}5"] = replace("the card's message: the requester's note", f"$var.{q}1.replacedString", "__N__",
+                                 c["note_ref"], x=0)
         if c["mode"] == "implement":
             s.update({
                 f"{p}d": sni("updateStandardChange", "the change: Scheduled",
@@ -3532,6 +3510,13 @@ def change_request_section(name: str, target: str, note_ref: str, window: str, c
                 f"{p}e": sni("updateStandardChange", "the change: the approval's work note",
                              {"sys_id": "$var.job.change_sys_id", **nbi_body(f"$var.{p}d.object")}, x=0),
                 f"{p}f": note("the approval was not written to the change", "ServiceNow did not take the approval's "
+                              "work note; the decision is on this job's card", "change_unwritten", x=0),
+                # a rejection here does not end the change (the router change already happened): note it too
+                f"{q}c": set_key("the change: the rejection's work note", {}, "work_notes",
+                                 "$var.job.change_approval_note", x=0),
+                f"{q}d": sni("updateStandardChange", "the change: the rejection's work note",
+                             {"sys_id": "$var.job.change_sys_id", **nbi_body(f"$var.{q}c.object")}, x=0),
+                f"{q}e": note("the rejection was not written to the change", "ServiceNow did not take the rejection's "
                               "work note; the decision is on this job's card", "change_unwritten", x=0),
             })
     s.update({
@@ -3596,11 +3581,9 @@ def with_change_request(tasks: dict, tr: dict, *, name: str, after: str, before:
         tr[a] = _edge(**dst_state)
 
     tr[after] = {("ce0" if k == before else k): v for k, v in tr[after].items()}
-    for a, b in zip(("ce0", "ce4", "ce5", "ce6", "ce7", "ce8"), ("ce1", "ce5", "ce6", "ce7", "ce8", "ce9")):
+    for a, b in zip(("ce0", "ce4", "ce5", "ce6", "ce7"), ("ce1", "ce5", "ce6", "ce7", "ce9")):
         go(a, **{b: ok})
-    go("ce1", ce2=ok, cef=fail)
-    go("ce2", ce4=ok, ce3=err)
-    go("ce3", ce4=ok)
+    go("ce1", ce4=ok, cef=fail)
     go("ce9", cea=ok)
     go("cea", ceb=ok, cef=err)
     go("ceb", cec=ok, cef=fail)
@@ -3612,18 +3595,20 @@ def with_change_request(tasks: dict, tr: dict, *, name: str, after: str, before:
         p, q, card = c["ids"], c["prep"], c["card"]
         for a in [a for a, e in tr.items() if f"{card}1" in e]:
             tr[a] = {(f"{q}0" if k == f"{card}1" else k): v for k, v in tr[a].items()}
+        message = f"{q}5" if c.get("note_ref") else f"{q}1"
         go(f"{q}0", **{f"{q}1": ok})
-        go(f"{q}1", **{f"{q}2": ok})
+        go(f"{q}1", **{message: ok} if message != f"{q}1" else {f"{q}2": ok})
+        if message != f"{q}1":
+            go(message, **{f"{q}2": ok})
         go(f"{q}2", **{f"{card}1": ok})
-        tasks[f"{card}2"]["variables"]["incoming"]["value"] = f"$var.{q}1.replacedString"
+        tasks[f"{card}2"]["variables"]["incoming"]["value"] = f"$var.{message}.replacedString"
         tasks[f"{card}3"]["variables"]["incoming"]["value"] = f"$var.{q}2.object"
         approved = next(d for d, e in tr[card].items() if e["state"] == ok)
         rejected = next(d for d, e in tr[card].items() if e["state"] == fail)
         c["approved_target"] = approved
-        go(card, **{f"{p}0": ok, f"{q}5": fail})
-        _decision_edges(go, (f"{p}0", f"{p}2", f"{p}3", f"{p}4", f"{p}5", f"{p}6", f"{p}7", f"{p}8", f"{p}9",
-                             f"{p}a", f"{p}b", f"{q}4"), f"{p}d")
-        _decision_edges(go, tuple(f"{q}{i}" for i in "56789abcdef") + (f"{p}1",), rejected)
+        go(card, **{_chain_ids(c, "approved")[0]: ok, _chain_ids(c, "rejected")[0]: fail})
+        _decision_edges(go, c, "approved", f"{p}d")
+        _decision_edges(go, c, "rejected", rejected if c["mode"] == "implement" else f"{q}c")
         if c["mode"] == "implement":
             go(f"{p}d", **{f"{p}e": ok, f"{q}3": err})
             go(f"{p}e", **{f"{p}f": ok})
@@ -3633,6 +3618,9 @@ def with_change_request(tasks: dict, tr: dict, *, name: str, after: str, before:
             go(f"{p}d", **{f"{p}e": ok})
             go(f"{p}e", **{approved: ok, f"{p}f": err})
             go(f"{p}f", **{approved: ok})
+            go(f"{q}c", **{f"{q}d": ok})
+            go(f"{q}d", **{rejected: ok, f"{q}e": err})
+            go(f"{q}e", **{rejected: ok})
     for kind, ids in ends.items():
         for a in ids:
             state = tr[a].pop("workflow_end")["state"]
@@ -3688,11 +3676,14 @@ def card_sides(tr: dict, card: str) -> tuple[str, str]:
 def card_input(tasks: dict, card: str, part: int) -> str:
     """What a card's message (part 2) or body (part 3) is made from, before the change request adds its number."""
     value = tasks[f"{card}{part}"]["variables"]["incoming"]["value"]
-    m = re.fullmatch(r"\$var\.(c[89][0-9a-f])\.(replacedString|object)", value)
-    if not m:
-        return value
-    incoming = tasks[m.group(1)]["variables"]["incoming"]
-    return incoming["newSubstr"] if m.group(2) == "replacedString" else incoming["obj"]
+    while m := re.fullmatch(r"\$var\.(c[89][0-9a-f])\.(replacedString|object)", value):
+        incoming = tasks[m.group(1)]["variables"]["incoming"]
+        if m.group(2) == "object":
+            return incoming["obj"]
+        if incoming["substr"] == "__M__":
+            return incoming["newSubstr"]
+        value = incoming["str"]
+    return value
 
 
 def deploy_aws_vpn() -> dict:
@@ -5350,9 +5341,9 @@ def tear_down_aws_vpn() -> dict:
         tasks, {"workflow_start": _edge(**{"10": "success"}), **tr}, name=WF["tear_down_aws_vpn"], after="11",
         before="1a", target="$var.job.target", note_ref="$var.job.change_note", window="", refused_end="workflow_end",
         cards=[{"card": "2c", "ids": "ca", "prep": "c8", "var": "approval", "label": "removing the router's AWS block",
-                "mode": "implement"},
+                "mode": "implement", "note_ref": "$var.job.change_note"},
                {"card": "5f", "ids": "cb", "prep": "c9", "var": "approval_2", "label": "destroying the AWS side",
-                "mode": "note"}],
+                "mode": "note", "note_ref": "$var.job.change_note"}],
         ends={"canceled": ("bf",), "rejected": ("a1",), "failed": ("37", "c1", "c2", "c3", "c4", "c5", "c6", "c7"),
               "successful": ("4f", "66", "a6")})
     return workflow(

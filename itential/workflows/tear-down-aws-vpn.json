@@ -75,8 +75,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": -440,
-        "y": 3300
+        "x": -450,
+        "y": 2850
       },
       "variables": {
         "incoming": {
@@ -107,8 +107,8 @@
       "displayName": "GatewayManager",
       "groups": [],
       "nodeLocation": {
-        "x": -560,
-        "y": 3450
+        "x": -570,
+        "y": 3000
       },
       "variables": {
         "incoming": {
@@ -143,7 +143,7 @@
       "groups": [],
       "nodeLocation": {
         "x": -320,
-        "y": 3600
+        "y": 3150
       },
       "variables": {
         "incoming": {
@@ -189,7 +189,7 @@
       "groups": [],
       "nodeLocation": {
         "x": -90,
-        "y": 3750
+        "y": 3300
       },
       "variables": {
         "incoming": {
@@ -217,7 +217,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 140,
-        "y": 3900
+        "y": 3450
       },
       "variables": {
         "incoming": {
@@ -247,7 +247,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 230,
-        "y": 4050
+        "y": 3600
       },
       "variables": {
         "incoming": {
@@ -292,8 +292,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 260,
-        "y": 4200
+        "x": 710,
+        "y": 3750
       },
       "variables": {
         "incoming": {
@@ -324,8 +324,8 @@
       "displayName": "GatewayManager",
       "groups": [],
       "nodeLocation": {
-        "x": 240,
-        "y": 4350
+        "x": 90,
+        "y": 3900
       },
       "variables": {
         "incoming": {
@@ -360,7 +360,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 240,
-        "y": 4500
+        "y": 4050
       },
       "variables": {
         "incoming": {
@@ -406,7 +406,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 730,
-        "y": 4650
+        "y": 4200
       },
       "variables": {
         "incoming": {
@@ -433,8 +433,8 @@
       "displayName": "GatewayManager",
       "groups": [],
       "nodeLocation": {
-        "x": 730,
-        "y": 4800
+        "x": 740,
+        "y": 4350
       },
       "variables": {
         "incoming": {
@@ -463,8 +463,8 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 850,
-        "y": 4950
+        "x": 860,
+        "y": 4500
       },
       "variables": {
         "incoming": {
@@ -509,8 +509,8 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 1210,
-        "y": 5100
+        "x": 1080,
+        "y": 4650
       },
       "variables": {
         "incoming": {
@@ -537,8 +537,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 750,
-        "y": 5250
+        "x": 760,
+        "y": 4800
       },
       "variables": {
         "incoming": {
@@ -567,8 +567,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 60,
-        "y": 5850
+        "x": 0,
+        "y": 5550
       },
       "variables": {
         "incoming": {
@@ -599,8 +599,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": -10,
-        "y": 6000
+        "x": -50,
+        "y": 5700
       },
       "variables": {
         "incoming": {
@@ -608,7 +608,7 @@
           "path": [
             "message"
           ],
-          "value": "$var.c81.replacedString"
+          "value": "$var.c85.replacedString"
         },
         "outgoing": {
           "object": null
@@ -631,8 +631,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": -50,
-        "y": 6150
+        "x": -80,
+        "y": 5850
       },
       "variables": {
         "incoming": {
@@ -663,8 +663,8 @@
       "displayName": "GatewayManager",
       "groups": [],
       "nodeLocation": {
-        "x": -60,
-        "y": 6300
+        "x": -90,
+        "y": 6000
       },
       "variables": {
         "incoming": {
@@ -698,8 +698,8 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": -50,
-        "y": 6450
+        "x": -80,
+        "y": 6150
       },
       "variables": {
         "incoming": {
@@ -726,8 +726,8 @@
       "displayName": "Work Center",
       "groups": [],
       "nodeLocation": {
-        "x": -30,
-        "y": 6600
+        "x": -70,
+        "y": 6300
       },
       "variables": {
         "incoming": {
@@ -757,8 +757,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": -170,
-        "y": 9000
+        "x": -180,
+        "y": 7950
       },
       "variables": {
         "incoming": {
@@ -788,7 +788,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 990,
-        "y": 9150
+        "y": 8100
       },
       "variables": {
         "incoming": {
@@ -816,7 +816,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 90,
-        "y": 9300
+        "y": 8250
       },
       "variables": {
         "incoming": {
@@ -844,7 +844,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 260,
-        "y": 9450
+        "y": 8400
       },
       "variables": {
         "incoming": {
@@ -876,7 +876,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 320,
-        "y": 9600
+        "y": 8550
       },
       "variables": {
         "incoming": {
@@ -906,7 +906,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 620,
-        "y": 9750
+        "y": 8700
       },
       "variables": {
         "incoming": {
@@ -952,7 +952,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 620,
-        "y": 9900
+        "y": 8850
       },
       "variables": {
         "incoming": {
@@ -982,7 +982,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 900,
-        "y": 10050
+        "y": 9000
       },
       "variables": {
         "incoming": {
@@ -1014,7 +1014,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 900,
-        "y": 10200
+        "y": 9150
       },
       "variables": {
         "incoming": {
@@ -1049,7 +1049,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 970,
-        "y": 10350
+        "y": 9300
       },
       "variables": {
         "incoming": {
@@ -1077,7 +1077,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 970,
-        "y": 10500
+        "y": 9450
       },
       "variables": {
         "incoming": {
@@ -1123,7 +1123,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 1080,
-        "y": 10650
+        "y": 9600
       },
       "variables": {
         "incoming": {
@@ -1153,7 +1153,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 890,
-        "y": 10800
+        "y": 9750
       },
       "variables": {
         "incoming": {
@@ -1199,7 +1199,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 970,
-        "y": 10950
+        "y": 9900
       },
       "variables": {
         "incoming": {
@@ -1227,7 +1227,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 1160,
-        "y": 11100
+        "y": 10050
       },
       "variables": {
         "incoming": {
@@ -1257,7 +1257,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 1420,
-        "y": 11250
+        "y": 10200
       },
       "variables": {
         "incoming": {
@@ -1303,7 +1303,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 1430,
-        "y": 11400
+        "y": 10350
       },
       "variables": {
         "incoming": {
@@ -1349,7 +1349,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 1680,
-        "y": 11550
+        "y": 10500
       },
       "variables": {
         "incoming": {
@@ -1395,7 +1395,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 1520,
-        "y": 11700
+        "y": 10650
       },
       "variables": {
         "incoming": {
@@ -1425,7 +1425,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 1970,
-        "y": 11700
+        "y": 10650
       },
       "variables": {
         "incoming": {
@@ -1453,7 +1453,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 1990,
-        "y": 11850
+        "y": 10800
       },
       "variables": {
         "incoming": {
@@ -1483,7 +1483,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 1800,
-        "y": 12000
+        "y": 10950
       },
       "variables": {
         "incoming": {
@@ -1529,7 +1529,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 2040,
-        "y": 12150
+        "y": 11100
       },
       "variables": {
         "incoming": {
@@ -1557,7 +1557,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 2310,
-        "y": 12300
+        "y": 11250
       },
       "variables": {
         "incoming": {
@@ -1584,8 +1584,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 2190,
-        "y": 12900
+        "x": 2160,
+        "y": 12000
       },
       "variables": {
         "incoming": {
@@ -1616,8 +1616,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 2160,
-        "y": 13050
+        "x": 2140,
+        "y": 12150
       },
       "variables": {
         "incoming": {
@@ -1625,7 +1625,7 @@
           "path": [
             "message"
           ],
-          "value": "$var.c91.replacedString"
+          "value": "$var.c95.replacedString"
         },
         "outgoing": {
           "object": null
@@ -1648,8 +1648,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 2140,
-        "y": 13200
+        "x": 2130,
+        "y": 12300
       },
       "variables": {
         "incoming": {
@@ -1680,8 +1680,8 @@
       "displayName": "GatewayManager",
       "groups": [],
       "nodeLocation": {
-        "x": 2130,
-        "y": 13350
+        "x": 2120,
+        "y": 12450
       },
       "variables": {
         "incoming": {
@@ -1715,8 +1715,8 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 2120,
-        "y": 13500
+        "x": 2110,
+        "y": 12600
       },
       "variables": {
         "incoming": {
@@ -1743,8 +1743,8 @@
       "displayName": "Work Center",
       "groups": [],
       "nodeLocation": {
-        "x": 2120,
-        "y": 13650
+        "x": 2110,
+        "y": 12750
       },
       "variables": {
         "incoming": {
@@ -1774,8 +1774,8 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 1800,
-        "y": 16050
+        "x": 1770,
+        "y": 14400
       },
       "variables": {
         "incoming": {
@@ -1802,8 +1802,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 2250,
-        "y": 16200
+        "x": 2240,
+        "y": 14550
       },
       "variables": {
         "incoming": {
@@ -1833,7 +1833,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 2260,
-        "y": 16350
+        "y": 14700
       },
       "variables": {
         "incoming": {
@@ -1862,8 +1862,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 2900,
-        "y": 16500
+        "x": 2280,
+        "y": 14850
       },
       "variables": {
         "incoming": {
@@ -1890,8 +1890,8 @@
       "displayName": "GatewayManager",
       "groups": [],
       "nodeLocation": {
-        "x": 2410,
-        "y": 16650
+        "x": 2280,
+        "y": 15000
       },
       "variables": {
         "incoming": {
@@ -1920,8 +1920,8 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 2410,
-        "y": 16800
+        "x": 2420,
+        "y": 15150
       },
       "variables": {
         "incoming": {
@@ -1967,7 +1967,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 2430,
-        "y": 16950
+        "y": 15300
       },
       "variables": {
         "incoming": {
@@ -1996,8 +1996,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 2440,
-        "y": 17100
+        "x": 2430,
+        "y": 15450
       },
       "variables": {
         "incoming": {
@@ -2024,8 +2024,8 @@
       "displayName": "GatewayManager",
       "groups": [],
       "nodeLocation": {
-        "x": 2440,
-        "y": 17250
+        "x": 2430,
+        "y": 15600
       },
       "variables": {
         "incoming": {
@@ -2054,8 +2054,8 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 2470,
-        "y": 17400
+        "x": 2460,
+        "y": 15750
       },
       "variables": {
         "incoming": {
@@ -2100,8 +2100,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 2570,
-        "y": 17550
+        "x": 2710,
+        "y": 15900
       },
       "variables": {
         "incoming": {
@@ -2132,8 +2132,8 @@
       "displayName": "GatewayManager",
       "groups": [],
       "nodeLocation": {
-        "x": 2570,
-        "y": 17700
+        "x": 2720,
+        "y": 16050
       },
       "variables": {
         "incoming": {
@@ -2168,7 +2168,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 2570,
-        "y": 17850
+        "y": 16200
       },
       "variables": {
         "incoming": {
@@ -2213,8 +2213,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 2470,
-        "y": 18000
+        "x": 2480,
+        "y": 16350
       },
       "variables": {
         "incoming": {
@@ -2244,7 +2244,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 920,
-        "y": 8550
+        "y": 7500
       },
       "variables": {
         "incoming": {
@@ -2274,7 +2274,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 920,
-        "y": 8700
+        "y": 7650
       },
       "variables": {
         "incoming": {
@@ -2303,8 +2303,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 2670,
-        "y": 15600
+        "x": 2700,
+        "y": 14400
       },
       "variables": {
         "incoming": {
@@ -2333,8 +2333,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 2670,
-        "y": 15750
+        "x": 2700,
+        "y": 14550
       },
       "variables": {
         "incoming": {
@@ -2363,8 +2363,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 2690,
-        "y": 15900
+        "x": 2700,
+        "y": 14700
       },
       "variables": {
         "incoming": {
@@ -2391,8 +2391,8 @@
       "displayName": "GatewayManager",
       "groups": [],
       "nodeLocation": {
-        "x": 2690,
-        "y": 16050
+        "x": 2700,
+        "y": 14850
       },
       "variables": {
         "incoming": {
@@ -2421,8 +2421,8 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 2610,
-        "y": 16200
+        "x": 2660,
+        "y": 15000
       },
       "variables": {
         "incoming": {
@@ -2467,8 +2467,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 2260,
-        "y": 16500
+        "x": 2790,
+        "y": 15300
       },
       "variables": {
         "incoming": {
@@ -2497,8 +2497,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 2980,
-        "y": 16350
+        "x": 3050,
+        "y": 15150
       },
       "variables": {
         "incoming": {
@@ -2527,8 +2527,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": -520,
-        "y": 5250
+        "x": -500,
+        "y": 4800
       },
       "variables": {
         "incoming": {
@@ -2558,7 +2558,7 @@
       "groups": [],
       "nodeLocation": {
         "x": -390,
-        "y": 3750
+        "y": 3300
       },
       "variables": {
         "incoming": {
@@ -2586,7 +2586,7 @@
       "groups": [],
       "nodeLocation": {
         "x": -40,
-        "y": 4200
+        "y": 3750
       },
       "variables": {
         "incoming": {
@@ -2616,7 +2616,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 130,
-        "y": 4650
+        "y": 4200
       },
       "variables": {
         "incoming": {
@@ -2643,8 +2643,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 760,
-        "y": 5100
+        "x": 630,
+        "y": 4650
       },
       "variables": {
         "incoming": {
@@ -2673,8 +2673,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": -280,
-        "y": 5400
+        "x": -260,
+        "y": 4950
       },
       "variables": {
         "incoming": {
@@ -2704,7 +2704,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 230,
-        "y": 10500
+        "y": 9450
       },
       "variables": {
         "incoming": {
@@ -2734,7 +2734,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 240,
-        "y": 10650
+        "y": 9600
       },
       "variables": {
         "incoming": {
@@ -2764,7 +2764,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 670,
-        "y": 10950
+        "y": 9900
       },
       "variables": {
         "incoming": {
@@ -2792,7 +2792,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 1100,
-        "y": 11400
+        "y": 10350
       },
       "variables": {
         "incoming": {
@@ -2822,7 +2822,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 1380,
-        "y": 11550
+        "y": 10500
       },
       "variables": {
         "incoming": {
@@ -2852,7 +2852,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 1800,
-        "y": 12450
+        "y": 11400
       },
       "variables": {
         "incoming": {
@@ -2881,8 +2881,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 2050,
-        "y": 16950
+        "x": 1900,
+        "y": 15300
       },
       "variables": {
         "incoming": {
@@ -2912,7 +2912,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 1990,
-        "y": 18000
+        "y": 16350
       },
       "variables": {
         "incoming": {
@@ -2942,7 +2942,7 @@
       "groups": [],
       "nodeLocation": {
         "x": -40,
-        "y": 9450
+        "y": 8400
       },
       "variables": {
         "incoming": {
@@ -2972,7 +2972,7 @@
       "groups": [],
       "nodeLocation": {
         "x": -10,
-        "y": 9600
+        "y": 8550
       },
       "variables": {
         "incoming": {
@@ -3053,63 +3053,6 @@
         "decorators": []
       }
     },
-    "ce2": {
-      "name": "getJob",
-      "canvasName": "getJob",
-      "summary": "how this run was started (its own record)",
-      "description": "the change request: a ServiceNow standard change opened before anything is planned or read (R5); if ServiceNow refuses, the run stops with nothing done",
-      "location": "Application",
-      "locationType": null,
-      "app": "OperationsManager",
-      "type": "automatic",
-      "displayName": "OperationsManager",
-      "groups": [],
-      "nodeLocation": {
-        "x": -80,
-        "y": 1350
-      },
-      "variables": {
-        "incoming": {
-          "id": "$var.ce1.return_data",
-          "queryParameters": {}
-        },
-        "outgoing": {
-          "job": "$var.job.change_started"
-        },
-        "error": "",
-        "decorators": []
-      },
-      "actor": "Pronghorn",
-      "scheduled": false
-    },
-    "ce3": {
-      "name": "parse",
-      "canvasName": "parse",
-      "summary": "its own record could not be read (started through a trigger)",
-      "description": "the change request: a ServiceNow standard change opened before anything is planned or read (R5); if ServiceNow refuses, the run stops with nothing done",
-      "location": "Application",
-      "locationType": null,
-      "app": "WorkFlowEngine",
-      "type": "automatic",
-      "displayName": "Tools",
-      "groups": [],
-      "nodeLocation": {
-        "x": -190,
-        "y": 1500
-      },
-      "variables": {
-        "incoming": {
-          "text": "{}"
-        },
-        "outgoing": {
-          "textObject": "$var.job.change_started"
-        },
-        "error": "",
-        "decorators": []
-      },
-      "actor": "Pronghorn",
-      "scheduled": false
-    },
     "ce4": {
       "name": "setObjectKey",
       "canvasName": "setObjectKey",
@@ -3122,8 +3065,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 0,
-        "y": 1650
+        "x": -150,
+        "y": 1350
       },
       "variables": {
         "incoming": {
@@ -3154,8 +3097,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 0,
-        "y": 1800
+        "x": -110,
+        "y": 1500
       },
       "variables": {
         "incoming": {
@@ -3186,8 +3129,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 0,
-        "y": 1950
+        "x": -80,
+        "y": 1650
       },
       "variables": {
         "incoming": {
@@ -3218,8 +3161,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 0,
-        "y": 2100
+        "x": -60,
+        "y": 1800
       },
       "variables": {
         "incoming": {
@@ -3228,38 +3171,6 @@
             "window"
           ],
           "value": ""
-        },
-        "outgoing": {
-          "object": null
-        },
-        "error": "",
-        "decorators": []
-      },
-      "actor": "Pronghorn",
-      "scheduled": false
-    },
-    "ce8": {
-      "name": "setObjectKey",
-      "canvasName": "setObjectKey",
-      "summary": "the change: how it was started",
-      "description": "the change request: a ServiceNow standard change opened before anything is planned or read (R5); if ServiceNow refuses, the run stops with nothing done",
-      "location": "Application",
-      "locationType": null,
-      "app": "WorkFlowEngine",
-      "type": "automatic",
-      "displayName": "Tools",
-      "groups": [],
-      "nodeLocation": {
-        "x": 0,
-        "y": 2250
-      },
-      "variables": {
-        "incoming": {
-          "obj": "$var.ce7.object",
-          "path": [
-            "started"
-          ],
-          "value": "$var.job.change_started"
         },
         "outgoing": {
           "object": null
@@ -3282,12 +3193,12 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 0,
-        "y": 2400
+        "x": -50,
+        "y": 1950
       },
       "variables": {
         "incoming": {
-          "obj": "$var.ce8.object",
+          "obj": "$var.ce7.object",
           "path": [
             "job_id"
           ],
@@ -3314,14 +3225,14 @@
       "displayName": "GatewayManager",
       "groups": [],
       "nodeLocation": {
-        "x": 150,
-        "y": 2550
+        "x": 110,
+        "y": 2100
       },
       "variables": {
         "incoming": {
           "clusterId": "lab",
           "language": "python",
-          "code": "import json, sys\n\n\ndef change_open(d: dict) -> dict:\n    \"\"\"The change's create body: short description `<Workflow>: <target> (itential-enterprise-lab, job <id>)` (the\n    request tools find the CHG by that job id) and a first work note with the workflow, target, the requester's note,\n    the planned window, how the run was started and the job link. `started` is the job's own record (getJob), {} when\n    the run cannot read itself (any trigger-started run: the page's, the form's, an automation's). Pure: runCode runs\n    this source.\"\"\"\n    job = str(d.get(\"job_id\") or \"\")\n    workflow, target = str(d.get(\"workflow\") or \"\"), str(d.get(\"target\") or \"\")\n    record = (d.get(\"started\") or {}).get(\"data\") or {}\n    how, who = str(record.get(\"description\") or \"\"), record.get(\"created_by\")\n    if not record:  # every trigger-started run, the page's too (measured 2026-10-27: getJob on its own id is 401)\n        started = (\"through an Itential trigger: the page, the form or an automation (this run cannot read its own \"\n                   \"record to say which)\")\n    else:  # only a run started on the Platform directly can read itself; its description says nothing more\n        started = \"on the Platform\"\n    if who and record:\n        started += \" by \" + ((d.get(\"roles\") or {}).get(who) or \"Platform account ...\" + str(who)[-6:])\n    window = str(d.get(\"window\") or \"\")\n    if window == \"none\":\n        window = \"from now, with no end time (it stays up until Tear Down)\"\n    elif window:\n        window = f\"from now until {window} (Tear Down Expired AWS VPN removes it then)\"\n    else:\n        window = \"now, while the job runs\"\n    note = \" \".join(str(d.get(\"note\") or \"\").split()) or \"(none)\"\n    work = (f\"Workflow: {workflow}\\nTarget: {target}\\nThe requester's note (their own words, not checked): {note}\\n\"\n            f\"Planned window: {window}\\nStarted {started}\\nJob: {d.get('job_url', '')}{job}\")\n    return {\"create\": {\"short_description\": f\"{workflow}: {target} (itential-enterprise-lab, job {job})\",\n                       \"assignment_group\": d.get(\"group\"), \"work_notes\": work}}\n\n\nprint(json.dumps(change_open({**json.loads(sys.stdin.read() or \"{}\"), **json.loads('{\"roles\": {\"6aa2bdfddd92a98c6d310e34\": \"the lab owner (admin@itential)\"}, \"job_url\": \"https://itential.lab.internal/operations-manager/jobs/\", \"group\": \"287ebd7da9fe198100f92cc8d1d2154e\"}')})))\n",
+          "code": "import json, sys\n\n\ndef change_open(d: dict) -> dict:\n    \"\"\"The change's create body: short description `<Workflow>: <target> (itential-enterprise-lab, job <id>)` (the\n    request tools find the CHG by that job id) and a first work note with the workflow, target, the requester's note,\n    the planned window, how the run was started and the job link. A trigger-started run (the page's, the form's, an\n    automation's) cannot read its own record (measured 2026-10-27), so the note names the ways in and points at the job,\n    which records who started it. Pure: runCode runs this source.\"\"\"\n    job = str(d.get(\"job_id\") or \"\")\n    workflow, target = str(d.get(\"workflow\") or \"\"), str(d.get(\"target\") or \"\")\n    window = str(d.get(\"window\") or \"\")\n    if window == \"none\":\n        window = \"from now, with no end time (it stays up until Tear Down)\"\n    elif window:\n        window = f\"from now until {window} (Tear Down Expired AWS VPN removes it then)\"\n    else:\n        window = \"now, while the job runs\"\n    note = \" \".join(str(d.get(\"note\") or \"\").split()) or \"(none)\"\n    work = (f\"Workflow: {workflow}\\nTarget: {target}\\nThe requester's note (their own words, not checked): {note}\\n\"\n            f\"Planned window: {window}\\nStarted in Itential (the job records who and how)\\nJob: {d.get('job_url', '')}{job}\")\n    return {\"create\": {\"short_description\": f\"{workflow}: {target} (itential-enterprise-lab, job {job})\",\n                       \"assignment_group\": d.get(\"group\"), \"work_notes\": work}}\n\n\nprint(json.dumps(change_open({**json.loads(sys.stdin.read() or \"{}\"), **json.loads('{\"job_url\": \"https://itential.lab.internal/operations-manager/jobs/\", \"group\": \"287ebd7da9fe198100f92cc8d1d2154e\"}')})))\n",
           "data": "$var.ce9.object",
           "safety": {
             "timeout": 30
@@ -3349,8 +3260,8 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": -20,
-        "y": 2700
+        "x": -40,
+        "y": 2250
       },
       "variables": {
         "incoming": {
@@ -3377,8 +3288,8 @@
       "displayName": "lab-servicenow:1.0.0",
       "groups": [],
       "nodeLocation": {
-        "x": -70,
-        "y": 2850
+        "x": -90,
+        "y": 2400
       },
       "variables": {
         "incoming": {
@@ -3408,8 +3319,8 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": -220,
-        "y": 3000
+        "x": -230,
+        "y": 2550
       },
       "variables": {
         "incoming": {
@@ -3436,8 +3347,8 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": -480,
-        "y": 3150
+        "x": -490,
+        "y": 2700
       },
       "variables": {
         "incoming": {
@@ -3465,7 +3376,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 440,
-        "y": 3300
+        "y": 2850
       },
       "variables": {
         "incoming": {
@@ -3494,12 +3405,12 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 210,
-        "y": 5400
+        "x": 680,
+        "y": 4950
       },
       "variables": {
         "incoming": {
-          "str": "Change request __CHG__. __M__",
+          "str": "Change request __CHG__. __M__ The requester's note (their own words, not checked): __N__",
           "substr": "__CHG__",
           "newSubstr": "$var.job.change_number"
         },
@@ -3524,8 +3435,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 320,
-        "y": 5550
+        "x": 190,
+        "y": 5100
       },
       "variables": {
         "incoming": {
@@ -3554,8 +3465,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 170,
-        "y": 5700
+        "x": 80,
+        "y": 5400
       },
       "variables": {
         "incoming": {
@@ -3586,8 +3497,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": -30,
-        "y": 6750
+        "x": -90,
+        "y": 6450
       },
       "variables": {
         "incoming": {
@@ -3607,152 +3518,6 @@
       "scheduled": false
     },
     "ca2": {
-      "name": "getJob",
-      "canvasName": "getJob",
-      "summary": "who approved it: this job's record",
-      "description": "the change on the card: removing the router's AWS block carries the change number; the decision is written to the change, an approval moving it on",
-      "location": "Application",
-      "locationType": null,
-      "app": "OperationsManager",
-      "type": "automatic",
-      "displayName": "OperationsManager",
-      "groups": [],
-      "nodeLocation": {
-        "x": -30,
-        "y": 6900
-      },
-      "variables": {
-        "incoming": {
-          "id": "$var.job.change_job_id",
-          "queryParameters": {}
-        },
-        "outgoing": {
-          "job": null
-        },
-        "error": "",
-        "decorators": []
-      },
-      "actor": "Pronghorn",
-      "scheduled": false
-    },
-    "ca3": {
-      "name": "query",
-      "canvasName": "query",
-      "summary": "the card's run",
-      "description": "the change on the card: removing the router's AWS block carries the change number; the decision is written to the change, an approval moving it on",
-      "location": "Application",
-      "locationType": null,
-      "app": "WorkFlowEngine",
-      "type": "operation",
-      "displayName": "WorkFlowEngine",
-      "groups": [],
-      "nodeLocation": {
-        "x": -120,
-        "y": 7050
-      },
-      "variables": {
-        "incoming": {
-          "pass_on_null": false,
-          "query": "data.tasks.2c.iterations[0]",
-          "obj": "$var.ca2.job"
-        },
-        "outgoing": {
-          "return_data": null
-        },
-        "error": "",
-        "decorators": []
-      }
-    },
-    "ca4": {
-      "name": "getTask",
-      "canvasName": "getTask",
-      "summary": "who approved it: the card's run (its finisher)",
-      "description": "the change on the card: removing the router's AWS block carries the change number; the decision is written to the change, an approval moving it on",
-      "location": "Application",
-      "locationType": null,
-      "app": "OperationsManager",
-      "type": "automatic",
-      "displayName": "OperationsManager",
-      "groups": [],
-      "nodeLocation": {
-        "x": -210,
-        "y": 7200
-      },
-      "variables": {
-        "incoming": {
-          "id": "$var.ca3.return_data",
-          "queryParameters": {}
-        },
-        "outgoing": {
-          "task": "$var.job.change_card"
-        },
-        "error": "",
-        "decorators": []
-      },
-      "actor": "Pronghorn",
-      "scheduled": false
-    },
-    "ca5": {
-      "name": "parse",
-      "canvasName": "parse",
-      "summary": "the card's run could not be read (the job was started through a trigger)",
-      "description": "the change on the card: removing the router's AWS block carries the change number; the decision is written to the change, an approval moving it on",
-      "location": "Application",
-      "locationType": null,
-      "app": "WorkFlowEngine",
-      "type": "automatic",
-      "displayName": "Tools",
-      "groups": [],
-      "nodeLocation": {
-        "x": 130,
-        "y": 7350
-      },
-      "variables": {
-        "incoming": {
-          "text": "{}"
-        },
-        "outgoing": {
-          "textObject": "$var.job.change_card"
-        },
-        "error": "",
-        "decorators": []
-      },
-      "actor": "Pronghorn",
-      "scheduled": false
-    },
-    "ca6": {
-      "name": "setObjectKey",
-      "canvasName": "setObjectKey",
-      "summary": "the decision: the card's run",
-      "description": "the change on the card: removing the router's AWS block carries the change number; the decision is written to the change, an approval moving it on",
-      "location": "Application",
-      "locationType": null,
-      "app": "WorkFlowEngine",
-      "type": "automatic",
-      "displayName": "Tools",
-      "groups": [],
-      "nodeLocation": {
-        "x": 160,
-        "y": 7500
-      },
-      "variables": {
-        "incoming": {
-          "obj": "$var.ca0.object",
-          "path": [
-            "card"
-          ],
-          "value": "$var.job.change_card"
-        },
-        "outgoing": {
-          "object": null
-        },
-        "error": "",
-        "decorators": []
-      },
-      "actor": "Pronghorn",
-      "scheduled": false
-    },
-    "ca7": {
       "name": "setObjectKey",
       "canvasName": "setObjectKey",
       "summary": "the decision: the card's note",
@@ -3764,12 +3529,12 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 200,
-        "y": 7650
+        "x": 0,
+        "y": 6600
       },
       "variables": {
         "incoming": {
-          "obj": "$var.ca6.object",
+          "obj": "$var.ca0.object",
           "path": [
             "export"
           ],
@@ -3784,7 +3549,7 @@
       "actor": "Pronghorn",
       "scheduled": false
     },
-    "ca8": {
+    "ca3": {
       "name": "setObjectKey",
       "canvasName": "setObjectKey",
       "summary": "the decision: what was decided",
@@ -3796,12 +3561,12 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 240,
-        "y": 7800
+        "x": 70,
+        "y": 6750
       },
       "variables": {
         "incoming": {
-          "obj": "$var.ca7.object",
+          "obj": "$var.ca2.object",
           "path": [
             "label"
           ],
@@ -3816,7 +3581,7 @@
       "actor": "Pronghorn",
       "scheduled": false
     },
-    "ca9": {
+    "ca4": {
       "name": "setObjectKey",
       "canvasName": "setObjectKey",
       "summary": "the decision: the job id",
@@ -3828,12 +3593,12 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 260,
-        "y": 7950
+        "x": 110,
+        "y": 6900
       },
       "variables": {
         "incoming": {
-          "obj": "$var.ca8.object",
+          "obj": "$var.ca3.object",
           "path": [
             "job_id"
           ],
@@ -3848,7 +3613,7 @@
       "actor": "Pronghorn",
       "scheduled": false
     },
-    "caa": {
+    "ca5": {
       "name": "runCode",
       "canvasName": "runCode",
       "summary": "the decision's work note (Python on the runner)",
@@ -3860,15 +3625,15 @@
       "displayName": "GatewayManager",
       "groups": [],
       "nodeLocation": {
-        "x": 270,
-        "y": 8100
+        "x": 140,
+        "y": 7050
       },
       "variables": {
         "incoming": {
           "clusterId": "lab",
           "language": "python",
-          "code": "import json, sys\n\n\ndef change_decision(d: dict) -> dict:\n    \"\"\"A card's decision as the change's work note: who decided (the card task's finisher, by role) and when, and\n    the note they wrote. `card` is the card task's own record (getTask), {} when the run could not read it (it was\n    started through a trigger): then the note says the card records who and when. Pure: runCode runs this source.\"\"\"\n    from datetime import datetime, timezone\n\n    metrics = ((d.get(\"card\") or {}).get(\"data\") or {}).get(\"metrics\") or {}\n    user, end = metrics.get(\"user\"), metrics.get(\"end_time\")\n    who = (d.get(\"roles\") or {}).get(user) or (\"Platform account ...\" + str(user)[-6:] if user else \"\")\n    link = f\"{d.get('job_url', '')}{d.get('job_id', '')}\"\n    now = f\"{datetime.now(timezone.utc):%Y-%m-%d %H:%M} UTC\"\n    if not metrics:  # a trigger-started run cannot read its card: the card records who and when\n        when = f\"(the card on job {link} records who and when; noted {now})\"\n    else:\n        at = f\"at {datetime.fromtimestamp(end / 1000, timezone.utc):%Y-%m-%d %H:%M} UTC\" \\\n            if isinstance(end, (int, float)) else f\"(noted {now})\"\n        when = f\"by {who} {at}\" if who else f\"{at} (the card on job {link} records who)\"\n\n    def written(x):  # the card's note box, wherever the export nests it\n        if isinstance(x, dict):\n            if isinstance(x.get(\"note\"), str):\n                return x[\"note\"]\n            for v in x.values():\n                if written(v):\n                    return written(v)\n        return \"\"\n\n    verb = \"Approved\" if d.get(\"decision\") == \"approved\" else \"Rejected\"\n    note = \" \".join(written(d.get(\"export\")).split())\n    if not note:\n        note = \"(none).\"\n    elif len(note) > 500:\n        note = note[:500] + \"...\"\n    elif note[-1] not in \".!?)\":\n        note += \".\"\n    return {\"work_note\": f\"{verb} in Itential Work Center {when}: {d.get('label', '')}. Their note: {note}\"}\n\n\nprint(json.dumps(change_decision({**json.loads(sys.stdin.read() or \"{}\"), **json.loads('{\"roles\": {\"6aa2bdfddd92a98c6d310e34\": \"the lab owner (admin@itential)\"}, \"job_url\": \"https://itential.lab.internal/operations-manager/jobs/\"}')})))\n",
-          "data": "$var.ca9.object",
+          "code": "import json, sys\n\n\ndef change_decision(d: dict) -> dict:\n    \"\"\"A card's decision as the change's work note: what was decided, the note the person wrote on the card, and where\n    the card (which records who and when) is. A trigger-started run cannot read its card back (measured 2026-10-27),\n    so the note does not name anyone. Pure: runCode runs this source.\"\"\"\n    from datetime import datetime, timezone\n\n    link = f\"{d.get('job_url', '')}{d.get('job_id', '')}\"\n    when = f\"(the card on job {link} records who and when; noted {datetime.now(timezone.utc):%Y-%m-%d %H:%M} UTC)\"\n\n    def written(x):  # the card's note box, wherever the export nests it\n        if isinstance(x, dict):\n            if isinstance(x.get(\"note\"), str):\n                return x[\"note\"]\n            for v in x.values():\n                if written(v):\n                    return written(v)\n        return \"\"\n\n    verb = \"Approved\" if d.get(\"decision\") == \"approved\" else \"Rejected\"\n    note = \" \".join(written(d.get(\"export\")).split())\n    if not note:\n        note = \"(none).\"\n    elif len(note) > 500:\n        note = note[:500] + \"...\"\n    elif note[-1] not in \".!?)\":\n        note += \".\"\n    return {\"work_note\": f\"{verb} in Itential Work Center {when}: {d.get('label', '')}. Their note: {note}\"}\n\n\nprint(json.dumps(change_decision({**json.loads(sys.stdin.read() or \"{}\"), **json.loads('{\"job_url\": \"https://itential.lab.internal/operations-manager/jobs/\"}')})))\n",
+          "data": "$var.ca4.object",
           "safety": {
             "timeout": 30
           },
@@ -3883,7 +3648,7 @@
       "actor": "Pronghorn",
       "scheduled": false
     },
-    "cab": {
+    "ca6": {
       "name": "query",
       "canvasName": "query",
       "summary": "the decision's work note",
@@ -3895,14 +3660,14 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 120,
-        "y": 8250
+        "x": 30,
+        "y": 7200
       },
       "variables": {
         "incoming": {
           "pass_on_null": false,
           "query": "stdout_json.work_note",
-          "obj": "$var.caa.result"
+          "obj": "$var.ca5.result"
         },
         "outgoing": {
           "return_data": "$var.job.change_approval_note"
@@ -3923,8 +3688,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 330,
-        "y": 8400
+        "x": 290,
+        "y": 7350
       },
       "variables": {
         "incoming": {
@@ -3941,7 +3706,7 @@
       "actor": "Pronghorn",
       "scheduled": false
     },
-    "c85": {
+    "c86": {
       "name": "setObjectKey",
       "canvasName": "setObjectKey",
       "summary": "the decision: rejected",
@@ -3953,8 +3718,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 300,
-        "y": 6750
+        "x": 210,
+        "y": 6450
       },
       "variables": {
         "incoming": {
@@ -3973,153 +3738,7 @@
       "actor": "Pronghorn",
       "scheduled": false
     },
-    "c86": {
-      "name": "getJob",
-      "canvasName": "getJob",
-      "summary": "who rejected it: this job's record",
-      "description": "the change on the card: removing the router's AWS block carries the change number; the decision is written to the change, an approval moving it on",
-      "location": "Application",
-      "locationType": null,
-      "app": "OperationsManager",
-      "type": "automatic",
-      "displayName": "OperationsManager",
-      "groups": [],
-      "nodeLocation": {
-        "x": 770,
-        "y": 6900
-      },
-      "variables": {
-        "incoming": {
-          "id": "$var.job.change_job_id",
-          "queryParameters": {}
-        },
-        "outgoing": {
-          "job": null
-        },
-        "error": "",
-        "decorators": []
-      },
-      "actor": "Pronghorn",
-      "scheduled": false
-    },
     "c87": {
-      "name": "query",
-      "canvasName": "query",
-      "summary": "the card's run",
-      "description": "the change on the card: removing the router's AWS block carries the change number; the decision is written to the change, an approval moving it on",
-      "location": "Application",
-      "locationType": null,
-      "app": "WorkFlowEngine",
-      "type": "operation",
-      "displayName": "WorkFlowEngine",
-      "groups": [],
-      "nodeLocation": {
-        "x": 620,
-        "y": 7050
-      },
-      "variables": {
-        "incoming": {
-          "pass_on_null": false,
-          "query": "data.tasks.2c.iterations[0]",
-          "obj": "$var.c86.job"
-        },
-        "outgoing": {
-          "return_data": null
-        },
-        "error": "",
-        "decorators": []
-      }
-    },
-    "c88": {
-      "name": "getTask",
-      "canvasName": "getTask",
-      "summary": "who rejected it: the card's run (its finisher)",
-      "description": "the change on the card: removing the router's AWS block carries the change number; the decision is written to the change, an approval moving it on",
-      "location": "Application",
-      "locationType": null,
-      "app": "OperationsManager",
-      "type": "automatic",
-      "displayName": "OperationsManager",
-      "groups": [],
-      "nodeLocation": {
-        "x": 690,
-        "y": 7200
-      },
-      "variables": {
-        "incoming": {
-          "id": "$var.c87.return_data",
-          "queryParameters": {}
-        },
-        "outgoing": {
-          "task": "$var.job.change_card"
-        },
-        "error": "",
-        "decorators": []
-      },
-      "actor": "Pronghorn",
-      "scheduled": false
-    },
-    "c89": {
-      "name": "parse",
-      "canvasName": "parse",
-      "summary": "the card's run could not be read (the job was started through a trigger)",
-      "description": "the change on the card: removing the router's AWS block carries the change number; the decision is written to the change, an approval moving it on",
-      "location": "Application",
-      "locationType": null,
-      "app": "WorkFlowEngine",
-      "type": "automatic",
-      "displayName": "Tools",
-      "groups": [],
-      "nodeLocation": {
-        "x": 1160,
-        "y": 7350
-      },
-      "variables": {
-        "incoming": {
-          "text": "{}"
-        },
-        "outgoing": {
-          "textObject": "$var.job.change_card"
-        },
-        "error": "",
-        "decorators": []
-      },
-      "actor": "Pronghorn",
-      "scheduled": false
-    },
-    "c8a": {
-      "name": "setObjectKey",
-      "canvasName": "setObjectKey",
-      "summary": "the decision: the card's run",
-      "description": "the change on the card: removing the router's AWS block carries the change number; the decision is written to the change, an approval moving it on",
-      "location": "Application",
-      "locationType": null,
-      "app": "WorkFlowEngine",
-      "type": "automatic",
-      "displayName": "Tools",
-      "groups": [],
-      "nodeLocation": {
-        "x": 720,
-        "y": 7500
-      },
-      "variables": {
-        "incoming": {
-          "obj": "$var.c85.object",
-          "path": [
-            "card"
-          ],
-          "value": "$var.job.change_card"
-        },
-        "outgoing": {
-          "object": null
-        },
-        "error": "",
-        "decorators": []
-      },
-      "actor": "Pronghorn",
-      "scheduled": false
-    },
-    "c8b": {
       "name": "setObjectKey",
       "canvasName": "setObjectKey",
       "summary": "the decision: the card's note",
@@ -4131,12 +3750,12 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 720,
-        "y": 7650
+        "x": 640,
+        "y": 6600
       },
       "variables": {
         "incoming": {
-          "obj": "$var.c8a.object",
+          "obj": "$var.c86.object",
           "path": [
             "export"
           ],
@@ -4151,7 +3770,7 @@
       "actor": "Pronghorn",
       "scheduled": false
     },
-    "c8c": {
+    "c88": {
       "name": "setObjectKey",
       "canvasName": "setObjectKey",
       "summary": "the decision: what was decided",
@@ -4163,12 +3782,12 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 720,
-        "y": 7800
+        "x": 760,
+        "y": 6750
       },
       "variables": {
         "incoming": {
-          "obj": "$var.c8b.object",
+          "obj": "$var.c87.object",
           "path": [
             "label"
           ],
@@ -4183,7 +3802,7 @@
       "actor": "Pronghorn",
       "scheduled": false
     },
-    "c8d": {
+    "c89": {
       "name": "setObjectKey",
       "canvasName": "setObjectKey",
       "summary": "the decision: the job id",
@@ -4195,12 +3814,12 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 730,
-        "y": 7950
+        "x": 710,
+        "y": 6900
       },
       "variables": {
         "incoming": {
-          "obj": "$var.c8c.object",
+          "obj": "$var.c88.object",
           "path": [
             "job_id"
           ],
@@ -4215,7 +3834,7 @@
       "actor": "Pronghorn",
       "scheduled": false
     },
-    "c8e": {
+    "c8a": {
       "name": "runCode",
       "canvasName": "runCode",
       "summary": "the decision's work note (Python on the runner)",
@@ -4227,15 +3846,15 @@
       "displayName": "GatewayManager",
       "groups": [],
       "nodeLocation": {
-        "x": 730,
-        "y": 8100
+        "x": 640,
+        "y": 7050
       },
       "variables": {
         "incoming": {
           "clusterId": "lab",
           "language": "python",
-          "code": "import json, sys\n\n\ndef change_decision(d: dict) -> dict:\n    \"\"\"A card's decision as the change's work note: who decided (the card task's finisher, by role) and when, and\n    the note they wrote. `card` is the card task's own record (getTask), {} when the run could not read it (it was\n    started through a trigger): then the note says the card records who and when. Pure: runCode runs this source.\"\"\"\n    from datetime import datetime, timezone\n\n    metrics = ((d.get(\"card\") or {}).get(\"data\") or {}).get(\"metrics\") or {}\n    user, end = metrics.get(\"user\"), metrics.get(\"end_time\")\n    who = (d.get(\"roles\") or {}).get(user) or (\"Platform account ...\" + str(user)[-6:] if user else \"\")\n    link = f\"{d.get('job_url', '')}{d.get('job_id', '')}\"\n    now = f\"{datetime.now(timezone.utc):%Y-%m-%d %H:%M} UTC\"\n    if not metrics:  # a trigger-started run cannot read its card: the card records who and when\n        when = f\"(the card on job {link} records who and when; noted {now})\"\n    else:\n        at = f\"at {datetime.fromtimestamp(end / 1000, timezone.utc):%Y-%m-%d %H:%M} UTC\" \\\n            if isinstance(end, (int, float)) else f\"(noted {now})\"\n        when = f\"by {who} {at}\" if who else f\"{at} (the card on job {link} records who)\"\n\n    def written(x):  # the card's note box, wherever the export nests it\n        if isinstance(x, dict):\n            if isinstance(x.get(\"note\"), str):\n                return x[\"note\"]\n            for v in x.values():\n                if written(v):\n                    return written(v)\n        return \"\"\n\n    verb = \"Approved\" if d.get(\"decision\") == \"approved\" else \"Rejected\"\n    note = \" \".join(written(d.get(\"export\")).split())\n    if not note:\n        note = \"(none).\"\n    elif len(note) > 500:\n        note = note[:500] + \"...\"\n    elif note[-1] not in \".!?)\":\n        note += \".\"\n    return {\"work_note\": f\"{verb} in Itential Work Center {when}: {d.get('label', '')}. Their note: {note}\"}\n\n\nprint(json.dumps(change_decision({**json.loads(sys.stdin.read() or \"{}\"), **json.loads('{\"roles\": {\"6aa2bdfddd92a98c6d310e34\": \"the lab owner (admin@itential)\"}, \"job_url\": \"https://itential.lab.internal/operations-manager/jobs/\"}')})))\n",
-          "data": "$var.c8d.object",
+          "code": "import json, sys\n\n\ndef change_decision(d: dict) -> dict:\n    \"\"\"A card's decision as the change's work note: what was decided, the note the person wrote on the card, and where\n    the card (which records who and when) is. A trigger-started run cannot read its card back (measured 2026-10-27),\n    so the note does not name anyone. Pure: runCode runs this source.\"\"\"\n    from datetime import datetime, timezone\n\n    link = f\"{d.get('job_url', '')}{d.get('job_id', '')}\"\n    when = f\"(the card on job {link} records who and when; noted {datetime.now(timezone.utc):%Y-%m-%d %H:%M} UTC)\"\n\n    def written(x):  # the card's note box, wherever the export nests it\n        if isinstance(x, dict):\n            if isinstance(x.get(\"note\"), str):\n                return x[\"note\"]\n            for v in x.values():\n                if written(v):\n                    return written(v)\n        return \"\"\n\n    verb = \"Approved\" if d.get(\"decision\") == \"approved\" else \"Rejected\"\n    note = \" \".join(written(d.get(\"export\")).split())\n    if not note:\n        note = \"(none).\"\n    elif len(note) > 500:\n        note = note[:500] + \"...\"\n    elif note[-1] not in \".!?)\":\n        note += \".\"\n    return {\"work_note\": f\"{verb} in Itential Work Center {when}: {d.get('label', '')}. Their note: {note}\"}\n\n\nprint(json.dumps(change_decision({**json.loads(sys.stdin.read() or \"{}\"), **json.loads('{\"job_url\": \"https://itential.lab.internal/operations-manager/jobs/\"}')})))\n",
+          "data": "$var.c89.object",
           "safety": {
             "timeout": 30
           },
@@ -4250,7 +3869,7 @@
       "actor": "Pronghorn",
       "scheduled": false
     },
-    "c8f": {
+    "c8b": {
       "name": "query",
       "canvasName": "query",
       "summary": "the decision's work note",
@@ -4262,14 +3881,14 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 720,
-        "y": 8250
+        "x": 640,
+        "y": 7200
       },
       "variables": {
         "incoming": {
           "pass_on_null": false,
           "query": "stdout_json.work_note",
-          "obj": "$var.c8e.result"
+          "obj": "$var.c8a.result"
         },
         "outgoing": {
           "return_data": "$var.job.change_approval_note"
@@ -4290,8 +3909,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 1020,
-        "y": 8400
+        "x": 1000,
+        "y": 7350
       },
       "variables": {
         "incoming": {
@@ -4301,6 +3920,36 @@
         },
         "outgoing": {
           "output": "$var.job.change_approval_note"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "c85": {
+      "name": "replace",
+      "canvasName": "replace",
+      "summary": "the card's message: the requester's note",
+      "description": "the change on the card: removing the router's AWS block carries the change number; the decision is written to the change, an approval moving it on",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 190,
+        "y": 5250
+      },
+      "variables": {
+        "incoming": {
+          "str": "$var.c81.replacedString",
+          "substr": "__N__",
+          "newSubstr": "$var.job.change_note"
+        },
+        "outgoing": {
+          "replacedString": null
         },
         "error": "",
         "decorators": []
@@ -4320,8 +3969,8 @@
       "displayName": "lab-servicenow:1.0.0",
       "groups": [],
       "nodeLocation": {
-        "x": 200,
-        "y": 8550
+        "x": 180,
+        "y": 7500
       },
       "variables": {
         "incoming": {
@@ -4353,8 +4002,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 50,
-        "y": 8700
+        "x": 30,
+        "y": 7650
       },
       "variables": {
         "incoming": {
@@ -4387,8 +4036,8 @@
       "displayName": "lab-servicenow:1.0.0",
       "groups": [],
       "nodeLocation": {
-        "x": 10,
-        "y": 8850
+        "x": 0,
+        "y": 7800
       },
       "variables": {
         "incoming": {
@@ -4418,8 +4067,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 130,
-        "y": 9000
+        "x": 120,
+        "y": 7950
       },
       "variables": {
         "incoming": {
@@ -4449,11 +4098,11 @@
       "groups": [],
       "nodeLocation": {
         "x": 2280,
-        "y": 12450
+        "y": 11400
       },
       "variables": {
         "incoming": {
-          "str": "Change request __CHG__. __M__",
+          "str": "Change request __CHG__. __M__ The requester's note (their own words, not checked): __N__",
           "substr": "__CHG__",
           "newSubstr": "$var.job.change_number"
         },
@@ -4479,7 +4128,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 2250,
-        "y": 12600
+        "y": 11550
       },
       "variables": {
         "incoming": {
@@ -4508,8 +4157,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 2220,
-        "y": 12750
+        "x": 2190,
+        "y": 11850
       },
       "variables": {
         "incoming": {
@@ -4540,8 +4189,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 2090,
-        "y": 13800
+        "x": 2000,
+        "y": 12900
       },
       "variables": {
         "incoming": {
@@ -4561,152 +4210,6 @@
       "scheduled": false
     },
     "cb2": {
-      "name": "getJob",
-      "canvasName": "getJob",
-      "summary": "who approved it: this job's record",
-      "description": "the change on the card: destroying the AWS side carries the change number; the decision is written to the change, an approval moving it on",
-      "location": "Application",
-      "locationType": null,
-      "app": "OperationsManager",
-      "type": "automatic",
-      "displayName": "OperationsManager",
-      "groups": [],
-      "nodeLocation": {
-        "x": 2100,
-        "y": 13950
-      },
-      "variables": {
-        "incoming": {
-          "id": "$var.job.change_job_id",
-          "queryParameters": {}
-        },
-        "outgoing": {
-          "job": null
-        },
-        "error": "",
-        "decorators": []
-      },
-      "actor": "Pronghorn",
-      "scheduled": false
-    },
-    "cb3": {
-      "name": "query",
-      "canvasName": "query",
-      "summary": "the card's run",
-      "description": "the change on the card: destroying the AWS side carries the change number; the decision is written to the change, an approval moving it on",
-      "location": "Application",
-      "locationType": null,
-      "app": "WorkFlowEngine",
-      "type": "operation",
-      "displayName": "WorkFlowEngine",
-      "groups": [],
-      "nodeLocation": {
-        "x": 1610,
-        "y": 14100
-      },
-      "variables": {
-        "incoming": {
-          "pass_on_null": false,
-          "query": "data.tasks.5f.iterations[0]",
-          "obj": "$var.cb2.job"
-        },
-        "outgoing": {
-          "return_data": null
-        },
-        "error": "",
-        "decorators": []
-      }
-    },
-    "cb4": {
-      "name": "getTask",
-      "canvasName": "getTask",
-      "summary": "who approved it: the card's run (its finisher)",
-      "description": "the change on the card: destroying the AWS side carries the change number; the decision is written to the change, an approval moving it on",
-      "location": "Application",
-      "locationType": null,
-      "app": "OperationsManager",
-      "type": "automatic",
-      "displayName": "OperationsManager",
-      "groups": [],
-      "nodeLocation": {
-        "x": 1650,
-        "y": 14250
-      },
-      "variables": {
-        "incoming": {
-          "id": "$var.cb3.return_data",
-          "queryParameters": {}
-        },
-        "outgoing": {
-          "task": "$var.job.change_card"
-        },
-        "error": "",
-        "decorators": []
-      },
-      "actor": "Pronghorn",
-      "scheduled": false
-    },
-    "cb5": {
-      "name": "parse",
-      "canvasName": "parse",
-      "summary": "the card's run could not be read (the job was started through a trigger)",
-      "description": "the change on the card: destroying the AWS side carries the change number; the decision is written to the change, an approval moving it on",
-      "location": "Application",
-      "locationType": null,
-      "app": "WorkFlowEngine",
-      "type": "automatic",
-      "displayName": "Tools",
-      "groups": [],
-      "nodeLocation": {
-        "x": 2100,
-        "y": 14400
-      },
-      "variables": {
-        "incoming": {
-          "text": "{}"
-        },
-        "outgoing": {
-          "textObject": "$var.job.change_card"
-        },
-        "error": "",
-        "decorators": []
-      },
-      "actor": "Pronghorn",
-      "scheduled": false
-    },
-    "cb6": {
-      "name": "setObjectKey",
-      "canvasName": "setObjectKey",
-      "summary": "the decision: the card's run",
-      "description": "the change on the card: destroying the AWS side carries the change number; the decision is written to the change, an approval moving it on",
-      "location": "Application",
-      "locationType": null,
-      "app": "WorkFlowEngine",
-      "type": "automatic",
-      "displayName": "Tools",
-      "groups": [],
-      "nodeLocation": {
-        "x": 2100,
-        "y": 14550
-      },
-      "variables": {
-        "incoming": {
-          "obj": "$var.cb0.object",
-          "path": [
-            "card"
-          ],
-          "value": "$var.job.change_card"
-        },
-        "outgoing": {
-          "object": null
-        },
-        "error": "",
-        "decorators": []
-      },
-      "actor": "Pronghorn",
-      "scheduled": false
-    },
-    "cb7": {
       "name": "setObjectKey",
       "canvasName": "setObjectKey",
       "summary": "the decision: the card's note",
@@ -4718,12 +4221,12 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 2100,
-        "y": 14700
+        "x": 2020,
+        "y": 13050
       },
       "variables": {
         "incoming": {
-          "obj": "$var.cb6.object",
+          "obj": "$var.cb0.object",
           "path": [
             "export"
           ],
@@ -4738,7 +4241,7 @@
       "actor": "Pronghorn",
       "scheduled": false
     },
-    "cb8": {
+    "cb3": {
       "name": "setObjectKey",
       "canvasName": "setObjectKey",
       "summary": "the decision: what was decided",
@@ -4750,12 +4253,12 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 2100,
-        "y": 14850
+        "x": 2030,
+        "y": 13200
       },
       "variables": {
         "incoming": {
-          "obj": "$var.cb7.object",
+          "obj": "$var.cb2.object",
           "path": [
             "label"
           ],
@@ -4770,7 +4273,7 @@
       "actor": "Pronghorn",
       "scheduled": false
     },
-    "cb9": {
+    "cb4": {
       "name": "setObjectKey",
       "canvasName": "setObjectKey",
       "summary": "the decision: the job id",
@@ -4782,12 +4285,12 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 2100,
-        "y": 15000
+        "x": 2040,
+        "y": 13350
       },
       "variables": {
         "incoming": {
-          "obj": "$var.cb8.object",
+          "obj": "$var.cb3.object",
           "path": [
             "job_id"
           ],
@@ -4802,7 +4305,7 @@
       "actor": "Pronghorn",
       "scheduled": false
     },
-    "cba": {
+    "cb5": {
       "name": "runCode",
       "canvasName": "runCode",
       "summary": "the decision's work note (Python on the runner)",
@@ -4814,15 +4317,15 @@
       "displayName": "GatewayManager",
       "groups": [],
       "nodeLocation": {
-        "x": 2100,
-        "y": 15150
+        "x": 2050,
+        "y": 13500
       },
       "variables": {
         "incoming": {
           "clusterId": "lab",
           "language": "python",
-          "code": "import json, sys\n\n\ndef change_decision(d: dict) -> dict:\n    \"\"\"A card's decision as the change's work note: who decided (the card task's finisher, by role) and when, and\n    the note they wrote. `card` is the card task's own record (getTask), {} when the run could not read it (it was\n    started through a trigger): then the note says the card records who and when. Pure: runCode runs this source.\"\"\"\n    from datetime import datetime, timezone\n\n    metrics = ((d.get(\"card\") or {}).get(\"data\") or {}).get(\"metrics\") or {}\n    user, end = metrics.get(\"user\"), metrics.get(\"end_time\")\n    who = (d.get(\"roles\") or {}).get(user) or (\"Platform account ...\" + str(user)[-6:] if user else \"\")\n    link = f\"{d.get('job_url', '')}{d.get('job_id', '')}\"\n    now = f\"{datetime.now(timezone.utc):%Y-%m-%d %H:%M} UTC\"\n    if not metrics:  # a trigger-started run cannot read its card: the card records who and when\n        when = f\"(the card on job {link} records who and when; noted {now})\"\n    else:\n        at = f\"at {datetime.fromtimestamp(end / 1000, timezone.utc):%Y-%m-%d %H:%M} UTC\" \\\n            if isinstance(end, (int, float)) else f\"(noted {now})\"\n        when = f\"by {who} {at}\" if who else f\"{at} (the card on job {link} records who)\"\n\n    def written(x):  # the card's note box, wherever the export nests it\n        if isinstance(x, dict):\n            if isinstance(x.get(\"note\"), str):\n                return x[\"note\"]\n            for v in x.values():\n                if written(v):\n                    return written(v)\n        return \"\"\n\n    verb = \"Approved\" if d.get(\"decision\") == \"approved\" else \"Rejected\"\n    note = \" \".join(written(d.get(\"export\")).split())\n    if not note:\n        note = \"(none).\"\n    elif len(note) > 500:\n        note = note[:500] + \"...\"\n    elif note[-1] not in \".!?)\":\n        note += \".\"\n    return {\"work_note\": f\"{verb} in Itential Work Center {when}: {d.get('label', '')}. Their note: {note}\"}\n\n\nprint(json.dumps(change_decision({**json.loads(sys.stdin.read() or \"{}\"), **json.loads('{\"roles\": {\"6aa2bdfddd92a98c6d310e34\": \"the lab owner (admin@itential)\"}, \"job_url\": \"https://itential.lab.internal/operations-manager/jobs/\"}')})))\n",
-          "data": "$var.cb9.object",
+          "code": "import json, sys\n\n\ndef change_decision(d: dict) -> dict:\n    \"\"\"A card's decision as the change's work note: what was decided, the note the person wrote on the card, and where\n    the card (which records who and when) is. A trigger-started run cannot read its card back (measured 2026-10-27),\n    so the note does not name anyone. Pure: runCode runs this source.\"\"\"\n    from datetime import datetime, timezone\n\n    link = f\"{d.get('job_url', '')}{d.get('job_id', '')}\"\n    when = f\"(the card on job {link} records who and when; noted {datetime.now(timezone.utc):%Y-%m-%d %H:%M} UTC)\"\n\n    def written(x):  # the card's note box, wherever the export nests it\n        if isinstance(x, dict):\n            if isinstance(x.get(\"note\"), str):\n                return x[\"note\"]\n            for v in x.values():\n                if written(v):\n                    return written(v)\n        return \"\"\n\n    verb = \"Approved\" if d.get(\"decision\") == \"approved\" else \"Rejected\"\n    note = \" \".join(written(d.get(\"export\")).split())\n    if not note:\n        note = \"(none).\"\n    elif len(note) > 500:\n        note = note[:500] + \"...\"\n    elif note[-1] not in \".!?)\":\n        note += \".\"\n    return {\"work_note\": f\"{verb} in Itential Work Center {when}: {d.get('label', '')}. Their note: {note}\"}\n\n\nprint(json.dumps(change_decision({**json.loads(sys.stdin.read() or \"{}\"), **json.loads('{\"job_url\": \"https://itential.lab.internal/operations-manager/jobs/\"}')})))\n",
+          "data": "$var.cb4.object",
           "safety": {
             "timeout": 30
           },
@@ -4837,7 +4340,7 @@
       "actor": "Pronghorn",
       "scheduled": false
     },
-    "cbb": {
+    "cb6": {
       "name": "query",
       "canvasName": "query",
       "summary": "the decision's work note",
@@ -4849,14 +4352,14 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 1780,
-        "y": 15300
+        "x": 1730,
+        "y": 13650
       },
       "variables": {
         "incoming": {
           "pass_on_null": false,
           "query": "stdout_json.work_note",
-          "obj": "$var.cba.result"
+          "obj": "$var.cb5.result"
         },
         "outgoing": {
           "return_data": "$var.job.change_approval_note"
@@ -4877,8 +4380,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 2190,
-        "y": 15450
+        "x": 2120,
+        "y": 13800
       },
       "variables": {
         "incoming": {
@@ -4895,7 +4398,7 @@
       "actor": "Pronghorn",
       "scheduled": false
     },
-    "c95": {
+    "c96": {
       "name": "setObjectKey",
       "canvasName": "setObjectKey",
       "summary": "the decision: rejected",
@@ -4907,8 +4410,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 2390,
-        "y": 13800
+        "x": 2300,
+        "y": 12900
       },
       "variables": {
         "incoming": {
@@ -4927,153 +4430,7 @@
       "actor": "Pronghorn",
       "scheduled": false
     },
-    "c96": {
-      "name": "getJob",
-      "canvasName": "getJob",
-      "summary": "who rejected it: this job's record",
-      "description": "the change on the card: destroying the AWS side carries the change number; the decision is written to the change, an approval moving it on",
-      "location": "Application",
-      "locationType": null,
-      "app": "OperationsManager",
-      "type": "automatic",
-      "displayName": "OperationsManager",
-      "groups": [],
-      "nodeLocation": {
-        "x": 2790,
-        "y": 13950
-      },
-      "variables": {
-        "incoming": {
-          "id": "$var.job.change_job_id",
-          "queryParameters": {}
-        },
-        "outgoing": {
-          "job": null
-        },
-        "error": "",
-        "decorators": []
-      },
-      "actor": "Pronghorn",
-      "scheduled": false
-    },
     "c97": {
-      "name": "query",
-      "canvasName": "query",
-      "summary": "the card's run",
-      "description": "the change on the card: destroying the AWS side carries the change number; the decision is written to the change, an approval moving it on",
-      "location": "Application",
-      "locationType": null,
-      "app": "WorkFlowEngine",
-      "type": "operation",
-      "displayName": "WorkFlowEngine",
-      "groups": [],
-      "nodeLocation": {
-        "x": 2640,
-        "y": 14100
-      },
-      "variables": {
-        "incoming": {
-          "pass_on_null": false,
-          "query": "data.tasks.5f.iterations[0]",
-          "obj": "$var.c96.job"
-        },
-        "outgoing": {
-          "return_data": null
-        },
-        "error": "",
-        "decorators": []
-      }
-    },
-    "c98": {
-      "name": "getTask",
-      "canvasName": "getTask",
-      "summary": "who rejected it: the card's run (its finisher)",
-      "description": "the change on the card: destroying the AWS side carries the change number; the decision is written to the change, an approval moving it on",
-      "location": "Application",
-      "locationType": null,
-      "app": "OperationsManager",
-      "type": "automatic",
-      "displayName": "OperationsManager",
-      "groups": [],
-      "nodeLocation": {
-        "x": 2550,
-        "y": 14250
-      },
-      "variables": {
-        "incoming": {
-          "id": "$var.c97.return_data",
-          "queryParameters": {}
-        },
-        "outgoing": {
-          "task": "$var.job.change_card"
-        },
-        "error": "",
-        "decorators": []
-      },
-      "actor": "Pronghorn",
-      "scheduled": false
-    },
-    "c99": {
-      "name": "parse",
-      "canvasName": "parse",
-      "summary": "the card's run could not be read (the job was started through a trigger)",
-      "description": "the change on the card: destroying the AWS side carries the change number; the decision is written to the change, an approval moving it on",
-      "location": "Application",
-      "locationType": null,
-      "app": "WorkFlowEngine",
-      "type": "automatic",
-      "displayName": "Tools",
-      "groups": [],
-      "nodeLocation": {
-        "x": 2780,
-        "y": 14400
-      },
-      "variables": {
-        "incoming": {
-          "text": "{}"
-        },
-        "outgoing": {
-          "textObject": "$var.job.change_card"
-        },
-        "error": "",
-        "decorators": []
-      },
-      "actor": "Pronghorn",
-      "scheduled": false
-    },
-    "c9a": {
-      "name": "setObjectKey",
-      "canvasName": "setObjectKey",
-      "summary": "the decision: the card's run",
-      "description": "the change on the card: destroying the AWS side carries the change number; the decision is written to the change, an approval moving it on",
-      "location": "Application",
-      "locationType": null,
-      "app": "WorkFlowEngine",
-      "type": "automatic",
-      "displayName": "Tools",
-      "groups": [],
-      "nodeLocation": {
-        "x": 2540,
-        "y": 14550
-      },
-      "variables": {
-        "incoming": {
-          "obj": "$var.c95.object",
-          "path": [
-            "card"
-          ],
-          "value": "$var.job.change_card"
-        },
-        "outgoing": {
-          "object": null
-        },
-        "error": "",
-        "decorators": []
-      },
-      "actor": "Pronghorn",
-      "scheduled": false
-    },
-    "c9b": {
       "name": "setObjectKey",
       "canvasName": "setObjectKey",
       "summary": "the decision: the card's note",
@@ -5085,12 +4442,12 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 2540,
-        "y": 14700
+        "x": 2350,
+        "y": 13050
       },
       "variables": {
         "incoming": {
-          "obj": "$var.c9a.object",
+          "obj": "$var.c96.object",
           "path": [
             "export"
           ],
@@ -5105,7 +4462,7 @@
       "actor": "Pronghorn",
       "scheduled": false
     },
-    "c9c": {
+    "c98": {
       "name": "setObjectKey",
       "canvasName": "setObjectKey",
       "summary": "the decision: what was decided",
@@ -5117,12 +4474,12 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 2540,
-        "y": 14850
+        "x": 2400,
+        "y": 13200
       },
       "variables": {
         "incoming": {
-          "obj": "$var.c9b.object",
+          "obj": "$var.c97.object",
           "path": [
             "label"
           ],
@@ -5137,7 +4494,7 @@
       "actor": "Pronghorn",
       "scheduled": false
     },
-    "c9d": {
+    "c99": {
       "name": "setObjectKey",
       "canvasName": "setObjectKey",
       "summary": "the decision: the job id",
@@ -5149,12 +4506,12 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 2540,
-        "y": 15000
+        "x": 2440,
+        "y": 13350
       },
       "variables": {
         "incoming": {
-          "obj": "$var.c9c.object",
+          "obj": "$var.c98.object",
           "path": [
             "job_id"
           ],
@@ -5169,7 +4526,7 @@
       "actor": "Pronghorn",
       "scheduled": false
     },
-    "c9e": {
+    "c9a": {
       "name": "runCode",
       "canvasName": "runCode",
       "summary": "the decision's work note (Python on the runner)",
@@ -5181,15 +4538,15 @@
       "displayName": "GatewayManager",
       "groups": [],
       "nodeLocation": {
-        "x": 2540,
-        "y": 15150
+        "x": 2480,
+        "y": 13500
       },
       "variables": {
         "incoming": {
           "clusterId": "lab",
           "language": "python",
-          "code": "import json, sys\n\n\ndef change_decision(d: dict) -> dict:\n    \"\"\"A card's decision as the change's work note: who decided (the card task's finisher, by role) and when, and\n    the note they wrote. `card` is the card task's own record (getTask), {} when the run could not read it (it was\n    started through a trigger): then the note says the card records who and when. Pure: runCode runs this source.\"\"\"\n    from datetime import datetime, timezone\n\n    metrics = ((d.get(\"card\") or {}).get(\"data\") or {}).get(\"metrics\") or {}\n    user, end = metrics.get(\"user\"), metrics.get(\"end_time\")\n    who = (d.get(\"roles\") or {}).get(user) or (\"Platform account ...\" + str(user)[-6:] if user else \"\")\n    link = f\"{d.get('job_url', '')}{d.get('job_id', '')}\"\n    now = f\"{datetime.now(timezone.utc):%Y-%m-%d %H:%M} UTC\"\n    if not metrics:  # a trigger-started run cannot read its card: the card records who and when\n        when = f\"(the card on job {link} records who and when; noted {now})\"\n    else:\n        at = f\"at {datetime.fromtimestamp(end / 1000, timezone.utc):%Y-%m-%d %H:%M} UTC\" \\\n            if isinstance(end, (int, float)) else f\"(noted {now})\"\n        when = f\"by {who} {at}\" if who else f\"{at} (the card on job {link} records who)\"\n\n    def written(x):  # the card's note box, wherever the export nests it\n        if isinstance(x, dict):\n            if isinstance(x.get(\"note\"), str):\n                return x[\"note\"]\n            for v in x.values():\n                if written(v):\n                    return written(v)\n        return \"\"\n\n    verb = \"Approved\" if d.get(\"decision\") == \"approved\" else \"Rejected\"\n    note = \" \".join(written(d.get(\"export\")).split())\n    if not note:\n        note = \"(none).\"\n    elif len(note) > 500:\n        note = note[:500] + \"...\"\n    elif note[-1] not in \".!?)\":\n        note += \".\"\n    return {\"work_note\": f\"{verb} in Itential Work Center {when}: {d.get('label', '')}. Their note: {note}\"}\n\n\nprint(json.dumps(change_decision({**json.loads(sys.stdin.read() or \"{}\"), **json.loads('{\"roles\": {\"6aa2bdfddd92a98c6d310e34\": \"the lab owner (admin@itential)\"}, \"job_url\": \"https://itential.lab.internal/operations-manager/jobs/\"}')})))\n",
-          "data": "$var.c9d.object",
+          "code": "import json, sys\n\n\ndef change_decision(d: dict) -> dict:\n    \"\"\"A card's decision as the change's work note: what was decided, the note the person wrote on the card, and where\n    the card (which records who and when) is. A trigger-started run cannot read its card back (measured 2026-10-27),\n    so the note does not name anyone. Pure: runCode runs this source.\"\"\"\n    from datetime import datetime, timezone\n\n    link = f\"{d.get('job_url', '')}{d.get('job_id', '')}\"\n    when = f\"(the card on job {link} records who and when; noted {datetime.now(timezone.utc):%Y-%m-%d %H:%M} UTC)\"\n\n    def written(x):  # the card's note box, wherever the export nests it\n        if isinstance(x, dict):\n            if isinstance(x.get(\"note\"), str):\n                return x[\"note\"]\n            for v in x.values():\n                if written(v):\n                    return written(v)\n        return \"\"\n\n    verb = \"Approved\" if d.get(\"decision\") == \"approved\" else \"Rejected\"\n    note = \" \".join(written(d.get(\"export\")).split())\n    if not note:\n        note = \"(none).\"\n    elif len(note) > 500:\n        note = note[:500] + \"...\"\n    elif note[-1] not in \".!?)\":\n        note += \".\"\n    return {\"work_note\": f\"{verb} in Itential Work Center {when}: {d.get('label', '')}. Their note: {note}\"}\n\n\nprint(json.dumps(change_decision({**json.loads(sys.stdin.read() or \"{}\"), **json.loads('{\"job_url\": \"https://itential.lab.internal/operations-manager/jobs/\"}')})))\n",
+          "data": "$var.c99.object",
           "safety": {
             "timeout": 30
           },
@@ -5204,7 +4561,7 @@
       "actor": "Pronghorn",
       "scheduled": false
     },
-    "c9f": {
+    "c9b": {
       "name": "query",
       "canvasName": "query",
       "summary": "the decision's work note",
@@ -5216,14 +4573,14 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 2530,
-        "y": 15300
+        "x": 2480,
+        "y": 13650
       },
       "variables": {
         "incoming": {
           "pass_on_null": false,
           "query": "stdout_json.work_note",
-          "obj": "$var.c9e.result"
+          "obj": "$var.c9a.result"
         },
         "outgoing": {
           "return_data": "$var.job.change_approval_note"
@@ -5244,8 +4601,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 2790,
-        "y": 15450
+        "x": 2720,
+        "y": 13800
       },
       "variables": {
         "incoming": {
@@ -5255,6 +4612,36 @@
         },
         "outgoing": {
           "output": "$var.job.change_approval_note"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "c95": {
+      "name": "replace",
+      "canvasName": "replace",
+      "summary": "the card's message: the requester's note",
+      "description": "the change on the card: destroying the AWS side carries the change number; the decision is written to the change, an approval moving it on",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 2220,
+        "y": 11700
+      },
+      "variables": {
+        "incoming": {
+          "str": "$var.c91.replacedString",
+          "substr": "__N__",
+          "newSubstr": "$var.job.change_note"
+        },
+        "outgoing": {
+          "replacedString": null
         },
         "error": "",
         "decorators": []
@@ -5275,7 +4662,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 2100,
-        "y": 15600
+        "y": 13950
       },
       "variables": {
         "incoming": {
@@ -5306,8 +4693,8 @@
       "displayName": "lab-servicenow:1.0.0",
       "groups": [],
       "nodeLocation": {
-        "x": 2250,
-        "y": 15750
+        "x": 2100,
+        "y": 14100
       },
       "variables": {
         "incoming": {
@@ -5337,12 +4724,105 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 1800,
-        "y": 15900
+        "x": 1760,
+        "y": 14250
       },
       "variables": {
         "incoming": {
           "input": "ServiceNow did not take the approval's work note; the decision is on this job's card",
+          "outputType": "string",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.change_unwritten"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "c9c": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "the change: the rejection's work note",
+      "description": "the change on the card: destroying the AWS side carries the change number; the decision is written to the change, an approval moving it on",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 2550,
+        "y": 13950
+      },
+      "variables": {
+        "incoming": {
+          "obj": {},
+          "path": [
+            "work_notes"
+          ],
+          "value": "$var.job.change_approval_note"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "c9d": {
+      "name": "updateStandardChange",
+      "canvasName": "updateStandardChange",
+      "summary": "the change: the rejection's work note",
+      "description": "the change on the card: destroying the AWS side carries the change number; the decision is written to the change, an approval moving it on",
+      "location": "Adapter",
+      "locationType": "lab-servicenow:1.0.0",
+      "app": "lab-servicenow:1.0.0",
+      "type": "automatic",
+      "displayName": "lab-servicenow:1.0.0",
+      "groups": [],
+      "nodeLocation": {
+        "x": 2550,
+        "y": 14100
+      },
+      "variables": {
+        "incoming": {
+          "adapter_id": "servicenow-api",
+          "sys_id": "$var.job.change_sys_id",
+          "bodyContentType": "application/json",
+          "requestBodyPayload": "$var.c9c.object"
+        },
+        "outgoing": {
+          "response": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "c9e": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "the rejection was not written to the change",
+      "description": "the change on the card: destroying the AWS side carries the change number; the decision is written to the change, an approval moving it on",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 2510,
+        "y": 14250
+      },
+      "variables": {
+        "incoming": {
+          "input": "ServiceNow did not take the rejection's work note; the decision is on this job's card",
           "outputType": "string",
           "variables": ""
         },
@@ -5367,8 +4847,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": -480,
-        "y": 9150
+        "x": -490,
+        "y": 8100
       },
       "variables": {
         "incoming": {
@@ -5400,7 +4880,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 940,
-        "y": 8850
+        "y": 7800
       },
       "variables": {
         "incoming": {
@@ -5432,7 +4912,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 630,
-        "y": 18150
+        "y": 16500
       },
       "variables": {
         "incoming": {
@@ -5464,7 +4944,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 2300,
-        "y": 18150
+        "y": 16500
       },
       "variables": {
         "incoming": {
@@ -5496,7 +4976,7 @@
       "groups": [],
       "nodeLocation": {
         "x": -540,
-        "y": 9300
+        "y": 8250
       },
       "variables": {
         "incoming": {
@@ -5528,7 +5008,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 960,
-        "y": 9000
+        "y": 7950
       },
       "variables": {
         "incoming": {
@@ -5559,8 +5039,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": -150,
-        "y": 9150
+        "x": -160,
+        "y": 8100
       },
       "variables": {
         "incoming": {
@@ -5592,7 +5072,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 180,
-        "y": 18300
+        "y": 16650
       },
       "variables": {
         "incoming": {
@@ -5624,7 +5104,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 1310,
-        "y": 18300
+        "y": 16650
       },
       "variables": {
         "incoming": {
@@ -5656,7 +5136,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 20,
-        "y": 18450
+        "y": 16800
       },
       "variables": {
         "incoming": {
@@ -5687,14 +5167,14 @@
       "displayName": "GatewayManager",
       "groups": [],
       "nodeLocation": {
-        "x": 620,
-        "y": 18600
+        "x": 320,
+        "y": 16950
       },
       "variables": {
         "incoming": {
           "clusterId": "lab",
           "language": "python",
-          "code": "import json, sys\n\n\ndef change_close(d: dict) -> dict:\n    \"\"\"How a run ends its change: `kind` canceled (ended before any approval, or Implement refused), rejected (a card\n    rejected), failed or successful (after an approval); `reason` is the run's own error or outcome, `note` a\n    rejection's decision note. Canceled takes one update, Review then Closed two. Pure: runCode runs this source.\"\"\"\n    kind, link = d.get(\"kind\"), f\"{d.get('job_url', '')}{d.get('job_id', '')}\"\n    reason = \" \".join(str(d.get(\"reason\") or \"\").split())\n    reason = (reason[:2500] + \"...\") if len(reason) > 2500 else reason or \"(no reason recorded)\"\n    reason = reason if reason[-1:] in \".!?)\" else reason + \".\"\n    if kind in (\"failed\", \"successful\"):\n        code = \"successful\" if kind == \"successful\" else \"unsuccessful\"\n        return {\"two_steps\": True, \"first\": {\"state\": \"0\"},\n                \"second\": {\"state\": \"3\", \"close_code\": code, \"close_notes\": f\"{reason} Job: {link}\",\n                           \"work_notes\": f\"Closed {code}: {reason}\"}}\n    decided = \" \".join(str(d.get(\"note\") or \"\").split()) or \"Rejected in Itential Work Center.\"\n    text = f\"Canceled: {reason}\" if kind != \"rejected\" else f\"{decided} Outcome: {reason}\"\n    return {\"two_steps\": False, \"first\": {\"state\": \"4\", \"work_notes\": f\"{text} Job: {link}\"}, \"second\": None}\n\n\nprint(json.dumps(change_close({**json.loads(sys.stdin.read() or \"{}\"), **json.loads('{\"roles\": {\"6aa2bdfddd92a98c6d310e34\": \"the lab owner (admin@itential)\"}, \"job_url\": \"https://itential.lab.internal/operations-manager/jobs/\"}')})))\n",
+          "code": "import json, sys\n\n\ndef change_close(d: dict) -> dict:\n    \"\"\"How a run ends its change: `kind` canceled (ended before any approval, or Implement refused), rejected (a card\n    rejected), failed or successful (after an approval); `reason` is the run's own error or outcome, `note` a\n    rejection's decision note. Canceled takes one update, Review then Closed two. Pure: runCode runs this source.\"\"\"\n    kind, link = d.get(\"kind\"), f\"{d.get('job_url', '')}{d.get('job_id', '')}\"\n    reason = \" \".join(str(d.get(\"reason\") or \"\").split())\n    reason = (reason[:2500] + \"...\") if len(reason) > 2500 else reason or \"(no reason recorded)\"\n    reason = reason if reason[-1:] in \".!?)\" else reason + \".\"\n    if kind in (\"failed\", \"successful\"):\n        code = \"successful\" if kind == \"successful\" else \"unsuccessful\"\n        return {\"two_steps\": True, \"first\": {\"state\": \"0\"},\n                \"second\": {\"state\": \"3\", \"close_code\": code, \"close_notes\": f\"{reason} Job: {link}\",\n                           \"work_notes\": f\"Closed {code}: {reason}\"}}\n    decided = \" \".join(str(d.get(\"note\") or \"\").split()) or \"Rejected in Itential Work Center.\"\n    text = f\"Canceled: {reason}\" if kind != \"rejected\" else f\"{decided} Outcome: {reason}\"\n    return {\"two_steps\": False, \"first\": {\"state\": \"4\", \"work_notes\": f\"{text} Job: {link}\"}, \"second\": None}\n\n\nprint(json.dumps(change_close({**json.loads(sys.stdin.read() or \"{}\"), **json.loads('{\"job_url\": \"https://itential.lab.internal/operations-manager/jobs/\"}')})))\n",
           "data": "$var.cd9.object",
           "safety": {
             "timeout": 30
@@ -5722,8 +5202,8 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 310,
-        "y": 18750
+        "x": 300,
+        "y": 17100
       },
       "variables": {
         "incoming": {
@@ -5751,7 +5231,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 250,
-        "y": 18900
+        "y": 17250
       },
       "variables": {
         "incoming": {
@@ -5782,7 +5262,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 100,
-        "y": 19050
+        "y": 17400
       },
       "variables": {
         "incoming": {
@@ -5828,7 +5308,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 0,
-        "y": 19200
+        "y": 17550
       },
       "variables": {
         "incoming": {
@@ -5856,7 +5336,7 @@
       "groups": [],
       "nodeLocation": {
         "x": -440,
-        "y": 19350
+        "y": 17700
       },
       "variables": {
         "incoming": {
@@ -5886,8 +5366,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 620,
-        "y": 19500
+        "x": 920,
+        "y": 17850
       },
       "variables": {
         "incoming": {
@@ -5919,7 +5399,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 620,
-        "y": 19650
+        "y": 18000
       },
       "variables": {
         "incoming": {
@@ -5951,13 +5431,13 @@
       "groups": [],
       "nodeLocation": {
         "x": 770,
-        "y": 19800
+        "y": 18150
       },
       "variables": {
         "incoming": {
           "clusterId": "lab",
           "language": "python",
-          "code": "import json, sys\n\n\nCARD_NIGHT = '#0B1322'\nCARD_PANEL = '#121D31'\nCARD_EDGE = '#24344D'\nCARD_DEEP = '#070D18'\nCARD_TEXT = '#E6EDF7'\nCARD_MUTED = '#9FB0C8'\nCARD_GREY = '#7C8EA6'\nCARD_GREEN = '#39C27A'\nCARD_AMBER = '#F2B134'\nCARD_RED = '#FF5A5F'\nCARD_SKY = '#4FA3F7'\nimport base64\nimport html\nfrom datetime import datetime, timezone\n\nOUTAGE_CARD_CSS = '\\nbody { margin: 0; padding: 4px; background: transparent; }\\n.oc { --night: #0B1322; --panel: #121D31; --edge: #24344D; --deep: #070D18; --ink: #E6EDF7; --ink-soft: #9FB0C8;\\n  --sky: #4FA3F7; --green: #39C27A; --amber: #F2B134; --red: #FF5A5F; --line: #24344D; --on-sky: #06101E;\\n  --display: \"Avenir Next Condensed\", \"Avenir Next\", \"Segoe UI Semibold\", \"Arial Narrow\", sans-serif;\\n  --mono: \"SF Mono\", \"Cascadia Mono\", Menlo, Consolas, monospace;\\n  font-family: \"Avenir Next\", \"Segoe UI\", system-ui, -apple-system, sans-serif; color: var(--ink);\\n  background: var(--night); font-size: 15px; line-height: 1.5; max-width: 980px; margin: 0 auto;\\n  border-radius: 14px; overflow: hidden; box-shadow: 0 18px 40px -24px rgba(0, 0, 0, .75);\\n  font-variant-numeric: tabular-nums; }\\n.oc * { box-sizing: border-box; }\\n.oc p { margin: 0; }\\n.oc .band { background: var(--deep); color: var(--ink); padding: 22px 28px 24px; display: grid;\\n  grid-template-columns: 1fr auto; gap: 18px 24px; align-items: start; border-bottom: 1px solid var(--sky); }\\n.oc .brand { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--ink-soft); grid-column: 1 / -1;\\n  letter-spacing: .02em; }\\n.oc .brand img { width: 26px; height: 26px; flex: none; display: block; }\\n.oc .brand b { color: #fff; font-family: var(--display); font-weight: 700; font-size: 15px; }\\n.oc h1 { font-family: var(--display); font-weight: 700; font-size: 34px; line-height: 1.05; margin: 0 0 8px; color: #fff; }\\n.oc .lede { color: var(--ink-soft); max-width: 58ch; }\\n.oc .lede strong { color: #fff; font-weight: 600; }\\n.oc .status { text-align: right; }\\n.oc .pill { display: inline-flex; align-items: center; gap: 8px; background: rgba(242, 177, 52, .14); color: var(--amber);\\n  border: 1px solid rgba(242, 177, 52, .55); border-radius: 999px; padding: 5px 12px 5px 10px; font-size: 13px;\\n  font-weight: 600; white-space: nowrap; }\\n.oc .pill::before { content: \"\"; width: 8px; height: 8px; border-radius: 50%; background: var(--amber);\\n  animation: oc-blink 1.8s ease-in-out infinite; }\\n@keyframes oc-blink { 0%, 100% { opacity: 1; } 50% { opacity: .3; } }\\n.oc .elapsed { margin-top: 12px; font-family: var(--mono); font-size: 36px; font-weight: 600; line-height: 1;\\n  letter-spacing: .02em; color: var(--amber); }\\n.oc .elapsed small { display: block; font-family: var(--display); font-size: 12px; font-weight: 500; color: var(--ink-soft);\\n  margin-top: 4px; letter-spacing: 0; }\\n.oc .body { padding: 22px 28px 28px; display: grid; gap: 18px; }\\n.oc .panel { background: var(--panel); border: 1px solid var(--edge); border-radius: 12px; padding: 18px 20px; }\\n.oc h2 { font-family: var(--display); font-weight: 700; font-size: 19px; margin: 0 0 12px; color: #fff; }\\n.oc .topo { padding: 16px 20px 6px; }\\n.oc .topo img { display: block; width: 100%; height: auto; }\\n.oc .ledger { display: grid; grid-template-columns: repeat(4, 1fr); border-top: 1px solid var(--line); margin-top: 6px; }\\n.oc .reading { padding: 14px 16px 4px 14px; border-left: 3px solid var(--c); }\\n.oc .src, .oc .why { font-size: 13px; color: var(--ink-soft); }\\n.oc .val { font-family: var(--mono); font-size: 19px; font-weight: 600; color: var(--c); line-height: 1.2;\\n  margin: 2px 0; }\\n.oc .steps { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(5, 1fr); }\\n.oc .steps li { position: relative; padding: 26px 8px 0 0; font-size: 13px; color: var(--ink-soft); }\\n.oc .steps li::before { content: \"\"; position: absolute; top: 6px; left: 0; width: 13px; height: 13px;\\n  border-radius: 50%; background: var(--green); box-shadow: 0 0 0 3px var(--panel), 0 0 0 4px var(--green); }\\n.oc .steps li::after { content: \"\"; position: absolute; top: 12px; left: 20px; right: 6px; height: 2px;\\n  background: var(--green); }\\n.oc .steps li:last-child::after { display: none; }\\n.oc .steps .who { display: block; font-family: var(--display); font-weight: 700; font-size: 15px; color: var(--ink); }\\n.oc .steps b { display: block; color: var(--ink); font-size: 14px; font-weight: 600; }\\n.oc .steps .now::before { background: var(--amber); box-shadow: 0 0 0 3px var(--panel), 0 0 0 5px var(--amber); }\\n.oc .steps .now::after, .oc .steps .next::after {\\n  background: repeating-linear-gradient(90deg, #3A4C66 0 6px, transparent 6px 11px); }\\n.oc .steps .now b { color: var(--amber); }\\n.oc .steps .next::before { background: var(--panel); box-shadow: 0 0 0 2px #3A4C66; }\\n.oc .diag { display: grid; grid-template-columns: 1fr 1.05fr; gap: 20px; align-items: start; }\\n.oc .cause { font-family: var(--display); font-size: 25px; font-weight: 700; line-height: 1.15; margin: 2px 0 10px; color: #fff; }\\n.oc .by { display: inline-flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--ink-soft);\\n  background: var(--night); border-radius: 999px; padding: 4px 10px 4px 6px; margin-bottom: 12px; }\\n.oc .by i { width: 18px; height: 18px; border-radius: 50%; display: inline-block;\\n  box-shadow: inset 0 0 0 4px var(--panel), inset 0 0 0 9px var(--sky); background: var(--sky); }\\n.oc .term { background: var(--deep); color: #C9D6E8; border: 1px solid var(--edge); border-radius: 10px;\\n  padding: 12px 16px 14px; font-family: var(--mono); font-size: 12.3px; line-height: 1.6; }\\n.oc .term .h { color: var(--sky); margin-top: 8px; }\\n.oc .term .h:first-child { margin-top: 0; }\\n.oc .term .row { display: flex; justify-content: space-between; gap: 12px; padding-left: 14px; }\\n.oc .term .ok { color: var(--green); }\\n.oc .term .bad { color: var(--red); }\\n.oc .term .unk { color: var(--ink-soft); }\\n.oc .action { background: var(--sky); color: var(--on-sky); border: 0; display: grid; grid-template-columns: 1fr auto;\\n  gap: 6px 24px; padding: 22px 24px; }\\n.oc .kicker { font-size: 13px; color: #0B2A4A; }\\n.oc .action h2 { font-size: 28px; margin: 2px 0 8px; color: var(--on-sky); }\\n.oc .what { color: #0B2A4A; max-width: 56ch; }\\n.oc .scope { align-self: start; text-align: right; font-size: 12.5px; color: #0B2A4A; }\\n.oc .scope b { display: block; font-family: var(--display); font-size: 20px; color: var(--on-sky); }\\n.oc .promises { grid-column: 1 / -1; list-style: none; margin: 14px 0 0; padding: 14px 0 0;\\n  border-top: 1px solid rgba(6, 16, 30, .28); display: grid; grid-template-columns: repeat(3, 1fr);\\n  gap: 10px 18px; font-size: 13.5px; color: var(--on-sky); }\\n.oc .promise { padding-left: 24px; position: relative; }\\n.oc .promise::before { content: \"\"; position: absolute; left: 2px; top: 4px; width: 7px; height: 11px;\\n  border: solid var(--on-sky); border-width: 0 2.5px 2.5px 0; transform: rotate(40deg); }\\n.oc .decide { display: grid; grid-template-columns: 1fr 1.3fr; gap: 20px; align-items: start; }\\n.oc .decide p { color: var(--ink-soft); font-size: 14px; }\\n.oc .decide p + p { margin-top: 8px; }\\n.oc label { display: block; font-weight: 600; font-size: 14px; margin-bottom: 6px; color: var(--ink); }\\n.oc textarea { width: 100%; min-height: 88px; font: inherit; font-size: 14px; padding: 10px 12px; color: var(--ink);\\n  border: 1px solid var(--edge); border-radius: 8px; background: #0E1828; resize: vertical; }\\n.oc textarea:focus-visible { outline: 3px solid rgba(79, 163, 247, .4); border-color: var(--sky); }\\n.oc .foot { padding: 0 28px 20px; font-size: 12px; color: var(--ink-soft); }\\n.oc a { color: var(--sky); }\\n@media (max-width: 760px) {\\n  .oc .band, .oc .action, .oc .decide, .oc .diag { grid-template-columns: 1fr; }\\n  .oc .status, .oc .scope { text-align: left; }\\n  .oc .ledger { grid-template-columns: 1fr 1fr; }\\n  .oc .steps, .oc .promises { grid-template-columns: 1fr; }\\n  .oc .steps li::after { display: none; }\\n}\\n'\nAPPROVAL_CARD_CSS = '\\n.oc .facts { display: grid; grid-template-columns: max-content 1fr; gap: 6px 18px; margin: 0; font-size: 14px; }\\n.oc .facts dt { color: var(--ink-soft); }\\n.oc .facts dd { margin: 0; font-family: var(--mono); font-size: 13.5px; word-break: break-word; }\\n.oc pre.block { margin: 0; font-family: var(--mono); font-size: 13px; line-height: 1.55; white-space: pre-wrap;\\n  color: var(--ink); background: var(--deep); border: 1px solid var(--edge); border-radius: 10px; padding: 12px 14px;\\n  max-height: 520px; overflow: auto; }\\n'\n\n\ndef outage_card_image(svg: str, alt: str, width: int, height: int) -> str:\n    \"\"\"An SVG drawing as an <img> (Work Center strips <svg>, P6): base64 in a data URI.\"\"\"\n    data = base64.b64encode(svg.encode()).decode()\n    return (f'<img alt=\"{html.escape(alt)}\" width=\"{width}\" height=\"{height}\" '\n            f'src=\"data:image/svg+xml;base64,{data}\">')\n\n\ndef card_mark() -> str:\n    \"\"\"The lab's mark for a card's band (ADR 0077): an attitude indicator, sky over ground behind the aircraft\n    reference symbol. Drawn once here and once in the portal page; never a callsign.\"\"\"\n    return outage_card_image(\n        '<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 40 40\" width=\"40\" height=\"40\"><rect width=\"40\" '\n        'height=\"40\" rx=\"10\" fill=\"#070D18\"/><clipPath id=\"c\"><circle cx=\"20\" cy=\"20\" r=\"14\"/></clipPath>'\n        '<g clip-path=\"url(#c)\"><rect x=\"4\" y=\"4\" width=\"32\" height=\"16\" fill=\"#4FA3F7\"/><rect x=\"4\" y=\"20\" '\n        'width=\"32\" height=\"16\" fill=\"#8A5A1E\"/><path d=\"M6 20h28\" stroke=\"#fff\" stroke-width=\"1.2\"/>'\n        '<path d=\"M14 15h4M22 15h4M16 25h2M22 25h2\" stroke=\"#fff\" stroke-width=\"1\" opacity=\".8\"/></g>'\n        '<path d=\"M9 21h8l3 3 3-3h8\" fill=\"none\" stroke=\"#F2B134\" stroke-width=\"2.2\" stroke-linecap=\"round\" '\n        'stroke-linejoin=\"round\"/><circle cx=\"20\" cy=\"21\" r=\"1.6\" fill=\"#F2B134\"/>'\n        '<circle cx=\"20\" cy=\"20\" r=\"14\" fill=\"none\" stroke=\"#fff\" stroke-width=\"1.4\" opacity=\".9\"/></svg>', \"\", 26, 26)\n\n\ndef card_page(title: str, headline: str, lede: str, elapsed: str, since: str, sections: str, number: str,\n              foot: str, extra_css: str = \"\", decide: str = \"\", note_label: str = \"Note for the incident\",\n              brand: str = \"outage response\", pill: str = \"Waiting for your approval\") -> str:\n    \"\"\"A Work Center card's page (R6, R10): the band (title, lede, waiting pill, the outage's age), the card's own\n    sections, the decision with the engineer's note, the foot. `lede`, `sections` and `foot` are HTML the caller built\n    from escaped values; every other argument is escaped here. `extra_css` adds rules after the shared ones; `decide`\n    (HTML) replaces the decision's two lines, which speak of an incident.\"\"\"\n    e = html.escape\n    decide = decide or (f\"<p>Approve runs only this fix. Reject runs nothing and leaves {e(number)} open for a person.</p>\\n\"\n                        \"<p>Either way, your note goes into the incident's work notes.</p>\")\n    return f\"\"\"<!doctype html>\n<html lang=\"en\"><head><meta charset=\"utf-8\"><title>{e(title)}</title>\n<style>{OUTAGE_CARD_CSS}{extra_css}</style></head>\n<body><div class=\"oc\">\n<header class=\"band\">\n<div class=\"brand\">{card_mark()}<span><b>Elliot's Itential Lab</b>&nbsp; {e(brand)}</span></div>\n<div><h1>{e(headline)}</h1>\n<p class=\"lede\">{lede}</p></div>\n<div class=\"status\"><span class=\"pill\">{e(pill)}</span>\n<p class=\"elapsed\">{e(elapsed)}<small>{e(since)}</small></p></div>\n</header>\n<div class=\"body\">\n{sections}\n<section class=\"panel decide\" aria-labelledby=\"t-decide\"><div><h2 id=\"t-decide\">Your decision</h2>\n{decide}</div>\n<form name=\"decision\"><label for=\"oc-note\">{e(note_label)}</label>\n<textarea id=\"oc-note\" name=\"note\" placeholder=\"Why you approve or reject, or what you checked first\"></textarea>\n</form></section>\n</div>\n<p class=\"foot\">{foot}</p>\n</div></body></html>\"\"\"\n\n\ndef change_close(d: dict) -> dict:\n    \"\"\"How a run ends its change: `kind` canceled (ended before any approval, or Implement refused), rejected (a card\n    rejected), failed or successful (after an approval); `reason` is the run's own error or outcome, `note` a\n    rejection's decision note. Canceled takes one update, Review then Closed two. Pure: runCode runs this source.\"\"\"\n    kind, link = d.get(\"kind\"), f\"{d.get('job_url', '')}{d.get('job_id', '')}\"\n    reason = \" \".join(str(d.get(\"reason\") or \"\").split())\n    reason = (reason[:2500] + \"...\") if len(reason) > 2500 else reason or \"(no reason recorded)\"\n    reason = reason if reason[-1:] in \".!?)\" else reason + \".\"\n    if kind in (\"failed\", \"successful\"):\n        code = \"successful\" if kind == \"successful\" else \"unsuccessful\"\n        return {\"two_steps\": True, \"first\": {\"state\": \"0\"},\n                \"second\": {\"state\": \"3\", \"close_code\": code, \"close_notes\": f\"{reason} Job: {link}\",\n                           \"work_notes\": f\"Closed {code}: {reason}\"}}\n    decided = \" \".join(str(d.get(\"note\") or \"\").split()) or \"Rejected in Itential Work Center.\"\n    text = f\"Canceled: {reason}\" if kind != \"rejected\" else f\"{decided} Outcome: {reason}\"\n    return {\"two_steps\": False, \"first\": {\"state\": \"4\", \"work_notes\": f\"{text} Job: {link}\"}, \"second\": None}\n\n\ndef change_fix_card(d: dict) -> dict:\n    \"\"\"The Work Center card when ServiceNow refused to update a change after the run (ADR 0085 decision 5): the state\n    moves and notes change_close would have sent, to write by hand, on the branded page, one button. Every value is\n    escaped. Pure: runCode runs this source (with change_close and card_page) on the Gateway.\"\"\"\n    e = html.escape\n    number = str(d.get(\"number\") or \"the change request\")\n    plan = change_close(d)\n    steps = [plan[\"first\"]] + ([plan[\"second\"]] if plan.get(\"two_steps\") else [])\n    names = {\"0\": \"Review\", \"3\": \"Closed\", \"4\": \"Canceled\"}\n    rows = \"\".join(f\"<dt>State</dt><dd>{e(names.get(step.get('state'), str(step.get('state'))))}</dd>\"\n                   + \"\".join(f\"<dt>{e(k.replace('_', ' '))}</dt><dd>{e(str(v))}</dd>\" for k, v in step.items()\n                             if k != \"state\") for step in steps)\n    sections = (f'<section class=\"panel\" aria-labelledby=\"t-fix\"><h2 id=\"t-fix\">Write this in {e(number)}, in order'\n                f'</h2>\\n<dl class=\"facts\">{rows}</dl></section>\\n')\n    lede = e(f\"ServiceNow refused to update {number} after the run ended. The run itself finished; only the change \"\n             \"request is behind.\")\n    decide = \"<p>Done closes this card. Nothing runs from it.</p>\"\n    page = card_page(f\"Fix {number} by hand\", f\"Fix {number} by hand\", lede, \"\", \"\", sections, \"\",\n                     e(\"Prepared by Itential from this job's own ending.\"), extra_css=APPROVAL_CARD_CSS, decide=decide,\n                     note_label=\"Note for the record\", brand=\"change request\", pill=\"For a person\")\n    return {\"html\": page}\n\n\nprint(json.dumps(change_fix_card({**json.loads(sys.stdin.read() or \"{}\"), **json.loads('{\"roles\": {\"6aa2bdfddd92a98c6d310e34\": \"the lab owner (admin@itential)\"}, \"job_url\": \"https://itential.lab.internal/operations-manager/jobs/\"}')})))\n",
+          "code": "import json, sys\n\n\nCARD_NIGHT = '#0B1322'\nCARD_PANEL = '#121D31'\nCARD_EDGE = '#24344D'\nCARD_DEEP = '#070D18'\nCARD_TEXT = '#E6EDF7'\nCARD_MUTED = '#9FB0C8'\nCARD_GREY = '#7C8EA6'\nCARD_GREEN = '#39C27A'\nCARD_AMBER = '#F2B134'\nCARD_RED = '#FF5A5F'\nCARD_SKY = '#4FA3F7'\nimport base64\nimport html\nfrom datetime import datetime, timezone\n\nOUTAGE_CARD_CSS = '\\nbody { margin: 0; padding: 4px; background: transparent; }\\n.oc { --night: #0B1322; --panel: #121D31; --edge: #24344D; --deep: #070D18; --ink: #E6EDF7; --ink-soft: #9FB0C8;\\n  --sky: #4FA3F7; --green: #39C27A; --amber: #F2B134; --red: #FF5A5F; --line: #24344D; --on-sky: #06101E;\\n  --display: \"Avenir Next Condensed\", \"Avenir Next\", \"Segoe UI Semibold\", \"Arial Narrow\", sans-serif;\\n  --mono: \"SF Mono\", \"Cascadia Mono\", Menlo, Consolas, monospace;\\n  font-family: \"Avenir Next\", \"Segoe UI\", system-ui, -apple-system, sans-serif; color: var(--ink);\\n  background: var(--night); font-size: 15px; line-height: 1.5; max-width: 980px; margin: 0 auto;\\n  border-radius: 14px; overflow: hidden; box-shadow: 0 18px 40px -24px rgba(0, 0, 0, .75);\\n  font-variant-numeric: tabular-nums; }\\n.oc * { box-sizing: border-box; }\\n.oc p { margin: 0; }\\n.oc .band { background: var(--deep); color: var(--ink); padding: 22px 28px 24px; display: grid;\\n  grid-template-columns: 1fr auto; gap: 18px 24px; align-items: start; border-bottom: 1px solid var(--sky); }\\n.oc .brand { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--ink-soft); grid-column: 1 / -1;\\n  letter-spacing: .02em; }\\n.oc .brand img { width: 26px; height: 26px; flex: none; display: block; }\\n.oc .brand b { color: #fff; font-family: var(--display); font-weight: 700; font-size: 15px; }\\n.oc h1 { font-family: var(--display); font-weight: 700; font-size: 34px; line-height: 1.05; margin: 0 0 8px; color: #fff; }\\n.oc .lede { color: var(--ink-soft); max-width: 58ch; }\\n.oc .lede strong { color: #fff; font-weight: 600; }\\n.oc .status { text-align: right; }\\n.oc .pill { display: inline-flex; align-items: center; gap: 8px; background: rgba(242, 177, 52, .14); color: var(--amber);\\n  border: 1px solid rgba(242, 177, 52, .55); border-radius: 999px; padding: 5px 12px 5px 10px; font-size: 13px;\\n  font-weight: 600; white-space: nowrap; }\\n.oc .pill::before { content: \"\"; width: 8px; height: 8px; border-radius: 50%; background: var(--amber);\\n  animation: oc-blink 1.8s ease-in-out infinite; }\\n@keyframes oc-blink { 0%, 100% { opacity: 1; } 50% { opacity: .3; } }\\n.oc .elapsed { margin-top: 12px; font-family: var(--mono); font-size: 36px; font-weight: 600; line-height: 1;\\n  letter-spacing: .02em; color: var(--amber); }\\n.oc .elapsed small { display: block; font-family: var(--display); font-size: 12px; font-weight: 500; color: var(--ink-soft);\\n  margin-top: 4px; letter-spacing: 0; }\\n.oc .body { padding: 22px 28px 28px; display: grid; gap: 18px; }\\n.oc .panel { background: var(--panel); border: 1px solid var(--edge); border-radius: 12px; padding: 18px 20px; }\\n.oc h2 { font-family: var(--display); font-weight: 700; font-size: 19px; margin: 0 0 12px; color: #fff; }\\n.oc .topo { padding: 16px 20px 6px; }\\n.oc .topo img { display: block; width: 100%; height: auto; }\\n.oc .ledger { display: grid; grid-template-columns: repeat(4, 1fr); border-top: 1px solid var(--line); margin-top: 6px; }\\n.oc .reading { padding: 14px 16px 4px 14px; border-left: 3px solid var(--c); }\\n.oc .src, .oc .why { font-size: 13px; color: var(--ink-soft); }\\n.oc .val { font-family: var(--mono); font-size: 19px; font-weight: 600; color: var(--c); line-height: 1.2;\\n  margin: 2px 0; }\\n.oc .steps { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(5, 1fr); }\\n.oc .steps li { position: relative; padding: 26px 8px 0 0; font-size: 13px; color: var(--ink-soft); }\\n.oc .steps li::before { content: \"\"; position: absolute; top: 6px; left: 0; width: 13px; height: 13px;\\n  border-radius: 50%; background: var(--green); box-shadow: 0 0 0 3px var(--panel), 0 0 0 4px var(--green); }\\n.oc .steps li::after { content: \"\"; position: absolute; top: 12px; left: 20px; right: 6px; height: 2px;\\n  background: var(--green); }\\n.oc .steps li:last-child::after { display: none; }\\n.oc .steps .who { display: block; font-family: var(--display); font-weight: 700; font-size: 15px; color: var(--ink); }\\n.oc .steps b { display: block; color: var(--ink); font-size: 14px; font-weight: 600; }\\n.oc .steps .now::before { background: var(--amber); box-shadow: 0 0 0 3px var(--panel), 0 0 0 5px var(--amber); }\\n.oc .steps .now::after, .oc .steps .next::after {\\n  background: repeating-linear-gradient(90deg, #3A4C66 0 6px, transparent 6px 11px); }\\n.oc .steps .now b { color: var(--amber); }\\n.oc .steps .next::before { background: var(--panel); box-shadow: 0 0 0 2px #3A4C66; }\\n.oc .diag { display: grid; grid-template-columns: 1fr 1.05fr; gap: 20px; align-items: start; }\\n.oc .cause { font-family: var(--display); font-size: 25px; font-weight: 700; line-height: 1.15; margin: 2px 0 10px; color: #fff; }\\n.oc .by { display: inline-flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--ink-soft);\\n  background: var(--night); border-radius: 999px; padding: 4px 10px 4px 6px; margin-bottom: 12px; }\\n.oc .by i { width: 18px; height: 18px; border-radius: 50%; display: inline-block;\\n  box-shadow: inset 0 0 0 4px var(--panel), inset 0 0 0 9px var(--sky); background: var(--sky); }\\n.oc .term { background: var(--deep); color: #C9D6E8; border: 1px solid var(--edge); border-radius: 10px;\\n  padding: 12px 16px 14px; font-family: var(--mono); font-size: 12.3px; line-height: 1.6; }\\n.oc .term .h { color: var(--sky); margin-top: 8px; }\\n.oc .term .h:first-child { margin-top: 0; }\\n.oc .term .row { display: flex; justify-content: space-between; gap: 12px; padding-left: 14px; }\\n.oc .term .ok { color: var(--green); }\\n.oc .term .bad { color: var(--red); }\\n.oc .term .unk { color: var(--ink-soft); }\\n.oc .action { background: var(--sky); color: var(--on-sky); border: 0; display: grid; grid-template-columns: 1fr auto;\\n  gap: 6px 24px; padding: 22px 24px; }\\n.oc .kicker { font-size: 13px; color: #0B2A4A; }\\n.oc .action h2 { font-size: 28px; margin: 2px 0 8px; color: var(--on-sky); }\\n.oc .what { color: #0B2A4A; max-width: 56ch; }\\n.oc .scope { align-self: start; text-align: right; font-size: 12.5px; color: #0B2A4A; }\\n.oc .scope b { display: block; font-family: var(--display); font-size: 20px; color: var(--on-sky); }\\n.oc .promises { grid-column: 1 / -1; list-style: none; margin: 14px 0 0; padding: 14px 0 0;\\n  border-top: 1px solid rgba(6, 16, 30, .28); display: grid; grid-template-columns: repeat(3, 1fr);\\n  gap: 10px 18px; font-size: 13.5px; color: var(--on-sky); }\\n.oc .promise { padding-left: 24px; position: relative; }\\n.oc .promise::before { content: \"\"; position: absolute; left: 2px; top: 4px; width: 7px; height: 11px;\\n  border: solid var(--on-sky); border-width: 0 2.5px 2.5px 0; transform: rotate(40deg); }\\n.oc .decide { display: grid; grid-template-columns: 1fr 1.3fr; gap: 20px; align-items: start; }\\n.oc .decide p { color: var(--ink-soft); font-size: 14px; }\\n.oc .decide p + p { margin-top: 8px; }\\n.oc label { display: block; font-weight: 600; font-size: 14px; margin-bottom: 6px; color: var(--ink); }\\n.oc textarea { width: 100%; min-height: 88px; font: inherit; font-size: 14px; padding: 10px 12px; color: var(--ink);\\n  border: 1px solid var(--edge); border-radius: 8px; background: #0E1828; resize: vertical; }\\n.oc textarea:focus-visible { outline: 3px solid rgba(79, 163, 247, .4); border-color: var(--sky); }\\n.oc .foot { padding: 0 28px 20px; font-size: 12px; color: var(--ink-soft); }\\n.oc a { color: var(--sky); }\\n@media (max-width: 760px) {\\n  .oc .band, .oc .action, .oc .decide, .oc .diag { grid-template-columns: 1fr; }\\n  .oc .status, .oc .scope { text-align: left; }\\n  .oc .ledger { grid-template-columns: 1fr 1fr; }\\n  .oc .steps, .oc .promises { grid-template-columns: 1fr; }\\n  .oc .steps li::after { display: none; }\\n}\\n'\nAPPROVAL_CARD_CSS = '\\n.oc .facts { display: grid; grid-template-columns: max-content 1fr; gap: 6px 18px; margin: 0; font-size: 14px; }\\n.oc .facts dt { color: var(--ink-soft); }\\n.oc .facts dd { margin: 0; font-family: var(--mono); font-size: 13.5px; word-break: break-word; }\\n.oc pre.block { margin: 0; font-family: var(--mono); font-size: 13px; line-height: 1.55; white-space: pre-wrap;\\n  color: var(--ink); background: var(--deep); border: 1px solid var(--edge); border-radius: 10px; padding: 12px 14px;\\n  max-height: 520px; overflow: auto; }\\n'\n\n\ndef outage_card_image(svg: str, alt: str, width: int, height: int) -> str:\n    \"\"\"An SVG drawing as an <img> (Work Center strips <svg>, P6): base64 in a data URI.\"\"\"\n    data = base64.b64encode(svg.encode()).decode()\n    return (f'<img alt=\"{html.escape(alt)}\" width=\"{width}\" height=\"{height}\" '\n            f'src=\"data:image/svg+xml;base64,{data}\">')\n\n\ndef card_mark() -> str:\n    \"\"\"The lab's mark for a card's band (ADR 0077): an attitude indicator, sky over ground behind the aircraft\n    reference symbol. Drawn once here and once in the portal page; never a callsign.\"\"\"\n    return outage_card_image(\n        '<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 40 40\" width=\"40\" height=\"40\"><rect width=\"40\" '\n        'height=\"40\" rx=\"10\" fill=\"#070D18\"/><clipPath id=\"c\"><circle cx=\"20\" cy=\"20\" r=\"14\"/></clipPath>'\n        '<g clip-path=\"url(#c)\"><rect x=\"4\" y=\"4\" width=\"32\" height=\"16\" fill=\"#4FA3F7\"/><rect x=\"4\" y=\"20\" '\n        'width=\"32\" height=\"16\" fill=\"#8A5A1E\"/><path d=\"M6 20h28\" stroke=\"#fff\" stroke-width=\"1.2\"/>'\n        '<path d=\"M14 15h4M22 15h4M16 25h2M22 25h2\" stroke=\"#fff\" stroke-width=\"1\" opacity=\".8\"/></g>'\n        '<path d=\"M9 21h8l3 3 3-3h8\" fill=\"none\" stroke=\"#F2B134\" stroke-width=\"2.2\" stroke-linecap=\"round\" '\n        'stroke-linejoin=\"round\"/><circle cx=\"20\" cy=\"21\" r=\"1.6\" fill=\"#F2B134\"/>'\n        '<circle cx=\"20\" cy=\"20\" r=\"14\" fill=\"none\" stroke=\"#fff\" stroke-width=\"1.4\" opacity=\".9\"/></svg>', \"\", 26, 26)\n\n\ndef card_page(title: str, headline: str, lede: str, elapsed: str, since: str, sections: str, number: str,\n              foot: str, extra_css: str = \"\", decide: str = \"\", note_label: str = \"Note for the incident\",\n              brand: str = \"outage response\", pill: str = \"Waiting for your approval\") -> str:\n    \"\"\"A Work Center card's page (R6, R10): the band (title, lede, waiting pill, the outage's age), the card's own\n    sections, the decision with the engineer's note, the foot. `lede`, `sections` and `foot` are HTML the caller built\n    from escaped values; every other argument is escaped here. `extra_css` adds rules after the shared ones; `decide`\n    (HTML) replaces the decision's two lines, which speak of an incident.\"\"\"\n    e = html.escape\n    decide = decide or (f\"<p>Approve runs only this fix. Reject runs nothing and leaves {e(number)} open for a person.</p>\\n\"\n                        \"<p>Either way, your note goes into the incident's work notes.</p>\")\n    return f\"\"\"<!doctype html>\n<html lang=\"en\"><head><meta charset=\"utf-8\"><title>{e(title)}</title>\n<style>{OUTAGE_CARD_CSS}{extra_css}</style></head>\n<body><div class=\"oc\">\n<header class=\"band\">\n<div class=\"brand\">{card_mark()}<span><b>Elliot's Itential Lab</b>&nbsp; {e(brand)}</span></div>\n<div><h1>{e(headline)}</h1>\n<p class=\"lede\">{lede}</p></div>\n<div class=\"status\"><span class=\"pill\">{e(pill)}</span>\n<p class=\"elapsed\">{e(elapsed)}<small>{e(since)}</small></p></div>\n</header>\n<div class=\"body\">\n{sections}\n<section class=\"panel decide\" aria-labelledby=\"t-decide\"><div><h2 id=\"t-decide\">Your decision</h2>\n{decide}</div>\n<form name=\"decision\"><label for=\"oc-note\">{e(note_label)}</label>\n<textarea id=\"oc-note\" name=\"note\" placeholder=\"Why you approve or reject, or what you checked first\"></textarea>\n</form></section>\n</div>\n<p class=\"foot\">{foot}</p>\n</div></body></html>\"\"\"\n\n\ndef change_close(d: dict) -> dict:\n    \"\"\"How a run ends its change: `kind` canceled (ended before any approval, or Implement refused), rejected (a card\n    rejected), failed or successful (after an approval); `reason` is the run's own error or outcome, `note` a\n    rejection's decision note. Canceled takes one update, Review then Closed two. Pure: runCode runs this source.\"\"\"\n    kind, link = d.get(\"kind\"), f\"{d.get('job_url', '')}{d.get('job_id', '')}\"\n    reason = \" \".join(str(d.get(\"reason\") or \"\").split())\n    reason = (reason[:2500] + \"...\") if len(reason) > 2500 else reason or \"(no reason recorded)\"\n    reason = reason if reason[-1:] in \".!?)\" else reason + \".\"\n    if kind in (\"failed\", \"successful\"):\n        code = \"successful\" if kind == \"successful\" else \"unsuccessful\"\n        return {\"two_steps\": True, \"first\": {\"state\": \"0\"},\n                \"second\": {\"state\": \"3\", \"close_code\": code, \"close_notes\": f\"{reason} Job: {link}\",\n                           \"work_notes\": f\"Closed {code}: {reason}\"}}\n    decided = \" \".join(str(d.get(\"note\") or \"\").split()) or \"Rejected in Itential Work Center.\"\n    text = f\"Canceled: {reason}\" if kind != \"rejected\" else f\"{decided} Outcome: {reason}\"\n    return {\"two_steps\": False, \"first\": {\"state\": \"4\", \"work_notes\": f\"{text} Job: {link}\"}, \"second\": None}\n\n\ndef change_fix_card(d: dict) -> dict:\n    \"\"\"The Work Center card when ServiceNow refused to update a change after the run (ADR 0085 decision 5): the state\n    moves and notes change_close would have sent, to write by hand, on the branded page, one button. Every value is\n    escaped. Pure: runCode runs this source (with change_close and card_page) on the Gateway.\"\"\"\n    e = html.escape\n    number = str(d.get(\"number\") or \"the change request\")\n    plan = change_close(d)\n    steps = [plan[\"first\"]] + ([plan[\"second\"]] if plan.get(\"two_steps\") else [])\n    names = {\"0\": \"Review\", \"3\": \"Closed\", \"4\": \"Canceled\"}\n    rows = \"\".join(f\"<dt>State</dt><dd>{e(names.get(step.get('state'), str(step.get('state'))))}</dd>\"\n                   + \"\".join(f\"<dt>{e(k.replace('_', ' '))}</dt><dd>{e(str(v))}</dd>\" for k, v in step.items()\n                             if k != \"state\") for step in steps)\n    sections = (f'<section class=\"panel\" aria-labelledby=\"t-fix\"><h2 id=\"t-fix\">Write this in {e(number)}, in order'\n                f'</h2>\\n<dl class=\"facts\">{rows}</dl></section>\\n')\n    lede = e(f\"ServiceNow refused to update {number} after the run ended. The run itself finished; only the change \"\n             \"request is behind.\")\n    decide = \"<p>Done closes this card. Nothing runs from it.</p>\"\n    page = card_page(f\"Fix {number} by hand\", f\"Fix {number} by hand\", lede, \"\", \"\", sections, \"\",\n                     e(\"Prepared by Itential from this job's own ending.\"), extra_css=APPROVAL_CARD_CSS, decide=decide,\n                     note_label=\"Note for the record\", brand=\"change request\", pill=\"For a person\")\n    return {\"html\": page}\n\n\nprint(json.dumps(change_fix_card({**json.loads(sys.stdin.read() or \"{}\"), **json.loads('{\"job_url\": \"https://itential.lab.internal/operations-manager/jobs/\"}')})))\n",
           "data": "$var.cc1.object",
           "safety": {
             "timeout": 30
@@ -5986,7 +5466,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 710,
-        "y": 19950
+        "y": 18300
       },
       "variables": {
         "incoming": {
@@ -6014,7 +5494,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 60,
-        "y": 20100
+        "y": 18450
       },
       "variables": {
         "incoming": {
@@ -6045,7 +5525,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 960,
-        "y": 20250
+        "y": 18600
       },
       "variables": {
         "incoming": {
@@ -6265,7 +5745,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 510,
-        "y": 20400
+        "y": 18750
       }
     }
   },
@@ -6451,7 +5931,7 @@
         "state": "success",
         "type": "standard"
       },
-      "c85": {
+      "c86": {
         "state": "failure",
         "type": "standard"
       }
@@ -6703,7 +6183,7 @@
         "state": "success",
         "type": "standard"
       },
-      "c95": {
+      "c96": {
         "state": "failure",
         "type": "standard"
       }
@@ -7003,40 +6483,18 @@
       }
     },
     "ce7": {
-      "ce8": {
-        "state": "success",
-        "type": "standard"
-      }
-    },
-    "ce8": {
       "ce9": {
         "state": "success",
         "type": "standard"
       }
     },
     "ce1": {
-      "ce2": {
+      "ce4": {
         "state": "success",
         "type": "standard"
       },
       "cef": {
         "state": "failure",
-        "type": "standard"
-      }
-    },
-    "ce2": {
-      "ce4": {
-        "state": "success",
-        "type": "standard"
-      },
-      "ce3": {
-        "state": "error",
-        "type": "standard"
-      }
-    },
-    "ce3": {
-      "ce4": {
-        "state": "success",
         "type": "standard"
       }
     },
@@ -7109,6 +6567,12 @@
       }
     },
     "c81": {
+      "c85": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "c85": {
       "c82": {
         "state": "success",
         "type": "standard"
@@ -7130,64 +6594,22 @@
       "ca3": {
         "state": "success",
         "type": "standard"
-      },
-      "ca5": {
-        "state": "error",
-        "type": "standard"
       }
     },
     "ca3": {
       "ca4": {
         "state": "success",
         "type": "standard"
-      },
-      "ca5": {
-        "state": "failure",
-        "type": "standard"
       }
     },
     "ca4": {
-      "ca6": {
-        "state": "success",
-        "type": "standard"
-      },
       "ca5": {
-        "state": "error",
+        "state": "success",
         "type": "standard"
       }
     },
     "ca5": {
       "ca6": {
-        "state": "success",
-        "type": "standard"
-      }
-    },
-    "ca6": {
-      "ca7": {
-        "state": "success",
-        "type": "standard"
-      }
-    },
-    "ca7": {
-      "ca8": {
-        "state": "success",
-        "type": "standard"
-      }
-    },
-    "ca8": {
-      "ca9": {
-        "state": "success",
-        "type": "standard"
-      }
-    },
-    "ca9": {
-      "caa": {
-        "state": "success",
-        "type": "standard"
-      }
-    },
-    "caa": {
-      "cab": {
         "state": "success",
         "type": "standard"
       },
@@ -7196,7 +6618,7 @@
         "type": "standard"
       }
     },
-    "cab": {
+    "ca6": {
       "cad": {
         "state": "success",
         "type": "standard"
@@ -7212,19 +6634,9 @@
         "type": "standard"
       }
     },
-    "c85": {
-      "c86": {
-        "state": "success",
-        "type": "standard"
-      }
-    },
     "c86": {
       "c87": {
         "state": "success",
-        "type": "standard"
-      },
-      "c89": {
-        "state": "error",
         "type": "standard"
       }
     },
@@ -7232,19 +6644,11 @@
       "c88": {
         "state": "success",
         "type": "standard"
-      },
-      "c89": {
-        "state": "failure",
-        "type": "standard"
       }
     },
     "c88": {
-      "c8a": {
-        "state": "success",
-        "type": "standard"
-      },
       "c89": {
-        "state": "error",
+        "state": "success",
         "type": "standard"
       }
     },
@@ -7258,37 +6662,13 @@
       "c8b": {
         "state": "success",
         "type": "standard"
-      }
-    },
-    "c8b": {
-      "c8c": {
-        "state": "success",
-        "type": "standard"
-      }
-    },
-    "c8c": {
-      "c8d": {
-        "state": "success",
-        "type": "standard"
-      }
-    },
-    "c8d": {
-      "c8e": {
-        "state": "success",
-        "type": "standard"
-      }
-    },
-    "c8e": {
-      "c8f": {
-        "state": "success",
-        "type": "standard"
       },
       "ca1": {
         "state": "error",
         "type": "standard"
       }
     },
-    "c8f": {
+    "c8b": {
       "a0": {
         "state": "success",
         "type": "standard"
@@ -7343,6 +6723,12 @@
       }
     },
     "c91": {
+      "c95": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "c95": {
       "c92": {
         "state": "success",
         "type": "standard"
@@ -7364,64 +6750,22 @@
       "cb3": {
         "state": "success",
         "type": "standard"
-      },
-      "cb5": {
-        "state": "error",
-        "type": "standard"
       }
     },
     "cb3": {
       "cb4": {
         "state": "success",
         "type": "standard"
-      },
-      "cb5": {
-        "state": "failure",
-        "type": "standard"
       }
     },
     "cb4": {
-      "cb6": {
-        "state": "success",
-        "type": "standard"
-      },
       "cb5": {
-        "state": "error",
+        "state": "success",
         "type": "standard"
       }
     },
     "cb5": {
       "cb6": {
-        "state": "success",
-        "type": "standard"
-      }
-    },
-    "cb6": {
-      "cb7": {
-        "state": "success",
-        "type": "standard"
-      }
-    },
-    "cb7": {
-      "cb8": {
-        "state": "success",
-        "type": "standard"
-      }
-    },
-    "cb8": {
-      "cb9": {
-        "state": "success",
-        "type": "standard"
-      }
-    },
-    "cb9": {
-      "cba": {
-        "state": "success",
-        "type": "standard"
-      }
-    },
-    "cba": {
-      "cbb": {
         "state": "success",
         "type": "standard"
       },
@@ -7430,7 +6774,7 @@
         "type": "standard"
       }
     },
-    "cbb": {
+    "cb6": {
       "cbd": {
         "state": "success",
         "type": "standard"
@@ -7446,19 +6790,9 @@
         "type": "standard"
       }
     },
-    "c95": {
-      "c96": {
-        "state": "success",
-        "type": "standard"
-      }
-    },
     "c96": {
       "c97": {
         "state": "success",
-        "type": "standard"
-      },
-      "c99": {
-        "state": "error",
         "type": "standard"
       }
     },
@@ -7466,19 +6800,11 @@
       "c98": {
         "state": "success",
         "type": "standard"
-      },
-      "c99": {
-        "state": "failure",
-        "type": "standard"
       }
     },
     "c98": {
-      "c9a": {
-        "state": "success",
-        "type": "standard"
-      },
       "c99": {
-        "state": "error",
+        "state": "success",
         "type": "standard"
       }
     },
@@ -7492,38 +6818,14 @@
       "c9b": {
         "state": "success",
         "type": "standard"
-      }
-    },
-    "c9b": {
-      "c9c": {
-        "state": "success",
-        "type": "standard"
-      }
-    },
-    "c9c": {
-      "c9d": {
-        "state": "success",
-        "type": "standard"
-      }
-    },
-    "c9d": {
-      "c9e": {
-        "state": "success",
-        "type": "standard"
-      }
-    },
-    "c9e": {
-      "c9f": {
-        "state": "success",
-        "type": "standard"
       },
       "cb1": {
         "state": "error",
         "type": "standard"
       }
     },
-    "c9f": {
-      "a2": {
+    "c9b": {
+      "c9c": {
         "state": "success",
         "type": "standard"
       },
@@ -7533,7 +6835,7 @@
       }
     },
     "cb1": {
-      "a2": {
+      "c9c": {
         "state": "success",
         "type": "standard"
       }
@@ -7556,6 +6858,28 @@
     },
     "cbf": {
       "6a": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "c9c": {
+      "c9d": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "c9d": {
+      "a2": {
+        "state": "success",
+        "type": "standard"
+      },
+      "c9e": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "c9e": {
+      "a2": {
         "state": "success",
         "type": "standard"
       }
