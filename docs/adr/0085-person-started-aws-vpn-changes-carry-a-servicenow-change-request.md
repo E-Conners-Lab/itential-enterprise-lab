@@ -1,7 +1,7 @@
 # 0085 — Person-started AWS VPN changes carry a ServiceNow change request
 
-- **Status:** proposed (2026-10-27): R5 built; A2 (plan review), A4 (Cloud Concierge) and A5 (drift and cost watch)
-  add their decisions here in the PRs that build them. Design approved by the owner 2026-10-26 (delivery
+- **Status:** proposed (2026-10-27): R5 and A2 (plan review) built; A4 (Cloud Concierge) and A5 (drift and cost
+  watch) add their decisions here in the PRs that build them. Design approved by the owner 2026-10-26 (delivery
   `aws-vpn-roadmap`: customer-spec, feasibility amendments A1-A5, solution-design section C, probes P1-P5)
 - **Date:** 2026-10-27
 - **Related:** ADR 0054 (the `lab-servicenow` integration), ADR 0066 (evaluate every Gateway result), ADR 0068 (the AWS
@@ -44,6 +44,27 @@ Branch VLAN already walks a ServiceNow standard change; the AWS VPN workflows di
    gate rule (`CHANGE_NOTE_RULE`: at most 280 characters, no markup, one line), and shows it on both of its cards, so
    the requester's words reach the approver and the change request.
 
+## Decision (A2: the plan review on Deploy's card)
+
+7. **Deploy reviews its own plan before the card.** Between the plan and the card, `plan_facts` (runCode) turns the
+   plan's review extract (cloud-devops-pipeline #48: address, actions, type, allow-listed facts; the on-prem address
+   never) into the counts, one line per change and the estimate, and `runAgent` hands that to `plan-reviewer`.
+   `plan_review` (runCode) holds the answer to the plan and builds the card's body: the review first, the estimate,
+   then every change by address. The raw extract stays in the job's `plan` variable, off the card.
+8. **The reviewer holds no tool and answers one JSON line** (`{"review": [{"text", "addresses"}]}`): no MCP route, no
+   extra operators, only its workflow runs it (`WORKFLOW_ONLY_AGENTS` in tests/test_flowai.py). The check keeps at most
+   8 lines, replacements and deletions first. The card shows only each line's text, so a line is left out when its
+   text names a resource not in the plan (by address or the end of one) or a global IPv4 address, or when none of the
+   addresses it lists is in the plan; one mistyped address among good ones only loses that address (measured on the
+   twin 2026-10-28).
+9. **Advisory, never in the way.** A session that errors, is canceled or answers anything but the line leaves the card
+   saying "Review unavailable" with why; a review step that cannot run goes straight on to the card, which then shows
+   the plan as it is. The approval works the same either way.
+10. **The cost is computed, never written by a model** (D5): one pure `estimate_per_day` from `aws_vpn.prices`, shared
+    with Get AWS VPN Status. It counts each billed public IPv4 address, so with the NAT gateway on both workflows now
+    add its address too (Status said $1.48 a day for t3.micro with NAT, now $1.60). The card's message drops its
+    written "about $1 a day" for the computed figure.
+
 ## Consequences
 
 - Every ending after the open meets at one of four close entries: more arrows cross tasks on the canvas (Deploy 5,
@@ -58,3 +79,9 @@ Branch VLAN already walks a ServiceNow standard change; the AWS VPN workflows di
   when, and the first note says only that the run started in Itential. The reads were dropped the same day.
 - Tear Down's second card (the AWS destroy) adds a work note on a rejection as on an approval: the change still closes
   `successful` (the router change happened), and the record says the destroy was rejected, with the card's note.
+- A2: every Deploy spends one reviewer session (Claude on production) before its card, and the card waits for it:
+  runAgent has no timeout, so the reviewer gets no tools and one turn. A Deploy imported before the agent exists
+  keeps the agent marker and its review says "unavailable" until the next converge fills it (two passes on the first
+  install). Deploy's canvas has three more arrows through tasks (8; the owner's 2026-10-03 rule).
+- The local twin `plan-reviewer-local` runs in verify/test-06-flowai.sh (S4d.5r) on a fixed plan, held by the
+  workflow's own check.

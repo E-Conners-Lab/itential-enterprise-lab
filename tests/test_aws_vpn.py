@@ -272,8 +272,8 @@ def test_deploy_plans_then_asks_then_applies_exactly_that_plan() -> None:
     names = [(tasks[t]["name"], tasks[t]["variables"]["incoming"].get("serviceName")) for t in order]
     assert names == [("runService", "terraform-run"), ("InteractiveHTML", None), ("runService", "terraform-run"),
                      ("runService", "aws-vpn-psk")]
-    # the approver sees the plan summary, on the branded page (ADR 0077): the body task feeds the renderer
-    assert build.card_input(tasks, "2b", 3) == "$var.job.plan"
+    # the approver sees the plan with its review and estimate (A2), on the branded page (ADR 0077)
+    assert build.card_input(tasks, "2b", 3) == "$var.job.plan_card"
     assert tasks["2b"]["variables"]["incoming"]["body"] == "$var.2b5.return_data"
     plan_fixed = tasks["1a"]["variables"]["incoming"]["text"]  # the inputs are added as data (WEB-01)
     assert '"job": "new"' in plan_fixed and '"enable_vpn": "true"' in plan_fixed and '"action": "plan"' in plan_fixed
@@ -1005,7 +1005,7 @@ def test_the_card_shows_the_end_time_and_what_approving_it_means() -> None:
     _, tasks = _deploy()
     end = tasks["2c"]["variables"]["incoming"]
     assert end["substr"] == "__END__" and end["newSubstr"] == "$var.job.expires_at" and end["str"] == "$var.2a.replacedString"
-    assert build.card_input(tasks, "2b", 2) == "$var.2c.replacedString"  # the page's lede (ADR 0077)
+    assert build.card_input(tasks, "2b", 2) == "$var.2d.replacedString"  # the page's lede (ADR 0077), the estimate in
     message = tasks["2a"]["variables"]["incoming"]["str"]
     assert "__END__" in message and "Tear Down Expired AWS VPN" in message and "no further card" in message
 

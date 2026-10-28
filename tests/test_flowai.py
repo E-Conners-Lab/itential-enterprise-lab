@@ -19,6 +19,9 @@ AGENTS = ROOT / "itential" / "agents"
 VERIFY = ROOT / "verify" / "test-06-flowai.sh"
 PLAY = ROOT / "ansible" / "playbooks" / "flowai.yml"
 ENV_EXAMPLE = ROOT / ".env.example"
+# D6 (ADR 0085): agents only a workflow runs, handed the facts and answering in one turn - no tools at all, no MCP route,
+# no extra operator groups, and a workflow that names them (a twin through the dev overlay's marker map)
+WORKFLOW_ONLY_AGENTS = {"plan-reviewer", "plan-reviewer-local"}
 
 
 @pytest.fixture(scope="module")
@@ -101,7 +104,11 @@ def test_agent_documents(versions: dict) -> None:
         a = yaml.safe_load(path.read_text())
         assert a["project"] and a["name"] and a["instructions"].strip()
         assert a["profile"] in names, f"{path.name}: unknown profile {a['profile']}"
-        assert a["tools"], f"{path.name}: an agent without tools cannot touch the lab"
+        if a["name"] in WORKFLOW_ONLY_AGENTS:
+            assert a["tools"] == [], f"{path.name}: a workflow-only agent holds no tool (criterion 9)"
+            assert "expose_route" not in a and "operator_groups" not in a, f"{path.name}: only its workflow runs it"
+        else:
+            assert a["tools"], f"{path.name}: an agent without tools cannot touch the lab"
         for t in a["tools"]:
             assert t["reference"], t
         schema = a["input_schema"]
@@ -109,6 +116,14 @@ def test_agent_documents(versions: dict) -> None:
         for prop in schema["properties"].values():
             assert prop["type"] in ("string", "number"), "FlowAI input schema allows string/number only"
     assert any(yaml.safe_load(p.read_text())["name"] == "lab-netops" for p in docs)
+
+
+def test_every_workflow_only_agent_is_run_by_a_workflow() -> None:
+    marked = {m for p in (ROOT / "itential" / "workflows").glob("*.json")
+              for m in re.findall(r"__AGENT_ID:([a-z0-9-]+)__", p.read_text())}
+    for name in sorted(WORKFLOW_ONLY_AGENTS):
+        assert (AGENTS / f"{name}.yaml").exists(), name
+        assert name.removesuffix("-local") in marked, f"{name}: no workflow runs it"
 
 
 def test_play_and_verify_exist() -> None:

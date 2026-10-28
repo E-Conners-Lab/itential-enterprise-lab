@@ -609,6 +609,16 @@ c27() {
 }
 check "S16.8 ${WF_ASK} from the Slack endpoint: platform-guide's answer on the card the bot reads, published with the document's own counts" c27
 
+# r) plan-reviewer-local (A2, ADR 0085): Deploy's review step on its twin. A fixed plan (a replacement, a destroyed NAT
+# gateway and its address, one new rule, one IAM update) goes in as Deploy would hand it over; the answer must pass the
+# workflow's own check (build.plan_review: the JSON line, every resource it names in the plan) and repeat the estimate
+c28() {
+  local sid txt
+  sid=$(run_agent plan-reviewer-local "$(${PY} verify/planreviewcheck.py request)") || { echo "$sid"; return 1; }
+  sid=${sid##*$'\n'}; txt=$(session_text "$sid"); count_tokens "$sid"
+  printf '%s' "$txt" | ${PY} verify/planreviewcheck.py judge || { echo "the review did not hold: $(echo "$txt" | head -c 300)"; return 1; }
+}
+check "S4d.5r plan-reviewer-local reviews a fixed plan: one JSON line, only resources in the plan, the estimate repeated" c28
 # cleanup: close the verify's incident; restore the hostname if a failed run left the drift behind
 if [ -n "$INC_SYS" ]; then sn -X PATCH "$SN/incident/${INC_SYS}" -d '{"state":"7","close_code":"Solution provided","close_notes":"closed by verify/test-06-flowai.sh"}' -o /dev/null; echo "closed ${INC_NUM}"; fi
 for s in ${TD_INCS}; do sn -X PATCH "$SN/incident/${s}" -d '{"state":"7","close_code":"Solution provided","close_notes":"closed by verify/test-06-flowai.sh"}' -o /dev/null; done

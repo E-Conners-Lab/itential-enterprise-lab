@@ -383,7 +383,7 @@ aws_vpn:
       transfer, NAT data processing and the state's fixed $1/month key
     instance_hour: {t3.micro: 0.0104, t3.small: 0.0208}
     assumed_instance_type: t3.micro # the vpn module's default, until the next apply records the real one
-    public_ipv4_hour: 0.005 # the strongSwan EIP
+    public_ipv4_hour: 0.005 # each public IPv4: the strongSwan EIP, and the NAT gateway's when it is on (A2)
     nat_gateway_hour: 0.045 # only when enable_nat_gateway
     secret_month: 0.40 # the key's Secrets Manager secret
     root_volume_month: 0.64 # the instance's 8 GB gp3 root volume
