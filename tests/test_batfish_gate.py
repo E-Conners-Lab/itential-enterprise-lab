@@ -111,8 +111,9 @@ def test_the_service_is_pinned_with_the_edge_services_and_holds_only_the_passwor
     assert svc["secrets"] == [{"name": "dc1-wan01-aws-vpn-password", "type": "env", "target": "LAB_EDGE_PASSWORD_DC1_WAN01"}]
     # cfa2bea (cdp #42) brought batfish-check; the pin moved on to its descendants 71d5223 (cdp #43) on the rebase,
     # 4a11f3d (cdp #44: the wider scrub and the deadline, #45), d2e2a46 (cdp #46: restconf-get, ADR 0084) and
-    # 10ead8d (cdp #47: restconf-get's three routers) and d269f20 (cdp #48: the plan's review)
-    assert VERSIONS["terraform_run"]["repository"]["reference"] == "d269f2077486471d26ca01c5a343dd16f986d587"
+    # 10ead8d (cdp #47: restconf-get's three routers), d269f20 (cdp #48: the plan's review) and 4f79b60 (cdp #49: the
+    # routing table)
+    assert VERSIONS["terraform_run"]["repository"]["reference"] == "4f79b60e81b410706835a730f054e998f216fef4"
 
 
 # ── Hand Off: the section between the render and the card (ADR 0076 decision 4) ──

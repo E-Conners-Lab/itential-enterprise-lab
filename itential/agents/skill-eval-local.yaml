@@ -29,6 +29,7 @@ instructions: |
       /restconf/data/Cisco-IOS-XE-interfaces-oper:interfaces
       /restconf/data/Cisco-IOS-XE-native:native/router/Cisco-IOS-XE-ospf:router-ospf
       /restconf/data/Cisco-IOS-XE-native:native/interface
+      /restconf/data/ietf-routing:routing-state/routing-instance=default/ribs/rib=ipv4-default/routes
     The answer is data; error is set instead (a short class such as not-found) when the read failed.
   - "Push Configuration to a Scratch Device with Approval" (device, lines, reason): a configuration change as a list of
     lines, in the order a person types them after "configure terminal", and one sentence saying why. A person approves

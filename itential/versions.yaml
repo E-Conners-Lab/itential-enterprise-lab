@@ -102,7 +102,9 @@ terraform_run:
     # gives it (any other name or address is refused before a connection).
     # d269f20 = main after cdp #48 (A2): terraform-run plan also returns `review` (per changed resource: address,
     # actions, replacement, allow-listed facts) and `review_withheld`; any public IPv4 or 12-digit id withholds it.
-    reference: "d269f2077486471d26ca01c5a343dd16f986d587"
+    # 4f79b60 = main after cdp #49: restconf-get's ALLOWLIST takes the IPv4 routing table (skills_lab.restconf_allowlist
+    # follows).
+    reference: "4f79b60e81b410706835a730f054e998f216fef4"
   executable_object:
     name: python-3-12
     description: "the runner image's Python 3.12 (ADR 0038)"
@@ -267,13 +269,16 @@ skills_lab:
   # the four workflows' keys (workflows, operations_manager): imported and triggered on production only
   workflows: [scratch_show, scratch_restconf, scratch_push, scratch_restore]
   # restconf-get's ALLOWLIST (cloud-devops-pipeline itential/restconf-get.py), held here for Get RESTCONF Data from a
-  # Scratch Device's input gate: the same four prefixes, the same character rule (`%` only as %2F), no `..`. A change
-  # is a CDP pull request plus a pin bump plus this list
+  # Scratch Device's input gate: the same prefixes, the same character rule (`%` only as %2F), no `..`. A change is a
+  # CDP pull request plus a pin bump plus this list
   restconf_allowlist:
     - /restconf/data/Cisco-IOS-XE-ospf-oper:ospf-oper-data
     - /restconf/data/Cisco-IOS-XE-interfaces-oper:interfaces
     - /restconf/data/Cisco-IOS-XE-native:native/router/Cisco-IOS-XE-ospf:router-ospf
     - /restconf/data/Cisco-IOS-XE-native:native/interface
+    # the IPv4 routing table (cdp #49), one route readable by its key (route=10.255.0.3%2F32). Only this form answers on
+    # IOS XE 17.13
+    - /restconf/data/ietf-routing:routing-state/routing-instance=default/ribs/rib=ipv4-default/routes
   # Push Configuration to a Scratch Device with Approval refuses a line matching any of these (case-insensitive, searched
   # anywhere in the line) on the runner before a card exists: no save, reload, replace, archive, keys, accounts, file
   # operations, boot, licence, EEM or Tcl, and no exec command through `do`. Nor anything that reaches the management
