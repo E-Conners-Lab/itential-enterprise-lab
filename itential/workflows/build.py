@@ -3778,8 +3778,8 @@ def plan_review(d: dict) -> dict:
     kinds = {c["address"]: c["kind"] for c in facts.get("changes") or []}
     lines = [x.strip() for x in str(agent.get("lastMessage") or "").strip().splitlines() if x.strip()]
     items, why = [], ""
-    if not agent:
-        why = "the reviewer did not run"
+    if not agent:  # runAgent errors on a canceled or failed session (measured 2026-10-28): its answer stays {}
+        why = "the reviewer session ended without an answer (canceled, failed or not started)"
     elif agent.get("sessionStatus") != "COMPLETE":
         why = f"the reviewer did not finish ({str(agent.get('sessionStatus') or 'no status')[:24]})"
     else:
@@ -6695,6 +6695,9 @@ APPROVAL_LABELS = {"block": "The block (key masked)", "lines": "The lines pushed
                    "kept only if": "Kept only if", "after this": "After this", "details": "Details",
                    "plan_review": "Plan review (advisory: plan-reviewer has no tools and never approves)",
                    "estimated_cost": "Estimated cost", "plan_changes": "Every change in the plan"}
+# where a block goes on the card, by its key (any other key: 2). The Platform hands the body to the renderer with its
+# keys sorted (measured 2026-10-28, Deploy 1a8c577d): without this the review sat below a 53-line change list.
+APPROVAL_ORDER = {"plan_review": 0, "estimated_cost": 1, "plan_changes": 3}
 
 
 def approval_card(d: dict) -> dict:
@@ -6725,6 +6728,7 @@ def approval_card(d: dict) -> dict:
     if facts:
         rows = "".join(f"<dt>{e(k)}</dt><dd>{e(v)}</dd>" for k, v in facts)
         sections += f'<section class="panel" aria-labelledby="t-facts"><h2 id="t-facts">What this approval covers</h2>\n<dl class="facts">{rows}</dl></section>\n'
+    blocks.sort(key=lambda b: APPROVAL_ORDER.get(b[0], 2))
     for n, (key, text) in enumerate(blocks):
         text = text if len(text) <= APPROVAL_BLOCK_CHARS else text[:APPROVAL_BLOCK_CHARS] + "\n... (cut)"
         label = APPROVAL_LABELS.get(key, key.replace("_", " ").capitalize())
@@ -6991,7 +6995,8 @@ APPROVAL_CARD_CODE = _source(outage_card_image, card_mark, card_page, approval_c
                              extra=CARD_PALETTE_SRC + "import base64\nimport html\nfrom datetime import datetime, timezone\n\n"
                              "OUTAGE_CARD_CSS = " + repr(OUTAGE_CARD_CSS) + "\nAPPROVAL_CARD_CSS = "
                              + repr(APPROVAL_CARD_CSS) + "\nAPPROVAL_BLOCK_CHARS = " + repr(APPROVAL_BLOCK_CHARS)
-                             + "\nAPPROVAL_LABELS = " + repr(APPROVAL_LABELS) + "\n\n\n")
+                             + "\nAPPROVAL_LABELS = " + repr(APPROVAL_LABELS)
+                             + "\nAPPROVAL_ORDER = " + repr(APPROVAL_ORDER) + "\n\n\n")
 def change_fix_card(d: dict) -> dict:
     """The Work Center card when ServiceNow refused to update a change after the run (ADR 0085 decision 5): the state
     moves and notes change_close would have sent, to write by hand, on the branded page, one button. Every value is
