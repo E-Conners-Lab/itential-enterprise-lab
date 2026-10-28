@@ -423,7 +423,7 @@
               "path": {
                 "type": "string",
                 "maxLength": 300,
-                "pattern": "^(?!.*\\.\\.)(?:/restconf/data/Cisco-IOS-XE-ospf-oper:ospf-oper-data|/restconf/data/Cisco-IOS-XE-interfaces-oper:interfaces|/restconf/data/Cisco-IOS-XE-native:native/router/Cisco-IOS-XE-ospf:router-ospf|/restconf/data/Cisco-IOS-XE-native:native/interface)(?:/(?:[A-Za-z0-9=:._,/-]|%2[Ff])*)?$"
+                "pattern": "^(?!.*\\.\\.)(?:/restconf/data/Cisco-IOS-XE-ospf-oper:ospf-oper-data|/restconf/data/Cisco-IOS-XE-interfaces-oper:interfaces|/restconf/data/Cisco-IOS-XE-native:native/router/Cisco-IOS-XE-ospf:router-ospf|/restconf/data/Cisco-IOS-XE-native:native/interface|/restconf/data/ietf-routing:routing-state/routing-instance=default/ribs/rib=ipv4-default/routes)(?:/(?:[A-Za-z0-9=:._,/-]|%2[Ff])*)?$"
               }
             }
           }

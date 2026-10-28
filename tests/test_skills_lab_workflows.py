@@ -26,6 +26,7 @@ CDP_ALLOWLIST = [
     "/restconf/data/Cisco-IOS-XE-interfaces-oper:interfaces",
     "/restconf/data/Cisco-IOS-XE-native:native/router/Cisco-IOS-XE-ospf:router-ospf",
     "/restconf/data/Cisco-IOS-XE-native:native/interface",
+    "/restconf/data/ietf-routing:routing-state/routing-instance=default/ribs/rib=ipv4-default/routes",
 ]
 
 _spec = importlib.util.spec_from_file_location("workflow_build", WORKFLOWS / "build.py")
@@ -113,6 +114,8 @@ def test_the_allowlist_is_restconf_gets_own() -> None:
     "/restconf/data/Cisco-IOS-XE-interfaces-oper:interfaces/interface=GigabitEthernet2",
     "/restconf/data/Cisco-IOS-XE-native:native/interface/GigabitEthernet=0%2F0%2F1",
     "/restconf/data/Cisco-IOS-XE-ospf-oper:ospf-oper-data/ospf-state",
+    # one route by its key, the `/` of the prefix sent as %2F (measured on skl-r1, 2026-10-27)
+    "/restconf/data/ietf-routing:routing-state/routing-instance=default/ribs/rib=ipv4-default/routes/route=10.255.0.3%2F32",
 ])
 def test_the_restconf_gate_takes_an_allowlisted_path(path: str) -> None:
     pattern = _gate("scratch_restconf")["properties"]["path"]["pattern"]
@@ -129,6 +132,11 @@ def test_the_restconf_gate_takes_an_allowlisted_path(path: str) -> None:
     "/restconf/data/Cisco-IOS-XE-native:native/interface?depth=1",
     "/restconf/data/Cisco-IOS-XE-native:native/interface#x",
     "/restconf/data/Cisco-IOS-XE-native:native/interface/a b",
+    # the routing table only through the default instance: the other forms answer nothing on 17.13 and stay out
+    "/restconf/data/ietf-routing:routing/ribs",
+    "/restconf/data/ietf-routing:routing-state/ribs/rib=ipv4-default/routes",
+    "/restconf/data/ietf-routing:routing-state/routing-instance=default/ribs/rib=ipv6-default/routes",
+    "/restconf/data/ietf-routing:routing-state/routing-instance=default/ribs/rib=ipv4-default/routesx",
 ])
 def test_the_restconf_gate_refuses_anything_else(path: str) -> None:
     pattern = _gate("scratch_restconf")["properties"]["path"]["pattern"]
