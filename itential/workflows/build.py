@@ -3686,6 +3686,162 @@ def card_input(tasks: dict, card: str, part: int) -> str:
     return value
 
 
+# --- A2: the plan review on Deploy's card (ADR 0085) ----------------------------------------------------------------
+# Between the plan and the card, Deploy hands plan-reviewer (no tools, one turn, ONE JSON line) the plan's changes as the
+# plan's own review extract gives them (cloud-devops-pipeline #48: address, actions, type, allow-listed facts, never the
+# on-prem address) with the estimate, computed here and never by the model (D5). The answer is held to the plan before
+# it reaches the card: at most PLAN_REVIEW_LINES lines, each naming only resources in the plan, replacements and
+# deletions first. Advisory: a review that fails, is canceled or does not parse shows "Review unavailable" and the card
+# approves or rejects as before.
+PLAN_REVIEWER_MARKER = "__AGENT_ID:plan-reviewer__"
+PLAN_REVIEW_LINES = 8
+PLAN_PRICES = VERSIONS["aws_vpn"]["prices"]
+
+
+def estimate_per_day(facts: dict, prices: dict) -> dict:
+    """The deployment's estimated cost from the unit prices pinned in versions.yaml aws_vpn.prices (D5: computed, never
+    written by a model). `facts`: instance_type (none: the assumed type), nat (bool), public_ipv4 (how many public IPv4
+    addresses AWS bills: the strongSwan EIP, and the NAT gateway's when it is on). A month is 730 hours in AWS pricing.
+    Pure: Get AWS VPN Status and Deploy's review run this very source on the Gateway."""
+    itype = facts.get("instance_type") or prices["assumed_instance_type"]
+    rate = prices["instance_hour"].get(itype)
+    hourly = None
+    if rate is not None:
+        hourly = (rate + prices["public_ipv4_hour"] * facts.get("public_ipv4", 1)
+                  + (prices["nat_gateway_hour"] if facts.get("nat") else 0)
+                  + (prices["secret_month"] + prices["root_volume_month"]) / 730)
+    return {"instance_type": itype, "assumed": not facts.get("instance_type"), "hourly": hourly,
+            "per_day_usd": None if hourly is None else round(hourly * 24, 2)}
+
+
+def plan_facts(d: dict) -> dict:
+    """What plan-reviewer is handed and what its answer is held to (A2): each change's kind, address, type and
+    allow-listed facts from the plan's review extract (its address and actions only when the extract was withheld),
+    the counts, and the estimate once applied from the NAT input and the planned instance type. `d`: plan (terraform-run
+    plan's stdout_json), nat (the input, "true"/"false"), prices. Pure: runCode runs this source on the Gateway."""
+    plan = d.get("plan") or {}
+    review = plan.get("review") if isinstance(plan.get("review"), list) else []
+    entries = review or [{"address": c.get("address"), "actions": c.get("actions") or []}
+                         for c in plan.get("changes") or [] if isinstance(c, dict)]
+    counts = {"create": 0, "update": 0, "replace": 0, "destroy": 0}
+    changes, lines, itype = [], [], None
+    for e in entries:
+        actions = [str(a) for a in e.get("actions") or []]
+        kind = ("replace" if "delete" in actions and "create" in actions else "destroy" if "delete" in actions
+                else "create" if "create" in actions else "update")
+        counts[kind] += 1
+        address, facts = str(e.get("address") or ""), e.get("facts") or {}
+        if (e.get("type") == "aws_instance" and kind != "destroy"
+                and facts.get("instance_type") not in (None, "known after apply")):
+            itype = str(facts["instance_type"])
+        changes.append({"address": address, "kind": kind})
+        why = e.get("replace_attributes") if kind == "replace" else e.get("changed_attributes") if kind == "update" else []
+        lines.append(f"{kind} {address}" + (f" [{e['type']}]" if e.get("type") else "")
+                     + (f" ({'forced by' if kind == 'replace' else 'changing'}: {', '.join(map(str, why))})" if why else "")
+                     + "".join(f" {k}={json.dumps(v)}" for k, v in sorted(facts.items())))
+    nat = str(d.get("nat")).lower() == "true"
+    est = estimate_per_day({"instance_type": itype, "nat": nat, "public_ipv4": 2 if nat else 1}, d["prices"])
+    shape = (f"{est['instance_type']}{' (assumed: the plan does not set it)' if est['assumed'] else ''}, NAT gateway "
+             f"{'on' if nat else 'off'}, {2 if nat else 1} public IPv4 address{'es' if nat else ''}")
+    if est["per_day_usd"] is None:
+        cost = f"not worked out: no pinned price for {est['instance_type']}"
+        estimate = f"{cost} (add it to versions.yaml aws_vpn.prices)"
+    else:
+        cost = f"about ${est['per_day_usd']:.2f} a day"
+        estimate = f"{cost} once applied ({shape}): {d['prices']['basis']}"
+    told = ", ".join(f"{n} to {k if k != 'update' else 'change'}" for k, n in counts.items())
+    withheld = str(plan.get("review_withheld") or "")
+    request = (f"The plan: {told}.\nThe estimated cost once applied (computed; repeat it, never work out your own): "
+               f"{cost} ({shape}).\n"
+               + (f"The plan's attribute extract was withheld ({withheld}): only addresses and actions are known.\n"
+                  if withheld or not review and entries else "")
+               + ("The changes, one per line: what Terraform does, the address, [the type], what forces a replacement "
+                  "or what changes, the facts.\n" + "\n".join(lines) if lines else "The plan changes nothing."))
+    keep = {k: v for k, v in plan.items() if k not in ("review", "changes") and not (k == "review_withheld" and not v)}
+    return {"ok": True, "request": request, "changes": changes, "counts": counts, "cost": cost, "estimate": estimate,
+            "per_day_usd": est["per_day_usd"], "plan": keep}
+
+
+PLAN_ADDRESS = re.compile(r"(?:module\.[\w-]+(?:\[[^\]\s]+\])?\.)*aws_\w+\.[\w-]+(?:\[[^\]\s]+\])?")
+IPV4_LITERAL = re.compile(r"(?<![\d.])\d{1,3}(?:\.\d{1,3}){3}(?!\d)")
+
+
+def plan_review(d: dict) -> dict:
+    """plan-reviewer's answer held to the plan (A2), and the Deploy card's body. `d`: facts (plan_facts' runCode result,
+    its answer under stdout_json), agent (runAgent's {sessionId, sessionStatus, lastMessage}, or {} when the session did
+    not run). The answer's last JSON
+    object line (a code fence around it is fine) must be {"review": [{"text": ..., "addresses": [...]}]}. The card shows only the text, so a line is left out when
+    its text names a resource not in the plan (by its address or the end of one) or a global IPv4 address, or when it
+    lists resource addresses and none is in the plan (it is about something else); one mistyped address among good
+    ones only loses that address, and a listed prefix or label is not an address. The rest are ordered replacements and deletions first and cut to PLAN_REVIEW_LINES. Anything else is "Review unavailable" with why. Pure: runCode runs this source."""
+    facts, agent = (d.get("facts") or {}).get("stdout_json") or {}, d.get("agent") or {}
+    kinds = {c["address"]: c["kind"] for c in facts.get("changes") or []}
+    lines = [x.strip() for x in str(agent.get("lastMessage") or "").strip().splitlines() if x.strip()]
+    items, why = [], ""
+    if not agent:
+        why = "the reviewer did not run"
+    elif agent.get("sessionStatus") != "COMPLETE":
+        why = f"the reviewer did not finish ({str(agent.get('sessionStatus') or 'no status')[:24]})"
+    else:
+        answer = None
+        for line in reversed(lines):  # the last line that is a JSON object: a fence or a closing word may follow it
+            try:
+                answer = json.loads(line)
+            except ValueError:
+                continue
+            if isinstance(answer, dict):
+                break
+        items = answer.get("review") if isinstance(answer, dict) else None
+        if not isinstance(items, list):
+            items, why = [], "the reviewer's answer was not the JSON line"
+        elif not items:
+            why = "the reviewer returned no lines"
+
+    def resolve(name):  # the plan's addresses a name stands for: itself, or those it ends
+        return [a for a in kinds if a == name or a.endswith("." + name)]
+
+    def is_global(literal):  # as cloud-devops-pipeline's guard: what Python cannot read (10.01.0.0) is no address
+        try:
+            return ipaddress.ip_address(literal).is_global
+        except ValueError:
+            return False
+
+    kept, dropped = [], 0
+    for item in items:
+        item = item if isinstance(item, dict) else {"text": item}
+        text = " ".join(str(item.get("text") or "").split())
+        listed = {a for a in item.get("addresses") or [] if isinstance(a, str) and PLAN_ADDRESS.fullmatch(a)}
+        said = set(PLAN_ADDRESS.findall(text))
+        public = any(is_global(x) for x in IPV4_LITERAL.findall(text))
+        if (not text or public or any(not resolve(n) for n in said)
+                or (listed and not any(resolve(a) for a in listed))):
+            dropped += 1
+            continue
+        first = any(kinds[a] in ("replace", "destroy") for n in listed | said for a in resolve(n))
+        kept.append((0 if first else 1, text if len(text) <= 300 else text[:297] + "..."))
+    kept = [t for _, t in sorted(kept, key=lambda k: k[0])][:PLAN_REVIEW_LINES]
+    if items and not kept:
+        why = "every line named a resource that is not in the plan"
+    review = kept or [f"Review unavailable: {why}. The changes are listed below; approving or rejecting works as always."]
+    if kept and dropped:
+        review.append(f"({dropped} line{'s' if dropped > 1 else ''} left out: named a resource not in the plan or a "
+                      "public address)")
+    card = {"plan_review": review, "estimated_cost": facts.get("estimate") or "not worked out",
+            **(facts.get("plan") or {}),
+            "plan_changes": [f"{c['kind']:<8} {c['address']}" for c in facts.get("changes") or []] or ["none"]}
+    return {"available": bool(kept), "why": why, "review": kept, "dropped": dropped,
+            "session": str(agent.get("sessionId") or "")[:64], "card": card}
+
+
+PLAN_FACTS_CODE = ("import json, sys\n\n\nPRICES = " + repr(PLAN_PRICES) + "\n\n\n" + inspect.getsource(estimate_per_day)
+                   + "\n\n" + inspect.getsource(plan_facts)
+                   + "\n\nprint(json.dumps(plan_facts({**json.loads(sys.stdin.read() or \"{}\"), \"prices\": PRICES})))\n")
+PLAN_REVIEW_CODE = ("import ipaddress, json, re, sys\n\n\nPLAN_REVIEW_LINES = " + repr(PLAN_REVIEW_LINES)
+                    + "\nPLAN_ADDRESS = re.compile(" + repr(PLAN_ADDRESS.pattern) + ")\nIPV4_LITERAL = re.compile("
+                    + repr(IPV4_LITERAL.pattern) + ")\n\n\n" + inspect.getsource(plan_review)
+                    + "\n\nprint(json.dumps(plan_review(json.loads(sys.stdin.read() or \"{}\"))))\n")
+
+
 def deploy_aws_vpn() -> dict:
     ok, fail, err = "success", "failure", "error"
     tasks = sectioned({
@@ -3709,17 +3865,46 @@ def deploy_aws_vpn() -> dict:
         "1e": evaluate("plan made?", "1d", "result", "result.return_code", "==", 0, x=500),
         "1f": jq("the plan summary", "$var.1d.result", "result.stdout_json", x=600, to_job="plan"),
         "10": jq("the plan ID", "$var.1d.result", "result.stdout_json.job", x=700),
-        **step("the approval: the plan summary on a Work Center card"),
+        **step("the review: plan-reviewer reads the plan, the estimate is worked out; advisory, it never blocks the card"),
+        # what the card shows when a review step cannot run: the plan as it is, "Review unavailable" (A2, criterion 8)
+        "60": note("the estimate, until it is worked out", "not worked out (the review step did not run)", "plan_cost",
+                   x=705),
+        "61": _publish(set_key("the card's body, until the review is made",
+                               {"plan_review": ["Review unavailable: the review step did not run. The plan is below; "
+                                                "approving or rejecting works as always."]}, "plan", "$var.job.plan",
+                               x=710), "object", "plan_card"),
+        "62": empty("no review answer yet", "review_result", x=715),
+        "63": set_key("the review's input: the plan", {}, "plan", "$var.job.plan", x=720),
+        "64": set_key("the review's input: NAT gateway", "$var.63.object", "nat", "$var.job.enable_nat_gateway", x=725),
+        "65": run_code("the plan's facts and the estimate (Python on the runner)", PLAN_FACTS_CODE, "$var.64.object",
+                       "plan_facts", x=730),
+        "66": jq("the estimate", "$var.65.result", "stdout_json.cost", x=735, to_job="plan_cost"),
+        "67": jq("the reviewer's request", "$var.65.result", "stdout_json.request", x=740),
+        "68": run_agent("plan-reviewer: the plan in plain English (advisory, no tools)", PLAN_REVIEWER_MARKER,
+                        "$var.67.return_data", "review_result", x=745),
+        "6d": note("the review session did not run", "the plan-reviewer session ended in an error: the card says "
+                   "review unavailable", "review_error", x=750, y=-300),
+        "69": set_key("the review's input: the plan's facts", {}, "facts", "$var.job.plan_facts", x=755),
+        "6a": set_key("the review's input: the reviewer's answer", "$var.69.object", "agent", "$var.job.review_result",
+                      x=760),
+        "6b": run_code("the review, held to the plan (Python on the runner)", PLAN_REVIEW_CODE, "$var.6a.object",
+                       "plan_review", x=765),
+        "6c": jq("the card's body", "$var.6b.result", "stdout_json.card", x=770, to_job="plan_card"),
+        "6e": note("the reviewed body could not be read", "the review's card body could not be read: the card shows "
+                   "the plan as it is", "review_error", x=775, y=-300),
+        **step("the approval: the plan, its review and the estimate on a Work Center card"),
         "2a": replace(
             "the card's message",
-            "Deploy the AWS side of the site-to-site VPN (costs about $1 a day while it is up). "
+            "Deploy the AWS side of the site-to-site VPN. Estimated cost while it is up: __COST__. "
             "It ends at __END__: approving this also approves Tear Down Expired AWS VPN removing it then, router "
             "first, with no further card (none: it stays up until Tear Down). "
             "The requester's note (their own words, not checked): __NOTE__",
             "__NOTE__", "$var.job.change_note", x=800,
         ),
         "2c": replace("the card's message: end time", "$var.2a.replacedString", "__END__", "$var.job.expires_at", x=850),
-        **approval("2b", "Approve the AWS change", "$var.2c.replacedString", "$var.job.plan", "Approve", "Reject",
+        "2d": replace("the card's message: the estimate", "$var.2c.replacedString", "__COST__", "$var.job.plan_cost",
+                      x=875),
+        **approval("2b", "Approve the AWS change", "$var.2d.replacedString", "$var.job.plan_card", "Approve", "Reject",
                    x=900, var="approval"),
         **step("the apply: exactly the approved plan, its SHA-256 and commit checked by the service"),
         "3a": jq("the approved plan's SHA-256", "$var.1d.result", "result.stdout_json.plan_sha256", x=1000),
@@ -3782,7 +3967,8 @@ def deploy_aws_vpn() -> dict:
         "76": evaluate("discarded? (Implement refused)", "74", "result", "result.return_code", "==", 0, x=1250, y=600),
     })
     tasks["5e"]["variables"]["outgoing"]["replacedString"] = "$var.job.outcome"
-    tr = chain("1a", "1b", "1c", "14", "15", "16", "17", "11", "12", "13", "1d", "1e", "1f", "10", "2a", "2c", *approval_ids("2b"), "2b", "3a", "3b", "3c", "3d", "3e", "3f", "30", "31",
+    tr = chain("1a", "1b", "1c", "14", "15", "16", "17", "11", "12", "13", "1d", "1e", "1f", "10", "60", "61", "62", "63", "64", "65", "66", "67", "68",
+               "69", "6a", "6b", "6c", "2a", "2c", "2d", *approval_ids("2b"), "2b", "3a", "3b", "3c", "3d", "3e", "3f", "30", "31",
                "4a", "4b", "4c", "4d", "4e", "4f", "5a", "5b", "5d", "5e")
     tr["12"] = {"13": {"state": ok, "type": "standard"}, "8f": {"state": err, "type": "standard"}}
     tr["13"] = {"1d": {"state": ok, "type": "standard"}, "8f": {"state": fail, "type": "standard"}}
@@ -3799,6 +3985,13 @@ def deploy_aws_vpn() -> dict:
     tr["1d"] = {"1e": {"state": ok, "type": "standard"}, "8a": {"state": err, "type": "standard"}}
     tr["1e"] = {"1f": {"state": ok, "type": "standard"}, "8b": {"state": fail, "type": "standard"}}
     tr["2b"] = {"3a": {"state": ok, "type": "standard"}, "7a": {"state": fail, "type": "standard"}}
+    # the review is advisory (A2): a step that cannot run goes on to the card, which then says "Review unavailable"
+    for tid, nxt in (("65", "66"), ("66", "67"), ("67", "68"), ("6b", "6c")):
+        tr[tid] = {nxt: {"state": ok, "type": "standard"}, "2a": {"state": err, "type": "standard"}}
+    tr["68"] = {"69": {"state": ok, "type": "standard"}, "6d": {"state": err, "type": "standard"}}
+    tr["6d"] = t("", "69")
+    tr["6c"] = {"2a": {"state": ok, "type": "standard"}, "6e": {"state": err, "type": "standard"}}
+    tr["6e"] = t("", "2a")
     tr["3e"] = {"3f": {"state": ok, "type": "standard"}, "8d": {"state": err, "type": "standard"}}
     tr["3f"] = {"30": {"state": ok, "type": "standard"}, "8e": {"state": fail, "type": "standard"}}
     tr["4d"] = {"4e": {"state": ok, "type": "standard"}, "9a": {"state": err, "type": "standard"}}
@@ -3848,6 +4041,12 @@ def deploy_aws_vpn() -> dict:
         {
             "plan": {"type": "object"}, "approval_card": {"type": "object"},
             "approval_decision": {"type": ["object", "null"]},
+            "plan_card": {"type": "object"},
+            "plan_cost": {"type": "string"},
+            "plan_facts": {"type": "object"},
+            "review_result": {"type": "object"},
+            "plan_review": {"type": "object"},
+            "review_error": {"type": "string"},
             "expires_at": {"type": "string"},
             "lifetime": {"type": "object"},
             "outputs": {"type": "object"},
@@ -5420,18 +5619,16 @@ def aws_vpn_status(d: dict, now: datetime, prices: dict) -> dict:
             else f"ends at {end} (Tear Down Expired AWS VPN removes it then)")
     nat = outputs.get("nat_gateway_enabled")
     nat_text = "unknown (recorded by the next Deploy)" if nat is None else ("on" if nat else "off")
-    itype = outputs.get("strongswan_instance_type")
-    assumed = not itype
-    itype = itype or prices["assumed_instance_type"]
-    itype_text = f"{itype} (assumed: recorded by the next Deploy)" if assumed else itype
-    rate = prices["instance_hour"].get(itype)
-    if rate is None:
+    # Deploy's card works out the same estimate from the same function (A2, D5); the NAT gateway's address is billed too
+    est = estimate_per_day({"instance_type": outputs.get("strongswan_instance_type"), "nat": bool(nat),
+                            "public_ipv4": 2 if nat else 1}, prices)
+    itype, hourly = est["instance_type"], est["hourly"]
+    itype_text = f"{itype} (assumed: recorded by the next Deploy)" if est["assumed"] else itype
+    if hourly is None:
         per_day, since = None, None
         cost = f"no pinned price for {itype}: add it to versions.yaml aws_vpn.prices"
     else:
-        hourly = (rate + prices["public_ipv4_hour"] + (prices["nat_gateway_hour"] if nat else 0)
-                  + (prices["secret_month"] + prices["root_volume_month"]) / 730)
-        per_day = round(hourly * 24, 2)
+        per_day = est["per_day_usd"]
         since = round(hourly * hours, 2) if hours is not None else None
         cost = (f"about ${per_day:.2f} a day" + (f", about ${since:.2f} since the last change" if since is not None
                                                  else "") + f" ({prices['basis']})")
@@ -5446,7 +5643,7 @@ def aws_vpn_status(d: dict, now: datetime, prices: dict) -> dict:
 
 
 STATUS_CODE = ("import json, sys\nfrom datetime import datetime, timezone\n\n\nPRICES = " + repr(STATUS_PRICES)
-               + "\n\n\n" + inspect.getsource(aws_vpn_status)
+               + "\n\n\n" + inspect.getsource(estimate_per_day) + "\n\n" + inspect.getsource(aws_vpn_status)
                + "\n\nprint(json.dumps(aws_vpn_status(json.loads(sys.stdin.read() or \"{}\"), datetime.now(timezone.utc), "
                + "PRICES)))\n")
 
@@ -6495,7 +6692,9 @@ APPROVAL_HELPER_OFFSET = (0, -300)  # canvas only: the helper row above the appr
 # the object keys the ViewData used to show raw, as a person reads them; anything else is capitalised as is
 APPROVAL_LABELS = {"block": "The block (key masked)", "lines": "The lines pushed", "netbox": "NetBox, as read back",
                    "plan": "The plan", "resources": "Resources in the plan", "summary": "Plan summary",
-                   "kept only if": "Kept only if", "after this": "After this", "details": "Details"}
+                   "kept only if": "Kept only if", "after this": "After this", "details": "Details",
+                   "plan_review": "Plan review (advisory: plan-reviewer has no tools and never approves)",
+                   "estimated_cost": "Estimated cost", "plan_changes": "Every change in the plan"}
 
 
 def approval_card(d: dict) -> dict:

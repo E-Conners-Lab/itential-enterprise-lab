@@ -61,7 +61,9 @@ def test_the_estimate_is_the_pinned_prices_times_the_hours() -> None:
 def test_the_nat_gateway_is_in_the_estimate_only_when_it_is_on() -> None:
     off = _status(_answer(DEPLOYED))["estimate"]["per_day_usd"]
     on = _status(_answer({**DEPLOYED, "nat_gateway_enabled": True}))
-    assert on["nat_gateway"] == "on" and on["estimate"]["per_day_usd"] == round(off + PRICES["nat_gateway_hour"] * 24, 2)
+    # the NAT gateway and its own public IPv4 address, which AWS bills like the strongSwan EIP (A2: the shared estimate)
+    more = (PRICES["nat_gateway_hour"] + PRICES["public_ipv4_hour"]) * 24
+    assert on["nat_gateway"] == "on" and on["estimate"]["per_day_usd"] == round(off + more, 2)
 
 
 def test_an_end_time_is_reported_as_one() -> None:
