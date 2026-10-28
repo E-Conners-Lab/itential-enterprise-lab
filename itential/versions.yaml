@@ -369,13 +369,11 @@ aws_vpn:
   # endpoint trigger's schema and the branded page (tests hold them to it); at most 31 days (terraform-run's bound).
   lifetime_hours: {choices: ["none", "2", "4", "8", "24", "72"], default: "8"}
   # R5 (ADR 0085, D1-D3): every person-started Deploy, Hand Off and Tear Down opens a ServiceNow standard change from
-  # this PDI template before it plans or reads anything, and the change follows the Work Center card. The approver is
-  # written by role, never by name (this repo is public); an account not listed reads "Platform account ...<last 6>".
+  # this PDI template before it plans or reads anything, and the change follows the Work Center card. The notes name
+  # no one: the card on the job records who decided and when (a trigger-started run cannot read itself back).
   change_request:
     template: a4f48008c3949750f2d238bc0501316f # "Lab AWS VPN change", Network Standard Changes (owner, 2026-10-27)
     job_url: https://itential.lab.internal/operations-manager/jobs/
-    approver_roles:
-      6aa2bdfddd92a98c6d310e34: the lab owner (admin@itential) # LDAP account, read from Deploy job 7f0119a8's card
   # A1 (Cloud Status, owner decision 2026-10-04: an estimate, not real spend): what Get AWS VPN Status prices a
   # deployment with. On-demand list prices for us-east-1 as Claude knew them on 2026-10-04 - NOT read from AWS; check
   # them against the bill and correct them here. Real spend (Cost Explorer) needs an IAM grant (R9's), later.

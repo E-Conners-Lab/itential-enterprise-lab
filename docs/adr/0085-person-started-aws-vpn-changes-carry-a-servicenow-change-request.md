@@ -22,15 +22,15 @@ Branch VLAN already walks a ServiceNow standard change; the AWS VPN workflows di
    ServiceNow refusing the create ends the run with nothing planned, read or changed (fail closed). Tear Down Expired,
    Verify and the read-only workflows open none.
 2. **Work Center stays the gate; the change mirrors it.** Every card shows the change number. Approved -> Scheduled ->
-   Implement with a work note naming the approver, the time and the card's note; ServiceNow refusing either move
+   Implement with a work note carrying the card's note (decision 3); ServiceNow refusing either move
    applies nothing (Deploy discards the approved plan) and the change ends Canceled with why. Rejected -> Canceled
    with the decision. A run that ends before any approval -> Canceled with its reason. After an approval -> Review ->
    Closed `successful` or `unsuccessful` with the run's own outcome or error and the job link. Tear Down's second card
    (the AWS destroy) adds a work note; rejecting it closes the change `successful` (router removed, AWS kept).
-3. **The approver by role, never by name** (this repo is public): the card task's finisher (`metrics.user`, read from
-   the job's own record) through `aws_vpn.change_request.approver_roles`; an unmapped account reads "Platform account
-   ...<last 6>". A run started through any trigger - the page's, the form's, an automation's - cannot read its own
-   record (measured below), so its notes say the card on the job records who and when.
+3. **The notes name no one; the card records who and when.** A run started through any trigger - the page's, the
+   form's, an automation's - cannot read its own record (measured below), so a decision's work note says what was
+   decided, carries the card's note and links the job whose Work Center card records who and when. The run does not
+   try to read itself back (amended 2026-10-27: the reads only ever failed and left errored tasks on every job).
 4. **One generator, no child jobs.** `with_change_request` writes the same tasks into all three workflows (`ce*` open,
    `c8*`-`cb*` per card, `cd*` close, `cc*` fix by hand; a test holds the copies identical). Each workflow names how
    each of its endings closes the change (canceled, rejected, failed, successful); the build refuses an ending it
@@ -41,8 +41,8 @@ Branch VLAN already walks a ServiceNow standard change; the AWS VPN workflows di
    The build checks each ending's kind against the graph: nothing reached after the first card's change is in
    Implement may close it canceled or rejected.
 6. **Tear Down takes a required `change_note`** on the page, the form and the endpoint trigger, under Deploy's own
-   gate rule (`CHANGE_NOTE_RULE`: at most 280 characters, no markup, one line), so the requester's words reach the
-   change request.
+   gate rule (`CHANGE_NOTE_RULE`: at most 280 characters, no markup, one line), and shows it on both of its cards, so
+   the requester's words reach the approver and the change request.
 
 ## Consequences
 
@@ -54,6 +54,7 @@ Branch VLAN already walks a ServiceNow standard change; the AWS VPN workflows di
 - Measured live 2026-10-27 (Deploy job 1a5507b8, CHG0030030, rejected): a run started through an endpoint or manual
   trigger - the page's and the form's too, not only an automation's - cannot read its own record (`getJob` on its own
   id answers 401, though `created_by` is the person). Probe P2's readable run was started by the admin, how was not
-  recorded. So decision 3's approver by role applies only to a run that can read itself (started on the Platform
-  directly); every other note says the card on the job records who and when, and the first note says the run came
-  through a trigger without guessing which. Each such run leaves its getJob reads errored on the job (left for now).
+  recorded. So the notes cannot name the approver from inside the run: they say the card on the job records who and
+  when, and the first note says only that the run started in Itential. The reads were dropped the same day.
+- Tear Down's second card (the AWS destroy) adds a work note on a rejection as on an approval: the change still closes
+  `successful` (the router change happened), and the record says the destroy was rejected, with the card's note.
