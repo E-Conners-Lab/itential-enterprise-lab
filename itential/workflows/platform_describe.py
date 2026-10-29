@@ -47,6 +47,14 @@ JOB_ID = re.compile(r"^[0-9a-f]{24}$")  # a Mongo object id, as the Platform sho
 LOGIN_POSTS = {"/login", "/oauth/token"}  # the only POSTs: a password login, or a client-credentials token
 
 
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    """Never follow a redirect: urllib copies every header but the content ones onto it (the session cookie and the
+    bearer token included), to whatever host it names. A 3xx comes back as its own answer instead."""
+
+    def redirect_request(self, *args: object, **kwargs: object) -> None:
+        return None
+
+
 class Platform:
     """The Platform API, GET only (plus the login POST). The same guard verify/prod-snapshot.py has."""
 
@@ -56,6 +64,7 @@ class Platform:
         self.user, self._password, self.timeout = user, password, timeout
         self._client = (client_id, client_secret)
         self._tls = ssl.create_default_context(cafile=cacert) if cacert else ssl.create_default_context()
+        self._open = urllib.request.build_opener(_NoRedirect, urllib.request.HTTPSHandler(context=self._tls)).open
         self._cookie = ""
         self._bearer = ""
 
@@ -77,9 +86,8 @@ class Platform:
         if self._bearer:
             headers["Authorization"] = f"Bearer {self._bearer}"
         req = urllib.request.Request(url, data=data, method=method, headers=headers)
-        ctx = self._tls if url.startswith("https://") else None
         try:
-            with urllib.request.urlopen(req, timeout=self.timeout, context=ctx) as resp:
+            with self._open(req, timeout=self.timeout) as resp:
                 return resp.status, resp.read().decode(), resp.headers.get_all("Set-Cookie") or []
         except urllib.error.HTTPError as exc:
             return exc.code, exc.read().decode(errors="replace"), []

@@ -75,6 +75,11 @@ class FakePlatform(BaseHTTPRequestHandler):
         FakePlatform.seen.append(("GET", self.path, self.headers.get("Cookie") or self.headers.get("Authorization")))
         if self.headers.get("Cookie") != "token=a-token" and self.headers.get("Authorization") != "Bearer a-bearer":
             return self._send(401, {"message": "no session"})
+        if self.path.endswith("equals[name]=Moved%20Elsewhere"):  # a 302 to another host: never followed
+            self.send_response(302)
+            self.send_header("Location", ELSEWHERE[0] + "/collect")
+            self.end_headers()
+            return None
         if self.path.startswith("/automation-studio/workflows?"):
             if "equals[name]=" not in self.path:  # the whole list (ADR 0081): two documents, one without steps
                 return self._send(200, {"items": [ROTATE, BARE], "total": 2})
@@ -250,3 +255,32 @@ def test_the_token_post_is_the_only_new_way_out() -> None:
     for method, path in (("POST", "/oauth/revoke"), ("POST", "/operations-manager/jobs/start"), ("PUT", "/oauth/token")):
         with pytest.raises(RuntimeError, match="refused"):
             api._request(method, path)
+
+
+ELSEWHERE: list = []  # another host's address, set by the test that redirects to it
+
+
+class Elsewhere(BaseHTTPRequestHandler):
+    seen: list = []
+
+    def log_message(self, *_: object) -> None:  # quiet
+        pass
+
+    def do_GET(self) -> None:  # noqa: N802
+        Elsewhere.seen.append((self.headers.get("Authorization"), self.headers.get("Cookie")))
+        self.send_response(200)
+        self.end_headers()
+
+
+@pytest.mark.parametrize("env", [{}, CLIENT], ids=["password", "client credentials"])
+def test_a_redirect_is_never_followed_so_the_session_stays_on_the_platform(platform: str, env: dict) -> None:
+    server = HTTPServer(("127.0.0.1", 0), Elsewhere)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    ELSEWHERE[:] = [f"http://127.0.0.1:{server.server_port}"]
+    Elsewhere.seen.clear()
+    try:
+        code, out = run(platform, "--action", "workflow", "--name", "Moved Elsewhere", env=env)
+    finally:
+        server.shutdown()
+    assert code == 1 and out == {"ok": False, "message": "the workflow list answered HTTP 302"}
+    assert Elsewhere.seen == [], "neither the cookie nor the bearer token reached another host"
