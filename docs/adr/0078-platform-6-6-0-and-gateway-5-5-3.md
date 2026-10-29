@@ -111,8 +111,10 @@ Measured on the day, dev first, then production:
 Itential withdrew the 6.6.0 artifacts: the tag is gone from the ECR, and the staged tarball under
 `/srv/images/itential/` is the only copy left (kept as the rollback). 6.6.1 was pushed on 2026-10-15, the same digest
 as the descriptive tag `6.6.1-ecm-6.6.1-fai-1.2.0-gm-1.18.2-lcm-6.6.1-1` (Node 22), and is pinned by digest in
-`itential/versions.yaml`. A 6.6.1.1 exists only as a cloud release, with no image to pull. Gateway 5.5.3 is still the
-newest Gateway, so its pin stays.
+`itential/versions.yaml`. Against 6.6.0's long tag (`6.6.0-ecm-6.6.0-fai-6.6.0-gm-1.18.2-lcm-6.6.0-1`) the components
+read: ECM and Lifecycle Manager 6.6.1, Gateway Manager 1.18.2 unchanged, and FlowAI `1.2.0` where 6.6.0's release
+build said `6.6.0` (its superseded first push had said `1.2.0` too); recorded as observed. A 6.6.1.1 exists only as a
+cloud release, with no image to pull. Gateway 5.5.3 is still the newest Gateway, so its pin stays.
 
 The 6.6.1 notes tighten Operations Manager validation (ENG-26440 manual trigger `formId`/`formData`, ENG-26441
 `componentName`-only updates, ENG-26442 read access requiring write on `createAutomation`) and fix Run Service
@@ -135,8 +137,11 @@ Proven on 2026-10-29 with a Push Configuration with Approval card, rejected each
   button ended the job on the rejected path.
 - Dev on 6.6.1: three cached chunks were stale, with the same result once refreshed.
 
-The InteractiveHTML cards chosen because of the finding (ADR 0077, ADR 0085's fix-by-hand task) still work. Only
-the stated reason is wrong. Runbook chapter 11 now treats the browser cache as the first suspect and asks for
-cleared site data after every upgrade.
+ADR 0085's fix-by-hand task, an InteractiveHTML card chosen because of the finding, still works; only its stated
+reason is wrong, as is the "card that does not open on 6.6.0" ADR 0084 lists. ADR 0077's branded approval pages
+predate the finding (2026-10-07) and never rested on it. The report to Itential is to be withdrawn (owner action).
+Runbook chapter 11 now treats the browser cache as the first suspect. The proven fix is refreshing the stale chunks;
+emptying the browser's cached files is the everyday route, not yet tested (the production upgrade is the next chance).
+Only Reject was clicked on these cards; Approve in the UI is untested.
 
 Production follows from `main` after this amendment merges, by runbook chapter 11.
