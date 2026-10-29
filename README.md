@@ -7,7 +7,7 @@ network topology, Helm/Kustomize for k3s, Ansible for guests, and NetBox as the
 network source of truth.
 
 > **Status: Phases 0-8 and Phase 9a are complete.** Production is Itential's HA2 architecture at lab sizes
-> (ADR 0053): Itential Platform 6.6.0 and Gateway 5.5.3 (ADR 0078) behind nginx, a three-member MongoDB replica set
+> (ADR 0053): Itential Platform 6.6.1 and Gateway 5.5.3 (ADR 0078) behind nginx, a three-member MongoDB replica set
 > and Redis with Sentinels. The second Platform node is the Active/Standby standby and stays stopped (ADR 0055,
 > 0078). Credentials live in Vault, and the Platform and Gateway read them through their built-in clients (ADR 0065).
 
@@ -82,7 +82,7 @@ Phases are delivered in the order fixed by ADR 0008. Service specs and acceptanc
 | 13 | `phase-13/firewall-track` | NIOS grid master, the PA-VM firewalls (`lab.firewalls`), Panorama: once the images exist (ADR 0050) | planned |
 | aws-vpn | `phase-aws-vpn/*` | The AWS site-to-site VPN run by Itential on production: deploy, hand off with the Batfish gate, verify, drift check, key rotation, timed teardown (ADR 0068, 0070, 0076) | on production since PR #112 (built from #71); the tunnel exists only between Deploy and Tear Down |
 | outage loops | - | AWS tunnel and fabric BGP outage loops with the knowledge service (ADR 0072-0075) | running (PR #122-#145) |
-| upgrade | - | Platform 6.6.0 and Gateway 5.5.3, with the upgrade runbook (ADR 0078) | done (PR #151) |
+| upgrade | - | Platform 6.6.1 and Gateway 5.5.3, with the upgrade runbook (ADR 0078) | done (PR #151; 6.6.1 in #211) |
 | explain | - | Describe Workflow and Describe Job, the workflow guide, `platform-guide` and Ask Platform Guide (ADR 0080, 0081) | running (PR #162-#177) |
 | netclaw | - | NetClaw, the lab's Slack interface (ADR 0082) | built (PR #178) |
 | dev | - | The Copilot prototyping tier (ADR 0063): `itential-dev` with its own Vault and the local model, Containerlab topology `dev`, `svc-copilot` read-only on production; `make verify-dev` | running (PR #41-#57) |
