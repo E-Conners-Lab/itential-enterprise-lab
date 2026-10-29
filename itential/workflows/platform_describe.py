@@ -120,6 +120,10 @@ class Platform:
         if not isinstance(token, str) or not token:
             return "the token request answered no access_token"
         self._bearer = token
+        # the descriptions name their reader: the service account's own name, not the password login's PLATFORM_USER
+        status, who = self.get("/whoami")
+        name = who.get("username") if status == 200 and isinstance(who, dict) else None
+        self.user = name if isinstance(name, str) and name else "a client-credentials service account"
         return ""
 
     def get(self, path: str) -> tuple[int, object]:

@@ -75,6 +75,8 @@ class FakePlatform(BaseHTTPRequestHandler):
         FakePlatform.seen.append(("GET", self.path, self.headers.get("Cookie") or self.headers.get("Authorization")))
         if self.headers.get("Cookie") != "token=a-token" and self.headers.get("Authorization") != "Bearer a-bearer":
             return self._send(401, {"message": "no session"})
+        if self.path == "/whoami":  # a service account's own name, as the cloud answers it
+            return self._send(200, {"username": "svc-describe-test", "provenance": "Service Account"})
         if self.path.endswith("equals[name]=Moved%20Elsewhere"):  # a 302 to another host: never followed
             self.send_response(302)
             self.send_header("Location", ELSEWHERE[0] + "/collect")
@@ -228,6 +230,8 @@ def test_client_credentials_get_a_bearer_token_instead_of_the_password(platform:
     FakePlatform.seen.clear()
     code, out = run(platform, "--action", "workflow", "--name", "Rotate AWS VPN Key", env=CLIENT)
     assert code == 0 and out["ok"] is True and out["name"] == "Rotate AWS VPN Key"
+    # the description names the service account that read it, never the password login's default account
+    assert "by platform-describe, as svc-describe-test" in out["markdown"] and "svc-copilot" not in out["markdown"]
     posts = [(path, body) for method, path, body in FakePlatform.seen if method == "POST"]
     assert posts == [("/oauth/token", {"grant_type": "client_credentials", "client_id": CLIENT_ID,
                                        "client_secret": CLIENT_SECRET})], "one token request, never /login"

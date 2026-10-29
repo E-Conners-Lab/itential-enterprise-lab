@@ -141,7 +141,7 @@ Platform's own variables out.
 The service gains an optional login for Itential Cloud. There, an API caller is a Cloud Hub service account with
 OAuth client credentials, and there is no `/login` for it. With `PLATFORM_CLIENT_ID` and `PLATFORM_CLIENT_SECRET` set
 (both required once either is), it trades them at `POST /oauth/token` (a form, `grant_type=client_credentials`) for a
-bearer token sent on every GET after; the password is then not a fallback. The read-only guard gains exactly that one
+bearer token sent on every GET after; the password is then not a fallback. The descriptions name their reader from `GET /whoami` (the service account's own name), not the password login's `PLATFORM_USER`. The read-only guard gains exactly that one
 POST. Error messages never carry the secret.
 
 This lab's own path is unchanged: its runner sets neither variable, so its pin and its converge do not move for this.
