@@ -3545,7 +3545,8 @@ def change_request_section(name: str, target: str, note_ref: str, window: str, c
         "cde": jq("the second update", "$var.cda.result", "stdout_json.second", x=0),
         "cdf": sni("updateStandardChange", "the change: Closed (successful or unsuccessful)",
                    {"sys_id": "$var.job.change_sys_id", **nbi_body("$var.cde.return_data")}, x=0),
-        # an InteractiveHTML card: a ViewData task does not open in Work Center on 6.6.0
+        # an InteractiveHTML card (ADR 0085); the "ViewData does not open on 6.6.0" reason was a stale browser
+        # cache (ADR 0078 amendment 2026-10-29)
         "cc0": set_key("the fix card: the change number", "$var.job.change_close_in", "number", "$var.job.change_number",
                        x=0),
         "cc1": set_key("the fix card: the job id", "$var.cc0.object", "job_id", "$var.job.change_job_id", x=0),
