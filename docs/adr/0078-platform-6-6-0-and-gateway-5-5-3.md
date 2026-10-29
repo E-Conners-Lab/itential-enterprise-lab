@@ -141,7 +141,21 @@ ADR 0085's fix-by-hand task, an InteractiveHTML card chosen because of the findi
 reason is wrong, as is the "card that does not open on 6.6.0" ADR 0084 lists. ADR 0077's branded approval pages
 predate the finding (2026-10-07) and never rested on it. The report to Itential is to be withdrawn (owner action).
 Runbook chapter 11 now treats the browser cache as the first suspect. The proven fix is refreshing the stale chunks;
-emptying the browser's cached files is the everyday route, not yet tested (the production upgrade is the next chance).
-Only Reject was clicked on these cards; Approve in the UI is untested.
+emptying the browser's cached files is the everyday route, still untested (production's upgrade left no stale chunk
+to test it on, below). Only Reject was clicked on these cards; Approve on a `ViewData` card is untested.
 
-Production follows from `main` after this amendment merges, by runbook chapter 11.
+**Production, as built 2026-10-29:** from `main` at #211, by runbook chapter 11.
+- The Platform play on iap-01 took 49 s and the Gateway play 92 s, failed=0; iap-02 stays parked. The load balancer
+  reports 6.6.1, and the snapshot compare found no difference (123 values).
+- The verify runs failed only where 6.6.1 was not the cause. All of those checks pass since:
+  - S4.7b/c: the MCP access change merged 2026-10-21 had never been applied. They pass after the tools play. `lab`
+    and `lab-hosts` were then recreated with `mcp-builders` so the MCP server's new account still lists them, and
+    S4.3 and S4d.6 read devices and hosts through them (ADR 0083). `nxos` (mock devices) was left out and the MCP
+    server does not list it.
+  - S13.2d and S4d.5l/m/n: AWS was torn down. They pass after a full AWS VPN drill on 6.6.1 (Deploy, Hand Off,
+    Verify, Tear Down).
+  - S17.2: the check predated the eval groups of ADR 0084. It passes after this follow-up.
+- ENG-26442 did not bite: svc-netclaw read and started its automations.
+- The browser cache: the owner's browser held no stale `ViewData` chunk after the upgrade.
+- The cards: in the drill, four InteractiveHTML approval cards were approved in the UI and one was rejected, each on
+  its intended path, with nothing cleared from the cache.

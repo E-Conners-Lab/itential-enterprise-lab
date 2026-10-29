@@ -65,7 +65,7 @@ it does and what it costs if you skip it.
 | 3 | Create an integration instance from that model | Gives the model somewhere to send requests | Same error as above |
 | 4 | **Studio → Projects → Import** `Cisco/NX-OS/Studio Projects/Cisco NX-OS.project.json` from the pack repo | The 19 assets | — |
 | 5 | **Configuration Manager → Search (🔍) → Golden Configurations → Import** ×3 | The three `cisco-nx` trees | Looking for Import on the Golden Configurations page itself, which offers only **Create**. Import is in the 🔍 Collection window |
-| 6 | Create an inventory named `nxos` with a group you belong to | The workflow populates an existing inventory rather than creating one | See the `403` trap below |
+| 6 | Create an inventory named `nxos` with a group you belong to, and on production also `mcp-builders` | The workflow populates an existing inventory rather than creating one; the production MCP server's account sees only inventories that carry its group (ADR 0083) | See the `403` trap below. The groups cannot be changed later (no inventory update on 6.6.0 or 6.6.1): an inventory created without `mcp-builders` has to be deleted and recreated before the MCP server lists it. This lab's own `nxos` predates the rule and was left without it (mock devices) |
 | 7 | Run **Create & Update Inventory from NetBox** with `inventoryName: nxos` | NetBox → Inventory Manager | — |
 
 ### Step 3 in detail — the integration instance

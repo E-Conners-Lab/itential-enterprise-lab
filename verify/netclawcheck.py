@@ -141,7 +141,14 @@ def gbac(tier: str) -> None:
             continue
         g = a.get("gbac") or {}
         read = {names.get(i, i) for i in g.get("read", [])}
-        want = base | ({VERSIONS["netclaw"]["group"]} if a["name"] in access["netclaw"] else set())
+        # ADR 0084: the scratch-router automations carry admin_group plus exactly one eval group, as
+        # tasks/automation-access.yml sets them, and none of the tier's read groups
+        if a["name"] in access["eval"]:
+            want = {"admin_group", VERSIONS["eval_access"]["run"]["group"]}
+        elif a["name"] in access["eval_runner"]:
+            want = {"admin_group", VERSIONS["eval_access"]["approve"]["group"]}
+        else:
+            want = base | ({VERSIONS["netclaw"]["group"]} if a["name"] in access["netclaw"] else set())
         if read != want or {names.get(i, i) for i in g.get("write", [])} != write:
             wrong.append((a["name"], sorted(read)))
         if VERSIONS["netclaw"]["group"] in read:

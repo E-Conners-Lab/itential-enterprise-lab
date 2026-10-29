@@ -2,8 +2,8 @@
 
 Move a running lab from one Itential Platform and Gateway release to the next: dev first, then production,
 with a rollback that is real. This chapter is the procedure that took Platform 6.5.2 to 6.6.0 and Gateway
-5.5.2 to 5.5.3 on 2026-10-10 ([ADR 0078](../adr/0078-platform-6-6-0-and-gateway-5-5-3.md)), written so the
-next bump is the same steps with different numbers.
+5.5.2 to 5.5.3 on 2026-10-10 ([ADR 0078](../adr/0078-platform-6-6-0-and-gateway-5-5-3.md)), then Platform 6.6.0
+to 6.6.1 on 2026-10-29 (the ADR's amendment), written so the next bump is the same steps with different numbers.
 
 Nothing here is new tooling. The pins, the fetch script, the plays, the snapshot and the verify suites are the
 ones chapters 05 and 08 built; an upgrade is a pin change pushed through them in a fixed order.
@@ -53,7 +53,7 @@ rather than resolving it.
 | `itential/versions.yaml` | `images.platform` and `images.gateway5` tag and digest; `stack.runner_image` name (it carries the Gateway version the `iagctl` binary came from, so a new name forces the rebuild) |
 | `docs/image-manifest.md` | Section 3.5's "Pinned" column; `tests/test_itential.py` compares it with the pins |
 | `ansible/playbooks/tasks/*.yml` | Whatever the release notes said the API now refuses |
-| `docs/adr/` and `docs/PID.md` | One ADR for the bump, one history row |
+| `docs/adr/` | One ADR for the bump, or an amendment to the last one when the release only replaces it (6.6.1) |
 
 The digests come from the registry listing, never from a tag:
 
@@ -253,8 +253,8 @@ plays of the dev converge have already proved the Platform; fix the host separat
 
 | Component | Version |
 |---|---|
-| Itential Platform | 6.5.2 → 6.6.0 (Node 20 → 22; FlowAI 6.6.0, Gateway Manager 1.18.2 per the image tag, LCM 6.6.0) |
-| Itential Gateway 5 | 5.5.2-amd64 → 5.5.3-amd64; runner rebuilt from its `iagctl` |
+| Itential Platform | 6.5.2 → 6.6.0 (Node 20 → 22; FlowAI 6.6.0, Gateway Manager 1.18.2 per the image tag, LCM 6.6.0); 6.6.0 → 6.6.1 (FlowAI 1.2.0, Gateway Manager 1.18.2, LCM 6.6.1 per the image tag) |
+| Itential Gateway 5 | 5.5.2-amd64 → 5.5.3-amd64; runner rebuilt from its `iagctl`; 5.5.3 kept for 6.6.1 |
 | MongoDB | 7.0.40 (unchanged; 6.0 to 8.0 supported) |
 | Redis | 7.4.11 (unchanged; 7.0 to 7.4 supported) |
 | Dev tier | the Copilot dev stack of chapter 09 |
