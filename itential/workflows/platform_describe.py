@@ -17,9 +17,13 @@ Environment (the Gateway resolves the secret per run; the rest is the runner's, 
   PLATFORM_USER       the read-only account (default svc-copilot)
   PLATFORM_PASSWORD   its password, from the Vault alias (required; never in argv, never printed)
   PLATFORM_CACERT     the CA file for the Platform's TLS (default: VAULT_CACERT; empty: the system's)
+  PLATFORM_CLIENT_ID, PLATFORM_CLIENT_SECRET
+                      Itential Cloud: a service account's client credentials, traded at POST /oauth/token for a
+                      bearer token. When either is set both are required and the password is not used (the cloud has
+                      no /login for a service account). From Vault aliases, like the password.
 
-Read-only by construction: POST /login and GET only, anywhere else refused before a socket opens. Exit 0 with ok true,
-1 otherwise; the workflow evaluates both.
+Read-only by construction: GET, plus the one login POST (/login, or /oauth/token for client credentials), anywhere else
+refused before a socket opens. Exit 0 with ok true, 1 otherwise; the workflow evaluates both.
 """
 
 from __future__ import annotations
@@ -40,37 +44,58 @@ import describe  # noqa: E402 - the walker beside this file
 
 NAME_CHARS = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 -")
 JOB_ID = re.compile(r"^[0-9a-f]{24}$")  # a Mongo object id, as the Platform shows one
+LOGIN_POSTS = {"/login", "/oauth/token"}  # the only POSTs: a password login, or a client-credentials token
+
+
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    """Never follow a redirect: urllib copies every header but the content ones onto it (the session cookie and the
+    bearer token included), to whatever host it names. A 3xx comes back as its own answer instead."""
+
+    def redirect_request(self, *args: object, **kwargs: object) -> None:
+        return None
 
 
 class Platform:
     """The Platform API, GET only (plus the login POST). The same guard verify/prod-snapshot.py has."""
 
-    def __init__(self, url: str, user: str, password: str, cacert: str, timeout: float) -> None:
+    def __init__(self, url: str, user: str, password: str, cacert: str, timeout: float, client_id: str = "",
+                 client_secret: str = "") -> None:
         self.url = url.rstrip("/")
         self.user, self._password, self.timeout = user, password, timeout
+        self._client = (client_id, client_secret)
         self._tls = ssl.create_default_context(cafile=cacert) if cacert else ssl.create_default_context()
+        self._open = urllib.request.build_opener(_NoRedirect, urllib.request.HTTPSHandler(context=self._tls)).open
         self._cookie = ""
+        self._bearer = ""
 
-    def _request(self, method: str, path: str, body: dict | None = None) -> tuple[int, str, list]:
+    def _request(self, method: str, path: str, body: dict | None = None,
+                 form: dict | None = None) -> tuple[int, str, list]:
         url = self.url + path
-        if not (method == "GET" or (method == "POST" and path == "/login")):
-            raise RuntimeError(f"refused: {method} {path} (only GET and POST /login are allowed)")
-        data = json.dumps(body).encode() if body is not None else None
+        if not (method == "GET" or (method == "POST" and path in LOGIN_POSTS)):
+            raise RuntimeError(f"refused: {method} {path} (only GET and the login POST are allowed)")
         headers = {"Accept": "application/json"}
-        if data is not None:
-            headers["Content-Type"] = "application/json"
+        if form is not None:  # OAuth's token endpoint takes a form, not JSON
+            data = urllib.parse.urlencode(form).encode()
+            headers["Content-Type"] = "application/x-www-form-urlencoded"
+        else:
+            data = json.dumps(body).encode() if body is not None else None
+            if data is not None:
+                headers["Content-Type"] = "application/json"
         if self._cookie:
             headers["Cookie"] = self._cookie
+        if self._bearer:
+            headers["Authorization"] = f"Bearer {self._bearer}"
         req = urllib.request.Request(url, data=data, method=method, headers=headers)
-        ctx = self._tls if url.startswith("https://") else None
         try:
-            with urllib.request.urlopen(req, timeout=self.timeout, context=ctx) as resp:
+            with self._open(req, timeout=self.timeout) as resp:
                 return resp.status, resp.read().decode(), resp.headers.get_all("Set-Cookie") or []
         except urllib.error.HTTPError as exc:
             return exc.code, exc.read().decode(errors="replace"), []
 
     def login(self) -> str:
-        """An empty string when logged in, else why not (never the password)."""
+        """An empty string when logged in, else why not (never the password or the client secret)."""
+        if self._client[0]:
+            return self._token()
         status, text, cookies = self._request("POST", "/login", {"username": self.user, "password": self._password})
         if status != 200:
             return f"login as {self.user} answered HTTP {status}"
@@ -79,6 +104,26 @@ class Platform:
         else:  # the Platform answers the token itself when no cookie is set
             token = text.strip().strip('"')
             self._cookie = f"token={token}"
+        return ""
+
+    def _token(self) -> str:
+        """Itential Cloud: the service account's client credentials for a bearer token, sent on every GET after."""
+        client_id, client_secret = self._client
+        status, text, _ = self._request("POST", "/oauth/token", form={
+            "grant_type": "client_credentials", "client_id": client_id, "client_secret": client_secret})
+        if status != 200:
+            return f"the token request answered HTTP {status}"
+        try:
+            token = json.loads(text).get("access_token")
+        except (ValueError, AttributeError):
+            token = None
+        if not isinstance(token, str) or not token:
+            return "the token request answered no access_token"
+        self._bearer = token
+        # the descriptions name their reader: the service account's own name, not the password login's PLATFORM_USER
+        status, who = self.get("/whoami")
+        name = who.get("username") if status == 200 and isinstance(who, dict) else None
+        self.user = name if isinstance(name, str) and name else "a client-credentials service account"
         return ""
 
     def get(self, path: str) -> tuple[int, object]:
@@ -176,12 +221,16 @@ def main(argv: list[str]) -> int:
 
     url, user = os.environ.get("PLATFORM_URL", ""), os.environ.get("PLATFORM_USER", "svc-copilot")
     password = os.environ.get("PLATFORM_PASSWORD", "")
+    client_id, client_secret = os.environ.get("PLATFORM_CLIENT_ID", ""), os.environ.get("PLATFORM_CLIENT_SECRET", "")
     cacert = os.environ.get("PLATFORM_CACERT", os.environ.get("VAULT_CACERT", ""))
-    missing = [n for n, v in (("PLATFORM_URL", url), ("PLATFORM_PASSWORD", password)) if not v]
+    # client credentials when either half is set (Itential Cloud), the password otherwise
+    credential = ((("PLATFORM_CLIENT_ID", client_id), ("PLATFORM_CLIENT_SECRET", client_secret))
+                  if client_id or client_secret else (("PLATFORM_PASSWORD", password),))
+    missing = [n for n, v in (("PLATFORM_URL", url), *credential) if not v]
     if missing:
         out = {"ok": False, "message": "the runner has no " + " and ".join(missing) + ": nothing was read"}
     else:
-        api = Platform(url, user, password, cacert, args.timeout)
+        api = Platform(url, user, password, cacert, args.timeout, client_id, client_secret)
         try:
             why = api.login()
             if why:

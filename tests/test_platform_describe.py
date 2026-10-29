@@ -21,6 +21,7 @@ ROOT = Path(__file__).resolve().parent.parent
 SCRIPT = ROOT / "itential" / "workflows" / "platform_describe.py"
 ROTATE = json.loads((ROOT / "itential" / "workflows" / "rotate-aws-vpn-key.json").read_text())
 PASSWORD = "not-a-real-password-test-only"
+CLIENT_ID, CLIENT_SECRET = "test-client-id", "not-a-real-client-secret-test-only"  # Itential Cloud's client credentials
 JOB_ID = "6d43c80a53b14be58f8f8c8d"
 
 
@@ -56,17 +57,31 @@ class FakePlatform(BaseHTTPRequestHandler):
         self.wfile.write(data)
 
     def do_POST(self) -> None:  # noqa: N802
-        body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", "0")) or "{}"))
+        raw = self.rfile.read(int(self.headers.get("Content-Length", "0"))).decode()
+        if self.headers.get("Content-Type") == "application/x-www-form-urlencoded":
+            body = dict(urllib.parse.parse_qsl(raw))
+        else:
+            body = json.loads(raw or "{}")
         FakePlatform.seen.append(("POST", self.path, body))
         if self.path == "/login" and body == {"username": "svc-copilot", "password": PASSWORD}:
             self._send(200, "a-token", cookie="token=a-token; Path=/; HttpOnly")
+        elif self.path == "/oauth/token" and body == {"grant_type": "client_credentials", "client_id": CLIENT_ID,
+                                                      "client_secret": CLIENT_SECRET}:
+            self._send(200, {"access_token": "a-bearer", "token_type": "bearer", "expires_in": 3600})
         else:
             self._send(401, {"message": "Invalid credentials"})
 
     def do_GET(self) -> None:  # noqa: N802
-        FakePlatform.seen.append(("GET", self.path, self.headers.get("Cookie")))
-        if self.headers.get("Cookie") != "token=a-token":
+        FakePlatform.seen.append(("GET", self.path, self.headers.get("Cookie") or self.headers.get("Authorization")))
+        if self.headers.get("Cookie") != "token=a-token" and self.headers.get("Authorization") != "Bearer a-bearer":
             return self._send(401, {"message": "no session"})
+        if self.path == "/whoami":  # a service account's own name, as the cloud answers it
+            return self._send(200, {"username": "svc-describe-test", "provenance": "Service Account"})
+        if self.path.endswith("equals[name]=Moved%20Elsewhere"):  # a 302 to another host: never followed
+            self.send_response(302)
+            self.send_header("Location", ELSEWHERE[0] + "/collect")
+            self.end_headers()
+            return None
         if self.path.startswith("/automation-studio/workflows?"):
             if "equals[name]=" not in self.path:  # the whole list (ADR 0081): two documents, one without steps
                 return self._send(200, {"items": [ROTATE, BARE], "total": 2})
@@ -206,3 +221,70 @@ def test_only_get_and_the_login_post_can_leave_the_script() -> None:
     for method, path in (("PUT", "/automation-studio/workflows"), ("POST", "/workflows/start"), ("DELETE", "/x")):
         with pytest.raises(RuntimeError, match="refused"):
             api._request(method, path)
+
+
+CLIENT = {"PLATFORM_PASSWORD": "", "PLATFORM_CLIENT_ID": CLIENT_ID, "PLATFORM_CLIENT_SECRET": CLIENT_SECRET}
+
+
+def test_client_credentials_get_a_bearer_token_instead_of_the_password(platform: str) -> None:
+    FakePlatform.seen.clear()
+    code, out = run(platform, "--action", "workflow", "--name", "Rotate AWS VPN Key", env=CLIENT)
+    assert code == 0 and out["ok"] is True and out["name"] == "Rotate AWS VPN Key"
+    # the description names the service account that read it, never the password login's default account
+    assert "by platform-describe, as svc-describe-test" in out["markdown"] and "svc-copilot" not in out["markdown"]
+    posts = [(path, body) for method, path, body in FakePlatform.seen if method == "POST"]
+    assert posts == [("/oauth/token", {"grant_type": "client_credentials", "client_id": CLIENT_ID,
+                                       "client_secret": CLIENT_SECRET})], "one token request, never /login"
+    assert {auth for method, _, auth in FakePlatform.seen if method == "GET"} == {"Bearer a-bearer"}
+
+
+def test_a_wrong_client_secret_is_reported_without_the_secret(platform: str) -> None:
+    code, out = run(platform, "--action", "list", "--which", "all", env={**CLIENT, "PLATFORM_CLIENT_SECRET": "wrong"})
+    assert code == 1 and out == {"ok": False, "message": "the token request answered HTTP 401"}
+
+
+def test_half_a_client_pair_reads_nothing(platform: str) -> None:
+    FakePlatform.seen.clear()
+    code, out = run(platform, "--action", "list", "--which", "all", env={**CLIENT, "PLATFORM_CLIENT_SECRET": ""})
+    assert code == 1 and out["message"].startswith("the runner has no PLATFORM_CLIENT_SECRET")
+    assert FakePlatform.seen == [], "the password is not a fallback once a client half is set"
+
+
+def test_the_token_post_is_the_only_new_way_out() -> None:
+    spec = importlib.util.spec_from_file_location("pd", SCRIPT)
+    pd = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(pd)
+    assert pd.LOGIN_POSTS == {"/login", "/oauth/token"}
+    api = pd.Platform("https://platform.invalid", "svc-copilot", "", "", 1.0, CLIENT_ID, CLIENT_SECRET)
+    for method, path in (("POST", "/oauth/revoke"), ("POST", "/operations-manager/jobs/start"), ("PUT", "/oauth/token")):
+        with pytest.raises(RuntimeError, match="refused"):
+            api._request(method, path)
+
+
+ELSEWHERE: list = []  # another host's address, set by the test that redirects to it
+
+
+class Elsewhere(BaseHTTPRequestHandler):
+    seen: list = []
+
+    def log_message(self, *_: object) -> None:  # quiet
+        pass
+
+    def do_GET(self) -> None:  # noqa: N802
+        Elsewhere.seen.append((self.headers.get("Authorization"), self.headers.get("Cookie")))
+        self.send_response(200)
+        self.end_headers()
+
+
+@pytest.mark.parametrize("env", [{}, CLIENT], ids=["password", "client credentials"])
+def test_a_redirect_is_never_followed_so_the_session_stays_on_the_platform(platform: str, env: dict) -> None:
+    server = HTTPServer(("127.0.0.1", 0), Elsewhere)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    ELSEWHERE[:] = [f"http://127.0.0.1:{server.server_port}"]
+    Elsewhere.seen.clear()
+    try:
+        code, out = run(platform, "--action", "workflow", "--name", "Moved Elsewhere", env=env)
+    finally:
+        server.shutdown()
+    assert code == 1 and out == {"ok": False, "message": "the workflow list answered HTTP 302"}
+    assert Elsewhere.seen == [], "neither the cookie nor the bearer token reached another host"

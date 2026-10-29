@@ -135,3 +135,18 @@ Platform's own variables out.
   has no document tool; the contribution is the follow-up, not the start.
 - **`restCall` from the workflow.** The credential would sit in the document.
 - **The pages embedded in a lookup workflow.** Reads nothing live; useless for Describe Job.
+
+## Amendment 2026-10-29: client credentials for Itential Cloud
+
+The service gains an optional login for Itential Cloud. There, an API caller is a Cloud Hub service account with
+OAuth client credentials, and there is no `/login` for it. With `PLATFORM_CLIENT_ID` and `PLATFORM_CLIENT_SECRET` set
+(both required once either is), it trades them at `POST /oauth/token` (a form, `grant_type=client_credentials`) for a
+bearer token sent on every GET after; the password is then not a fallback. The descriptions name their reader from `GET /whoami` (the service account's own name), not the password login's `PLATFORM_USER`. The read-only guard gains exactly that one
+POST. Error messages never carry the secret.
+
+This lab's own path is unchanged: its runner sets neither variable, so its pin and its converge do not move for this.
+A gateway that runs the service against a cloud instance holds the instance URL and the client pair as secret
+aliases, never as service parameters (a caller could otherwise send the secret to another host), on an account with
+only the read roles the two GETs need (in Cloud Hub: `workflows:read` and `jobs:read`). Tested against the fake
+Platform in `tests/test_platform_describe.py`: a bearer token instead of the password, a wrong secret reported
+without it, half a pair reads nothing, and the guard refuses every other POST.
