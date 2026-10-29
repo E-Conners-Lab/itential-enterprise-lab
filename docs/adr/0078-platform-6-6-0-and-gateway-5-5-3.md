@@ -1,6 +1,6 @@
 # 0078 — Platform 6.6.0 and Gateway 5.5.3 replace 6.5.2 and 5.5.2
 
-- **Status:** accepted (owner, 2026-10-10)
+- **Status:** accepted (owner, 2026-10-10); amended 2026-10-29 (Platform 6.6.1, the `ViewData` correction)
 - **Date:** 2026-10-10
 - **Amends:** ADR 0020 (amendment: container images from Itential's private ECR), manifest 3.5
 - **Related:** ADR 0035 (Gateway 5 is the gateway), ADR 0038 (the runner image), ADR 0053 (the production environment),
@@ -105,3 +105,43 @@ Measured on the day, dev first, then production:
   a Push Configuration with Revert Timer card rendered in Work Center and its Reject button ended the job
   (`changed = false`). Reported to Itential as an owner action; the workaround is the API or a cancel.
 - The procedure is runbook chapter 11.
+
+## Amendment 2026-10-29 — Platform 6.6.1 replaces 6.6.0
+
+Itential withdrew the 6.6.0 artifacts: the tag is gone from the ECR, and the staged tarball under
+`/srv/images/itential/` is the only copy left (kept as the rollback). 6.6.1 was pushed on 2026-10-15, the same digest
+as the descriptive tag `6.6.1-ecm-6.6.1-fai-1.2.0-gm-1.18.2-lcm-6.6.1-1` (Node 22), and is pinned by digest in
+`itential/versions.yaml`. Against 6.6.0's long tag (`6.6.0-ecm-6.6.0-fai-6.6.0-gm-1.18.2-lcm-6.6.0-1`) the components
+read: ECM and Lifecycle Manager 6.6.1, Gateway Manager 1.18.2 unchanged, and FlowAI `1.2.0` where 6.6.0's release
+build said `6.6.0` (its superseded first push had said `1.2.0` too); recorded as observed. A 6.6.1.1 exists only as a
+cloud release, with no image to pull. Gateway 5.5.3 is still the newest Gateway, so its pin stays.
+
+The 6.6.1 notes tighten Operations Manager validation (ENG-26440 manual trigger `formId`/`formData`, ENG-26441
+`componentName`-only updates, ENG-26442 read access requiring write on `createAutomation`) and fix Run Service
+(ENG-28541, ENG-28436). The dev converge, which re-points every trigger, passed without a refusal; the three stay
+watch items for production.
+
+**Dev, as built 2026-10-29:** the image loaded on dev and both production nodes (image ID equal everywhere); the dev
+converge (`itential.yml` → `platform.yml` → `flowai.yml`) ran 05:23–05:33Z with no failed or ignored task; MCP
+restarted; `make verify-dev` passed 33 checks with 0 failures (test-12a 7, test-05b 7 incl. S12.2 and S12.9 on 6.6.1,
+test-09a-dev 13, test-16 6).
+
+**Correction to the 2026-10-10 `ViewData` finding above.** The card was never broken by the release. The browser
+had cached old chunks of the task view. The Platform serves them with `Cache-Control: public, max-age=0`, a fixed
+`Last-Modified` of 1985-10-26 08:15 UTC and a weak ETag built from size and that time (`W/"af17-7438674ba0"` is
+44823 bytes plus that timestamp). So a chunk that changed between releases but kept its byte length revalidates
+with 304, and the browser keeps the old code; a hard reload does not reach chunks the federated frame loads later.
+Proven on 2026-10-29 with a Push Configuration with Approval card, rejected each time, nothing pushed:
+- Production on 6.6.0: seven of the cached `ViewData` chunks differed from the server's, each with the same
+  length. The card failed as recorded. With only those seven chunks refreshed, it rendered, and its Reject
+  button ended the job on the rejected path.
+- Dev on 6.6.1: three cached chunks were stale, with the same result once refreshed.
+
+ADR 0085's fix-by-hand task, an InteractiveHTML card chosen because of the finding, still works; only its stated
+reason is wrong, as is the "card that does not open on 6.6.0" ADR 0084 lists. ADR 0077's branded approval pages
+predate the finding (2026-10-07) and never rested on it. The report to Itential is to be withdrawn (owner action).
+Runbook chapter 11 now treats the browser cache as the first suspect. The proven fix is refreshing the stale chunks;
+emptying the browser's cached files is the everyday route, not yet tested (the production upgrade is the next chance).
+Only Reject was clicked on these cards; Approve in the UI is untested.
+
+Production follows from `main` after this amendment merges, by runbook chapter 11.

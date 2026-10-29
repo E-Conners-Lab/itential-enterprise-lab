@@ -60,11 +60,13 @@ The digests come from the registry listing, never from a tag:
 ```
 aws ecr describe-images --profile ${ECR_PROFILE} --region us-east-2 \
   --repository-name automation-platform-config-lcm-flowai \
-  --image-ids imageTag=6.6.0 --query 'imageDetails[0].[imagePushedAt,imageDigest,imageTags]'
+  --image-ids imageTag=6.6.1 --query 'imageDetails[0].[imagePushedAt,imageDigest,imageTags]'
 ```
 
 When a release was pushed twice the same day, the build that carries the short tags (`6`, `6.6`, `6.6.0`) is
-the release; an earlier one with different component versions in its long tag was superseded.
+the release; an earlier one with different component versions in its long tag was superseded. Itential can also
+withdraw a release (6.6.0, 2026-10): its tag stops listing, and the staged tarball under `/srv/images/` is then the
+only rollback, so keep it.
 
 ---
 
@@ -168,6 +170,8 @@ did not say, then the PR.
 - The Gateway cluster is connected on the new version and a device command runs through it.
 - Every trigger still points at a workflow (the re-point PATCH succeeded on the new API).
 - The MCP server answers `get_health` with the new version.
+- An approval card renders in Work Center and its Reject button ends the job without a change. If the card says
+  "There was a problem loading this task", rule out the browser cache first (Troubleshooting).
 - The snapshot compare shows only what the release itself changed (6.6.0: four roles added to the
   administrator group, nothing else).
 - A post-upgrade dump exists and restores to the live collection count.
@@ -210,12 +214,24 @@ start and the newest dump predates it. Take a dump now and rerun; keep the pre-u
 
 **A Work Center card says "There was a problem loading this task".** Open the browser console before you blame
 the workflow. If the stack trace names the task view's `remoteEntry.js` under `workflow_engine/task/<view>/` and
-Work Center's `federatedFrame`, the release broke that task view's bundle, not your job: every chunk downloads
-with 200, a hard reload changes nothing, and the legacy Operations Manager dialog fails the same way. Seen on
-6.6.0 for `ViewData` (Push Configuration with Approval's card), while the InteractiveHTML cards rendered. Finish
-the task through the API instead, as `verify/test-06-flowai.sh` does
-(`POST /operations-manager/jobs/<job>/tasks/<task>/finish` with the button's `finish_state`), or cancel the job
-from Active Jobs. Note that cancelling an agent session does not cancel the job it started.
+Work Center's `federatedFrame` (`TypeError: Cannot read properties of undefined (reading 'call')`), suspect your
+browser's cache first: it is running old chunks of that view against the new release's entry file. The Platform
+serves these files with a weak ETag built from size and modification time, and every file in the image carries
+the same fixed time (1985), so a chunk that changed between releases but kept its byte length gets the same ETag
+and the server answers the browser's revalidation with 304. A hard reload does not reach chunks loaded later by
+the federated frame. To see it, compare each chunk's cached copy with the server's in the browser console on a
+Platform page (`fetch(<chunk>, {cache: 'only-if-cached', mode: 'same-origin'})` against `fetch(<chunk>, {cache:
+'no-store'})`): equal length, different content means stale. The proven fix is to fetch each stale chunk with
+`{cache: 'reload'}`, which overwrites the cached copy, then reload the page and reopen the card. Emptying the
+browser's cached files (Chrome: *Delete browsing data*, *Cached images and files*) should fix every chunk at once,
+but has not been tested yet; the per-site *Delete data* under *Site settings* is not known to clear the file cache,
+so do not rely on it. This is what the "`ViewData` cannot be opened on
+6.6.0" finding of 2026-10-10 really was: on 2026-10-29 production on 6.6.0 failed the same way with seven stale
+`ViewData` chunks and rendered the card once they were refreshed, and dev after 6.6.0 → 6.6.1 had three. The
+release itself is broken only if the card still fails with a fresh cache. Then finish the task through the API
+instead, as `verify/test-06-flowai.sh` does (`POST /operations-manager/jobs/<job>/tasks/<task>/finish` with the
+button's `finish_state`), or cancel the job from Active Jobs. Note that cancelling an agent session does not
+cancel the job it started.
 
 **`make prod-snapshot MODE=compare` reports the administrator group's role count changed.** New applications
 or features carry new roles, which the Platform grants to its administrator group on upgrade. Four on 6.6.0.

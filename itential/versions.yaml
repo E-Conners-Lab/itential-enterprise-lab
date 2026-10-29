@@ -14,10 +14,12 @@ images:
   # Private ECR: tags listed with the owner's SSO session on the pull date (manifest 3.5, ADR 0020 amendment)
   # Listed 2026-09-07 with `aws ecr describe-images --profile product-ecr-pull-all-497639811223`; digests below.
   # Bumped 2026-10-10 (ADR 0078): Platform 6.6.0 and Gateway 5.5.3, both pushed 2026-10-07, listed the same way.
-  platform: # pushed 2026-10-07 19:55 EDT, 826 MB; same digest as 6.6.0-ecm-6.6.0-fai-6.6.0-gm-1.18.2-lcm-6.6.0-1 (Node 22)
+  # Bumped 2026-10-29 (ADR 0078 amendment): Platform 6.6.1, which replaces 6.6.0 (Itential withdrew the 6.6.0
+  # artifacts; the tag is gone from ECR, the staged tarball is the only copy). Gateway 5.5.3 is still the newest.
+  platform: # pushed 2026-10-15 16:13 EDT, 787 MB; same digest as 6.6.1-ecm-6.6.1-fai-1.2.0-gm-1.18.2-lcm-6.6.1-1 (Node 22)
     repository: 497639811223.dkr.ecr.us-east-2.amazonaws.com/automation-platform-config-lcm-flowai
-    tag: "6.6.0"
-    digest: sha256:ab18e774eb5222627e9694ad54bb0bf02636d32361c73b2f782d5f09bffa4e78
+    tag: "6.6.1"
+    digest: sha256:38f792f3a77df31e6287996408e107fd963746d92344849876fb8c9cc2671031
   gateway5: # pushed 2026-10-07, 381 MB (5.5.3: sshpass in the image, api.key 0600, dependency CVEs)
     repository: 497639811223.dkr.ecr.us-east-2.amazonaws.com/automation-gateway5
     tag: 5.5.3-amd64

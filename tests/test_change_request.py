@@ -184,7 +184,8 @@ def test_once_the_change_is_in_implement_no_ending_cancels_it(name: str) -> None
 
 @pytest.mark.parametrize("name", sorted(CHANGED))
 def test_a_refused_update_after_the_run_leaves_a_card_a_person_can_open(name: str) -> None:
-    """ViewData does not open in Work Center on 6.6.0: the fix-by-hand task is an InteractiveHTML card."""
+    """The fix-by-hand task is an InteractiveHTML card (ADR 0085), not ViewData (whose 6.6.0 failure was a stale
+    browser cache, ADR 0078 amendment 2026-10-29)."""
     tasks, tr = CHANGED[name]["tasks"], CHANGED[name]["transitions"]
     card = tasks["cc4"]
     assert card["name"] == "InteractiveHTML" and card["type"] == "manual"
