@@ -173,6 +173,7 @@ def test_the_allowlist_admits_single_client_machines_only() -> None:
             f"{src}: one client machine per entry, never a range"
         )
     assert "192.168.68.142/32" in allow, "the Mac Mini"
+    assert "192.168.68.140/32" in allow, "the laptop"
 
 
 def test_the_allowlist_script_guards_the_containers_own_port() -> None:

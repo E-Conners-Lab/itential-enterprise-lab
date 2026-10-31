@@ -125,6 +125,7 @@ tools:
   # a phone reaches it through Remote Control on one of these. From tools-01 itself the allowlist does not apply.
   mcp_allow:
     - 192.168.68.142/32 # the Mac Mini (en0 reservation, lab-build-lessons)
+    - 192.168.68.140/32 # the laptop (Deco reservation)
   # R7 (ADR 0076 decision 1): Batfish's API, published on the OOB address and admitted from the Gateway VM only (the
   # play's DOCKER-USER allowlist); a 2 GB heap inside a 3 GB limit (measured: about 3 GB at a 2 GB heap)
   batfish_port: 9996
