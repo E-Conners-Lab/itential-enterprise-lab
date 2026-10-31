@@ -22,8 +22,9 @@ the Platform it is checking).
     restore    6  after a probe change, the restore reports restored with equal hashes and the change is gone
     agents     7  one skill-eval-local session (--claude: skill-eval too) follows a probe procedure with the scratch
                   tools only; no agent document holds the procedure; svc-eval deletes each session once scored and
-                  the administrator reads it gone; then how far the delete reaches, on a throwaway session the
-                  administrator starts (skill-eval-local)
+                  the administrator reads it gone; svc-eval cancels a running session of its own and deletes it;
+                  then how far its cancel and delete reach, on a throwaway session the administrator starts
+                  (skill-eval-local)
     profile    8  anthropic-sonnet-5-5 serves skill-eval; every agent document is operable
     project       the pair sits in skills_lab.project alone, which has no group among its members
     all           every check but agents, in the order above
@@ -325,18 +326,56 @@ def agents(claude: bool) -> None:
         assert code in (200, 204), f"svc-eval could not delete session {sid}: HTTP {code} {str(out)[:200]}"
         assert gone(adm, sid), f"session {sid}: deleted, but the administrator still reads it"
         print(f"{name} session {sid}: deleted by svc-eval; the administrator reads neither it nor its messages")
+    # the runner's stop at a limit or a stall: cancel its own running session, then delete it (ADR 0084, 2026-10-30)
+    sid = throwaway(evl, ids["skill-eval-local"])
+    before, code, out, after = cancel(evl, adm, sid)
+    assert before.upper() == "RUNNING", f"session {sid} was {before} before the cancel: nothing measured, run again"
+    assert code in (200, 201, 204) and after.upper() in CANCELED, (
+        f"svc-eval's cancel of its own session {sid}: HTTP {code} {out}, then {after}")
+    code, out = evl.req("DELETE", f"/agent-session-manager/sessions/{sid}")
+    assert code in (200, 204), f"svc-eval could not delete its cancelled session {sid}: HTTP {code} {str(out)[:200]}"
+    assert gone(adm, sid), f"session {sid}: deleted, but the administrator still reads it"
+    print(f"svc-eval cancelled its own running session {sid} (then {after}) and deleted it")
     reach(evl, adm, ids["skill-eval-local"])
 
 
-def session_end(p: Platform, sid: str, seconds: int = 900) -> str:
+CANCELED = ("CANCELED", "CANCELLED")
+
+
+def session_status(p: Platform, sid: str) -> str:
+    """A failed read is not a status: the probe stops rather than take an expired login for a finished session."""
+    code, doc = p.req("GET", f"/agent-session-manager/sessions/{sid}")
+    assert code == 200, f"session {sid}: the read answered HTTP {code}"
+    return str(((doc.get("data") or doc) if isinstance(doc, dict) else {}).get("status") or "")
+
+
+def session_end(p: Platform, sid: str, seconds: int = 900, waiting: tuple[str, ...] = ("RUNNING",)) -> str:
     deadline, status = time.time() + seconds, ""
     while time.time() < deadline:
-        doc = p.req("GET", f"/agent-session-manager/sessions/{sid}")[1]
-        status = str(((doc.get("data") or doc) if isinstance(doc, dict) else {}).get("status") or "")
-        if status.upper() != "RUNNING":
+        status = session_status(p, sid)
+        if status.upper() not in waiting:
             break
         time.sleep(5)
     return status
+
+
+def throwaway(p: Platform, agent_id: str) -> str:
+    # long enough that the twin is still answering when the cancel arrives
+    code, out = p.req("POST", "/agent-session-manager/sessions",
+                      {"agentDefinitionId": agent_id,
+                       "inputs": {"request": "Count from one to one hundred in words, one per line. Call no tool."}})
+    sid = out.get("sessionId") if isinstance(out, dict) else None
+    assert code in (200, 201) and sid, f"throwaway session: HTTP {code} {str(out)[:200]}"
+    return sid
+
+
+def cancel(p: Platform, adm: Platform, sid: str) -> tuple[str, int, str, str]:
+    """p cancels the session as the runner does; the administrator reads its status before and after. In-flight calls
+    finish first, so CANCELING may last a while (Agent sessions, docs.itential.com)."""
+    before = session_status(adm, sid)
+    code, out = p.req("POST", f"/agent-session-manager/sessions/{sid}", {"action": "CANCEL"})
+    after = session_end(adm, sid, seconds=300, waiting=("RUNNING", "CANCELING"))
+    return before, code, str(out)[:200], after
 
 
 def gone(adm: Platform, sid: str) -> bool:
@@ -352,13 +391,23 @@ def gone(adm: Platform, sid: str) -> bool:
 
 
 def reach(evl: Platform, adm: Platform, agent_id: str) -> None:
-    """How far svc-eval's deleteSession reaches: a measurement, recorded in ADR 0084 decision 6. The session is a
-    throwaway the administrator starts on the local twin; whichever way it goes, the probe removes it."""
-    code, out = adm.req("POST", "/agent-session-manager/sessions",
-                        {"agentDefinitionId": agent_id, "inputs": {"request": "Reply with the single word OK. Call no tool."}})
-    sid = out.get("sessionId") if isinstance(out, dict) else None
-    assert code in (200, 201) and sid, f"the administrator's throwaway session: HTTP {code} {str(out)[:200]}"
-    session_end(adm, sid)
+    """How far svc-eval's updateSessionState (the cancel) and deleteSession reach: measurements, recorded in ADR 0084
+    decision 6 and its 2026-10-30 amendment. The session is a throwaway the administrator starts on the local twin;
+    svc-eval cancels it while it runs, then deletes it. Whichever way it goes, the probe removes it."""
+    sid = throwaway(adm, agent_id)
+    before, code, out, after = cancel(evl, adm, sid)
+    if before.upper() != "RUNNING" or after.upper().startswith("COMPLETE"):
+        print(f"not measured: throwaway session {sid} finished before svc-eval's cancel took ({before}, HTTP {code}, "
+              f"then {after})")
+    elif code in (200, 201, 204) and after.upper() in CANCELED:
+        print(f"measured: svc-eval cancelled a running session the administrator started ({sid}, then {after}): the "
+              "cancel reaches every session")
+    elif code in (401, 403):
+        print(f"measured: svc-eval may not cancel a session the administrator started ({sid}, HTTP {code})")
+    else:
+        print(f"measured: svc-eval's cancel of a session the administrator started: HTTP {code} {out}, then {after}")
+    # DELETE refuses a running session: a refused cancel leaves the count to finish, a slow one to settle
+    session_end(adm, sid, waiting=("RUNNING", "CANCELING"))
     code, _ = evl.req("DELETE", f"/agent-session-manager/sessions/{sid}")
     if gone(adm, sid):
         print(f"measured: svc-eval deleted a session the administrator started ({sid}, HTTP {code}): the delete "

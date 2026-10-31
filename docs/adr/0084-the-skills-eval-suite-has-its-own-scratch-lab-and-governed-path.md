@@ -235,3 +235,35 @@ Still open:
   fault before production.
 - The workbench runner must read session messages in time order, find cards as the approver, reject rather than cancel
   a card a run leaves waiting, and delete each session once it is scored.
+
+## Amendment (2026-10-30): the runner may cancel a session
+
+Decision 6 gave `svc-eval` the delete alone. The workbench runner stops a session at a case's limit, and now at a
+stall, with `POST /agent-session-manager/sessions/<id> {"action": "CANCEL"}`, then deletes it. The cancel answered
+HTTP 403, and DELETE refuses a session that is still RUNNING. In the workbench's batch of 2026-10-29 to 2026-10-30,
+two `skill-eval` sessions hung on the Platform: one model call was never answered, and two show calls stayed pending
+after their jobs completed. The runner stopped both at the 2,400 s limit, and both stayed on production with the
+procedure in their requests.
+
+`eval-run` now also holds `AgentSessionManager/updateSessionState` as an exact method (owner decision 2026-10-30).
+On 6.6.1 the built-in `session:manage` ("Pause, resume, and cancel sessions") holds that one method, as
+`session:delete` holds `deleteSession` alone (read on production as the administrator, 2026-10-30). The method is
+granted, never the role, so the deny list's `*:manage` stays in force.
+
+Reach: like the delete, the method is not scoped to the eval agents, so it is taken to reach every session on
+production, and the route takes PAUSE and RESUME as well as CANCEL. `svc-eval` can already delete any session, which
+is the stronger act. What it gains is the power to stop another account's running session. The runner never does
+that: it cancels only sessions it started, and only when it stops one at a limit or a stall.
+
+Measured by the workbench (2026-10-30): read after the run, one stuck session's message list held 19 of the 24 tool
+calls the runner had copied during the run, and showed four calls as pending that the runner had read as succeeded.
+
+Rollback: take the method out of `itential/eval/run-roles.yaml` and converge eval-access, which resets the role to its
+oracle.
+
+Verification: `tests/test_eval_access.py` (the exact methods; the only session methods either custom role holds are
+the runner's cancel and delete; `*:manage` and `*:delete` stay denied). After the converge,
+`verify/skillslabcheck.py agents`: `svc-eval` cancels a running session of its own and deletes it (asserted), then
+cancels and deletes a session the administrator started (the reach, measured). Then the workbench runs its own cancel
+and delete on the two stuck sessions as `svc-eval`, and records whether the cancel answers 200, whether each session
+reaches CANCELED or stays CANCELING, and whether DELETE then accepts it.

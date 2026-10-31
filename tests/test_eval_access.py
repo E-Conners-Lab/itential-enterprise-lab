@@ -3,9 +3,9 @@ them.
 
 itential/eval/run-roles.yaml (svc-eval) and approve-roles.yaml (svc-eval-approver) are the role oracles. The methods and
 the deny lists below are written here independently of those files, so an edit to an oracle cannot quietly widen what
-either account holds. The runner's account starts the agent tools, reads jobs and sessions and deletes the sessions it
-scored, and can never release a card; the approver releases or rejects cards and runs the restore, cancels no job and
-never starts an agent. No lab access."""
+either account holds. The runner's account starts the agent tools, reads jobs and sessions, cancels a session it stops
+and deletes the sessions it ran, and can never release a card; the approver releases or rejects cards and runs the
+restore, cancels no job and never starts an agent. No lab access."""
 
 from __future__ import annotations
 
@@ -25,6 +25,7 @@ TASKS = PLAYS / "tasks"
 
 RUN_METHODS = {"OperationsManager/runEndpointTriggerWithPost", "OperationsManager/getJob", "OperationsManager/getJobs",
                "AgentSessionManager/deleteSession",  # a scored session's record keeps the procedure
+               "AgentSessionManager/updateSessionState",  # the cancel: DELETE refuses a RUNNING session
                "AgentProjectService/listOperableAgents"}  # the eval agents' ids, by name
 RUN_BUILTIN = {"AgentSessionManager/session:read", "AgentSessionManager/operator"}
 APPROVE_METHODS = {"OperationsManager/runEndpointTriggerWithPost", "OperationsManager/getJob",
@@ -123,6 +124,18 @@ def test_the_only_delete_either_account_holds_is_the_runners_session_delete() ->
     assert deletes == {"run": {"AgentSessionManager/deleteSession"}, "approve": set()}
     # a method, not the built-in session:delete role, so the deny list's */*:delete keeps holding for every role
     assert "*:delete" in {d["name"] for d in _oracle("run-roles.yaml")["prod"]["deny"]}
+
+
+def test_the_only_session_methods_either_custom_role_holds_are_the_runners_cancel_and_delete() -> None:
+    """ADR 0084 decision 6, amended 2026-10-30: the runner cancels a session it stops at a limit or a stall, since
+    DELETE refuses one still RUNNING, then deletes it. Exact methods, never the built-in session:manage role (which
+    holds updateSessionState alone on 6.6.1), so the deny list's */*:manage keeps holding for every role."""
+    held = {account: {k for k in _keys([m for c in _oracle(spec[0])["prod"]["custom"] for m in c["methods"]])
+                      if k.startswith("AgentSessionManager/")}
+            for account, spec in ACCOUNTS.items()}
+    assert held == {"run": {"AgentSessionManager/deleteSession", "AgentSessionManager/updateSessionState"},
+                    "approve": set()}
+    assert {"*:delete", "*:manage"} <= {d["name"] for d in _oracle("run-roles.yaml")["prod"]["deny"]}
 
 
 def test_the_two_accounts_share_no_group_and_neither_is_an_admin() -> None:
