@@ -8,7 +8,7 @@ SHELL := /bin/bash
 
 PHASES := oob-network platform network-topology itential flowai observability platform-ha2 config-secrets-code identity ddi containerlab firewall-track
 
-.PHONY: help bootstrap lint test up verify mcp-access mcp-enrol mcp-wrap mcp-revoke mcp-check vault-mcp-tokens platform-ha2-tools vault-dev vault vault-status vault-init vault-unseal vault-config vault-snapshot vault-revoke-root vault-admin-user vault-login vault-logout vault-cutover aws-key deploy-key twin-key edge-account edge-account-line knowledge-token knowledge-pull-token knowledge-mcp-secret netops-knowledge discover netbox-enrich tokens agents-push observability-refresh plan-oob plan-platform plan-itential plan-platform-ha2 plan-clab \
+.PHONY: help bootstrap lint test up verify mcp-access mcp-enrol mcp-wrap mcp-revoke mcp-check vault-mcp-tokens vault-mcp-setup platform-ha2-tools vault-dev vault vault-status vault-init vault-unseal vault-config vault-snapshot vault-revoke-root vault-admin-user vault-login vault-logout vault-cutover aws-key deploy-key twin-key edge-account edge-account-line knowledge-token knowledge-pull-token knowledge-mcp-secret netops-knowledge discover netbox-enrich tokens agents-push observability-refresh plan-oob plan-platform plan-itential plan-platform-ha2 plan-clab \
 	netbox-token-dev clab-dev dev-stack verify-dev prod-snapshot copilot-prod $(addprefix phase-,$(PHASES))
 
 help: ## Show targets
@@ -197,10 +197,16 @@ vault-config: ## Production Vault: KV, AppRoles bound to their hosts (read-only 
 	  cd ansible && ansible-playbook -i inventory/netbox.yml playbooks/vault-prod-config.yml
 	scripts/vault-prod.sh snapshot
 
-vault-mcp-tokens: ## Production Vault, the MCP server's part only (ADR 0083): client roles and policy; the identity provider when the token may (root at the ceremony)
+vault-mcp-tokens: ## Production Vault, the MCP server's part only (ADR 0083): client roles and policy; the identity provider when the token may
 	@if [ -z "$${VAULT_TOKEN:-}" ] && [ -s $(VAULT_ADMIN_FILE) ]; then scripts/vault-prod.sh renew; fi
 	$(load_env) if [ -z "$${VAULT_TOKEN:-}" ] && [ -s $(VAULT_ADMIN_FILE) ]; then export VAULT_TOKEN=$$(tr -d '\n' < $(VAULT_ADMIN_FILE)); fi; \
 	  cd ansible && ansible-playbook -i inventory/netbox.yml playbooks/vault-prod-config.yml --tags mcp-tokens
+	scripts/vault-prod.sh snapshot
+
+vault-mcp-setup: ## Production Vault, ONCE (ADR 0083 amendment 2026-10-31): the MCP part plus a temporary setup role that writes the identity provider, then is removed
+	@if [ -z "$${VAULT_TOKEN:-}" ] && [ -s $(VAULT_ADMIN_FILE) ]; then scripts/vault-prod.sh renew; fi
+	$(load_env) if [ -z "$${VAULT_TOKEN:-}" ] && [ -s $(VAULT_ADMIN_FILE) ]; then export VAULT_TOKEN=$$(tr -d '\n' < $(VAULT_ADMIN_FILE)); fi; \
+	  cd ansible && ansible-playbook -i inventory/netbox.yml playbooks/vault-prod-config.yml --tags mcp-tokens -e mcp_setup_role=true
 	scripts/vault-prod.sh snapshot
 
 vault-snapshot: ## Production Vault: a Raft snapshot to ~/Backups/itential-enterprise-lab/vault (mode 600, outside the repo)

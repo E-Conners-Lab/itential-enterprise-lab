@@ -28,6 +28,33 @@
         {%- set _ = out.update({role: r.bound_hosts | map('extract', host_ip) | map('regex_replace', '$', '/32') | list}) -%}
       {%- endfor -%}
       {{ out }}
+    # the owner's administrator login (versions.yaml vault.prod.admin): written by root at first configuration and
+    # since by the temporary setup role (tasks/vault-mcp-tokens.yml). It holds the lab's admin jobs; note that writing
+    # itential-* policies and AppRole roles lets it grant itself more (ADR 0083 amendment 2026-10-31)
+    lab_admin_policy: |
+      # the owner's administrator login (ADR 0065): the lab's admin jobs only
+      path "auth/{{ vault.approle_mount }}/role/+/role-id" { capabilities = ["read"] }
+      path "auth/{{ vault.approle_mount }}/role/+/secret-id" { capabilities = ["create", "update", "list"] }
+      path "auth/{{ vault.approle_mount }}/role/+/secret-id/lookup" { capabilities = ["update"] }
+      path "auth/{{ vault.approle_mount }}/role/+/secret-id-accessor/lookup" { capabilities = ["update"] }
+      path "auth/{{ vault.approle_mount }}/role/+/secret-id-accessor/destroy" { capabilities = ["update"] }
+      path "auth/{{ vault.approle_mount }}/role/*" { capabilities = ["create", "read", "update", "list"] }
+      path "auth/{{ vault.approle_mount }}/role" { capabilities = ["list"] }
+      path "sys/policies/acl/itential-*" { capabilities = ["create", "read", "update", "delete", "list"] }
+      path "sys/policies/acl" { capabilities = ["list"] }
+      path "{{ vault.kv_mount }}/*" { capabilities = ["create", "read", "update", "patch", "delete", "list"] }
+      path "sys/storage/raft/snapshot" { capabilities = ["read"] }
+      path "sys/mounts" { capabilities = ["read"] }
+      path "sys/auth" { capabilities = ["read"] }
+      path "auth/token/create/verify-readers" { capabilities = ["update"] }
+      # ADR 0083: the MCP server's signing key and token role (not the issuer), once the temporary setup role made them
+      # (amendment 2026-10-31), and the way back to root: Vault 2.0 authenticates generate-root, and without these the
+      # owner's unseal key alone cannot issue one
+      path "identity/oidc/key/{{ vault.mcp_tokens.key }}" { capabilities = ["create", "read", "update"] }
+      path "identity/oidc/key/{{ vault.mcp_tokens.key }}/rotate" { capabilities = ["update"] }
+      path "identity/oidc/role/{{ vault.mcp_tokens.role }}" { capabilities = ["create", "read", "update"] }
+      path "sys/generate-root/attempt" { capabilities = ["create", "read", "update", "delete", "sudo"] }
+      path "sys/generate-root/update" { capabilities = ["create", "update", "sudo"] }
     # one test per (role, host) plus one per role from this workstation, which must be refused
     binding_plan: >-
       {%- set out = [] -%}
@@ -125,26 +152,7 @@
         headers: {X-Vault-Token: "{{ vault_token }}"}
         body_format: json
         body:
-          policy: |
-            # the owner's administrator login (ADR 0065): the lab's admin jobs only
-            path "auth/{{ vault.approle_mount }}/role/+/role-id" { capabilities = ["read"] }
-            path "auth/{{ vault.approle_mount }}/role/+/secret-id" { capabilities = ["create", "update", "list"] }
-            path "auth/{{ vault.approle_mount }}/role/+/secret-id/lookup" { capabilities = ["update"] }
-            path "auth/{{ vault.approle_mount }}/role/+/secret-id-accessor/lookup" { capabilities = ["update"] }
-            path "auth/{{ vault.approle_mount }}/role/+/secret-id-accessor/destroy" { capabilities = ["update"] }
-            path "auth/{{ vault.approle_mount }}/role/*" { capabilities = ["create", "read", "update", "list"] }
-            path "auth/{{ vault.approle_mount }}/role" { capabilities = ["list"] }
-            path "sys/policies/acl/itential-*" { capabilities = ["create", "read", "update", "delete", "list"] }
-            path "sys/policies/acl" { capabilities = ["list"] }
-            path "{{ vault.kv_mount }}/*" { capabilities = ["create", "read", "update", "patch", "delete", "list"] }
-            path "sys/storage/raft/snapshot" { capabilities = ["read"] }
-            path "sys/mounts" { capabilities = ["read"] }
-            path "sys/auth" { capabilities = ["read"] }
-            path "auth/token/create/verify-readers" { capabilities = ["update"] }
-            # ADR 0083: the MCP server's signing key and token role (not the issuer), set up at the root ceremony
-            path "identity/oidc/key/{{ vault.mcp_tokens.key }}" { capabilities = ["create", "read", "update"] }
-            path "identity/oidc/key/{{ vault.mcp_tokens.key }}/rotate" { capabilities = ["update"] }
-            path "identity/oidc/role/{{ vault.mcp_tokens.role }}" { capabilities = ["create", "read", "update"] }
+          policy: "{{ lab_admin_policy }}"
         status_code: [204]
       changed_when: false
       when: vault_token_is_root

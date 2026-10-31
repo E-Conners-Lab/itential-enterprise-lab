@@ -3,9 +3,9 @@
 # (itential/versions.yaml vault.mcp_tokens). One AppRole per client machine (topology/ipam.yaml home_lan.mcp_clients),
 # bound to that machine's address, whose only policy reads one identity token; the lab-admin login may write those.
 # The identity provider behind it (issuer, signing key, token role) is written only by a token Vault says may write
-# it: the root token at the ceremony (ADR 0083 decision 8), after which lab-admin may keep the key and the role (not the
-# issuer). Then the real path is proven from this workstation, the Mac Mini: its own role logs in and, once the provider
-# is set up, takes a token with the wanted issuer and audience; every other machine's role is refused from here.
+# it: once, by a temporary setup role (below), after which lab-admin may keep the key and the role (not the issuer).
+# Then the real path is proven from this workstation, the Mac Mini: its own role logs in and, once the provider is set
+# up, takes a token with the wanted issuer and audience; every other machine's role is refused from here.
 - name: The MCP token settings and the client machines
   ansible.builtin.set_fact:
     mcp: "{{ vault.mcp_tokens }}"
@@ -107,6 +107,11 @@
   no_log: true
 
 # --- the identity provider: written only by a token that may -----------------------------------------------------
+# Root cannot be had back (ADR 0083 amendment 2026-10-31: lab-admin is refused generate-root), so the owner chose a
+# temporary setup role: `make vault-mcp-setup` (mcp_setup_role=true) has lab-admin, with the rights it already holds,
+# make a policy and an AppRole that work once, from this workstation only, for fifteen minutes. That token writes the
+# issuer, the key and the role, gives lab-admin the key, the role and generate-root (a way back to root with the
+# owner's unseal key), and then the role, its token and the policy are removed, whatever happened before.
 - name: What this token may do on the identity provider
   ansible.builtin.uri:
     url: "{{ vault_addr }}/v1/sys/capabilities-self"
@@ -134,77 +139,226 @@
   register: mcp_discovery
   changed_when: false
 
-- name: Issuer set (it is the pod's address until then) to {{ mcp.issuer }}
-  ansible.builtin.uri:
-    url: "{{ vault_addr }}/v1/identity/oidc/config"
-    ca_path: "{{ playbook_dir }}/../../docs/lab-root-ca.crt"
-    method: POST
-    headers: {X-Vault-Token: "{{ vault_token }}"}
-    body_format: json
-    body: {issuer: "{{ mcp.issuer }}"}
-    status_code: [200, 204]
-  when: mcp_may_issuer and mcp_discovery.json.issuer != mcp.issuer ~ '/v1/identity/oidc'
-  changed_when: true
-  no_log: true
+- name: Whether this run uses the temporary setup role
+  ansible.builtin.set_fact:
+    # only while something is missing: the issuer not yet Vault's own name, or the key and role not writable
+    mcp_setup: >-
+      {{ (mcp_setup_role | default(false) | bool)
+         and (mcp_discovery.json.issuer != mcp.issuer ~ '/v1/identity/oidc' or not mcp_may_provider) }}
+    mcp_setup_name: itential-mcp-oidc-setup
+    mcp_ws_address: "{{ (mcp_clients | selectattr('hostname', 'equalto', mcp_ws) | first).address }}"
 
-# allowed_client_ids names the role's own client_id: no other role may sign with this key
-- name: Signing key {{ mcp.key }}
-  ansible.builtin.uri:
-    url: "{{ vault_addr }}/v1/identity/oidc/key/{{ mcp.key }}"
-    ca_path: "{{ playbook_dir }}/../../docs/lab-root-ca.crt"
-    method: POST
-    headers: {X-Vault-Token: "{{ vault_token }}"}
-    body_format: json
-    body:
-      algorithm: "{{ mcp.algorithm }}"
-      rotation_period: "{{ mcp.rotation_period }}"
-      verification_ttl: "{{ mcp.verification_ttl }}"
-      allowed_client_ids: ["{{ mcp.client_id }}"]
-    status_code: [200, 204]
-  when: mcp_may_provider
-  changed_when: false
-  no_log: true
+- name: The identity provider
+  block:
+    - name: Temporary setup policy (the issuer, the key, the role and lab-admin's own policy; its own role, to remove it)
+      ansible.builtin.uri:
+        url: "{{ vault_addr }}/v1/sys/policies/acl/{{ mcp_setup_name }}"
+        ca_path: "{{ playbook_dir }}/../../docs/lab-root-ca.crt"
+        method: PUT
+        headers: {X-Vault-Token: "{{ vault_token }}"}
+        body_format: json
+        body:
+          policy: |
+            # ADR 0083 amendment 2026-10-31: the one-time setup of the MCP server's identity provider
+            path "identity/oidc/config" { capabilities = ["read", "update"] }
+            path "identity/oidc/key/{{ mcp.key }}" { capabilities = ["create", "read", "update"] }
+            path "identity/oidc/role/{{ mcp.role }}" { capabilities = ["create", "read", "update"] }
+            path "sys/policies/acl/{{ vault.prod.admin.policy }}" { capabilities = ["read", "update"] }
+            path "auth/{{ vault.approle_mount }}/role/{{ mcp_setup_name }}" { capabilities = ["delete"] }
+        status_code: [204]
+      when: mcp_setup
+      changed_when: true
+      no_log: true
 
-- name: Token role {{ mcp.role }}
-  ansible.builtin.uri:
-    url: "{{ vault_addr }}/v1/identity/oidc/role/{{ mcp.role }}"
-    ca_path: "{{ playbook_dir }}/../../docs/lab-root-ca.crt"
-    method: POST
-    headers: {X-Vault-Token: "{{ vault_token }}"}
-    body_format: json
-    body: {key: "{{ mcp.key }}", ttl: "{{ mcp.ttl }}", client_id: "{{ mcp.client_id }}"}
-    status_code: [200, 204]
-  when: mcp_may_provider
-  changed_when: false
-  no_log: true
+    - name: Temporary setup role (one use, this workstation only, fifteen minutes)
+      ansible.builtin.uri:
+        url: "{{ vault_addr }}/v1/auth/{{ vault.approle_mount }}/role/{{ mcp_setup_name }}"
+        ca_path: "{{ playbook_dir }}/../../docs/lab-root-ca.crt"
+        method: POST
+        headers: {X-Vault-Token: "{{ vault_token }}"}
+        body_format: json
+        body:
+          token_policies: ["{{ mcp_setup_name }}"]
+          token_ttl: 900
+          token_max_ttl: 900
+          secret_id_ttl: 900
+          secret_id_num_uses: 1
+          secret_id_bound_cidrs: ["{{ mcp_ws_address }}/32"]
+          token_bound_cidrs: ["{{ mcp_ws_address }}/32"]
+        status_code: [204]
+      when: mcp_setup
+      changed_when: true
+      no_log: true
 
-- name: The token role as Vault holds it
-  ansible.builtin.uri:
-    url: "{{ vault_addr }}/v1/identity/oidc/role/{{ mcp.role }}"
-    ca_path: "{{ playbook_dir }}/../../docs/lab-root-ca.crt"
-    headers: {X-Vault-Token: "{{ vault_token }}"}
-  register: mcp_role_now
-  when: mcp_may_provider
-  no_log: true
+    - name: Its role ID
+      ansible.builtin.uri:
+        url: "{{ vault_addr }}/v1/auth/{{ vault.approle_mount }}/role/{{ mcp_setup_name }}/role-id"
+        ca_path: "{{ playbook_dir }}/../../docs/lab-root-ca.crt"
+        headers: {X-Vault-Token: "{{ vault_token }}"}
+      register: mcp_setup_rid
+      when: mcp_setup
+      no_log: true
 
-- name: The token role signs with the key, for the audience and lifetime wanted
-  ansible.builtin.assert:
-    that:
-      - mcp_role_now.json.data.key == mcp.key
-      - mcp_role_now.json.data.client_id == mcp.client_id
-      - mcp_role_now.json.data.ttl == 3600
-    fail_msg: "role {{ mcp.role }}: key {{ r.key }}, client_id {{ r.client_id }}, ttl {{ r.ttl }}"
-    quiet: true
-  vars:
-    r: "{{ mcp_role_now.json.data }}"
-  when: mcp_may_provider
+    - name: Its one secret ID
+      ansible.builtin.uri:
+        url: "{{ vault_addr }}/v1/auth/{{ vault.approle_mount }}/role/{{ mcp_setup_name }}/secret-id"
+        ca_path: "{{ playbook_dir }}/../../docs/lab-root-ca.crt"
+        method: POST
+        headers: {X-Vault-Token: "{{ vault_token }}"}
+        body_format: json
+        body: {metadata: '{"issued_by": "vault-mcp-tokens.yml identity provider setup"}'}
+      register: mcp_setup_sid
+      when: mcp_setup
+      no_log: true
 
-- name: The identity provider was left alone
-  ansible.builtin.debug:
-    msg: >-
-      This token may not write the issuer, the key or the token role: they wait for the root ceremony
-      (ADR 0083 decision 8). The client roles above are in place; a login is proven below, a token is not.
-  when: not mcp_may_provider
+    - name: Login with it from this workstation
+      ansible.builtin.uri:
+        url: "{{ vault_addr }}/v1/auth/{{ vault.approle_mount }}/login"
+        ca_path: "{{ playbook_dir }}/../../docs/lab-root-ca.crt"
+        method: POST
+        body_format: json
+        body: {role_id: "{{ mcp_setup_rid.json.data.role_id }}", secret_id: "{{ mcp_setup_sid.json.data.secret_id }}"}
+      register: mcp_setup_login
+      when: mcp_setup
+      no_log: true
+
+    - name: The token that writes the identity provider
+      ansible.builtin.set_fact:
+        mcp_write_token: "{{ mcp_setup_login.json.auth.client_token if mcp_setup else vault_token }}"
+        mcp_may_issuer: "{{ mcp_may_issuer or mcp_setup }}"
+        mcp_may_provider: "{{ mcp_may_provider or mcp_setup }}"
+      no_log: true
+
+    - name: Issuer set (it is the pod's address until then) to {{ mcp.issuer }}
+      ansible.builtin.uri:
+        url: "{{ vault_addr }}/v1/identity/oidc/config"
+        ca_path: "{{ playbook_dir }}/../../docs/lab-root-ca.crt"
+        method: POST
+        headers: {X-Vault-Token: "{{ mcp_write_token }}"}
+        body_format: json
+        body: {issuer: "{{ mcp.issuer }}"}
+        status_code: [200, 204]
+      when: mcp_may_issuer and mcp_discovery.json.issuer != mcp.issuer ~ '/v1/identity/oidc'
+      changed_when: true
+      no_log: true
+
+    # allowed_client_ids names the role's own client_id: no other role may sign with this key
+    - name: Signing key {{ mcp.key }}
+      ansible.builtin.uri:
+        url: "{{ vault_addr }}/v1/identity/oidc/key/{{ mcp.key }}"
+        ca_path: "{{ playbook_dir }}/../../docs/lab-root-ca.crt"
+        method: POST
+        headers: {X-Vault-Token: "{{ mcp_write_token }}"}
+        body_format: json
+        body:
+          algorithm: "{{ mcp.algorithm }}"
+          rotation_period: "{{ mcp.rotation_period }}"
+          verification_ttl: "{{ mcp.verification_ttl }}"
+          allowed_client_ids: ["{{ mcp.client_id }}"]
+        status_code: [200, 204]
+      when: mcp_may_provider
+      changed_when: false
+      no_log: true
+
+    - name: Token role {{ mcp.role }}
+      ansible.builtin.uri:
+        url: "{{ vault_addr }}/v1/identity/oidc/role/{{ mcp.role }}"
+        ca_path: "{{ playbook_dir }}/../../docs/lab-root-ca.crt"
+        method: POST
+        headers: {X-Vault-Token: "{{ mcp_write_token }}"}
+        body_format: json
+        body: {key: "{{ mcp.key }}", ttl: "{{ mcp.ttl }}", client_id: "{{ mcp.client_id }}"}
+        status_code: [200, 204]
+      when: mcp_may_provider
+      changed_when: false
+      no_log: true
+
+    - name: The token role as Vault holds it
+      ansible.builtin.uri:
+        url: "{{ vault_addr }}/v1/identity/oidc/role/{{ mcp.role }}"
+        ca_path: "{{ playbook_dir }}/../../docs/lab-root-ca.crt"
+        headers: {X-Vault-Token: "{{ mcp_write_token }}"}
+      register: mcp_role_now
+      when: mcp_may_provider
+      no_log: true
+
+    - name: The token role signs with the key, for the audience and lifetime wanted
+      ansible.builtin.assert:
+        that:
+          - mcp_role_now.json.data.key == mcp.key
+          - mcp_role_now.json.data.client_id == mcp.client_id
+          - mcp_role_now.json.data.ttl == 3600
+        fail_msg: "role {{ mcp.role }}: key {{ r.key }}, client_id {{ r.client_id }}, ttl {{ r.ttl }}"
+        quiet: true
+      vars:
+        r: "{{ mcp_role_now.json.data }}"
+      when: mcp_may_provider
+
+    - name: Lab-admin's policy as Vault holds it
+      ansible.builtin.uri:
+        url: "{{ vault_addr }}/v1/sys/policies/acl/{{ vault.prod.admin.policy }}"
+        ca_path: "{{ playbook_dir }}/../../docs/lab-root-ca.crt"
+        headers: {X-Vault-Token: "{{ mcp_write_token }}"}
+      register: mcp_admin_policy_now
+      when: mcp_setup
+      no_log: true
+
+    - name: Lab-admin keeps the key and the role, and may generate root with the owner's unseal key
+      ansible.builtin.uri:
+        url: "{{ vault_addr }}/v1/sys/policies/acl/{{ vault.prod.admin.policy }}"
+        ca_path: "{{ playbook_dir }}/../../docs/lab-root-ca.crt"
+        method: PUT
+        headers: {X-Vault-Token: "{{ mcp_write_token }}"}
+        body_format: json
+        body: {policy: "{{ lab_admin_policy }}"}
+        status_code: [204]
+      when: mcp_setup and mcp_admin_policy_now.json.data.policy != lab_admin_policy
+      changed_when: true
+      no_log: true
+
+    - name: The identity provider was left alone
+      ansible.builtin.debug:
+        msg: >-
+          This token may not write the issuer, the key or the token role, and no setup role was asked for: run
+          make vault-mcp-setup (ADR 0083 amendment 2026-10-31). The client roles above are in place; a login is proven
+          below, a token is not.
+      when: not mcp_may_provider
+
+  always:
+    - name: The temporary setup role removed (by its own token, which alone may)
+      ansible.builtin.uri:
+        url: "{{ vault_addr }}/v1/auth/{{ vault.approle_mount }}/role/{{ mcp_setup_name }}"
+        ca_path: "{{ playbook_dir }}/../../docs/lab-root-ca.crt"
+        method: DELETE
+        headers: {X-Vault-Token: "{{ mcp_setup_login.json.auth.client_token }}"}
+        status_code: [204]
+      when: mcp_setup and (mcp_setup_login.json.auth.client_token | default('')) != ''
+      changed_when: true
+      no_log: true
+
+    - name: Its token revoked
+      ansible.builtin.uri:
+        url: "{{ vault_addr }}/v1/auth/token/revoke-self"
+        ca_path: "{{ playbook_dir }}/../../docs/lab-root-ca.crt"
+        method: POST
+        headers: {X-Vault-Token: "{{ mcp_setup_login.json.auth.client_token }}"}
+        status_code: [204]
+      when: mcp_setup and (mcp_setup_login.json.auth.client_token | default('')) != ''
+      changed_when: true
+      no_log: true
+
+    # if the login never happened, the role is still there and lab-admin cannot delete it: it then holds an unused,
+    # one-use secret ID that expires in fifteen minutes, and the policy below goes, so it could grant nothing
+    - name: The temporary setup policy removed
+      ansible.builtin.uri:
+        url: "{{ vault_addr }}/v1/sys/policies/acl/{{ mcp_setup_name }}"
+        ca_path: "{{ playbook_dir }}/../../docs/lab-root-ca.crt"
+        method: DELETE
+        headers: {X-Vault-Token: "{{ vault_token }}"}
+        status_code: [204]
+      when: mcp_setup
+      changed_when: true
+      no_log: true
 
 # --- prove it on the real path from this workstation ------------------------------------------------------------
 - name: One-use, five-minute secret IDs, one per client role, to try from this workstation

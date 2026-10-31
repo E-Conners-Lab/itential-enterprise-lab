@@ -10,8 +10,10 @@
 #   enrol NAME   ADMIN, on machine NAME itself: a new secret ID straight into this Keychain, then every older one of
 #                NAME's destroyed
 #   wrap NAME    ADMIN, in YOUR terminal: a new secret ID for machine NAME, response-wrapped (single use, wrap_ttl in
-#                itential/versions.yaml); prints the wrapping token, the one value this script ever shows
-#   revoke NAME  ADMIN: destroys every secret ID of NAME's AppRole; that machine can no longer log in
+#                itential/versions.yaml), and NAME's older ones destroyed; prints the wrapping token, the one value
+#                this script ever shows
+#   revoke NAME  ADMIN: destroys every secret ID of NAME's AppRole; that machine can no longer log in, though a token
+#                it already took stays valid until it expires (Vault's tokens are not looked up by the server)
 #
 # Stock macOS only (bash 3.2, curl, plutil, security), so it runs on a machine without the repo: copy it with
 # docs/lab-root-ca.crt beside it (MCP_CA overrides). Vault is reached at its VIP under its own name, so the machine
@@ -76,12 +78,10 @@ admin_token() {
 # a client machine's AppRole; NAME is a hostname from topology/ipam.yaml home_lan.mcp_clients
 approle() { case "${1:-}" in ''|-*|*[!a-z0-9-]*) die "name a client machine (a hostname, a-z 0-9 -)";; esac; printf '%s%s' "$APPROLE_PREFIX" "$1"; }
 
-# the identity token, on stdout; the Vault login behind it is revoked once the token is read
-mint() {
-  local rid sid vt jwt
-  rid=$(kc_get role-id) && sid=$(kc_get secret-id) || die "no role or secret ID in this Keychain: run unwrap (or enrol) first"
-  vcall POST "auth/$APPROLE_MOUNT/login" < <(printf '{"role_id":"%s","secret_id":"%s"}' "$rid" "$sid")
-  unset sid
+# mint_with ROLE-ID-VAR SECRET-ID-VAR: the identity token, on stdout; the Vault login behind it is revoked once read
+mint_with() {
+  local vt jwt
+  vcall POST "auth/$APPROLE_MOUNT/login" < <(printf '{"role_id":"%s","secret_id":"%s"}' "${!1}" "${!2}")
   [ "$code" = 200 ] || die "Vault refused the login (HTTP $code): wrong machine address, or this machine's secret ID was revoked"
   vt=$(printf '%s' "$body" | jget auth.client_token)
   vcall GET "identity/oidc/token/$TOKEN_ROLE" vt < <(printf '')
@@ -91,6 +91,13 @@ mint() {
   unset vt
   [ -n "$jwt" ] || die "Vault's answer held no token"
   printf '%s' "$jwt"
+}
+
+# the identity token for the IDs in this Keychain
+mint() {
+  local rid sid
+  rid=$(kc_get role-id) && sid=$(kc_get secret-id) || die "no role or secret ID in this Keychain: run unwrap (or enrol) first"
+  mint_with rid sid
 }
 
 # the claims of a JWT on stdin (base64url, unpadded), as JSON
@@ -126,7 +133,11 @@ new_secret() {
 destroy_secrets() {
   local i=0 a n=0
   vcall LIST "auth/$APPROLE_MOUNT/role/$1/secret-id" at < <(printf '')
-  [ "$code" = 200 ] || { echo 0; return; } # 404: none
+  case "$code" in
+    200) ;;
+    404) echo 0; return ;; # the role holds no secret ID
+    *) die "could not list the secret IDs of $1 (HTTP $code): is the administrator login still valid? (make vault-login)" ;;
+  esac
   while a=$(printf '%s' "$body" | jget "data.keys.$i"); do
     i=$((i + 1))
     [ "$a" = "${2:-}" ] && continue
@@ -165,16 +176,20 @@ case "${1:-}" in
     role=$(approle "${2:-}")
     admin_token
     new_secret "$role"
+    # the new IDs must log in from here before they replace anything in this Keychain (rc 3: login proven, no token yet)
+    rc=0; ( mint_with rid sid >/dev/null ) || rc=$?
+    if [ "$rc" != 0 ] && [ "$rc" != 3 ]; then
+      printf '{"secret_id_accessor":"%s"}' "$acc" | { vcall POST "auth/$APPROLE_MOUNT/role/$role/secret-id-accessor/destroy" at; }
+      die "the new secret ID of $role did not log in from this machine (is $2 this machine?): it was destroyed, this Keychain is unchanged"
+    fi
     kc_put role-id rid
     kc_put secret-id sid
     unset sid
     echo "stored a new secret ID of $role in this Keychain (accessor $acc)"
-    rc=0; check || rc=$?
-    # the older secret IDs go only once the new one has logged in from here (rc 3: login proven, no token until the ceremony)
-    [ "$rc" = 0 ] || [ "$rc" = 3 ] || die "the new secret ID did not log in from this machine: older ones kept"
     gone=$(destroy_secrets "$role" "$acc")
     echo "older secret IDs of $role destroyed: $gone"
     unset at
+    if [ "$rc" = 0 ]; then check; else echo "login proven; no MCP token yet (Vault's identity provider is not set up)"; fi
     ;;
   wrap)
     role=$(approle "${2:-}")
@@ -182,22 +197,34 @@ case "${1:-}" in
     new_secret "$role"
     vcall POST sys/wrapping/wrap at "$WRAP_TTL" \
       < <(printf '{"name":"%s","role_id":"%s","secret_id":"%s"}' "$2" "$rid" "$sid")
-    unset sid at
-    [ "$code" = 200 ] || die "wrapping refused (HTTP $code)"
-    echo "secret ID for $role made (accessor $acc); its single-use wrapping token, valid $WRAP_TTL:"
-    printf '%s' "$body" | jget wrap_info.token
+    unset sid
+    if [ "$code" != 200 ]; then
+      printf '{"secret_id_accessor":"%s"}' "$acc" | { vcall POST "auth/$APPROLE_MOUNT/role/$role/secret-id-accessor/destroy" at; }
+      die "wrapping refused (HTTP $code): the new secret ID was destroyed"
+    fi
+    wrapped=$body
+    body=''
+    # a wrap replaces: the machine keeps one secret ID, this one, so an unused or leaked older one cannot linger
+    gone=$(destroy_secrets "$role" "$acc")
+    unset at
+    echo "secret ID for $role made (accessor $acc); older ones destroyed: $gone, so $2 is cut off until it unwraps"
+    echo "its single-use wrapping token, valid $WRAP_TTL:"
+    printf '%s' "$wrapped" | jget wrap_info.token
+    unset wrapped
     echo
     echo "on that machine: scripts/mcp-client.sh unwrap   (then paste it; it is not echoed)"
     ;;
   revoke)
     role=$(approle "${2:-}")
     admin_token
+    vcall GET "auth/$APPROLE_MOUNT/role/$role" at < <(printf '')
+    [ "$code" = 200 ] || die "could not read AppRole $role (HTTP $code): a 404 is no such machine, a 403 an expired administrator login (make vault-login)"
     gone=$(destroy_secrets "$role")
-    echo "secret IDs of $role destroyed: $gone"
     unset at
+    echo "secret IDs of $role destroyed: $gone; it can no longer log in, but a token it already took stays valid until it expires (at most ttl, 1 h)"
     ;;
   *)
-    sed -n '2,24p' "$0"
+    sed -n '2,23p' "$0"
     exit 2
     ;;
 esac

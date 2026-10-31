@@ -446,24 +446,55 @@ def test_the_client_policy_reads_one_token_and_nothing_else() -> None:
     assert policy == 'path "identity/oidc/token/{{ mcp.role }}" { capabilities = ["read"] }'
 
 
-def test_the_admin_login_may_keep_the_key_and_role_but_not_the_issuer() -> None:
-    """After the ceremony lab-admin maintains the signing key and the token role; moving the issuer (every token's iss)
-    and minting tokens stay outside its policy."""
-    play = (PLAYS / "vault-prod-config.yml").read_text()
-    policy = play.split("Least-privilege administrator policy", 1)[1].split("status_code", 1)[0]
+def _lab_admin_policy() -> str:
+    play = yaml.safe_load((PLAYS / "vault-prod-config.yml").read_text())
+    return play[0]["vars"]["lab_admin_policy"]
+
+
+def test_the_admin_login_may_keep_the_key_and_role_and_generate_root_but_not_move_the_issuer() -> None:
+    """After the setup lab-admin maintains the signing key and the token role, and may generate root with the owner's
+    unseal key (Vault 2.0 authenticates generate-root); moving the issuer and minting MCP tokens stay outside its policy
+    text. That is the policy as written, not a boundary Vault enforces: lab-admin writes itential-* policies and AppRole
+    roles, so it can grant itself more (ADR 0083 amendment 2026-10-31). One text, never two copies."""
+    policy = _lab_admin_policy()
     assert 'path "identity/oidc/key/{{ vault.mcp_tokens.key }}" { capabilities = ["create", "read", "update"] }' in policy
     assert 'path "identity/oidc/role/{{ vault.mcp_tokens.role }}" { capabilities = ["create", "read", "update"] }' in policy
+    assert 'path "sys/generate-root/attempt"' in policy and 'path "sys/generate-root/update"' in policy
     assert "identity/oidc/config" not in policy and "identity/oidc/token" not in policy
+    play = (PLAYS / "vault-prod-config.yml").read_text()
+    assert play.count('policy: "{{ lab_admin_policy }}"') == 1
     assert "tasks/vault-mcp-tokens.yml" in play
+    tasks = (TASKS / "vault-mcp-tokens.yml").read_text()
+    assert 'body: {policy: "{{ lab_admin_policy }}"}' in tasks
+
+
+def test_the_setup_role_works_once_from_here_and_is_always_removed() -> None:
+    """The owner's choice over a root ceremony that Vault 2.0 no longer allows (ADR 0083 amendment 2026-10-31)."""
+    tasks = yaml.safe_load((TASKS / "vault-mcp-tokens.yml").read_text())
+    block = next(t for t in tasks if t.get("name") == "The identity provider")
+    role = next(t for t in block["block"] if t["name"].startswith("Temporary setup role"))["ansible.builtin.uri"]["body"]
+    assert role["secret_id_num_uses"] == 1 and role["secret_id_ttl"] == role["token_max_ttl"] == 900
+    assert role["secret_id_bound_cidrs"] == role["token_bound_cidrs"] == ["{{ mcp_ws_address }}/32"]
+    cleanup = [t["name"] for t in block["always"]]
+    assert cleanup == [
+        "The temporary setup role removed (by its own token, which alone may)",
+        "Its token revoked",
+        "The temporary setup policy removed",
+    ]
+    setup_policy = next(t for t in block["block"] if t["name"].startswith("Temporary setup policy"))
+    text = setup_policy["ansible.builtin.uri"]["body"]["policy"]
+    # what this run writes, nothing else: lab-admin can still grant itself more (ADR 0083 amendment, correction to 0065)
+    assert "sys/policies/acl/itential-" not in text and "sys/generate-root" not in text, "only what this setup writes"
+    assert "mcp_setup_role=true" in (ROOT / "Makefile").read_text()
 
 
 def test_the_identity_provider_is_written_only_by_a_token_that_may() -> None:
     tasks = (TASKS / "vault-mcp-tokens.yml").read_text()
     assert "sys/capabilities-self" in tasks
     for task in ("Signing key", "Token role {{ mcp.role }}"):
-        block = tasks.split(f"- name: {task}", 1)[1].split("\n- name:", 1)[0]
+        block = tasks.split(f"- name: {task}", 1)[1].split("- name:", 1)[0]
         assert "when: mcp_may_provider" in block, task
-    issuer = tasks.split("- name: Issuer set", 1)[1].split("\n- name:", 1)[0]
+    issuer = tasks.split("- name: Issuer set", 1)[1].split("- name:", 1)[0]
     assert "when: mcp_may_issuer and" in issuer
     assert 'allowed_client_ids: ["{{ mcp.client_id }}"]' in tasks, "no other role may sign with the key"
 

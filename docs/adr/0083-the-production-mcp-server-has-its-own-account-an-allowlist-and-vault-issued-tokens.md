@@ -115,11 +115,24 @@ from the phone, and wants the credentials in a secret manager with a way back in
   lab-admin login may write these (an `itential-*` policy and AppRole roles), so they need no root token:
   `make vault-mcp-tokens` runs this part alone and proves it from the Mac (its own role logs in, the laptop's is refused).
 - **The identity provider** (issuer, signing key, token role) is written only by a token Vault says may write it
-  (`sys/capabilities-self`): the root token at the ceremony (decision 8), which also gives lab-admin the key and the role,
-  not the issuer and not token minting.
+  (`sys/capabilities-self`). Decision 8's root ceremony was impossible: lab-admin's token is refused `generate-root`
+  (measured 2026-10-31: 403, capabilities `deny`; Vault 2.0 authenticates it, ADR 0065), and root was revoked. The owner
+  chose a **temporary setup role** instead (`make vault-mcp-setup`, run once 2026-10-31 18:50Z): with rights it already
+  held, lab-admin made a policy and an AppRole usable once, from the Mac only, for fifteen minutes; that token set the
+  issuer, the key and the role and rewrote lab-admin's policy, and then the role, its token and the policy were removed
+  (an `always` block). lab-admin now keeps the key and the role (not the issuer, not token minting) and may run
+  `generate-root`, which still needs the owner's unseal key: the way back to root decision 8 assumed.
+- **Correction to ADR 0065:** lab-admin *can* widen itself. It writes `itential-*` policies and AppRole roles and can log
+  in through a role bound to the Mac, so it can grant itself anything; no ACL can stop an administrator that writes
+  policies. Treat its password as a full administrator's.
 - **Delivery** (`scripts/mcp-client.sh`, stock macOS only; no secret in argv, a file or a here-string): the Mac enrols
   itself (`make mcp-enrol NAME=mac-mini`). The laptop's role and secret IDs arrive response-wrapped, single use, valid
   ten minutes (owner decision 2026-10-31, over a lab-admin login on the laptop): `make mcp-wrap NAME=laptop` in the
-  owner's terminal, then `scripts/mcp-client.sh unwrap` on the laptop. `make mcp-revoke NAME=<machine>` cuts one off.
-- **Open before the ceremony:** Vault 2.0 authenticates `sys/generate-root` (ADR 0065), and lab-admin's policy has no
-  path there. Whether its token is accepted is measured first, with a read of `sys/generate-root/attempt`.
+  owner's terminal, then `scripts/mcp-client.sh unwrap` on the laptop; a wrap destroys the machine's older secret IDs, so
+  each machine holds one. `make mcp-revoke NAME=<machine>` stops that machine's logins, but a token it already took stays
+  valid until it expires (at most an hour): the server checks signatures, not Vault, and rotating the key does not help,
+  since a retired public key stays published for a day.
+- **Proven 2026-10-31:** the Mac's own role logs in from the Mac and the laptop's is refused there (HTTP 400); the Mac,
+  enrolled, gets a token through `scripts/mcp-client.sh token` (Claude Code's headersHelper) in 0.3 s, whose RS256
+  signature verifies against Vault's published keys, with `iss https://vault.lab.internal:8200/v1/identity/oidc`,
+  `aud itential-mcp` and an hour's life. The server does not ask for it yet: that is the server-side change.
