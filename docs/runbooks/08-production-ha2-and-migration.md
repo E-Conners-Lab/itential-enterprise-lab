@@ -179,9 +179,43 @@ The second line exists because 6.6.0's Inventory Manager cannot change an existi
 API offers create, read and delete only. Device jobs fail between the delete and the end of the replay's
 first play, so run the two back to back. Take `make prod-snapshot MODE=save` before and compare after.
 
-**To add a client machine:** reserve its address on the home router, add it to `tools.mcp_allow` as a
-`/32`, and run `make platform-ha2-tools`. A phone needs no entry: Remote Control of Claude Code on one of
-these machines makes the calls from that machine.
+**To add a client machine:** reserve its address on the home router, record it in `topology/ipam.yaml`
+`home_lan.mcp_clients` and add the same `/32` to `tools.mcp_allow` (a test holds the two equal), then
+`make vault-mcp-tokens` for its AppRole and `make platform-ha2-tools`, and give it its login (step 7). A phone
+needs no entry: Remote Control of Claude Code on one of these machines makes the calls from that machine.
+
+### 7. Make every MCP caller present a Vault-signed token
+
+[ADR 0083](../adr/0083-the-production-mcp-server-has-its-own-account-an-allowlist-and-vault-issued-tokens.md)
+decisions 5 to 7 and their amendment. Each client machine has its own Vault AppRole, bound to its address; its
+login reads a one-hour token signed by Vault's identity provider, and the server accepts nothing else, over TLS.
+Vault first, in your own terminal for the login and the wrap:
+
+```
+make vault-login                         # your terminal: the administrator login for the rest of this step
+make vault-mcp-tokens                    # the client policy and one AppRole per machine; proves them from this Mac
+make vault-mcp-setup                     # ONCE: the identity provider, through a temporary setup role (no root needed)
+make mcp-enrol NAME=mac-mini             # on the Mac: its secret ID into its own Keychain
+make mcp-wrap NAME=laptop                # your terminal: a single-use wrapping token for the other machine
+```
+
+On the other machine, with `scripts/mcp-client.sh` and `docs/lab-root-ca.crt` copied beside each other, run
+`scripts/mcp-client.sh unwrap` and paste the wrapping token (it is not echoed, works once and lasts ten
+minutes); it stores the IDs in that machine's Keychain and takes a test token. Point its Claude Code at the
+server with `"url": "https://mcp.${LAB_DOMAIN}:8000/mcp"` and `"headersHelper": "<path>/mcp-client.sh token"`.
+Claude Code trusts the operating system's store: where the lab CA is not a trusted root, set
+`NODE_EXTRA_CA_CERTS` to the CA file. Then the server:
+
+```
+make platform-ha2-tools                  # the certificate, JWT and TLS on the port; refused without a token, answered with one
+```
+
+Every client switches at that moment: a Claude Code session that connected before it needs `/mcp` to
+reconnect. `make mcp-revoke NAME=<machine>` stops a machine's logins; a token it already took stays valid for
+up to an hour. **Break-glass**, when Vault cannot sign (sealed or down) and the server refuses everyone: the
+tools play stages `docker-compose.breakglass.yml` on tools-01, which recreates the server with no token and no
+TLS on tools-01's loopback only, reached through an SSH tunnel; the file's header has the three commands, and
+`make platform-ha2-tools` leaves it.
 
 ---
 
@@ -225,9 +259,11 @@ verify/test-08-platform-ha2.sh
 | S11.9 | A `mongodump` newer than 24 h exists on the backup member **and restores** — into a throw-away `mongod`, with its collection count equal to the live database (ADR 0058) |
 | S11.6a/b/c | The three failover drills, behind `VERIFY_DRILLS=1` |
 
-Chapter 05's script also holds the MCP server to ADR 0083: S4.7b reads the container's login name and checks
-that `svc-mcp` itself logged in after the container started, and S4.7c checks that the Gateway VM, which is
-not in `tools.mcp_allow`, is dropped at the MCP port.
+Chapter 05's script also holds the MCP server to ADR 0083: S4.7 reaches it over TLS with this Mac's own
+Vault-signed token, S4.7b reads the container's login name and checks that `svc-mcp` itself logged in after the
+container started, S4.7c checks that the Gateway VM, which is not in `tools.mcp_allow`, is dropped at the MCP
+port, and S4.7d checks that a call with no token, or a token Vault never signed, gets 401 and plain HTTP no
+answer.
 
 The final run was **7 passed, 0 failed, 0 deferred** — the first run in the whole series with nothing
 deferred.

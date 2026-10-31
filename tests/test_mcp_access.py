@@ -7,6 +7,7 @@ No lab access."""
 
 from __future__ import annotations
 
+import collections
 import ipaddress
 import json
 import re
@@ -541,3 +542,68 @@ def test_the_wrapping_token_is_the_only_value_the_script_shows() -> None:
     for ln in shown:
         assert "=$(" in ln or "wrap_info.token" in ln, ln
     assert sum("wrap_info.token" in ln for ln in shown) == 1
+
+
+# --- ADR 0083 decisions 5-7, server side: TLS and a Vault-signed token on tools-01 ----------------------------------
+
+
+def _mcp_env_rendered() -> dict:
+    """The MCP service's environment with the real versions.yaml values the auth settings are made from."""
+    rendered = jinja2.Environment(undefined=jinja2.ChainableUndefined).from_string(COMPOSE.read_text()).render(
+        vault=yaml.safe_load(VERSIONS.read_text())["vault"],
+        images=collections.defaultdict(lambda: {"repository": "r", "tag": "t"}),
+        ip="10.100.0.81", tools={"mcp_port": 8000}, service_name="itential", domain="lab.internal",
+        loadbalancer={"listen_port": 443}, mcp_access={"user": "svc-mcp"},
+    )
+    return yaml.safe_load(rendered)["services"]["mcp"]["environment"]
+
+
+def test_the_server_takes_only_vault_signed_tokens_over_tls() -> None:
+    env = _mcp_env_rendered()
+    t = _mcp_tokens()
+    assert env["ITENTIAL_MCP_SERVER_AUTH_TYPE"] == "jwt"
+    assert env["ITENTIAL_MCP_SERVER_AUTH_JWKS_URI"] == f"{t['issuer']}/v1/identity/oidc/.well-known/keys"
+    assert env["ITENTIAL_MCP_SERVER_AUTH_ISSUER"] == f"{t['issuer']}/v1/identity/oidc", "Vault's iss claim"
+    assert env["ITENTIAL_MCP_SERVER_AUTH_AUDIENCE"] == t["client_id"]
+    assert env["ITENTIAL_MCP_SERVER_AUTH_ALGORITHM"] == t["algorithm"]
+    assert "ITENTIAL_MCP_SERVER_AUTH_PUBLIC_KEY" not in env, "exactly one of a JWKS URI and a static key"
+    assert env["ITENTIAL_MCP_SERVER_CERTIFICATE_FILE"] == "/etc/ssl/lab/mcp.crt"
+    assert env["ITENTIAL_MCP_SERVER_PRIVATE_KEY_FILE"] == "/etc/ssl/lab/mcp.key"
+    assert env["SSL_CERT_FILE"] == "/etc/ssl/lab/ca.crt", "the JWKS fetch trusts the lab CA"
+
+
+def test_the_tools_play_installs_the_certificate_and_proves_both_answers_from_here() -> None:
+    plays = yaml.safe_load((PLAYS / "platform-ha2-tools.yml").read_text())
+    cert = plays[0]
+    assert cert["hosts"] == "localhost"
+    spec = next(t for t in cert["tasks"] if "kubernetes.core.k8s" in t and t["kubernetes.core.k8s"]["definition"]["kind"] == "Certificate")
+    spec = spec["kubernetes.core.k8s"]["definition"]["spec"]
+    assert spec["issuerRef"] == {"name": "lab-ca", "kind": "ClusterIssuer"} and spec["ipAddresses"] == ["{{ tools_vm.ip }}"]
+    tools = next(p for p in plays if p.get("hosts") == "ha2-tools")
+    by_name = {t["name"]: t for t in tools["tasks"]}
+    files = by_name["The MCP server's certificate and key (ADR 0083 decision 6)"]
+    key = next(i for i in files["loop"] if i["name"] == "mcp.key")
+    assert key["mode"] == "0600" and files["ansible.builtin.copy"]["owner"] == "root" and files["no_log"] is True
+    assert by_name["MCP restarted for a new certificate"]["when"] == "mcp_tls_files is changed"
+    refused = by_name["MCP refuses an initialize without a token"]["ansible.builtin.uri"]
+    assert refused["status_code"] == [401]
+    accepted = by_name["MCP answers an initialize with that token"]
+    assert accepted["ansible.builtin.uri"]["status_code"] == [200] and accepted["no_log"] is True
+    assert accepted["delegate_to"] == "localhost", "from this Mac, through the allowlist, as Claude Code calls it"
+    minted = by_name["A token from this Mac's own Vault login (scripts/mcp-client.sh token, Claude Code's headersHelper)"]
+    assert minted["no_log"] is True and "mcp-client.sh token" in minted["ansible.builtin.command"]["cmd"]
+    assert tools["vars"]["mcp_url"] == "https://mcp.{{ domain }}:{{ tools.mcp_port }}/mcp"
+
+
+def test_break_glass_serves_loopback_only_without_auth_and_is_never_the_default() -> None:
+    """Decision 7: when Vault cannot sign, the way in is an SSH tunnel to tools-01, whose root already owns the box."""
+    text = (ROOT / "itential" / "ha2" / "tools.compose.breakglass.yml").read_text()
+    assert "ports: !override" in text, "replace the published address, do not add to it"
+    body = yaml.safe_load(text.replace("!override", ""))
+    mcp = body["services"]["mcp"]
+    assert mcp["ports"] == ["127.0.0.1:8000:8000"]
+    assert mcp["environment"]["ITENTIAL_MCP_SERVER_AUTH_TYPE"] == "none"
+    play = (PLAYS / "platform-ha2-tools.yml").read_text()
+    assert "dest: \"{{ dir }}/docker-compose.breakglass.yml\"" in play
+    assert "breakglass" not in COMPOSE.read_text(), "the normal compose file never pulls it in"
+    assert "cmd: docker compose up -d\n" in play, "the play's own up uses the normal file only, so a run leaves break-glass"

@@ -317,7 +317,10 @@ def test_workflows_exported_and_shaped(versions: dict) -> None:
 def test_mcp_client_config_points_at_lab_mcp() -> None:
     cfg = json.loads(MCP_JSON.read_text())
     srv = cfg["mcpServers"]["itential"]
-    assert srv["type"] == "http" and srv["url"] == "http://mcp.lab.internal:8000/mcp"
+    # ADR 0083 decisions 5 and 6: TLS, and a Vault-signed token from this machine's own login on every connection
+    assert srv["type"] == "http" and srv["url"] == "https://mcp.lab.internal:8000/mcp"
+    assert srv["headersHelper"] == "scripts/mcp-client.sh token"
+    assert "headers" not in srv, "no static credential in a committed file"
 
 
 def test_mcp_server_hides_the_tools_that_return_node_credentials() -> None:

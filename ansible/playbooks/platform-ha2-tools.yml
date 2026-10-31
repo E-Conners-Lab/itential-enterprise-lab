@@ -3,6 +3,67 @@
 # directory is an Itential Platform component, so the guide's "one component per server" rule moves them off
 # the Platform nodes onto tools-01. It runs before platform-ha2-identity.yml, which needs the directory, and
 # therefore before platform-ha2-gateway.yml, whose Gateway Manager calls need the directory account.
+# ADR 0083 decision 6: the MCP server's certificate, from the lab CA on k3s (ClusterIssuer lab-ca) as
+# platform-ha2-hosts.yml issues the Platform's: tools-01's own name, its aliases (mcp.lab.internal) and its address.
+- name: The MCP server's certificate from the lab CA
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars_files:
+    - ../../itential/ha2/versions.yaml
+    - ../../topology/ipam.yaml
+  vars:
+    ansible_python_interpreter: "{{ playbook_dir }}/../../.venv/bin/python"
+    kubeconfig: >-
+      {{ lookup('ansible.builtin.env', 'KUBECONFIG_PATH')
+         | default(lookup('ansible.builtin.env', 'HOME') ~ '/.kube/lab-k3s.yaml', true) }}
+    tools_vm: "{{ vms | selectattr('role', 'equalto', 'tools') | first }}"
+    tools_row: "{{ addresses | selectattr('hostname', 'equalto', tools_vm.name) | first }}"
+    mcp_dns: "{{ [tools_vm.name ~ '.' ~ domain] + (tools_row.aliases | default([]) | map('regex_replace', '$', '.' ~ domain) | list) }}"
+  tasks:
+    - name: Namespace itential-ha2 (holds the production hosts' certificates)
+      kubernetes.core.k8s:
+        kubeconfig: "{{ kubeconfig }}"
+        definition: {apiVersion: v1, kind: Namespace, metadata: {name: itential-ha2}}
+
+    - name: Certificate for the MCP server, from ClusterIssuer lab-ca
+      kubernetes.core.k8s:
+        kubeconfig: "{{ kubeconfig }}"
+        definition:
+          apiVersion: cert-manager.io/v1
+          kind: Certificate
+          metadata: {name: "{{ tools_vm.name }}", namespace: itential-ha2}
+          spec:
+            secretName: "{{ tools_vm.name }}-tls"
+            duration: 8760h # one year; this play copies the renewed one and restarts the server
+            renewBefore: 720h
+            commonName: "{{ mcp_dns[-1] }}"
+            dnsNames: "{{ mcp_dns }}"
+            ipAddresses: ["{{ tools_vm.ip }}"]
+            usages: [server auth, digital signature, key encipherment]
+            issuerRef: {name: lab-ca, kind: ClusterIssuer}
+        wait: true
+        wait_condition: {type: Ready, status: "True"}
+        wait_timeout: 180
+
+    - name: The issued secret
+      kubernetes.core.k8s_info:
+        kubeconfig: "{{ kubeconfig }}"
+        kind: Secret
+        namespace: itential-ha2
+        name: "{{ tools_vm.name }}-tls"
+      register: mcp_tls_secret
+      failed_when: mcp_tls_secret.resources | default([]) | length != 1
+      no_log: true
+
+    - name: Hand the PEMs to the tools play
+      ansible.builtin.set_fact:
+        mcp_tls:
+          cert: "{{ mcp_tls_secret.resources[0].data['tls.crt'] | b64decode }}"
+          key: "{{ mcp_tls_secret.resources[0].data['tls.key'] | b64decode }}"
+          ca: "{{ mcp_tls_secret.resources[0].data['ca.crt'] | b64decode }}"
+      no_log: true
+
 - name: The tools VM (MCP, Ollama and the directory)
   hosts: ha2-tools
   become: true
@@ -21,6 +82,13 @@
     # ADR 0083: who may reach the MCP server - the client machines in versions.yaml tools.mcp_allow
     mcp_allow: "{{ tools.mcp_allow }}"
     env_file: "{{ playbook_dir }}/../../.env"
+    # the name every client uses (.mcp.json); the certificate carries it
+    mcp_url: "https://mcp.{{ domain }}:{{ tools.mcp_port }}/mcp"
+    mcp_initialize:
+      jsonrpc: "2.0"
+      id: 1
+      method: initialize
+      params: {protocolVersion: "2025-03-26", capabilities: {}, clientInfo: {name: platform-ha2-tools.yml, version: "1"}}
   tasks:
     - name: Compose file
       ansible.builtin.template:
@@ -42,6 +110,32 @@
       ansible.builtin.copy:
         src: ../../docs/lab-root-ca.crt
         dest: "{{ dir }}/tls/ca.crt"
+        owner: ubuntu
+        group: ubuntu
+        mode: "0644"
+
+    # the container runs as root (its image sets no user), so the key is root's and no one else's on the VM
+    - name: The MCP server's certificate and key (ADR 0083 decision 6)
+      ansible.builtin.copy:
+        content: "{{ item.content }}"
+        dest: "{{ dir }}/tls/{{ item.name }}"
+        owner: root
+        group: root
+        mode: "{{ item.mode }}"
+      loop:
+        - {name: mcp.crt, content: "{{ pem.cert }}{{ pem.ca }}", mode: "0644"}
+        - {name: mcp.key, content: "{{ pem.key }}", mode: "0600"}
+      loop_control:
+        label: "{{ item.name }}"
+      vars:
+        pem: "{{ hostvars['localhost'].mcp_tls }}"
+      register: mcp_tls_files
+      no_log: true
+
+    - name: Break-glass override beside the compose file (ADR 0083 decision 7; used only by hand)
+      ansible.builtin.copy:
+        src: ../../itential/ha2/tools.compose.breakglass.yml
+        dest: "{{ dir }}/docker-compose.breakglass.yml"
         owner: ubuntu
         group: ubuntu
         mode: "0644"
@@ -107,6 +201,14 @@
         chdir: "{{ dir }}"
       register: up
       changed_when: "'Started' in up.stderr or 'Created' in up.stderr or 'Recreated' in up.stderr"
+
+    # compose recreates the container when its own definition changes, not when a mounted file does
+    - name: MCP restarted for a new certificate
+      ansible.builtin.command:
+        cmd: docker compose restart mcp
+        chdir: "{{ dir }}"
+      when: mcp_tls_files is changed
+      changed_when: true
 
     # ADR 0060 moved every local model to the Mac Mini: tools-01 has no GPU and its Ollama ran at
     # 91% of a 6 GiB cap until llama-server crashed mid-verify. Nothing to pull here any more; the
@@ -235,12 +337,55 @@
       delay: 5
       until: batfish_up.status is defined and batfish_up.status == 200
 
-    - name: MCP answers
+    - name: MCP answers over TLS, with the lab CA (its health route)
       ansible.builtin.uri:
-        url: "http://{{ ip }}:{{ tools.mcp_port }}/mcp"
-        method: GET
-        status_code: [200, 400, 405, 406]
+        url: "https://{{ ip }}:{{ tools.mcp_port }}/status/healthz"
+        ca_path: "{{ dir }}/tls/ca.crt"
+        status_code: [200, 401]
       register: mcp
       retries: 20
       delay: 5
-      until: mcp.status is defined
+      until: mcp.status is defined and mcp.status in [200, 401]
+
+    # ADR 0083 decision 5 on the real path, from this Mac (in tools.mcp_allow), the way Claude Code calls it
+    - name: MCP refuses an initialize without a token
+      ansible.builtin.uri:
+        url: "{{ mcp_url }}"
+        ca_path: "{{ playbook_dir }}/../../docs/lab-root-ca.crt"
+        method: POST
+        headers: {Accept: "application/json, text/event-stream"}
+        body_format: json
+        body: "{{ mcp_initialize }}"
+        status_code: [401]
+      delegate_to: localhost
+      become: false
+
+    - name: A token from this Mac's own Vault login (scripts/mcp-client.sh token, Claude Code's headersHelper)
+      ansible.builtin.command:
+        cmd: "{{ playbook_dir }}/../../scripts/mcp-client.sh token"
+      delegate_to: localhost
+      become: false
+      register: mcp_headers
+      changed_when: false
+      failed_when: false
+      no_log: true
+
+    # the script never writes the token to stderr, so its message can be shown
+    - name: This Mac holds a working MCP login
+      ansible.builtin.assert:
+        that: mcp_headers.rc == 0
+        fail_msg: "{{ mcp_headers.stderr }} (enrol this Mac: make mcp-enrol NAME=mac-mini)"
+        quiet: true
+
+    - name: MCP answers an initialize with that token
+      ansible.builtin.uri:
+        url: "{{ mcp_url }}"
+        ca_path: "{{ playbook_dir }}/../../docs/lab-root-ca.crt"
+        method: POST
+        headers: "{{ mcp_headers.stdout | from_json | combine({'Accept': 'application/json, text/event-stream'}) }}"
+        body_format: json
+        body: "{{ mcp_initialize }}"
+        status_code: [200]
+      delegate_to: localhost
+      become: false
+      no_log: true

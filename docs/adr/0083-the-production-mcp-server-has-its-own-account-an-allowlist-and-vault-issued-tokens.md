@@ -136,3 +136,25 @@ from the phone, and wants the credentials in a secret manager with a way back in
   enrolled, gets a token through `scripts/mcp-client.sh token` (Claude Code's headersHelper) in 0.3 s, whose RS256
   signature verifies against Vault's published keys, with `iss https://vault.lab.internal:8200/v1/identity/oidc`,
   `aud itential-mcp` and an hour's life. The server does not ask for it yet: that is the server-side change.
+
+## Amendment 2026-10-31: decisions 5 to 7, server side
+
+- **The server** (`itential/ha2/tools.compose.yml.j2`): `ITENTIAL_MCP_SERVER_AUTH_TYPE=jwt` with Vault's JWKS URI,
+  issuer, audience and RS256, all derived from `vault.mcp_tokens`; it fetches the keys with the lab CA it already
+  mounts (`SSL_CERT_FILE`) and caches them an hour. itential-mcp v0.14.1 serves TLS itself (uvicorn's certificate and
+  key, `ITENTIAL_MCP_SERVER_CERTIFICATE_FILE` / `_PRIVATE_KEY_FILE`, read from its v0.14.1 source), so decision 6 needs
+  no proxy.
+- **The certificate** comes from the lab CA on k3s as the Platform hosts' do: the tools play's first play issues it for
+  tools-01's own name, its alias `mcp.lab.internal` and its address, and the tools play installs it (the key root's,
+  mode 0600: the container runs as root) and restarts the server when it changes, since Compose recreates a container
+  only when its own definition changes.
+- **Proof on the real path**, in the tools play and verify S4.7/S4.7d: from the Mac, an initialize with no token gets
+  401, and one with the Mac's token (`scripts/mcp-client.sh token`, exactly as Claude Code's headersHelper runs it) gets
+  200; a token Vault never signed gets 401 and plain HTTP gets no answer.
+- **Clients**: `.mcp.json` names `https://mcp.lab.internal:8000/mcp` and `headersHelper: scripts/mcp-client.sh token`.
+  Claude Code runs the helper on every connection and again after a 401, so the hourly token renews itself; it trusts
+  the operating system's store, where the lab CA is already a trusted root on the Mac (`NODE_EXTRA_CA_CERTS` where it
+  is not). Credential-named environment variables are stripped from a project helper, which reads only the Keychain.
+- **Break-glass** (decision 7): `itential/ha2/tools.compose.breakglass.yml`, staged beside the compose file, recreates
+  the server with no token and no TLS on tools-01's loopback (`ports: !override`), reached through an SSH tunnel; the
+  tools play's own `docker compose up -d` uses the normal file only, so a run leaves break-glass.

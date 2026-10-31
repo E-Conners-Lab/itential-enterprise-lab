@@ -12,6 +12,17 @@ services:
       ITENTIAL_MCP_SERVER_PORT: "8000"
       ITENTIAL_MCP_SERVER_PATH: "/mcp"
       ITENTIAL_MCP_SERVER_LOG_LEVEL: "INFO"
+      # ADR 0083 decision 5: every caller presents a token Vault's identity provider signed (itential/versions.yaml
+      # vault.mcp_tokens), checked against Vault's published keys, issuer and audience; one per client machine, through
+      # scripts/mcp-client.sh. The keys are fetched with the lab CA (SSL_CERT_FILE below) and cached an hour.
+      ITENTIAL_MCP_SERVER_AUTH_TYPE: "jwt"
+      ITENTIAL_MCP_SERVER_AUTH_JWKS_URI: "{{ vault.mcp_tokens.issuer }}/v1/identity/oidc/.well-known/keys"
+      ITENTIAL_MCP_SERVER_AUTH_ISSUER: "{{ vault.mcp_tokens.issuer }}/v1/identity/oidc"
+      ITENTIAL_MCP_SERVER_AUTH_AUDIENCE: "{{ vault.mcp_tokens.client_id }}"
+      ITENTIAL_MCP_SERVER_AUTH_ALGORITHM: "{{ vault.mcp_tokens.algorithm }}"
+      # decision 6: TLS on the port, a lab-CA certificate for mcp.lab.internal, so a token never crosses in clear
+      ITENTIAL_MCP_SERVER_CERTIFICATE_FILE: "/etc/ssl/lab/mcp.crt"
+      ITENTIAL_MCP_SERVER_PRIVATE_KEY_FILE: "/etc/ssl/lab/mcp.key"
       # ADR 0039 amendment: the tools that return Inventory Manager node attributes carry the device
       # credentials in their reply, so they are hidden from MCP clients - the same list the dev-stack
       # excludes (itential/compose.override.yml), asserted by verify/test-05 S4.7. ADR 0083: the six adapter and
