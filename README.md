@@ -98,7 +98,7 @@ Every name resolves through the lab's own resolver on `10.100.0.1`; run
 |---|---|---|
 | Itential Platform | `https://itential.lab.internal` | nginx on `iap-lb`, in front of the Platform nodes |
 | Vault | `https://vault.lab.internal:8200` | the lab's credentials; `make vault-status`, and the owner unseals it after a restart |
-| MCP server | `http://mcp.lab.internal:8000/mcp` | on the tools VM; `.mcp.json` points Claude Code at it |
+| MCP server | `https://mcp.lab.internal:8000/mcp` | on the tools VM; `.mcp.json` points Claude Code at it, with a Vault-signed token per machine (ADR 0083) |
 | Dev stack (Copilot) | `https://itential-dev.lab.internal`, `http://mcp-dev.lab.internal:8000/mcp` | the sandbox of ADR 0063; nothing here is production |
 | NetBox | `http://netbox.lab.internal:8080` | the network source of truth |
 | Grafana | `https://grafana.lab.internal` | lab dashboards and the official Itential Platform Monitoring dashboard |

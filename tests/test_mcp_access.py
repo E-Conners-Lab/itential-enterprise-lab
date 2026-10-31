@@ -607,3 +607,12 @@ def test_break_glass_serves_loopback_only_without_auth_and_is_never_the_default(
     assert "dest: \"{{ dir }}/docker-compose.breakglass.yml\"" in play
     assert "breakglass" not in COMPOSE.read_text(), "the normal compose file never pulls it in"
     assert "cmd: docker compose up -d\n" in play, "the play's own up uses the normal file only, so a run leaves break-glass"
+
+
+def test_no_verify_calls_the_production_mcp_server_without_tls_and_a_token() -> None:
+    """Every caller of production's MCP server moved with the server (verify 06 S4c.6 was missed once)."""
+    for script in sorted((ROOT / "verify").glob("*.sh")):
+        text = script.read_text()
+        assert "http://mcp.lab.internal" not in text, f"{script.name} calls the production MCP server over plain HTTP"
+        if "https://mcp.lab.internal" in text and "mcpcall.py" in text:
+            assert 'MCP_HEADERS_CMD="scripts/mcp-client.sh token"' in text, f"{script.name} sends no token"

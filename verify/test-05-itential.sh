@@ -244,17 +244,19 @@ c7d() {
   [ "$MCP_HOST" = mcp.lab.internal ] || { echo "the dev stack's mcp-dev takes no token"; return 1; }
   local init='{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"verify","version":"1"}}}'
   local hdr=(-H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream') none forged plain fake
-  # well-formed, signed by no key Vault publishes; built here so no token-shaped string sits in the repo
-  b64url() { base64 | tr -d '=\n' | tr '/+' '_-'; }
-  fake="$(printf '{"alg":"RS256","kid":"none"}' | b64url).$(printf '{"iss":"none","aud":"itential-mcp"}' | b64url).$(printf 'signature' | b64url)"
+  # this Mac's real token - Vault's own key id, issuer, audience and expiry - with only its signature replaced, so
+  # nothing but the signature check can refuse it; the token is held in a variable, never printed
+  fake=$(scripts/mcp-client.sh token | ${PY} -c 'import json,sys;h,p,s=json.load(sys.stdin)["Authorization"][7:].split(".");print(f"{h}.{p}.{s[::-1]}")') \
+    || { echo "this Mac could not take a token (make mcp-enrol NAME=mac-mini)"; return 1; }
   none=$(curl -s -o /dev/null -w '%{http_code}' -m 10 --cacert "$CA" -X POST "${hdr[@]}" -d "$init" "$MCP_URL")
   forged=$(curl -s -o /dev/null -w '%{http_code}' -m 10 --cacert "$CA" -X POST "${hdr[@]}" -H "Authorization: Bearer ${fake}" \
              -d "$init" "$MCP_URL")
   plain=$(curl -s -o /dev/null -w '%{http_code}' -m 10 -X POST "${hdr[@]}" -d "$init" "http://${MCP_HOST}:8000/mcp" || true)
   [ "$none" = 401 ] || { echo "no token: HTTP ${none}, want 401"; return 1; }
-  [ "$forged" = 401 ] || { echo "a token Vault never signed: HTTP ${forged}, want 401"; return 1; }
+  unset fake
+  [ "$forged" = 401 ] || { echo "a real token with a forged signature: HTTP ${forged}, want 401"; return 1; }
   case "$plain" in 2*|3*|4*|5*) echo "plain HTTP was answered (HTTP ${plain}): the port must speak TLS only"; return 1 ;; esac
-  echo "no token: 401; a token Vault never signed: 401; plain HTTP: no answer (${plain}); this Mac's token: accepted (S4.7)"
+  echo "no token: 401; a real token with a forged signature: 401; plain HTTP: no answer (${plain}); this Mac's token: accepted (S4.7)"
 }
 check "S4.7d production's MCP server refuses a caller without a Vault-signed token, and plain HTTP" c7d
 

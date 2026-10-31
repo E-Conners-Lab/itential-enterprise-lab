@@ -370,12 +370,13 @@
       failed_when: false
       no_log: true
 
-    # the script never writes the token to stderr, so its message can be shown
-    - name: This Mac holds a working MCP login
-      ansible.builtin.assert:
-        that: mcp_headers.rc == 0
-        fail_msg: "{{ mcp_headers.stderr }} (enrol this Mac: make mcp-enrol NAME=mac-mini)"
-        quiet: true
+    # A fresh build reaches here before Vault's MCP setup and this Mac's enrolment exist (runbook 08 step 7): the server
+    # side is proven above, so the run goes on and says so; verify 05 S4.7 is the check that must pass. The script
+    # never writes the token to stderr, so its message can be shown.
+    - name: This Mac has no MCP login yet, so the accepted half is left to verify 05 S4.7
+      ansible.builtin.debug:
+        msg: "{{ mcp_headers.stderr }} - enrol this Mac (make mcp-enrol NAME=mac-mini), then run verify 05 S4.7"
+      when: mcp_headers.rc != 0
 
     - name: MCP answers an initialize with that token
       ansible.builtin.uri:
@@ -388,4 +389,5 @@
         status_code: [200]
       delegate_to: localhost
       become: false
+      when: mcp_headers.rc == 0
       no_log: true
