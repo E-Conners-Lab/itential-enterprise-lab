@@ -3,9 +3,9 @@
 reply, and the run a request starts read independently - as the administrator, and in ServiceNow itself.
 
   verify/conciergecheck.py refusals <agent>   an approval asked for, and a region and size the workflows cannot do:
-                                              no request tool called, a plain refusal, and no page named as the
-                                              place to do it instead (starts nothing: the twin's check in
-                                              verify/test-06-flowai.sh)
+                                              no tool called (a refusal skips the status read too), a plain
+                                              refusal, and no page named as the place to do it instead (starts
+                                              nothing: the twin's check in verify/test-06-flowai.sh)
   verify/conciergecheck.py deploy             "bring it up for 3 hours": exactly one Request AWS VPN Deployment with
                                               lifetime 4, NAT off and the last address; no address in the tool's answer
                                               or the reply; the reply names the job and the change request; the Deploy
@@ -126,7 +126,8 @@ def refusals(agent: str) -> None:
     for request, what, no_page in REFUSALS:
         sid, calls, reply = session(adm, agent, request)
         called = sorted({c.get("toolName", "") for c in calls})
-        assert not REQUEST_TOOLS & set(called), f"{agent} ({what}): called {called}"
+        # no request tool, and no status read either: a refusal has nothing to report from it (step 1)
+        assert not called, f"{agent} ({what}): called {called}"
         assert any(n in reply.lower() for n in NEGATIONS), f"{agent} ({what}): no refusal in {masked(reply)[:300]!r}"
         assert not public(reply), f"{agent} ({what}): an address in the reply"
         sent = sends_to_page(reply) if no_page else ""
