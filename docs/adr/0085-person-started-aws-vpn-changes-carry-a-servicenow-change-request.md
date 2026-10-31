@@ -1,7 +1,7 @@
 # 0085 — Person-started AWS VPN changes carry a ServiceNow change request
 
-- **Status:** proposed (2026-10-27): R5 and A2 (plan review) built; A4 (Cloud Concierge) and A5 (drift and cost
-  watch) add their decisions here in the PRs that build them. Design approved by the owner 2026-10-26 (delivery
+- **Status:** proposed (2026-10-27): R5 and A2 (plan review) built; A4 (Cloud Concierge) built 2026-10-31; A5 (drift
+  and cost watch) adds its decisions here in the PR that builds it. Design approved by the owner 2026-10-26 (delivery
   `aws-vpn-roadmap`: customer-spec, feasibility amendments A1-A5, solution-design section C, probes P1-P5)
 - **Date:** 2026-10-27
 - **Related:** ADR 0054 (the `lab-servicenow` integration), ADR 0066 (evaluate every Gateway result), ADR 0068 (the AWS
@@ -65,6 +65,33 @@ Branch VLAN already walks a ServiceNow standard change; the AWS VPN workflows di
     add its address too (Status said $1.48 a day for t3.micro with NAT, now $1.60). The card's message drops its
     written "about $1 a day" for the computed figure.
 
+## Decision (A4: the Cloud Concierge)
+
+11. **The Concierge holds two request tools, never Deploy or Tear Down.** `cloud-concierge` (Claude; its twin
+    `cloud-concierge-local`) holds `Get AWS VPN Status`, `Request AWS VPN Deployment` and `Request AWS VPN Teardown`,
+    all workflows. A request tool starts the real workflow through its endpoint trigger (`runEndpointTriggerWithPost`,
+    the branded page's own route), so the run carries the trigger automation's groups and its card shows to the
+    approver, and the tool answers at once: the chat never waits on a card (design D7, probes P1 and P1b). Nothing the
+    agent holds approves. "Request" joins the naming rule's verbs: the tool asks for a run that a person still
+    approves, and "Deploy" would say it deploys.
+12. **The change request is found by the job id.** A run that a tool starts cannot be read back (probe P2b), so the tool
+    finds the change request R5 opens by the job id in its short description (`listChangeRequests` with
+    `short_descriptionLIKE<job>`, five reads over about a minute). Its answer names the job, the change request, the
+    card the run waits on, the planned end and the next step (Hand Off on the branded page). The note it passes on is
+    the person's words marked `Cloud Concierge: `, so the change request and the card name the Concierge (feasibility
+    amendment A4); the mark fits inside Deploy's 280 characters.
+13. **The on-prem address never reaches the agent** (D8, feasibility amendment A5). An agent reads every variable of a
+    tool's job (measured 2026-10-31: a tool call's output is the job's `{_id, status, variables}`), so the address, the
+    started run's document and ServiceNow's HTTP responses (headers, a session cookie among them) stay in task outputs.
+    Each tool publishes only `started_job`, `change_number`, `outcome`, `error`, `input_check` and `change_wait`. The
+    address `last` is the newest Deploy a person started: a run that an agent tool, an automation or a schedule started
+    records `Pronghorn` as its `metrics.user` (measured 2026-10-31) and cannot be read. Without one, the agent asks the
+    person and passes on what they type.
+14. **The verify starts nothing.** `verify/test-06-flowai.sh` S4d.5s and S4d.5t run both agents on requests that start
+    nothing (an approval asked for; another region and instance size): no request tool called, and a plain refusal.
+    `verify/conciergecheck.py deploy` and `teardown` start a real run, reject its card as the administrator and read the
+    change request Canceled in ServiceNow itself: they run by hand, with the owner's go.
+
 ## Consequences
 
 - Every ending after the open meets at one of four close entries: more arrows cross tasks on the canvas (Deploy 5,
@@ -85,3 +112,9 @@ Branch VLAN already walks a ServiceNow standard change; the AWS VPN workflows di
   install). Deploy's canvas has three more arrows through tasks (8; the owner's 2026-10-03 rule).
 - The local twin `plan-reviewer-local` runs in verify/test-06-flowai.sh (S4d.5r) on a fixed plan, held by the
   workflow's own check.
+- A4: a run the Concierge starts belongs to the Pronghorn account, and Work Center files its card under the agent
+  session (probe P1), not under the job; the person is the session's creator. The request tools sit in the leak sweep's
+  job list (`verify/awsvpncheck.py`) beside the workflows they start. On the dev tier, which has no AWS endpoints, the
+  tools answer that the run could not be started.
+- A4 is proven to its cards only after the converge: `conciergecheck.py deploy` and `teardown`, each rejected
+  (criteria 10-12); the whole cycle waits for the AWS window.

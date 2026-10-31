@@ -17,6 +17,8 @@ What each workflow does from start to end, for someone who is about to run one o
 | [Tear Down AWS VPN](tear-down-aws-vpn.md) | 16 | 177 | 3 |
 | [Check AWS Drift](check-aws-drift.md) | 3 | 11 | 1 |
 | [Get AWS VPN Status](get-aws-vpn-status.md) | 2 | 8 | 0 |
+| [Request AWS VPN Deployment](request-aws-vpn-deployment.md) | 7 | 68 | 0 |
+| [Request AWS VPN Teardown](request-aws-vpn-teardown.md) | 6 | 44 | 0 |
 | [Diagnose AWS VPN Outage](diagnose-aws-vpn-outage.md) | 12 | 144 | 2 |
 | [Diagnose Fabric BGP Outage](diagnose-fabric-bgp-outage.md) | 12 | 116 | 2 |
 | [Break Fabric BGP](break-fabric-bgp.md) | 12 | 70 | 2 |

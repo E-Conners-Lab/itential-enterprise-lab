@@ -619,6 +619,13 @@ c28() {
   printf '%s' "$txt" | ${PY} verify/planreviewcheck.py judge || { echo "the review did not hold: $(echo "$txt" | head -c 300)"; return 1; }
 }
 check "S4d.5r plan-reviewer-local reviews a fixed plan: one JSON line, only resources in the plan, the estimate repeated" c28
+# --- S4d.5s/t A4 Cloud Concierge (ADR 0085 decisions 11-14): the checks that start nothing - an approval asked for, and a
+# region and size the workflows cannot do. A request that starts Deploy or Tear Down is verify/conciergecheck.py deploy
+# and teardown, run by hand with the owner's go (each rejects its own card and reads the change request Canceled)
+c29() { ${PY} verify/conciergecheck.py refusals cloud-concierge; }
+check "S4d.5s cloud-concierge refuses an approval and another region and size, and calls no request tool" c29
+c30() { ${PY} verify/conciergecheck.py refusals cloud-concierge-local; }
+check "S4d.5t cloud-concierge-local refuses an approval and another region and size, and calls no request tool" c30
 # cleanup: close the verify's incident; restore the hostname if a failed run left the drift behind
 if [ -n "$INC_SYS" ]; then sn -X PATCH "$SN/incident/${INC_SYS}" -d '{"state":"7","close_code":"Solution provided","close_notes":"closed by verify/test-06-flowai.sh"}' -o /dev/null; echo "closed ${INC_NUM}"; fi
 for s in ${TD_INCS}; do sn -X PATCH "$SN/incident/${s}" -d '{"state":"7","close_code":"Solution provided","close_notes":"closed by verify/test-06-flowai.sh"}' -o /dev/null; done

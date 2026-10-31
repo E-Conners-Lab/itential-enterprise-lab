@@ -1,0 +1,1870 @@
+{
+  "name": "Request AWS VPN Teardown",
+  "type": "automation",
+  "description": "The Cloud Concierge's teardown tool (A4, ADR 0085): starts Tear Down AWS VPN through its endpoint with the target and the person's words, and answers at once with the job, its change request and the Work Center cards it waits on. It never removes anything itself",
+  "tasks": {
+    "00": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "the run's input: change_note",
+      "description": "the run's inputs: the person's words marked as the Concierge's, every input but the address",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": -100,
+        "y": 750
+      },
+      "variables": {
+        "incoming": {
+          "obj": {},
+          "path": [
+            "change_note"
+          ],
+          "value": "$var.job.change_note"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "01": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "the run's input: target",
+      "description": "the run's inputs: the person's words marked as the Concierge's, every input but the address",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": -90,
+        "y": 900
+      },
+      "variables": {
+        "incoming": {
+          "obj": "$var.00.object",
+          "path": [
+            "target"
+          ],
+          "value": "$var.job.target"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "10": {
+      "name": "runCode",
+      "canvasName": "runCode",
+      "summary": "the run's inputs: the note marked as the Concierge's (Python on the runner)",
+      "description": "the run's inputs: the person's words marked as the Concierge's, every input but the address",
+      "location": "Application",
+      "locationType": null,
+      "app": "GatewayManager",
+      "type": "automatic",
+      "displayName": "GatewayManager",
+      "groups": [],
+      "nodeLocation": {
+        "x": -80,
+        "y": 1050
+      },
+      "variables": {
+        "incoming": {
+          "clusterId": "lab",
+          "language": "python",
+          "code": "import json, sys\n\n\ndef concierge_body(d: dict) -> dict:\n    \"\"\"The started run's inputs but the on-prem address: the person's words marked with where they came from, and the\n    deployment's lifetime and NAT setting or the teardown's target as given. Pure: runCode runs this source.\"\"\"\n    words = \" \".join(str(d.get(\"change_note\") or \"\").split())\n    body = {\"change_note\": d[\"prefix\"] + (words or \"(no reason given)\")}\n    for key in (\"enable_nat_gateway\", \"lifetime_hours\", \"target\"):\n        if key in d:\n            body[key] = d[key]\n    return {\"body\": body}\n\n\nprint(json.dumps(concierge_body({**json.loads(sys.stdin.read() or \"{}\"), **json.loads('{\"prefix\": \"Cloud Concierge: \"}')})))\n",
+          "data": "$var.01.object",
+          "safety": {
+            "timeout": 30
+          },
+          "packages": []
+        },
+        "outgoing": {
+          "result": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "11": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "the run's inputs",
+      "description": "the run's inputs: the person's words marked as the Concierge's, every input but the address",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": -170,
+        "y": 1200
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "stdout_json.body",
+          "obj": "$var.10.result"
+        },
+        "outgoing": {
+          "return_data": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "12": {
+      "name": "parse",
+      "canvasName": "parse",
+      "summary": "no change request read yet (empty)",
+      "description": "the run's inputs: the person's words marked as the Concierge's, every input but the address",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": -150,
+        "y": 1350
+      },
+      "variables": {
+        "incoming": {
+          "text": "\"\""
+        },
+        "outgoing": {
+          "textObject": "$var.job.change_number"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "31": {
+      "name": "runEndpointTriggerWithPost",
+      "canvasName": "runEndpointTriggerWithPost",
+      "summary": "start Tear Down AWS VPN through its endpoint (tear-down-aws-vpn): it stops at its own Work Center card",
+      "description": "the start: the real workflow through its endpoint trigger, so it stops at its own Work Center card",
+      "location": "Application",
+      "locationType": null,
+      "app": "OperationsManager",
+      "type": "automatic",
+      "displayName": "OperationsManager",
+      "groups": [],
+      "nodeLocation": {
+        "x": -80,
+        "y": 1500
+      },
+      "variables": {
+        "incoming": {
+          "routeName": "tear-down-aws-vpn",
+          "body": "$var.11.return_data",
+          "runtimeOptions": {}
+        },
+        "outgoing": {
+          "result": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "32": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "the started job's id",
+      "description": "the start: the real workflow through its endpoint trigger, so it stops at its own Work Center card",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": -80,
+        "y": 1650
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "data._id",
+          "obj": "$var.31.result"
+        },
+        "outgoing": {
+          "return_data": "$var.job.started_job"
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "3f": {
+      "name": "replace",
+      "canvasName": "replace",
+      "summary": "the change request's query",
+      "description": "the change request: found by the started job's id, read for up to about a minute",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": -140,
+        "y": 1800
+      },
+      "variables": {
+        "incoming": {
+          "str": "short_descriptionLIKE__J__",
+          "substr": "__J__",
+          "newSubstr": "$var.job.started_job"
+        },
+        "outgoing": {
+          "replacedString": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "40": {
+      "name": "delay",
+      "canvasName": "delay",
+      "summary": "wait 5 s for the change request (read 1)",
+      "description": "the change request: found by the started job's id, read for up to about a minute",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": -120,
+        "y": 1950
+      },
+      "variables": {
+        "incoming": {
+          "time": 5
+        },
+        "outgoing": {
+          "time_in_milliseconds": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "41": {
+      "name": "listChangeRequests",
+      "canvasName": "listChangeRequests",
+      "summary": "the run's change request (read 1)",
+      "description": "the change request: found by the started job's id, read for up to about a minute",
+      "location": "Adapter",
+      "locationType": "lab-servicenow:1.0.0",
+      "app": "lab-servicenow:1.0.0",
+      "type": "automatic",
+      "displayName": "lab-servicenow:1.0.0",
+      "groups": [],
+      "nodeLocation": {
+        "x": -110,
+        "y": 2100
+      },
+      "variables": {
+        "incoming": {
+          "adapter_id": "servicenow-api",
+          "sysparm_query": "$var.3f.replacedString",
+          "sysparm_fields": "number",
+          "sysparm_limit": 1
+        },
+        "outgoing": {
+          "response": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "50": {
+      "name": "evaluation",
+      "canvasName": "evaluation",
+      "summary": "found? (read 1)",
+      "description": "the change request: found by the started job's id, read for up to about a minute",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": -170,
+        "y": 2250
+      },
+      "variables": {
+        "incoming": {
+          "all_true_flag": true,
+          "evaluation_groups": [
+            {
+              "all_true_flag": true,
+              "evaluations": [
+                {
+                  "query": "body.result[0].number",
+                  "operand_1": {
+                    "variable": "response",
+                    "task": "41"
+                  },
+                  "operator": "contains",
+                  "operand_2": {
+                    "variable": "CHG",
+                    "task": "static"
+                  }
+                }
+              ]
+            }
+          ],
+          "options": {}
+        },
+        "outgoing": {
+          "return_value": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "60": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "its number (read 1)",
+      "description": "the change request: found by the started job's id, read for up to about a minute",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": -330,
+        "y": 2400
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "body.result[0].number",
+          "obj": "$var.41.response"
+        },
+        "outgoing": {
+          "return_data": "$var.job.change_number"
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "42": {
+      "name": "delay",
+      "canvasName": "delay",
+      "summary": "wait 5 s for the change request (read 2)",
+      "description": "the change request: found by the started job's id, read for up to about a minute",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 40,
+        "y": 2550
+      },
+      "variables": {
+        "incoming": {
+          "time": 5
+        },
+        "outgoing": {
+          "time_in_milliseconds": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "43": {
+      "name": "listChangeRequests",
+      "canvasName": "listChangeRequests",
+      "summary": "the run's change request (read 2)",
+      "description": "the change request: found by the started job's id, read for up to about a minute",
+      "location": "Adapter",
+      "locationType": "lab-servicenow:1.0.0",
+      "app": "lab-servicenow:1.0.0",
+      "type": "automatic",
+      "displayName": "lab-servicenow:1.0.0",
+      "groups": [],
+      "nodeLocation": {
+        "x": 250,
+        "y": 2700
+      },
+      "variables": {
+        "incoming": {
+          "adapter_id": "servicenow-api",
+          "sysparm_query": "$var.3f.replacedString",
+          "sysparm_fields": "number",
+          "sysparm_limit": 1
+        },
+        "outgoing": {
+          "response": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "51": {
+      "name": "evaluation",
+      "canvasName": "evaluation",
+      "summary": "found? (read 2)",
+      "description": "the change request: found by the started job's id, read for up to about a minute",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 100,
+        "y": 2850
+      },
+      "variables": {
+        "incoming": {
+          "all_true_flag": true,
+          "evaluation_groups": [
+            {
+              "all_true_flag": true,
+              "evaluations": [
+                {
+                  "query": "body.result[0].number",
+                  "operand_1": {
+                    "variable": "response",
+                    "task": "43"
+                  },
+                  "operator": "contains",
+                  "operand_2": {
+                    "variable": "CHG",
+                    "task": "static"
+                  }
+                }
+              ]
+            }
+          ],
+          "options": {}
+        },
+        "outgoing": {
+          "return_value": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "61": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "its number (read 2)",
+      "description": "the change request: found by the started job's id, read for up to about a minute",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": -60,
+        "y": 3000
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "body.result[0].number",
+          "obj": "$var.43.response"
+        },
+        "outgoing": {
+          "return_data": "$var.job.change_number"
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "44": {
+      "name": "delay",
+      "canvasName": "delay",
+      "summary": "wait 10 s for the change request (read 3)",
+      "description": "the change request: found by the started job's id, read for up to about a minute",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 330,
+        "y": 3150
+      },
+      "variables": {
+        "incoming": {
+          "time": 10
+        },
+        "outgoing": {
+          "time_in_milliseconds": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "45": {
+      "name": "listChangeRequests",
+      "canvasName": "listChangeRequests",
+      "summary": "the run's change request (read 3)",
+      "description": "the change request: found by the started job's id, read for up to about a minute",
+      "location": "Adapter",
+      "locationType": "lab-servicenow:1.0.0",
+      "app": "lab-servicenow:1.0.0",
+      "type": "automatic",
+      "displayName": "lab-servicenow:1.0.0",
+      "groups": [],
+      "nodeLocation": {
+        "x": 400,
+        "y": 3300
+      },
+      "variables": {
+        "incoming": {
+          "adapter_id": "servicenow-api",
+          "sysparm_query": "$var.3f.replacedString",
+          "sysparm_fields": "number",
+          "sysparm_limit": 1
+        },
+        "outgoing": {
+          "response": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "52": {
+      "name": "evaluation",
+      "canvasName": "evaluation",
+      "summary": "found? (read 3)",
+      "description": "the change request: found by the started job's id, read for up to about a minute",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 250,
+        "y": 3450
+      },
+      "variables": {
+        "incoming": {
+          "all_true_flag": true,
+          "evaluation_groups": [
+            {
+              "all_true_flag": true,
+              "evaluations": [
+                {
+                  "query": "body.result[0].number",
+                  "operand_1": {
+                    "variable": "response",
+                    "task": "45"
+                  },
+                  "operator": "contains",
+                  "operand_2": {
+                    "variable": "CHG",
+                    "task": "static"
+                  }
+                }
+              ]
+            }
+          ],
+          "options": {}
+        },
+        "outgoing": {
+          "return_value": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "62": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "its number (read 3)",
+      "description": "the change request: found by the started job's id, read for up to about a minute",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 240,
+        "y": 3600
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "body.result[0].number",
+          "obj": "$var.45.response"
+        },
+        "outgoing": {
+          "return_data": "$var.job.change_number"
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "46": {
+      "name": "delay",
+      "canvasName": "delay",
+      "summary": "wait 20 s for the change request (read 4)",
+      "description": "the change request: found by the started job's id, read for up to about a minute",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 480,
+        "y": 3750
+      },
+      "variables": {
+        "incoming": {
+          "time": 20
+        },
+        "outgoing": {
+          "time_in_milliseconds": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "47": {
+      "name": "listChangeRequests",
+      "canvasName": "listChangeRequests",
+      "summary": "the run's change request (read 4)",
+      "description": "the change request: found by the started job's id, read for up to about a minute",
+      "location": "Adapter",
+      "locationType": "lab-servicenow:1.0.0",
+      "app": "lab-servicenow:1.0.0",
+      "type": "automatic",
+      "displayName": "lab-servicenow:1.0.0",
+      "groups": [],
+      "nodeLocation": {
+        "x": 550,
+        "y": 3900
+      },
+      "variables": {
+        "incoming": {
+          "adapter_id": "servicenow-api",
+          "sysparm_query": "$var.3f.replacedString",
+          "sysparm_fields": "number",
+          "sysparm_limit": 1
+        },
+        "outgoing": {
+          "response": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "53": {
+      "name": "evaluation",
+      "canvasName": "evaluation",
+      "summary": "found? (read 4)",
+      "description": "the change request: found by the started job's id, read for up to about a minute",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 550,
+        "y": 4050
+      },
+      "variables": {
+        "incoming": {
+          "all_true_flag": true,
+          "evaluation_groups": [
+            {
+              "all_true_flag": true,
+              "evaluations": [
+                {
+                  "query": "body.result[0].number",
+                  "operand_1": {
+                    "variable": "response",
+                    "task": "47"
+                  },
+                  "operator": "contains",
+                  "operand_2": {
+                    "variable": "CHG",
+                    "task": "static"
+                  }
+                }
+              ]
+            }
+          ],
+          "options": {}
+        },
+        "outgoing": {
+          "return_value": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "63": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "its number (read 4)",
+      "description": "the change request: found by the started job's id, read for up to about a minute",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 540,
+        "y": 4200
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "body.result[0].number",
+          "obj": "$var.47.response"
+        },
+        "outgoing": {
+          "return_data": "$var.job.change_number"
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "48": {
+      "name": "delay",
+      "canvasName": "delay",
+      "summary": "wait 20 s for the change request (read 5)",
+      "description": "the change request: found by the started job's id, read for up to about a minute",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 770,
+        "y": 4350
+      },
+      "variables": {
+        "incoming": {
+          "time": 20
+        },
+        "outgoing": {
+          "time_in_milliseconds": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "49": {
+      "name": "listChangeRequests",
+      "canvasName": "listChangeRequests",
+      "summary": "the run's change request (read 5)",
+      "description": "the change request: found by the started job's id, read for up to about a minute",
+      "location": "Adapter",
+      "locationType": "lab-servicenow:1.0.0",
+      "app": "lab-servicenow:1.0.0",
+      "type": "automatic",
+      "displayName": "lab-servicenow:1.0.0",
+      "groups": [],
+      "nodeLocation": {
+        "x": 1140,
+        "y": 4500
+      },
+      "variables": {
+        "incoming": {
+          "adapter_id": "servicenow-api",
+          "sysparm_query": "$var.3f.replacedString",
+          "sysparm_fields": "number",
+          "sysparm_limit": 1
+        },
+        "outgoing": {
+          "response": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "54": {
+      "name": "evaluation",
+      "canvasName": "evaluation",
+      "summary": "found? (read 5)",
+      "description": "the change request: found by the started job's id, read for up to about a minute",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 1290,
+        "y": 4650
+      },
+      "variables": {
+        "incoming": {
+          "all_true_flag": true,
+          "evaluation_groups": [
+            {
+              "all_true_flag": true,
+              "evaluations": [
+                {
+                  "query": "body.result[0].number",
+                  "operand_1": {
+                    "variable": "response",
+                    "task": "49"
+                  },
+                  "operator": "contains",
+                  "operand_2": {
+                    "variable": "CHG",
+                    "task": "static"
+                  }
+                }
+              ]
+            }
+          ],
+          "options": {}
+        },
+        "outgoing": {
+          "return_value": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "64": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "its number (read 5)",
+      "description": "the change request: found by the started job's id, read for up to about a minute",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 670,
+        "y": 4800
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "body.result[0].number",
+          "obj": "$var.49.response"
+        },
+        "outgoing": {
+          "return_data": "$var.job.change_number"
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "5f": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "none within about a minute",
+      "description": "the change request: found by the started job's id, read for up to about a minute",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 1190,
+        "y": 4950
+      },
+      "variables": {
+        "incoming": {
+          "input": "no change request found within about a minute",
+          "outputType": "string",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.change_wait"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "90": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "the answer's job",
+      "description": "the answer: the job, the change request, the card it waits on, the end time and the next step",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 230,
+        "y": 5100
+      },
+      "variables": {
+        "incoming": {
+          "obj": {},
+          "path": [
+            "job"
+          ],
+          "value": "$var.job.started_job"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "91": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "the answer's change_number",
+      "description": "the answer: the job, the change request, the card it waits on, the end time and the next step",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 210,
+        "y": 5250
+      },
+      "variables": {
+        "incoming": {
+          "obj": "$var.90.object",
+          "path": [
+            "change_number"
+          ],
+          "value": "$var.job.change_number"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "92": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "the answer's target",
+      "description": "the answer: the job, the change request, the card it waits on, the end time and the next step",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 190,
+        "y": 5400
+      },
+      "variables": {
+        "incoming": {
+          "obj": "$var.91.object",
+          "path": [
+            "target"
+          ],
+          "value": "$var.job.target"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "9a": {
+      "name": "runCode",
+      "canvasName": "runCode",
+      "summary": "the answer: what started, the job, the change request, the card (Python on the runner)",
+      "description": "the answer: the job, the change request, the card it waits on, the end time and the next step",
+      "location": "Application",
+      "locationType": null,
+      "app": "GatewayManager",
+      "type": "automatic",
+      "displayName": "GatewayManager",
+      "groups": [],
+      "nodeLocation": {
+        "x": 330,
+        "y": 5550
+      },
+      "variables": {
+        "incoming": {
+          "clusterId": "lab",
+          "language": "python",
+          "code": "import json, sys\n\n\ndef concierge_answer(d: dict) -> dict:\n    \"\"\"The tool's answer in words the agent can pass on: what started, the job and its change request (`change_number`,\n    a CHG number once found), the card it stops at, the planned end and the next step. Pure: runCode runs this\n    source.\"\"\"\n    number = d.get(\"change_number\") if str(d.get(\"change_number\") or \"\").startswith(\"CHG\") else None\n    job = d.get(\"job\") or \"\"\n    started = f\"job {job} ({d.get('job_url', '')}{job})\"\n    reused = (f\" It uses {d['address_from']}: if that address has changed, reject the waiting card and request again \"\n              \"with the new one.\" if d.get(\"address_from\") else \"\")\n    change = (f\"Its change request is {number}.\" if number else\n              \"No change request appeared within a minute: the run may have stopped at its own input check, or \"\n              \"ServiceNow is slow; the job shows which.\")\n    if d.get(\"kind\") == \"deploy\":\n        hours = d.get(\"lifetime_hours\")\n        ends = (\"It has no end time: it stays up until Tear Down AWS VPN.\" if hours == \"none\" else\n                f\"It ends {hours} hours after it starts (the card shows the exact time), when Tear Down Expired AWS \"\n                \"VPN removes it.\")\n        text = (f\"Deploy AWS VPN started: {started}. {change} It stops at Itential Work Center: a person must approve \"\n                \"its plan on the card \\\"Approve the AWS change\\\", which appears once the plan and its review are ready, \"\n                \"usually within a few minutes. Nothing is created in AWS before that approval. \" + ends + reused\n                + \" After the apply, Hand Off AWS VPN on the branded page connects the router, then Verify AWS VPN.\")\n    else:\n        text = (f\"Tear Down AWS VPN started for {d.get('target')}: {started}. {change} It stops at Itential Work Center \"\n                \"for a person's approval twice: first \\\"Approve removing the router's AWS block\\\", then, when anything \"\n                \"is deployed in AWS, \\\"Approve destroying the AWS side\\\". Nothing changes before each approval.\")\n    return {\"outcome\": text, \"change_number\": number or \"\"}\n\n\nprint(json.dumps(concierge_answer({**json.loads(sys.stdin.read() or \"{}\"), **json.loads('{\"kind\": \"teardown\", \"job_url\": \"https://itential.lab.internal/operations-manager/jobs/\"}')})))\n",
+          "data": "$var.92.object",
+          "safety": {
+            "timeout": 30
+          },
+          "packages": []
+        },
+        "outgoing": {
+          "result": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "9b": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "the answer, in words",
+      "description": "the answer: the job, the change request, the card it waits on, the end time and the next step",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 110,
+        "y": 5700
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "stdout_json.outcome",
+          "obj": "$var.9a.result"
+        },
+        "outgoing": {
+          "return_data": "$var.job.outcome"
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "9c": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "the change request's number",
+      "description": "the answer: the job, the change request, the card it waits on, the end time and the next step",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": -100,
+        "y": 5850
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "stdout_json.change_number",
+          "obj": "$var.9a.result"
+        },
+        "outgoing": {
+          "return_data": "$var.job.change_number"
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "83": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "the run could not be started",
+      "description": "where it stops: nothing was started, or the answer could not be made",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 520,
+        "y": 1650
+      },
+      "variables": {
+        "incoming": {
+          "input": "Tear Down AWS VPN could not be started through its endpoint: nothing was started (this tool's job in Itential shows why)",
+          "outputType": "string",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.error"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "84": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "the request could not be prepared",
+      "description": "where it stops: nothing was started, or the answer could not be made",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 600,
+        "y": 1350
+      },
+      "variables": {
+        "incoming": {
+          "input": "the request could not be prepared: nothing was started",
+          "outputType": "string",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.error"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "85": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "started, but no answer",
+      "description": "where it stops: nothing was started, or the answer could not be made",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 200,
+        "y": 6000
+      },
+      "variables": {
+        "incoming": {
+          "input": "the run was started (started_job) but the answer could not be put together: look at that job in Itential",
+          "outputType": "string",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.error"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "86": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "started, but its id unread",
+      "description": "where it stops: nothing was started, or the answer could not be made",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 310,
+        "y": 1800
+      },
+      "variables": {
+        "incoming": {
+          "input": "Tear Down AWS VPN was started, but its job id could not be read: do not request again. Its card waits in Work Center; the newest job of that workflow is the one",
+          "outputType": "string",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.error"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "9a01": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "input to check: target",
+      "description": "the input gate: every input checked against its schema before anything runs; a refusal ends the job with nothing sent",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 0,
+        "y": 150
+      },
+      "variables": {
+        "incoming": {
+          "obj": {},
+          "path": [
+            "target"
+          ],
+          "value": "$var.job.target"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "9a02": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "input to check: change_note",
+      "description": "the input gate: every input checked against its schema before anything runs; a refusal ends the job with nothing sent",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 0,
+        "y": 300
+      },
+      "variables": {
+        "incoming": {
+          "obj": "$var.9a01.object",
+          "path": [
+            "change_note"
+          ],
+          "value": "$var.job.change_note"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "9a0a": {
+      "name": "validateJsonSchema",
+      "canvasName": "validateJsonSchema",
+      "summary": "check the inputs",
+      "description": "the input gate: every input checked against its schema before anything runs; a refusal ends the job with nothing sent",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 0,
+        "y": 450
+      },
+      "variables": {
+        "incoming": {
+          "jsonData": "$var.9a02.object",
+          "schema": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "target",
+              "change_note"
+            ],
+            "properties": {
+              "target": {
+                "enum": [
+                  "dc1-wan01"
+                ]
+              },
+              "change_note": {
+                "type": "string",
+                "maxLength": 263,
+                "pattern": "^[^<>\"\\\\\\r\\n]{0,263}$"
+              }
+            }
+          }
+        },
+        "outgoing": {
+          "result": "$var.job.input_check"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "9a0b": {
+      "name": "evaluation",
+      "canvasName": "evaluation",
+      "summary": "inputs valid?",
+      "description": "the input gate: every input checked against its schema before anything runs; a refusal ends the job with nothing sent",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": -100,
+        "y": 600
+      },
+      "variables": {
+        "incoming": {
+          "all_true_flag": true,
+          "evaluation_groups": [
+            {
+              "all_true_flag": true,
+              "evaluations": [
+                {
+                  "query": "valid",
+                  "operand_1": {
+                    "variable": "result",
+                    "task": "9a0a"
+                  },
+                  "operator": "==",
+                  "operand_2": {
+                    "variable": true,
+                    "task": "static"
+                  }
+                }
+              ]
+            }
+          ],
+          "options": {}
+        },
+        "outgoing": {
+          "return_value": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "9a0c": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "the inputs were refused",
+      "description": "the input gate: every input checked against its schema before anything runs; a refusal ends the job with nothing sent",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 650,
+        "y": 750
+      },
+      "variables": {
+        "incoming": {
+          "input": "the inputs were refused before anything ran (see input_check for which input and why): nothing was sent to a device",
+          "outputType": "string",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.error"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "workflow_start": {
+      "name": "workflow_start",
+      "summary": "workflow_start",
+      "groups": [],
+      "nodeLocation": {
+        "x": 0,
+        "y": 0
+      }
+    },
+    "workflow_end": {
+      "name": "workflow_end",
+      "summary": "workflow_end",
+      "groups": [],
+      "nodeLocation": {
+        "x": 1120,
+        "y": 6150
+      }
+    }
+  },
+  "transitions": {
+    "workflow_start": {
+      "9a01": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "00": {
+      "01": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "01": {
+      "10": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "10": {
+      "11": {
+        "state": "success",
+        "type": "standard"
+      },
+      "84": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "11": {
+      "12": {
+        "state": "success",
+        "type": "standard"
+      },
+      "84": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "12": {
+      "31": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "31": {
+      "32": {
+        "state": "success",
+        "type": "standard"
+      },
+      "83": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "32": {
+      "3f": {
+        "state": "success",
+        "type": "standard"
+      },
+      "86": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "3f": {
+      "40": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "40": {
+      "41": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "41": {
+      "50": {
+        "state": "success",
+        "type": "standard"
+      },
+      "42": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "50": {
+      "60": {
+        "state": "success",
+        "type": "standard"
+      },
+      "42": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "60": {
+      "90": {
+        "state": "success",
+        "type": "standard"
+      },
+      "42": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "42": {
+      "43": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "43": {
+      "51": {
+        "state": "success",
+        "type": "standard"
+      },
+      "44": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "51": {
+      "61": {
+        "state": "success",
+        "type": "standard"
+      },
+      "44": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "61": {
+      "90": {
+        "state": "success",
+        "type": "standard"
+      },
+      "44": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "44": {
+      "45": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "45": {
+      "52": {
+        "state": "success",
+        "type": "standard"
+      },
+      "46": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "52": {
+      "62": {
+        "state": "success",
+        "type": "standard"
+      },
+      "46": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "62": {
+      "90": {
+        "state": "success",
+        "type": "standard"
+      },
+      "46": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "46": {
+      "47": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "47": {
+      "53": {
+        "state": "success",
+        "type": "standard"
+      },
+      "48": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "53": {
+      "63": {
+        "state": "success",
+        "type": "standard"
+      },
+      "48": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "63": {
+      "90": {
+        "state": "success",
+        "type": "standard"
+      },
+      "48": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "48": {
+      "49": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "49": {
+      "54": {
+        "state": "success",
+        "type": "standard"
+      },
+      "5f": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "54": {
+      "64": {
+        "state": "success",
+        "type": "standard"
+      },
+      "5f": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "64": {
+      "90": {
+        "state": "success",
+        "type": "standard"
+      },
+      "5f": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "5f": {
+      "90": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "90": {
+      "91": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "91": {
+      "92": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "92": {
+      "9a": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "9a": {
+      "9b": {
+        "state": "success",
+        "type": "standard"
+      },
+      "85": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "9b": {
+      "9c": {
+        "state": "success",
+        "type": "standard"
+      },
+      "85": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "9c": {
+      "workflow_end": {
+        "state": "success",
+        "type": "standard"
+      },
+      "85": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "83": {
+      "workflow_end": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "84": {
+      "workflow_end": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "85": {
+      "workflow_end": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "86": {
+      "workflow_end": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "9a01": {
+      "9a02": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "9a02": {
+      "9a0a": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "9a0a": {
+      "9a0b": {
+        "state": "success",
+        "type": "standard"
+      },
+      "9a0c": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "9a0b": {
+      "00": {
+        "state": "success",
+        "type": "standard"
+      },
+      "9a0c": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "9a0c": {
+      "workflow_end": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "workflow_end": {}
+  },
+  "groups": [],
+  "canvasVersion": 3,
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "target": {
+        "type": "string",
+        "required": true,
+        "enum": [
+          "dc1-wan01"
+        ],
+        "description": "The lab edge router whose AWS VPN to tear down"
+      },
+      "change_note": {
+        "type": "string",
+        "required": true,
+        "maxLength": 263,
+        "description": "The person's own words: why. Shown to the approver and in the change request"
+      }
+    },
+    "required": [
+      "target",
+      "change_note"
+    ]
+  },
+  "outputSchema": {
+    "type": "object",
+    "properties": {
+      "started_job": {
+        "type": "string"
+      },
+      "change_number": {
+        "type": "string"
+      },
+      "outcome": {
+        "type": "string"
+      },
+      "error": {
+        "type": "string"
+      },
+      "change_wait": {
+        "type": "string"
+      },
+      "input_check": {
+        "type": "object"
+      }
+    }
+  },
+  "tags": [],
+  "preAutomationTime": 300000,
+  "sla": 600000,
+  "font_size": 12,
+  "decorators": []
+}
