@@ -76,6 +76,19 @@ def test_the_instructions_say_it_cannot_approve_and_never_guesses_the_address() 
     assert words <= build.CONCIERGE_NOTE_MAX
 
 
+def test_a_request_it_refuses_skips_the_status_read() -> None:
+    """Claude read the status first on a region request, led with it and softened the refusal ("aren't something I can
+    change") in two of its three such runs; its one run without the read opened "I can't do that." (2026-10-31, after
+    #219). A refusal has nothing to report from the status."""
+    text = " ".join(_agent("cloud-concierge")["instructions"].split())
+    step = text[text.index("1. Call"):text.index("2. To bring it up")]
+    # the whole request: one that is partly refused and partly started still reads the status first
+    assert "unless you refuse the whole request" in step and "step 4" in step
+    assert all(card in step for card in ("approving", "rejecting", "skipping"))
+    check = (ROOT / "verify" / "conciergecheck.py").read_text()
+    assert "assert not called," in check, "the live refusal check must fail any tool call, the status read included"
+
+
 def test_a_refusal_says_it_cannot_before_what_it_can_do() -> None:
     """With the offer first in step 4, Claude led with it and ended "aren't something this workflow controls", no plain
     refusal (2026-10-31, after #216). The approval line, which says "say plainly that you cannot", held on both
