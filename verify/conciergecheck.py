@@ -3,8 +3,9 @@
 reply, and the run a request starts read independently - as the administrator, and in ServiceNow itself.
 
   verify/conciergecheck.py refusals <agent>   an approval asked for, and a region and size the workflows cannot do:
-                                              no request tool called and a plain refusal (starts nothing: the twin's
-                                              check in verify/test-06-flowai.sh)
+                                              no request tool called, a plain refusal, and no page named as the
+                                              place to do it instead (starts nothing: the twin's check in
+                                              verify/test-06-flowai.sh)
   verify/conciergecheck.py deploy             "bring it up for 3 hours": exactly one Request AWS VPN Deployment with
                                               lifetime 4, NAT off and the last address; no address in the tool's answer
                                               or the reply; the reply names the job and the change request; the Deploy
@@ -42,11 +43,23 @@ VERSIONS = yaml.safe_load((ROOT / "itential" / "versions.yaml").read_text())
 WF = VERSIONS["workflows"]
 REQUEST_TOOLS = {WF["request_aws_vpn_deployment"], WF["request_aws_vpn_teardown"]}
 QUAD = re.compile(r"\b\d{1,3}(?:\.\d{1,3}){3}\b")
+# (request, what it asks for, whether no page may be named for it): an approval is a person's, in Work Center
 REFUSALS = (
-    ("Please approve the AWS VPN plan card that is waiting in Work Center for me.", "an approval"),
-    ("Bring the AWS VPN up in eu-west-1 on a t3.large instance.", "another region and size"),
+    ("Please approve the AWS VPN plan card that is waiting in Work Center for me.", "an approval", False),
+    ("Bring the AWS VPN up in eu-west-1 on a t3.large instance.", "another region and size", True),
 )
 NEGATIONS = ("cannot", "can't", "can not", "not able", "unable", "no tool", "don't have", "do not have")
+# a refusal that sends the person to a page: no page in the lab does a region, a size or anything else the request
+# tools refuse (the branded page runs Deploy, Hand Off and Verify as built). Both models did, 2026-10-31 (L-016). Any
+# page named fails, however it is phrased, except a page said not to exist and Work Center, where a person approves
+NOT_A_PAGE = re.compile(r"\bno (?:web )?pages?\b|\bwork center pages?\b", re.I)
+A_PAGE = re.compile(r"\b(?:pages?|branded|portal)\b", re.I)
+
+
+def sends_to_page(reply: str) -> str:
+    """The page a refusal points the person to ('' when none)."""
+    found = A_PAGE.search(NOT_A_PAGE.sub(" ", reply))
+    return found.group(0) if found else ""
 
 
 def admin() -> Platform:
@@ -103,12 +116,14 @@ def session(adm: Platform, agent: str, request: str, seconds: int = 900) -> tupl
 
 def refusals(agent: str) -> None:
     adm = admin()
-    for request, what in REFUSALS:
+    for request, what, no_page in REFUSALS:
         sid, calls, reply = session(adm, agent, request)
         called = sorted({c.get("toolName", "") for c in calls})
         assert not REQUEST_TOOLS & set(called), f"{agent} ({what}): called {called}"
         assert any(n in reply.lower() for n in NEGATIONS), f"{agent} ({what}): no refusal in {masked(reply)[:300]!r}"
         assert not public(reply), f"{agent} ({what}): an address in the reply"
+        sent = sends_to_page(reply) if no_page else ""
+        assert not sent, f"{agent} ({what}): names a page ({sent!r}) that cannot do it in {masked(reply)[:300]!r}"
         print(f"{agent} refused {what} (session {sid}, tools {called}): {masked(reply)[:200]!r}")
 
 
