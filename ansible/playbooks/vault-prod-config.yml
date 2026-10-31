@@ -1,7 +1,8 @@
 ---
 # Phase 9a step 3 (ADR 0065): configure production's Vault - `make vault-config`. The KV v2 mount, the two read-only
 # AppRoles and the PSK writer (ADR 0068) bound to their own hosts' addresses (topology/ipam.yaml), and the seeds from
-# .env, all through the task file the dev tier proved (tasks/vault-config.yml). Then the binding is proven on the real
+# .env, all through the task file the dev tier proved (tasks/vault-config.yml); the MCP server's client roles come
+# from tasks/vault-mcp-tokens.yml (ADR 0083). Then the binding is proven on the real
 # path instead of assumed: a one-use, five-minute secret ID per role and host must log in from that host, and one from
 # this workstation must be refused. The token is the root token from the owner's init file (VAULT_INIT_FILE), read
 # without printing it; VAULT_TOKEN overrides it (for example the owner's lab-admin login, now that root is revoked).
@@ -27,6 +28,33 @@
         {%- set _ = out.update({role: r.bound_hosts | map('extract', host_ip) | map('regex_replace', '$', '/32') | list}) -%}
       {%- endfor -%}
       {{ out }}
+    # the owner's administrator login (versions.yaml vault.prod.admin): written by root at first configuration and
+    # since by the temporary setup role (tasks/vault-mcp-tokens.yml). It holds the lab's admin jobs; note that writing
+    # itential-* policies and AppRole roles lets it grant itself more (ADR 0083 amendment 2026-10-31)
+    lab_admin_policy: |
+      # the owner's administrator login (ADR 0065): the lab's admin jobs only
+      path "auth/{{ vault.approle_mount }}/role/+/role-id" { capabilities = ["read"] }
+      path "auth/{{ vault.approle_mount }}/role/+/secret-id" { capabilities = ["create", "update", "list"] }
+      path "auth/{{ vault.approle_mount }}/role/+/secret-id/lookup" { capabilities = ["update"] }
+      path "auth/{{ vault.approle_mount }}/role/+/secret-id-accessor/lookup" { capabilities = ["update"] }
+      path "auth/{{ vault.approle_mount }}/role/+/secret-id-accessor/destroy" { capabilities = ["update"] }
+      path "auth/{{ vault.approle_mount }}/role/*" { capabilities = ["create", "read", "update", "list"] }
+      path "auth/{{ vault.approle_mount }}/role" { capabilities = ["list"] }
+      path "sys/policies/acl/itential-*" { capabilities = ["create", "read", "update", "delete", "list"] }
+      path "sys/policies/acl" { capabilities = ["list"] }
+      path "{{ vault.kv_mount }}/*" { capabilities = ["create", "read", "update", "patch", "delete", "list"] }
+      path "sys/storage/raft/snapshot" { capabilities = ["read"] }
+      path "sys/mounts" { capabilities = ["read"] }
+      path "sys/auth" { capabilities = ["read"] }
+      path "auth/token/create/verify-readers" { capabilities = ["update"] }
+      # ADR 0083: the MCP server's signing key and token role (not the issuer), once the temporary setup role made them
+      # (amendment 2026-10-31), and the way back to root: Vault 2.0 authenticates generate-root, and without these the
+      # owner's unseal key alone cannot issue one
+      path "identity/oidc/key/{{ vault.mcp_tokens.key }}" { capabilities = ["create", "read", "update"] }
+      path "identity/oidc/key/{{ vault.mcp_tokens.key }}/rotate" { capabilities = ["update"] }
+      path "identity/oidc/role/{{ vault.mcp_tokens.role }}" { capabilities = ["create", "read", "update"] }
+      path "sys/generate-root/attempt" { capabilities = ["create", "read", "update", "delete", "sudo"] }
+      path "sys/generate-root/update" { capabilities = ["create", "update", "sudo"] }
     # one test per (role, host) plus one per role from this workstation, which must be refused
     binding_plan: >-
       {%- set out = [] -%}
@@ -37,12 +65,14 @@
       {{ out }}
   tasks:
     - name: Production only
+      tags: [always]
       ansible.builtin.assert:
         that: not (dev_overlay | default(false) | bool)
         fail_msg: "vault-prod-config.yml configures production's Vault; the dev tier has make vault-dev"
         quiet: true
 
     - name: Token to configure with (VAULT_TOKEN, else the root token in the owner's init file)
+      tags: [always]
       ansible.builtin.set_fact:
         vault_token: >-
           {{ lookup('ansible.builtin.env', 'VAULT_TOKEN')
@@ -50,6 +80,7 @@
       no_log: true
 
     - name: Which token this run holds (root at first configuration, the owner's lab-admin login after)
+      tags: [always]
       ansible.builtin.uri:
         url: "{{ vault_addr }}/v1/auth/token/lookup-self"
         ca_path: "{{ playbook_dir }}/../../docs/lab-root-ca.crt"
@@ -58,6 +89,7 @@
       no_log: true
 
     - name: Root or not
+      tags: [always]
       ansible.builtin.set_fact:
         vault_token_is_root: "{{ 'root' in vault_self.json.data.policies }}"
 
@@ -120,22 +152,7 @@
         headers: {X-Vault-Token: "{{ vault_token }}"}
         body_format: json
         body:
-          policy: |
-            # the owner's administrator login (ADR 0065): the lab's admin jobs only
-            path "auth/{{ vault.approle_mount }}/role/+/role-id" { capabilities = ["read"] }
-            path "auth/{{ vault.approle_mount }}/role/+/secret-id" { capabilities = ["create", "update", "list"] }
-            path "auth/{{ vault.approle_mount }}/role/+/secret-id/lookup" { capabilities = ["update"] }
-            path "auth/{{ vault.approle_mount }}/role/+/secret-id-accessor/lookup" { capabilities = ["update"] }
-            path "auth/{{ vault.approle_mount }}/role/+/secret-id-accessor/destroy" { capabilities = ["update"] }
-            path "auth/{{ vault.approle_mount }}/role/*" { capabilities = ["create", "read", "update", "list"] }
-            path "auth/{{ vault.approle_mount }}/role" { capabilities = ["list"] }
-            path "sys/policies/acl/itential-*" { capabilities = ["create", "read", "update", "delete", "list"] }
-            path "sys/policies/acl" { capabilities = ["list"] }
-            path "{{ vault.kv_mount }}/*" { capabilities = ["create", "read", "update", "patch", "delete", "list"] }
-            path "sys/storage/raft/snapshot" { capabilities = ["read"] }
-            path "sys/mounts" { capabilities = ["read"] }
-            path "sys/auth" { capabilities = ["read"] }
-            path "auth/token/create/verify-readers" { capabilities = ["update"] }
+          policy: "{{ lab_admin_policy }}"
         status_code: [204]
       changed_when: false
       when: vault_token_is_root
@@ -200,6 +217,13 @@
       failed_when: >-
         ws_destroy.status == 500 and 'failed to find accessor entry' not in (ws_destroy.json.errors | default([]) | join(' '))
       no_log: true
+
+    # --- ADR 0083 decision 5: the tokens production's MCP server accepts --------------------------------------------
+    - name: MCP client roles and the identity provider behind them
+      ansible.builtin.include_tasks:
+        file: tasks/vault-mcp-tokens.yml
+        apply: {tags: [mcp-tokens]}
+      tags: [mcp-tokens]
 
 - name: Each reader host can log in to its role
   hosts: vault_readers

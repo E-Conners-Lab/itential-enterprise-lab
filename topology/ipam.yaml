@@ -26,6 +26,14 @@ home_lan:
     aliases: [ollama]
     dhcp_reservation: true
     description: "Ollama for every FlowAI local profile (ADR 0060)"
+  # ADR 0083: the machines that call production's MCP server (mcp.lab.internal on tools-01). Both are inside the
+  # router's DHCP pool, so each holds a router reservation, as inference_host does. tools-01 admits exactly these
+  # (itential/ha2/versions.yaml tools.mcp_allow) and each has its own Vault AppRole bound to its address
+  # (itential/versions.yaml vault.mcp_tokens): lose a reservation and the next device to lease the address would
+  # pass the port's allowlist, so re-check the router before suspecting the server.
+  mcp_clients:
+    - {hostname: mac-mini, address: 192.168.68.142, dhcp_reservation: true, description: "the Mac Mini, also inference_host"}
+    - {hostname: laptop, address: 192.168.68.140, dhcp_reservation: true, description: "the laptop, reserved 2026-10-30"}
 
 prefixes:
   - {prefix: 10.100.0.0/14, status: container, role: lab-supernet, description: "Everything this lab allocates (ADR 0003)"}

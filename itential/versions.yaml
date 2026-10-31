@@ -1020,6 +1020,29 @@ vault:
         metadata/aws/vpn-psk: [read]
         destroy/aws/vpn-psk: [update]
       bound_hosts: [iag-01]
+  # ADR 0083 decision 5: production's MCP server accepts only Vault-signed tokens. Vault's identity provider signs
+  # them with its own key (`key`, rotated every `rotation_period`; a retired public key stays published for
+  # `verification_ttl`) through one role (`role`): one-hour tokens whose audience is `client_id`, issued by
+  # `<issuer>/v1/identity/oidc`. Each client machine (topology/ipam.yaml home_lan.mcp_clients) has its own AppRole,
+  # `<approle_prefix><hostname>`, bound to that machine's address, whose only policy (`policy`) reads such a token: one
+  # machine can be revoked alone. Its role and secret IDs live in that machine's Keychain (scripts/mcp-client.sh); the
+  # laptop's arrive response-wrapped, single use (owner decision 2026-10-31). Setting the issuer and writing the key and
+  # the role need the root token (the ceremony, ADR 0083 decision 8); the client roles and policy do not.
+  mcp_tokens:
+    issuer: https://vault.lab.internal:8200
+    key: itential-mcp
+    role: itential-mcp
+    client_id: itential-mcp
+    algorithm: RS256
+    ttl: 1h
+    rotation_period: 24h
+    verification_ttl: 24h
+    policy: itential-mcp-client
+    approle_prefix: mcp-client-
+    # the Vault token a login gets only has to last until it reads one identity token
+    login_token_ttl: 300
+    login_token_max_ttl: 600
+    wrap_ttl: 10m
   # Every AWS secret lives here and nowhere else (owner rule 2026-09-26, ADR 0068 decision 3). None is seeded from
   # .env: each tier's Vault gets its own IAM key (owner decision 2026-09-29), so either can be revoked alone.
   aws:
