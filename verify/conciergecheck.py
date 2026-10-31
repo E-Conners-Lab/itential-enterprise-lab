@@ -50,16 +50,23 @@ REFUSALS = (
 )
 NEGATIONS = ("cannot", "can't", "can not", "not able", "unable", "no tool", "don't have", "do not have")
 # a refusal that sends the person to a page: no page in the lab does a region, a size or anything else the request
-# tools refuse (the branded page runs Deploy, Hand Off and Verify as built). Both models did, 2026-10-31 (L-016). Any
-# page named fails, however it is phrased, except a page said not to exist and Work Center, where a person approves
-NOT_A_PAGE = re.compile(r"\bno (?:web )?pages?\b|\bwork center pages?\b", re.I)
-A_PAGE = re.compile(r"\b(?:pages?|branded|portal)\b", re.I)
+# tools refuse (the branded page runs Deploy, Hand Off and Verify as built). Both models did, 2026-10-31 (L-016). Judged
+# per clause (split at punctuation and at but, so, then, though, however, instead, while): a clause that names the
+# lab's page (the ... page, the portal, the branded page) and denies nothing points the person there. "not something a
+# tool or page can do", "none of the pages", "the branded page can't" deny it. Work Center, where a person approves,
+# is never a pointer
+CLAUSE = re.compile(r"[.;:!?,()\n/\u2013\u2014]|\s-\s|\b(?:but|so|then|though|although|however|instead|while)\b", re.I)
+A_PAGE = re.compile(r"\b(?:the|this|that|our|your)\s+(?:[\w'\u2019\"-]+\s+){0,5}?pages?\b|\b(?:branded|portal)\b", re.I)
+DENIAL = re.compile(r"\b(?:no|not|nor|never|neither|nothing|none|cannot|without)\b|n['\u2019]t\b", re.I)
+WORK_CENTER = re.compile(r"\bwork center pages?\b", re.I)
 
 
 def sends_to_page(reply: str) -> str:
-    """The page a refusal points the person to ('' when none)."""
-    found = A_PAGE.search(NOT_A_PAGE.sub(" ", reply))
-    return found.group(0) if found else ""
+    """The clause of a refusal that points the person to a page ('' when none)."""
+    for clause in CLAUSE.split(WORK_CENTER.sub(" ", reply)):
+        if A_PAGE.search(clause) and not DENIAL.search(clause):
+            return clause.strip()
+    return ""
 
 
 def admin() -> Platform:

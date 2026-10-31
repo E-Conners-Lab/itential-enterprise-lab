@@ -242,11 +242,24 @@ def test_the_refusal_check_fails_a_reply_that_sends_the_person_to_a_page() -> No
             "For the eu-west-1 region and the t3.large instance size, you'll need to use the branded page directly.",
             "Head to the branded page to change it.", "Go to the Deploy page.", "The branded page can do that.",
             "Please use the lab's branded page.", "Do it on the 'Deploy AWS VPN' page.",
-            "Use the Itential branded AWS VPN deploy page.", "The lab's portal has that option."]
+            "Use the Itential branded AWS VPN deploy page.", "The lab's portal has that option.",
+            # a denial in another clause than the page
+            "I can't do that here; use the branded page instead.", "No, use the branded page.",
+            "Do not worry, the branded page does it.", "Not here - use the branded page.",
+            "No - the branded page does that.", "There is no tool but the portal for that.",
+            "I'm not sure but the branded page can.", "I do not have it but the branded page does.",
+            "Not via me; not via chat but the branded page."]
     kept = ["I can't do that: no page or tool changes the region or the instance size; that needs a change to the lab.",
             "I cannot pick eu-west-1 or t3.large. I can bring the whole VPN up for 2, 4, 8, 24 or 72 hours, or tear it "
             "all down.",
-            "I cannot change the region. I can bring the whole VPN up, and the run waits on its Work Center page."]
+            "I cannot change the region. I can bring the whole VPN up, and the run waits on its Work Center page.",
+            # the two replies of 2026-10-31 after #219: Claude's failed the first form of this check
+            "Those require a change to the lab itself, not something a tool or page can do.",
+            "Those would require a change to the lab itself, and no page or tool of mine can make that change, so I "
+            "won't send you off to one.",
+            "That is not something the branded page can do either.", "There isn't a page for that.",
+            "Nothing on the branded page does that.", "None of the pages can change the region.",
+            "The branded page can't do that either.", "That is not something the branded Deploy page can do."]
     assert [r for r in sent if not check.sends_to_page(r)] == []
     assert [r for r in kept if check.sends_to_page(r)] == []
 
