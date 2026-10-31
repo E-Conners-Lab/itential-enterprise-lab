@@ -76,6 +76,16 @@ def test_the_instructions_say_it_cannot_approve_and_never_guesses_the_address() 
     assert words <= build.CONCIERGE_NOTE_MAX
 
 
+def test_a_refusal_says_it_cannot_before_what_it_can_do() -> None:
+    """With the offer first in step 4, Claude led with it and ended "aren't something this workflow controls", no plain
+    refusal (2026-10-31, after #216). The approval line, which says "say plainly that you cannot", held on both
+    models: step 4 asks for the same, before the offer."""
+    text = " ".join(_agent("cloud-concierge")["instructions"].split())
+    step = text[text.index("4. Refuse"):text.index("5. Answer")]
+    order = ["saying plainly that you cannot", "say what you can do instead", "What you refuse"]
+    assert [step.index(s) for s in order] == sorted(step.index(s) for s in order)
+
+
 def test_only_hand_off_and_verify_are_sent_to_the_branded_page() -> None:
     """Both models sent a region and size request to the branded page when one parenthetical closed the whole refusal
     list (L-016, 2026-10-31): the page is named only in the item it runs, and its Deploy form takes neither."""
