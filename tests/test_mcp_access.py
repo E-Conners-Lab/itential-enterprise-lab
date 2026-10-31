@@ -23,6 +23,8 @@ COMPOSE = ROOT / "itential" / "ha2" / "tools.compose.yml.j2"
 ALLOW_SCRIPT = ROOT / "itential" / "ha2" / "mcp-access.sh.j2"
 PLAYS = ROOT / "ansible" / "playbooks"
 TASKS = PLAYS / "tasks"
+IPAM = ROOT / "topology" / "ipam.yaml"
+CLIENT_SCRIPT = ROOT / "scripts" / "mcp-client.sh"
 
 # identity, sessions and the server itself (ADR 0063's dev exclusions), plus adapter and application control, which can
 # stop the LDAP adapter every login goes through (measured on production 6.6.0, 2026-10-18)
@@ -172,8 +174,31 @@ def test_the_allowlist_admits_single_client_machines_only() -> None:
         assert net.prefixlen == 32, (
             f"{src}: one client machine per entry, never a range"
         )
-    assert "192.168.68.142/32" in allow, "the Mac Mini"
-    assert "192.168.68.140/32" in allow, "the laptop"
+
+
+def test_the_allowlist_admits_exactly_the_recorded_client_machines() -> None:
+    """tools.mcp_allow and topology/ipam.yaml home_lan.mcp_clients name the same machines: an address on the allowlist
+    that no reservation holds would admit whatever device leases it next."""
+    allow = set(yaml.safe_load(HA2.read_text())["tools"]["mcp_allow"])
+    clients = yaml.safe_load(IPAM.read_text())["home_lan"]["mcp_clients"]
+    assert allow == {f"{c['address']}/32" for c in clients}
+
+
+def test_every_client_machine_holds_a_router_reservation() -> None:
+    lan = yaml.safe_load(IPAM.read_text())["home_lan"]
+    pool = (ipaddress.ip_address(lan["dhcp_pool_start"]), ipaddress.ip_address(lan["dhcp_pool_end"]))
+    names = [c["hostname"] for c in lan["mcp_clients"]]
+    assert len(names) == len(set(names)), "one record per machine"
+    for c in lan["mcp_clients"]:
+        addr = ipaddress.ip_address(c["address"])
+        assert addr in ipaddress.ip_network("192.168.68.0/22"), c["hostname"]
+        if pool[0] <= addr <= pool[1]:
+            assert c.get("dhcp_reservation") is True, f"{c['hostname']}: inside the DHCP pool without a reservation"
+        assert re.fullmatch(r"[a-z0-9-]+", c["hostname"]), "the AppRole name and the client script take it as is"
+    inference = lan["inference_host"]
+    for c in lan["mcp_clients"]:
+        if c["hostname"] == inference["hostname"]:
+            assert c["address"] == inference["address"], "one machine, one address"
 
 
 def test_the_allowlist_script_guards_the_containers_own_port() -> None:
@@ -396,3 +421,92 @@ def test_every_agent_update_keeps_the_mcp_group_on_production() -> None:
         'operators: "{{ agent_operators }}"' in text
         and "'operators': agent_operators" in text
     )
+
+
+# --- ADR 0083 decision 5: the tokens the server will accept (itential/versions.yaml vault.mcp_tokens) -----------------
+
+
+def _mcp_tokens() -> dict:
+    return yaml.safe_load(VERSIONS.read_text())["vault"]["mcp_tokens"]
+
+
+def test_the_client_policy_is_one_the_admin_login_may_write() -> None:
+    """lab-admin may write only itential-* policies (vault-prod-config.yml), so the client roles need no root token."""
+    t = _mcp_tokens()
+    assert t["policy"].startswith("itential-")
+    assert t["issuer"] == yaml.safe_load(VERSIONS.read_text())["vault"]["prod"]["url"], "the issuer is Vault's own name"
+    assert t["key"] and t["role"] and t["client_id"]
+    assert t["algorithm"] == "RS256"
+    assert t["login_token_ttl"] <= t["login_token_max_ttl"] <= 900, "a login only has to last until it reads one token"
+
+
+def test_the_client_policy_reads_one_token_and_nothing_else() -> None:
+    tasks = (TASKS / "vault-mcp-tokens.yml").read_text()
+    policy = re.search(r"policy: '(path .*)'", tasks).group(1)
+    assert policy == 'path "identity/oidc/token/{{ mcp.role }}" { capabilities = ["read"] }'
+
+
+def test_the_admin_login_may_keep_the_key_and_role_but_not_the_issuer() -> None:
+    """After the ceremony lab-admin maintains the signing key and the token role; moving the issuer (every token's iss)
+    and minting tokens stay outside its policy."""
+    play = (PLAYS / "vault-prod-config.yml").read_text()
+    policy = play.split("Least-privilege administrator policy", 1)[1].split("status_code", 1)[0]
+    assert 'path "identity/oidc/key/{{ vault.mcp_tokens.key }}" { capabilities = ["create", "read", "update"] }' in policy
+    assert 'path "identity/oidc/role/{{ vault.mcp_tokens.role }}" { capabilities = ["create", "read", "update"] }' in policy
+    assert "identity/oidc/config" not in policy and "identity/oidc/token" not in policy
+    assert "tasks/vault-mcp-tokens.yml" in play
+
+
+def test_the_identity_provider_is_written_only_by_a_token_that_may() -> None:
+    tasks = (TASKS / "vault-mcp-tokens.yml").read_text()
+    assert "sys/capabilities-self" in tasks
+    for task in ("Signing key", "Token role {{ mcp.role }}"):
+        block = tasks.split(f"- name: {task}", 1)[1].split("\n- name:", 1)[0]
+        assert "when: mcp_may_provider" in block, task
+    issuer = tasks.split("- name: Issuer set", 1)[1].split("\n- name:", 1)[0]
+    assert "when: mcp_may_issuer and" in issuer
+    assert 'allowed_client_ids: ["{{ mcp.client_id }}"]' in tasks, "no other role may sign with the key"
+
+
+def test_each_client_role_is_bound_to_its_own_address_and_proven_from_here() -> None:
+    tasks = (TASKS / "vault-mcp-tokens.yml").read_text()
+    assert 'secret_id_bound_cidrs: ["{{ cidr }}"]' in tasks and 'token_bound_cidrs: ["{{ cidr }}"]' in tasks
+    assert 'cidr: "{{ item.item.address }}/32"' in tasks
+    assert "that: (item.1 == 200) == (item.0 == mcp_ws)" in tasks, "only this workstation's own role logs in from here"
+    assert "mcp_claims.aud == mcp.client_id" in tasks and "mcp_claims.iss == mcp.issuer ~ '/v1/identity/oidc'" in tasks
+
+
+def _script_constants() -> dict[str, str]:
+    return dict(re.findall(r"^([A-Z_]+)=([^\s$]+)$", CLIENT_SCRIPT.read_text(), re.M))
+
+
+def test_the_client_script_matches_versions_yaml() -> None:
+    v = yaml.safe_load(VERSIONS.read_text())["vault"]
+    c = _script_constants()
+    assert f"https://{c['VAULT_HOST']}:{c['VAULT_PORT']}" == v["prod"]["url"]
+    assert c["VAULT_VIP"] == v["prod"]["vip"]
+    assert c["APPROLE_MOUNT"] == v["approle_mount"]
+    assert c["APPROLE_PREFIX"] == v["mcp_tokens"]["approle_prefix"]
+    assert c["TOKEN_ROLE"] == v["mcp_tokens"]["role"]
+    assert c["WRAP_TTL"] == v["mcp_tokens"]["wrap_ttl"]
+
+
+def test_the_client_script_keeps_secrets_out_of_argv_and_files() -> None:
+    """A value in argv shows in ps; bash 3.2 (stock macOS) writes a here-string or heredoc to a temporary file."""
+    script = CLIENT_SCRIPT.read_text()
+    code = "\n".join(ln for ln in script.splitlines() if not ln.lstrip().startswith("#"))
+    assert "<<<" not in code and "<<" not in code.replace("<<<", ""), "no here-strings or heredocs"
+    assert "| security -i" in code, "the Keychain write reads its command on stdin"
+    assert not re.search(r"security add-generic-password", code), "never with the value in argv"
+    assert "X-Vault-Token: %s" in code and "-H @<(printf" in code, "the token reaches curl through a descriptor"
+    assert script.startswith("#!/bin/bash") and "\nset -eu\n" in script
+    for name in ("sid", "vt", "at", "wt", "jwt"):
+        assert f"unset {name}" in code or f"unset rid {name}" in code or re.search(rf"unset [a-z ]*\b{name}\b", code), name
+
+
+def test_the_wrapping_token_is_the_only_value_the_script_shows() -> None:
+    script = CLIENT_SCRIPT.read_text()
+    shown = [ln for ln in script.splitlines() if re.search(r"jget (data\.secret_id|data\.role_id|auth\.client_token|data\.token|wrap_info\.token)", ln)]
+    for ln in shown:
+        assert "=$(" in ln or "wrap_info.token" in ln, ln
+    assert sum("wrap_info.token" in ln for ln in shown) == 1

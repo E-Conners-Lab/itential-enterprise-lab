@@ -1,7 +1,8 @@
 ---
 # Phase 9a step 3 (ADR 0065): configure production's Vault - `make vault-config`. The KV v2 mount, the two read-only
 # AppRoles and the PSK writer (ADR 0068) bound to their own hosts' addresses (topology/ipam.yaml), and the seeds from
-# .env, all through the task file the dev tier proved (tasks/vault-config.yml). Then the binding is proven on the real
+# .env, all through the task file the dev tier proved (tasks/vault-config.yml); the MCP server's client roles come
+# from tasks/vault-mcp-tokens.yml (ADR 0083). Then the binding is proven on the real
 # path instead of assumed: a one-use, five-minute secret ID per role and host must log in from that host, and one from
 # this workstation must be refused. The token is the root token from the owner's init file (VAULT_INIT_FILE), read
 # without printing it; VAULT_TOKEN overrides it (for example the owner's lab-admin login, now that root is revoked).
@@ -37,12 +38,14 @@
       {{ out }}
   tasks:
     - name: Production only
+      tags: [always]
       ansible.builtin.assert:
         that: not (dev_overlay | default(false) | bool)
         fail_msg: "vault-prod-config.yml configures production's Vault; the dev tier has make vault-dev"
         quiet: true
 
     - name: Token to configure with (VAULT_TOKEN, else the root token in the owner's init file)
+      tags: [always]
       ansible.builtin.set_fact:
         vault_token: >-
           {{ lookup('ansible.builtin.env', 'VAULT_TOKEN')
@@ -50,6 +53,7 @@
       no_log: true
 
     - name: Which token this run holds (root at first configuration, the owner's lab-admin login after)
+      tags: [always]
       ansible.builtin.uri:
         url: "{{ vault_addr }}/v1/auth/token/lookup-self"
         ca_path: "{{ playbook_dir }}/../../docs/lab-root-ca.crt"
@@ -58,6 +62,7 @@
       no_log: true
 
     - name: Root or not
+      tags: [always]
       ansible.builtin.set_fact:
         vault_token_is_root: "{{ 'root' in vault_self.json.data.policies }}"
 
@@ -136,6 +141,10 @@
             path "sys/mounts" { capabilities = ["read"] }
             path "sys/auth" { capabilities = ["read"] }
             path "auth/token/create/verify-readers" { capabilities = ["update"] }
+            # ADR 0083: the MCP server's signing key and token role (not the issuer), set up at the root ceremony
+            path "identity/oidc/key/{{ vault.mcp_tokens.key }}" { capabilities = ["create", "read", "update"] }
+            path "identity/oidc/key/{{ vault.mcp_tokens.key }}/rotate" { capabilities = ["update"] }
+            path "identity/oidc/role/{{ vault.mcp_tokens.role }}" { capabilities = ["create", "read", "update"] }
         status_code: [204]
       changed_when: false
       when: vault_token_is_root
@@ -200,6 +209,13 @@
       failed_when: >-
         ws_destroy.status == 500 and 'failed to find accessor entry' not in (ws_destroy.json.errors | default([]) | join(' '))
       no_log: true
+
+    # --- ADR 0083 decision 5: the tokens production's MCP server accepts --------------------------------------------
+    - name: MCP client roles and the identity provider behind them
+      ansible.builtin.include_tasks:
+        file: tasks/vault-mcp-tokens.yml
+        apply: {tags: [mcp-tokens]}
+      tags: [mcp-tokens]
 
 - name: Each reader host can log in to its role
   hosts: vault_readers

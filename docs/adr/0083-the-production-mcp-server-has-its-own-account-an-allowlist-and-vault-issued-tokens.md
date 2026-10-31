@@ -101,3 +101,25 @@ from the phone, and wants the credentials in a secret manager with a way back in
   supported APIs and keeps the group in the plays.
 - **The Platform's OAuth service accounts for the server's login.** ipsdk supports client credentials, but on 6.5.2 such an
   account could not join an LDAP group and its device search failed (runbook 09).
+
+## Amendment 2026-10-31: how decision 5 is built (Vault side)
+
+- **The client machines are records.** `topology/ipam.yaml` `home_lan.mcp_clients` holds each machine's address and its
+  router reservation (both are inside the DHCP pool, like `inference_host`); `tools.mcp_allow` must name exactly them
+  (`tests/test_mcp_access.py`), so an allowlisted address no reservation holds fails the build.
+- **Tokens** (`itential/versions.yaml` `vault.mcp_tokens`): key and role `itential-mcp`, RS256, one-hour tokens, the key
+  rotated daily and a retired public key published for a day. The role's `client_id` is set, not generated, so the
+  server's audience is known before the role exists.
+- **One AppRole per machine**, `mcp-client-<hostname>`, its secret IDs and tokens bound to that machine's /32. Its only
+  policy, `itential-mcp-client`, reads `identity/oidc/token/itential-mcp`; a login token lasts five to ten minutes. The
+  lab-admin login may write these (an `itential-*` policy and AppRole roles), so they need no root token:
+  `make vault-mcp-tokens` runs this part alone and proves it from the Mac (its own role logs in, the laptop's is refused).
+- **The identity provider** (issuer, signing key, token role) is written only by a token Vault says may write it
+  (`sys/capabilities-self`): the root token at the ceremony (decision 8), which also gives lab-admin the key and the role,
+  not the issuer and not token minting.
+- **Delivery** (`scripts/mcp-client.sh`, stock macOS only; no secret in argv, a file or a here-string): the Mac enrols
+  itself (`make mcp-enrol NAME=mac-mini`). The laptop's role and secret IDs arrive response-wrapped, single use, valid
+  ten minutes (owner decision 2026-10-31, over a lab-admin login on the laptop): `make mcp-wrap NAME=laptop` in the
+  owner's terminal, then `scripts/mcp-client.sh unwrap` on the laptop. `make mcp-revoke NAME=<machine>` cuts one off.
+- **Open before the ceremony:** Vault 2.0 authenticates `sys/generate-root` (ADR 0065), and lab-admin's policy has no
+  path there. Whether its token is accepted is measured first, with a read of `sys/generate-root/attempt`.
