@@ -76,6 +76,21 @@ def test_the_instructions_say_it_cannot_approve_and_never_guesses_the_address() 
     assert words <= build.CONCIERGE_NOTE_MAX
 
 
+def test_only_hand_off_and_verify_are_sent_to_the_branded_page() -> None:
+    """Both models sent a region and size request to the branded page when one parenthetical closed the whole refusal
+    list (L-016, 2026-10-31): the page is named only in the item it runs, and its Deploy form takes neither."""
+    text = _agent("cloud-concierge")["instructions"]
+    items = [" ".join(i.split()) for i in re.split(r"\n\s*(?:\d+\.|-) ", text)]
+    paged = [i for i in items if "branded page" in i]
+    assert paged and all(i.startswith("running Hand Off or Verify") for i in paged), paged
+    refused = next(i for i in items if i.startswith("another AWS region"))
+    assert "never send the person to a page" in refused
+    # the branded page and the Deploy form behind it
+    for page in (ROOT / "itential" / "portal" / "deploy-aws-vpn" / "index.html",
+                 ROOT / "itential" / "forms" / "lab-deploy-aws-vpn.json"):
+        assert not re.search(r"region|instance_type|instance size", page.read_text(), re.I), f"{page.name} takes one"
+
+
 # --- the request tools ------------------------------------------------------------------------------------------------
 
 
@@ -204,6 +219,26 @@ def test_the_verify_runs_the_concierge_only_on_requests_that_start_nothing() -> 
         assert f"conciergecheck.py refusals {name}" in text
     # deploy and teardown start real runs: the owner runs them by hand
     assert not re.search(r"\$\{PY\} verify/conciergecheck\.py (deploy|teardown)", text)
+
+
+def test_the_refusal_check_fails_a_reply_that_sends_the_person_to_a_page() -> None:
+    spec = importlib.util.spec_from_file_location("conciergecheck", ROOT / "verify" / "conciergecheck.py")
+    check = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(check)
+    assert [no_page for _, what, no_page in check.REFUSALS] == [False, True], "only the region and size refusal"
+    # the two replies of 2026-10-31 (L-016), other ways to say it, then refusals that point nowhere
+    sent = ["That would need to be handled separately (e.g., on the branded Hand Off/Verify page or via direct "
+            "infrastructure change).",
+            "For the eu-west-1 region and the t3.large instance size, you'll need to use the branded page directly.",
+            "Head to the branded page to change it.", "Go to the Deploy page.", "The branded page can do that.",
+            "Please use the lab's branded page.", "Do it on the 'Deploy AWS VPN' page.",
+            "Use the Itential branded AWS VPN deploy page.", "The lab's portal has that option."]
+    kept = ["I can't do that: no page or tool changes the region or the instance size; that needs a change to the lab.",
+            "I cannot pick eu-west-1 or t3.large. I can bring the whole VPN up for 2, 4, 8, 24 or 72 hours, or tear it "
+            "all down.",
+            "I cannot change the region. I can bring the whole VPN up, and the run waits on its Work Center page."]
+    assert [r for r in sent if not check.sends_to_page(r)] == []
+    assert [r for r in kept if check.sends_to_page(r)] == []
 
 
 def test_a_start_whose_id_cannot_be_read_says_it_started() -> None:

@@ -34,10 +34,11 @@ instructions: |
      and its plan card shows exactly what would change.
   3. To take it down (tear down, remove, destroy), call "Request AWS VPN Teardown" once with target
      "dc1-wan01" and change_note as above.
-  4. Refuse what these workflows cannot do, and say what you can do instead: another AWS region or account,
-     another instance size, a single resource, changing the router, or running Hand Off or Verify (those stay
-     on the branded page). You can bring the whole VPN up for one of the lifetimes, with or without the NAT
-     gateway, or tear it all down.
+  4. Refuse what these workflows cannot do, and say what you can do instead: bring the whole VPN up for one of
+     the lifetimes, with or without the NAT gateway, or tear it all down. What you refuse:
+     - another AWS region or account, another instance size, a single resource, or changing the router. No
+       page or tool does these: they need a change to the lab itself, so never send the person to a page.
+     - running Hand Off or Verify: those two stay on the branded page.
   5. Answer in a few plain sentences from the tool's outcome: what was started, the job, the change request
      number, that it now waits for a person's approval on its Work Center card, the planned end, whose on-prem
      address it uses (the outcome names the deployment, never the address) and the next step. Never say it is
