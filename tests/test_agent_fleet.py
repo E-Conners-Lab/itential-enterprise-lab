@@ -471,6 +471,10 @@ def test_the_verify_runs_every_local_twin(docs: dict) -> None:
             # ADR 0084: production only, and its request is a procedure: verify/skillslabcheck.py agents runs the twin
             assert 'SKILLS["agents"]' in probes and 'n.endswith("-local")' in probes, name
             continue
+        if name == "cloud-concierge-local":
+            # ADR 0085 (A4): its requests start real runs, so the verify runs it only on requests that start nothing
+            assert re.search(r"conciergecheck\.py refusals cloud-concierge-local\b", text), name
+            continue
         assert re.search(rf"run_agent {re.escape(name)}\b", text), (
             f"{name} is never exercised by verify/test-06-flowai.sh"
         )
@@ -535,10 +539,12 @@ def test_the_mac_script_does_not_hardcode_the_model() -> None:
 
 # ── A1, Cloud Status (PID S13 "Agents on the roadmap", owner decisions 2026-10-04) ──
 
-# the AWS VPN workflows that change something: no fleet agent holds one (A4 Cloud Concierge will, behind Work Center)
+# the AWS VPN workflows that change something, or start a run that does: no fleet agent holds one. The A4 Cloud
+# Concierge holds the two request tools only, each of which stops at Work Center (test_cloud_concierge.py)
 AWS_WRITE_TOOLS = {"Deploy AWS VPN", "Hand Off AWS VPN", "Tear Down AWS VPN", "Tear Down Expired AWS VPN",
                    "Push Configuration with Revert Timer", "Rotate AWS VPN Key", "Rotate AWS VPN Key Monthly",
-                   "Diagnose AWS VPN Outage"}  # Diagnose runs the approved fix: the agent it calls must not hold it
+                   "Diagnose AWS VPN Outage",  # Diagnose runs the approved fix: the agent it calls must not hold it
+                   "Request AWS VPN Deployment", "Request AWS VPN Teardown"}
 
 
 @pytest.mark.parametrize("name", ["cloud-status", "cloud-status-local"])

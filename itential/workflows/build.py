@@ -441,6 +441,12 @@ CONFIG_LINES = {"type": "array", "minItems": 1, "maxItems": 50,
 REASON = {"type": "string", "maxLength": 500, "pattern": r"^[^<>]*$"}
 # a requester's note reaches a card and a change request as text: no markup, one line (Deploy's, then Tear Down's, R5)
 CHANGE_NOTE_RULE = {"type": "string", "maxLength": 280, "pattern": r'^[^<>"\\\r\n]{0,280}$'}  # no `\"`: JS u-mode
+# A4 (ADR 0085): a request tool marks the note with where it came from, so the change request and the card name the
+# Cloud Concierge (a run its tool starts is the Pronghorn account's, with no link back to the chat); Deploy's bound holds
+CONCIERGE_PREFIX = "Cloud Concierge: "
+CONCIERGE_NOTE_MAX = 280 - len(CONCIERGE_PREFIX)
+CONCIERGE_NOTE_RULE = {"type": "string", "maxLength": CONCIERGE_NOTE_MAX,
+                       "pattern": r'^[^<>"\\\r\n]{0,%d}$' % CONCIERGE_NOTE_MAX}
 INPUT_GATES = {
     WF["show_version"]: {"device": NODE_NAME},
     # ADR 0080: a workflow name, as versions.yaml spells them; the service checks it again
@@ -527,6 +533,16 @@ INPUT_GATES = {
     WF["scratch_push"]: {"device": SCRATCH_DEVICE, "lines": CONFIG_LINES, "reason": REASON},
     WF["scratch_restore"]: {"device": SCRATCH_DEVICE},
 }
+# A4 (ADR 0085): the Cloud Concierge's two tools. The on-prem address is `last` (the newest person-started Deploy's) or
+# one the person typed; the rest are Deploy's and Tear Down's own inputs, and Tear Down's targets
+INPUT_GATES[WF["request_aws_vpn_deployment"]] = {
+    "lifetime_hours": INPUT_GATES[WF["deploy_aws_vpn"]]["lifetime_hours"],
+    "enable_nat_gateway": INPUT_GATES[WF["deploy_aws_vpn"]]["enable_nat_gateway"],
+    "change_note": CONCIERGE_NOTE_RULE,
+    "onprem_public_ip": {"type": "string", "pattern": "^(last|" + IPV4_TEXT["pattern"][1:-1] + ")$"},
+}
+INPUT_GATES[WF["request_aws_vpn_teardown"]] = {"target": INPUT_GATES[WF["tear_down_aws_vpn"]]["target"],
+                                               "change_note": CONCIERGE_NOTE_RULE}
 # where a refusal is reported: the device workflows already say "did not run" in device_error, which the agents read
 GATE_ERROR_VAR = {WF[k]: "device_error" for k in ("show_version", "show_command", "show_all", "config_push",
                                                   "scratch_show")}
@@ -4177,12 +4193,13 @@ JUDGE_CODE = ("import json, sys\n\n\n" + inspect.getsource(judge)
               + "\n\nprint(json.dumps(judge(json.loads(sys.stdin.read() or \"{}\"))))\n")
 
 
-def run_code(summary: str, code: str, data_ref: str, out_job: str, x: int, y: int = 0) -> dict:
-    """GatewayManager.runCode: Python on the runner, the data on stdin; its result carries stdout_json."""
+def run_code(summary: str, code: str, data_ref: str, out_job: str | None, x: int, y: int = 0) -> dict:
+    """GatewayManager.runCode: Python on the runner, the data on stdin; its result carries stdout_json. out_job None
+    keeps the result on the task (an agent reads every variable of a tool's job, never its task outputs)."""
     return task("runCode", "GatewayManager", summary,
                 {"clusterId": CLUSTER, "language": "python", "code": code, "data": data_ref,
                  "safety": {"timeout": 30}, "packages": []},
-                {"result": f"$var.job.{out_job}"}, x=x, y=y)
+                {"result": f"$var.job.{out_job}" if out_job else None}, x=x, y=y)
 
 
 def empty(summary: str, job_var: str, x: int, y: int = 0) -> dict:
@@ -5688,6 +5705,279 @@ def get_aws_vpn_status() -> dict:
         {"summary": {"type": "string"}, "status": {"type": "object"}, "error": {"type": "string"},
          "outputs_result": {"type": "object"}},
     )
+
+
+# --- A4 Cloud Concierge: the two request tools (ADR 0085 decisions 11-14) ----------------------------------------------
+# The Concierge never holds Deploy or Tear Down: the chat would wait on the card for as long as it stays open, the run
+# would start with no groups (its card hidden from the approver) and the run's own-id reads would turn into invented
+# tool inputs (design D7). Each tool checks its inputs, starts the real workflow through its endpoint trigger (the run
+# carries the trigger automation's groups, so its card shows to the approver, probe P1b), finds the change request the
+# run opens by the job id in its short description (a Pronghorn-started run cannot be read back, P2b) and answers at
+# once. An agent reads every variable of a tool's job, so the on-prem address stays in task outputs, never a variable.
+CONCIERGE_ROUTES = {"deploy": VERSIONS["operations_manager"]["deploy_aws_vpn"]["endpoint"]["route"],
+                    "teardown": VERSIONS["operations_manager"]["tear_down_aws_vpn"]["endpoint"]["route"]}
+# the run opens its change request right after its input check: reads over about a minute, unrolled (no cycle)
+CONCIERGE_LOOKUPS = (5, 5, 10, 20, 20)
+
+
+def concierge_body(d: dict) -> dict:
+    """The started run's inputs but the on-prem address: the person's words marked with where they came from, and the
+    deployment's lifetime and NAT setting or the teardown's target as given. Pure: runCode runs this source."""
+    words = " ".join(str(d.get("change_note") or "").split())
+    body = {"change_note": d["prefix"] + (words or "(no reason given)")}
+    for key in ("enable_nat_gateway", "lifetime_hours", "target"):
+        if key in d:
+            body[key] = d[key]
+    return {"body": body}
+
+
+def newest_person_deploy(d: dict) -> dict:
+    """The newest Deploy AWS VPN job a person started, from getJobs' answer (`jobs`, newest first), and where the reused
+    address comes from in words (never the address). A run an automation, an agent tool or a schedule started records
+    `Pronghorn` as its user (measured 2026-10-31) and cannot be read back (probe P2b), so it is passed over: an address
+    a person gave the Concierge is not reused, which is why the answer says whose address it is. Pure: runCode runs
+    this source."""
+    from datetime import datetime, timezone
+
+    for row in (d.get("jobs") or {}).get("data") or []:
+        if isinstance(row, dict) and (row.get("metrics") or {}).get("user") not in (None, "", "Pronghorn"):
+            start = (row.get("metrics") or {}).get("start_time")
+            when = (f", started {datetime.fromtimestamp(start / 1000, timezone.utc):%Y-%m-%d %H:%M} UTC"
+                    if isinstance(start, (int, float)) else "")
+            return {"found": True, "job": row.get("_id"),
+                    "from": f"the on-prem address of Deploy AWS VPN job {row.get('_id')}{when}"}
+    return {"found": False}
+
+
+def last_address(d: dict) -> dict:
+    """That job's on-prem address, from getJob's answer (`job`), when it is a dotted IPv4 address. Its result stays on
+    the task. Pure: runCode runs this source."""
+    ip = (((d.get("job") or {}).get("data") or {}).get("variables") or {}).get("onprem_public_ip")
+    parts = ip.split(".") if isinstance(ip, str) else []
+    ok = len(parts) == 4 and all(p.isdigit() and str(int(p)) == p and int(p) <= 255 for p in parts)
+    return {"ok": ok, "ip": ip if ok else None}
+
+
+def concierge_answer(d: dict) -> dict:
+    """The tool's answer in words the agent can pass on: what started, the job and its change request (`change_number`,
+    a CHG number once found), the card it stops at, the planned end and the next step. Pure: runCode runs this
+    source."""
+    number = d.get("change_number") if str(d.get("change_number") or "").startswith("CHG") else None
+    job = d.get("job") or ""
+    started = f"job {job} ({d.get('job_url', '')}{job})"
+    reused = (f" It uses {d['address_from']}: if that address has changed, reject the waiting card and request again "
+              "with the new one." if d.get("address_from") else "")
+    change = (f"Its change request is {number}." if number else
+              "No change request appeared within a minute: the run may have stopped at its own input check, or "
+              "ServiceNow is slow; the job shows which.")
+    if d.get("kind") == "deploy":
+        hours = d.get("lifetime_hours")
+        ends = ("It has no end time: it stays up until Tear Down AWS VPN." if hours == "none" else
+                f"It ends {hours} hours after it starts (the card shows the exact time), when Tear Down Expired AWS "
+                "VPN removes it.")
+        text = (f"Deploy AWS VPN started: {started}. {change} It stops at Itential Work Center: a person must approve "
+                "its plan on the card \"Approve the AWS change\", which appears once the plan and its review are ready, "
+                "usually within a few minutes. Nothing is created in AWS before that approval. " + ends + reused
+                + " After the apply, Hand Off AWS VPN on the branded page connects the router, then Verify AWS VPN.")
+    else:
+        text = (f"Tear Down AWS VPN started for {d.get('target')}: {started}. {change} It stops at Itential Work Center "
+                "for a person's approval twice: first \"Approve removing the router's AWS block\", then, when anything "
+                "is deployed in AWS, \"Approve destroying the AWS side\". Nothing changes before each approval.")
+    return {"outcome": text, "change_number": number or ""}
+
+
+def concierge_request(kind: str) -> dict:
+    """Request AWS VPN Deployment (`deploy`) or Request AWS VPN Teardown (`teardown`)."""
+    ok, fail, err = "success", "failure", "error"
+    deploy = kind == "deploy"
+    target_wf = WF["deploy_aws_vpn"] if deploy else WF["tear_down_aws_vpn"]
+    fields = ("change_note", "enable_nat_gateway", "lifetime_hours") if deploy else ("change_note", "target")
+    tasks, tr = {}, {"workflow_start": _edge(**{"00": ok})}
+    # the run's inputs but the address, in one object; the note marked as the Concierge's
+    for i, key in enumerate(fields):
+        tasks[f"0{i}"] = set_key(f"the run's input: {key}", f"$var.0{i - 1}.object" if i else {}, key,
+                                 f"$var.job.{key}", x=0)
+        tr[f"0{i}"] = _edge(**{(f"0{i + 1}" if i + 1 < len(fields) else "10"): ok})
+    tasks |= {
+        "10": run_code("the run's inputs: the note marked as the Concierge's (Python on the runner)",
+                       _pure_code(concierge_body, {"prefix": CONCIERGE_PREFIX}), f"$var.0{len(fields) - 1}.object",
+                       None, x=0),
+        "11": jq("the run's inputs", "$var.10.result", "stdout_json.body", x=0),
+        # empty until one is found: a placeholder would read as a number on a path that ends early
+        "12": _publish(parse("no change request read yet (empty)", '""', x=0), "textObject", "change_number"),
+    }
+    tr |= {"10": _edge(**{"11": ok, "84": err}), "11": _edge(**{"12": ok, "84": fail})}
+
+    def start(tid: str, idj: str, body_ref: str) -> None:
+        route = CONCIERGE_ROUTES[kind]
+        tasks[tid] = task("runEndpointTriggerWithPost", "OperationsManager",
+                          f"start {target_wf} through its endpoint ({route}): it stops at its own Work Center card",
+                          {"routeName": route, "body": body_ref, "runtimeOptions": {}}, {"result": None})
+        tasks[idj] = jq("the started job's id", f"$var.{tid}.result", "data._id", x=0, to_job="started_job")
+        tr[tid] = _edge(**{idj: ok, "83": err})
+        tr[idj] = _edge(**{"3f": ok, "86": fail})
+
+    if deploy:
+        tasks |= {
+            "13": evaluate("reuse the last deployment's address?", "job", "onprem_public_ip", "", "==", "last", x=0),
+            # last: the newest person-started Deploy's address, handed on without ever becoming a job variable
+            "20": task("getJobs", "OperationsManager", "the newest Deploy AWS VPN jobs (who started each)",
+                       {"queryParameters": {"equals": {"name": WF["deploy_aws_vpn"]}, "sort": "metrics.start_time",
+                                            "order": -1, "limit": 100,
+                                            "include": "_id,metrics.start_time,metrics.user"}},
+                       {"result": None}),
+            "21": set_key("the jobs", {}, "jobs", "$var.20.result", x=0),
+            "22": run_code("the newest one a person started (Python on the runner)",
+                           _pure_code(newest_person_deploy, {}), "$var.21.object", None, x=0),
+            "23": evaluate("one found?", "22", "result", "stdout_json.found", "==", True, x=0),
+            "24": jq("its id", "$var.22.result", "stdout_json.job", x=0),
+            "2d": jq("whose address it is, in words (never the address)", "$var.22.result", "stdout_json.from", x=0,
+                     to_job="address_from"),
+            # getJob needs queryParameters even when empty (probe E.0), and reads the inputs dereferenced
+            "25": task("getJob", "OperationsManager", "that job, its inputs read",
+                       {"id": "$var.24.return_data", "queryParameters": {}}, {"job": None}),
+            "26": set_key("that job", {}, "job", "$var.25.job", x=0),
+            "27": run_code("its on-prem address, checked (Python on the runner; kept on the task)",
+                           _pure_code(last_address, {}), "$var.26.object", None, x=0),
+            "28": evaluate("a usable address?", "27", "result", "stdout_json.ok", "==", True, x=0),
+            "29": jq("the address (kept on the task)", "$var.27.result", "stdout_json.ip", x=0),
+            "2a": set_key("the run's input: the last deployment's address", "$var.11.return_data", "onprem_public_ip",
+                          "$var.29.return_data", x=0),
+            # an address the person gave is one of the tool's own inputs already
+            "30": set_key("the run's input: the address the person gave", "$var.11.return_data", "onprem_public_ip",
+                          "$var.job.onprem_public_ip", x=0),
+            "33": note("whose address it is", "the on-prem address the person gave", "address_from", x=0),
+        }
+        tr |= {"12": _edge(**{"13": ok}), "13": _edge(**{"20": ok, "30": fail}),
+               "20": _edge(**{"21": ok, "80": err}), "21": _edge(**{"22": ok}), "22": _edge(**{"23": ok, "80": err}),
+               "23": _edge(**{"24": ok, "81": fail}), "24": _edge(**{"2d": ok, "80": fail}),
+               "2d": _edge(**{"25": ok, "80": fail}),
+               "25": _edge(**{"26": ok, "80": err}), "26": _edge(**{"27": ok}), "27": _edge(**{"28": ok, "80": err}),
+               "28": _edge(**{"29": ok, "82": fail}), "29": _edge(**{"2a": ok, "82": fail}),
+               "2a": _edge(**{"2b": ok}), "30": _edge(**{"33": ok}), "33": _edge(**{"31": ok})}
+        start("2b", "2c", "$var.2a.object")
+        start("31", "32", "$var.30.object")
+    else:
+        tr["12"] = _edge(**{"31": ok})
+        start("31", "32", "$var.11.return_data")
+    # the change request the run opens right after its input check, by the job id in its short description (R5); each
+    # read keeps its response on the task (an HTTP response carries ServiceNow's headers, a session cookie among them)
+    # and only the number becomes a variable
+    tasks["3f"] = replace("the change request's query", "short_descriptionLIKE__J__", "__J__", "$var.job.started_job",
+                          x=0)
+    tr["3f"] = _edge(**{"40": ok})
+    for i, secs in enumerate(CONCIERGE_LOOKUPS):
+        wait, read, found, take = f"4{2 * i}", f"4{2 * i + 1}", f"5{i}", f"6{i}"
+        last = i + 1 == len(CONCIERGE_LOOKUPS)
+        nxt = "5f" if last else f"4{2 * i + 2}"
+        tasks[wait] = task("delay", "WorkFlowEngine", f"wait {secs} s for the change request (read {i + 1})",
+                           {"time": secs}, {"time_in_milliseconds": None}, kind="operation", display="WorkFlowEngine")
+        tasks[read] = sni("listChangeRequests", f"the run's change request (read {i + 1})",
+                          {"sysparm_query": "$var.3f.replacedString", "sysparm_fields": "number",
+                           "sysparm_limit": 1}, x=0)
+        tasks[found] = evaluate(f"found? (read {i + 1})", read, "response", "body.result[0].number", "contains", "CHG",
+                                x=0)
+        tasks[take] = jq(f"its number (read {i + 1})", f"$var.{read}.response", "body.result[0].number", x=0,
+                         to_job="change_number")
+        tr[wait] = _edge(**{read: ok})
+        tr[read] = _edge(**{found: ok, nxt: err})
+        tr[found] = _edge(**{take: ok, nxt: fail})
+        tr[take] = _edge(**{"90": ok, nxt: fail})
+    tasks["5f"] = note("none within about a minute", "no change request found within about a minute", "change_wait",
+                       x=0)
+    tr["5f"] = _edge(**{"90": ok})
+    # the answer, put together on the runner
+    answer = [("job", "$var.job.started_job"), ("change_number", "$var.job.change_number"),
+              *([("lifetime_hours", "$var.job.lifetime_hours"), ("address_from", "$var.job.address_from")] if deploy
+                else [("target", "$var.job.target")])]
+    for i, (key, ref) in enumerate(answer):
+        tasks[f"9{i}"] = set_key(f"the answer's {key}", f"$var.9{i - 1}.object" if i else {}, key, ref, x=0)
+        tr[f"9{i}"] = _edge(**{(f"9{i + 1}" if i + 1 < len(answer) else "9a"): ok})
+    retry = "Ask the person for the lab's on-prem public IPv4 address and request again with it"
+    tasks |= {
+        "9a": run_code("the answer: what started, the job, the change request, the card (Python on the runner)",
+                       _pure_code(concierge_answer, {"kind": kind, "job_url": CHANGE["job_url"]}),
+                       f"$var.9{len(answer) - 1}.object", None, x=0),
+        "9b": jq("the answer, in words", "$var.9a.result", "stdout_json.outcome", x=0, to_job="outcome"),
+        "9c": jq("the change request's number", "$var.9a.result", "stdout_json.change_number", x=0,
+                 to_job="change_number"),
+        "80": note("the last deployment could not be read", "the last Deploy AWS VPN could not be read, so its on-prem "
+                   f"address cannot be reused: nothing was started. {retry}", "error", x=0),
+        "81": note("no deployment a person started", "no earlier Deploy AWS VPN started by a person was found, so there "
+                   f"is no on-prem address to reuse: nothing was started. {retry}", "error", x=0),
+        "82": note("the last address is not usable", "the last Deploy AWS VPN has no usable on-prem address: nothing "
+                   f"was started. {retry}", "error", x=0),
+        "83": note("the run could not be started", f"{target_wf} could not be started through its endpoint: nothing "
+                   "was started (this tool's job in Itential shows why)", "error", x=0),
+        "84": note("the request could not be prepared", "the request could not be prepared: nothing was started",
+                   "error", x=0),
+        "85": note("started, but no answer", "the run was started (started_job) but the answer could not be put "
+                   "together: look at that job in Itential", "error", x=0),
+        "86": note("started, but its id unread", f"{target_wf} was started, but its job id could not be read: do not "
+                   "request again. Its card waits in Work Center; the newest job of that workflow is the one", "error",
+                   x=0),
+    }
+    tr |= {"9a": _edge(**{"9b": ok, "85": err}), "9b": _edge(**{"9c": ok, "85": fail}),
+           "9c": _edge(**{"workflow_end": ok, "85": fail})}
+    if not deploy:  # the address errors belong to the deploy tool only
+        for e in ("80", "81", "82"):
+            del tasks[e]
+    for e in (t for t in tasks if t[0] == "8"):
+        tr[e] = _edge(**{"workflow_end": ok})
+    stepped(tasks, "the run's inputs: the person's words marked as the Concierge's, every input but the address",
+            *[t for t in tasks if t[0] in "01"])
+    if deploy:
+        stepped(tasks, "the on-prem address: the newest person-started Deploy's, or the one the person gave; read on "
+                       "the tasks, never a job variable", "13", "30", "33", *[t for t in tasks if t[0] == "2"])
+    stepped(tasks, "the start: the real workflow through its endpoint trigger, so it stops at its own Work Center card",
+            *[t for t in ("2b", "2c", "31", "32") if t in tasks])
+    stepped(tasks, "the change request: found by the started job's id, read for up to about a minute",
+            "3f", *[t for t in tasks if t[0] in "456"])
+    stepped(tasks, "the answer: the job, the change request, the card it waits on, the end time and the next step",
+            *[t for t in tasks if t[0] == "9"])
+    stepped(tasks, "where it stops: nothing was started, or the answer could not be made",
+            *[t for t in tasks if t[0] == "8"])
+    note_input = {"type": "string", "required": True, "maxLength": CONCIERGE_NOTE_MAX,
+                  "description": "The person's own words: why. Shown to the approver and in the change request"}
+    if deploy:
+        inputs = {
+            "lifetime_hours": {"type": "string", "required": True,
+                               "enum": INPUT_GATES[WF["request_aws_vpn_deployment"]]["lifetime_hours"]["enum"],
+                               "description": "How long it stays up, in hours, or none (until Tear Down)"},
+            "enable_nat_gateway": {"type": "string", "required": True, "enum": ["false", "true"],
+                                   "description": "true only when the person asks for the NAT gateway"},
+            "change_note": note_input,
+            "onprem_public_ip": {"type": "string", "required": True,
+                                 "description": "last (reuse the last deployment's on-prem address) or the address "
+                                                "the person gave; never a guess"},
+        }
+        what = ("The Cloud Concierge's deploy tool (A4, ADR 0085): starts Deploy AWS VPN through its endpoint with the "
+                "lifetime, the NAT setting, the person's words and the last deployment's on-prem address (or the one "
+                "the person gave), and answers at once with the job, its change request and the Work Center card it "
+                "waits on. It never applies anything and never returns the address")
+    else:
+        inputs = {
+            "target": {"type": "string", "required": True,
+                       "enum": INPUT_GATES[WF["request_aws_vpn_teardown"]]["target"]["enum"],
+                       "description": "The lab edge router whose AWS VPN to tear down"},
+            "change_note": note_input,
+        }
+        what = ("The Cloud Concierge's teardown tool (A4, ADR 0085): starts Tear Down AWS VPN through its endpoint with "
+                "the target and the person's words, and answers at once with the job, its change request and the Work "
+                "Center cards it waits on. It never removes anything itself")
+    name = WF["request_aws_vpn_deployment"] if deploy else WF["request_aws_vpn_teardown"]
+    return workflow(name, what, inputs, tasks, tr,
+                    {"started_job": {"type": "string"}, "change_number": {"type": "string"},
+                     "outcome": {"type": "string"}, "error": {"type": "string"},
+                     "change_wait": {"type": "string"}, **({"address_from": {"type": "string"}} if deploy else {})})
+
+
+def request_aws_vpn_deployment() -> dict:
+    return concierge_request("deploy")
+
+
+def request_aws_vpn_teardown() -> dict:
+    return concierge_request("teardown")
 
 
 # --- Check AWS Drift (R3, owner decisions 2026-10-04) -----------------------------------------------------------------
@@ -9287,7 +9577,8 @@ BUILDERS = (device_count, show_version, show_command, show_all, branch_vlan, bra
             hand_off_aws_vpn, config_push_revert, tear_down_aws_vpn, tear_down_expired_aws_vpn, get_aws_vpn_status,
             check_aws_drift, rotate_aws_vpn_key, rotate_aws_vpn_key_monthly, diagnose_aws_vpn_outage,
             diagnose_fabric_bgp_outage, break_fabric_bgp, drill_batfish_gate, describe_workflow, describe_job, describe_for_agent,
-            ask_platform_guide, scratch_show, scratch_restconf, scratch_push, scratch_restore)
+            ask_platform_guide, scratch_show, scratch_restconf, scratch_push, scratch_restore,
+            request_aws_vpn_deployment, request_aws_vpn_teardown)
 
 
 if __name__ == "__main__":

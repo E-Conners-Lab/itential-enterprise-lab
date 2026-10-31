@@ -86,7 +86,10 @@ def test_arrows_stay_clear_of_the_tasks(file: str) -> None:
 # R5 (ADR 0085, 2026-10-27): every ending of Deploy, Hand Off and Tear Down after the change request opens now meets at
 # one of the change's four close entries (canceled, rejected, failed, successful) instead of workflow_end, and each card
 # gains its two decision chains: Deploy 5, Hand Off 14, Tear Down 11 as measured. Same rule. A2 (ADR 0085): Deploy's
-# review steps each skip to the card when they cannot run: Deploy 8 as measured.
+# review steps each skip to the card when they cannot run: Deploy 8 as measured. A4 (ADR 0085, 2026-10-31): Request AWS
+# VPN Deployment's five unrolled change-request reads each jump to the answer, and its address reads meet at three
+# notes: 3 as measured. Same rule.
 THROUGH_ALLOWED = {"hand-off-aws-vpn.json": 14, "deploy-aws-vpn.json": 8, "tear-down-aws-vpn.json": 11,
                    "tear-down-expired-aws-vpn.json": 4, "diagnose-aws-vpn-outage.json": 13,
-                   "diagnose-fabric-bgp-outage.json": 6, "break-fabric-bgp.json": 4}
+                   "diagnose-fabric-bgp-outage.json": 6, "break-fabric-bgp.json": 4,
+                   "request-aws-vpn-deployment.json": 3}

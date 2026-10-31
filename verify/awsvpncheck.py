@@ -45,13 +45,14 @@ SECRET_FIELDS = {
     "aws/psk-writer": ["role_id", "secret_id"],
     "devices/dc1-wan01-aws-vpn": ["password"],
 }
-# The AWS VPN workflows (every one that runs an AWS VPN service: tests/test_awsvpncheck.py), and the two hand paths to
-# the lab edge (the teardown by hand on 2026-10-02, the show reads of the windows)
+# The AWS VPN workflows (every one that runs an AWS VPN service: tests/test_awsvpncheck.py), the Cloud Concierge's two
+# request tools, which start them (ADR 0085, A4), and the two hand paths to the lab edge (the teardown by hand on
+# 2026-10-02, the show reads of the windows)
 JOB_WORKFLOWS = [
     V["workflows"][k]
     for k in ("deploy_aws_vpn", "hand_off_aws_vpn", "verify_aws_vpn", "tear_down_aws_vpn", "tear_down_expired_aws_vpn",
               "get_aws_vpn_status", "check_aws_drift", "rotate_aws_vpn_key", "rotate_aws_vpn_key_monthly",
-              "diagnose_aws_vpn_outage", "drill_batfish_gate",
+              "diagnose_aws_vpn_outage", "drill_batfish_gate", "request_aws_vpn_deployment", "request_aws_vpn_teardown",
               "config_push_revert", "show_command")
 ]
 TIER = os.environ.get("AWS_VPN_TIER") or V["aws_vpn"]["tier"]

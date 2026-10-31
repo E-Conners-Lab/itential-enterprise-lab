@@ -22,8 +22,9 @@ network source of truth.
   diagnoses it and proposes one fix, a person approves, and Itential checks the result independently.
 - **Agents:** FlowAI agents use the workflows as tools: `lab-netops`, a five-agent fleet (source of truth, device
   operations, compliance, diagnostics, gated remediation), `cloud-status`, `tunnel-diagnostics`,
-  `fabric-diagnostics` and `platform-guide`, each with a local twin (ADR 0046) on qwen3.8 (ADR 0079). The
-  diagnostics agents search a knowledge service through FlowMCP Gateway (ADR 0074).
+  `fabric-diagnostics`, `platform-guide` and `cloud-concierge`, each with a local twin (ADR 0046) on qwen3.8 (ADR 0079).
+  The diagnostics agents search a knowledge service through FlowMCP Gateway (ADR 0074); the Cloud Concierge starts
+  Deploy and Tear Down AWS VPN runs that wait on their own Work Center cards (ADR 0085).
 - **The Platform explains itself:** Describe Workflow and Describe Job (ADR 0080), the `platform-guide` agent with
   Ask Platform Guide (ADR 0081), and NetClaw as the lab's Slack interface (ADR 0082).
 

@@ -761,6 +761,10 @@ workflows:
   tear_down_aws_vpn: Tear Down AWS VPN # S13 criterion 5 (R2): the router's block removed and proved gone, then the AWS destroy
   check_aws_drift: Check AWS Drift # R3: daily refresh-only plan; drift opens a Work Center task, names only; reads only
   get_aws_vpn_status: Get AWS VPN Status # A1: what is deployed, until when, last change, an estimated cost; reads only
+  # A4 (ADR 0085 decisions 11-14): the Cloud Concierge's two tools. Each starts the real workflow through its endpoint
+  # trigger, so the run stops at its own Work Center card and change request, and returns the job and the CHG at once
+  request_aws_vpn_deployment: Request AWS VPN Deployment # starts Deploy AWS VPN; its answer never holds the on-prem address
+  request_aws_vpn_teardown: Request AWS VPN Teardown # starts Tear Down AWS VPN for an open target
   diagnose_aws_vpn_outage: Diagnose AWS VPN Outage # R6 + A3: the tunnel-down alert -> incident, agent, approved fix
   diagnose_fabric_bgp_outage: Diagnose Fabric BGP Outage # R10 + A6: a BGP session down -> incident, agent, approved fix
   break_fabric_bgp: Break Fabric BGP # R10 PR C: the drill - one fault under an EOS commit timer, behind an HTML card
