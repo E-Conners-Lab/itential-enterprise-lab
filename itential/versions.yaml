@@ -645,11 +645,11 @@ mcp_access:
 
 # ADR 0084: the skills eval suite's two accounts, production only (the scratch lab is production's). `run` is the
 # runner's agent-tool account: it starts the three agent-tool automations and the eval agents' sessions, reads their
-# jobs, deletes each session once scored, and can neither release a card nor restore a router. `approve` releases or
-# rejects the push card (Work Center claim + complete, scoped by the card's groups) and runs the baseline restore; it
-# cancels no job. Role oracles: itential/eval/run-roles.yaml and approve-roles.yaml. Made by tasks/eval-access.yml
-# (start of the replay and platform.yml); passwords generated once into .env, copied to the workbench by make
-# skills-lab-creds.
+# jobs, cancels a session it stops at a limit or a stall, deletes each session once scored or stopped, and can neither
+# release a card nor restore a router. `approve` releases or rejects the push card (Work Center claim + complete,
+# scoped by the card's groups) and runs the baseline restore; it cancels no job. Role oracles:
+# itential/eval/run-roles.yaml and approve-roles.yaml. Made by tasks/eval-access.yml (start of the replay and
+# platform.yml); passwords generated once into .env, copied to the workbench by make skills-lab-creds.
 eval_access:
   run: {user: svc-eval, group: eval, password_env: SVC_EVAL_PROD_PASSWORD, kind: eval}
   approve: {user: svc-eval-approver, group: eval-approvers, password_env: SVC_EVAL_APPROVER_PROD_PASSWORD,
