@@ -188,7 +188,9 @@ check "S4c.5 lab-netops-local (ollama-mac ${OLLAMA_MODEL}) answers the br1-sw01 
 # The agent is exposed as an Operations Manager automation with the endpoint route "lab-netops"
 # (flowai.yml), so the MCP's trigger_automation starts a session and describe_session reads it back.
 c6() {
-  local url="http://mcp.lab.internal:8000/mcp" res sid
+  # ADR 0083: TLS and this Mac's own Vault-signed token, as Claude Code's headersHelper sends it (verify 05 S4.7)
+  local url="https://mcp.lab.internal:8000/mcp" res sid
+  export MCP_HEADERS_CMD="scripts/mcp-client.sh token" MCP_CA="$CA"
   res=$(${PY} verify/mcpcall.py "$url" call get_agents) || { echo "$res"; return 1; }
   echo "$res" | grep -q '"route_name":\s*"lab-netops"\|route_name\\":\\"lab-netops' || echo "$res" | grep -q "lab-netops" || { echo "lab-netops not exposed to MCP get_agents: $(echo "$res" | head -c 300)"; return 1; }
   res=$(${PY} verify/mcpcall.py "$url" call trigger_automation '{"route_name":"lab-netops","data":{"request":"What software version is running on br1-sw01? Reply with the version string only."}}') || { echo "$res"; return 1; }

@@ -9,3 +9,4 @@ exclude_paths:
   - topology/
   - tests/
   - itential/docker-compose.yml # vendored upstream file, byte-identical to the pin (ADR 0035)
+  - itential/ha2/tools.compose.breakglass.yml # Compose's !override tag, which it cannot load; yamllint checks it

@@ -1,0 +1,19 @@
+# ADR 0083 decision 7: break-glass, for when Vault cannot sign tokens (sealed, down) and the MCP server refuses every
+# caller. The tools play stages this file beside the compose file on tools-01; it recreates the server with no
+# authentication and no TLS, published on tools-01's loopback only, so only someone who can SSH to tools-01 (and so
+# already holds root there) reaches it.
+#
+#   on tools-01:   cd /opt/itential && sudo docker compose -f docker-compose.yml -f docker-compose.breakglass.yml up -d mcp
+#   from the Mac:  ssh -N -L 8000:127.0.0.1:8000 ubuntu@10.100.0.81   then http://127.0.0.1:8000/mcp, no token
+#   leave it:      make platform-ha2-tools, or on tools-01: sudo docker compose up -d mcp
+#
+# docs/runbooks/08-production-ha2-and-migration.md has the procedure. `!override` replaces the published ports instead
+# of adding to them (Compose merges port lists otherwise).
+services:
+  mcp:
+    ports: !override
+      - "127.0.0.1:8000:8000"
+    environment:
+      ITENTIAL_MCP_SERVER_AUTH_TYPE: "none"
+      ITENTIAL_MCP_SERVER_CERTIFICATE_FILE: ""
+      ITENTIAL_MCP_SERVER_PRIVATE_KEY_FILE: ""

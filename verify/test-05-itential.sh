@@ -37,6 +37,13 @@ RESOLVE=${IT_IP:+--resolve ${IT_HOST}:443:${IT_IP}}
 MCP_IP=${IT_MCP_IP:-$(${PY} -c "import yaml;d=yaml.safe_load(open('itential/ha2/versions.yaml'));print(next(v['ip'] for v in d['vms'] if v['role']=='tools'))")}
 PLATFORM="https://${IT_HOST}"
 CA=docs/lab-root-ca.crt
+# ADR 0083: production's MCP server takes TLS and a Vault-signed token from this Mac's own login (scripts/mcp-client.sh
+# token, Claude Code's headersHelper; verify/mcpcall.py runs it the same way); the dev stack's mcp-dev takes neither
+if [ "$MCP_HOST" = mcp.lab.internal ]; then
+  MCP_URL="https://${MCP_HOST}:8000/mcp"; export MCP_HEADERS_CMD="scripts/mcp-client.sh token" MCP_CA="$CA"
+else
+  MCP_URL="http://${MCP_HOST}:8000/mcp"
+fi
 SSH="ssh -o BatchMode=yes -o ConnectTimeout=8 -o StrictHostKeyChecking=accept-new"
 ts=$(date -u +%Y%m%dT%H%M%SZ)
 fail=0; pass=0; deferred=0; hibernated=0
@@ -186,7 +193,7 @@ else bad "S4.6 Platform node memory pressure"; sed 's/^/      /' /tmp/verify05.$
 
 # --- S4.7 Claude Code on this Mac reaches mcp.lab.internal and runs a read-only tool -------------
 c7() {
-  local url="http://${MCP_HOST}:8000/mcp" tools res
+  local url="$MCP_URL" tools res
   ${PY} -c "import socket;assert socket.gethostbyname('${MCP_HOST}')=='${MCP_IP}','${MCP_HOST} resolves elsewhere'" || return 1
   tools=$(${PY} verify/mcpcall.py "$url" tools) || { echo "$tools"; return 1; }
   echo "$tools" | grep -qx get_health || { echo "get_health not in tools: $(echo "$tools" | tr '\n' ' ')"; return 1; }
@@ -196,7 +203,7 @@ c7() {
   echo "$res" | grep -q "$PLATFORM_VER" || { echo "get_health did not return platform ${PLATFORM_VER}: $(echo "$res" | head -c 300)"; return 1; }
   echo "$(echo "$tools" | wc -l | tr -d ' ') tools; get_health reports ${PLATFORM_VER}"
   # .mcp.json points Claude Code at production's MCP by design; against mcp-dev there is nothing to match
-  [ "$MCP_HOST" != mcp.lab.internal ] || ${PY} -c 'import json;c=json.load(open(".mcp.json"))["mcpServers"]["itential"];assert c["url"]=="'"$url"'",c'
+  [ "$MCP_HOST" != mcp.lab.internal ] || ${PY} -c 'import json;c=json.load(open(".mcp.json"))["mcpServers"]["itential"];assert c["url"]=="'"$url"'" and c["headersHelper"]=="'"$MCP_HEADERS_CMD"'",c'
 }
 check "S4.7 mcp.lab.internal answers streamable HTTP from this Mac; get_health returns Platform ${PLATFORM_VER}; .mcp.json matches" c7
 
@@ -208,7 +215,7 @@ c7b() {
   user=$($SSH ubuntu@"${MCP_IP}" "sudo docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' mcp | grep '^ITENTIAL_MCP_PLATFORM_USER='")
   [ "$user" = ITENTIAL_MCP_PLATFORM_USER=svc-mcp ] || { echo "the mcp container logs in as '${user#*=}', not svc-mcp"; return 1; }
   started=$($SSH ubuntu@"${MCP_IP}" "sudo docker inspect -f '{{.State.StartedAt}}' mcp")
-  ${PY} verify/mcpcall.py "http://${MCP_HOST}:8000/mcp" call get_health >/dev/null || return 1
+  ${PY} verify/mcpcall.py "$MCP_URL" call get_health >/dev/null || return 1
   iap_login || { echo "admin login failed"; return 1; }
   last=$(iap "${PLATFORM}/authorization/accounts?limit=100" | ${PY} -c 'import sys,json;print(next((a.get("lastLogin","") for a in json.load(sys.stdin)["results"] if a.get("username")=="svc-mcp"),""))')
   [ -n "$last" ] || { echo "svc-mcp has never logged in to the Platform"; return 1; }
@@ -230,6 +237,28 @@ c7c() {
   echo "the Gateway VM ${probe} is dropped at ${MCP_IP}:8000 (curl 28); this Mac is admitted (S4.7)"
 }
 check "S4.7c the MCP port admits only tools.mcp_allow: a lab VM outside it is dropped" c7c
+
+# --- S4.7d production's MCP server refuses a caller without a Vault-signed token, and plain HTTP (ADR 0083) ----------
+# S4.7 proved the other half: this Mac's own token is accepted
+c7d() {
+  [ "$MCP_HOST" = mcp.lab.internal ] || { echo "the dev stack's mcp-dev takes no token"; return 1; }
+  local init='{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"verify","version":"1"}}}'
+  local hdr=(-H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream') none forged plain fake
+  # this Mac's real token - Vault's own key id, issuer, audience and expiry - with only its signature replaced, so
+  # nothing but the signature check can refuse it; the token is held in a variable, never printed
+  fake=$(scripts/mcp-client.sh token | ${PY} -c 'import json,sys;h,p,s=json.load(sys.stdin)["Authorization"][7:].split(".");print(f"{h}.{p}.{s[::-1]}")') \
+    || { echo "this Mac could not take a token (make mcp-enrol NAME=mac-mini)"; return 1; }
+  none=$(curl -s -o /dev/null -w '%{http_code}' -m 10 --cacert "$CA" -X POST "${hdr[@]}" -d "$init" "$MCP_URL")
+  forged=$(curl -s -o /dev/null -w '%{http_code}' -m 10 --cacert "$CA" -X POST "${hdr[@]}" -H "Authorization: Bearer ${fake}" \
+             -d "$init" "$MCP_URL")
+  plain=$(curl -s -o /dev/null -w '%{http_code}' -m 10 -X POST "${hdr[@]}" -d "$init" "http://${MCP_HOST}:8000/mcp" || true)
+  [ "$none" = 401 ] || { echo "no token: HTTP ${none}, want 401"; return 1; }
+  unset fake
+  [ "$forged" = 401 ] || { echo "a real token with a forged signature: HTTP ${forged}, want 401"; return 1; }
+  case "$plain" in 2*|3*|4*|5*) echo "plain HTTP was answered (HTTP ${plain}): the port must speak TLS only"; return 1 ;; esac
+  echo "no token: 401; a real token with a forged signature: 401; plain HTTP: no answer (${plain}); this Mac's token: accepted (S4.7)"
+}
+check "S4.7d production's MCP server refuses a caller without a Vault-signed token, and plain HTTP" c7d
 
 # =============================== S4b ServiceNow PDI ==============================================
 snow() { curl -s -m 30 -u "${SNOW_USER}:${SNOW_PASSWORD}" -H "Accept: application/json" "$@"; }

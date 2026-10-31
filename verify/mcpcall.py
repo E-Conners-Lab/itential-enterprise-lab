@@ -4,12 +4,20 @@
   verify/mcpcall.py <url> tools            # prints one tool name per line
   verify/mcpcall.py <url> call <tool> [json-args]   # prints the tool result JSON
 
+MCP_HEADERS_CMD (optional) is a command whose stdout is a JSON object of headers, sent with every request - the way
+Claude Code runs a headersHelper (production: scripts/mcp-client.sh token, ADR 0083). MCP_CA (optional) is the CA file
+an https URL is verified with (docs/lab-root-ca.crt). Neither the headers nor a token is ever printed.
+
 Implements initialize -> notifications/initialized -> request, honouring the Mcp-Session-Id
 header and both JSON and SSE response bodies of the 2025-03-26 / 2025-11-25 transports."""
 
 from __future__ import annotations
 
 import json
+import os
+import shlex
+import ssl
+import subprocess
 import sys
 import urllib.error
 import urllib.request
@@ -23,6 +31,15 @@ class Client:
         self.timeout = timeout
         self.session: str | None = None
         self._id = 0
+        self.headers: dict[str, str] = {}
+        cmd = os.environ.get("MCP_HEADERS_CMD")
+        if cmd:
+            out = subprocess.run(shlex.split(cmd), capture_output=True, text=True, check=False)
+            if out.returncode != 0:
+                raise SystemExit(f"MCP_HEADERS_CMD failed: {out.stderr.strip()[:300]}")
+            self.headers = json.loads(out.stdout)
+        ca = os.environ.get("MCP_CA")
+        self.ctx = ssl.create_default_context(cafile=ca) if ca else None
 
     def _post(self, body: dict) -> dict | None:
         req = urllib.request.Request(self.url, data=json.dumps(body).encode(), method="POST")
@@ -30,8 +47,10 @@ class Client:
         req.add_header("Accept", "application/json, text/event-stream")
         if self.session:
             req.add_header("Mcp-Session-Id", self.session)
+        for k, v in self.headers.items():
+            req.add_header(k, v)
         try:
-            with urllib.request.urlopen(req, timeout=self.timeout) as resp:
+            with urllib.request.urlopen(req, timeout=self.timeout, context=self.ctx) as resp:
                 sid = resp.headers.get("Mcp-Session-Id")
                 if sid:
                     self.session = sid

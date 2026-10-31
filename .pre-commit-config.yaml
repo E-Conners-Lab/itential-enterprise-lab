@@ -12,6 +12,8 @@ repos:
         exclude: ^(verify/results/|observability/grafana/dashboards/itential-platform-monitoring\.json$)
       - id: check-yaml
         args: [--allow-multiple-documents]
+        # Compose's `!override` tag, which a safe loader rejects; yamllint still checks its syntax (ADR 0083 decision 7)
+        exclude: ^itential/ha2/tools\.compose\.breakglass\.yml$
       - id: check-merge-conflict
       - id: check-added-large-files
         args: [--maxkb=2048]
