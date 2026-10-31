@@ -200,8 +200,9 @@ make mcp-wrap NAME=laptop                # your terminal: a single-use wrapping 
 ```
 
 On the other machine, with `scripts/mcp-client.sh` and `docs/lab-root-ca.crt` copied beside each other, run
-`scripts/mcp-client.sh unwrap` and paste the wrapping token (it is not echoed, works once and lasts ten
-minutes); it stores the IDs in that machine's Keychain and takes a test token. Point its Claude Code at the
+`scripts/mcp-client.sh unwrap` and paste the wrapping token on one line (it is not echoed, works once and lasts
+ten minutes; a paste split across lines arrives cut short and is refused as "used already, expired, or mistyped",
+HTTP 400, so wrap again); it stores the IDs in that machine's Keychain and takes a test token. Point its Claude Code at the
 server with `"url": "https://mcp.${LAB_DOMAIN}:8000/mcp"` and `"headersHelper": "<path>/mcp-client.sh token"`.
 Claude Code trusts the operating system's store: where the lab CA is not a trusted root, set
 `NODE_EXTRA_CA_CERTS` to the CA file. Then the server:
