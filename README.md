@@ -17,16 +17,22 @@ network source of truth.
   variant also under a revert timer), nightly compliance checks and backups.
 - **AWS site-to-site VPN on demand** (ADR 0068, 0070): Terraform on the Gateway runs only an approved plan, Batfish
   proves the router change before anyone approves it (ADR 0076), and drift checks, key rotation and a timed
-  teardown keep it honest.
+  teardown keep it honest. Every person-started change (Deploy, Hand Off, Tear Down) opens a ServiceNow change
+  request that follows its Work Center cards, and an advisory agent with no tools (`plan-reviewer`) explains Deploy's
+  plan on the approval card (ADR 0085).
 - **Outage loops** (ADR 0072, 0073, 0075): a tunnel-down or BGP-session-down alert opens an incident, an agent
   diagnoses it and proposes one fix, a person approves, and Itential checks the result independently.
 - **Agents:** FlowAI agents use the workflows as tools: `lab-netops`, a five-agent fleet (source of truth, device
   operations, compliance, diagnostics, gated remediation), `cloud-status`, `tunnel-diagnostics`,
-  `fabric-diagnostics`, `platform-guide` and `cloud-concierge`, each with a local twin (ADR 0046) on qwen3.8 (ADR 0079).
+  `fabric-diagnostics`, `platform-guide`, `cloud-concierge` and `skill-eval`, each with a local twin (ADR 0046) on
+  qwen3.8 (ADR 0079).
   The diagnostics agents search a knowledge service through FlowMCP Gateway (ADR 0074); the Cloud Concierge starts
   Deploy and Tear Down AWS VPN runs that wait on their own Work Center cards (ADR 0085).
 - **The Platform explains itself:** Describe Workflow and Describe Job (ADR 0080), the `platform-guide` agent with
   Ask Platform Guide (ADR 0081), and NetClaw as the lab's Slack interface (ADR 0082).
+- **A scratch lab for skills evals** (ADR 0084): three C8000v routers in their own EVE-NG lab, with their own
+  accounts, approval cards and RESTCONF read, where an external eval suite tests agent skills without touching the
+  enterprise network.
 
 Every workflow is generated from `itential/workflows/build.py`, named in `itential/versions.yaml`, and described
 step by step in the [workflow guide](docs/workflows/README.md).
@@ -36,7 +42,7 @@ step by step in the [workflow guide](docs/workflows/README.md).
 | Layer | Where | What |
 |---|---|---|
 | Hypervisor | Dell R640, Proxmox VE 9.2 | 72 threads (2x Xeon Gold 6154), 314 GB usable RAM, `local-lvm` thin pool 1.6 TB; ceilings and current allocation in `docs/resource-budget.md` |
-| Network devices | EVE-NG Pro VM | C8000v WAN edges, vEOS spine/leaf/access, Linux/Windows endpoints; PA-VM deferred behind `lab.firewalls` (ADR 0034) |
+| Network devices | EVE-NG Pro VM | C8000v WAN edges, vEOS spine/leaf/access, Linux/Windows endpoints; PA-VM deferred behind `lab.firewalls` (ADR 0034); a separate three-router scratch lab for skills evals (ADR 0084) |
 | OOB management | `vmbr1` on its own NIC, EVE-NG `pnet1` | Every service gets a leg on it |
 | Services | Proxmox VMs + k3s | Itential Platform in the HA2 shape (11 VMs), Vault, Prometheus/Grafana, gNMIc, Loki, OpenLDAP, the knowledge service, Batfish; planned: Oxidized, Gitea, Keycloak, TACACS+, DDI (BIND9/Kea, Infoblox NIOS), Panorama |
 | Prototyping | Proxmox VMs | The Copilot dev stack (`itential-dev`) and a Containerlab host (`clab`), never production (ADR 0063) |
@@ -85,7 +91,10 @@ Phases are delivered in the order fixed by ADR 0008. Service specs and acceptanc
 | outage loops | - | AWS tunnel and fabric BGP outage loops with the knowledge service (ADR 0072-0075) | running (PR #122-#145) |
 | upgrade | - | Platform 6.6.1 and Gateway 5.5.3, with the upgrade runbook (ADR 0078) | done (PR #151; 6.6.1 in #211) |
 | explain | - | Describe Workflow and Describe Job, the workflow guide, `platform-guide` and Ask Platform Guide (ADR 0080, 0081) | running (PR #162-#177) |
-| netclaw | - | NetClaw, the lab's Slack interface (ADR 0082) | built (PR #178) |
+| netclaw | - | NetClaw, the lab's Slack interface (ADR 0082) | running (PR #178) |
+| mcp | - | Production's MCP server on its own account behind an allowlist, with Vault-signed tokens over TLS (ADR 0083) | running (PR #183, #185, #186, #217, #218, #220) |
+| skills lab | - | The skills eval suite's scratch lab, accounts and governed device path (ADR 0084) | running (PR #189-#192, #194-#203, #210, #214) |
+| aws-vpn roadmap | - | ServiceNow change requests for person-started changes, the plan review on Deploy's card and the Cloud Concierge (ADR 0085); drift and cost watch next | running (PR #204-#209, #215, #216, #219, #221, #222) |
 | dev | - | The Copilot prototyping tier (ADR 0063): `itential-dev` with its own Vault and the local model, Containerlab topology `dev`, `svc-copilot` read-only on production; `make verify-dev` | running (PR #41-#57) |
 
 ## What is running
@@ -122,7 +131,9 @@ ansible/        guest OS and application configuration; playbooks/ holds itentia
 eve/            EVE-NG REST API client and topology builder
 clab/           the dev tier's Containerlab topology and device templates
 itential/       the platform as documents: versions.yaml (the oracle), workflows/, golden-config/, command-templates/,
-                lcm/, forms/, integrations/, agents/, vault/, ha2/ (production's own oracle and Compose templates)
+                lcm/, forms/, integrations/, agents/, vault/, ha2/ (production's own oracle and Compose templates),
+                portal/ (the AWS VPN page), gateway5-runner/ (the runner image), and the service accounts' roles in
+                copilot/, mcp/, netclaw/ and eval/
 observability/  expiry rules, Grafana dashboards, gNMIc, the Platform exporter, the alert relay
 servicenow/     the stock ServiceNow PDI records the workflows rely on
 scripts/        workstation helpers, including scripts/vault-prod.sh for the owner's Vault operations
