@@ -379,7 +379,9 @@ aws_vpn:
   # this PDI template before it plans or reads anything, and the change follows the Work Center card. The notes name
   # no one: the card on the job records who decided and when (a trigger-started run cannot read itself back).
   change_request:
-    template: a4f48008c3949750f2d238bc0501316f # "Lab AWS VPN change", Network Standard Changes (owner, 2026-10-27)
+    # "Lab AWS VPN change", Network Standard Changes (owner, 2026-10-27). Re-created 2026-11-01 on the replacement PDI
+    # (the first went offline on ServiceNow's side for a day and was released); field values in servicenow/README.md
+    template: 3bccbce9939413102f20f5532bba1040
     job_url: https://itential.lab.internal/operations-manager/jobs/
   # A1 (Cloud Status, owner decision 2026-10-04: an estimate, not real spend): what Get AWS VPN Status prices a
   # deployment with. On-demand list prices for us-east-1 as Claude knew them on 2026-10-04 - NOT read from AWS; check
