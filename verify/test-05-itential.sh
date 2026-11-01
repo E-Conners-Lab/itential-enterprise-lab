@@ -328,14 +328,18 @@ end" >/dev/null 2>&1 || true; fi
     }
     check "S4b.2 Add Branch VLAN with change_request=true opens a standard change, work-notes the NetBox reservation, walks New->Scheduled->Implement->Review->Closed" c9
     # --- S4b.3 update set exported ---
-    # No PDI customisation exists (stock template, stock group, one user): servicenow/README.md is the
+    # One custom record (the AWS VPN change template, ADR 0085) beside the stock ones: servicenow/README.md is the
     # rebuild record (PID 1.5) and the two stock records it names must be present on the instance.
     c10() {
       [ -s servicenow/README.md ] || { echo "servicenow/README.md missing"; return 1; }
       snow "${SNOW_URL}/api/sn_chg_rest/change/standard/template?sysparm_query=sys_id=b1c8d15147810200e90d87e8dee490f7" | ${PY} -c 'import sys,json;r=json.load(sys.stdin)["result"];assert r and r[0]["sys_name"]["value"]=="Change VLAN on a Cisco switchport",r' || { echo "standard change template missing on the PDI"; return 1; }
       snow "${SNOW_URL}/api/now/table/sys_user_group/287ebd7da9fe198100f92cc8d1d2154e?sysparm_fields=name" | ${PY} -c 'import sys,json;assert json.load(sys.stdin)["result"]["name"]=="Network"' || { echo "assignment group Network missing on the PDI"; return 1; }
+      # The one custom record (ADR 0085): the id versions.yaml pins must be the active record producer, or every
+      # person-started Deploy, Hand Off and Tear Down AWS VPN stops at its first ServiceNow call
+      local aws; aws=$(${PY} -c "import yaml;print(yaml.safe_load(open('$V'))['aws_vpn']['change_request']['template'])")
+      snow "${SNOW_URL}/api/sn_chg_rest/change/standard/template?sysparm_query=sys_id=${aws}" | ${PY} -c 'import sys,json;r=[x for x in json.load(sys.stdin)["result"] if x];assert r and r[0]["sys_name"]["value"]=="Lab AWS VPN change" and r[0]["active"]["value"] is True,r' || { echo "the AWS VPN change template ${aws} (versions.yaml) is missing or inactive on the PDI"; return 1; }
     }
-    check "S4b.3 servicenow/README.md is the PDI rebuild record; the stock VLAN change template and the Network group exist on the instance" c10
+    check "S4b.3 servicenow/README.md is the PDI rebuild record; the stock VLAN change template, the Network group and the AWS VPN change template exist on the instance" c10
     # --- S4b.4 instance name + release family recorded, never the password ---
     c11() { grep -q "^SNOW_INSTANCE=${SNOW_INSTANCE}" .env && grep -q "${SNOW_INSTANCE}.service-now.com" docs/image-manifest.md && grep -Eq "Release family.*(Zurich|Australia)" docs/image-manifest.md && ! grep -rqF "${SNOW_PASSWORD}" docs itential servicenow ansible verify/results; }
     check "S4b.4 SNOW_INSTANCE in .env and the manifest with its release family; password nowhere in the repo" c11

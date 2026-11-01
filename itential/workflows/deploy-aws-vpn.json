@@ -2826,7 +2826,7 @@
       "variables": {
         "incoming": {
           "adapter_id": "servicenow-api",
-          "template_sys_id": "a4f48008c3949750f2d238bc0501316f",
+          "template_sys_id": "3bccbce9939413102f20f5532bba1040",
           "bodyContentType": "application/json",
           "requestBodyPayload": "$var.ceb.return_data"
         },
