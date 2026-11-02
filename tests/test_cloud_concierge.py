@@ -172,10 +172,24 @@ def test_the_change_request_is_found_by_the_started_jobs_id(kind: str) -> None:
     assert opened["create"]["short_description"].endswith(f"job {JOB})")
 
 
+def _admits(rule: dict, value: object) -> bool:
+    """JSON Schema enum equality: 4 is not "4", and true is not 1 (Python's True == 1 is not the schema's)."""
+    return any(type(value) is type(allowed) and value == allowed for allowed in rule["enum"])
+
+
 def test_the_gates_are_the_started_workflows_own_bounds() -> None:
     deploy = build.INPUT_GATES[TOOLS["deploy"]]
-    assert deploy["lifetime_hours"] == build.INPUT_GATES[STARTS["deploy"]]["lifetime_hours"]
-    assert deploy["enable_nat_gateway"] == build.INPUT_GATES[STARTS["deploy"]]["enable_nat_gateway"]
+    started = build.INPUT_GATES[STARTS["deploy"]]
+    # Deploy's own values, plus the number and boolean an agent sends for them (both models, 2026-11-01); nothing else
+    hours = started["lifetime_hours"]["enum"]
+    assert set(deploy["lifetime_hours"]) == {"enum"} and set(deploy["enable_nat_gateway"]) == {"enum"}
+    for value in [*hours, *(int(h) for h in hours if h.isdigit()), "false", "true", False, True]:
+        key = "enable_nat_gateway" if value in ("false", "true") or isinstance(value, bool) else "lifetime_hours"
+        assert _admits(deploy[key], value), (key, value)
+    for value in (3, "3", 4.5, "four", '"4"', 0, 1, None):
+        assert not _admits(deploy["lifetime_hours"], value), value
+    for value in ("yes", "False", '"false"', 0, 1, None):
+        assert not _admits(deploy["enable_nat_gateway"], value), value
     teardown = build.INPUT_GATES[TOOLS["teardown"]]
     assert teardown["target"] == build.INPUT_GATES[STARTS["teardown"]]["target"]
     # the marked note still fits the started workflow's 280 characters
@@ -294,3 +308,149 @@ def test_the_change_number_is_empty_until_one_is_found() -> None:
         first = DOCS[kind]["tasks"]["12"]
         assert first["variables"]["incoming"]["text"] == '""'
         assert first["variables"]["outgoing"]["textObject"] == "$var.job.change_number"
+
+
+def test_the_started_runs_inputs_are_text_whatever_form_the_gate_took() -> None:
+    """An agent's 4 and false reach Deploy as "4" and "false": Deploy's own gate takes text only."""
+    code = build._pure_code(build.concierge_body, {"prefix": build.CONCIERGE_PREFIX})
+    started = build.INPUT_GATES[STARTS["deploy"]]
+    for hours, nat in ((4, False), ("4", "false"), (72, True), ("none", "true")):
+        body = _run(code, {"change_note": "x", "enable_nat_gateway": nat, "lifetime_hours": hours})["body"]
+        assert _admits(started["lifetime_hours"], body["lifetime_hours"]), body
+        assert _admits(started["enable_nat_gateway"], body["enable_nat_gateway"]), body
+        assert body["lifetime_hours"] == str(hours) and body["enable_nat_gateway"] == str(nat).lower()
+
+
+def _check():
+    spec = importlib.util.spec_from_file_location("conciergecheck", ROOT / "verify" / "conciergecheck.py")
+    check = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(check)
+    return check
+
+
+class _WorkCenter:
+    """The two Work Center calls the check makes: a pending card per job, and claim + complete."""
+
+    def __init__(self, jobs: list[str]) -> None:
+        self.items = [{"id": f"card-{j[-4:]}", "status": "pending", "execution": {"id": j}} for j in jobs]
+        self.decided: list[str] = []
+
+    def req(self, method: str, path: str, body: object = None) -> tuple[int, object]:
+        if method == "GET" and path.startswith("/work-center-service/work-items?"):
+            return 200, {"items": self.items}
+        if method == "PATCH" and path.endswith(("/claim", "/complete")):
+            self.decided.append(path.rsplit("/", 2)[1] + "/" + path.rsplit("/", 1)[1])
+            return 200, {}
+        raise AssertionError(f"unexpected call {method} {path}")
+
+
+def test_the_deploy_check_rejects_every_started_run_before_it_counts_the_calls() -> None:
+    """-4b's catch (L-017): a retry that passed its gate must not be left waiting at its card when the count fails."""
+    check = _check()
+    jobs = ["a" * 24, "b" * 24]
+    calls = [{"toolName": WF["request_aws_vpn_deployment"], "output": {"variables": {"started_job": j}}} for j in jobs]
+    calls.append({"toolName": WF["request_aws_vpn_deployment"], "output": {"variables": {"error": "refused"}}})
+    wc = _WorkCenter(jobs)
+    done = check.reject_every_run(wc, "session", calls)
+    assert done == {j: f"card-{j[-4:]}" for j in jobs}
+    assert wc.decided == [f"card-{j[-4:]}/{step}" for j in jobs for step in ("claim", "complete")]
+
+
+def test_one_card_that_cannot_be_rejected_does_not_stop_the_others(monkeypatch: pytest.MonkeyPatch) -> None:
+    check = _check()
+    jobs = ["a" * 24, "b" * 24]
+    wc = _WorkCenter(jobs)
+
+    def card(adm: object, sid: str, job: str, seconds: int = 900) -> str:
+        if job == jobs[0]:
+            raise AssertionError("no pending card")
+        return f"card-{job[-4:]}"
+
+    monkeypatch.setattr(check, "card", card)
+    calls = [{"toolName": WF["request_aws_vpn_deployment"], "output": {"variables": {"started_job": j}}} for j in jobs]
+    with pytest.raises(AssertionError, match="could not be rejected"):
+        check.reject_every_run(wc, "session", calls)
+    assert wc.decided == [f"card-{jobs[1][-4:]}/claim", f"card-{jobs[1][-4:]}/complete"]
+
+
+def test_the_deploy_check_takes_either_form_of_the_lifetime_and_the_nat_setting() -> None:
+    check = _check()
+    assert [check.as_text(v) for v in (4, "4", False, "false", True, "last", None)] == [
+        "4", "4", "false", "false", "true", "last", None]
+
+
+# --- NetClaw's copies (ADR 0082 amendment A1) -------------------------------------------------------------------------
+
+NETCLAW_TOOLS = {"deploy": WF["netclaw_request_aws_vpn_deployment"], "teardown": WF["netclaw_request_aws_vpn_teardown"]}
+NETCLAW_DOCS = {kind: json.loads((WFS / build.file_name(name)).read_text()) for kind, name in NETCLAW_TOOLS.items()}
+NETCLAW = build.REQUEST_CALLERS["netclaw"]
+
+
+@pytest.mark.parametrize("kind", sorted(TOOLS))
+def test_netclaws_copy_is_the_concierges_but_for_its_name_mark_next_step_and_words(kind: str) -> None:
+    """One builder makes both, so a fix to one is a fix to the other; this proves the copies did not drift."""
+    mine, theirs = NETCLAW_DOCS[kind], DOCS[kind]
+    assert mine["name"] != theirs["name"] and mine["name"] == theirs["name"] + " from NetClaw"
+    assert mine["transitions"] == theirs["transitions"]
+    assert mine["inputSchema"] == theirs["inputSchema"] and mine["outputSchema"] == theirs["outputSchema"]
+    assert set(mine["tasks"]) == set(theirs["tasks"])
+    for tid, t in theirs["tasks"].items():
+        m = mine["tasks"][tid]
+        assert (m.get("name"), m.get("app")) == (t.get("name"), t.get("app")), tid
+        if tid not in ("10", "9a"):
+            assert m.get("variables") == t.get("variables"), tid
+    # the two runCode tasks: the same functions, with the caller's constants
+    assert mine["tasks"]["10"]["variables"]["incoming"]["code"] == build._pure_code(
+        build.concierge_body, {"prefix": build.NETCLAW_PREFIX})
+    assert mine["tasks"]["9a"]["variables"]["incoming"]["code"] == build._pure_code(
+        build.concierge_answer, {"kind": kind, "job_url": build.CHANGE["job_url"], "hand_off": NETCLAW["hand_off"]})
+    # the gate is the Concierge's, and so is the run it starts: Deploy's or Tear Down's own endpoint
+    assert build.INPUT_GATES[mine["name"]] is build.INPUT_GATES[theirs["name"]]
+
+
+@pytest.mark.parametrize("kind", sorted(TOOLS))
+def test_netclaws_copy_marks_the_note_netclaw_whatever_the_caller_sends(kind: str) -> None:
+    code = NETCLAW_DOCS[kind]["tasks"]["10"]["variables"]["incoming"]["code"]
+    sent = {"change_note": " AutoCon  demo ", "target": "dc1-wan01", "lifetime_hours": 2, "enable_nat_gateway": False,
+            # a caller cannot pick the mark: the constants override whatever the input holds
+            "prefix": "Approved: "}
+    assert _run(code, sent)["body"]["change_note"] == "NetClaw: AutoCon demo"
+    concierge = DOCS[kind]["tasks"]["10"]["variables"]["incoming"]["code"]
+    assert _run(concierge, sent)["body"]["change_note"] == "Cloud Concierge: AutoCon demo"
+
+
+def test_netclaws_answer_points_to_its_own_hand_off() -> None:
+    args = {"job": JOB, "change_number": "CHG0030050", "lifetime_hours": "2", "address_from": "x"}
+    mine = _run(NETCLAW_DOCS["deploy"]["tasks"]["9a"]["variables"]["incoming"]["code"], args)["outcome"]
+    theirs = _run(DOCS["deploy"]["tasks"]["9a"]["variables"]["incoming"]["code"], args)["outcome"]
+    assert "Hand Off AWS VPN (NetClaw's hand-off) connects the router" in mine and "branded page" not in mine
+    assert "Hand Off AWS VPN on the branded page connects the router" in theirs
+
+
+def test_a_run_that_ended_without_a_card_is_reported_at_once() -> None:
+    """A run its own gate stopped has no card coming: the check says so on the first read, not after 900 s."""
+    check = _check()
+
+    class Ended(_WorkCenter):
+        def job(self, job_id: str) -> dict:
+            return {"_id": job_id, "status": "complete"}
+
+    with pytest.raises(AssertionError, match="ended complete without a pending card"):
+        check.card(Ended([]), "session", "a" * 24, seconds=60)
+
+
+def test_a_network_error_on_one_run_still_rejects_the_next(monkeypatch: pytest.MonkeyPatch) -> None:
+    check = _check()
+    jobs = ["a" * 24, "b" * 24]
+    wc = _WorkCenter(jobs)
+
+    def card(adm: object, sid: str, job: str, seconds: int = 900) -> str:
+        if job == jobs[0]:
+            raise OSError("connection reset")
+        return f"card-{job[-4:]}"
+
+    monkeypatch.setattr(check, "card", card)
+    calls = [{"toolName": WF["request_aws_vpn_deployment"], "output": {"variables": {"started_job": j}}} for j in jobs]
+    with pytest.raises(AssertionError, match="connection reset"):
+        check.reject_every_run(wc, "session", calls)
+    assert wc.decided == [f"card-{jobs[1][-4:]}/claim", f"card-{jobs[1][-4:]}/complete"]

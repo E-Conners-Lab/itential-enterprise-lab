@@ -27,10 +27,15 @@
     otr_auto: >-
       {{ (otr_now.results[1].json.data
           | selectattr('name', 'equalto', operations_manager[otr_key].automation) | first) | default({}) }}
-    # the workflow's own input gate, from the generated document (one source: build.py INPUT_GATES)
+    # the workflow's own input gate, from the generated document (one source: build.py INPUT_GATES); a workflow with no
+    # inputs has no gate (Get AWS VPN Status, ADR 0082 amendment A1), and its trigger takes an empty object only
     otr_schema: >-
-      {{ (lookup('ansible.builtin.file', playbook_dir ~ '/../../itential/workflows/'
-          ~ workflows[otr_key] | lower | replace(' ', '-') ~ '.json') | from_json).tasks['9a0a'].variables.incoming.schema }}
+      {{ otr_doc.tasks['9a0a'].variables.incoming.schema if '9a0a' in otr_doc.tasks
+         else {'type': 'object', 'additionalProperties': false, 'properties': {}} }}
+  vars:
+    otr_doc: >-
+      {{ lookup('ansible.builtin.file', playbook_dir ~ '/../../itential/workflows/'
+          ~ workflows[otr_key] | lower | replace(' ', '-') ~ '.json') | from_json }}
 
 - name: Outage loop - the workflow names its agent by UUID
   ansible.builtin.assert:

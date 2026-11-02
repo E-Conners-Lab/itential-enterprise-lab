@@ -90,6 +90,40 @@ offers shell, file and web tools; the persona alone is about 40k tokens, more th
 - The first Slack round trip (the owner's phone, dev, twin): 2 tool calls, the answer in the thread after 138 s, 15.4k in /
   428 out tokens; no top-level post. A public channel delivers nothing (the app's scopes are private-channel only).
 
+## Amendment A1 (2026-11-01): the AWS VPN from the phone
+
+Owner-approved (delivery `customer-spec.md` and `solution-design.md`, amendment A1): for AutoCon 6, NetClaw may ask for
+the AWS VPN from Slack. Approvals stay a person's, in Work Center.
+
+1. **Five more automations, never Deploy's or Tear Down's own.** `automation_access.netclaw` adds `Get AWS VPN Status`,
+   `Request AWS VPN Deployment from NetClaw` and `Request AWS VPN Teardown from NetClaw` (decision 2), and
+   `Hand Off AWS VPN` and `Verify AWS VPN` through their branded-page endpoints. The status and the two requests get
+   endpoints of their own (`get-aws-vpn-status`, `request-aws-vpn-deployment`, `request-aws-vpn-teardown`), on the AWS
+   VPN's tier only, removed with the rest by `aws-vpn-retire.yml`. Deploy's and Tear Down's routes stay closed to
+   svc-netclaw, so NetClaw never sends or receives the on-prem address: the request workflow reuses it (`last`) inside
+   Itential. svc-netclaw can still read the job documents that hold it, as any account can (job reads are platform-wide
+   on 6.6.0, measured 2026-10-11 and accepted above), which is why decision 4 withholds it in NetClaw's tools.
+2. **NetClaw's request workflows are generated copies of the Cloud Concierge's, marked `NetClaw: `** (owner,
+   2026-11-01). One builder makes both pairs (ADR 0085 decision 11); a copy differs only in its name, its note's mark,
+   its answer's next step (NetClaw's hand-off, not the branded page) and its description, and a test holds the rest
+   equal. The mark is a constant of the copy, never the job's initiator: the import turns every `$var.job.X` a workflow
+   reads and never writes into a required input of the agent's tool, which the model would then fill in itself
+   (tests/test_skills_lab_workflows.py), so a run could claim any caller.
+3. **NetClaw never decides a card, and sees only some.** Its role holds no Work Center claim or complete; S17.7 tries
+   both on a real Add Branch VLAN card it can see. A card shows to the groups of the automation whose trigger started
+   the run: Hand Off's (netclaw reads it), but not Deploy's or Tear Down's, which the request copies start through those
+   workflows' own endpoints. So for those NetClaw names the card and links Work Center and the job; the approver finds
+   the card in their own queue.
+4. **Nothing a tool returns carries an address.** The AWS VPN outputs hold the on-prem and AWS addresses (Deploy's
+   `outcome`, the status `summary`, Hand Off's and Verify's plans; measured on the newest eight jobs of each), so
+   NetClaw's tools return named fields only and withhold every global IPv4 address in them.
+5. **Reaching the cards from the phone is not this repository's.** The delivery serves the Platform to the owner's
+   tailnet from the Mac, switched on only for rehearsals and the demo; no lab route, DNS or certificate authority is
+   added, because the lab root CA carries no name constraints and a phone that trusted it would trust it for any site.
+
+S17.8 runs the status and Verify as svc-netclaw and proves each request route's gate refuses a bad input before a job;
+the phone proofs (a run rejected at its card, then one full approved cycle) are the delivery's.
+
 ## Alternatives considered
 
 - **NetClaw's pyATS (or any device MCP) for device state.** A second copy of the device credentials on NetClaw's host and a

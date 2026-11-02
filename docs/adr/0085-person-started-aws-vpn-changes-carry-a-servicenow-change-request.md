@@ -92,6 +92,14 @@ Branch VLAN already walks a ServiceNow standard change; the AWS VPN workflows di
     `verify/conciergecheck.py deploy` and `teardown` start a real run, reject its card as the administrator and read the
     change request Canceled in ServiceNow itself: they run by hand, with the owner's go.
 
+15. **The request tools take the forms the models send** (2026-11-01, ADR 0082 amendment A1). The Platform describes
+    every workflow input to a model as any JSON type, and both Concierges sent the lifetime as a number and the NAT
+    setting as a boolean (sessions d0a02c96 and 102e1d23): `conciergecheck.py deploy` failed at the gate with nothing
+    started. The request gate now takes Deploy's values as text or as that number or boolean, and the step that builds
+    Deploy's inputs hands it text; a value in quote marks is still refused. NetClaw starts generated copies of the two
+    workflows, marked `NetClaw: ` (ADR 0082 amendment A1). The deploy check rejects the card of every run any request call started before it judges
+    the calls, so a retry can never leave a run waiting.
+
 ## Consequences
 
 - Every ending after the open meets at one of four close entries: more arrows cross tasks on the canvas (Deploy 5,

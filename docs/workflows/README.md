@@ -19,6 +19,8 @@ What each workflow does from start to end, for someone who is about to run one o
 | [Get AWS VPN Status](get-aws-vpn-status.md) | 2 | 8 | 0 |
 | [Request AWS VPN Deployment](request-aws-vpn-deployment.md) | 7 | 68 | 0 |
 | [Request AWS VPN Teardown](request-aws-vpn-teardown.md) | 6 | 44 | 0 |
+| [Request AWS VPN Deployment from NetClaw](request-aws-vpn-deployment-from-netclaw.md) | 7 | 68 | 0 |
+| [Request AWS VPN Teardown from NetClaw](request-aws-vpn-teardown-from-netclaw.md) | 6 | 44 | 0 |
 | [Diagnose AWS VPN Outage](diagnose-aws-vpn-outage.md) | 12 | 144 | 2 |
 | [Diagnose Fabric BGP Outage](diagnose-fabric-bgp-outage.md) | 12 | 116 | 2 |
 | [Break Fabric BGP](break-fabric-bgp.md) | 12 | 70 | 2 |

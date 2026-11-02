@@ -33,6 +33,11 @@ DENY = ["*/admin", "*/apiwrite", "*/designer", "*/engineering", "*/operations", 
 # the department-agents delivery's own Ask automations: the lab's plays never set their gbac
 DEPARTMENT_ASK = {"Ask Finance", "Ask Audit", "Ask HR", "Ask R&D"}
 NETCLAW_WORKFLOW_KEYS = ["show_command", "describe_job", "branch_vlan"]
+# ADR 0082 amendment A1: NetClaw's AWS VPN tools - three endpoints of its own on the AWS VPN's tier (the status and its
+# own copies of the Cloud Concierge's two request workflows), and the branded page's endpoints for Hand Off and Verify;
+# never Deploy's or Tear Down's own (the request workflows keep the address), nor the Concierge's requests (their mark)
+NETCLAW_AWS_KEYS = ["get_aws_vpn_status", "netclaw_request_aws_vpn_deployment", "netclaw_request_aws_vpn_teardown"]
+NETCLAW_BRANDED_KEYS = ["hand_off_aws_vpn", "verify_aws_vpn"]
 
 
 def _versions() -> dict:
@@ -95,13 +100,16 @@ def test_the_builtins_are_the_session_reads_and_the_agent_start_and_nothing_deni
 def test_each_netclaw_workflow_has_its_own_endpoint_on_its_workflows_key() -> None:
     v = _versions()
     routes = {}
-    for key in NETCLAW_WORKFLOW_KEYS:
+    for key in NETCLAW_WORKFLOW_KEYS + NETCLAW_AWS_KEYS:
         om = v["operations_manager"][key]
         assert om["automation"] == v["workflows"][key], "the describer reads the endpoint by the workflows key"
         assert om["endpoint"]["name"].endswith("from NetClaw") and "svc-netclaw" in om["endpoint"]["description"]
         assert "manual" not in om and "schedule" not in om, "no form, no schedule: only NetClaw starts these"
         routes[key] = om["endpoint"]["route"]
-    assert routes == {"show_command": "run-show-command", "describe_job": "describe-job", "branch_vlan": "add-branch-vlan"}
+    assert routes == {"show_command": "run-show-command", "describe_job": "describe-job", "branch_vlan": "add-branch-vlan",
+                      "get_aws_vpn_status": "get-aws-vpn-status",
+                      "netclaw_request_aws_vpn_deployment": "request-aws-vpn-deployment",
+                      "netclaw_request_aws_vpn_teardown": "request-aws-vpn-teardown"}
     others = [om.get("endpoint", {}).get("route") for k, om in v["operations_manager"].items() if k not in routes]
     assert not set(routes.values()) & set(others)
 
@@ -109,9 +117,16 @@ def test_each_netclaw_workflow_has_its_own_endpoint_on_its_workflows_key() -> No
 def test_the_netclaw_group_reads_exactly_its_tools_automations() -> None:
     v = _versions()
     access = v["automation_access"]
-    workflows = [v["operations_manager"][k]["automation"] for k in NETCLAW_WORKFLOW_KEYS]
+    keys = NETCLAW_WORKFLOW_KEYS + NETCLAW_AWS_KEYS + NETCLAW_BRANDED_KEYS
+    workflows = [v["operations_manager"][k]["automation"] for k in keys]
     agents = sorted(v["netclaw"]["platform_guide_routes"].values())
     assert sorted(access["netclaw"]) == sorted(workflows + agents)
+    # the address-bearing runs only through the request workflows: Deploy's and Tear Down's own routes stay closed
+    for key in ("deploy_aws_vpn", "tear_down_aws_vpn"):
+        assert v["operations_manager"][key]["automation"] not in access["netclaw"], key
+    # the Concierge's own requests mark their notes as the Concierge's: NetClaw starts its copies only
+    for key in ("request_aws_vpn_deployment", "request_aws_vpn_teardown"):
+        assert v["workflows"][key] not in access["netclaw"] and key not in v["operations_manager"], key
     assert set(access["unmanaged"]) == DEPARTMENT_ASK
     assert access["write"] == ["admin_group"]
     for tier in ("prod", "dev"):
@@ -169,10 +184,29 @@ def test_the_trigger_task_finds_each_workflow_by_its_name() -> None:
     v = _versions()
     text = (TASKS / "outage-trigger.yml").read_text()
     assert "workflows[otr_key] | lower | replace(' ', '-')" in text
-    for key in NETCLAW_WORKFLOW_KEYS + ["diagnose_aws_vpn_outage", "diagnose_fabric_bgp_outage", "ask_platform_guide"]:
-        doc = ROOT / "itential" / "workflows" / (v["workflows"][key].lower().replace(" ", "-") + ".json")
-        gate = json.loads(doc.read_text())["tasks"]["9a0a"]["variables"]["incoming"]["schema"]
+    # a workflow with no inputs has no gate: its trigger takes an empty object only (no `required: []`, which draft-04
+    # schemas refuse)
+    assert "else {'type': 'object', 'additionalProperties': false, 'properties': {}}" in text
+    for key in NETCLAW_WORKFLOW_KEYS + NETCLAW_AWS_KEYS + ["diagnose_aws_vpn_outage", "diagnose_fabric_bgp_outage",
+                                                            "ask_platform_guide"]:
+        doc = json.loads((ROOT / "itential" / "workflows" / (v["workflows"][key].lower().replace(" ", "-") + ".json"))
+                         .read_text())
+        if "9a0a" not in doc["tasks"]:
+            assert doc["inputSchema"]["properties"] == {}, f"{key} has inputs but no gate"
+            continue
+        gate = doc["tasks"]["9a0a"]["variables"]["incoming"]["schema"]
         assert gate["additionalProperties"] is False and gate["required"], key
+
+
+def test_netclaws_aws_vpn_endpoints_live_on_the_aws_vpn_tier_only() -> None:
+    tasks = _tasks(PLAYS / "platform.yml")
+    aws = next(t for t in tasks if t.get("loop") == NETCLAW_AWS_KEYS)
+    branded = next(t for t in tasks if t.get("ansible.builtin.include_tasks") == "tasks/aws-vpn-triggers.yml")
+    assert aws["ansible.builtin.include_tasks"] == "tasks/outage-trigger.yml"
+    assert aws["when"] == branded["when"], "the same tier as the AWS VPN's own triggers"
+    retire = (TASKS / "aws-vpn-retire.yml").read_text()
+    for key in NETCLAW_AWS_KEYS + NETCLAW_BRANDED_KEYS:
+        assert f"'{key}'" in retire, f"{key}: the other tier removes it with the rest of the AWS VPN"
 
 
 def test_netclaw_access_writes_only_its_own_role_and_its_account() -> None:
@@ -202,7 +236,7 @@ def test_automation_access_writes_only_gbac_and_never_the_department_ask() -> No
 
 def test_the_guide_pages_name_netclaws_endpoints() -> None:
     v = _versions()
-    for key in NETCLAW_WORKFLOW_KEYS:
+    for key in NETCLAW_WORKFLOW_KEYS + NETCLAW_AWS_KEYS:
         ep = v["operations_manager"][key]["endpoint"]
         page = (ROOT / "docs" / "workflows" / (v["workflows"][key].lower().replace(" ", "-") + ".md")).read_text()
         assert f'From the endpoint trigger "{ep["name"]}" (route `{ep["route"]}`).' in page

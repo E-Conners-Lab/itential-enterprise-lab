@@ -447,6 +447,12 @@ CONCIERGE_PREFIX = "Cloud Concierge: "
 CONCIERGE_NOTE_MAX = 280 - len(CONCIERGE_PREFIX)
 CONCIERGE_NOTE_RULE = {"type": "string", "maxLength": CONCIERGE_NOTE_MAX,
                        "pattern": r'^[^<>"\\\r\n]{0,%d}$' % CONCIERGE_NOTE_MAX}
+# ADR 0082 amendment A1: NetClaw starts its own generated copies of the two request workflows, whose mark is a constant
+# of the copy. Not the job's initiator: the import turns every `$var.job.X` a workflow reads and never writes into a
+# required input of an agent's tool, which the model would fill in itself. No mark is longer than the Concierge's, so
+# CONCIERGE_NOTE_RULE bounds every note
+NETCLAW_PREFIX = "NetClaw: "
+assert len(NETCLAW_PREFIX) <= len(CONCIERGE_PREFIX)
 INPUT_GATES = {
     WF["show_version"]: {"device": NODE_NAME},
     # ADR 0080: a workflow name, as versions.yaml spells them; the service checks it again
@@ -533,16 +539,24 @@ INPUT_GATES = {
     WF["scratch_push"]: {"device": SCRATCH_DEVICE, "lines": CONFIG_LINES, "reason": REASON},
     WF["scratch_restore"]: {"device": SCRATCH_DEVICE},
 }
-# A4 (ADR 0085): the Cloud Concierge's two tools. The on-prem address is `last` (the newest person-started Deploy's) or
-# one the person typed; the rest are Deploy's and Tear Down's own inputs, and Tear Down's targets
+# A4 (ADR 0085): the Cloud Concierge's two tools, which NetClaw also starts (ADR 0082, amendment A1). The on-prem address
+# is `last` (the newest person-started Deploy's) or one the person typed; the rest are Deploy's and Tear Down's own
+# inputs, and Tear Down's targets. The Platform describes every workflow input to a model as any JSON type, and both
+# Concierges sent the lifetime as a number and the NAT setting as a boolean (2026-11-01, sessions d0a02c96 and
+# 102e1d23): the gate takes Deploy's values in either form, and concierge_body hands Deploy its own text
+DEPLOY_HOURS = INPUT_GATES[WF["deploy_aws_vpn"]]["lifetime_hours"]["enum"]
+DEPLOY_NAT = INPUT_GATES[WF["deploy_aws_vpn"]]["enable_nat_gateway"]["enum"]
 INPUT_GATES[WF["request_aws_vpn_deployment"]] = {
-    "lifetime_hours": INPUT_GATES[WF["deploy_aws_vpn"]]["lifetime_hours"],
-    "enable_nat_gateway": INPUT_GATES[WF["deploy_aws_vpn"]]["enable_nat_gateway"],
+    "lifetime_hours": {"enum": [*DEPLOY_HOURS, *(int(h) for h in DEPLOY_HOURS if h.isdigit())]},
+    "enable_nat_gateway": {"enum": [*DEPLOY_NAT, *(v == "true" for v in DEPLOY_NAT)]},
     "change_note": CONCIERGE_NOTE_RULE,
     "onprem_public_ip": {"type": "string", "pattern": "^(last|" + IPV4_TEXT["pattern"][1:-1] + ")$"},
 }
 INPUT_GATES[WF["request_aws_vpn_teardown"]] = {"target": INPUT_GATES[WF["tear_down_aws_vpn"]]["target"],
                                                "change_note": CONCIERGE_NOTE_RULE}
+# NetClaw's copies check exactly what the Concierge's check
+INPUT_GATES[WF["netclaw_request_aws_vpn_deployment"]] = INPUT_GATES[WF["request_aws_vpn_deployment"]]
+INPUT_GATES[WF["netclaw_request_aws_vpn_teardown"]] = INPUT_GATES[WF["request_aws_vpn_teardown"]]
 # where a refusal is reported: the device workflows already say "did not run" in device_error, which the agents read
 GATE_ERROR_VAR = {WF[k]: "device_error" for k in ("show_version", "show_command", "show_all", "config_push",
                                                   "scratch_show")}
@@ -5722,12 +5736,16 @@ CONCIERGE_LOOKUPS = (5, 5, 10, 20, 20)
 
 def concierge_body(d: dict) -> dict:
     """The started run's inputs but the on-prem address: the person's words marked with where they came from, and the
-    deployment's lifetime and NAT setting or the teardown's target as given. Pure: runCode runs this source."""
+    deployment's lifetime and NAT setting or the teardown's target as text, the only form the started workflow's own
+    gate takes (4 -> "4", False -> "false"). Pure: runCode runs this source."""
     words = " ".join(str(d.get("change_note") or "").split())
     body = {"change_note": d["prefix"] + (words or "(no reason given)")}
     for key in ("enable_nat_gateway", "lifetime_hours", "target"):
         if key in d:
-            body[key] = d[key]
+            value = d[key]
+            # bool first: True is an int in Python
+            body[key] = (str(value).lower() if isinstance(value, bool) else
+                         str(value) if isinstance(value, int) else value)
     return {"body": body}
 
 
@@ -5778,7 +5796,8 @@ def concierge_answer(d: dict) -> dict:
         text = (f"Deploy AWS VPN started: {started}. {change} It stops at Itential Work Center: a person must approve "
                 "its plan on the card \"Approve the AWS change\", which appears once the plan and its review are ready, "
                 "usually within a few minutes. Nothing is created in AWS before that approval. " + ends + reused
-                + " After the apply, Hand Off AWS VPN on the branded page connects the router, then Verify AWS VPN.")
+                + f" After the apply, Hand Off AWS VPN {d.get('hand_off', 'on the branded page')} connects the router, "
+                "then Verify AWS VPN.")
     else:
         text = (f"Tear Down AWS VPN started for {d.get('target')}: {started}. {change} It stops at Itential Work Center "
                 "for a person's approval twice: first \"Approve removing the router's AWS block\", then, when anything "
@@ -5786,21 +5805,34 @@ def concierge_answer(d: dict) -> dict:
     return {"outcome": text, "change_number": number or ""}
 
 
-def concierge_request(kind: str) -> dict:
-    """Request AWS VPN Deployment (`deploy`) or Request AWS VPN Teardown (`teardown`)."""
+# per caller: the workflows' keys, the note's mark, the answer's next step, and who the tool is in its description
+REQUEST_CALLERS = {
+    "concierge": {"deploy": "request_aws_vpn_deployment", "teardown": "request_aws_vpn_teardown",
+                  "prefix": CONCIERGE_PREFIX, "who": "the Concierge's", "hand_off": "on the branded page",
+                  "tool": "The Cloud Concierge's {kind} tool (A4, ADR 0085)"},
+    "netclaw": {"deploy": "netclaw_request_aws_vpn_deployment", "teardown": "netclaw_request_aws_vpn_teardown",
+                "prefix": NETCLAW_PREFIX, "who": "NetClaw's", "hand_off": "(NetClaw's hand-off)",
+                "tool": "NetClaw's {kind} tool (ADR 0082 amendment A1; generated with the Cloud Concierge's, ADR 0085)"},
+}
+
+
+def concierge_request(kind: str, caller: str = "concierge") -> dict:
+    """Request AWS VPN Deployment (`deploy`) or Request AWS VPN Teardown (`teardown`), for the Cloud Concierge or, as
+    a copy that differs only in its name, mark, next step and description, for NetClaw."""
     ok, fail, err = "success", "failure", "error"
     deploy = kind == "deploy"
+    who = REQUEST_CALLERS[caller]
     target_wf = WF["deploy_aws_vpn"] if deploy else WF["tear_down_aws_vpn"]
     fields = ("change_note", "enable_nat_gateway", "lifetime_hours") if deploy else ("change_note", "target")
     tasks, tr = {}, {"workflow_start": _edge(**{"00": ok})}
-    # the run's inputs but the address, in one object; the note marked as the Concierge's
+    # the run's inputs but the address, in one object; the note marked as the caller's
     for i, key in enumerate(fields):
         tasks[f"0{i}"] = set_key(f"the run's input: {key}", f"$var.0{i - 1}.object" if i else {}, key,
                                  f"$var.job.{key}", x=0)
         tr[f"0{i}"] = _edge(**{(f"0{i + 1}" if i + 1 < len(fields) else "10"): ok})
     tasks |= {
-        "10": run_code("the run's inputs: the note marked as the Concierge's (Python on the runner)",
-                       _pure_code(concierge_body, {"prefix": CONCIERGE_PREFIX}), f"$var.0{len(fields) - 1}.object",
+        "10": run_code(f"the run's inputs as text, the note marked as {who['who']} (Python on the runner)",
+                       _pure_code(concierge_body, {"prefix": who["prefix"]}), f"$var.0{len(fields) - 1}.object",
                        None, x=0),
         "11": jq("the run's inputs", "$var.10.result", "stdout_json.body", x=0),
         # empty until one is found: a placeholder would read as a number on a path that ends early
@@ -5896,7 +5928,8 @@ def concierge_request(kind: str) -> dict:
     retry = "Ask the person for the lab's on-prem public IPv4 address and request again with it"
     tasks |= {
         "9a": run_code("the answer: what started, the job, the change request, the card (Python on the runner)",
-                       _pure_code(concierge_answer, {"kind": kind, "job_url": CHANGE["job_url"]}),
+                       _pure_code(concierge_answer, {"kind": kind, "job_url": CHANGE["job_url"],
+                                                     "hand_off": who["hand_off"]}),
                        f"$var.9{len(answer) - 1}.object", None, x=0),
         "9b": jq("the answer, in words", "$var.9a.result", "stdout_json.outcome", x=0, to_job="outcome"),
         "9c": jq("the change request's number", "$var.9a.result", "stdout_json.change_number", x=0,
@@ -5924,7 +5957,8 @@ def concierge_request(kind: str) -> dict:
             del tasks[e]
     for e in (t for t in tasks if t[0] == "8"):
         tr[e] = _edge(**{"workflow_end": ok})
-    stepped(tasks, "the run's inputs: the person's words marked as the Concierge's, every input but the address",
+    stepped(tasks, f"the run's inputs as text: the person's words marked as {who['who']}, every input but the "
+                   "address",
             *[t for t in tasks if t[0] in "01"])
     if deploy:
         stepped(tasks, "the on-prem address: the newest person-started Deploy's, or the one the person gave; read on "
@@ -5942,16 +5976,16 @@ def concierge_request(kind: str) -> dict:
     if deploy:
         inputs = {
             "lifetime_hours": {"type": "string", "required": True,
-                               "enum": INPUT_GATES[WF["request_aws_vpn_deployment"]]["lifetime_hours"]["enum"],
+                               "enum": DEPLOY_HOURS,
                                "description": "How long it stays up, in hours, or none (until Tear Down)"},
-            "enable_nat_gateway": {"type": "string", "required": True, "enum": ["false", "true"],
+            "enable_nat_gateway": {"type": "string", "required": True, "enum": DEPLOY_NAT,
                                    "description": "true only when the person asks for the NAT gateway"},
             "change_note": note_input,
             "onprem_public_ip": {"type": "string", "required": True,
                                  "description": "last (reuse the last deployment's on-prem address) or the address "
                                                 "the person gave; never a guess"},
         }
-        what = ("The Cloud Concierge's deploy tool (A4, ADR 0085): starts Deploy AWS VPN through its endpoint with the "
+        what = (who["tool"].format(kind="deploy") + ": starts Deploy AWS VPN through its endpoint with the "
                 "lifetime, the NAT setting, the person's words and the last deployment's on-prem address (or the one "
                 "the person gave), and answers at once with the job, its change request and the Work Center card it "
                 "waits on. It never applies anything and never returns the address")
@@ -5962,10 +5996,10 @@ def concierge_request(kind: str) -> dict:
                        "description": "The lab edge router whose AWS VPN to tear down"},
             "change_note": note_input,
         }
-        what = ("The Cloud Concierge's teardown tool (A4, ADR 0085): starts Tear Down AWS VPN through its endpoint with "
+        what = (who["tool"].format(kind="teardown") + ": starts Tear Down AWS VPN through its endpoint with "
                 "the target and the person's words, and answers at once with the job, its change request and the Work "
                 "Center cards it waits on. It never removes anything itself")
-    name = WF["request_aws_vpn_deployment"] if deploy else WF["request_aws_vpn_teardown"]
+    name = WF[who[kind]]
     return workflow(name, what, inputs, tasks, tr,
                     {"started_job": {"type": "string"}, "change_number": {"type": "string"},
                      "outcome": {"type": "string"}, "error": {"type": "string"},
@@ -5978,6 +6012,14 @@ def request_aws_vpn_deployment() -> dict:
 
 def request_aws_vpn_teardown() -> dict:
     return concierge_request("teardown")
+
+
+def netclaw_request_aws_vpn_deployment() -> dict:
+    return concierge_request("deploy", "netclaw")
+
+
+def netclaw_request_aws_vpn_teardown() -> dict:
+    return concierge_request("teardown", "netclaw")
 
 
 # --- Check AWS Drift (R3, owner decisions 2026-10-04) -----------------------------------------------------------------
@@ -9578,7 +9620,8 @@ BUILDERS = (device_count, show_version, show_command, show_all, branch_vlan, bra
             check_aws_drift, rotate_aws_vpn_key, rotate_aws_vpn_key_monthly, diagnose_aws_vpn_outage,
             diagnose_fabric_bgp_outage, break_fabric_bgp, drill_batfish_gate, describe_workflow, describe_job, describe_for_agent,
             ask_platform_guide, scratch_show, scratch_restconf, scratch_push, scratch_restore,
-            request_aws_vpn_deployment, request_aws_vpn_teardown)
+            request_aws_vpn_deployment, request_aws_vpn_teardown, netclaw_request_aws_vpn_deployment,
+            netclaw_request_aws_vpn_teardown)
 
 
 if __name__ == "__main__":

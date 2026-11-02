@@ -544,7 +544,9 @@ def test_the_mac_script_does_not_hardcode_the_model() -> None:
 AWS_WRITE_TOOLS = {"Deploy AWS VPN", "Hand Off AWS VPN", "Tear Down AWS VPN", "Tear Down Expired AWS VPN",
                    "Push Configuration with Revert Timer", "Rotate AWS VPN Key", "Rotate AWS VPN Key Monthly",
                    "Diagnose AWS VPN Outage",  # Diagnose runs the approved fix: the agent it calls must not hold it
-                   "Request AWS VPN Deployment", "Request AWS VPN Teardown"}
+                   "Request AWS VPN Deployment", "Request AWS VPN Teardown",
+                   # NetClaw's copies (ADR 0082 amendment A1): NetClaw starts them through endpoints, no agent holds one
+                   "Request AWS VPN Deployment from NetClaw", "Request AWS VPN Teardown from NetClaw"}
 
 
 @pytest.mark.parametrize("name", ["cloud-status", "cloud-status-local"])
