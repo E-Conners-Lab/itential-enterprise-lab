@@ -101,8 +101,11 @@ the AWS VPN from Slack. Approvals stay a person's, in Work Center.
    endpoints of their own (`get-aws-vpn-status`, `request-aws-vpn-deployment`, `request-aws-vpn-teardown`), on the AWS
    VPN's tier only, removed with the rest by `aws-vpn-retire.yml`. Deploy's and Tear Down's routes stay closed to
    svc-netclaw, so NetClaw never sends or receives the on-prem address: the request workflow reuses it (`last`) inside
-   Itential. svc-netclaw can still read the job documents that hold it, as any account can (job reads are platform-wide
-   on 6.6.0, measured 2026-10-11 and accepted above), which is why decision 4 withholds it in NetClaw's tools.
+   Itential. Nor can it read it afterwards: a run started through an automation trigger carries that automation's
+   groups, and svc-netclaw gets 401 on the Deploy and Tear Down jobs a request starts (measured 2026-11-02, Deploy
+   8d1f050c). "Job reads are platform-wide" (measured 2026-10-11) holds only for jobs whose workflow has no groups.
+   Hand Off's and Verify's runs, whose automations include netclaw, it can read, so decision 4 withholds the
+   addresses they hold.
 2. **NetClaw's request workflows are generated copies of the Cloud Concierge's, marked `NetClaw: `** (owner,
    2026-11-01). One builder makes both pairs (ADR 0085 decision 11); a copy differs only in its name, its note's mark,
    its answer's next step (NetClaw's hand-off, not the branded page) and its description, and a test holds the rest
@@ -112,8 +115,8 @@ the AWS VPN from Slack. Approvals stay a person's, in Work Center.
 3. **NetClaw never decides a card, and sees only some.** Its role holds no Work Center claim or complete; S17.7 tries
    both on a real Add Branch VLAN card it can see. A card shows to the groups of the automation whose trigger started
    the run: Hand Off's (netclaw reads it), but not Deploy's or Tear Down's, which the request copies start through those
-   workflows' own endpoints. So for those NetClaw names the card and links Work Center and the job; the approver finds
-   the card in their own queue.
+   workflows' own endpoints. For those, NetClaw's job_result answers `visible: false` with the Work Center link instead
+   of a 401, and the approver finds the card in their own queue.
 4. **Nothing a tool returns carries an address.** The AWS VPN outputs hold the on-prem and AWS addresses (Deploy's
    `outcome`, the status `summary`, Hand Off's and Verify's plans; measured on the newest eight jobs of each), so
    NetClaw's tools return named fields only and withhold every global IPv4 address in them.
@@ -123,6 +126,18 @@ the AWS VPN from Slack. Approvals stay a person's, in Work Center.
 
 S17.8 runs the status and Verify as svc-netclaw and proves each request route's gate refuses a bad input before a job;
 the phone proofs (a run rejected at its card, then one full approved cycle) are the delivery's.
+
+### Measured (production, 2026-11-02)
+
+- After the replay of #225: S17 8/8. svc-netclaw got 401 on Deploy's and Tear Down's own endpoints (with an empty body,
+  so the gbac check comes before the trigger's schema) and was refused claim and complete on a real Add Branch VLAN card.
+- From the phone: the status (job d047c9be), a deployment request rejected at its card (CHG0030003, then CHG0030004 after
+  the `visible: false` fix: one call, one read, the change number and the Work Center link), nothing changed in AWS.
+- Two full approved cycles from Slack, the cards approved on the Mac: Deploy, Hand Off, Verify, Tear Down
+  (CHG0030005-0030007, and CHG0030008-0030011 with one early hand-off refused because the AWS monitor had not yet checked
+  the new box). Checked apart from the workflows: dc1-wan01's IKE and IPsec state and 5/5 pings from Loopback0 to the
+  strongSwan box while up; no Tunnel10 and no AWS route after; AWS empty; each change request read in ServiceNow.
+- Phone approvals stay out of reach: the Platform is reachable only from the home network (the phone path is deferred).
 
 ## Alternatives considered
 
