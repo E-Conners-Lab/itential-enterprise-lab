@@ -6,7 +6,7 @@ NetClaw's teardown tool (ADR 0082 amendment A1; generated with the Cloud Concier
 
 ## How it runs
 
-- Through the Operations Manager automation "Request AWS VPN Teardown from NetClaw": Starts Tear Down AWS VPN, which waits for its Work Center cards; answers with the job and the change request (ADR 0082 amendment A1).
+- Through the Operations Manager automation "Request AWS VPN Teardown from NetClaw": Starts Tear Down AWS VPN, which waits for its cards; answers with the job and the change request (ADR 0082 A1).
 - From the endpoint trigger "Request AWS VPN Teardown from NetClaw" (route `request-aws-vpn-teardown`).
 
 ## Inputs

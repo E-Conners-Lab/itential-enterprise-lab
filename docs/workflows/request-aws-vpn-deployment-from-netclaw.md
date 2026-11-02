@@ -6,7 +6,7 @@ NetClaw's deploy tool (ADR 0082 amendment A1; generated with the Cloud Concierge
 
 ## How it runs
 
-- Through the Operations Manager automation "Request AWS VPN Deployment from NetClaw": Starts Deploy AWS VPN, which waits for its Work Center card; answers with the job and the change request (ADR 0082 amendment A1).
+- Through the Operations Manager automation "Request AWS VPN Deployment from NetClaw": Starts Deploy AWS VPN, which waits for its card; answers with the job and the change request (ADR 0082 A1).
 - From the endpoint trigger "Request AWS VPN Deployment from NetClaw" (route `request-aws-vpn-deployment`).
 
 ## Inputs
