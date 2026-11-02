@@ -92,4 +92,6 @@ def test_arrows_stay_clear_of_the_tasks(file: str) -> None:
 THROUGH_ALLOWED = {"hand-off-aws-vpn.json": 14, "deploy-aws-vpn.json": 8, "tear-down-aws-vpn.json": 11,
                    "tear-down-expired-aws-vpn.json": 4, "diagnose-aws-vpn-outage.json": 13,
                    "diagnose-fabric-bgp-outage.json": 6, "break-fabric-bgp.json": 4,
-                   "request-aws-vpn-deployment.json": 3}
+                   "request-aws-vpn-deployment.json": 3,
+                   # NetClaw's copy (ADR 0082 amendment A1): the same builder, so the same canvas
+                   "request-aws-vpn-deployment-from-netclaw.json": 3}

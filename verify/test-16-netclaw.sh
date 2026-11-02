@@ -28,6 +28,7 @@ check "S17.4 (a) platform-guide's twin answers through its route with the guide'
 check "S17.5 (b) one show job as svc-netclaw; dc1-spine01's parsed BGP neighbors = the topology's" ${PY} verify/netclawcheck.py show --tier $T
 check "S17.6 (c) the newest BGP drill job described; svc-netclaw finds the card; closed" ${PY} verify/netclawcheck.py describe --tier $T
 check "S17.7 (d) one Add Branch VLAN job stops on its approval; rejected and rolled back; NetBox unchanged" ${PY} verify/netclawcheck.py vlan --tier $T
+check "S17.8 the AWS VPN status and Verify run as svc-netclaw; each request route refuses a bad input before a job" ${PY} verify/netclawcheck.py aws --tier $T
 
 echo "# ${pass} passed, ${fail} failed"
 [ "$fail" -eq 0 ]

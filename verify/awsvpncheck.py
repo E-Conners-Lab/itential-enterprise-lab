@@ -53,7 +53,7 @@ JOB_WORKFLOWS = [
     for k in ("deploy_aws_vpn", "hand_off_aws_vpn", "verify_aws_vpn", "tear_down_aws_vpn", "tear_down_expired_aws_vpn",
               "get_aws_vpn_status", "check_aws_drift", "rotate_aws_vpn_key", "rotate_aws_vpn_key_monthly",
               "diagnose_aws_vpn_outage", "drill_batfish_gate", "request_aws_vpn_deployment", "request_aws_vpn_teardown",
-              "config_push_revert", "show_command")
+              "netclaw_request_aws_vpn_deployment", "netclaw_request_aws_vpn_teardown", "config_push_revert", "show_command")
 ]
 TIER = os.environ.get("AWS_VPN_TIER") or V["aws_vpn"]["tier"]
 HA2 = yaml.safe_load((HERE.parent / "itential" / "ha2" / "versions.yaml").read_text())

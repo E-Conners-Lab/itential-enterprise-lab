@@ -571,6 +571,24 @@ operations_manager:
     description: "A user VLAN on a branch switch, after a Work Center approval (ADR 0082)"
     endpoint: {name: Add Branch VLAN from NetClaw, route: add-branch-vlan,
                description: "NetClaw posts a branch and a VLAN name here as svc-netclaw; the change waits for its approval"}
+  # ADR 0082 amendment A1 (owner 2026-11-01): NetClaw's AWS VPN tools, on the AWS VPN's tier only (aws_vpn.tier). The
+  # two request workflows are NetClaw's copies of the Cloud Concierge's (ADR 0085), so the on-prem address stays inside
+  # Itential; Hand Off and Verify keep their branded-page endpoints above, which NetClaw posts to as well
+  get_aws_vpn_status:
+    automation: Get AWS VPN Status
+    description: "What is deployed in AWS, until when, and an estimated cost; reads only (ADR 0082 amendment A1)"
+    endpoint: {name: Get AWS VPN Status from NetClaw, route: get-aws-vpn-status,
+               description: "NetClaw posts here as svc-netclaw; reads only"}
+  netclaw_request_aws_vpn_deployment:
+    automation: Request AWS VPN Deployment from NetClaw
+    description: "Starts Deploy AWS VPN, which waits for its card; answers with the job and the change request (ADR 0082 A1)"
+    endpoint: {name: Request AWS VPN Deployment from NetClaw, route: request-aws-vpn-deployment,
+               description: "NetClaw posts a lifetime, the NAT setting, a note and the address `last` here as svc-netclaw"}
+  netclaw_request_aws_vpn_teardown:
+    automation: Request AWS VPN Teardown from NetClaw
+    description: "Starts Tear Down AWS VPN, which waits for its cards; answers with the job and the change request (ADR 0082 A1)"
+    endpoint: {name: Request AWS VPN Teardown from NetClaw, route: request-aws-vpn-teardown,
+               description: "NetClaw posts a target and a note here as svc-netclaw"}
   # ADR 0084: the skills eval suite's four endpoints, production only (the scratch lab is production's). The runner
   # posts to the three agent tools as svc-eval and to the restore as svc-eval-approver (automation_access.eval and
   # eval_runner below). No form and no manual trigger: the schema is the workflow's own input gate (tasks/outage-trigger.yml)
@@ -614,8 +632,11 @@ automation_access:
     prod: [admin_group, copilot-readonly, mcp-builders]
     dev: [admin_group, copilot-builders]
   write: [admin_group]
-  # the automations NetClaw's group may also read and start: exactly the routes of its tools
-  netclaw: [Run Show Command on a Device, Describe Job, Add Branch VLAN, platform-guide, platform-guide-local]
+  # the automations NetClaw's group may also read and start: exactly the routes of its tools (the AWS VPN five: ADR 0082
+  # amendment A1; they exist on the AWS VPN's tier only, and a name absent from a tier is skipped there)
+  netclaw: [Run Show Command on a Device, Describe Job, Add Branch VLAN, platform-guide, platform-guide-local,
+            Get AWS VPN Status, Request AWS VPN Deployment from NetClaw, Request AWS VPN Teardown from NetClaw,
+            Hand Off AWS VPN, Verify AWS VPN]
   # ADR 0084 (owner decision 2026-10-22: only the eval accounts reach the scratch routers): these carry admin_group plus
   # exactly one eval group and none of the read groups above, so Copilot, the production MCP account and the other
   # agents cannot start them. `eval` = the agent tools (svc-eval); `eval_runner` = the restore (svc-eval-approver)
@@ -767,6 +788,10 @@ workflows:
   # trigger, so the run stops at its own Work Center card and change request, and returns the job and the CHG at once
   request_aws_vpn_deployment: Request AWS VPN Deployment # starts Deploy AWS VPN; its answer never holds the on-prem address
   request_aws_vpn_teardown: Request AWS VPN Teardown # starts Tear Down AWS VPN for an open target
+  # ADR 0082 amendment A1: the same two, generated from the same code, for NetClaw. Only the name, the note's mark
+  # (`NetClaw: `, fixed: no model can choose it) and the answer's next step differ; NetClaw's endpoints start these
+  netclaw_request_aws_vpn_deployment: Request AWS VPN Deployment from NetClaw # Request AWS VPN Deployment, marked NetClaw
+  netclaw_request_aws_vpn_teardown: Request AWS VPN Teardown from NetClaw # Request AWS VPN Teardown, marked NetClaw
   diagnose_aws_vpn_outage: Diagnose AWS VPN Outage # R6 + A3: the tunnel-down alert -> incident, agent, approved fix
   diagnose_fabric_bgp_outage: Diagnose Fabric BGP Outage # R10 + A6: a BGP session down -> incident, agent, approved fix
   break_fabric_bgp: Break Fabric BGP # R10 PR C: the drill - one fault under an EOS commit timer, behind an HTML card

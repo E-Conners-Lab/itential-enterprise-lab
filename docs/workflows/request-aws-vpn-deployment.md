@@ -40,7 +40,7 @@ flowchart TD
   S([start])
   E([done])
   s1["step 1: the input gate"]
-  s2["step 2: the run's inputs"]
+  s2["step 2: the run's inputs as text"]
   s3["step 3: the on-prem address"]
   s4["step 4: the start"]
   s5["step 5: the change request"]
@@ -75,12 +75,12 @@ One line per task, in canvas order; the task's id first, then its label as the c
 - `9a0b` inputs valid? Yes → the run's input: change_note (step 2). No → the inputs were refused.
 - `9a0c` the inputs were refused. Then → done.
 
-### 2. the run's inputs: the person's words marked as the Concierge's, every input but the address
+### 2. the run's inputs as text: the person's words marked as the Concierge's, every input but the address
 
 - `00` the run's input: change_note
 - `01` the run's input: enable_nat_gateway
 - `02` the run's input: lifetime_hours
-- `10` the run's inputs: the note marked as the Concierge's (Python on the runner) — Python on the Gateway runner. Could not run → the request could not be prepared (step 7).
+- `10` the run's inputs as text, the note marked as the Concierge's (Python on the runner) — Python on the Gateway runner. Could not run → the request could not be prepared (step 7).
 - `11` the run's inputs. Failed → the request could not be prepared (step 7).
 - `12` no change request read yet (empty). Then → reuse the last deployment's address? (step 3).
 

@@ -7,7 +7,7 @@
       "name": "setObjectKey",
       "canvasName": "setObjectKey",
       "summary": "the run's input: change_note",
-      "description": "the run's inputs: the person's words marked as the Concierge's, every input but the address",
+      "description": "the run's inputs as text: the person's words marked as the Concierge's, every input but the address",
       "location": "Application",
       "locationType": null,
       "app": "WorkFlowEngine",
@@ -39,7 +39,7 @@
       "name": "setObjectKey",
       "canvasName": "setObjectKey",
       "summary": "the run's input: target",
-      "description": "the run's inputs: the person's words marked as the Concierge's, every input but the address",
+      "description": "the run's inputs as text: the person's words marked as the Concierge's, every input but the address",
       "location": "Application",
       "locationType": null,
       "app": "WorkFlowEngine",
@@ -70,8 +70,8 @@
     "10": {
       "name": "runCode",
       "canvasName": "runCode",
-      "summary": "the run's inputs: the note marked as the Concierge's (Python on the runner)",
-      "description": "the run's inputs: the person's words marked as the Concierge's, every input but the address",
+      "summary": "the run's inputs as text, the note marked as the Concierge's (Python on the runner)",
+      "description": "the run's inputs as text: the person's words marked as the Concierge's, every input but the address",
       "location": "Application",
       "locationType": null,
       "app": "GatewayManager",
@@ -86,7 +86,7 @@
         "incoming": {
           "clusterId": "lab",
           "language": "python",
-          "code": "import json, sys\n\n\ndef concierge_body(d: dict) -> dict:\n    \"\"\"The started run's inputs but the on-prem address: the person's words marked with where they came from, and the\n    deployment's lifetime and NAT setting or the teardown's target as given. Pure: runCode runs this source.\"\"\"\n    words = \" \".join(str(d.get(\"change_note\") or \"\").split())\n    body = {\"change_note\": d[\"prefix\"] + (words or \"(no reason given)\")}\n    for key in (\"enable_nat_gateway\", \"lifetime_hours\", \"target\"):\n        if key in d:\n            body[key] = d[key]\n    return {\"body\": body}\n\n\nprint(json.dumps(concierge_body({**json.loads(sys.stdin.read() or \"{}\"), **json.loads('{\"prefix\": \"Cloud Concierge: \"}')})))\n",
+          "code": "import json, sys\n\n\ndef concierge_body(d: dict) -> dict:\n    \"\"\"The started run's inputs but the on-prem address: the person's words marked with where they came from, and the\n    deployment's lifetime and NAT setting or the teardown's target as text, the only form the started workflow's own\n    gate takes (4 -> \"4\", False -> \"false\"). Pure: runCode runs this source.\"\"\"\n    words = \" \".join(str(d.get(\"change_note\") or \"\").split())\n    body = {\"change_note\": d[\"prefix\"] + (words or \"(no reason given)\")}\n    for key in (\"enable_nat_gateway\", \"lifetime_hours\", \"target\"):\n        if key in d:\n            value = d[key]\n            # bool first: True is an int in Python\n            body[key] = (str(value).lower() if isinstance(value, bool) else\n                         str(value) if isinstance(value, int) else value)\n    return {\"body\": body}\n\n\nprint(json.dumps(concierge_body({**json.loads(sys.stdin.read() or \"{}\"), **json.loads('{\"prefix\": \"Cloud Concierge: \"}')})))\n",
           "data": "$var.01.object",
           "safety": {
             "timeout": 30
@@ -106,7 +106,7 @@
       "name": "query",
       "canvasName": "query",
       "summary": "the run's inputs",
-      "description": "the run's inputs: the person's words marked as the Concierge's, every input but the address",
+      "description": "the run's inputs as text: the person's words marked as the Concierge's, every input but the address",
       "location": "Application",
       "locationType": null,
       "app": "WorkFlowEngine",
@@ -134,7 +134,7 @@
       "name": "parse",
       "canvasName": "parse",
       "summary": "no change request read yet (empty)",
-      "description": "the run's inputs: the person's words marked as the Concierge's, every input but the address",
+      "description": "the run's inputs as text: the person's words marked as the Concierge's, every input but the address",
       "location": "Application",
       "locationType": null,
       "app": "WorkFlowEngine",
@@ -1046,7 +1046,7 @@
         "incoming": {
           "clusterId": "lab",
           "language": "python",
-          "code": "import json, sys\n\n\ndef concierge_answer(d: dict) -> dict:\n    \"\"\"The tool's answer in words the agent can pass on: what started, the job and its change request (`change_number`,\n    a CHG number once found), the card it stops at, the planned end and the next step. Pure: runCode runs this\n    source.\"\"\"\n    number = d.get(\"change_number\") if str(d.get(\"change_number\") or \"\").startswith(\"CHG\") else None\n    job = d.get(\"job\") or \"\"\n    started = f\"job {job} ({d.get('job_url', '')}{job})\"\n    reused = (f\" It uses {d['address_from']}: if that address has changed, reject the waiting card and request again \"\n              \"with the new one.\" if d.get(\"address_from\") else \"\")\n    change = (f\"Its change request is {number}.\" if number else\n              \"No change request appeared within a minute: the run may have stopped at its own input check, or \"\n              \"ServiceNow is slow; the job shows which.\")\n    if d.get(\"kind\") == \"deploy\":\n        hours = d.get(\"lifetime_hours\")\n        ends = (\"It has no end time: it stays up until Tear Down AWS VPN.\" if hours == \"none\" else\n                f\"It ends {hours} hours after it starts (the card shows the exact time), when Tear Down Expired AWS \"\n                \"VPN removes it.\")\n        text = (f\"Deploy AWS VPN started: {started}. {change} It stops at Itential Work Center: a person must approve \"\n                \"its plan on the card \\\"Approve the AWS change\\\", which appears once the plan and its review are ready, \"\n                \"usually within a few minutes. Nothing is created in AWS before that approval. \" + ends + reused\n                + \" After the apply, Hand Off AWS VPN on the branded page connects the router, then Verify AWS VPN.\")\n    else:\n        text = (f\"Tear Down AWS VPN started for {d.get('target')}: {started}. {change} It stops at Itential Work Center \"\n                \"for a person's approval twice: first \\\"Approve removing the router's AWS block\\\", then, when anything \"\n                \"is deployed in AWS, \\\"Approve destroying the AWS side\\\". Nothing changes before each approval.\")\n    return {\"outcome\": text, \"change_number\": number or \"\"}\n\n\nprint(json.dumps(concierge_answer({**json.loads(sys.stdin.read() or \"{}\"), **json.loads('{\"kind\": \"teardown\", \"job_url\": \"https://itential.lab.internal/operations-manager/jobs/\"}')})))\n",
+          "code": "import json, sys\n\n\ndef concierge_answer(d: dict) -> dict:\n    \"\"\"The tool's answer in words the agent can pass on: what started, the job and its change request (`change_number`,\n    a CHG number once found), the card it stops at, the planned end and the next step. Pure: runCode runs this\n    source.\"\"\"\n    number = d.get(\"change_number\") if str(d.get(\"change_number\") or \"\").startswith(\"CHG\") else None\n    job = d.get(\"job\") or \"\"\n    started = f\"job {job} ({d.get('job_url', '')}{job})\"\n    reused = (f\" It uses {d['address_from']}: if that address has changed, reject the waiting card and request again \"\n              \"with the new one.\" if d.get(\"address_from\") else \"\")\n    change = (f\"Its change request is {number}.\" if number else\n              \"No change request appeared within a minute: the run may have stopped at its own input check, or \"\n              \"ServiceNow is slow; the job shows which.\")\n    if d.get(\"kind\") == \"deploy\":\n        hours = d.get(\"lifetime_hours\")\n        ends = (\"It has no end time: it stays up until Tear Down AWS VPN.\" if hours == \"none\" else\n                f\"It ends {hours} hours after it starts (the card shows the exact time), when Tear Down Expired AWS \"\n                \"VPN removes it.\")\n        text = (f\"Deploy AWS VPN started: {started}. {change} It stops at Itential Work Center: a person must approve \"\n                \"its plan on the card \\\"Approve the AWS change\\\", which appears once the plan and its review are ready, \"\n                \"usually within a few minutes. Nothing is created in AWS before that approval. \" + ends + reused\n                + f\" After the apply, Hand Off AWS VPN {d.get('hand_off', 'on the branded page')} connects the router, \"\n                \"then Verify AWS VPN.\")\n    else:\n        text = (f\"Tear Down AWS VPN started for {d.get('target')}: {started}. {change} It stops at Itential Work Center \"\n                \"for a person's approval twice: first \\\"Approve removing the router's AWS block\\\", then, when anything \"\n                \"is deployed in AWS, \\\"Approve destroying the AWS side\\\". Nothing changes before each approval.\")\n    return {\"outcome\": text, \"change_number\": number or \"\"}\n\n\nprint(json.dumps(concierge_answer({**json.loads(sys.stdin.read() or \"{}\"), **json.loads('{\"kind\": \"teardown\", \"job_url\": \"https://itential.lab.internal/operations-manager/jobs/\", \"hand_off\": \"on the branded page\"}')})))\n",
           "data": "$var.92.object",
           "safety": {
             "timeout": 30

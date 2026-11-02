@@ -146,6 +146,10 @@ def card(adm: Platform, sid: str, job: str, seconds: int = 900) -> str:
         mine = [i for i in items if i.get("status") == "pending" and (i.get("execution") or {}).get("id") == job]
         if mine:
             return mine[0]["id"]
+        # a run that ended (its own gate, an error) has no card coming: say so now, not after the whole wait
+        status = (adm.job(job) or {}).get("status")
+        if status in ("complete", "error", "canceled"):
+            raise AssertionError(f"job {job} ended {status} without a pending card (look at the job)")
         time.sleep(10)
     raise AssertionError(f"job {job}: no pending card under session {sid} after {seconds} s")
 
@@ -171,13 +175,37 @@ def change_state(number: str) -> str:
     return str(rows[0].get("state")) if rows else ""
 
 
+def as_text(value: object) -> object:
+    """A tool input as the started run receives it: the request gate takes 4 or "4", false or "false" (ADR 0082
+    amendment A1), and the request workflow hands Deploy the text."""
+    return str(value).lower() if isinstance(value, bool) else str(value) if isinstance(value, int) else value
+
+
+def reject_every_run(adm: Platform, sid: str, calls: list[dict]) -> dict[str, str]:
+    """Reject the card of every run any request call started ({job: card}), before any assertion: a retry that passed
+    its gate would otherwise leave a real run waiting at its card when the check fails on the count (2026-11-01: Claude
+    called the deploy tool three times; each was refused at the gate, so nothing waited, but nothing guaranteed it)."""
+    jobs = [((c.get("output") or {}).get("variables") or {}).get("started_job") or "" for c in calls]
+    done, problems = {}, []
+    for job in (j for j in jobs if re.fullmatch(r"[0-9a-f]{24}", j)):
+        try:
+            done[job] = card(adm, sid, job)
+            reject(adm, done[job])
+        except Exception as exc:  # noqa: BLE001 - a network error on one run must not leave the next one waiting
+            problems.append(f"{job}: {exc}")
+    assert not problems, "a started run's card could not be rejected (reject it in Work Center): " + "; ".join(problems)
+    return done
+
+
 def started(agent: str, request: str, tool: str, want: dict, workflow: str) -> None:
     adm = admin()
     sid, calls, reply = session(adm, agent, request)
     mine = [c for c in calls if c.get("toolName") in REQUEST_TOOLS]
-    assert [c.get("toolName") for c in mine] == [tool], f"request tools called: {[c.get('toolName') for c in mine]}"
+    rejected = reject_every_run(adm, sid, mine)
+    assert [c.get("toolName") for c in mine] == [tool], (
+        f"request tools called: {[c.get('toolName') for c in mine]}; runs started and rejected: {sorted(rejected)}")
     got = mine[0].get("input") or {}
-    assert all(got.get(k) == v for k, v in want.items()), f"{tool} input {masked(json.dumps(got))}"
+    assert all(as_text(got.get(k)) == v for k, v in want.items()), f"{tool} input {masked(json.dumps(got))}"
     answer = json.dumps(mine[0].get("output"))
     assert not public(answer), f"{tool}'s answer holds an address: {masked(answer)[:300]}"
     assert not public(reply), "the reply holds an address"
@@ -187,8 +215,7 @@ def started(agent: str, request: str, tool: str, want: dict, workflow: str) -> N
     assert number.startswith("CHG"), f"{tool}: no change request ({variables.get('outcome')!r})"
     assert job in reply and number in reply, f"the reply names neither the job nor {number}: {masked(reply)[:300]!r}"
     print(f"{agent} session {sid}: {tool} {got} -> job {job}, {number}; the reply names both, no address anywhere")
-    item = card(adm, sid, job)
-    reject(adm, item)
+    item = rejected[job]
     d = adm.wait(job, 600)
     v = d.get("variables") or {}
     assert d.get("status") == "complete" and v.get("rejected") is True, f"{workflow} {job}: {d.get('status')} {v}"

@@ -6,7 +6,8 @@ Reports the AWS side of the lab's site-to-site VPN without changing anything: wh
 
 ## How it runs
 
-- By hand, from the Platform: the Studio's run button or the API. No automation, form, endpoint or schedule starts it.
+- Through the Operations Manager automation "Get AWS VPN Status": What is deployed in AWS, until when, and an estimated cost; reads only (ADR 0082 amendment A1).
+- From the endpoint trigger "Get AWS VPN Status from NetClaw" (route `get-aws-vpn-status`).
 
 ## Inputs
 

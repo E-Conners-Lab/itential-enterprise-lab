@@ -9,11 +9,15 @@ refusal - is the delivery's eval (itential-deliveries/netclaw/eval), which needs
     account   S17.1 svc-netclaw logs in and its session holds exactly the netclaw group
     gbac      S17.2 every automation but the department's carries the gbac versions.yaml names
     refusals  S17.3 another automation, a direct start, MOP, Configuration Manager, Studio and the card search refuse it;
-              the show gate refuses a non-show command before a job exists
+              so do, on the AWS VPN's tier, Deploy's and Tear Down's own endpoints; the show gate refuses a non-show
+              command before a job exists
     guide     S17.4 (a) platform-guide's twin, started through its route, answers with the guide's counts
     show      S17.5 (b) one show job; on production the parsed BGP neighbors equal the topology's for dc1-spine01
     describe  S17.6 (c) the newest drill job described, its card found by svc-netclaw, then closed (Seen)
-    vlan      S17.7 (d) one Add Branch VLAN job stops on its card; rejected; rolled back; NetBox holds no such VLAN
+    vlan      S17.7 (d) one Add Branch VLAN job stops on its card, which svc-netclaw sees and can neither claim nor
+              complete; rejected; rolled back; NetBox holds no such VLAN
+    aws       S17.8 (ADR 0082 amendment A1, AWS VPN tier) the status and Verify run as svc-netclaw; each request route's
+              gate refuses a bad input before a job exists (a real request starts a Deploy: the delivery's phone proofs)
 
 Reads .env (ITENTIAL_ADMIN_*, SVC_NETCLAW_<TIER>_PASSWORD, NETBOX_URL/NETBOX_TOKEN). Prints no secret.
 """
@@ -106,6 +110,16 @@ def logins(tier: str) -> tuple[Platform, Platform]:
     return ncl, adm
 
 
+def masked(text: str) -> str:
+    """Every global IPv4 address withheld: the on-prem address and AWS's sit in the AWS VPN workflows' outputs."""
+    def one(m: re.Match) -> str:
+        try:
+            return "<address>" if ipaddress.ip_address(m.group()).is_global else m.group()
+        except ValueError:
+            return m.group()
+    return re.sub(r"\b\d{1,3}(?:\.\d{1,3}){3}\b", one, text)
+
+
 def finish(adm: Platform, job: str, task: str, state: str, variables: dict | None = None) -> int:
     body = {"taskData": {"finish_state": state, "variables": variables or {}}}
     return adm.req("POST", f"/operations-manager/jobs/{job}/tasks/{task}/finish", body)[0]
@@ -171,6 +185,12 @@ def refusals(tier: str) -> None:
         ("Automation Studio workflows", "GET", "/automation-studio/workflows?limit=1", None),
         ("the Work Center search", "POST", "/work-center-service/work-items/search", {"filters": [], "limit": 1, "skip": 0}),
     ]
+    # ADR 0082 amendment A1: the runs that carry the on-prem address start only through the request workflows. An
+    # empty body: a Platform that checked the schema before the gbac would answer 400 and fail this check, never start
+    if VERSIONS["aws_vpn"]["tier"] == tier:
+        cases += [(f"{OM[k]['automation']}'s own endpoint", "POST",
+                   f"/operations-manager/triggers/endpoint/{OM[k]['endpoint']['route']}", {})
+                  for k in ("deploy_aws_vpn", "tear_down_aws_vpn")]
     for what, method, path, body in cases:
         code, _ = ncl.req(method, path, body)
         assert code in (401, 403), f"{what}: HTTP {code} (expected a refusal)"
@@ -276,7 +296,14 @@ def vlan(tier: str) -> None:
     d = ncl.wait(job, 300)
     assert d["_waiting"] == ["4a"], f"job {job}: {d.get('status')}, waiting {d['_waiting']} (expected the approval 4a)"
     assert ncl.count(wf) == before + 1, "not exactly one new job"
-    assert card_id(ncl, job), "svc-netclaw cannot find the approval card"
+    item = card_id(ncl, job)
+    assert item, "svc-netclaw cannot find the approval card"
+    # ADR 0082 amendment A1 decision 3: NetClaw sees a card and never decides it, tried on this real card it can see (an
+    # id that matched no card would not tell a role refusal from a lookup). The attempt is a rejection, so even a
+    # wrongly granted permission ends this VLAN, never approves it
+    for step, body in (("claim", {}), ("complete", {"finishState": "failure", "variables": {}})):
+        refused = ncl.req("PATCH", f"/work-center-service/work-items/{item}/{step}", body)[0]
+        assert refused in (401, 403), f"svc-netclaw could {step} the card {item}: HTTP {refused}"
     assert finish(adm, job, "4a", "failure", {"export": {"decision": "reject"}}) == 200, "could not reject"
     end = adm.wait(job, 300)
     rolled = (end.get("variables") or {}).get("rolled_back")
@@ -286,10 +313,40 @@ def vlan(tier: str) -> None:
                                          "User-Agent": "lab-verify/1.0"})
     count = json.load(urllib.request.urlopen(nb, timeout=30))["count"]
     assert count == 0, f"NetBox still holds {name}"
-    print(f"job {job}: stopped on approval 4a, rejected, rolled back; NetBox holds no VLAN {name}; one job")
+    print(f"job {job}: stopped on approval 4a; svc-netclaw refused claim and complete on its card; rejected, rolled "
+          f"back; NetBox holds no VLAN {name}; one job")
 
 
-CHECKS = {"account": account, "gbac": gbac, "refusals": refusals, "guide": guide, "show": show, "describe": describe, "vlan": vlan}
+def aws(tier: str) -> None:
+    if VERSIONS["aws_vpn"]["tier"] != tier:
+        print(f"the AWS VPN does not run on {tier}: nothing to check")
+        return
+    ncl, _ = logins(tier)
+    wf = VERSIONS["workflows"]
+    # the two that only read, for real
+    for key, body in (("get_aws_vpn_status", {}), ("verify_aws_vpn", {"target": "dc1-wan01"})):
+        code, job, out = ncl.start(OM[key]["endpoint"]["route"], body)
+        assert code == 200 and job, f"{wf[key]} as svc-netclaw: HTTP {code} {masked(str(out))[:200]}"
+        d = ncl.wait(job, 180)
+        assert d.get("status") == "complete" and not d["_waiting"], f"{wf[key]} {job}: {d.get('status')}"
+        v = d.get("variables") or {}
+        print(f"{wf[key]} job {job} as svc-netclaw: complete; {masked(str(v.get('summary') or v.get('outcome')))[:160]!r}")
+    # the two that start a run: the gate (the trigger's schema) refuses a bad input before any job. Each body fails three
+    # ways at once (a value outside its enum, a required input missing, an input the gate does not have), so no single
+    # change to a gate lets it start a real Deploy or Tear Down that this check would then leave waiting at its card
+    never = {"s17_8_not_an_input": "refused"}
+    for key, body in (("netclaw_request_aws_vpn_deployment", {"lifetime_hours": "3", "enable_nat_gateway": "false",
+                                                              "onprem_public_ip": "last", **never}),
+                      ("netclaw_request_aws_vpn_teardown", {"target": "dc1-wan99", **never})):
+        before = ncl.count(wf[key])
+        code, job, _ = ncl.start(OM[key]["endpoint"]["route"], body)
+        assert code == 400 and not job, f"{wf[key]}'s gate let a bad input through: HTTP {code}"
+        assert ncl.count(wf[key]) == before, f"a {wf[key]} job exists for a refused input"
+        print(f"refused before any job: {OM[key]['endpoint']['route']} with a bad input (HTTP 400)")
+
+
+CHECKS = {"account": account, "gbac": gbac, "refusals": refusals, "guide": guide, "show": show, "describe": describe,
+          "vlan": vlan, "aws": aws}
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
