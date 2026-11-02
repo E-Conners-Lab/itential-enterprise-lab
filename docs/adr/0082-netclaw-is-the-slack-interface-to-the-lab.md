@@ -66,8 +66,10 @@ offers shell, file and web tools; the persona alone is about 40k tokens, more th
 
 - One Slack thread can read a device, describe a job, explain a workflow and request a change, and the Platform still decides
   everything: what the account may start (gbac), what each workflow accepts (its gate), who approves (Work Center).
-- svc-netclaw reads every job and every agent session on the Platform (6.6.0 scopes neither per account): accepted for an IT
-  front door used only by the owner; the department accounts do not hold these reads.
+- svc-netclaw reads every agent session, and every job whose groups are empty, on the Platform (6.6.0 scopes neither per
+  account): accepted for an IT front door used only by the owner; the department accounts do not hold these reads. A job
+  started through an automation trigger carries that automation's groups and is not readable outside them (amendment A1,
+  decision 1).
 - Every lab automation now carries gbac from the plays; a replay no longer opens a new automation to any trigger-runner. A new
   group that should start a lab automation (the department bot's own channel for Ask Platform Guide, later) is a versions.yaml
   change.
@@ -101,11 +103,14 @@ the AWS VPN from Slack. Approvals stay a person's, in Work Center.
    endpoints of their own (`get-aws-vpn-status`, `request-aws-vpn-deployment`, `request-aws-vpn-teardown`), on the AWS
    VPN's tier only, removed with the rest by `aws-vpn-retire.yml`. Deploy's and Tear Down's routes stay closed to
    svc-netclaw, so NetClaw never sends or receives the on-prem address: the request workflow reuses it (`last`) inside
-   Itential. Nor can it read it afterwards: a run started through an automation trigger carries that automation's
-   groups, and svc-netclaw gets 401 on the Deploy and Tear Down jobs a request starts (measured 2026-11-02, Deploy
-   8d1f050c). "Job reads are platform-wide" (measured 2026-10-11) holds only for jobs whose workflow has no groups.
-   Hand Off's and Verify's runs, whose automations include netclaw, it can read, so decision 4 withholds the
-   addresses they hold.
+   Itential. Nor can it read it afterwards. Job reads follow the job's `groups`, which a run started through an
+   automation trigger copies from that automation's read groups at the start (measured 2026-11-02 UTC on 20 jobs:
+   Deploy and Tear Down runs hold 4 groups without netclaw and answer svc-netclaw 401, all 8 read, started by a request
+   or from the page; Hand Off and Verify runs started through NetClaw's routes hold 5 groups with netclaw and answer
+   200; a Hand Off started from the page before netclaw's access existed holds 4 and answers 401). Decision 4 withholds
+   the addresses in the runs it can read. Not measured: runs started other than through a trigger (a direct start, an
+   administrator's run from Studio); "job reads are platform-wide" (2026-10-11) was measured on jobs with no groups.
+   S17.8 re-reads the newest Deploy and Tear Down as svc-netclaw.
 2. **NetClaw's request workflows are generated copies of the Cloud Concierge's, marked `NetClaw: `** (owner,
    2026-11-01). One builder makes both pairs (ADR 0085 decision 11); a copy differs only in its name, its note's mark,
    its answer's next step (NetClaw's hand-off, not the branded page) and its description, and a test holds the rest
@@ -120,14 +125,16 @@ the AWS VPN from Slack. Approvals stay a person's, in Work Center.
 4. **Nothing a tool returns carries an address.** The AWS VPN outputs hold the on-prem and AWS addresses (Deploy's
    `outcome`, the status `summary`, Hand Off's and Verify's plans; measured on the newest eight jobs of each), so
    NetClaw's tools return named fields only and withhold every global IPv4 address in them.
-5. **Reaching the cards from the phone is not this repository's.** The delivery serves the Platform to the owner's
-   tailnet from the Mac, switched on only for rehearsals and the demo; no lab route, DNS or certificate authority is
-   added, because the lab root CA carries no name constraints and a phone that trusted it would trust it for any site.
+5. **Reaching the cards from the phone is not this repository's, and is not built.** The planned way is the delivery
+   serving the Platform to the owner's tailnet from the Mac, switched on only for rehearsals and the demo, never a lab
+   route, DNS or certificate authority (the lab root CA carries no name constraints, so a phone that trusted it would
+   trust it for any site). The Mac's Tailscale app cannot serve a destination behind a non-default route, so it needs
+   a local reverse proxy; deferred by the owner (2026-11-01). Until then the cards are approved from the home network.
 
 S17.8 runs the status and Verify as svc-netclaw and proves each request route's gate refuses a bad input before a job;
 the phone proofs (a run rejected at its card, then one full approved cycle) are the delivery's.
 
-### Measured (production, 2026-11-02)
+### Measured (production, 2026-11-02 UTC, the evening of 2026-11-01 local)
 
 - After the replay of #225: S17 8/8. svc-netclaw got 401 on Deploy's and Tear Down's own endpoints (with an empty body,
   so the gbac check comes before the trigger's schema) and was refused claim and complete on a real Add Branch VLAN card.

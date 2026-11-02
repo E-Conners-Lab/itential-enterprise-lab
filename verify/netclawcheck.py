@@ -16,8 +16,9 @@ refusal - is the delivery's eval (itential-deliveries/netclaw/eval), which needs
     describe  S17.6 (c) the newest drill job described, its card found by svc-netclaw, then closed (Seen)
     vlan      S17.7 (d) one Add Branch VLAN job stops on its card, which svc-netclaw sees and can neither claim nor
               complete; rejected; rolled back; NetBox holds no such VLAN
-    aws       S17.8 (ADR 0082 amendment A1, AWS VPN tier) the status and Verify run as svc-netclaw; each request route's
-              gate refuses a bad input before a job exists (a real request starts a Deploy: the delivery's phone proofs)
+    aws       S17.8 (ADR 0082 amendment A1, AWS VPN tier) the status and Verify run as svc-netclaw; svc-netclaw cannot
+              read the newest Deploy or Tear Down job; each request route's gate refuses a bad input before a job exists
+              (a real request starts a Deploy: the delivery's phone proofs)
 
 Reads .env (ITENTIAL_ADMIN_*, SVC_NETCLAW_<TIER>_PASSWORD, NETBOX_URL/NETBOX_TOKEN). Prints no secret.
 """
@@ -331,6 +332,18 @@ def aws(tier: str) -> None:
         assert d.get("status") == "complete" and not d["_waiting"], f"{wf[key]} {job}: {d.get('status')}"
         v = d.get("variables") or {}
         print(f"{wf[key]} job {job} as svc-netclaw: complete; {masked(str(v.get('summary') or v.get('outcome')))[:160]!r}")
+    # A1 decision 1: the runs that hold the on-prem address are not svc-netclaw's to read. A run started through its
+    # automation's trigger copies that automation's read groups, which leave netclaw out for Deploy and Tear Down
+    _, adm = logins(tier)
+    for key in ("deploy_aws_vpn", "tear_down_aws_vpn"):
+        newest = adm.newest(wf[key])
+        if not newest:
+            print(f"no {wf[key]} job yet: its read not checked")
+            continue
+        groups = (adm.req("GET", f"/operations-manager/jobs/{newest}")[1].get("data") or {}).get("groups") or []
+        code = ncl.req("GET", f"/operations-manager/jobs/{newest}")[0]
+        assert code in (401, 403), f"svc-netclaw read {wf[key]} job {newest} (HTTP {code}): those runs hold the on-prem address"
+        print(f"refused: svc-netclaw reading {wf[key]} job {newest} (HTTP {code}; the job holds {len(groups)} groups)")
     # the two that start a run: the gate (the trigger's schema) refuses a bad input before any job. Each body fails three
     # ways at once (a value outside its enum, a required input missing, an input the gate does not have), so no single
     # change to a gate lets it start a real Deploy or Tear Down that this check would then leave waiting at its card
