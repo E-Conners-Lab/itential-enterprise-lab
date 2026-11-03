@@ -15,7 +15,7 @@ What each workflow does from start to end, for someone who is about to run one o
 | [Verify AWS VPN](verify-aws-vpn.md) | 7 | 36 | 0 |
 | [Hand Off AWS VPN](hand-off-aws-vpn.md) | 17 | 177 | 2 |
 | [Tear Down AWS VPN](tear-down-aws-vpn.md) | 16 | 177 | 3 |
-| [Check AWS Drift](check-aws-drift.md) | 3 | 11 | 1 |
+| [Check AWS Drift](check-aws-drift.md) | 8 | 75 | 2 |
 | [Get AWS VPN Status](get-aws-vpn-status.md) | 2 | 8 | 0 |
 | [Request AWS VPN Deployment](request-aws-vpn-deployment.md) | 7 | 68 | 0 |
 | [Request AWS VPN Teardown](request-aws-vpn-teardown.md) | 6 | 44 | 0 |

@@ -90,22 +90,25 @@ def test_it_is_registered_named_and_takes_no_input() -> None:
     assert not (WF.get("inputSchema") or {}).get("properties")
 
 
-def test_its_only_service_call_is_the_drift_check() -> None:
+def test_its_service_calls_are_the_drift_check_and_a_state_read() -> None:
+    # A5 (ADR 0085): the Drift and Cost Watch reads the deployment too (terraform-run outputs, a state read); both read
     services = [t for t in TASKS.values() if t.get("name") == "runService"]
-    assert len(services) == 1 and services[0]["variables"]["incoming"]["serviceName"] == "terraform-run"
-    parses = [t for t in TASKS.values() if t.get("name") == "parse"]
-    assert [json.loads(t["variables"]["incoming"]["text"])["action"] for t in parses] == ["drift"]
+    assert len(services) == 2 and {s["variables"]["incoming"]["serviceName"] for s in services} == {"terraform-run"}
+    parses = [t for t in TASKS.values() if t.get("name") == "parse"
+              and t["variables"]["incoming"]["text"].startswith('{"action"')]
+    assert sorted(json.loads(t["variables"]["incoming"]["text"])["action"] for t in parses) == ["drift", "outputs"]
 
 
-def test_only_found_drift_opens_the_work_center_task() -> None:
-    manual = [tid for tid, t in TASKS.items() if t.get("type") == "manual"]
-    assert len(manual) == 1
-    card = manual[0]
-    into = [src for src, dst in TR.items() if card in dst]  # the drift, in words
+def test_only_drift_opens_the_drift_task_and_found_still_routes_it() -> None:
+    # two manual tasks since A5: the watch's proposal card and the R3 drift task. The drift task is entered only from
+    # "the drift, in words", and the R3 evaluation of `found` still leads there when the watch cannot run
+    manual = {t["name"]: tid for tid, t in TASKS.items() if t.get("type") == "manual"}
+    assert sorted(manual) == ["InteractiveHTML", "ViewData"]
+    into = [src for src, dst in TR.items() if manual["ViewData"] in dst]
     assert len(into) == 1
-    gate = [src for src, dst in TR.items() if into[0] in dst]  # and before it, the evaluation of `found`
-    assert len(gate) == 1 and TR[gate[0]][into[0]]["state"] == "success"
-    assert TASKS[gate[0]]["name"] == "evaluation" and "stdout_json.found" in json.dumps(TASKS[gate[0]])
+    before = [src for src, dst in TR.items() if into[0] in dst]
+    found = [g for g in before if TASKS[g]["name"] == "evaluation" and "stdout_json.found" in json.dumps(TASKS[g])]
+    assert len(found) == 1 and TR[found[0]][into[0]]["state"] == "success"
 
 
 def test_every_task_reaches_the_end() -> None:

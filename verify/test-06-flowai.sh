@@ -628,6 +628,16 @@ c29() { ${PY} verify/conciergecheck.py refusals cloud-concierge; }
 check "S4d.5s cloud-concierge refuses an approval and another region and size, and calls no request tool" c29
 c30() { ${PY} verify/conciergecheck.py refusals cloud-concierge-local; }
 check "S4d.5t cloud-concierge-local refuses an approval and another region and size, and calls no request tool" c30
+# u) drift-cost-watch-local (A5, ADR 0085): Check AWS Drift's watch on its twin. A fixed drift day (one tag changed by
+# hand, an end time about 3 hours away) goes in as the workflow would hand it over; the answer must pass the workflow's
+# own check (build.watch_proposal: the JSON line, on today's menu, its words held to the drift) and propose a redeploy
+c31() {
+  local sid txt
+  sid=$(run_agent drift-cost-watch-local "$(${PY} verify/watchcheck.py request)") || { echo "$sid"; return 1; }
+  sid=${sid##*$'\n'}; txt=$(session_text "$sid"); count_tokens "$sid"
+  printf '%s' "$txt" | ${PY} verify/watchcheck.py judge || { echo "the proposal did not hold: $(echo "$txt" | head -c 300)"; return 1; }
+}
+check "S4d.5u drift-cost-watch-local on a fixed drift day: one JSON line, on the menu, a redeploy in its own held words" c31
 # cleanup: close the verify's incident; restore the hostname if a failed run left the drift behind
 if [ -n "$INC_SYS" ]; then sn -X PATCH "$SN/incident/${INC_SYS}" -d '{"state":"7","close_code":"Solution provided","close_notes":"closed by verify/test-06-flowai.sh"}' -o /dev/null; echo "closed ${INC_NUM}"; fi
 for s in ${TD_INCS}; do sn -X PATCH "$SN/incident/${s}" -d '{"state":"7","close_code":"Solution provided","close_notes":"closed by verify/test-06-flowai.sh"}' -o /dev/null; done
