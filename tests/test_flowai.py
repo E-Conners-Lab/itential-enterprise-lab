@@ -21,7 +21,7 @@ PLAY = ROOT / "ansible" / "playbooks" / "flowai.yml"
 ENV_EXAMPLE = ROOT / ".env.example"
 # D6 (ADR 0085): agents only a workflow runs, handed the facts and answering in one turn - no tools at all, no MCP route,
 # no extra operator groups, and a workflow that names them (a twin through the dev overlay's marker map)
-WORKFLOW_ONLY_AGENTS = {"plan-reviewer", "plan-reviewer-local"}
+WORKFLOW_ONLY_AGENTS = {"plan-reviewer", "plan-reviewer-local", "drift-cost-watch", "drift-cost-watch-local"}
 
 
 @pytest.fixture(scope="module")

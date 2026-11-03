@@ -1,7 +1,7 @@
 {
   "name": "Check AWS Drift",
   "type": "automation",
-  "description": "Reports what changed in AWS outside Terraform without changing anything: a refresh-only plan reads every resource and names the ones that drifted and their attributes; drift opens a Work Center task (R3, ADR 0068)",
+  "description": "Reports what changed in AWS outside Terraform without changing anything: a refresh-only plan reads every resource and names the ones that drifted and their attributes. Drift, or a deployment with no end time past 24 hours, gets one proposal card from the Drift and Cost Watch (A5); the drift task opens when it cannot (R3, ADR 0068, ADR 0085)",
   "tasks": {
     "1a": {
       "name": "parse",
@@ -174,11 +174,97 @@
       "actor": "Pronghorn",
       "scheduled": false
     },
-    "1f": {
+    "a0": {
+      "name": "parse",
+      "canvasName": "parse",
+      "summary": "no deployment reading yet",
+      "description": "the gate: the deployment read from the Terraform state; the workflow decides whether there is anything to propose, never the model (A5)",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 180,
+        "y": 900
+      },
+      "variables": {
+        "incoming": {
+          "text": "{}"
+        },
+        "outgoing": {
+          "textObject": "$var.job.watch_outputs"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "a1": {
+      "name": "parse",
+      "canvasName": "parse",
+      "summary": "terraform-run outputs' params",
+      "description": "the gate: the deployment read from the Terraform state; the workflow decides whether there is anything to propose, never the model (A5)",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 160,
+        "y": 1050
+      },
+      "variables": {
+        "incoming": {
+          "text": "{\"action\": \"outputs\", \"timeout\": \"120\"}"
+        },
+        "outgoing": {
+          "textObject": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "a2": {
+      "name": "runService",
+      "canvasName": "runService",
+      "summary": "the deployment, its end time and last apply (terraform-run outputs, a state read)",
+      "description": "the gate: the deployment read from the Terraform state; the workflow decides whether there is anything to propose, never the model (A5)",
+      "location": "Application",
+      "locationType": null,
+      "app": "GatewayManager",
+      "type": "automatic",
+      "displayName": "GatewayManager",
+      "groups": [],
+      "nodeLocation": {
+        "x": 140,
+        "y": 1200
+      },
+      "variables": {
+        "incoming": {
+          "serviceName": "terraform-run",
+          "clusterId": "lab",
+          "params": "$var.a1.textObject"
+        },
+        "outgoing": {
+          "result": "$var.job.watch_outputs"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "e0": {
       "name": "evaluation",
       "canvasName": "evaluation",
-      "summary": "drift found?",
-      "description": "the check: terraform-run drift, a refresh-only plan, read on the Gateway runner",
+      "summary": "the state read answered?",
+      "description": "the gate: the deployment read from the Terraform state; the workflow decides whether there is anything to propose, never the model (A5)",
       "location": "Application",
       "locationType": null,
       "app": "WorkFlowEngine",
@@ -186,8 +272,2045 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 250,
-        "y": 900
+        "x": 230,
+        "y": 1350
+      },
+      "variables": {
+        "incoming": {
+          "all_true_flag": true,
+          "evaluation_groups": [
+            {
+              "all_true_flag": true,
+              "evaluations": [
+                {
+                  "query": "result.return_code",
+                  "operand_1": {
+                    "variable": "result",
+                    "task": "a2"
+                  },
+                  "operator": "==",
+                  "operand_2": {
+                    "variable": 0,
+                    "task": "static"
+                  }
+                }
+              ]
+            }
+          ],
+          "options": {}
+        },
+        "outgoing": {
+          "return_value": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "a3": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "the deployment could not be read",
+      "description": "the gate: the deployment read from the Terraform state; the workflow decides whether there is anything to propose, never the model (A5)",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 60,
+        "y": 1500
+      },
+      "variables": {
+        "incoming": {
+          "input": "terraform-run outputs did not answer (see watch_outputs): the gate judges an unread deployment",
+          "outputType": "string",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.watch_error"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "a4": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "the watch's input: the drift",
+      "description": "the gate: the deployment read from the Terraform state; the workflow decides whether there is anything to propose, never the model (A5)",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 150,
+        "y": 1650
+      },
+      "variables": {
+        "incoming": {
+          "obj": {},
+          "path": [
+            "drift"
+          ],
+          "value": "$var.job.drift"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "a5": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "the watch's input: the deployment",
+      "description": "the gate: the deployment read from the Terraform state; the workflow decides whether there is anything to propose, never the model (A5)",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": -150,
+        "y": 1800
+      },
+      "variables": {
+        "incoming": {
+          "obj": "$var.a4.object",
+          "path": [
+            "outputs"
+          ],
+          "value": "$var.job.watch_outputs"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "a6": {
+      "name": "runCode",
+      "canvasName": "runCode",
+      "summary": "anything to propose? (Python on the runner)",
+      "description": "the gate: the deployment read from the Terraform state; the workflow decides whether there is anything to propose, never the model (A5)",
+      "location": "Application",
+      "locationType": null,
+      "app": "GatewayManager",
+      "type": "automatic",
+      "displayName": "GatewayManager",
+      "groups": [],
+      "nodeLocation": {
+        "x": 0,
+        "y": 1950
+      },
+      "variables": {
+        "incoming": {
+          "clusterId": "lab",
+          "language": "python",
+          "code": "import json, sys\nfrom datetime import datetime, timezone\n\n\nRULES = {'long_hours': 24, 'menus': {'drift': ['redeploy', 'tear-down'], 'long-running': ['tear-down']}, 'lifetimes': ['none', '2', '4', '8', '24', '72'], 'prefix': 'Drift and Cost Watch: ', 'target': 'dc1-wan01', 'deploy': 'Deploy AWS VPN', 'teardown': 'Tear Down AWS VPN', 'routes': {'deploy': 'deploy-aws-vpn', 'teardown': 'tear-down-aws-vpn'}, 'job_url': 'https://itential.lab.internal/operations-manager/jobs/', 'prices': {'basis': \"an estimate from list prices (on-demand, us-east-1, pinned 2026-10-04, not read from AWS); excludes data transfer, NAT data processing and the state's fixed $1/month key\", 'instance_hour': {'t3.micro': 0.0104, 't3.small': 0.0208}, 'assumed_instance_type': 't3.micro', 'public_ipv4_hour': 0.005, 'nat_gateway_hour': 0.045, 'secret_month': 0.4, 'root_volume_month': 0.64}}\n\n\ndef estimate_per_day(facts: dict, prices: dict) -> dict:\n    \"\"\"The deployment's estimated cost from the unit prices pinned in versions.yaml aws_vpn.prices (D5: computed, never\n    written by a model). `facts`: instance_type (none: the assumed type), nat (bool), public_ipv4 (how many public IPv4\n    addresses AWS bills: the strongSwan EIP, and the NAT gateway's when it is on). A month is 730 hours in AWS pricing.\n    Pure: Get AWS VPN Status and Deploy's review run this very source on the Gateway.\"\"\"\n    itype = facts.get(\"instance_type\") or prices[\"assumed_instance_type\"]\n    rate = prices[\"instance_hour\"].get(itype)\n    hourly = None\n    if rate is not None:\n        hourly = (rate + prices[\"public_ipv4_hour\"] * facts.get(\"public_ipv4\", 1)\n                  + (prices[\"nat_gateway_hour\"] if facts.get(\"nat\") else 0)\n                  + (prices[\"secret_month\"] + prices[\"root_volume_month\"]) / 730)\n    return {\"instance_type\": itype, \"assumed\": not facts.get(\"instance_type\"), \"hourly\": hourly,\n            \"per_day_usd\": None if hourly is None else round(hourly * 24, 2)}\n\n\ndef watch_gate(d: dict, now: datetime, rules: dict) -> dict:\n    \"\"\"Is there anything for the Drift and Cost Watch to propose (D10)? `d`: drift (drift_summary's runCode result),\n    outputs (terraform-run outputs' answer; {} when it did not run). `route`: quiet (nothing to propose, no agent\n    call), fallback (drift the watch does not take: the plain R3 drift task; `reason` says why) or watch: the\n    `situation`, its `menu`, the agent's `request`, the card's facts and Deploy's same inputs but the address (D11).\n    Names attributes, never their values, and never an address. Pure: runCode runs this source on the Gateway with the\n    clock, the prices and the rules written in.\"\"\"\n    drift = (d.get(\"drift\") or {}).get(\"stdout_json\") or {}\n    found = drift.get(\"ok\") is True and drift.get(\"found\") is True\n    said = str(drift.get(\"summary\") or \"The drift check said nothing.\")\n    result = (d.get(\"outputs\") or {}).get(\"result\") or {}\n    answer = result.get(\"stdout_json\") or {}\n    outputs = answer.get(\"outputs\")\n\n    def quiet(text):\n        return {\"ok\": True, \"route\": \"quiet\", \"summary\": text}\n\n    def fallback(text):\n        return {\"ok\": True, \"route\": \"fallback\", \"reason\": text,\n                \"summary\": f\"{said} The Drift and Cost Watch did not run: {text}.\"}\n\n    def when(text):\n        try:\n            return datetime.strptime(str(text), \"%Y-%m-%dT%H:%M:%SZ\").replace(tzinfo=timezone.utc)\n        except ValueError:\n            return None\n\n    if result.get(\"return_code\") != 0 or not isinstance(outputs, dict):\n        return (fallback(\"the deployment could not be read (watch_outputs)\") if found else\n                quiet(f\"{said} The deployment could not be read (watch_outputs), so its age was not checked.\"))\n    if not outputs:\n        return fallback(\"the Terraform state holds nothing deployed\") if found else quiet(said)\n    end = outputs.get(\"expires_at\")\n    no_end = end in (None, \"\", \"none\")\n    ends_at = None if no_end else when(end)\n    remaining = None if ends_at is None else (ends_at - now).total_seconds() / 3600\n    state = answer.get(\"state\") or {}\n    changed = state.get(\"last_modified\") if state.get(\"read\") else None\n    then = when(changed) if changed else None\n    hours = None if then is None else round((now - then).total_seconds() / 3600, 1)\n    long_running = no_end and hours is not None and hours >= rules[\"long_hours\"]\n    if found and not no_end and (remaining is None or remaining <= 0):\n        return fallback(\"the deployment's end time has passed or cannot be read, and Tear Down Expired AWS VPN \"\n                        \"removes an expired deployment within the hour\")\n    if not found and not long_running:\n        age = (f\"It is deployed with no end time, last applied {hours} h ago: a Tear Down proposal comes at \"\n               f\"{rules['long_hours']} h.\" if no_end and hours is not None else\n               \"It is deployed with no end time; when Terraform last applied it is not known.\" if no_end else\n               f\"It is deployed until {end}, when Tear Down Expired AWS VPN removes it.\")\n        return quiet(f\"{said} {age}\")\n    situation = \"drift\" if found else \"long-running\"\n    nat = outputs.get(\"nat_gateway_enabled\")\n    est = estimate_per_day({\"instance_type\": outputs.get(\"strongswan_instance_type\"), \"nat\": bool(nat),\n                            \"public_ipv4\": 2 if nat else 1}, rules[\"prices\"])\n    so_far = None if est[\"hourly\"] is None or hours is None else round(est[\"hourly\"] * hours, 2)\n    if est[\"hourly\"] is None:\n        cost = f\"not worked out: no pinned price for {est['instance_type']}\"\n    else:\n        cost = (f\"about ${est['per_day_usd']:.2f} a day\"\n                + (f\", about ${so_far:.2f} since the last Terraform apply ({hours} h ago)\" if so_far is not None else \"\")\n                + f\" ({rules['prices']['basis']})\")\n    resources = [r for r in drift.get(\"resources\") or [] if isinstance(r, dict)] if found else []\n    drifted = [str(r.get(\"address\") or \"?\") for r in resources]\n    lines = [str(r.get(\"address\") or \"?\") + (\": deleted outside Terraform\" if \"delete\" in (r.get(\"actions\") or [])\n                                             else \": \" + \", \".join(map(str, r.get(\"attributes\") or [\"changed\"])))\n             for r in resources]\n    deployment = [f\"instance type: {est['instance_type']}\" + (\" (assumed: the state does not record it)\"\n                                                              if est[\"assumed\"] else \"\"),\n                  \"NAT gateway: \" + (\"not recorded in the state (off is Deploy's default)\" if nat is None\n                                     else \"on\" if nat else \"off\"),\n                  \"end time: \" + (\"none: it stays up until Tear Down AWS VPN\" if no_end else str(end)),\n                  \"last Terraform apply: \" + (f\"{changed} ({hours} h ago)\" if hours is not None else \"not known\")]\n    if no_end:\n        lifetime, ends = \"none\", \"no end time, as now\"\n    else:\n        # the allowed lifetime nearest the time left (owner, 2026-11-02), the shorter on a tie\n        pick = min((int(h) for h in rules[\"lifetimes\"] if h.isdigit()), key=lambda h: (abs(h - remaining), h))\n        lifetime, ends = str(pick), (f\"{pick} hours from when Deploy starts (about {remaining:.1f} h are left now; \"\n                                     \"Deploy's card shows the exact end)\")\n    meaning = {\"redeploy\": \"Deploy AWS VPN with the same inputs, which puts AWS back to what Terraform wants\",\n               \"tear-down\": f\"Tear Down AWS VPN for {rules['target']}, which removes the router's AWS block, then \"\n                            \"everything in AWS\"}\n    menu = rules[\"menus\"][situation]\n    reason = (f\"{len(lines)} resource{'s' if len(lines) != 1 else ''} in AWS changed outside Terraform\"\n              + (f\", and the deployment has had no end time for {hours} h\" if long_running else \"\") if found else\n              f\"The AWS VPN has had no end time for {hours} h since its last Terraform apply\"\n              + (f\" (about ${so_far:.2f} so far)\" if so_far is not None else \"\"))\n    request = (\"Today's situation: \"\n               + (\"drift: AWS no longer matches the Terraform state.\" if found else\n                  f\"long-running: deployed with no end time, last applied {hours} h ago.\")\n               + (f\" It is also long-running: no end time, last applied {hours} h ago.\" if found and long_running\n                  else \"\")\n               + \"\\nChoose exactly one proposal from this menu:\\n\" + \"\\n\".join(f\"- {m}: {meaning[m]}\" for m in menu)\n               + (\"\\nWhat changed outside Terraform (the resource, then the names of the attributes that changed; \"\n                  \"values are never given):\\n\" + \"\\n\".join(lines) if lines else \"\")\n               + \"\\nThe deployment:\\n\" + \"\\n\".join(deployment)\n               + f\"\\nThe estimated cost (computed; the card shows it, so never write a cost): {cost}.\")\n    return {\"ok\": True, \"route\": \"watch\", \"situation\": situation, \"menu\": menu, \"request\": request,\n            \"reason\": reason[0].upper() + reason[1:] + \".\", \"drifted\": drifted, \"drift_lines\": lines,\n            \"deployment\": deployment, \"cost\": cost, \"nat\": \"true\" if nat else \"false\", \"lifetime\": lifetime,\n            \"ends\": ends, \"summary\": f\"{said} The Drift and Cost Watch was asked ({situation}).\"}\n\n\nprint(json.dumps(watch_gate(json.loads(sys.stdin.read() or \"{}\"), datetime.now(timezone.utc), RULES)))\n",
+          "data": "$var.a5.object",
+          "safety": {
+            "timeout": 30
+          },
+          "packages": []
+        },
+        "outgoing": {
+          "result": "$var.job.watch_gate"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "a7": {
+      "name": "evaluation",
+      "canvasName": "evaluation",
+      "summary": "something to propose?",
+      "description": "the gate: the deployment read from the Terraform state; the workflow decides whether there is anything to propose, never the model (A5)",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 300,
+        "y": 2100
+      },
+      "variables": {
+        "incoming": {
+          "all_true_flag": true,
+          "evaluation_groups": [
+            {
+              "all_true_flag": true,
+              "evaluations": [
+                {
+                  "query": "stdout_json.route",
+                  "operand_1": {
+                    "variable": "result",
+                    "task": "a6"
+                  },
+                  "operator": "==",
+                  "operand_2": {
+                    "variable": "watch",
+                    "task": "static"
+                  }
+                }
+              ]
+            }
+          ],
+          "options": {}
+        },
+        "outgoing": {
+          "return_value": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "a8": {
+      "name": "evaluation",
+      "canvasName": "evaluation",
+      "summary": "drift the watch does not take?",
+      "description": "the gate: the deployment read from the Terraform state; the workflow decides whether there is anything to propose, never the model (A5)",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 850,
+        "y": 2250
+      },
+      "variables": {
+        "incoming": {
+          "all_true_flag": true,
+          "evaluation_groups": [
+            {
+              "all_true_flag": true,
+              "evaluations": [
+                {
+                  "query": "stdout_json.route",
+                  "operand_1": {
+                    "variable": "result",
+                    "task": "a6"
+                  },
+                  "operator": "==",
+                  "operand_2": {
+                    "variable": "fallback",
+                    "task": "static"
+                  }
+                }
+              ]
+            }
+          ],
+          "options": {}
+        },
+        "outgoing": {
+          "return_value": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "a9": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "the outcome: nothing to propose",
+      "description": "the gate: the deployment read from the Terraform state; the workflow decides whether there is anything to propose, never the model (A5)",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 850,
+        "y": 2400
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "stdout_json.summary",
+          "obj": "$var.a6.result"
+        },
+        "outgoing": {
+          "return_data": "$var.job.outcome"
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "aa": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "why the drift task opens instead",
+      "description": "the gate: the deployment read from the Terraform state; the workflow decides whether there is anything to propose, never the model (A5)",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 1600,
+        "y": 2400
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "stdout_json.reason",
+          "obj": "$var.a6.result"
+        },
+        "outgoing": {
+          "return_data": "$var.job.watch_note"
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "ab": {
+      "name": "getJobs",
+      "canvasName": "getJobs",
+      "summary": "the running jobs (an earlier card or an AWS VPN change open?)",
+      "description": "one open card: an earlier proposal or a change to the AWS VPN still open ends today's run",
+      "location": "Application",
+      "locationType": null,
+      "app": "OperationsManager",
+      "type": "automatic",
+      "displayName": "OperationsManager",
+      "groups": [],
+      "nodeLocation": {
+        "x": 300,
+        "y": 2250
+      },
+      "variables": {
+        "incoming": {
+          "queryParameters": {
+            "equals": {
+              "status": "running"
+            },
+            "sort": "metrics.start_time",
+            "order": -1,
+            "limit": 200,
+            "include": "_id,name"
+          }
+        },
+        "outgoing": {
+          "result": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "ac": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "the running jobs",
+      "description": "one open card: an earlier proposal or a change to the AWS VPN still open ends today's run",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 450,
+        "y": 2400
+      },
+      "variables": {
+        "incoming": {
+          "obj": {},
+          "path": [
+            "jobs"
+          ],
+          "value": "$var.ab.result"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "ad": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "the gate's answer",
+      "description": "one open card: an earlier proposal or a change to the AWS VPN still open ends today's run",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 470,
+        "y": 2550
+      },
+      "variables": {
+        "incoming": {
+          "obj": "$var.ac.object",
+          "path": [
+            "gate"
+          ],
+          "value": "$var.job.watch_gate"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "ae": {
+      "name": "runCode",
+      "canvasName": "runCode",
+      "summary": "one open? (Python on the runner)",
+      "description": "one open card: an earlier proposal or a change to the AWS VPN still open ends today's run",
+      "location": "Application",
+      "locationType": null,
+      "app": "GatewayManager",
+      "type": "automatic",
+      "displayName": "GatewayManager",
+      "groups": [],
+      "nodeLocation": {
+        "x": 330,
+        "y": 2700
+      },
+      "variables": {
+        "incoming": {
+          "clusterId": "lab",
+          "language": "python",
+          "code": "import json, sys\n\n\ndef watch_open(d: dict) -> dict:\n    \"\"\"At most one open card (D10): is an earlier proposal or a change to the AWS VPN still open? `jobs`: getJobs'\n    answer for the running jobs (their names); `self` and `changes` name the workflows; `gate`: watch_gate's runCode\n    result. A job waiting at a Work Center card is running, and this run is one running Check AWS Drift, so a second\n    is an earlier day's card or drift task: today's run notes it and ends (`route` end). A change to the AWS VPN in\n    flight means no proposal today, but drift still opens the R3 drift task (`route` fallback, `reason` says why): the\n    watch never hides drift. `route` watch: nothing open. `ok` is false when the jobs cannot be read. Pure: runCode\n    runs this source.\"\"\"\n    rows = (d.get(\"jobs\") or {}).get(\"data\")\n    if not isinstance(rows, list):\n        return {\"ok\": False, \"route\": \"\"}\n    names = [str(r.get(\"name\")) for r in rows if isinstance(r, dict)]\n    earlier = names.count(d[\"self\"]) - 1\n    changes = sorted({n for n in names if n in d[\"changes\"]})\n    gate = (d.get(\"gate\") or {}).get(\"stdout_json\") or {}\n    said = str(gate.get(\"summary\") or \"\")\n    if earlier > 0:\n        return {\"ok\": True, \"route\": \"end\", \"summary\": (f\"{said} \" if said else \"\") + \"No proposal today: an earlier \"\n                f\"{d['self']} run is still waiting at its Work Center card. Decide that first; tomorrow's check looks \"\n                \"again.\"}\n    if changes:\n        running = \", \".join(changes)\n        if gate.get(\"situation\") == \"drift\":\n            return {\"ok\": True, \"route\": \"fallback\",\n                    \"reason\": f\"a change to the AWS VPN is in flight ({running}): no proposal while it runs\"}\n        return {\"ok\": True, \"route\": \"end\", \"summary\": (f\"{said} \" if said else \"\") + f\"No proposal today: {running} \"\n                \"is running or waiting at its card. Tomorrow's check looks again.\"}\n    return {\"ok\": True, \"route\": \"watch\"}\n\n\nprint(json.dumps(watch_open({**json.loads(sys.stdin.read() or \"{}\"), **json.loads('{\"self\": \"Check AWS Drift\", \"changes\": [\"Deploy AWS VPN\", \"Diagnose AWS VPN Outage\", \"Hand Off AWS VPN\", \"Rotate AWS VPN Key\", \"Rotate AWS VPN Key Monthly\", \"Tear Down AWS VPN\", \"Tear Down Expired AWS VPN\"]}')})))\n",
+          "data": "$var.ad.object",
+          "safety": {
+            "timeout": 30
+          },
+          "packages": []
+        },
+        "outgoing": {
+          "result": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "af": {
+      "name": "evaluation",
+      "canvasName": "evaluation",
+      "summary": "the running jobs read?",
+      "description": "one open card: an earlier proposal or a change to the AWS VPN still open ends today's run",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 520,
+        "y": 2850
+      },
+      "variables": {
+        "incoming": {
+          "all_true_flag": true,
+          "evaluation_groups": [
+            {
+              "all_true_flag": true,
+              "evaluations": [
+                {
+                  "query": "stdout_json.ok",
+                  "operand_1": {
+                    "variable": "result",
+                    "task": "ae"
+                  },
+                  "operator": "==",
+                  "operand_2": {
+                    "variable": true,
+                    "task": "static"
+                  }
+                }
+              ]
+            }
+          ],
+          "options": {}
+        },
+        "outgoing": {
+          "return_value": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "b0": {
+      "name": "evaluation",
+      "canvasName": "evaluation",
+      "summary": "an earlier card open?",
+      "description": "one open card: an earlier proposal or a change to the AWS VPN still open ends today's run",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 1160,
+        "y": 3000
+      },
+      "variables": {
+        "incoming": {
+          "all_true_flag": true,
+          "evaluation_groups": [
+            {
+              "all_true_flag": true,
+              "evaluations": [
+                {
+                  "query": "stdout_json.route",
+                  "operand_1": {
+                    "variable": "result",
+                    "task": "ae"
+                  },
+                  "operator": "==",
+                  "operand_2": {
+                    "variable": "end",
+                    "task": "static"
+                  }
+                }
+              ]
+            }
+          ],
+          "options": {}
+        },
+        "outgoing": {
+          "return_value": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "b1": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "the outcome: one is open",
+      "description": "one open card: an earlier proposal or a change to the AWS VPN still open ends today's run",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 1460,
+        "y": 3150
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "stdout_json.summary",
+          "obj": "$var.ae.result"
+        },
+        "outgoing": {
+          "return_data": "$var.job.outcome"
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "e1": {
+      "name": "evaluation",
+      "canvasName": "evaluation",
+      "summary": "a change in flight, with drift?",
+      "description": "one open card: an earlier proposal or a change to the AWS VPN still open ends today's run",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 710,
+        "y": 3150
+      },
+      "variables": {
+        "incoming": {
+          "all_true_flag": true,
+          "evaluation_groups": [
+            {
+              "all_true_flag": true,
+              "evaluations": [
+                {
+                  "query": "stdout_json.route",
+                  "operand_1": {
+                    "variable": "result",
+                    "task": "ae"
+                  },
+                  "operator": "==",
+                  "operand_2": {
+                    "variable": "fallback",
+                    "task": "static"
+                  }
+                }
+              ]
+            }
+          ],
+          "options": {}
+        },
+        "outgoing": {
+          "return_value": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "e2": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "why the drift task opens instead",
+      "description": "one open card: an earlier proposal or a change to the AWS VPN still open ends today's run",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 1200,
+        "y": 3300
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "stdout_json.reason",
+          "obj": "$var.ae.result"
+        },
+        "outgoing": {
+          "return_data": "$var.job.watch_note"
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "b2": {
+      "name": "parse",
+      "canvasName": "parse",
+      "summary": "no watch answer yet",
+      "description": "the watch: drift-cost-watch picks one proposal from today's menu (no tools), held to the menu and the facts",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 750,
+        "y": 3300
+      },
+      "variables": {
+        "incoming": {
+          "text": "{}"
+        },
+        "outgoing": {
+          "textObject": "$var.job.watch_result"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "b3": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "the watch's request",
+      "description": "the watch: drift-cost-watch picks one proposal from today's menu (no tools), held to the menu and the facts",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 740,
+        "y": 3450
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "stdout_json.request",
+          "obj": "$var.a6.result"
+        },
+        "outgoing": {
+          "return_data": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "b4": {
+      "name": "runAgent",
+      "canvasName": "runAgent",
+      "summary": "drift-cost-watch: one proposal from today's menu (advisory, no tools)",
+      "description": "the watch: drift-cost-watch picks one proposal from today's menu (no tools), held to the menu and the facts",
+      "location": "Application",
+      "locationType": null,
+      "app": "AgentSessionManager",
+      "type": "automatic",
+      "displayName": "Agent Sessions",
+      "groups": [],
+      "nodeLocation": {
+        "x": 910,
+        "y": 3600
+      },
+      "variables": {
+        "incoming": {
+          "agent": "__AGENT_ID:drift-cost-watch__",
+          "inputs": {
+            "request": "$var.b3.return_data"
+          }
+        },
+        "outgoing": {
+          "result": "$var.job.watch_result"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "b5": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "the watch session did not run",
+      "description": "the watch: drift-cost-watch picks one proposal from today's menu (no tools), held to the menu and the facts",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 1160,
+        "y": 3750
+      },
+      "variables": {
+        "incoming": {
+          "input": "the drift-cost-watch session ended in an error: drift opens the drift task, a long-running deployment its Tear Down card",
+          "outputType": "string",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.watch_error"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "b6": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "the check's input: the gate",
+      "description": "the watch: drift-cost-watch picks one proposal from today's menu (no tools), held to the menu and the facts",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 830,
+        "y": 3900
+      },
+      "variables": {
+        "incoming": {
+          "obj": {},
+          "path": [
+            "gate"
+          ],
+          "value": "$var.job.watch_gate"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "b7": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "the check's input: the watch's answer",
+      "description": "the watch: drift-cost-watch picks one proposal from today's menu (no tools), held to the menu and the facts",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 980,
+        "y": 4050
+      },
+      "variables": {
+        "incoming": {
+          "obj": "$var.b6.object",
+          "path": [
+            "agent"
+          ],
+          "value": "$var.job.watch_result"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "b8": {
+      "name": "runCode",
+      "canvasName": "runCode",
+      "summary": "the proposal, held to the menu and the facts (Python on the runner)",
+      "description": "the watch: drift-cost-watch picks one proposal from today's menu (no tools), held to the menu and the facts",
+      "location": "Application",
+      "locationType": null,
+      "app": "GatewayManager",
+      "type": "automatic",
+      "displayName": "GatewayManager",
+      "groups": [],
+      "nodeLocation": {
+        "x": 940,
+        "y": 4200
+      },
+      "variables": {
+        "incoming": {
+          "clusterId": "lab",
+          "language": "python",
+          "code": "import json, re, sys\n\n\nPLAN_ADDRESS = re.compile('(?:module\\\\.[\\\\w-]+(?:\\\\[[^\\\\]\\\\s]+\\\\])?\\\\.)*aws_\\\\w+\\\\.[\\\\w-]+(?:\\\\[[^\\\\]\\\\s]+\\\\])?')\nIPV4_LITERAL = re.compile('(?<![\\\\d.])\\\\d{1,3}(?:\\\\.\\\\d{1,3}){3}(?!\\\\d)')\n\n\ndef watch_proposal(d: dict) -> dict:\n    \"\"\"drift-cost-watch's answer held to today's menu and the facts (D6, D10), and the card. `d`: gate (watch_gate's\n    runCode result), agent (runAgent's {sessionId, sessionStatus, lastMessage}, or {} when the session did not run),\n    and the rules. The answer's last JSON object line (a code fence around it is fine) must be {\"proposal\": <on today's\n    menu>, \"why\": <plain words>}. The words are kept only when they name no resource that did not drift and no global\n    IPv4 address; markup characters go. `route`: card or fallback (the plain R3 drift task, `reason` says why; a\n    drift day only); a long-running day whose watch fails still gets the Tear Down card with\n    the workflow's own reason. `body`: the started run's inputs but the address. Pure: runCode runs this source.\"\"\"\n    gate, agent = (d.get(\"gate\") or {}).get(\"stdout_json\") or {}, d.get(\"agent\") or {}\n    situation, menu = gate.get(\"situation\"), list(gate.get(\"menu\") or [])\n    proposal, words, failed = None, \"\", \"\"\n    if not agent:  # runAgent errors on a canceled or failed session: its answer stays {}\n        failed = \"the watch session ended without an answer (canceled, failed or not started)\"\n    elif agent.get(\"sessionStatus\") != \"COMPLETE\":\n        failed = f\"the watch did not finish ({str(agent.get('sessionStatus') or 'no status')[:24]})\"\n    else:\n        answer = None\n        for line in reversed([x.strip() for x in str(agent.get(\"lastMessage\") or \"\").splitlines() if x.strip()]):\n            try:\n                answer = json.loads(line)\n            except ValueError:\n                continue\n            if isinstance(answer, dict):\n                break\n        if not isinstance(answer, dict) or \"proposal\" not in answer:\n            failed = \"the watch's answer was not the JSON line\"\n        elif answer.get(\"proposal\") not in menu:\n            failed = (f\"the watch proposed {str(answer.get('proposal'))[:24]!r}, which is not on today's menu \"\n                      f\"({', '.join(menu)})\")\n        else:\n            proposal, words = answer[\"proposal\"], answer.get(\"why\")\n\n    # the words reach the card and the started run's change note, so they carry no address of any kind and no cost\n    # (D5: the card shows the computed estimate), and name only resources that drifted\n    drifted = [str(a) for a in gate.get(\"drifted\") or []]\n    text = \"\".join(c for c in \" \".join(str(words or \"\").split()) if c not in '<>\"\\\\')\n    named = PLAN_ADDRESS.findall(text)\n    if (IPV4_LITERAL.search(text) or \"$\" in text or re.search(r\"(?i)\\b(usd|dollars?|cents?)\\b\", text)\n            or any(not any(a == n or a.endswith(\".\" + n) for a in drifted) for n in named)):\n        text = \"\"\n    text = text if len(text) <= 240 else text[:237] + \"...\"\n    if failed and situation == \"drift\":\n        return {\"ok\": True, \"route\": \"fallback\", \"reason\": failed,\n                \"summary\": f\"The Drift and Cost Watch could not propose ({failed}): the drift task opens instead.\"}\n    if failed:\n        proposal = \"tear-down\"\n    why = text or str(gate.get(\"reason\") or \"\")\n    note = d[\"prefix\"] + why\n    note = note if len(note) <= 280 else note[:277] + \"...\"\n    if proposal == \"redeploy\":\n        what = \"redeploy: Deploy AWS VPN with the same inputs\"\n        body = {\"change_note\": note, \"enable_nat_gateway\": gate.get(\"nat\"), \"lifetime_hours\": gate.get(\"lifetime\")}\n        run = [f\"{d['deploy']}, started through its endpoint ({d['routes']['deploy']})\",\n               f\"end: {gate.get('ends')}\",\n               f\"NAT gateway: {'on' if gate.get('nat') == 'true' else 'off'} (as the Terraform state records it)\",\n               \"on-prem address: reused, never shown (the message names the Deploy job it comes from)\"]\n        started = d[\"deploy\"]\n        reuse = \" It reuses __FROM__: if that address has changed, reject the plan's card.\"\n    else:\n        what = f\"tear-down: Tear Down AWS VPN for {d['target']}\"\n        body = {\"change_note\": note, \"target\": d[\"target\"]}\n        run = [f\"{d['teardown']} for {d['target']}, started through its endpoint ({d['routes']['teardown']})\",\n               \"it stops at two cards: the router's AWS block first, then the AWS destroy\"]\n        started = d[\"teardown\"]\n        reuse = \"\"\n    run += [f\"change note: {note}\", \"It opens its own ServiceNow change request and stops at its own Work Center \"\n                                    \"card: nothing changes before that approval.\"]\n    shown = why + (f\" (the workflow's own reason: the watch's words were unavailable, {failed})\" if failed else\n                   \" (the watch's words, checked: drifted resources only, no address, no cost)\" if text\n                   else \" (the workflow's own reason)\")\n    card = {\"proposal\": what, \"why\": shown, \"situation\": situation, \"menu_today\": \", \".join(menu),\n            **({\"what_changed_outside_terraform\": list(gate.get(\"drift_lines\") or [])} if gate.get(\"drift_lines\")\n               else {}),\n            \"the_deployment\": list(gate.get(\"deployment\") or []), \"estimated_cost\": gate.get(\"cost\") or \"not worked out\",\n            \"the_run_it_starts\": run}\n    message = (f\"The Drift and Cost Watch proposes {what}. Why: {why}{reuse} Approve starts that run, which opens its \"\n               \"own change request and stops at its own Work Center card; Reject starts nothing.\")\n    return {\"ok\": True, \"route\": \"card\", \"proposal\": proposal, \"why\": why, \"unavailable\": failed, \"body\": body,\n            \"card\": card, \"message\": message, \"started\": f\"The approved {started} started: {d['job_url']}__J__. It \"\n                                                         \"opens its own change request and stops at its own Work Center card.\"}\n\n\nprint(json.dumps(watch_proposal({**json.loads(sys.stdin.read() or \"{}\"), **json.loads('{\"long_hours\": 24, \"menus\": {\"drift\": [\"redeploy\", \"tear-down\"], \"long-running\": [\"tear-down\"]}, \"lifetimes\": [\"none\", \"2\", \"4\", \"8\", \"24\", \"72\"], \"prefix\": \"Drift and Cost Watch: \", \"target\": \"dc1-wan01\", \"deploy\": \"Deploy AWS VPN\", \"teardown\": \"Tear Down AWS VPN\", \"routes\": {\"deploy\": \"deploy-aws-vpn\", \"teardown\": \"tear-down-aws-vpn\"}, \"job_url\": \"https://itential.lab.internal/operations-manager/jobs/\"}')})))\n",
+          "data": "$var.b7.object",
+          "safety": {
+            "timeout": 30
+          },
+          "packages": []
+        },
+        "outgoing": {
+          "result": "$var.job.watch"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "b9": {
+      "name": "evaluation",
+      "canvasName": "evaluation",
+      "summary": "a card?",
+      "description": "the watch: drift-cost-watch picks one proposal from today's menu (no tools), held to the menu and the facts",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 1850,
+        "y": 4350
+      },
+      "variables": {
+        "incoming": {
+          "all_true_flag": true,
+          "evaluation_groups": [
+            {
+              "all_true_flag": true,
+              "evaluations": [
+                {
+                  "query": "stdout_json.route",
+                  "operand_1": {
+                    "variable": "result",
+                    "task": "b8"
+                  },
+                  "operator": "==",
+                  "operand_2": {
+                    "variable": "card",
+                    "task": "static"
+                  }
+                }
+              ]
+            }
+          ],
+          "options": {}
+        },
+        "outgoing": {
+          "return_value": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "bb": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "why the drift task opens instead",
+      "description": "the watch: drift-cost-watch picks one proposal from today's menu (no tools), held to the menu and the facts",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 2210,
+        "y": 4500
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "stdout_json.reason",
+          "obj": "$var.b8.result"
+        },
+        "outgoing": {
+          "return_data": "$var.job.watch_note"
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "bd": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "the card's body",
+      "description": "the watch: drift-cost-watch picks one proposal from today's menu (no tools), held to the menu and the facts",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 1400,
+        "y": 4500
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "stdout_json.card",
+          "obj": "$var.b8.result"
+        },
+        "outgoing": {
+          "return_data": "$var.job.watch_card"
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "be": {
+      "name": "evaluation",
+      "canvasName": "evaluation",
+      "summary": "a redeploy?",
+      "description": "the watch: drift-cost-watch picks one proposal from today's menu (no tools), held to the menu and the facts",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 2060,
+        "y": 4650
+      },
+      "variables": {
+        "incoming": {
+          "all_true_flag": true,
+          "evaluation_groups": [
+            {
+              "all_true_flag": true,
+              "evaluations": [
+                {
+                  "query": "stdout_json.proposal",
+                  "operand_1": {
+                    "variable": "result",
+                    "task": "b8"
+                  },
+                  "operator": "==",
+                  "operand_2": {
+                    "variable": "redeploy",
+                    "task": "static"
+                  }
+                }
+              ]
+            }
+          ],
+          "options": {}
+        },
+        "outgoing": {
+          "return_value": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "bf": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "the card's message",
+      "description": "the watch: drift-cost-watch picks one proposal from today's menu (no tools), held to the menu and the facts",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 2510,
+        "y": 4800
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "stdout_json.message",
+          "obj": "$var.b8.result"
+        },
+        "outgoing": {
+          "return_data": "$var.job.watch_message"
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "c0": {
+      "name": "getJobs",
+      "canvasName": "getJobs",
+      "summary": "the newest Deploy AWS VPN jobs (who started each)",
+      "description": "the address: a redeploy reuses the newest person-started Deploy's on-prem address, never a job variable",
+      "location": "Application",
+      "locationType": null,
+      "app": "OperationsManager",
+      "type": "automatic",
+      "displayName": "OperationsManager",
+      "groups": [],
+      "nodeLocation": {
+        "x": 2060,
+        "y": 4800
+      },
+      "variables": {
+        "incoming": {
+          "queryParameters": {
+            "equals": {
+              "name": "Deploy AWS VPN"
+            },
+            "sort": "metrics.start_time",
+            "order": -1,
+            "limit": 100,
+            "include": "_id,metrics.start_time,metrics.user"
+          }
+        },
+        "outgoing": {
+          "result": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "c1": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "the jobs",
+      "description": "the address: a redeploy reuses the newest person-started Deploy's on-prem address, never a job variable",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 1890,
+        "y": 4950
+      },
+      "variables": {
+        "incoming": {
+          "obj": {},
+          "path": [
+            "jobs"
+          ],
+          "value": "$var.c0.result"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "c2": {
+      "name": "runCode",
+      "canvasName": "runCode",
+      "summary": "the newest one a person started (Python on the runner)",
+      "description": "the address: a redeploy reuses the newest person-started Deploy's on-prem address, never a job variable",
+      "location": "Application",
+      "locationType": null,
+      "app": "GatewayManager",
+      "type": "automatic",
+      "displayName": "GatewayManager",
+      "groups": [],
+      "nodeLocation": {
+        "x": 1460,
+        "y": 5100
+      },
+      "variables": {
+        "incoming": {
+          "clusterId": "lab",
+          "language": "python",
+          "code": "import json, sys\n\n\ndef newest_person_deploy(d: dict) -> dict:\n    \"\"\"The newest Deploy AWS VPN job a person started, from getJobs' answer (`jobs`, newest first), and where the reused\n    address comes from in words (never the address). A run an automation, an agent tool or a schedule started records\n    `Pronghorn` as its user (measured 2026-10-31) and cannot be read back (probe P2b), so it is passed over: an address\n    a person gave the Concierge is not reused, which is why the answer says whose address it is. Pure: runCode runs\n    this source.\"\"\"\n    from datetime import datetime, timezone\n\n    for row in (d.get(\"jobs\") or {}).get(\"data\") or []:\n        if isinstance(row, dict) and (row.get(\"metrics\") or {}).get(\"user\") not in (None, \"\", \"Pronghorn\"):\n            start = (row.get(\"metrics\") or {}).get(\"start_time\")\n            when = (f\", started {datetime.fromtimestamp(start / 1000, timezone.utc):%Y-%m-%d %H:%M} UTC\"\n                    if isinstance(start, (int, float)) else \"\")\n            return {\"found\": True, \"job\": row.get(\"_id\"),\n                    \"from\": f\"the on-prem address of Deploy AWS VPN job {row.get('_id')}{when}\"}\n    return {\"found\": False}\n\n\nprint(json.dumps(newest_person_deploy({**json.loads(sys.stdin.read() or \"{}\"), **json.loads('{}')})))\n",
+          "data": "$var.c1.object",
+          "safety": {
+            "timeout": 30
+          },
+          "packages": []
+        },
+        "outgoing": {
+          "result": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "c3": {
+      "name": "evaluation",
+      "canvasName": "evaluation",
+      "summary": "one found?",
+      "description": "the address: a redeploy reuses the newest person-started Deploy's on-prem address, never a job variable",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 1760,
+        "y": 5250
+      },
+      "variables": {
+        "incoming": {
+          "all_true_flag": true,
+          "evaluation_groups": [
+            {
+              "all_true_flag": true,
+              "evaluations": [
+                {
+                  "query": "stdout_json.found",
+                  "operand_1": {
+                    "variable": "result",
+                    "task": "c2"
+                  },
+                  "operator": "==",
+                  "operand_2": {
+                    "variable": true,
+                    "task": "static"
+                  }
+                }
+              ]
+            }
+          ],
+          "options": {}
+        },
+        "outgoing": {
+          "return_value": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "c4": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "its id",
+      "description": "the address: a redeploy reuses the newest person-started Deploy's on-prem address, never a job variable",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 1950,
+        "y": 5400
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "stdout_json.job",
+          "obj": "$var.c2.result"
+        },
+        "outgoing": {
+          "return_data": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "c5": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "whose address it is, in words (never the address)",
+      "description": "the address: a redeploy reuses the newest person-started Deploy's on-prem address, never a job variable",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 2040,
+        "y": 5550
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "stdout_json.from",
+          "obj": "$var.c2.result"
+        },
+        "outgoing": {
+          "return_data": "$var.job.address_from"
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "c6": {
+      "name": "getJob",
+      "canvasName": "getJob",
+      "summary": "that job, its inputs read",
+      "description": "the address: a redeploy reuses the newest person-started Deploy's on-prem address, never a job variable",
+      "location": "Application",
+      "locationType": null,
+      "app": "OperationsManager",
+      "type": "automatic",
+      "displayName": "OperationsManager",
+      "groups": [],
+      "nodeLocation": {
+        "x": 2270,
+        "y": 5700
+      },
+      "variables": {
+        "incoming": {
+          "id": "$var.c4.return_data",
+          "queryParameters": {}
+        },
+        "outgoing": {
+          "job": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "c7": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "that job",
+      "description": "the address: a redeploy reuses the newest person-started Deploy's on-prem address, never a job variable",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 2370,
+        "y": 5850
+      },
+      "variables": {
+        "incoming": {
+          "obj": {},
+          "path": [
+            "job"
+          ],
+          "value": "$var.c6.job"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "c8": {
+      "name": "runCode",
+      "canvasName": "runCode",
+      "summary": "its on-prem address, checked (Python on the runner; kept on the task)",
+      "description": "the address: a redeploy reuses the newest person-started Deploy's on-prem address, never a job variable",
+      "location": "Application",
+      "locationType": null,
+      "app": "GatewayManager",
+      "type": "automatic",
+      "displayName": "GatewayManager",
+      "groups": [],
+      "nodeLocation": {
+        "x": 2420,
+        "y": 6000
+      },
+      "variables": {
+        "incoming": {
+          "clusterId": "lab",
+          "language": "python",
+          "code": "import json, sys\n\n\ndef last_address(d: dict) -> dict:\n    \"\"\"That job's on-prem address, from getJob's answer (`job`), when it is a dotted IPv4 address. Its result stays on\n    the task. Pure: runCode runs this source.\"\"\"\n    ip = (((d.get(\"job\") or {}).get(\"data\") or {}).get(\"variables\") or {}).get(\"onprem_public_ip\")\n    parts = ip.split(\".\") if isinstance(ip, str) else []\n    ok = len(parts) == 4 and all(p.isdigit() and str(int(p)) == p and int(p) <= 255 for p in parts)\n    return {\"ok\": ok, \"ip\": ip if ok else None}\n\n\nprint(json.dumps(last_address({**json.loads(sys.stdin.read() or \"{}\"), **json.loads('{}')})))\n",
+          "data": "$var.c7.object",
+          "safety": {
+            "timeout": 30
+          },
+          "packages": []
+        },
+        "outgoing": {
+          "result": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "c9": {
+      "name": "evaluation",
+      "canvasName": "evaluation",
+      "summary": "a usable address?",
+      "description": "the address: a redeploy reuses the newest person-started Deploy's on-prem address, never a job variable",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 2560,
+        "y": 6150
+      },
+      "variables": {
+        "incoming": {
+          "all_true_flag": true,
+          "evaluation_groups": [
+            {
+              "all_true_flag": true,
+              "evaluations": [
+                {
+                  "query": "stdout_json.ok",
+                  "operand_1": {
+                    "variable": "result",
+                    "task": "c8"
+                  },
+                  "operator": "==",
+                  "operand_2": {
+                    "variable": true,
+                    "task": "static"
+                  }
+                }
+              ]
+            }
+          ],
+          "options": {}
+        },
+        "outgoing": {
+          "return_value": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "ca": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "the address (kept on the task)",
+      "description": "the address: a redeploy reuses the newest person-started Deploy's on-prem address, never a job variable",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 3110,
+        "y": 6300
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "stdout_json.ip",
+          "obj": "$var.c8.result"
+        },
+        "outgoing": {
+          "return_data": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "cd": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "the card's message, before whose address",
+      "description": "the address: a redeploy reuses the newest person-started Deploy's on-prem address, never a job variable",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 3230,
+        "y": 6450
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "stdout_json.message",
+          "obj": "$var.b8.result"
+        },
+        "outgoing": {
+          "return_data": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "cb": {
+      "name": "replace",
+      "canvasName": "replace",
+      "summary": "the card's message: whose address",
+      "description": "the address: a redeploy reuses the newest person-started Deploy's on-prem address, never a job variable",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 3210,
+        "y": 6600
+      },
+      "variables": {
+        "incoming": {
+          "str": "$var.cd.return_data",
+          "substr": "__FROM__",
+          "newSubstr": "$var.job.address_from"
+        },
+        "outgoing": {
+          "replacedString": "$var.job.watch_message"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "cc": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "why the drift task opens instead",
+      "description": "the address: a redeploy reuses the newest person-started Deploy's on-prem address, never a job variable",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 2140,
+        "y": 6750
+      },
+      "variables": {
+        "incoming": {
+          "input": "a redeploy needs the on-prem address of a Deploy AWS VPN a person started, and none could be read",
+          "outputType": "string",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.watch_note"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "d01": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "the card: header",
+      "description": "the proposal card: the proposal, why and the facts; approve starts the run, reject starts nothing",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 3050,
+        "y": 6750
+      },
+      "variables": {
+        "incoming": {
+          "obj": {},
+          "path": [
+            "header"
+          ],
+          "value": "Approve the Drift and Cost Watch proposal"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "d02": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "the card: message",
+      "description": "the proposal card: the proposal, why and the facts; approve starts the run, reject starts nothing",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 2590,
+        "y": 6900
+      },
+      "variables": {
+        "incoming": {
+          "obj": "$var.d01.object",
+          "path": [
+            "message"
+          ],
+          "value": "$var.job.watch_message"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "d03": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "the card: body",
+      "description": "the proposal card: the proposal, why and the facts; approve starts the run, reject starts nothing",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 2180,
+        "y": 7050
+      },
+      "variables": {
+        "incoming": {
+          "obj": "$var.d02.object",
+          "path": [
+            "body"
+          ],
+          "value": "$var.job.watch_card"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "d04": {
+      "name": "runCode",
+      "canvasName": "runCode",
+      "summary": "the card's page (Python on the runner)",
+      "description": "the proposal card: the proposal, why and the facts; approve starts the run, reject starts nothing",
+      "location": "Application",
+      "locationType": null,
+      "app": "GatewayManager",
+      "type": "automatic",
+      "displayName": "GatewayManager",
+      "groups": [],
+      "nodeLocation": {
+        "x": 1870,
+        "y": 7200
+      },
+      "variables": {
+        "incoming": {
+          "clusterId": "lab",
+          "language": "python",
+          "code": "import json, sys\n\n\nCARD_NIGHT = '#0B1322'\nCARD_PANEL = '#121D31'\nCARD_EDGE = '#24344D'\nCARD_DEEP = '#070D18'\nCARD_TEXT = '#E6EDF7'\nCARD_MUTED = '#9FB0C8'\nCARD_GREY = '#7C8EA6'\nCARD_GREEN = '#39C27A'\nCARD_AMBER = '#F2B134'\nCARD_RED = '#FF5A5F'\nCARD_SKY = '#4FA3F7'\nimport base64\nimport html\nfrom datetime import datetime, timezone\n\nOUTAGE_CARD_CSS = '\\nbody { margin: 0; padding: 4px; background: transparent; }\\n.oc { --night: #0B1322; --panel: #121D31; --edge: #24344D; --deep: #070D18; --ink: #E6EDF7; --ink-soft: #9FB0C8;\\n  --sky: #4FA3F7; --green: #39C27A; --amber: #F2B134; --red: #FF5A5F; --line: #24344D; --on-sky: #06101E;\\n  --display: \"Avenir Next Condensed\", \"Avenir Next\", \"Segoe UI Semibold\", \"Arial Narrow\", sans-serif;\\n  --mono: \"SF Mono\", \"Cascadia Mono\", Menlo, Consolas, monospace;\\n  font-family: \"Avenir Next\", \"Segoe UI\", system-ui, -apple-system, sans-serif; color: var(--ink);\\n  background: var(--night); font-size: 15px; line-height: 1.5; max-width: 980px; margin: 0 auto;\\n  border-radius: 14px; overflow: hidden; box-shadow: 0 18px 40px -24px rgba(0, 0, 0, .75);\\n  font-variant-numeric: tabular-nums; }\\n.oc * { box-sizing: border-box; }\\n.oc p { margin: 0; }\\n.oc .band { background: var(--deep); color: var(--ink); padding: 22px 28px 24px; display: grid;\\n  grid-template-columns: 1fr auto; gap: 18px 24px; align-items: start; border-bottom: 1px solid var(--sky); }\\n.oc .brand { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--ink-soft); grid-column: 1 / -1;\\n  letter-spacing: .02em; }\\n.oc .brand img { width: 26px; height: 26px; flex: none; display: block; }\\n.oc .brand b { color: #fff; font-family: var(--display); font-weight: 700; font-size: 15px; }\\n.oc h1 { font-family: var(--display); font-weight: 700; font-size: 34px; line-height: 1.05; margin: 0 0 8px; color: #fff; }\\n.oc .lede { color: var(--ink-soft); max-width: 58ch; }\\n.oc .lede strong { color: #fff; font-weight: 600; }\\n.oc .status { text-align: right; }\\n.oc .pill { display: inline-flex; align-items: center; gap: 8px; background: rgba(242, 177, 52, .14); color: var(--amber);\\n  border: 1px solid rgba(242, 177, 52, .55); border-radius: 999px; padding: 5px 12px 5px 10px; font-size: 13px;\\n  font-weight: 600; white-space: nowrap; }\\n.oc .pill::before { content: \"\"; width: 8px; height: 8px; border-radius: 50%; background: var(--amber);\\n  animation: oc-blink 1.8s ease-in-out infinite; }\\n@keyframes oc-blink { 0%, 100% { opacity: 1; } 50% { opacity: .3; } }\\n.oc .elapsed { margin-top: 12px; font-family: var(--mono); font-size: 36px; font-weight: 600; line-height: 1;\\n  letter-spacing: .02em; color: var(--amber); }\\n.oc .elapsed small { display: block; font-family: var(--display); font-size: 12px; font-weight: 500; color: var(--ink-soft);\\n  margin-top: 4px; letter-spacing: 0; }\\n.oc .body { padding: 22px 28px 28px; display: grid; gap: 18px; }\\n.oc .panel { background: var(--panel); border: 1px solid var(--edge); border-radius: 12px; padding: 18px 20px; }\\n.oc h2 { font-family: var(--display); font-weight: 700; font-size: 19px; margin: 0 0 12px; color: #fff; }\\n.oc .topo { padding: 16px 20px 6px; }\\n.oc .topo img { display: block; width: 100%; height: auto; }\\n.oc .ledger { display: grid; grid-template-columns: repeat(4, 1fr); border-top: 1px solid var(--line); margin-top: 6px; }\\n.oc .reading { padding: 14px 16px 4px 14px; border-left: 3px solid var(--c); }\\n.oc .src, .oc .why { font-size: 13px; color: var(--ink-soft); }\\n.oc .val { font-family: var(--mono); font-size: 19px; font-weight: 600; color: var(--c); line-height: 1.2;\\n  margin: 2px 0; }\\n.oc .steps { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(5, 1fr); }\\n.oc .steps li { position: relative; padding: 26px 8px 0 0; font-size: 13px; color: var(--ink-soft); }\\n.oc .steps li::before { content: \"\"; position: absolute; top: 6px; left: 0; width: 13px; height: 13px;\\n  border-radius: 50%; background: var(--green); box-shadow: 0 0 0 3px var(--panel), 0 0 0 4px var(--green); }\\n.oc .steps li::after { content: \"\"; position: absolute; top: 12px; left: 20px; right: 6px; height: 2px;\\n  background: var(--green); }\\n.oc .steps li:last-child::after { display: none; }\\n.oc .steps .who { display: block; font-family: var(--display); font-weight: 700; font-size: 15px; color: var(--ink); }\\n.oc .steps b { display: block; color: var(--ink); font-size: 14px; font-weight: 600; }\\n.oc .steps .now::before { background: var(--amber); box-shadow: 0 0 0 3px var(--panel), 0 0 0 5px var(--amber); }\\n.oc .steps .now::after, .oc .steps .next::after {\\n  background: repeating-linear-gradient(90deg, #3A4C66 0 6px, transparent 6px 11px); }\\n.oc .steps .now b { color: var(--amber); }\\n.oc .steps .next::before { background: var(--panel); box-shadow: 0 0 0 2px #3A4C66; }\\n.oc .diag { display: grid; grid-template-columns: 1fr 1.05fr; gap: 20px; align-items: start; }\\n.oc .cause { font-family: var(--display); font-size: 25px; font-weight: 700; line-height: 1.15; margin: 2px 0 10px; color: #fff; }\\n.oc .by { display: inline-flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--ink-soft);\\n  background: var(--night); border-radius: 999px; padding: 4px 10px 4px 6px; margin-bottom: 12px; }\\n.oc .by i { width: 18px; height: 18px; border-radius: 50%; display: inline-block;\\n  box-shadow: inset 0 0 0 4px var(--panel), inset 0 0 0 9px var(--sky); background: var(--sky); }\\n.oc .term { background: var(--deep); color: #C9D6E8; border: 1px solid var(--edge); border-radius: 10px;\\n  padding: 12px 16px 14px; font-family: var(--mono); font-size: 12.3px; line-height: 1.6; }\\n.oc .term .h { color: var(--sky); margin-top: 8px; }\\n.oc .term .h:first-child { margin-top: 0; }\\n.oc .term .row { display: flex; justify-content: space-between; gap: 12px; padding-left: 14px; }\\n.oc .term .ok { color: var(--green); }\\n.oc .term .bad { color: var(--red); }\\n.oc .term .unk { color: var(--ink-soft); }\\n.oc .action { background: var(--sky); color: var(--on-sky); border: 0; display: grid; grid-template-columns: 1fr auto;\\n  gap: 6px 24px; padding: 22px 24px; }\\n.oc .kicker { font-size: 13px; color: #0B2A4A; }\\n.oc .action h2 { font-size: 28px; margin: 2px 0 8px; color: var(--on-sky); }\\n.oc .what { color: #0B2A4A; max-width: 56ch; }\\n.oc .scope { align-self: start; text-align: right; font-size: 12.5px; color: #0B2A4A; }\\n.oc .scope b { display: block; font-family: var(--display); font-size: 20px; color: var(--on-sky); }\\n.oc .promises { grid-column: 1 / -1; list-style: none; margin: 14px 0 0; padding: 14px 0 0;\\n  border-top: 1px solid rgba(6, 16, 30, .28); display: grid; grid-template-columns: repeat(3, 1fr);\\n  gap: 10px 18px; font-size: 13.5px; color: var(--on-sky); }\\n.oc .promise { padding-left: 24px; position: relative; }\\n.oc .promise::before { content: \"\"; position: absolute; left: 2px; top: 4px; width: 7px; height: 11px;\\n  border: solid var(--on-sky); border-width: 0 2.5px 2.5px 0; transform: rotate(40deg); }\\n.oc .decide { display: grid; grid-template-columns: 1fr 1.3fr; gap: 20px; align-items: start; }\\n.oc .decide p { color: var(--ink-soft); font-size: 14px; }\\n.oc .decide p + p { margin-top: 8px; }\\n.oc label { display: block; font-weight: 600; font-size: 14px; margin-bottom: 6px; color: var(--ink); }\\n.oc textarea { width: 100%; min-height: 88px; font: inherit; font-size: 14px; padding: 10px 12px; color: var(--ink);\\n  border: 1px solid var(--edge); border-radius: 8px; background: #0E1828; resize: vertical; }\\n.oc textarea:focus-visible { outline: 3px solid rgba(79, 163, 247, .4); border-color: var(--sky); }\\n.oc .foot { padding: 0 28px 20px; font-size: 12px; color: var(--ink-soft); }\\n.oc a { color: var(--sky); }\\n@media (max-width: 760px) {\\n  .oc .band, .oc .action, .oc .decide, .oc .diag { grid-template-columns: 1fr; }\\n  .oc .status, .oc .scope { text-align: left; }\\n  .oc .ledger { grid-template-columns: 1fr 1fr; }\\n  .oc .steps, .oc .promises { grid-template-columns: 1fr; }\\n  .oc .steps li::after { display: none; }\\n}\\n'\nAPPROVAL_CARD_CSS = '\\n.oc .facts { display: grid; grid-template-columns: max-content 1fr; gap: 6px 18px; margin: 0; font-size: 14px; }\\n.oc .facts dt { color: var(--ink-soft); }\\n.oc .facts dd { margin: 0; font-family: var(--mono); font-size: 13.5px; word-break: break-word; }\\n.oc pre.block { margin: 0; font-family: var(--mono); font-size: 13px; line-height: 1.55; white-space: pre-wrap;\\n  color: var(--ink); background: var(--deep); border: 1px solid var(--edge); border-radius: 10px; padding: 12px 14px;\\n  max-height: 520px; overflow: auto; }\\n'\nAPPROVAL_BLOCK_CHARS = 20000\nAPPROVAL_LABELS = {'block': 'The block (key masked)', 'lines': 'The lines pushed', 'netbox': 'NetBox, as read back', 'plan': 'The plan', 'resources': 'Resources in the plan', 'summary': 'Plan summary', 'kept only if': 'Kept only if', 'after this': 'After this', 'details': 'Details', 'plan_review': 'Plan review (advisory: plan-reviewer has no tools and never approves)', 'estimated_cost': 'Estimated cost', 'plan_changes': 'Every change in the plan'}\nAPPROVAL_ORDER = {'plan_review': 0, 'estimated_cost': 1, 'plan_changes': 3}\n\n\ndef outage_card_image(svg: str, alt: str, width: int, height: int) -> str:\n    \"\"\"An SVG drawing as an <img> (Work Center strips <svg>, P6): base64 in a data URI.\"\"\"\n    data = base64.b64encode(svg.encode()).decode()\n    return (f'<img alt=\"{html.escape(alt)}\" width=\"{width}\" height=\"{height}\" '\n            f'src=\"data:image/svg+xml;base64,{data}\">')\n\n\ndef card_mark() -> str:\n    \"\"\"The lab's mark for a card's band (ADR 0077): an attitude indicator, sky over ground behind the aircraft\n    reference symbol. Drawn once here and once in the portal page; never a callsign.\"\"\"\n    return outage_card_image(\n        '<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 40 40\" width=\"40\" height=\"40\"><rect width=\"40\" '\n        'height=\"40\" rx=\"10\" fill=\"#070D18\"/><clipPath id=\"c\"><circle cx=\"20\" cy=\"20\" r=\"14\"/></clipPath>'\n        '<g clip-path=\"url(#c)\"><rect x=\"4\" y=\"4\" width=\"32\" height=\"16\" fill=\"#4FA3F7\"/><rect x=\"4\" y=\"20\" '\n        'width=\"32\" height=\"16\" fill=\"#8A5A1E\"/><path d=\"M6 20h28\" stroke=\"#fff\" stroke-width=\"1.2\"/>'\n        '<path d=\"M14 15h4M22 15h4M16 25h2M22 25h2\" stroke=\"#fff\" stroke-width=\"1\" opacity=\".8\"/></g>'\n        '<path d=\"M9 21h8l3 3 3-3h8\" fill=\"none\" stroke=\"#F2B134\" stroke-width=\"2.2\" stroke-linecap=\"round\" '\n        'stroke-linejoin=\"round\"/><circle cx=\"20\" cy=\"21\" r=\"1.6\" fill=\"#F2B134\"/>'\n        '<circle cx=\"20\" cy=\"20\" r=\"14\" fill=\"none\" stroke=\"#fff\" stroke-width=\"1.4\" opacity=\".9\"/></svg>', \"\", 26, 26)\n\n\ndef card_page(title: str, headline: str, lede: str, elapsed: str, since: str, sections: str, number: str,\n              foot: str, extra_css: str = \"\", decide: str = \"\", note_label: str = \"Note for the incident\",\n              brand: str = \"outage response\", pill: str = \"Waiting for your approval\") -> str:\n    \"\"\"A Work Center card's page (R6, R10): the band (title, lede, waiting pill, the outage's age), the card's own\n    sections, the decision with the engineer's note, the foot. `lede`, `sections` and `foot` are HTML the caller built\n    from escaped values; every other argument is escaped here. `extra_css` adds rules after the shared ones; `decide`\n    (HTML) replaces the decision's two lines, which speak of an incident.\"\"\"\n    e = html.escape\n    decide = decide or (f\"<p>Approve runs only this fix. Reject runs nothing and leaves {e(number)} open for a person.</p>\\n\"\n                        \"<p>Either way, your note goes into the incident's work notes.</p>\")\n    return f\"\"\"<!doctype html>\n<html lang=\"en\"><head><meta charset=\"utf-8\"><title>{e(title)}</title>\n<style>{OUTAGE_CARD_CSS}{extra_css}</style></head>\n<body><div class=\"oc\">\n<header class=\"band\">\n<div class=\"brand\">{card_mark()}<span><b>Elliot's Itential Lab</b>&nbsp; {e(brand)}</span></div>\n<div><h1>{e(headline)}</h1>\n<p class=\"lede\">{lede}</p></div>\n<div class=\"status\"><span class=\"pill\">{e(pill)}</span>\n<p class=\"elapsed\">{e(elapsed)}<small>{e(since)}</small></p></div>\n</header>\n<div class=\"body\">\n{sections}\n<section class=\"panel decide\" aria-labelledby=\"t-decide\"><div><h2 id=\"t-decide\">Your decision</h2>\n{decide}</div>\n<form name=\"decision\"><label for=\"oc-note\">{e(note_label)}</label>\n<textarea id=\"oc-note\" name=\"note\" placeholder=\"Why you approve or reject, or what you checked first\"></textarea>\n</form></section>\n</div>\n<p class=\"foot\">{foot}</p>\n</div></body></html>\"\"\"\n\n\ndef approval_card(d: dict) -> dict:\n    \"\"\"A form-based approval as the branded page (ADR 0077): the approval's message as the lede, its object laid out\n    as facts (scalars) and blocks (lines, the block, a plan), the same two buttons and the note. `header`, `message`\n    and `body` come from the workflow; everything is escaped here, blocks are capped. Pure: runCode runs this\n    function's own source on the Gateway.\"\"\"\n    e = html.escape\n    header = str(d.get(\"header\") or \"Approve this change\")\n    message = str(d.get(\"message\") or \"\")\n    body = d.get(\"body\")\n    facts, blocks = [], []\n    if isinstance(body, dict):\n        for key, value in body.items():\n            if isinstance(value, list) and all(isinstance(i, str) for i in value):\n                blocks.append((str(key), \"\\n\".join(value)))\n            elif isinstance(value, (dict, list)):\n                blocks.append((str(key), json.dumps(value, indent=2, sort_keys=True)))\n            elif isinstance(value, str) and (\"\\n\" in value or len(value) > 90):\n                blocks.append((str(key), value))\n            else:\n                facts.append((str(key), \"\" if value is None else str(value)))\n    elif isinstance(body, str):\n        blocks.append((\"details\", body))\n    elif body is not None:\n        blocks.append((\"details\", json.dumps(body, indent=2, sort_keys=True)))\n    sections = \"\"\n    if facts:\n        rows = \"\".join(f\"<dt>{e(k)}</dt><dd>{e(v)}</dd>\" for k, v in facts)\n        sections += f'<section class=\"panel\" aria-labelledby=\"t-facts\"><h2 id=\"t-facts\">What this approval covers</h2>\\n<dl class=\"facts\">{rows}</dl></section>\\n'\n    blocks.sort(key=lambda b: APPROVAL_ORDER.get(b[0], 2))\n    for n, (key, text) in enumerate(blocks):\n        text = text if len(text) <= APPROVAL_BLOCK_CHARS else text[:APPROVAL_BLOCK_CHARS] + \"\\n... (cut)\"\n        label = APPROVAL_LABELS.get(key, key.replace(\"_\", \" \").capitalize())\n        sections += (f'<section class=\"panel\" aria-labelledby=\"t-b{n}\"><h2 id=\"t-b{n}\">{e(label)}</h2>\\n'\n                     f'<pre class=\"block\">{e(text)}</pre></section>\\n')\n    try:\n        now = datetime.fromisoformat(str(d.get(\"now\")).replace(\"Z\", \"+00:00\")).astimezone(timezone.utc)\n    except ValueError:\n        now = datetime.now(timezone.utc)\n    decide = (\"<p>Approve runs exactly what this card shows. Reject runs nothing and ends the job.</p>\\n\"\n              \"<p>Your note stays on the job, for the record.</p>\")\n    foot = f\"Prepared by Itential at {now:%H:%M} UTC from the job's own data; the pre-shared key is never on a card.\"\n    page = card_page(header, header, e(message), \"\", \"\", sections, \"\", foot, extra_css=APPROVAL_CARD_CSS,\n                     decide=decide, note_label=\"Note for the record\")\n    return {\"html\": page}\n\n\nprint(json.dumps(approval_card(json.loads(sys.stdin.read() or \"{}\"))))\n",
+          "data": "$var.d03.object",
+          "safety": {
+            "timeout": 30
+          },
+          "packages": []
+        },
+        "outgoing": {
+          "result": "$var.job.watch_approval_card"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "d05": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "the card's HTML",
+      "description": "the proposal card: the proposal, why and the facts; approve starts the run, reject starts nothing",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 1810,
+        "y": 7350
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "stdout_json.html",
+          "obj": "$var.d04.result"
+        },
+        "outgoing": {
+          "return_data": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "d0": {
+      "name": "InteractiveHTML",
+      "canvasName": "InteractiveHTML",
+      "summary": "approval: Approve the Drift and Cost Watch proposal",
+      "description": "the proposal card: the proposal, why and the facts; approve starts the run, reject starts nothing",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkCenter",
+      "type": "manual",
+      "displayName": "Work Center",
+      "groups": [],
+      "nodeLocation": {
+        "x": 1850,
+        "y": 7500
+      },
+      "variables": {
+        "incoming": {
+          "header": "Approve the Drift and Cost Watch proposal",
+          "body": "$var.d05.return_data",
+          "variables": {},
+          "btn_success": "Approve",
+          "btn_failure": "Reject"
+        },
+        "outgoing": {
+          "export": "$var.job.watch_approval_decision"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "view": "/work-center/task/InteractiveHTML"
+    },
+    "d1": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "the outcome: rejected",
+      "description": "the proposal card: the proposal, why and the facts; approve starts the run, reject starts nothing",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 1850,
+        "y": 7650
+      },
+      "variables": {
+        "incoming": {
+          "input": "The Drift and Cost Watch proposal was rejected: nothing was started or changed.",
+          "outputType": "string",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.outcome"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "d2": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "the run's inputs",
+      "description": "the proposal card: the proposal, why and the facts; approve starts the run, reject starts nothing",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 1320,
+        "y": 7650
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "stdout_json.body",
+          "obj": "$var.b8.result"
+        },
+        "outgoing": {
+          "return_data": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "d3": {
+      "name": "evaluation",
+      "canvasName": "evaluation",
+      "summary": "a redeploy?",
+      "description": "the proposal card: the proposal, why and the facts; approve starts the run, reject starts nothing",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 1170,
+        "y": 7800
+      },
+      "variables": {
+        "incoming": {
+          "all_true_flag": true,
+          "evaluation_groups": [
+            {
+              "all_true_flag": true,
+              "evaluations": [
+                {
+                  "query": "stdout_json.proposal",
+                  "operand_1": {
+                    "variable": "result",
+                    "task": "b8"
+                  },
+                  "operator": "==",
+                  "operand_2": {
+                    "variable": "redeploy",
+                    "task": "static"
+                  }
+                }
+              ]
+            }
+          ],
+          "options": {}
+        },
+        "outgoing": {
+          "return_value": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "d4": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "the run's input: the on-prem address",
+      "description": "the proposal card: the proposal, why and the facts; approve starts the run, reject starts nothing",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 1070,
+        "y": 7950
+      },
+      "variables": {
+        "incoming": {
+          "obj": "$var.d2.return_data",
+          "path": [
+            "onprem_public_ip"
+          ],
+          "value": "$var.ca.return_data"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "d5": {
+      "name": "runEndpointTriggerWithPost",
+      "canvasName": "runEndpointTriggerWithPost",
+      "summary": "start Deploy AWS VPN through its endpoint (deploy-aws-vpn): it stops at its own Work Center card",
+      "description": "the proposal card: the proposal, why and the facts; approve starts the run, reject starts nothing",
+      "location": "Application",
+      "locationType": null,
+      "app": "OperationsManager",
+      "type": "automatic",
+      "displayName": "OperationsManager",
+      "groups": [],
+      "nodeLocation": {
+        "x": 1030,
+        "y": 8100
+      },
+      "variables": {
+        "incoming": {
+          "routeName": "deploy-aws-vpn",
+          "body": "$var.d4.object",
+          "runtimeOptions": {}
+        },
+        "outgoing": {
+          "result": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "d6": {
+      "name": "runEndpointTriggerWithPost",
+      "canvasName": "runEndpointTriggerWithPost",
+      "summary": "start Tear Down AWS VPN through its endpoint (tear-down-aws-vpn): it stops at its own Work Center cards",
+      "description": "the proposal card: the proposal, why and the facts; approve starts the run, reject starts nothing",
+      "location": "Application",
+      "locationType": null,
+      "app": "OperationsManager",
+      "type": "automatic",
+      "displayName": "OperationsManager",
+      "groups": [],
+      "nodeLocation": {
+        "x": 1370,
+        "y": 7950
+      },
+      "variables": {
+        "incoming": {
+          "routeName": "tear-down-aws-vpn",
+          "body": "$var.d2.return_data",
+          "runtimeOptions": {}
+        },
+        "outgoing": {
+          "result": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "d7": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "the started job's id",
+      "description": "the proposal card: the proposal, why and the facts; approve starts the run, reject starts nothing",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 880,
+        "y": 8250
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "data._id",
+          "obj": "$var.d5.result"
+        },
+        "outgoing": {
+          "return_data": "$var.job.started_job"
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "d8": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "the started job's id",
+      "description": "the proposal card: the proposal, why and the facts; approve starts the run, reject starts nothing",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 1950,
+        "y": 8100
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "data._id",
+          "obj": "$var.d6.result"
+        },
+        "outgoing": {
+          "return_data": "$var.job.started_job"
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "db": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "the outcome's words",
+      "description": "the proposal card: the proposal, why and the facts; approve starts the run, reject starts nothing",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 1470,
+        "y": 8400
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "stdout_json.started",
+          "obj": "$var.b8.result"
+        },
+        "outgoing": {
+          "return_data": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "d9": {
+      "name": "replace",
+      "canvasName": "replace",
+      "summary": "the outcome: the run started",
+      "description": "the proposal card: the proposal, why and the facts; approve starts the run, reject starts nothing",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 1470,
+        "y": 8550
+      },
+      "variables": {
+        "incoming": {
+          "str": "$var.db.return_data",
+          "substr": "__J__",
+          "newSubstr": "$var.job.started_job"
+        },
+        "outgoing": {
+          "replacedString": "$var.job.outcome"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "da": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "the approved run could not be started",
+      "description": "the proposal card: the proposal, why and the facts; approve starts the run, reject starts nothing",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 1170,
+        "y": 8550
+      },
+      "variables": {
+        "incoming": {
+          "input": "the approved run could not be started through its endpoint (see the start task): nothing was changed",
+          "outputType": "string",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.error"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "1f": {
+      "name": "evaluation",
+      "canvasName": "evaluation",
+      "summary": "drift found?",
+      "description": "the drift task: drift with no proposal card, or a watch that could not run (R3)",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 820,
+        "y": 4950
       },
       "variables": {
         "incoming": {
@@ -224,7 +2347,7 @@
       "name": "query",
       "canvasName": "query",
       "summary": "the outcome: no drift",
-      "description": "the outcome: no drift ends quietly; drift opens a Work Center task",
+      "description": "the drift task: drift with no proposal card, or a watch that could not run (R3)",
       "location": "Application",
       "locationType": null,
       "app": "WorkFlowEngine",
@@ -232,8 +2355,8 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 800,
-        "y": 1050
+        "x": 880,
+        "y": 5100
       },
       "variables": {
         "incoming": {
@@ -252,7 +2375,7 @@
       "name": "query",
       "canvasName": "query",
       "summary": "the drift, in words",
-      "description": "the outcome: no drift ends quietly; drift opens a Work Center task",
+      "description": "the drift task: drift with no proposal card, or a watch that could not run (R3)",
       "location": "Application",
       "locationType": null,
       "app": "WorkFlowEngine",
@@ -260,8 +2383,8 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 200,
-        "y": 1050
+        "x": 2980,
+        "y": 6900
       },
       "variables": {
         "incoming": {
@@ -280,7 +2403,7 @@
       "name": "ViewData",
       "canvasName": "ViewData",
       "summary": "Work Center task",
-      "description": "the outcome: no drift ends quietly; drift opens a Work Center task",
+      "description": "the drift task: drift with no proposal card, or a watch that could not run (R3)",
       "location": "Application",
       "locationType": null,
       "app": "WorkFlowEngine",
@@ -288,8 +2411,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 250,
-        "y": 1200
+        "x": 2600,
+        "y": 7050
       },
       "variables": {
         "incoming": {
@@ -318,7 +2441,7 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": -350,
+        "x": -800,
         "y": 600
       },
       "variables": {
@@ -348,7 +2471,7 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": -50,
+        "x": -570,
         "y": 900
       },
       "variables": {
@@ -380,8 +2503,8 @@
       "summary": "workflow_end",
       "groups": [],
       "nodeLocation": {
-        "x": 100,
-        "y": 1350
+        "x": 1770,
+        "y": 8700
       }
     }
   },
@@ -425,12 +2548,540 @@
       }
     },
     "1e": {
-      "1f": {
+      "a0": {
         "state": "success",
         "type": "standard"
       },
       "8b": {
         "state": "error",
+        "type": "standard"
+      }
+    },
+    "a0": {
+      "a1": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "a1": {
+      "a2": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "a2": {
+      "e0": {
+        "state": "success",
+        "type": "standard"
+      },
+      "a3": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "e0": {
+      "a4": {
+        "state": "success",
+        "type": "standard"
+      },
+      "a3": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "a3": {
+      "a4": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "a4": {
+      "a5": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "a5": {
+      "a6": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "a6": {
+      "a7": {
+        "state": "success",
+        "type": "standard"
+      },
+      "1f": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "a7": {
+      "ab": {
+        "state": "success",
+        "type": "standard"
+      },
+      "a8": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "a8": {
+      "aa": {
+        "state": "success",
+        "type": "standard"
+      },
+      "a9": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "a9": {
+      "workflow_end": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "aa": {
+      "2a": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "ab": {
+      "ac": {
+        "state": "success",
+        "type": "standard"
+      },
+      "1f": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "ac": {
+      "ad": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "ad": {
+      "ae": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "ae": {
+      "af": {
+        "state": "success",
+        "type": "standard"
+      },
+      "1f": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "af": {
+      "b0": {
+        "state": "success",
+        "type": "standard"
+      },
+      "1f": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "b0": {
+      "b1": {
+        "state": "success",
+        "type": "standard"
+      },
+      "e1": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "e1": {
+      "e2": {
+        "state": "success",
+        "type": "standard"
+      },
+      "b2": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "e2": {
+      "2a": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "b1": {
+      "workflow_end": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "b2": {
+      "b3": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "b3": {
+      "b4": {
+        "state": "success",
+        "type": "standard"
+      },
+      "1f": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "b4": {
+      "b6": {
+        "state": "success",
+        "type": "standard"
+      },
+      "b5": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "b5": {
+      "b6": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "b6": {
+      "b7": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "b7": {
+      "b8": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "b8": {
+      "b9": {
+        "state": "success",
+        "type": "standard"
+      },
+      "1f": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "b9": {
+      "bd": {
+        "state": "success",
+        "type": "standard"
+      },
+      "bb": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "bb": {
+      "2a": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "bd": {
+      "be": {
+        "state": "success",
+        "type": "standard"
+      },
+      "1f": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "be": {
+      "c0": {
+        "state": "success",
+        "type": "standard"
+      },
+      "bf": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "bf": {
+      "d01": {
+        "state": "success",
+        "type": "standard"
+      },
+      "1f": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "c0": {
+      "c1": {
+        "state": "success",
+        "type": "standard"
+      },
+      "cc": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "c1": {
+      "c2": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "c2": {
+      "c3": {
+        "state": "success",
+        "type": "standard"
+      },
+      "cc": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "c3": {
+      "c4": {
+        "state": "success",
+        "type": "standard"
+      },
+      "cc": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "c4": {
+      "c5": {
+        "state": "success",
+        "type": "standard"
+      },
+      "cc": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "c5": {
+      "c6": {
+        "state": "success",
+        "type": "standard"
+      },
+      "cc": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "c6": {
+      "c7": {
+        "state": "success",
+        "type": "standard"
+      },
+      "cc": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "c7": {
+      "c8": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "c8": {
+      "c9": {
+        "state": "success",
+        "type": "standard"
+      },
+      "cc": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "c9": {
+      "ca": {
+        "state": "success",
+        "type": "standard"
+      },
+      "cc": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "ca": {
+      "cd": {
+        "state": "success",
+        "type": "standard"
+      },
+      "cc": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "cd": {
+      "cb": {
+        "state": "success",
+        "type": "standard"
+      },
+      "cc": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "cb": {
+      "d01": {
+        "state": "success",
+        "type": "standard"
+      },
+      "cc": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "cc": {
+      "2a": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "d01": {
+      "d02": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "d02": {
+      "d03": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "d03": {
+      "d04": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "d04": {
+      "d05": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "d05": {
+      "d0": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "d0": {
+      "d2": {
+        "state": "success",
+        "type": "standard"
+      },
+      "d1": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "d1": {
+      "workflow_end": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "d2": {
+      "d3": {
+        "state": "success",
+        "type": "standard"
+      },
+      "da": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "d3": {
+      "d4": {
+        "state": "success",
+        "type": "standard"
+      },
+      "d6": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "d4": {
+      "d5": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "d5": {
+      "d7": {
+        "state": "success",
+        "type": "standard"
+      },
+      "da": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "d6": {
+      "d8": {
+        "state": "success",
+        "type": "standard"
+      },
+      "da": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "d7": {
+      "db": {
+        "state": "success",
+        "type": "standard"
+      },
+      "da": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "d8": {
+      "db": {
+        "state": "success",
+        "type": "standard"
+      },
+      "da": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "db": {
+      "d9": {
+        "state": "success",
+        "type": "standard"
+      },
+      "da": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "d9": {
+      "workflow_end": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "da": {
+      "workflow_end": {
+        "state": "success",
         "type": "standard"
       }
     },
@@ -497,6 +3148,45 @@
       },
       "drift_result": {
         "type": "object"
+      },
+      "watch_outputs": {
+        "type": "object"
+      },
+      "watch_gate": {
+        "type": "object"
+      },
+      "watch_result": {
+        "type": "object"
+      },
+      "watch": {
+        "type": "object"
+      },
+      "watch_error": {
+        "type": "string"
+      },
+      "watch_note": {
+        "type": "string"
+      },
+      "watch_card": {
+        "type": "object"
+      },
+      "watch_message": {
+        "type": "string"
+      },
+      "watch_approval_card": {
+        "type": "object"
+      },
+      "watch_approval_decision": {
+        "type": [
+          "object",
+          "null"
+        ]
+      },
+      "address_from": {
+        "type": "string"
+      },
+      "started_job": {
+        "type": "string"
       }
     }
   },

@@ -1,7 +1,7 @@
 # 0085 — Person-started AWS VPN changes carry a ServiceNow change request
 
-- **Status:** proposed (2026-10-27): R5 and A2 (plan review) built; A4 (Cloud Concierge) built 2026-10-31; A5 (drift
-  and cost watch) adds its decisions here in the PR that builds it. Design approved by the owner 2026-10-26 (delivery
+- **Status:** proposed (2026-10-27): R5 and A2 (plan review) built; A4 (Cloud Concierge) built 2026-10-31; A5 (Drift
+  and Cost Watch) built 2026-11-02. Design approved by the owner 2026-10-26 (delivery
   `aws-vpn-roadmap`: customer-spec, feasibility amendments A1-A5, solution-design section C, probes P1-P5)
 - **Date:** 2026-10-27
 - **Related:** ADR 0054 (the `lab-servicenow` integration), ADR 0066 (evaluate every Gateway result), ADR 0068 (the AWS
@@ -100,6 +100,42 @@ Branch VLAN already walks a ServiceNow standard change; the AWS VPN workflows di
     workflows, marked `NetClaw: ` (ADR 0082 amendment A1). The deploy check rejects the card of every run any request call started before it judges
     the calls, so a retry can never leave a run waiting.
 
+## Decision (A5: the Drift and Cost Watch)
+
+16. **The workflow decides whether there is anything to propose, never the model** (D10). After the drift check, Check
+    AWS Drift reads the deployment (`terraform-run outputs`, a state read) and `watch_gate` (runCode) routes the day.
+    Drift found, or a deployment with no end time whose last Terraform apply is 24 h or more ago, is a proposal day.
+    Anything else ends quietly with no agent call (criterion 13). An end time is Tear Down Expired AWS VPN's (R2b):
+    an old deployment with an end time gets no proposal, and drift on an expired one opens the R3 drift task.
+17. **At most one open card.** A proposal day first reads the running jobs (`getJobs` on `status` running; measured
+    2026-11-02, the filter holds for complete, error and canceled). A second Check AWS Drift (an earlier day's card
+    still waiting, its drift task included) ends the run with a note. A running change to the AWS VPN (Deploy, Hand
+    Off, Tear Down, Tear Down Expired, either Rotate AWS VPN Key, Diagnose AWS VPN Outage) means no proposal that day,
+    but drift still opens the R3 drift task: Tear Down Expired runs at the top of every hour, 07:00 included, so a
+    change in flight must never hide drift. The change list goes past the design's "a card from an earlier day": an
+    approved redeploy waiting at Deploy's own card would otherwise be proposed again the next day.
+18. **One answer from a menu the situation fixes** (D6, D10). `drift-cost-watch` (Claude; twin
+    `drift-cost-watch-local`) holds no tool and answers one JSON line, `{"proposal", "why"}`: on a drift day redeploy or
+    tear-down, on a long-running day tear-down alone. The design also offered "nothing" there; it is gone (owner,
+    2026-11-02), since the model could then hold back the cost card every day. `watch_proposal` (runCode) holds the
+    answer to the menu. Its words
+    reach the card and the started run's change note, so they are kept only when they name no resource outside the
+    drift, no address of any kind and no cost (decision 10: the card shows the computed one); otherwise the card gives
+    the workflow's own reason. On a drift day anything else (off the menu, a failed or canceled session, no JSON line)
+    opens the plain R3 drift task, so the model can never hide drift (criterion 16). On a long-running day a failed
+    watch still gets the Tear Down card with the workflow's reason: the rule found it, not the model.
+19. **Approving starts the run; the run still asks** (D11). The card (InteractiveHTML, ADR 0077) shows the proposal and
+    why, the drifted resources by attribute name, the deployment and the computed estimate (decision 10). Approve
+    starts Deploy or Tear Down through its endpoint trigger, as the Concierge does (decision 11), with the note
+    `Drift and Cost Watch: <why>`. Each opens its own change request and stops at its own card; Reject starts nothing.
+    A redeploy keeps the end as close as Deploy's lifetimes allow (the choice nearest the hours left, the shorter on a
+    tie; none stays none) and the NAT setting the Terraform state records. The design took the smallest choice at or
+    above the hours left, which turns 30 hours into 72 (owner, 2026-11-02). It took NAT from the newest Deploy job,
+    but a later Deploy that was rejected would then change it. The on-prem address is the newest person-started
+    Deploy's, read into task outputs and never a job variable (decision 13); with none to read, the R3 task opens.
+20. **A watch that cannot run is R3 as it was.** A watch step that errors hands back to R3's own `found?`: drift opens
+    the drift task, no drift ends quietly.
+
 ## Consequences
 
 - Every ending after the open meets at one of four close entries: more arrows cross tasks on the canvas (Deploy 5,
@@ -126,3 +162,13 @@ Branch VLAN already walks a ServiceNow standard change; the AWS VPN workflows di
   tools answer that the run could not be started.
 - A4 is proven to its cards only after the converge: `conciergecheck.py deploy` and `teardown`, each rejected
   (criteria 10-12); the whole cycle waits for the AWS window.
+- A5: a proposal day costs one watch session (Claude on production); a quiet day costs none, and every day reads the
+  state once more. Check AWS Drift has two manual tasks now, the proposal card and the R3 drift task. A Check AWS Drift
+  imported before the agent exists keeps the marker until the next converge fills it (two passes on the first install,
+  as A2); until then a drift day opens the R3 task and a long-running day gets the Tear Down card with the workflow's
+  reason.
+- The local twin `drift-cost-watch-local` runs in verify/test-06-flowai.sh (S4d.5u) on a fixed drift day, held by the
+  workflow's own check. No agent session (A2's or A5's) is in the leak sweep yet; the gate never hands the model an
+  address (tests/test_drift_cost_watch.py).
+- A5 is proven to its card only after the converge: with AWS empty the daily run ends quietly (criterion 13); the drift
+  and long-running cards (criteria 14-16) wait for the AWS window.
