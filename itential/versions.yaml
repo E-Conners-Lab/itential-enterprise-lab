@@ -475,13 +475,13 @@ aws_vpn:
 # before it applies the digest (SEC-28).
 netops_knowledge:
   repository: https://github.com/E-Conners-Lab/netops-knowledge
-  # netops-knowledge #4 (46153ce: 15 vendor-documented BGP/EVPN/interface/IPsec scenarios, PID 1.3), built 2026-10-07, CI run 37676745775
-  source_commit: 46153ce47ad96bca641b54fb34afe4cd7347a285
+  # netops-knowledge #5 (982eeea: the md5 scenario covers IOS-XE, PID 1.4), built 2026-11-03, CI run 41661664310
+  source_commit: 982eeea8e3433874a1ed301a0d083abf5d7263e0
   image:
     repository: ghcr.io/e-conners-lab/netops-knowledge
-    digest: "sha256:d29abd152508b3f89a61fd5e88707fb3beb63545448cd3cacbd05fd6f27e3876"
-  index_sha256: f7d07eadff4afb9b528e60975b45ee6a88624f195c312982a7c0a5e7025bd7c6
-  corpus_sha256: 28a6c6bd92f4edc9294e912d0e2a56387345cd9227f0582bc88b5ddcdbb036e3 # 57 scenarios
+    digest: "sha256:5a43f811a1a727682a2e7c62229f08e84e37aad4874cbee1e56a9d2ee0a4b7e0"
+  index_sha256: dd9670b58785c8d9a9279ac7c9447efda0b76cd9dc980699b75577aa6b0f8545
+  corpus_sha256: 71c64783a7dea4879902c5b091fb7509526e3264436b5917e7863f40eaf4e6aa # 57 scenarios
   signer:
     identity: https://github.com/E-Conners-Lab/netops-knowledge/.github/workflows/ci.yml@refs/heads/main
     issuer: https://token.actions.githubusercontent.com
