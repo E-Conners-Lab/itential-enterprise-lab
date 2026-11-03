@@ -6025,8 +6025,9 @@ def netclaw_request_aws_vpn_teardown() -> dict:
 # --- Check AWS Drift (R3, owner decisions 2026-10-04) -----------------------------------------------------------------
 # Once a day (operations_manager.check_aws_drift): terraform-run drift, a refresh-only plan (cloud-devops-pipeline #32)
 # that reads every resource from AWS and reports what changed outside Terraform by NAME only. No drift and nothing
-# deployed end quietly; drift opens a Work Center task with the two ways back. The check never changes anything; a
-# check that could not run ends with the reason (no task, as the hourly timed teardown).
+# deployed end quietly; drift opens a Work Center task with the two ways back, or, since A5, the Drift and Cost
+# Watch's one proposal card (below). The check never changes anything; a check that could not run ends with the
+# reason (no task, as the hourly timed teardown).
 DRIFT_PARAMS = '{"action": "drift", "timeout": "600"}'
 
 
@@ -6057,6 +6058,271 @@ DRIFT_CODE = ("import json, sys\n\n\n" + inspect.getsource(drift_summary)
               + "\n\nprint(json.dumps(drift_summary(json.loads(sys.stdin.read() or \"{}\"))))\n")
 
 
+# --- A5 Drift and Cost Watch (ADR 0085; delivery aws-vpn-roadmap D6, D10, D11) ----------------------------------------
+# The daily run also watches. The workflow, never the model, decides whether there is anything to propose (D10): drift
+# found, or a deployment with no end time whose last Terraform apply is long_hours or more ago. An end time is Tear Down
+# Expired AWS VPN's to keep (R2b), so the watch never proposes what that already does. Anything else ends quietly with
+# no agent call. With something to propose and no earlier proposal or AWS VPN change still open (at most one open
+# card), drift-cost-watch (no tools, one turn, ONE JSON line) gets the facts and a menu fixed by the situation: drift ->
+# redeploy or tear-down; long-running only -> tear-down (owner, 2026-11-02: no "nothing", so the model can never hold
+# back the cost card). Its answer is held to the menu and the facts before a card shows it. Off the menu, a failed session, or a redeploy with no person-started Deploy to take the on-prem
+# address from: the plain R3 drift task, so the model can never hide drift; a long-running deployment whose watch fails
+# still gets its Tear Down card, with the workflow's own reason. Approving starts Deploy (the same inputs, D11) or Tear
+# Down through its endpoint: each opens its own change request and stops at its own card. Anything in the watch that
+# cannot run falls back to what R3 did before it: drift opens the task, no drift ends quietly.
+WATCH_MARKER = "__AGENT_ID:drift-cost-watch__"
+_WATCH_TARGETS = sorted(n for n, t in VERSIONS["aws_vpn"]["targets"].items()
+                        if t["window"] == "open" and t["monitor"] == "aws" and n in VERSIONS["revert_push"]["targets"])
+assert len(_WATCH_TARGETS) == 1, _WATCH_TARGETS  # the one Tear Down target deployed in AWS
+WATCH_RULES = {
+    "long_hours": 24,  # owner, 2026-10-14 (spec A5): a deployment with no end time past 24 h gets a Tear Down proposal
+    "menus": {"drift": ["redeploy", "tear-down"], "long-running": ["tear-down"]},
+    "lifetimes": DEPLOY_HOURS,
+    "prefix": "Drift and Cost Watch: ",
+    "target": _WATCH_TARGETS[0],
+    "deploy": WF["deploy_aws_vpn"],
+    "teardown": WF["tear_down_aws_vpn"],
+    "routes": {"deploy": CONCIERGE_ROUTES["deploy"], "teardown": CONCIERGE_ROUTES["teardown"]},
+    "job_url": CHANGE["job_url"],
+}
+# what is open when another of these runs: a change to the AWS VPN in flight, or an earlier day's card (a second
+# Check AWS Drift: this run is the first)
+WATCH_CHANGES = sorted(WF[k] for k in ("deploy_aws_vpn", "hand_off_aws_vpn", "tear_down_aws_vpn",
+                                       "tear_down_expired_aws_vpn", "rotate_aws_vpn_key", "rotate_aws_vpn_key_monthly",
+                                       "diagnose_aws_vpn_outage"))
+
+
+def watch_gate(d: dict, now: datetime, rules: dict) -> dict:
+    """Is there anything for the Drift and Cost Watch to propose (D10)? `d`: drift (drift_summary's runCode result),
+    outputs (terraform-run outputs' answer; {} when it did not run). `route`: quiet (nothing to propose, no agent
+    call), fallback (drift the watch does not take: the plain R3 drift task; `reason` says why) or watch: the
+    `situation`, its `menu`, the agent's `request`, the card's facts and Deploy's same inputs but the address (D11).
+    Names attributes, never their values, and never an address. Pure: runCode runs this source on the Gateway with the
+    clock, the prices and the rules written in."""
+    drift = (d.get("drift") or {}).get("stdout_json") or {}
+    found = drift.get("ok") is True and drift.get("found") is True
+    said = str(drift.get("summary") or "The drift check said nothing.")
+    result = (d.get("outputs") or {}).get("result") or {}
+    answer = result.get("stdout_json") or {}
+    outputs = answer.get("outputs")
+
+    def quiet(text):
+        return {"ok": True, "route": "quiet", "summary": text}
+
+    def fallback(text):
+        return {"ok": True, "route": "fallback", "reason": text,
+                "summary": f"{said} The Drift and Cost Watch did not run: {text}."}
+
+    def when(text):
+        try:
+            return datetime.strptime(str(text), "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+        except ValueError:
+            return None
+
+    if result.get("return_code") != 0 or not isinstance(outputs, dict):
+        return (fallback("the deployment could not be read (watch_outputs)") if found else
+                quiet(f"{said} The deployment could not be read (watch_outputs), so its age was not checked."))
+    if not outputs:
+        return fallback("the Terraform state holds nothing deployed") if found else quiet(said)
+    end = outputs.get("expires_at")
+    no_end = end in (None, "", "none")
+    ends_at = None if no_end else when(end)
+    remaining = None if ends_at is None else (ends_at - now).total_seconds() / 3600
+    state = answer.get("state") or {}
+    changed = state.get("last_modified") if state.get("read") else None
+    then = when(changed) if changed else None
+    hours = None if then is None else round((now - then).total_seconds() / 3600, 1)
+    long_running = no_end and hours is not None and hours >= rules["long_hours"]
+    if found and not no_end and (remaining is None or remaining <= 0):
+        return fallback("the deployment's end time has passed or cannot be read, and Tear Down Expired AWS VPN "
+                        "removes an expired deployment within the hour")
+    if not found and not long_running:
+        age = (f"It is deployed with no end time, last applied {hours} h ago: a Tear Down proposal comes at "
+               f"{rules['long_hours']} h." if no_end and hours is not None else
+               "It is deployed with no end time; when Terraform last applied it is not known." if no_end else
+               f"It is deployed until {end}, when Tear Down Expired AWS VPN removes it.")
+        return quiet(f"{said} {age}")
+    situation = "drift" if found else "long-running"
+    nat = outputs.get("nat_gateway_enabled")
+    est = estimate_per_day({"instance_type": outputs.get("strongswan_instance_type"), "nat": bool(nat),
+                            "public_ipv4": 2 if nat else 1}, rules["prices"])
+    so_far = None if est["hourly"] is None or hours is None else round(est["hourly"] * hours, 2)
+    if est["hourly"] is None:
+        cost = f"not worked out: no pinned price for {est['instance_type']}"
+    else:
+        cost = (f"about ${est['per_day_usd']:.2f} a day"
+                + (f", about ${so_far:.2f} since the last Terraform apply ({hours} h ago)" if so_far is not None else "")
+                + f" ({rules['prices']['basis']})")
+    resources = [r for r in drift.get("resources") or [] if isinstance(r, dict)] if found else []
+    drifted = [str(r.get("address") or "?") for r in resources]
+    lines = [str(r.get("address") or "?") + (": deleted outside Terraform" if "delete" in (r.get("actions") or [])
+                                             else ": " + ", ".join(map(str, r.get("attributes") or ["changed"])))
+             for r in resources]
+    deployment = [f"instance type: {est['instance_type']}" + (" (assumed: the state does not record it)"
+                                                              if est["assumed"] else ""),
+                  "NAT gateway: " + ("not recorded in the state (off is Deploy's default)" if nat is None
+                                     else "on" if nat else "off"),
+                  "end time: " + ("none: it stays up until Tear Down AWS VPN" if no_end else str(end)),
+                  "last Terraform apply: " + (f"{changed} ({hours} h ago)" if hours is not None else "not known")]
+    if no_end:
+        lifetime, ends = "none", "no end time, as now"
+    else:
+        # the allowed lifetime nearest the time left (owner, 2026-11-02), the shorter on a tie
+        pick = min((int(h) for h in rules["lifetimes"] if h.isdigit()), key=lambda h: (abs(h - remaining), h))
+        lifetime, ends = str(pick), (f"{pick} hours from when Deploy starts (about {remaining:.1f} h are left now; "
+                                     "Deploy's card shows the exact end)")
+    meaning = {"redeploy": "Deploy AWS VPN with the same inputs, which puts AWS back to what Terraform wants",
+               "tear-down": f"Tear Down AWS VPN for {rules['target']}, which removes the router's AWS block, then "
+                            "everything in AWS"}
+    menu = rules["menus"][situation]
+    reason = (f"{len(lines)} resource{'s' if len(lines) != 1 else ''} in AWS changed outside Terraform"
+              + (f", and the deployment has had no end time for {hours} h" if long_running else "") if found else
+              f"The AWS VPN has had no end time for {hours} h since its last Terraform apply"
+              + (f" (about ${so_far:.2f} so far)" if so_far is not None else ""))
+    request = ("Today's situation: "
+               + ("drift: AWS no longer matches the Terraform state." if found else
+                  f"long-running: deployed with no end time, last applied {hours} h ago.")
+               + (f" It is also long-running: no end time, last applied {hours} h ago." if found and long_running
+                  else "")
+               + "\nChoose exactly one proposal from this menu:\n" + "\n".join(f"- {m}: {meaning[m]}" for m in menu)
+               + ("\nWhat changed outside Terraform (the resource, then the names of the attributes that changed; "
+                  "values are never given):\n" + "\n".join(lines) if lines else "")
+               + "\nThe deployment:\n" + "\n".join(deployment)
+               + f"\nThe estimated cost (computed; the card shows it, so never write a cost): {cost}.")
+    return {"ok": True, "route": "watch", "situation": situation, "menu": menu, "request": request,
+            "reason": reason[0].upper() + reason[1:] + ".", "drifted": drifted, "drift_lines": lines,
+            "deployment": deployment, "cost": cost, "nat": "true" if nat else "false", "lifetime": lifetime,
+            "ends": ends, "summary": f"{said} The Drift and Cost Watch was asked ({situation})."}
+
+
+WATCH_GATE_RULES = {**WATCH_RULES, "prices": STATUS_PRICES}
+WATCH_GATE_CODE = ("import json, sys\nfrom datetime import datetime, timezone\n\n\nRULES = "
+                   + repr(WATCH_GATE_RULES) + "\n\n\n" + inspect.getsource(estimate_per_day)
+                   + "\n\n" + inspect.getsource(watch_gate)
+                   + "\n\nprint(json.dumps(watch_gate(json.loads(sys.stdin.read() or \"{}\"), datetime.now(timezone.utc), "
+                   + "RULES)))\n")
+
+
+def watch_open(d: dict) -> dict:
+    """At most one open card (D10): is an earlier proposal or a change to the AWS VPN still open? `jobs`: getJobs'
+    answer for the running jobs (their names); `self` and `changes` name the workflows; `gate`: watch_gate's runCode
+    result. A job waiting at a Work Center card is running, and this run is one running Check AWS Drift, so a second
+    is an earlier day's card or drift task: today's run notes it and ends (`route` end). A change to the AWS VPN in
+    flight means no proposal today, but drift still opens the R3 drift task (`route` fallback, `reason` says why): the
+    watch never hides drift. `route` watch: nothing open. `ok` is false when the jobs cannot be read. Pure: runCode
+    runs this source."""
+    rows = (d.get("jobs") or {}).get("data")
+    if not isinstance(rows, list):
+        return {"ok": False, "route": ""}
+    names = [str(r.get("name")) for r in rows if isinstance(r, dict)]
+    earlier = names.count(d["self"]) - 1
+    changes = sorted({n for n in names if n in d["changes"]})
+    gate = (d.get("gate") or {}).get("stdout_json") or {}
+    said = str(gate.get("summary") or "")
+    if earlier > 0:
+        return {"ok": True, "route": "end", "summary": (f"{said} " if said else "") + "No proposal today: an earlier "
+                f"{d['self']} run is still waiting at its Work Center card. Decide that first; tomorrow's check looks "
+                "again."}
+    if changes:
+        running = ", ".join(changes)
+        if gate.get("situation") == "drift":
+            return {"ok": True, "route": "fallback",
+                    "reason": f"a change to the AWS VPN is in flight ({running}): no proposal while it runs"}
+        return {"ok": True, "route": "end", "summary": (f"{said} " if said else "") + f"No proposal today: {running} "
+                "is running or waiting at its card. Tomorrow's check looks again."}
+    return {"ok": True, "route": "watch"}
+
+
+def watch_proposal(d: dict) -> dict:
+    """drift-cost-watch's answer held to today's menu and the facts (D6, D10), and the card. `d`: gate (watch_gate's
+    runCode result), agent (runAgent's {sessionId, sessionStatus, lastMessage}, or {} when the session did not run),
+    and the rules. The answer's last JSON object line (a code fence around it is fine) must be {"proposal": <on today's
+    menu>, "why": <plain words>}. The words are kept only when they name no resource that did not drift and no global
+    IPv4 address; markup characters go. `route`: card or fallback (the plain R3 drift task, `reason` says why; a
+    drift day only); a long-running day whose watch fails still gets the Tear Down card with
+    the workflow's own reason. `body`: the started run's inputs but the address. Pure: runCode runs this source."""
+    gate, agent = (d.get("gate") or {}).get("stdout_json") or {}, d.get("agent") or {}
+    situation, menu = gate.get("situation"), list(gate.get("menu") or [])
+    proposal, words, failed = None, "", ""
+    if not agent:  # runAgent errors on a canceled or failed session: its answer stays {}
+        failed = "the watch session ended without an answer (canceled, failed or not started)"
+    elif agent.get("sessionStatus") != "COMPLETE":
+        failed = f"the watch did not finish ({str(agent.get('sessionStatus') or 'no status')[:24]})"
+    else:
+        answer = None
+        for line in reversed([x.strip() for x in str(agent.get("lastMessage") or "").splitlines() if x.strip()]):
+            try:
+                answer = json.loads(line)
+            except ValueError:
+                continue
+            if isinstance(answer, dict):
+                break
+        if not isinstance(answer, dict) or "proposal" not in answer:
+            failed = "the watch's answer was not the JSON line"
+        elif answer.get("proposal") not in menu:
+            failed = (f"the watch proposed {str(answer.get('proposal'))[:24]!r}, which is not on today's menu "
+                      f"({', '.join(menu)})")
+        else:
+            proposal, words = answer["proposal"], answer.get("why")
+
+    # the words reach the card and the started run's change note, so they carry no address of any kind and no cost
+    # (D5: the card shows the computed estimate), and name only resources that drifted
+    drifted = [str(a) for a in gate.get("drifted") or []]
+    text = "".join(c for c in " ".join(str(words or "").split()) if c not in '<>"\\')
+    named = PLAN_ADDRESS.findall(text)
+    if (IPV4_LITERAL.search(text) or "$" in text or re.search(r"(?i)\b(usd|dollars?|cents?)\b", text)
+            or any(not any(a == n or a.endswith("." + n) for a in drifted) for n in named)):
+        text = ""
+    text = text if len(text) <= 240 else text[:237] + "..."
+    if failed and situation == "drift":
+        return {"ok": True, "route": "fallback", "reason": failed,
+                "summary": f"The Drift and Cost Watch could not propose ({failed}): the drift task opens instead."}
+    if failed:
+        proposal = "tear-down"
+    why = text or str(gate.get("reason") or "")
+    note = d["prefix"] + why
+    note = note if len(note) <= 280 else note[:277] + "..."
+    if proposal == "redeploy":
+        what = "redeploy: Deploy AWS VPN with the same inputs"
+        body = {"change_note": note, "enable_nat_gateway": gate.get("nat"), "lifetime_hours": gate.get("lifetime")}
+        run = [f"{d['deploy']}, started through its endpoint ({d['routes']['deploy']})",
+               f"end: {gate.get('ends')}",
+               f"NAT gateway: {'on' if gate.get('nat') == 'true' else 'off'} (as the Terraform state records it)",
+               "on-prem address: reused, never shown (the message names the Deploy job it comes from)"]
+        started = d["deploy"]
+        reuse = " It reuses __FROM__: if that address has changed, reject the plan's card."
+    else:
+        what = f"tear-down: Tear Down AWS VPN for {d['target']}"
+        body = {"change_note": note, "target": d["target"]}
+        run = [f"{d['teardown']} for {d['target']}, started through its endpoint ({d['routes']['teardown']})",
+               "it stops at two cards: the router's AWS block first, then the AWS destroy"]
+        started = d["teardown"]
+        reuse = ""
+    run += [f"change note: {note}", "It opens its own ServiceNow change request and stops at its own Work Center "
+                                    "card: nothing changes before that approval."]
+    shown = why + (f" (the workflow's own reason: the watch's words were unavailable, {failed})" if failed else
+                   " (the watch's words, checked: drifted resources only, no address, no cost)" if text
+                   else " (the workflow's own reason)")
+    card = {"proposal": what, "why": shown, "situation": situation, "menu_today": ", ".join(menu),
+            **({"what_changed_outside_terraform": list(gate.get("drift_lines") or [])} if gate.get("drift_lines")
+               else {}),
+            "the_deployment": list(gate.get("deployment") or []), "estimated_cost": gate.get("cost") or "not worked out",
+            "the_run_it_starts": run}
+    message = (f"The Drift and Cost Watch proposes {what}. Why: {why}{reuse} Approve starts that run, which opens its "
+               "own change request and stops at its own Work Center card; Reject starts nothing.")
+    return {"ok": True, "route": "card", "proposal": proposal, "why": why, "unavailable": failed, "body": body,
+            "card": card, "message": message, "started": f"The approved {started} started: {d['job_url']}__J__. It "
+                                                         "opens its own change request and stops at its own Work Center card."}
+
+
+WATCH_OPEN_CODE = _pure_code(watch_open, {"self": WF["check_aws_drift"], "changes": WATCH_CHANGES})
+WATCH_PROPOSAL_CODE = ("import json, re, sys\n\n\nPLAN_ADDRESS = re.compile(" + repr(PLAN_ADDRESS.pattern)
+                       + ")\nIPV4_LITERAL = re.compile(" + repr(IPV4_LITERAL.pattern) + ")\n\n\n"
+                       + inspect.getsource(watch_proposal)
+                       + "\n\nprint(json.dumps(watch_proposal({**json.loads(sys.stdin.read() or \"{}\"), **json.loads(%r)})))\n"
+                       % json.dumps(WATCH_RULES))
+
+
 def check_aws_drift() -> dict:
     ok, fail, err = "success", "failure", "error"
     tasks = sectioned({
@@ -6067,12 +6333,116 @@ def check_aws_drift() -> dict:
         "1c": evaluate("the drift check answered?", "1b", "result", "result.return_code", "==", 0, x=300),
         "1d": set_key("the drift check's answer", {}, "drift", "$var.job.drift_result", x=400),
         "1e": run_code("what was found (Python on the runner)", DRIFT_CODE, "$var.1d.object", "drift", x=500),
-        "1f": evaluate("drift found?", "1e", "result", "stdout_json.found", "==", True, x=600),
-        **step("the outcome: no drift ends quietly; drift opens a Work Center task"),
-        "10": jq("the outcome: no drift", "$var.job.drift", "stdout_json.summary", x=700, y=300, to_job="outcome"),
-        "2a": jq("the drift, in words", "$var.job.drift", "stdout_json.summary", x=700, to_job="outcome"),
+        **step("the gate: the deployment read from the Terraform state; the workflow decides whether there is anything "
+               "to propose, never the model (A5)"),
+        "a0": empty("no deployment reading yet", "watch_outputs", x=520),
+        "a1": parse("terraform-run outputs' params", OUTPUTS_PARAMS, x=540),
+        "a2": run_service("the deployment, its end time and last apply (terraform-run outputs, a state read)",
+                          "terraform-run", "$var.a1.textObject", "watch_outputs", x=560),
+        "e0": evaluate("the state read answered?", "a2", "result", "result.return_code", "==", 0, x=565),
+        "a3": note("the deployment could not be read", "terraform-run outputs did not answer (see watch_outputs): "
+                   "the gate judges an unread deployment", "watch_error", x=560, y=-300),
+        "a4": set_key("the watch's input: the drift", {}, "drift", "$var.job.drift", x=580),
+        "a5": set_key("the watch's input: the deployment", "$var.a4.object", "outputs", "$var.job.watch_outputs",
+                      x=600),
+        "a6": run_code("anything to propose? (Python on the runner)", WATCH_GATE_CODE, "$var.a5.object", "watch_gate",
+                       x=620),
+        "a7": evaluate("something to propose?", "a6", "result", "stdout_json.route", "==", "watch", x=640),
+        "a8": evaluate("drift the watch does not take?", "a6", "result", "stdout_json.route", "==", "fallback", x=660,
+                       y=300),
+        "a9": jq("the outcome: nothing to propose", "$var.a6.result", "stdout_json.summary", x=680, y=600,
+                 to_job="outcome"),
+        "aa": jq("why the drift task opens instead", "$var.a6.result", "stdout_json.reason", x=680, y=300,
+                 to_job="watch_note"),
+        **step("one open card: an earlier proposal or a change to the AWS VPN still open ends today's run"),
+        "ab": task("getJobs", "OperationsManager", "the running jobs (an earlier card or an AWS VPN change open?)",
+                   {"queryParameters": {"equals": {"status": "running"}, "sort": "metrics.start_time", "order": -1,
+                                        "limit": 200, "include": "_id,name"}},
+                   {"result": None}, x=700),
+        "ac": set_key("the running jobs", {}, "jobs", "$var.ab.result", x=710),
+        "ad": set_key("the gate's answer", "$var.ac.object", "gate", "$var.job.watch_gate", x=720),
+        "ae": run_code("one open? (Python on the runner)", WATCH_OPEN_CODE, "$var.ad.object", None, x=730),
+        "af": evaluate("the running jobs read?", "ae", "result", "stdout_json.ok", "==", True, x=740),
+        "b0": evaluate("an earlier card open?", "ae", "result", "stdout_json.route", "==", "end", x=750),
+        "b1": jq("the outcome: one is open", "$var.ae.result", "stdout_json.summary", x=760, y=600, to_job="outcome"),
+        "e1": evaluate("a change in flight, with drift?", "ae", "result", "stdout_json.route", "==", "fallback", x=755,
+                       y=300),
+        "e2": jq("why the drift task opens instead", "$var.ae.result", "stdout_json.reason", x=760, y=300,
+                 to_job="watch_note"),
+        **step("the watch: drift-cost-watch picks one proposal from today's menu (no tools), held to the menu and the "
+               "facts"),
+        "b2": empty("no watch answer yet", "watch_result", x=770),
+        "b3": jq("the watch's request", "$var.a6.result", "stdout_json.request", x=780),
+        "b4": run_agent("drift-cost-watch: one proposal from today's menu (advisory, no tools)", WATCH_MARKER,
+                        "$var.b3.return_data", "watch_result", x=790),
+        "b5": note("the watch session did not run", "the drift-cost-watch session ended in an error: drift opens the "
+                   "drift task, a long-running deployment its Tear Down card", "watch_error", x=800, y=-300),
+        "b6": set_key("the check's input: the gate", {}, "gate", "$var.job.watch_gate", x=810),
+        "b7": set_key("the check's input: the watch's answer", "$var.b6.object", "agent", "$var.job.watch_result",
+                      x=820),
+        "b8": run_code("the proposal, held to the menu and the facts (Python on the runner)", WATCH_PROPOSAL_CODE,
+                       "$var.b7.object", "watch", x=830),
+        "b9": evaluate("a card?", "b8", "result", "stdout_json.route", "==", "card", x=840),
+        "bb": jq("why the drift task opens instead", "$var.b8.result", "stdout_json.reason", x=860, y=300,
+                 to_job="watch_note"),
+        "bd": jq("the card's body", "$var.b8.result", "stdout_json.card", x=870, to_job="watch_card"),
+        "be": evaluate("a redeploy?", "b8", "result", "stdout_json.proposal", "==", "redeploy", x=880),
+        "bf": jq("the card's message", "$var.b8.result", "stdout_json.message", x=890, y=300, to_job="watch_message"),
+        **step("the address: a redeploy reuses the newest person-started Deploy's on-prem address, never a job variable"),
+        "c0": task("getJobs", "OperationsManager", "the newest Deploy AWS VPN jobs (who started each)",
+                   {"queryParameters": {"equals": {"name": WF["deploy_aws_vpn"]}, "sort": "metrics.start_time",
+                                        "order": -1, "limit": 100, "include": "_id,metrics.start_time,metrics.user"}},
+                   {"result": None}, x=900),
+        "c1": set_key("the jobs", {}, "jobs", "$var.c0.result", x=905),
+        "c2": run_code("the newest one a person started (Python on the runner)", _pure_code(newest_person_deploy, {}),
+                       "$var.c1.object", None, x=910),
+        "c3": evaluate("one found?", "c2", "result", "stdout_json.found", "==", True, x=915),
+        "c4": jq("its id", "$var.c2.result", "stdout_json.job", x=920),
+        "c5": jq("whose address it is, in words (never the address)", "$var.c2.result", "stdout_json.from", x=925,
+                 to_job="address_from"),
+        "c6": task("getJob", "OperationsManager", "that job, its inputs read",
+                   {"id": "$var.c4.return_data", "queryParameters": {}}, {"job": None}, x=930),
+        "c7": set_key("that job", {}, "job", "$var.c6.job", x=935),
+        "c8": run_code("its on-prem address, checked (Python on the runner; kept on the task)",
+                       _pure_code(last_address, {}), "$var.c7.object", None, x=940),
+        "c9": evaluate("a usable address?", "c8", "result", "stdout_json.ok", "==", True, x=945),
+        "ca": jq("the address (kept on the task)", "$var.c8.result", "stdout_json.ip", x=950),
+        "cd": jq("the card's message, before whose address", "$var.b8.result", "stdout_json.message", x=952),
+        "cb": _publish(replace("the card's message: whose address", "$var.cd.return_data", "__FROM__",
+                               "$var.job.address_from", x=955), "replacedString", "watch_message"),
+        "cc": note("why the drift task opens instead", "a redeploy needs the on-prem address of a Deploy AWS VPN a "
+                   "person started, and none could be read", "watch_note", x=930, y=300),
+        **step("the proposal card: the proposal, why and the facts; approve starts the run, reject starts nothing"),
+        **approval("d0", "Approve the Drift and Cost Watch proposal", "$var.job.watch_message", "$var.job.watch_card",
+                   "Approve", "Reject", x=1000, var="watch_approval"),
+        "d1": note("the outcome: rejected", "The Drift and Cost Watch proposal was rejected: nothing was started or "
+                   "changed.", "outcome", x=1050, y=600),
+        "d2": jq("the run's inputs", "$var.b8.result", "stdout_json.body", x=1050),
+        "d3": evaluate("a redeploy?", "b8", "result", "stdout_json.proposal", "==", "redeploy", x=1075),
+        "d4": set_key("the run's input: the on-prem address", "$var.d2.return_data", "onprem_public_ip",
+                      "$var.ca.return_data", x=1100),
+        "d5": task("runEndpointTriggerWithPost", "OperationsManager",
+                   f"start {WF['deploy_aws_vpn']} through its endpoint ({WATCH_RULES['routes']['deploy']}): it stops at "
+                   "its own Work Center card", {"routeName": WATCH_RULES["routes"]["deploy"], "body": "$var.d4.object",
+                                                "runtimeOptions": {}}, {"result": None}, x=1125),
+        "d6": task("runEndpointTriggerWithPost", "OperationsManager",
+                   f"start {WF['tear_down_aws_vpn']} through its endpoint ({WATCH_RULES['routes']['teardown']}): it "
+                   "stops at its own Work Center cards", {"routeName": WATCH_RULES["routes"]["teardown"],
+                                                          "body": "$var.d2.return_data", "runtimeOptions": {}},
+                   {"result": None}, x=1125, y=300),
+        "d7": jq("the started job's id", "$var.d5.result", "data._id", x=1150, to_job="started_job"),
+        "d8": jq("the started job's id", "$var.d6.result", "data._id", x=1150, y=300, to_job="started_job"),
+        "db": jq("the outcome's words", "$var.b8.result", "stdout_json.started", x=1165),
+        "d9": _publish(replace("the outcome: the run started", "$var.db.return_data", "__J__",
+                               "$var.job.started_job", x=1175), "replacedString", "outcome"),
+        "da": note("the approved run could not be started", "the approved run could not be started through its "
+                   "endpoint (see the start task): nothing was changed", "error", x=1150, y=-300),
+        **step("the drift task: drift with no proposal card, or a watch that could not run (R3)"),
+        "1f": evaluate("drift found?", "1e", "result", "stdout_json.found", "==", True, x=600, y=-150),
+        "10": jq("the outcome: no drift", "$var.job.drift", "stdout_json.summary", x=700, y=-150, to_job="outcome"),
+        "2a": jq("the drift, in words", "$var.job.drift", "stdout_json.summary", x=700, y=-300, to_job="outcome"),
         "2b": view("Work Center task", "Drift in AWS: changed outside Terraform", "$var.job.outcome",
-                   "$var.job.drift", "Seen", "Seen", x=800),
+                   "$var.job.drift", "Seen", "Seen", x=800, y=-300),
         **step("where it stops: the check could not run or be read"),
         "8a": note("the drift check could not run", "terraform-run drift did not answer (see drift_result): nothing "
                    "was changed", "error", x=250, y=-300),
@@ -6085,7 +6455,73 @@ def check_aws_drift() -> dict:
         "1b": _edge(**{"1c": ok, "8a": err}),
         "1c": _edge(**{"1d": ok, "8a": fail}),
         "1d": _edge(**{"1e": ok}),
-        "1e": _edge(**{"1f": ok, "8b": err}),
+        "1e": _edge(**{"a0": ok, "8b": err}),
+        # the watch's facts; a deployment that cannot be read is the gate's to judge
+        "a0": _edge(**{"a1": ok}),
+        "a1": _edge(**{"a2": ok}),
+        "a2": _edge(**{"e0": ok, "a3": err}),
+        "e0": _edge(**{"a4": ok, "a3": fail}),
+        "a3": _edge(**{"a4": ok}),
+        "a4": _edge(**{"a5": ok}),
+        "a5": _edge(**{"a6": ok}),
+        "a6": _edge(**{"a7": ok, "1f": err}),
+        "a7": _edge(**{"ab": ok, "a8": fail}),
+        "a8": _edge(**{"aa": ok, "a9": fail}),
+        "a9": _edge(**{"workflow_end": ok}),
+        "aa": _edge(**{"2a": ok}),
+        # at most one open card
+        "ab": _edge(**{"ac": ok, "1f": err}),
+        "ac": _edge(**{"ad": ok}),
+        "ad": _edge(**{"ae": ok}),
+        "ae": _edge(**{"af": ok, "1f": err}),
+        "af": _edge(**{"b0": ok, "1f": fail}),
+        "b0": _edge(**{"b1": ok, "e1": fail}),
+        "e1": _edge(**{"e2": ok, "b2": fail}),
+        "e2": _edge(**{"2a": ok}),
+        "b1": _edge(**{"workflow_end": ok}),
+        # the watch
+        "b2": _edge(**{"b3": ok}),
+        "b3": _edge(**{"b4": ok, "1f": fail}),
+        "b4": _edge(**{"b6": ok, "b5": err}),
+        "b5": _edge(**{"b6": ok}),
+        "b6": _edge(**{"b7": ok}),
+        "b7": _edge(**{"b8": ok}),
+        "b8": _edge(**{"b9": ok, "1f": err}),
+        "b9": _edge(**{"bd": ok, "bb": fail}),
+        "bb": _edge(**{"2a": ok}),
+        "bd": _edge(**{"be": ok, "1f": fail}),
+        "be": _edge(**{"c0": ok, "bf": fail}),
+        "bf": _edge(**{approval_ids("d0")[0]: ok, "1f": fail}),
+        # a redeploy's address; none -> the drift task
+        "c0": _edge(**{"c1": ok, "cc": err}),
+        "c1": _edge(**{"c2": ok}),
+        "c2": _edge(**{"c3": ok, "cc": err}),
+        "c3": _edge(**{"c4": ok, "cc": fail}),
+        "c4": _edge(**{"c5": ok, "cc": fail}),
+        "c5": _edge(**{"c6": ok, "cc": fail}),
+        "c6": _edge(**{"c7": ok, "cc": err}),
+        "c7": _edge(**{"c8": ok}),
+        "c8": _edge(**{"c9": ok, "cc": err}),
+        "c9": _edge(**{"ca": ok, "cc": fail}),
+        "ca": _edge(**{"cd": ok, "cc": fail}),
+        "cd": _edge(**{"cb": ok, "cc": fail}),
+        "cb": _edge(**{approval_ids("d0")[0]: ok, "cc": err}),
+        "cc": _edge(**{"2a": ok}),
+        # the card
+        **approval_edges("d0"),
+        "d0": _edge(**{"d2": ok, "d1": fail}),
+        "d1": _edge(**{"workflow_end": ok}),
+        "d2": _edge(**{"d3": ok, "da": fail}),
+        "d3": _edge(**{"d4": ok, "d6": fail}),
+        "d4": _edge(**{"d5": ok}),
+        "d5": _edge(**{"d7": ok, "da": err}),
+        "d6": _edge(**{"d8": ok, "da": err}),
+        "d7": _edge(**{"db": ok, "da": fail}),
+        "d8": _edge(**{"db": ok, "da": fail}),
+        "db": _edge(**{"d9": ok, "da": fail}),
+        "d9": _edge(**{"workflow_end": ok}),
+        "da": _edge(**{"workflow_end": ok}),
+        # R3: the drift task, or a quiet end
         "1f": _edge(**{"2a": ok, "10": fail}),
         "10": _edge(**{"workflow_end": ok}),
         "2a": _edge(**{"2b": ok}),
@@ -6096,12 +6532,18 @@ def check_aws_drift() -> dict:
     return workflow(
         WF["check_aws_drift"],
         "Reports what changed in AWS outside Terraform without changing anything: a refresh-only plan reads every "
-        "resource and names the ones that drifted and their attributes; drift opens a Work Center task (R3, ADR 0068)",
+        "resource and names the ones that drifted and their attributes. Drift, or a deployment with no end time past "
+        "24 hours, gets one proposal card from the Drift and Cost Watch (A5); the drift task opens when it cannot "
+        "(R3, ADR 0068, ADR 0085)",
         {},
         tasks,
         tr,
         {"outcome": {"type": "string"}, "drift": {"type": "object"}, "error": {"type": "string"},
-         "drift_result": {"type": "object"}},
+         "drift_result": {"type": "object"}, "watch_outputs": {"type": "object"}, "watch_gate": {"type": "object"},
+         "watch_result": {"type": "object"}, "watch": {"type": "object"}, "watch_error": {"type": "string"},
+         "watch_note": {"type": "string"}, "watch_card": {"type": "object"}, "watch_message": {"type": "string"},
+         "watch_approval_card": {"type": "object"}, "watch_approval_decision": {"type": ["object", "null"]},
+         "address_from": {"type": "string"}, "started_job": {"type": "string"}},
     )
 
 
