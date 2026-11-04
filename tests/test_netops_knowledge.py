@@ -329,3 +329,43 @@ def test_the_gateway_vault_play_survives_a_local_secret_without_a_provider() -> 
     expr = ("{{ secrets | selectattr('provider', 'defined') | selectattr('provider', 'equalto', 'lab-vault')"
             " | map(attribute='name') | list }}")
     assert env.from_string(expr).render(secrets=secrets) == "['lab-automation-password']"
+
+
+def _until(task_name: str) -> Any:
+    task = next(t for t in yaml.safe_load(PLAY.read_text())[0]["tasks"] if t["name"] == task_name)
+    return jinja2.Environment().compile_expression(task["until"])
+
+
+def _deployment(generation: int, observed: int, replicas: int, updated: int, available: int) -> dict[str, Any]:
+    # Available is True in every state below: during a rolling update the old pod keeps serving
+    status = {"observedGeneration": observed, "replicas": replicas, "updatedReplicas": updated,
+              "availableReplicas": available, "conditions": [{"type": "Available", "status": "True"}]}
+    return {"resources": [{"metadata": {"generation": generation}, "spec": {"replicas": 1}, "status": status}]}
+
+
+def test_the_rollout_wait_holds_until_only_the_new_pod_serves() -> None:
+    done = _until("The rollout finishes (only the new ReplicaSet's pods are left)")
+    assert not done(nk_deploy=_deployment(6, 5, 1, 1, 1)), "the controller has not seen the new template yet"
+    assert not done(nk_deploy=_deployment(6, 6, 1, 0, 1)), "only the old pod serves, the new one is not created yet"
+    assert not done(nk_deploy=_deployment(6, 6, 2, 1, 1)), "the new pod is up beside the old one (surge)"
+    assert not done(nk_deploy=_deployment(6, 6, 1, 1, 0)), "the new pod is not ready"
+    assert done(nk_deploy=_deployment(6, 6, 1, 1, 1))
+
+
+def _pod(terminating: bool) -> dict[str, Any]:
+    metadata = {"deletionTimestamp": "2026-11-04T02:30:58Z"} if terminating else {}
+    return {"metadata": metadata, "status": {"phase": "Running"}}
+
+
+def test_the_pod_check_waits_for_the_old_pod_to_be_deleted() -> None:
+    gone = _until("The running pod's image (once the old pod is deleted)")
+    assert not gone(nk_pods={"resources": [_pod(False), _pod(False)]}), "old and new pods both run"
+    assert not gone(nk_pods={"resources": [_pod(True), _pod(False)]}), "the old pod is terminating, still Running"
+    assert not gone(nk_pods={"resources": [_pod(True)]}), "only a terminating pod is left"
+    assert gone(nk_pods={"resources": [_pod(False)]})
+    names = [t["name"] for t in yaml.safe_load(PLAY.read_text())[0]["tasks"]]
+    assert names[-3:] == [
+        "The rollout finishes (only the new ReplicaSet's pods are left)",
+        "The running pod's image (once the old pod is deleted)",
+        "The running pod runs the pinned digest",
+    ]
