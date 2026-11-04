@@ -64,6 +64,15 @@ k8s/**/*.tgz
 *.deb
 images/staging/
 images/cache/
+# Itential's image layers and registry sign-ins (tests/test_no_itential_images.py)
+*.tar.*
+*.zst
+*.oci
+oci-layout
+**/blobs/sha256/
+.aws/
+.docker/
+.dockerconfigjson
 
 # --- python / tooling ---
 __pycache__/
