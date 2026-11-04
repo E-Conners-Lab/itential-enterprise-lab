@@ -139,6 +139,22 @@ def test_pre_push_passes_a_clean_push_and_a_branch_delete(tmp_path):
     assert guard.pushed(str(repo), [f"(delete) {guard.ZERO} refs/heads/old {tip}"]) == {}
 
 
+def test_pre_push_passes_a_push_that_adds_no_new_objects(tmp_path):
+    repo = _repo(tmp_path)
+    (repo / "README.md").write_text("lab\n")
+    tip = _commit(repo, "already on the remote")
+    subprocess.run(["git", "-C", str(repo), "update-ref", "refs/remotes/origin/main", tip], check=True)
+    r = subprocess.run(
+        ["python3", "-I", str(GUARD_PATH), "pre-push"],
+        cwd=repo,
+        input=f"refs/heads/new-name {tip} refs/heads/new-name {guard.ZERO}\n",
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert r.returncode == 0 and r.stderr == "", r.stderr
+
+
 def test_pre_push_refuses_with_exit_1_and_names_the_file(tmp_path):
     repo = _repo(tmp_path)
     (repo / "iagctl").write_bytes(b"\x7fELF\x02\x01\x01" + b"\x00" * 32)

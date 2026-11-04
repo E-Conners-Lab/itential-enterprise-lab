@@ -76,6 +76,8 @@ def pushed(repo: str, lines: list[str]) -> dict[str, list[str]]:
     for line in git(repo, "rev-list", "--objects", *tips, "--not", "--remotes").decode().splitlines():
         oid, _, path = line.partition(" ")
         paths.setdefault(oid, path)
+    if not paths:  # every pushed commit is already on a remote-tracking ref (a new branch name, a re-push)
+        return {}
     found: dict[str, list[str]] = {}
     sizes = git(repo, "cat-file", "--batch-check", stdin="\n".join(paths).encode() + b"\n").decode().splitlines()
     for oid, kind, size in (ln.split() for ln in sizes):
