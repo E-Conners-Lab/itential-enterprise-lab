@@ -8,7 +8,8 @@
 #   3. the pod gets the token's SHA-256 only (the token itself stays in Vault for the Gateway), the pull secret, a lab-CA
 #      certificate, and the manifests (templates/netops-knowledge.yaml.j2): non-root, read-only, no capabilities, no
 #      service-account token, a VIP that admits only the Gateway, and NO egress;
-#   4. the rollout is waited for, and the running pod's image digest is compared with the pin.
+#   4. the rollout is waited for until only the new pod is left (the old one deleted), and its image digest is
+#      compared with the pin.
 # The Gateway side (FlowMCP registration) is tasks/gateway-mcp.yml in platform-ha2-gateway.yml. Idempotent.
 - name: The netops-knowledge service on k3s
   hosts: localhost
@@ -174,17 +175,25 @@
         template: templates/netops-knowledge.yaml.j2
         apply: true # keys the template drops are removed (a patch would keep them)
 
-    - name: The rollout finishes
+    # Available stays True all through a rolling update (the old pod serves until the new one is ready), so it says
+    # nothing about the new pod: wait as `kubectl rollout status` does, then for the old pod to be deleted.
+    - name: The rollout finishes (only the new ReplicaSet's pods are left)
       kubernetes.core.k8s_info:
         kubeconfig: "{{ kubeconfig }}"
         kind: Deployment
         namespace: "{{ nk_ns }}"
         name: netops-knowledge
-        wait: true
-        wait_condition: {type: Available, status: "True"}
-        wait_timeout: 300
+      register: nk_deploy
+      until: >-
+        nk_deploy.resources | length == 1
+        and (nk_deploy.resources[0].status.observedGeneration | default(0)) >= nk_deploy.resources[0].metadata.generation
+        and (nk_deploy.resources[0].status.updatedReplicas | default(0)) == nk_deploy.resources[0].spec.replicas
+        and (nk_deploy.resources[0].status.replicas | default(0)) == nk_deploy.resources[0].spec.replicas
+        and (nk_deploy.resources[0].status.availableReplicas | default(0)) == nk_deploy.resources[0].spec.replicas
+      retries: 60
+      delay: 5
 
-    - name: The running pod's image
+    - name: The running pod's image (once the old pod is deleted)
       kubernetes.core.k8s_info:
         kubeconfig: "{{ kubeconfig }}"
         kind: Pod
@@ -192,6 +201,12 @@
         label_selectors: ["app.kubernetes.io/name=netops-knowledge"]
         field_selectors: ["status.phase=Running"]
       register: nk_pods
+      # a terminating pod keeps phase Running until it is gone
+      until: >-
+        nk_pods.resources | length == 1
+        and nk_pods.resources[0].metadata.deletionTimestamp | default(none) is none
+      retries: 24
+      delay: 5
 
     - name: The running pod runs the pinned digest
       ansible.builtin.assert:
