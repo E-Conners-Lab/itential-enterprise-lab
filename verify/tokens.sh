@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Anthropic token meter for the lab (ADR 0049, PID Domain 7). The Agent Session Manager is the ledger: every
-# session document carries provider, modelVersion, startedAt and its token totals. Prints the last 7 days per
-# model with the cost at the prices in itential/versions.yaml (llm.budget) and the budget left.
+# session document carries provider, modelVersion, startedAt and its token totals. NetClaw calls Anthropic itself,
+# so its runs come from verify/netclawusage.py's ledger (harvested here first; cache tokens priced too). Prints the
+# last 7 days per model with the cost at the prices in itential/versions.yaml (llm.budget) and the budget left.
 #   verify/tokens.sh            report
 #   verify/tokens.sh --check    exit 1 when the 7-day spend is at or over llm.budget.weekly_usd (the verifies' guard)
 #   DAYS=30 verify/tokens.sh    another window
@@ -31,8 +32,13 @@ while :; do
   offset=$((offset+n))
   [[ "$oldest" < "$(date -u -v-${DAYS}d +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -d "-${DAYS} days" +%Y-%m-%dT%H:%M:%SZ)" ]] && break
 done
-MODE=${1:-report} DAYS="$DAYS" ${PY} - "$JAR.sessions" <<'PY'
+# NetClaw's own runs (not in the Agent Session Manager): copy any new ones out of its containers into the ledger
+NC_OK=1
+NC_NOTE=$(${PY} verify/netclawusage.py harvest 2>&1 | tail -1) || { NC_OK=0; NC_NOTE="WARNING: NetClaw NOT fully metered: ${NC_NOTE}"; }
+MODE=${1:-report} DAYS="$DAYS" NC_NOTE="$NC_NOTE" NC_OK="$NC_OK" ${PY} - "$JAR.sessions" <<'PY'
 import datetime, json, os, sys, yaml
+sys.path.insert(0, "verify")
+import netclawusage
 budget = yaml.safe_load(open("itential/versions.yaml"))["llm"]["budget"]
 since = datetime.datetime.now(datetime.UTC) - datetime.timedelta(days=int(os.environ["DAYS"]))
 sessions = []
@@ -65,6 +71,13 @@ for (prov, model), p in sorted(per.items(), key=lambda kv: -kv[1]["in"]):
         cost = p["in"] / 1e6 * budget["input_usd_per_mtok"] + p["out"] / 1e6 * budget["output_usd_per_mtok"]
         usd += cost
     print(f"  {prov:10} {model:18} sessions={p['sessions']:4d} in={p['in']:9d} out={p['out']:7d}  ${cost:6.2f}")
+netclaw = netclawusage.totals(float(os.environ["DAYS"]))
+for key, p in sorted(netclaw.items()):
+    prov, model = key.split("|", 1)
+    cost = netclawusage.cost(p, budget) if prov == budget["provider"] else 0.0
+    usd += cost
+    print(f"  {prov:10} {model:18} netclaw runs={p['runs']:4d} in={p['input']:9d} out={p['output']:7d} cache_read={p['cache_read']:9d} cache_write={p['cache_write']:8d}  ${cost:6.2f}")
+print(f"  {os.environ['NC_NOTE']}")
 left = budget["weekly_usd"] - usd
 print(f"spent ${usd:.2f} of the ${budget['weekly_usd']:.2f} weekly budget; ${left:.2f} left")
 if left_out:
@@ -72,6 +85,10 @@ if left_out:
 big = sorted((s for s in rows if (s.get("provider") == budget["provider"])), key=lambda s: -(s.get("totalInputTokens") or 0))[:3]
 for s in big:
     print(f"  largest: {s['agentSnapshot'].get('name') if s.get('agentSnapshot') else '?'} {s.get('startedAt','')[:16]} in={s.get('totalInputTokens')} ({s.get('status')})")
+# fail closed: with NetClaw's newest runs unread, the week's spend is unknown, so the guard does not pass
+if os.environ["MODE"] == "--check" and os.environ["NC_OK"] != "1":
+    print("NetClaw's usage could not be read, so the week's spend is unknown: no new Anthropic sessions from the verifies (fix Docker, or ANTHROPIC_VERIFY=force)")
+    sys.exit(1)
 if os.environ["MODE"] == "--check" and usd >= budget["weekly_usd"]:
     print("BUDGET EXCEEDED: no new Anthropic sessions from the verifies (ANTHROPIC_VERIFY=force overrides)")
     sys.exit(1)

@@ -854,7 +854,10 @@ llm:
   # verifies refuse to start Anthropic sessions once the week is spent (ANTHROPIC_VERIFY=force overrides).
   # ADR 0084: the skills eval suite's sessions are metered by the workbench's own ledger (an alert at each $100), so the
   # meter leaves them out (exclude_agents = skills_lab.agents): eval runs never stop the verifies, nor the reverse
+  # NetClaw calls Anthropic itself (verify/netclawusage.py) and its runs bill prompt-cache tokens: writes (5-minute TTL)
+  # at 1.25x the input price, reads at 0.1x (Anthropic's prompt-caching prices; claude-sonnet-5 = $2 / $10, 2026-11-04)
   budget: {provider: anthropic, weekly_usd: 15, input_usd_per_mtok: 2.00, output_usd_per_mtok: 10.00,
+           cache_write_multiplier: 1.25, cache_read_multiplier: 0.1,
            exclude_agents: [skill-eval, skill-eval-local]}
   profiles:
     - name: anthropic
