@@ -6357,7 +6357,7 @@ def check_aws_drift() -> dict:
         **step("one open card: an earlier proposal or a change to the AWS VPN still open ends today's run"),
         "ab": task("getJobs", "OperationsManager", "the running jobs (an earlier card or an AWS VPN change open?)",
                    {"queryParameters": {"equals": {"status": "running"}, "sort": "metrics.start_time", "order": -1,
-                                        "limit": 200, "include": "_id,name"}},
+                                        "limit": 200, "include": "_id,name,metrics.start_time"}},
                    {"result": None}, x=700),
         "ac": set_key("the running jobs", {}, "jobs", "$var.ab.result", x=710),
         "ad": set_key("the gate's answer", "$var.ac.object", "gate", "$var.job.watch_gate", x=720),

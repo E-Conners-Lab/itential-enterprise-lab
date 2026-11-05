@@ -607,7 +607,7 @@
             "sort": "metrics.start_time",
             "order": -1,
             "limit": 200,
-            "include": "_id,name"
+            "include": "_id,name,metrics.start_time"
           }
         },
         "outgoing": {
