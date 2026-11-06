@@ -631,12 +631,15 @@
   ansible.builtin.set_fact:
     wf_docs: "{{ lookup('ansible.builtin.fileglob', playbook_dir ~ '/../../itential/workflows/*.json', wantlist=True) | sort }}"
 
-# ADR 0084: the scratch routers' workflows are production's alone; the dev tier gets nothing of the skills lab
+# ADR 0084: the scratch routers' workflows are production's alone; the dev tier gets nothing of the skills lab, nor
+# the amendment's job-run test workflows (their account and its group exist on production only)
 - name: The dev tier leaves out the skills lab's workflows
   ansible.builtin.set_fact:
     wf_docs: "{{ wf_docs | reject('search', '/(' ~ scratch_files | join('|') ~ ')[.]json$') | list }}"
   vars:
-    scratch_files: "{{ skills_lab.workflows | map('extract', workflows) | map('lower') | map('replace', ' ', '-') | list }}"
+    scratch_files: >-
+      {{ (skills_lab.workflows + skills_lab.job_workflows) | map('extract', workflows) | map('lower')
+         | map('replace', ' ', '-') | list }}
   when: dev_overlay | default(false) | bool
 
 - name: Agent UUIDs for the workflows that run an agent (R6)

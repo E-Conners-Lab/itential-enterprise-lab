@@ -270,6 +270,8 @@ skills_lab:
   project: skills-lab
   # the four workflows' keys (workflows, operations_manager): imported and triggered on production only
   workflows: [scratch_show, scratch_restconf, scratch_push, scratch_restore]
+  # ADR 0084 amendment: the workbench's job-run tests (no router, no inventory); their endpoints come from the same loop
+  job_workflows: [skill_job_plain, skill_job_error, skill_job_approval, skill_job_cleanup]
   # restconf-get's ALLOWLIST (cloud-devops-pipeline itential/restconf-get.py), held here for Get RESTCONF Data from a
   # Scratch Device's input gate: the same prefixes, the same character rule (`%` only as %2F), no `..`. A change is a
   # CDP pull request plus a pin bump plus this list
@@ -614,6 +616,28 @@ operations_manager:
     description: "Replaces a scratch router's configuration with its baseline and proves it; the runner only (ADR 0084)"
     endpoint: {name: Restore Baseline on a Scratch Device from the eval runner, route: skills-lab-restore,
                description: "The eval runner posts a scratch router here as svc-eval-approver between runs"}
+  # ADR 0084 amendment (owner 2026-11-05): the skills workbench's job-run tests, production only, posted to as
+  # svc-eval-jobs (eval_access.jobs). The cleanup is the account's only way to end a job: it holds no cancel method
+  skill_job_plain:
+    automation: Complete a Test Job
+    description: "Echoes one message and ends Complete; no device, no adapter (ADR 0084 amendment)"
+    endpoint: {name: Complete a Test Job from the skills workbench, route: skill-jobs-plain,
+               description: "The skills workbench posts a message here as svc-eval-jobs"}
+  skill_job_error:
+    automation: Fail a Test Job
+    description: "Ends in Error at once and stays open until the cleanup cancels it (ADR 0084 amendment)"
+    endpoint: {name: Fail a Test Job from the skills workbench, route: skill-jobs-error,
+               description: "The skills workbench posts an empty object here as svc-eval-jobs"}
+  skill_job_approval:
+    automation: Hold a Test Job for Approval
+    description: "Waits at one Work Center task svc-eval-jobs sees but cannot complete (ADR 0084 amendment)"
+    endpoint: {name: Hold a Test Job for Approval from the skills workbench, route: skill-jobs-approval,
+               description: "The skills workbench posts an empty object here as svc-eval-jobs"}
+  skill_job_cleanup:
+    automation: Cancel the Test Jobs
+    description: "Cancels the open jobs of the three test workflows and nothing else (ADR 0084 amendment)"
+    endpoint: {name: Cancel the Test Jobs from the skills workbench, route: skill-jobs-cleanup,
+               description: "The skills workbench's harness posts an empty object here as svc-eval-jobs after each run"}
   # R4 (owner decisions 2026-10-04): monthly and unattended, no card. Operations Manager repeats by minute, hour, day or
   # week only (no month), so this runs every day and the workflow rotates on the 1st (UTC) only; off the hour, so it
   # never starts with Tear Down Expired AWS VPN (top of the hour) or Check AWS Drift (07:00)
@@ -645,6 +669,8 @@ automation_access:
   eval: [Run Show Command on a Scratch Device, Get RESTCONF Data from a Scratch Device,
          Push Configuration to a Scratch Device with Approval]
   eval_runner: [Restore Baseline on a Scratch Device]
+  # ADR 0084 amendment: the workbench's job-run tests read admin_group plus eval-jobs only (svc-eval-jobs)
+  eval_jobs: [Complete a Test Job, Fail a Test Job, Hold a Test Job for Approval, Cancel the Test Jobs]
   # never touched by the plays: the department-agents delivery gates its own Ask automations per department (read =
   # the department's group and IT). Ask R&D came later (2026-10-13) and was missing, so tasks/automation-access.yml
   # (platform.yml, flowai-assets, mcp-access) reset it and took dept-rnd's access away; found 2026-10-21.
@@ -679,6 +705,9 @@ eval_access:
   run: {user: svc-eval, group: eval, password_env: SVC_EVAL_PROD_PASSWORD, kind: eval}
   approve: {user: svc-eval-approver, group: eval-approvers, password_env: SVC_EVAL_APPROVER_PROD_PASSWORD,
             kind: eval-approver}
+  # ADR 0084 amendment (owner 2026-11-05): the skills workbench's job-run tests. Starts the four test triggers, reads
+  # jobs and work items, never claims, completes or cancels anything (itential/eval/jobs-roles.yaml)
+  jobs: {user: svc-eval-jobs, group: eval-jobs, password_env: SVC_EVAL_JOBS_PROD_PASSWORD, kind: eval-jobs}
 
 vm:
   # itential-dev, never `itential` or `mcp`: since the S11 cut-over those names belong to production's load
@@ -815,6 +844,11 @@ workflows:
   scratch_restconf: Get RESTCONF Data from a Scratch Device # one allowlisted RESTCONF read through restconf-get; reads only
   scratch_push: Push Configuration to a Scratch Device with Approval # forbidden lines refused, a card for eval-approvers, never saved
   scratch_restore: Restore Baseline on a Scratch Device # configure replace from bootflash:baseline.cfg, proved by hashes; runner only
+  # ADR 0084 amendment (owner 2026-11-05): the skills workbench's job-run tests; no device, no adapter, seconds each
+  skill_job_plain: Complete a Test Job # echoes its message into `echo` and ends Complete
+  skill_job_error: Fail a Test Job # one task errors and has no error edge, so the job stays in Error
+  skill_job_approval: Hold a Test Job for Approval # waits at one Work Center task its account sees but cannot complete
+  skill_job_cleanup: Cancel the Test Jobs # cancels the open jobs of the three above, nothing else
 
 # The names before ADR 0067. The play deletes each one it still finds on a Platform, after importing the
 # renamed documents, so a replay leaves no stale copy behind. Nothing may reuse one of these names.

@@ -538,6 +538,8 @@ INPUT_GATES = {
     WF["scratch_restconf"]: {"device": SCRATCH_DEVICE, "path": RESTCONF_PATH},
     WF["scratch_push"]: {"device": SCRATCH_DEVICE, "lines": CONFIG_LINES, "reason": REASON},
     WF["scratch_restore"]: {"device": SCRATCH_DEVICE},
+    # ADR 0084 amendment: the workbench's plain test job takes one message, nothing else
+    WF["skill_job_plain"]: {"message": {"type": "string", "minLength": 1, "maxLength": 2000}},
 }
 # A4 (ADR 0085): the Cloud Concierge's two tools, which NetClaw also starts (ADR 0082, amendment A1). The on-prem address
 # is `last` (the newest person-started Deploy's) or one the person typed; the rest are Deploy's and Tear Down's own
@@ -10056,6 +10058,146 @@ def scratch_restore() -> dict:
     )
 
 
+# --- The skills workbench's job-run tests (ADR 0084 amendment, owner 2026-11-05) -----------------------------------
+# Four workflows, production only, started through their endpoints as svc-eval-jobs (versions.yaml eval_access.jobs):
+# one that completes, one that stays in Error, one that waits at a Work Center task, and the cleanup. No device, no
+# adapter, no Gateway call but the cleanup's one runCode. The account holds no cancel method (an Operations Manager
+# cancel is not limited to the caller's own jobs), so the cleanup is its only way to end the other three.
+SKILL_JOB_KEYS = ("skill_job_plain", "skill_job_error", "skill_job_approval")
+SKILL_JOB_GROUP_MARKERS = [f"__GROUP_ID:{VERSIONS['eval_access']['jobs']['group']}__", "__GROUP_ID:admin_group__"]
+SKILL_JOB_OPEN = ("running", "error", "paused")  # a job waiting at a Work Center task reads running
+
+
+def open_test_jobs(d: dict) -> dict:
+    """The jobs "Cancel the Test Jobs" cancels: of getJobs' answer (`data`), only those of the three test workflows
+    (`names`) that are still open (`statuses`), however the query was filtered. `ok` is false when the jobs could not
+    be read. Pure: runCode runs this function's own source on the Gateway."""
+    rows = d.get("data")
+    if not isinstance(rows, list):
+        return {"ok": False, "any": False, "ids": [], "done": "", "none": ""}
+    ids = sorted({str(r["_id"]) for r in rows if isinstance(r, dict) and r.get("_id")
+                  and r.get("name") in d["names"] and r.get("status") in d["statuses"]})
+    return {"ok": True, "any": bool(ids), "ids": ids,
+            "done": f"Canceled {len(ids)} open job(s) of the three test workflows.",
+            "none": "No open job of the three test workflows: nothing was canceled."}
+
+
+OPEN_TEST_JOBS_CODE = _pure_code(open_test_jobs, {"names": [WF[k] for k in SKILL_JOB_KEYS],
+                                                  "statuses": list(SKILL_JOB_OPEN)})
+
+
+def skill_job_plain() -> dict:
+    ok, err = "success", "error"
+    tasks = sectioned({
+        **step("the echo: the message, published as it came"),
+        "1a": task("makeData", "WorkFlowEngine", "the message, into echo",
+                   {"input": "$var.job.message", "outputType": "string", "variables": ""},
+                   {"output": "$var.job.echo"}, display="Tools", x=0),
+        **step("where it stops: an echo that failed, with its reason"),
+        "5a": note("the echo failed", "the message could not be echoed", "error", x=0, y=300),
+    })
+    tr = {"workflow_start": _edge(**{"1a": ok}), "1a": _edge(**{"workflow_end": ok, "5a": err}),
+          "5a": _edge(**{"workflow_end": ok})}
+    return workflow(
+        WF["skill_job_plain"],
+        "Echoes one message into echo and ends Complete; the skills workbench's job-run tests, no device and no adapter "
+        "(ADR 0084 amendment)",
+        {"message": {"type": "string", "required": True, "description": "Any text, e.g. hello"}},
+        tasks,
+        tr,
+        {"echo": {"type": "string"}, "error": {"type": "string"}},
+    )
+
+
+def skill_job_error() -> dict:
+    tasks = sectioned({
+        **step("the error: text that is not JSON, parsed, so the task errors; it has no error edge on purpose"),
+        "1a": parse("parse text that is not JSON (errors on purpose)", "this is not JSON", x=0),
+    })
+    # no error edge on purpose: the job stays in Error (open) until "Cancel the Test Jobs" cancels it
+    tr = {"workflow_start": _edge(**{"1a": "success"}), "1a": _edge(**{"workflow_end": "success"})}
+    return workflow(
+        WF["skill_job_error"],
+        "Errors at its one task and stays in Error until Cancel the Test Jobs cancels it; the skills workbench's job-run "
+        "tests, no device and no adapter (ADR 0084 amendment)",
+        {},
+        tasks,
+        tr,
+        {},
+    )
+
+
+def skill_job_approval() -> dict:
+    tasks = sectioned({
+        **step("the wait: one Work Center task for eval-jobs and admin_group, which svc-eval-jobs sees but cannot complete"),
+        "1a": task("ViewData", "WorkFlowEngine", "a test job waits here",
+                   {"header": "A test job waits here",
+                    "message": "Hold a Test Job for Approval waits at this task. Nobody completes it: Cancel the Test "
+                               "Jobs ends the job.",
+                    "body": "", "variables": {}, "btn_success": "Done", "btn_failure": "Done"},
+                   {}, kind="manual", display="Tools", view="/workflow_engine/task/ViewData",
+                   groups=SKILL_JOB_GROUP_MARKERS, x=0),
+        **step("ended by hand: an administrator completed the task anyway, either button"),
+        "5a": note("completed by hand", "an administrator completed the test task by hand", "outcome", x=0, y=300),
+    })
+    tr = {"workflow_start": _edge(**{"1a": "success"}), "1a": _edge(**{"workflow_end": "success", "5a": "failure"}),
+          "5a": _edge(**{"workflow_end": "success"})}
+    return workflow(
+        WF["skill_job_approval"],
+        "Waits at one Work Center task that its test account sees but cannot complete, until Cancel the Test Jobs "
+        "cancels it; the skills workbench's job-run tests, no device and no adapter (ADR 0084 amendment)",
+        {},
+        tasks,
+        tr,
+        {"outcome": {"type": "string"}},
+    )
+
+
+def skill_job_cleanup() -> dict:
+    ok, fail, err = "success", "failure", "error"
+    names = ",".join(WF[k] for k in SKILL_JOB_KEYS)
+    tasks = sectioned({
+        **step("the open test jobs: read, then picked again by name and status, so nothing else is ever canceled"),
+        "1a": task("getJobs", "OperationsManager", "the open jobs of the three test workflows",
+                   {"queryParameters": {"in": {"name": names, "status": ",".join(SKILL_JOB_OPEN)}, "limit": 200,
+                                        "include": "_id,name,status"}},
+                   {"result": None}, x=0),
+        "1b": run_code("only the test workflows' open jobs (Python on the runner)", OPEN_TEST_JOBS_CODE,
+                       "$var.1a.result", None, x=100),
+        "1c": evaluate("the jobs read?", "1b", "result", "stdout_json.ok", "==", True, x=200),
+        "1d": evaluate("anything to cancel?", "1b", "result", "stdout_json.any", "==", True, x=300),
+        **step("the cancel: exactly those jobs"),
+        "2a": jq("their ids", "$var.1b.result", "stdout_json.ids", x=400),
+        "2b": task("cancelJobs", "OperationsManager", "cancel exactly those jobs", {"jobIds": "$var.2a.return_data"},
+                   {"result": None}, x=500),
+        "2c": jq("the outcome: canceled", "$var.1b.result", "stdout_json.done", x=600, to_job="outcome"),
+        "2d": jq("the outcome: nothing to cancel", "$var.1b.result", "stdout_json.none", x=200, y=-300,
+                 to_job="outcome"),
+        **step("where it stops: jobs it could not read or a cancel the Platform refused, each with its reason"),
+        "5a": note("the jobs could not be read", "nothing was canceled: the open test jobs could not be read",
+                   "error", x=-300, y=-600),
+        "5b": note("the cancel was refused", "the cancel was refused: some test jobs may still be open", "error",
+                   x=300, y=-600),
+    })
+    tr = {
+        "workflow_start": _edge(**{"1a": ok}),
+        "1a": _edge(**{"1b": ok, "5a": err}), "1b": _edge(**{"1c": ok, "5a": err}),
+        "1c": _edge(**{"1d": ok, "5a": fail}), "1d": _edge(**{"2a": ok, "2d": fail}),
+        "2a": _edge(**{"2b": ok, "5b": err}), "2b": _edge(**{"2c": ok, "5b": err}),
+        "2c": _edge(**{"workflow_end": ok}), "2d": _edge(**{"workflow_end": ok}),
+        "5a": _edge(**{"workflow_end": ok}), "5b": _edge(**{"workflow_end": ok}),
+    }
+    return workflow(
+        WF["skill_job_cleanup"],
+        "Cancels the open jobs of the three test workflows and nothing else; the skills workbench's harness runs it "
+        "after each run (ADR 0084 amendment)",
+        {},
+        tasks,
+        tr,
+        {"outcome": {"type": "string"}, "error": {"type": "string"}},
+    )
+
+
 BUILDERS = (device_count, show_version, show_command, show_all, branch_vlan, branch_vlan_delete, config_push,
             compliance_run, compliance_report, netbox_devices, backup_all, deploy_aws_vpn, verify_aws_vpn,
             hand_off_aws_vpn, config_push_revert, tear_down_aws_vpn, tear_down_expired_aws_vpn, get_aws_vpn_status,
@@ -10063,7 +10205,8 @@ BUILDERS = (device_count, show_version, show_command, show_all, branch_vlan, bra
             diagnose_fabric_bgp_outage, break_fabric_bgp, drill_batfish_gate, describe_workflow, describe_job, describe_for_agent,
             ask_platform_guide, scratch_show, scratch_restconf, scratch_push, scratch_restore,
             request_aws_vpn_deployment, request_aws_vpn_teardown, netclaw_request_aws_vpn_deployment,
-            netclaw_request_aws_vpn_teardown)
+            netclaw_request_aws_vpn_teardown, skill_job_plain, skill_job_error, skill_job_approval,
+            skill_job_cleanup)
 
 
 if __name__ == "__main__":

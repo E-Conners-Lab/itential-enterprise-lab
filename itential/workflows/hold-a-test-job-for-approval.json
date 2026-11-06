@@ -1,0 +1,133 @@
+{
+  "name": "Hold a Test Job for Approval",
+  "type": "automation",
+  "description": "Waits at one Work Center task that its test account sees but cannot complete, until Cancel the Test Jobs cancels it; the skills workbench's job-run tests, no device and no adapter (ADR 0084 amendment)",
+  "tasks": {
+    "1a": {
+      "name": "ViewData",
+      "canvasName": "ViewData",
+      "summary": "a test job waits here",
+      "description": "the wait: one Work Center task for eval-jobs and admin_group, which svc-eval-jobs sees but cannot complete",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "manual",
+      "displayName": "Tools",
+      "groups": [
+        "__GROUP_ID:eval-jobs__",
+        "__GROUP_ID:admin_group__"
+      ],
+      "nodeLocation": {
+        "x": 0,
+        "y": 150
+      },
+      "variables": {
+        "incoming": {
+          "header": "A test job waits here",
+          "message": "Hold a Test Job for Approval waits at this task. Nobody completes it: Cancel the Test Jobs ends the job.",
+          "body": "",
+          "variables": {},
+          "btn_success": "Done",
+          "btn_failure": "Done"
+        },
+        "outgoing": {},
+        "error": "",
+        "decorators": []
+      },
+      "view": "/workflow_engine/task/ViewData"
+    },
+    "5a": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "completed by hand",
+      "description": "ended by hand: an administrator completed the task anyway, either button",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 300,
+        "y": 300
+      },
+      "variables": {
+        "incoming": {
+          "input": "an administrator completed the test task by hand",
+          "outputType": "string",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.outcome"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "workflow_start": {
+      "name": "workflow_start",
+      "summary": "workflow_start",
+      "groups": [],
+      "nodeLocation": {
+        "x": 0,
+        "y": 0
+      }
+    },
+    "workflow_end": {
+      "name": "workflow_end",
+      "summary": "workflow_end",
+      "groups": [],
+      "nodeLocation": {
+        "x": 0,
+        "y": 450
+      }
+    }
+  },
+  "transitions": {
+    "workflow_start": {
+      "1a": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "1a": {
+      "workflow_end": {
+        "state": "success",
+        "type": "standard"
+      },
+      "5a": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "5a": {
+      "workflow_end": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "workflow_end": {}
+  },
+  "groups": [],
+  "canvasVersion": 3,
+  "inputSchema": {
+    "type": "object",
+    "properties": {},
+    "required": []
+  },
+  "outputSchema": {
+    "type": "object",
+    "properties": {
+      "outcome": {
+        "type": "string"
+      }
+    }
+  },
+  "tags": [],
+  "preAutomationTime": 300000,
+  "sla": 600000,
+  "font_size": 12,
+  "decorators": []
+}

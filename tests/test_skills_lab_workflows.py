@@ -83,7 +83,7 @@ def test_only_the_eval_groups_start_them_and_the_restore_is_the_runners_alone() 
 
 def test_the_endpoints_and_the_imports_are_production_only() -> None:
     platform = _tasks(PLAYS / "platform.yml")
-    trig = next(t for t in platform if t.get("loop") == "{{ skills_lab.workflows }}")
+    trig = next(t for t in platform if t.get("loop") == "{{ skills_lab.workflows + skills_lab.job_workflows }}")
     assert trig["ansible.builtin.include_tasks"] == "tasks/outage-trigger.yml"
     assert trig["when"] == "not (dev_overlay | default(false) | bool)"
     assets = _tasks(TASKS / "platform-assets.yml")
@@ -93,6 +93,8 @@ def test_the_endpoints_and_the_imports_are_production_only() -> None:
     pattern = "/(" + "|".join(files) + ")[.]json$"
     assert all(re.search(pattern, f"/x/{wf.file_name(n)}") for n in NAMES.values())
     assert not re.search(pattern, "/x/" + wf.file_name(VERSIONS["workflows"]["show_command"]))
+    # ADR 0084 amendment: the job-run test workflows are left out of the dev tier the same way
+    assert "(skills_lab.workflows + skills_lab.job_workflows)" in skip["vars"]["scratch_files"]
 
 
 # --- the gates -------------------------------------------------------------------------------------------------------
@@ -557,3 +559,100 @@ def test_no_play_gives_the_pair_to_the_mcp_account_or_builds_it_on_dev() -> None
     # ... and the proof after it does not count the pair as missing the group (else every replay after the first fails)
     proof = next(t for t in _tasks(TASKS / "mcp-access.yml") if t["name"].startswith("MCP access - the group is on"))
     assert "if a.name not in skills_lab.agents" in proof["vars"]["agent_missing"]
+
+
+# --- the skills workbench's job-run tests (ADR 0084 amendment, owner 2026-11-05) --------------------------------------
+JOB_KEYS = ["skill_job_plain", "skill_job_error", "skill_job_approval", "skill_job_cleanup"]
+JOB_NAMES = {k: VERSIONS["workflows"][k] for k in JOB_KEYS}
+
+
+def _jdoc(key: str) -> dict:
+    return json.loads((WORKFLOWS / wf.file_name(JOB_NAMES[key])).read_text())
+
+
+def _edges(doc: dict) -> set[tuple[str, str, str]]:
+    return {(s, d, e["state"]) for s, ds in doc["transitions"].items() for d, e in ds.items()}
+
+
+def test_the_job_tests_have_their_endpoints_and_only_eval_jobs_starts_them() -> None:
+    assert SKILLS["job_workflows"] == JOB_KEYS
+    om = VERSIONS["operations_manager"]
+    assert [om[k]["endpoint"]["route"] for k in JOB_KEYS] == [
+        "skill-jobs-plain", "skill-jobs-error", "skill-jobs-approval", "skill-jobs-cleanup"]
+    assert all(om[k]["automation"] == JOB_NAMES[k] for k in JOB_KEYS)
+    assert VERSIONS["automation_access"]["eval_jobs"] == list(JOB_NAMES.values())
+    for other in ("eval", "eval_runner", "netclaw"):
+        assert not set(VERSIONS["automation_access"][other]) & set(JOB_NAMES.values()), other
+
+
+def test_no_job_test_touches_a_device_or_an_adapter() -> None:
+    for key in JOB_KEYS:
+        tasks = {tid: t for tid, t in _jdoc(key)["tasks"].items() if tid not in ("workflow_start", "workflow_end")}
+        for tid, t in tasks.items():
+            assert (t["app"], t["name"]) in {("WorkFlowEngine", t["name"]), ("OperationsManager", "getJobs"),
+                                             ("OperationsManager", "cancelJobs"), ("GatewayManager", "runCode")}, (key, tid)
+            assert t["app"] != "GatewayManager" or key == "skill_job_cleanup", (key, tid)
+
+
+def test_the_plain_job_takes_one_message_and_echoes_it() -> None:
+    doc = _jdoc("skill_job_plain")
+    assert _jdoc("skill_job_plain")["tasks"]["9a0a"]["variables"]["incoming"]["schema"]["properties"] == {"message": {"type": "string", "minLength": 1, "maxLength": 2000}}
+    echo = doc["tasks"]["1a"]
+    assert echo["name"] == "makeData" and echo["variables"]["incoming"]["input"] == "$var.job.message"
+    assert echo["variables"]["outgoing"]["output"] == "$var.job.echo"
+    assert ("1a", "workflow_end", "success") in _edges(doc)
+
+
+def test_the_error_job_errors_at_its_one_task_with_no_error_edge() -> None:
+    doc = _jdoc("skill_job_error")
+    tasks = [tid for tid in doc["tasks"] if tid not in ("workflow_start", "workflow_end")]
+    assert tasks == ["1a"] and doc["tasks"]["1a"]["name"] == "parse"
+    assert doc["transitions"]["1a"] == {"workflow_end": {"state": "success", "type": "standard"}}, (
+        "no error edge on purpose: the job stays in Error until the cleanup cancels it")
+
+
+def test_the_approval_job_waits_at_one_task_for_eval_jobs_and_admin_group() -> None:
+    doc = _jdoc("skill_job_approval")
+    manual = {tid: t for tid, t in doc["tasks"].items() if t.get("type") == "manual"}
+    assert list(manual) == ["1a"]
+    assert manual["1a"]["groups"] == [f"__GROUP_ID:{VERSIONS['eval_access']['jobs']['group']}__",
+                                      "__GROUP_ID:admin_group__"]
+    for key in JOB_KEYS:
+        for tid, t in _jdoc(key)["tasks"].items():
+            if (key, tid) != ("skill_job_approval", "1a"):
+                assert t.get("groups", []) == [], (key, tid)
+
+
+def test_the_cleanup_cancels_only_what_it_picked() -> None:
+    doc = _jdoc("skill_job_cleanup")
+    tasks = doc["tasks"]
+    query = tasks["1a"]["variables"]["incoming"]["queryParameters"]
+    assert query["in"]["name"].split(",") == [JOB_NAMES[k] for k in JOB_KEYS[:3]]
+    assert "sort" not in query, "an unsorted read: the include rule (L-037) does not apply"
+    cancel = [t for t in tasks.values() if t.get("name") == "cancelJobs"]
+    assert len(cancel) == 1 and cancel[0]["variables"]["incoming"] == {"jobIds": "$var.2a.return_data"}
+    assert tasks["2a"]["variables"]["incoming"] == {"pass_on_null": False, "query": "stdout_json.ids",
+                                                    "obj": "$var.1b.result"}
+    # the runner's constants name the three test workflows only, never the cleanup itself
+    three = json.dumps({"names": [JOB_NAMES[k] for k in JOB_KEYS[:3]], "statuses": list(wf.SKILL_JOB_OPEN)})
+    assert wf.OPEN_TEST_JOBS_CODE.endswith("json.loads(" + repr(three) + ")})))\n")
+
+
+@pytest.mark.parametrize(("rows", "ids"), [
+    ([{"_id": "a1", "name": "Complete a Test Job", "status": "running"},
+      {"_id": "b2", "name": "Fail a Test Job", "status": "error"},
+      {"_id": "c3", "name": "Hold a Test Job for Approval", "status": "running"}], ["a1", "b2", "c3"]),
+    # another workflow's job, a finished test job and the cleanup itself are never picked, whatever the query returned
+    ([{"_id": "d4", "name": "Deploy AWS VPN", "status": "running"},
+      {"_id": "e5", "name": "Fail a Test Job", "status": "canceled"},
+      {"_id": "f6", "name": "Complete a Test Job", "status": "complete"},
+      {"_id": "g7", "name": "Cancel the Test Jobs", "status": "running"}], []),
+])
+def test_open_test_jobs_picks_only_the_open_jobs_of_the_three(rows: list, ids: list) -> None:
+    out = wf.open_test_jobs({"data": rows, "names": [JOB_NAMES[k] for k in JOB_KEYS[:3]],
+                             "statuses": list(wf.SKILL_JOB_OPEN)})
+    assert out["ok"] is True and out["ids"] == ids and out["any"] is bool(ids)
+
+
+def test_open_test_jobs_reports_a_read_it_cannot_use() -> None:
+    assert wf.open_test_jobs({"names": [], "statuses": []})["ok"] is False

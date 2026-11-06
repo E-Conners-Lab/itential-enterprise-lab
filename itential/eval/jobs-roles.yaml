@@ -1,0 +1,54 @@
+# The role oracle for svc-eval-jobs, the skills workbench's job-run test account (ADR 0084 amendment, owner 2026-11-05).
+# Production only. Read by:
+#  - ansible/playbooks/tasks/eval-access.yml (the custom role, created or reset to exactly these methods)
+#  - ansible/playbooks/tasks/ldap-service-account.yml (svc_kind eval-jobs: the group's assignedRoles)
+#  - tests/test_eval_access.py (the deny list and the exact methods, written into the test independently)
+#
+# What the workbench does with it: post to the endpoint triggers of the four test automations its group may read
+# (versions.yaml automation_access.eval_jobs: gbac is the boundary, the methods only make the call possible), read the
+# jobs they start, and read the one Work Center task "Hold a Test Job for Approval" waits at. It can never claim,
+# complete, release, assign or cancel a work item, and never cancel, pause or resume a job: an Operations Manager cancel
+# is not limited to the caller's own jobs, so on production it could end any job. Its only way to end a test job is
+# "Cancel the Test Jobs", which cancels the open jobs of the three test workflows and nothing else.
+prod:
+  group: eval-jobs
+  builtin: []
+  # exact method names, no globs
+  custom:
+    - name: eval-jobs
+      description: "Skills workbench job tests: start the four test endpoints, read jobs and work items (ADR 0084 amendment)"
+      methods:
+        - {provenance: OperationsManager, name: runEndpointTriggerWithPost} # the four test automations
+        - {provenance: OperationsManager, name: getJob}
+        - {provenance: OperationsManager, name: getJobs}
+        # read only: the built-in work-items:write also claims, completes and cancels, so these three are named instead
+        - {provenance: WorkCenterService, name: searchWorkItems}
+        - {provenance: WorkCenterService, name: getWorkItem}
+        - {provenance: WorkCenterService, name: countWorkItems}
+  # Never in the set. Globs over "<provenance>/<name>"; the shared task asserts the resolved built-ins against it.
+  deny:
+    - {provenance: "*", name: admin}
+    - {provenance: "*", name: apiwrite}
+    - {provenance: "*", name: designer}
+    - {provenance: "*", name: engineering}
+    - {provenance: "*", name: operations}
+    - {provenance: "*", name: support}
+    - {provenance: "*", name: builder}
+    - {provenance: "*", name: "*:create"}
+    - {provenance: "*", name: "*:update"}
+    - {provenance: "*", name: "*:delete"}
+    - {provenance: "*", name: "*:run"}
+    - {provenance: "*", name: "*:code"}
+    - {provenance: "*", name: "*:manage"}
+    - {provenance: "*", name: "*:write"}
+    # no agent sessions: the workbench's agent drives jobs through the triggers only
+    - {provenance: AgentSessionManager, name: "*"}
+    # no device path at all: these workflows touch no device and no adapter
+    - {provenance: MOP, name: "*"}
+    - {provenance: ConfigurationManager, name: "*"}
+    - {provenance: GatewayManager, name: "*"}
+    - {provenance: InventoryManager, name: "*"}
+    # no workflow documents, no direct workflow start, no identity
+    - {provenance: AutomationStudio, name: "*"}
+    - {provenance: WorkFlowEngine, name: "*"}
+    - {provenance: Authorization, name: "*"}

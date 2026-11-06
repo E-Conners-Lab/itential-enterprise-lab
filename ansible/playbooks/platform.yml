@@ -279,10 +279,10 @@
 
     # ADR 0084: the skills eval suite's four endpoints, production only (the scratch lab is production's); the runner
     # posts to exactly these routes, and their gbac (tasks/automation-access.yml) names only the eval groups
-    - name: Skills eval suite's endpoints - an automation and an endpoint trigger for each scratch workflow
+    - name: Skills eval suite's endpoints - an automation and an endpoint trigger for each scratch and test workflow
       ansible.builtin.include_tasks: tasks/outage-trigger.yml
       vars: {otr_key: "{{ skl_key }}"}
-      loop: "{{ skills_lab.workflows }}"
+      loop: "{{ skills_lab.workflows + skills_lab.job_workflows }}"
       loop_control: {loop_var: skl_key}
       when: not (dev_overlay | default(false) | bool)
 

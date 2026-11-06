@@ -484,10 +484,10 @@ def creds(dest: Path) -> None:
         "SKILLEVAL_JUDGE_USER": "judge",
         "SKILLEVAL_JUDGE_PASSWORD": env("SKILLS_LAB_JUDGE_PASSWORD"),
     }
-    # the two Platform accounts (versions.yaml eval_access), under the names the workbench reads; their passwords
-    # exist once the replay has built the accounts
+    # the Platform accounts (versions.yaml eval_access), under the names the workbench reads; their passwords exist
+    # once the replay has built the accounts (JOBS: the ADR 0084 amendment's job-run test account)
     accounts = yaml.safe_load((ROOT / "itential" / "versions.yaml").read_text())["eval_access"]
-    for role, account in (("RUNNER", accounts["run"]), ("APPROVER", accounts["approve"])):
+    for role, account in (("RUNNER", accounts["run"]), ("APPROVER", accounts["approve"]), ("JOBS", accounts["jobs"])):
         if os.environ.get(account["password_env"]):
             wanted[f"SKILLEVAL_{role}_USER"] = account["user"]
             wanted[f"SKILLEVAL_{role}_PASSWORD"] = os.environ[account["password_env"]]
