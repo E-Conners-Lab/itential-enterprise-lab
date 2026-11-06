@@ -153,6 +153,15 @@ def test_the_router_is_proved_clean_before_aws_is_planned() -> None:
     assert TR["4d"]["4e"]["state"] == "success" and "5a" in TR["4e"]
 
 
+def test_the_timed_copy_reads_the_router_first_and_skips_the_push_when_none_is_there() -> None:
+    # Tear Down's read before (ADR 0068 amendment 2026-11-06), checked on this copy's own transitions
+    assert TR["1c"]["e0"]["state"] == "success" and TR["e2"]["1d"]["state"] == "success"
+    assert TR["e2"]["b5"]["state"] == "failure" and list(TR["b5"]) == ["bf"] and list(TR["bf"]) == ["f0"]
+    assert {src for src, dsts in TR.items() if "e4" in dsts} == {"15"}
+    assert TR["e4"]["e5"]["state"] == "success" and TR["e4"]["3a"]["state"] == "failure" and list(TR["e5"]) == ["4a"]
+    assert not _reach("e5") & {"3a", "3b"} and "5a" in _reach("e5")
+
+
 def test_every_task_reaches_the_end() -> None:
     for tid in TASKS:
         assert "workflow_end" in _reach(tid) or tid == "workflow_end", tid

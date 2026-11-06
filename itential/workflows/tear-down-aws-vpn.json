@@ -1,7 +1,7 @@
 {
   "name": "Tear Down AWS VPN",
   "type": "automation",
-  "description": "Tears the AWS VPN down: removes the router's AWS block under a revert timer after a Work Center approval, proves it gone, then - for a target deployed in AWS - plans the destroy, shows it on a second card and applies exactly that plan (PID S13 criterion 5, R2, ADR 0068)",
+  "description": "Tears the AWS VPN down: removes the router's AWS block (if any is there) under a revert timer after a Work Center approval, proves it gone, then - for a target deployed in AWS - plans the destroy, shows it on a second card and applies exactly that plan (PID S13 criterion 5, R2, ADR 0068)",
   "tasks": {
     "10": {
       "name": "makeData",
@@ -67,7 +67,7 @@
       "name": "setObjectKey",
       "canvasName": "setObjectKey",
       "summary": "the router (the target is gated: an open one)",
-      "description": "the plan: which services run, with what, and whether AWS follows; the removal lines rendered",
+      "description": "the plan: which services run, with what, and whether AWS follows",
       "location": "Application",
       "locationType": null,
       "app": "WorkFlowEngine",
@@ -75,7 +75,7 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": -450,
+        "x": 140,
         "y": 2850
       },
       "variables": {
@@ -99,7 +99,7 @@
       "name": "runCode",
       "canvasName": "runCode",
       "summary": "the plan (Python on the runner)",
-      "description": "the plan: which services run, with what, and whether AWS follows; the removal lines rendered",
+      "description": "the plan: which services run, with what, and whether AWS follows",
       "location": "Application",
       "locationType": null,
       "app": "GatewayManager",
@@ -107,14 +107,14 @@
       "displayName": "GatewayManager",
       "groups": [],
       "nodeLocation": {
-        "x": -570,
+        "x": -100,
         "y": 3000
       },
       "variables": {
         "incoming": {
           "clusterId": "lab",
           "language": "python",
-          "code": "import json, sys\n\n\nTARGETS = {'dc1-wan01': {'target': {'name': 'dc1-wan01', 'fvrf': 'INET', 'tunnel_source': 'GigabitEthernet7', 'front_door_ip': '172.29.129.250', 'loopback_ip': '10.103.255.11', 'router_inner': '169.254.10.1/30', 'aws_inner': '169.254.10.2/30', 'vpc_cidr': '10.0.0.0/16', 'vpc_private_prefixes': ['10.0.64.0/20', '10.0.80.0/20'], 'lab_prefixes': ['10.101.0.0/16', '10.103.255.0/24'], 'local_id': 'lab-edge.lab.internal', 'remote_id': 'aws-vpn.lab.internal', 'peer_rule': 'public', 'peer_pinned': None, 'bgp_asn': 65100, 'inside_interfaces': ['GigabitEthernet5', 'GigabitEthernet6', 'Tunnel1', 'Tunnel2'], 'unzoned_interfaces': ['GigabitEthernet1', 'GigabitEthernet2', 'GigabitEthernet7'], 'mgmt_host': '10.100.0.144', 'tunnel_description': 'IPsec VTI to AWS (Hand Off AWS VPN)'}, 'username': 'itential-aws-vpn', 'monitor': 'aws'}}\nREVERT_TARGETS = {'clab-rtr1': {'mgmt_host': '10.100.2.11', 'username': 'automation', 'password_alias': 'lab-automation-password', 'teardown_checks': {'bgp_established': ['10.100.3.202', '10.100.3.3'], 'pings': [{'target': '10.100.3.202', 'source': 'Loopback0', 'min_percent': 80}, {'target': '10.100.3.3', 'min_percent': 80}], 'settle_seconds': 60}}, 'dc1-wan01': {'mgmt_host': '10.100.0.144', 'username': 'itential-aws-vpn', 'password_alias': 'dc1-wan01-aws-vpn-password', 'teardown_checks': {'bgp_established': ['10.101.2.250', '10.101.3.2', '10.103.100.2', '10.103.100.6'], 'pings': [{'target': '10.101.2.250'}, {'target': '10.101.3.2'}, {'target': '10.103.100.2'}, {'target': '10.103.100.6'}, {'target': '10.102.17.1', 'source': 'Loopback0'}, {'target': '10.102.33.1', 'source': 'Loopback0'}], 'settle_seconds': 60}}}\n\n\ndef revert_plan(d: dict, targets: dict) -> dict:\n    \"\"\"The service's params and the approval card, from the job's inputs (already through the input gate). The card\n    lists exactly what will be pushed and what must hold afterwards; the params carry the same lines.\n    Pure: runCode runs this function's own source on the Gateway, with the targets table written in.\"\"\"\n    device = d.get(\"device\")\n    target = targets.get(device)\n    if not target:\n        return {\"ok\": False, \"message\": f\"{device} is not a router this workflow may change (revert_push.targets)\"}\n    lines = [line.rstrip() for line in str(d.get(\"config\") or \"\").splitlines() if line.strip()]\n    if not lines:\n        return {\"ok\": False, \"message\": \"no configuration lines to push\"}\n    checks, minutes = d.get(\"checks\") or {}, d.get(\"revert_minutes\")\n    kept_if = []\n    for b in checks.get(\"bgp_established\") or []:\n        n, vrf = (b.get(\"neighbor\"), b.get(\"vrf\")) if isinstance(b, dict) else (b, None)\n        kept_if.append(f\"BGP neighbour {n} Established\" + (f\" (VRF {vrf})\" if vrf else \"\"))\n    for p in checks.get(\"pings\") or []:\n        kept_if.append(f\"ping {p['target']}\" + (f\" from {p['source']}\" if p.get(\"source\") else \"\")\n                       + (f\" in VRF {p['vrf']}\" if p.get(\"vrf\") else \"\") + f\" at least {p.get('min_percent', 80)}%\")\n    kept_if.append(\"a fresh login to the router still works\")\n    inputs = {\n        \"target_json\": json.dumps({\"name\": device, \"mgmt_host\": target[\"mgmt_host\"]}),\n        \"lines_json\": json.dumps(lines),\n        \"checks_json\": json.dumps(checks),\n        \"revert_minutes\": str(minutes),\n    }\n    # `check` (no device) runs before the card; the push's Gateway timeout is the one `check` answers\n    check = {\"action\": \"check\", **inputs, \"timeout\": \"120\"}  # the lab's shortest service limit (the checkout runs in it)\n    params = {\"action\": \"push\", **inputs, \"username\": target[\"username\"]}\n    card = {\n        \"router\": device,\n        \"reason\": d.get(\"reason\"),\n        \"revert timer\": f\"{minutes} minutes\",\n        \"settle before the checks\": f\"{checks.get('settle_seconds', 75)} s\",\n        \"kept only if\": kept_if,\n        \"saving\": \"`write memory` saves the whole running configuration - with any change already on the router and \"\n                  \"not yet saved\",\n        \"lines\": lines,\n    }\n    return {\"ok\": True, \"check\": check, \"params\": params, \"card\": card}\n\n\ndef teardown_plan(d: dict, targets: dict, revert_targets: dict, revert_minutes: int, lab_edge_timeout: str) -> dict:\n    \"\"\"Tear Down's plan for one router. First call (no `removal` yet): the params of lab-edge `removal` and `absent`,\n    and whether an AWS deployment follows. Second call (with lab-edge removal's answer): config-push-revert's params\n    and the first card, through `revert_plan` with this router's own teardown checks. Pure: runCode runs this source\n    on the Gateway, with the tables and `revert_plan` written in.\"\"\"\n    name = d.get(\"target\")\n    entry, revert = (targets or {}).get(name), (revert_targets or {}).get(name)\n    if not entry or not revert:\n        return {\"ok\": False, \"message\": f\"{name} is not a router Tear Down may change (an open target with a revert target)\"}\n    target_json = json.dumps(entry[\"target\"])\n    plan = {\n        \"ok\": True,\n        \"target\": name,\n        \"aws\": entry.get(\"monitor\") == \"aws\",\n        \"removal\": {\"action\": \"removal\", \"target_json\": target_json, \"timeout\": \"120\"},\n        \"absent\": {\"action\": \"absent\", \"target_json\": target_json, \"username\": entry[\"username\"],\n                   \"timeout\": lab_edge_timeout},\n    }\n    removal = d.get(\"removal\")\n    if removal is None:\n        return plan\n    out = ((removal or {}).get(\"result\") or {}).get(\"stdout_json\") or {}\n    lines = out.get(\"lines\") if (removal.get(\"result\") or {}).get(\"return_code\") == 0 else None\n    if not lines or out.get(\"target\") != name:\n        return {\"ok\": False, \"message\": \"lab-edge removal gave no lines for \" + str(name) + \" (see removal_result)\"}\n    pushed = revert_plan({\"device\": name, \"config\": lines, \"revert_minutes\": revert_minutes,\n                          \"reason\": \"Tear Down AWS VPN: remove the router's AWS block (lab-edge removal \"\n                                    + str(out.get(\"sha256\", \"\"))[:12] + \")\",\n                          \"checks\": revert[\"teardown_checks\"]}, revert_targets)\n    if not pushed.get(\"ok\"):\n        return pushed\n    pushed[\"card\"][\"after this\"] = (\"the router is read back to prove the block is gone, then the AWS destroy is \"\n                                    \"planned for a second card\" if plan[\"aws\"] else\n                                    \"the router is read back to prove the block is gone; nothing of this target is \"\n                                    \"deployed in AWS\")\n    return {**plan, **pushed}\n\n\nprint(json.dumps(teardown_plan(json.loads(sys.stdin.read() or \"{}\"), TARGETS, REVERT_TARGETS, 8, '300')))\n",
+          "code": "import json, sys\n\n\nTARGETS = {'dc1-wan01': {'target': {'name': 'dc1-wan01', 'fvrf': 'INET', 'tunnel_source': 'GigabitEthernet7', 'front_door_ip': '172.29.129.250', 'loopback_ip': '10.103.255.11', 'router_inner': '169.254.10.1/30', 'aws_inner': '169.254.10.2/30', 'vpc_cidr': '10.0.0.0/16', 'vpc_private_prefixes': ['10.0.64.0/20', '10.0.80.0/20'], 'lab_prefixes': ['10.101.0.0/16', '10.103.255.0/24'], 'local_id': 'lab-edge.lab.internal', 'remote_id': 'aws-vpn.lab.internal', 'peer_rule': 'public', 'peer_pinned': None, 'bgp_asn': 65100, 'inside_interfaces': ['GigabitEthernet5', 'GigabitEthernet6', 'Tunnel1', 'Tunnel2'], 'unzoned_interfaces': ['GigabitEthernet1', 'GigabitEthernet2', 'GigabitEthernet7'], 'mgmt_host': '10.100.0.144', 'tunnel_description': 'IPsec VTI to AWS (Hand Off AWS VPN)'}, 'username': 'itential-aws-vpn', 'monitor': 'aws'}}\nREVERT_TARGETS = {'clab-rtr1': {'mgmt_host': '10.100.2.11', 'username': 'automation', 'password_alias': 'lab-automation-password', 'teardown_checks': {'bgp_established': ['10.100.3.202', '10.100.3.3'], 'pings': [{'target': '10.100.3.202', 'source': 'Loopback0', 'min_percent': 80}, {'target': '10.100.3.3', 'min_percent': 80}], 'settle_seconds': 60}}, 'dc1-wan01': {'mgmt_host': '10.100.0.144', 'username': 'itential-aws-vpn', 'password_alias': 'dc1-wan01-aws-vpn-password', 'teardown_checks': {'bgp_established': ['10.101.2.250', '10.101.3.2', '10.103.100.2', '10.103.100.6'], 'pings': [{'target': '10.101.2.250'}, {'target': '10.101.3.2'}, {'target': '10.103.100.2'}, {'target': '10.103.100.6'}, {'target': '10.102.17.1', 'source': 'Loopback0'}, {'target': '10.102.33.1', 'source': 'Loopback0'}], 'settle_seconds': 60}}}\n\n\ndef revert_plan(d: dict, targets: dict) -> dict:\n    \"\"\"The service's params and the approval card, from the job's inputs (already through the input gate). The card\n    lists exactly what will be pushed and what must hold afterwards; the params carry the same lines.\n    Pure: runCode runs this function's own source on the Gateway, with the targets table written in.\"\"\"\n    device = d.get(\"device\")\n    target = targets.get(device)\n    if not target:\n        return {\"ok\": False, \"message\": f\"{device} is not a router this workflow may change (revert_push.targets)\"}\n    lines = [line.rstrip() for line in str(d.get(\"config\") or \"\").splitlines() if line.strip()]\n    if not lines:\n        return {\"ok\": False, \"message\": \"no configuration lines to push\"}\n    checks, minutes = d.get(\"checks\") or {}, d.get(\"revert_minutes\")\n    kept_if = []\n    for b in checks.get(\"bgp_established\") or []:\n        n, vrf = (b.get(\"neighbor\"), b.get(\"vrf\")) if isinstance(b, dict) else (b, None)\n        kept_if.append(f\"BGP neighbour {n} Established\" + (f\" (VRF {vrf})\" if vrf else \"\"))\n    for p in checks.get(\"pings\") or []:\n        kept_if.append(f\"ping {p['target']}\" + (f\" from {p['source']}\" if p.get(\"source\") else \"\")\n                       + (f\" in VRF {p['vrf']}\" if p.get(\"vrf\") else \"\") + f\" at least {p.get('min_percent', 80)}%\")\n    kept_if.append(\"a fresh login to the router still works\")\n    inputs = {\n        \"target_json\": json.dumps({\"name\": device, \"mgmt_host\": target[\"mgmt_host\"]}),\n        \"lines_json\": json.dumps(lines),\n        \"checks_json\": json.dumps(checks),\n        \"revert_minutes\": str(minutes),\n    }\n    # `check` (no device) runs before the card; the push's Gateway timeout is the one `check` answers\n    check = {\"action\": \"check\", **inputs, \"timeout\": \"120\"}  # the lab's shortest service limit (the checkout runs in it)\n    params = {\"action\": \"push\", **inputs, \"username\": target[\"username\"]}\n    card = {\n        \"router\": device,\n        \"reason\": d.get(\"reason\"),\n        \"revert timer\": f\"{minutes} minutes\",\n        \"settle before the checks\": f\"{checks.get('settle_seconds', 75)} s\",\n        \"kept only if\": kept_if,\n        \"saving\": \"`write memory` saves the whole running configuration - with any change already on the router and \"\n                  \"not yet saved\",\n        \"lines\": lines,\n    }\n    return {\"ok\": True, \"check\": check, \"params\": params, \"card\": card}\n\n\ndef teardown_plan(d: dict, targets: dict, revert_targets: dict, revert_minutes: int, lab_edge_timeout: str) -> dict:\n    \"\"\"Tear Down's plan for one router. First call (no `removal` yet): the params of lab-edge `removal` and `absent`,\n    and whether an AWS deployment follows. Second call (with lab-edge removal's answer): config-push-revert's params\n    and the first card, through `revert_plan` with this router's own teardown checks. Pure: runCode runs this source\n    on the Gateway, with the tables and `revert_plan` written in.\"\"\"\n    name = d.get(\"target\")\n    entry, revert = (targets or {}).get(name), (revert_targets or {}).get(name)\n    if not entry or not revert:\n        return {\"ok\": False, \"message\": f\"{name} is not a router Tear Down may change (an open target with a revert target)\"}\n    target_json = json.dumps(entry[\"target\"])\n    plan = {\n        \"ok\": True,\n        \"target\": name,\n        \"aws\": entry.get(\"monitor\") == \"aws\",\n        \"removal\": {\"action\": \"removal\", \"target_json\": target_json, \"timeout\": \"120\"},\n        \"absent\": {\"action\": \"absent\", \"target_json\": target_json, \"username\": entry[\"username\"],\n                   \"timeout\": lab_edge_timeout},\n    }\n    removal = d.get(\"removal\")\n    if removal is None:\n        return plan\n    out = ((removal or {}).get(\"result\") or {}).get(\"stdout_json\") or {}\n    lines = out.get(\"lines\") if (removal.get(\"result\") or {}).get(\"return_code\") == 0 else None\n    if not lines or out.get(\"target\") != name:\n        return {\"ok\": False, \"message\": \"lab-edge removal gave no lines for \" + str(name) + \" (see removal_result)\"}\n    pushed = revert_plan({\"device\": name, \"config\": lines, \"revert_minutes\": revert_minutes,\n                          \"reason\": \"Tear Down AWS VPN: remove the router's AWS block (lab-edge removal \"\n                                    + str(out.get(\"sha256\", \"\"))[:12] + \")\",\n                          \"checks\": revert[\"teardown_checks\"]}, revert_targets)\n    if not pushed.get(\"ok\"):\n        return pushed\n    after = (\"the router is read back to prove the block is gone, then the AWS destroy is planned for a second card\"\n             if plan[\"aws\"] else\n             \"the router is read back to prove the block is gone; nothing of this target is deployed in AWS\")\n    pushed[\"card\"][\"after this\"] = after\n    # lab-edge absent's read before the card: a router with none of the block gets no push. A Deploy that was never\n    # handed off leaves the router clean, and IOS refuses the `no` lines of what is not there (prod, 2026-11-06)\n    before = (d.get(\"absent_before\") or {}).get(\"result\") or {}\n    seen = before.get(\"stdout_json\") or {}\n    clean = before.get(\"return_code\") == 0 and seen.get(\"target\") == name and seen.get(\"absent\") is True\n    if clean:\n        pushed[\"card\"] = {\"router\": name, \"reason\": \"Tear Down AWS VPN: lab-edge absent finds none of the AWS block on \"\n                                                    \"the router\", \"to push\": \"nothing: no line is sent, nothing is saved\",\n                          \"after this\": after}\n    return {**plan, **pushed, \"nothing_to_remove\": clean}\n\n\nprint(json.dumps(teardown_plan(json.loads(sys.stdin.read() or \"{}\"), TARGETS, REVERT_TARGETS, 8, '300')))\n",
           "data": "$var.job.teardown_in",
           "safety": {
             "timeout": 30
@@ -134,7 +134,7 @@
       "name": "evaluation",
       "canvasName": "evaluation",
       "summary": "planned?",
-      "description": "the plan: which services run, with what, and whether AWS follows; the removal lines rendered",
+      "description": "the plan: which services run, with what, and whether AWS follows",
       "location": "Application",
       "locationType": null,
       "app": "WorkFlowEngine",
@@ -142,7 +142,7 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": -320,
+        "x": -240,
         "y": 3150
       },
       "variables": {
@@ -176,11 +176,11 @@
         "decorators": []
       }
     },
-    "1d": {
+    "e0": {
       "name": "query",
       "canvasName": "query",
-      "summary": "lab-edge removal's params",
-      "description": "the plan: which services run, with what, and whether AWS follows; the removal lines rendered",
+      "summary": "lab-edge absent's params (the read before)",
+      "description": "the read before: what of the block is on the router now (lab-edge absent: show commands)",
       "location": "Application",
       "locationType": null,
       "app": "WorkFlowEngine",
@@ -188,8 +188,112 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": -90,
+        "x": 10,
         "y": 3300
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "stdout_json.absent",
+          "obj": "$var.job.teardown_plan"
+        },
+        "outgoing": {
+          "return_data": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "e1": {
+      "name": "runService",
+      "canvasName": "runService",
+      "summary": "any of the block on the router? (lab-edge absent)",
+      "description": "the read before: what of the block is on the router now (lab-edge absent: show commands)",
+      "location": "Application",
+      "locationType": null,
+      "app": "GatewayManager",
+      "type": "automatic",
+      "displayName": "GatewayManager",
+      "groups": [],
+      "nodeLocation": {
+        "x": 100,
+        "y": 3450
+      },
+      "variables": {
+        "incoming": {
+          "serviceName": "lab-edge",
+          "clusterId": "lab",
+          "params": "$var.e0.return_data"
+        },
+        "outgoing": {
+          "result": "$var.job.absent_before"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "e2": {
+      "name": "evaluation",
+      "canvasName": "evaluation",
+      "summary": "the read before ran?",
+      "description": "the read before: what of the block is on the router now (lab-edge absent: show commands)",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 500,
+        "y": 3600
+      },
+      "variables": {
+        "incoming": {
+          "all_true_flag": true,
+          "evaluation_groups": [
+            {
+              "all_true_flag": true,
+              "evaluations": [
+                {
+                  "query": "result.return_code",
+                  "operand_1": {
+                    "variable": "result",
+                    "task": "e1"
+                  },
+                  "operator": "==",
+                  "operand_2": {
+                    "variable": 0,
+                    "task": "static"
+                  }
+                }
+              ]
+            }
+          ],
+          "options": {}
+        },
+        "outgoing": {
+          "return_value": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "1d": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "lab-edge removal's params",
+      "description": "the removal: lab-edge removal's lines and the push's params (nothing to push when none is there)",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 570,
+        "y": 3750
       },
       "variables": {
         "incoming": {
@@ -208,7 +312,7 @@
       "name": "runService",
       "canvasName": "runService",
       "summary": "the removal lines (lab-edge removal: no device)",
-      "description": "the plan: which services run, with what, and whether AWS follows; the removal lines rendered",
+      "description": "the removal: lab-edge removal's lines and the push's params (nothing to push when none is there)",
       "location": "Application",
       "locationType": null,
       "app": "GatewayManager",
@@ -216,8 +320,8 @@
       "displayName": "GatewayManager",
       "groups": [],
       "nodeLocation": {
-        "x": 140,
-        "y": 3450
+        "x": 620,
+        "y": 3900
       },
       "variables": {
         "incoming": {
@@ -238,7 +342,7 @@
       "name": "evaluation",
       "canvasName": "evaluation",
       "summary": "lab-edge removal answered?",
-      "description": "the plan: which services run, with what, and whether AWS follows; the removal lines rendered",
+      "description": "the removal: lab-edge removal's lines and the push's params (nothing to push when none is there)",
       "location": "Application",
       "locationType": null,
       "app": "WorkFlowEngine",
@@ -246,8 +350,8 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 230,
-        "y": 3600
+        "x": 810,
+        "y": 4050
       },
       "variables": {
         "incoming": {
@@ -284,7 +388,7 @@
       "name": "setObjectKey",
       "canvasName": "setObjectKey",
       "summary": "the plan's input, with the removal",
-      "description": "the plan: which services run, with what, and whether AWS follows; the removal lines rendered",
+      "description": "the removal: lab-edge removal's lines and the push's params (nothing to push when none is there)",
       "location": "Application",
       "locationType": null,
       "app": "WorkFlowEngine",
@@ -292,8 +396,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 710,
-        "y": 3750
+        "x": 790,
+        "y": 4200
       },
       "variables": {
         "incoming": {
@@ -312,11 +416,43 @@
       "actor": "Pronghorn",
       "scheduled": false
     },
+    "e3": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "the plan's input, with the read before",
+      "description": "the removal: lab-edge removal's lines and the push's params (nothing to push when none is there)",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 640,
+        "y": 4350
+      },
+      "variables": {
+        "incoming": {
+          "obj": "$var.1f.object",
+          "path": [
+            "absent_before"
+          ],
+          "value": "$var.job.absent_before"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
     "18": {
       "name": "runCode",
       "canvasName": "runCode",
       "summary": "the push's params and the first card (Python on the runner)",
-      "description": "the plan: which services run, with what, and whether AWS follows; the removal lines rendered",
+      "description": "the removal: lab-edge removal's lines and the push's params (nothing to push when none is there)",
       "location": "Application",
       "locationType": null,
       "app": "GatewayManager",
@@ -324,15 +460,15 @@
       "displayName": "GatewayManager",
       "groups": [],
       "nodeLocation": {
-        "x": 90,
-        "y": 3900
+        "x": 770,
+        "y": 4500
       },
       "variables": {
         "incoming": {
           "clusterId": "lab",
           "language": "python",
-          "code": "import json, sys\n\n\nTARGETS = {'dc1-wan01': {'target': {'name': 'dc1-wan01', 'fvrf': 'INET', 'tunnel_source': 'GigabitEthernet7', 'front_door_ip': '172.29.129.250', 'loopback_ip': '10.103.255.11', 'router_inner': '169.254.10.1/30', 'aws_inner': '169.254.10.2/30', 'vpc_cidr': '10.0.0.0/16', 'vpc_private_prefixes': ['10.0.64.0/20', '10.0.80.0/20'], 'lab_prefixes': ['10.101.0.0/16', '10.103.255.0/24'], 'local_id': 'lab-edge.lab.internal', 'remote_id': 'aws-vpn.lab.internal', 'peer_rule': 'public', 'peer_pinned': None, 'bgp_asn': 65100, 'inside_interfaces': ['GigabitEthernet5', 'GigabitEthernet6', 'Tunnel1', 'Tunnel2'], 'unzoned_interfaces': ['GigabitEthernet1', 'GigabitEthernet2', 'GigabitEthernet7'], 'mgmt_host': '10.100.0.144', 'tunnel_description': 'IPsec VTI to AWS (Hand Off AWS VPN)'}, 'username': 'itential-aws-vpn', 'monitor': 'aws'}}\nREVERT_TARGETS = {'clab-rtr1': {'mgmt_host': '10.100.2.11', 'username': 'automation', 'password_alias': 'lab-automation-password', 'teardown_checks': {'bgp_established': ['10.100.3.202', '10.100.3.3'], 'pings': [{'target': '10.100.3.202', 'source': 'Loopback0', 'min_percent': 80}, {'target': '10.100.3.3', 'min_percent': 80}], 'settle_seconds': 60}}, 'dc1-wan01': {'mgmt_host': '10.100.0.144', 'username': 'itential-aws-vpn', 'password_alias': 'dc1-wan01-aws-vpn-password', 'teardown_checks': {'bgp_established': ['10.101.2.250', '10.101.3.2', '10.103.100.2', '10.103.100.6'], 'pings': [{'target': '10.101.2.250'}, {'target': '10.101.3.2'}, {'target': '10.103.100.2'}, {'target': '10.103.100.6'}, {'target': '10.102.17.1', 'source': 'Loopback0'}, {'target': '10.102.33.1', 'source': 'Loopback0'}], 'settle_seconds': 60}}}\n\n\ndef revert_plan(d: dict, targets: dict) -> dict:\n    \"\"\"The service's params and the approval card, from the job's inputs (already through the input gate). The card\n    lists exactly what will be pushed and what must hold afterwards; the params carry the same lines.\n    Pure: runCode runs this function's own source on the Gateway, with the targets table written in.\"\"\"\n    device = d.get(\"device\")\n    target = targets.get(device)\n    if not target:\n        return {\"ok\": False, \"message\": f\"{device} is not a router this workflow may change (revert_push.targets)\"}\n    lines = [line.rstrip() for line in str(d.get(\"config\") or \"\").splitlines() if line.strip()]\n    if not lines:\n        return {\"ok\": False, \"message\": \"no configuration lines to push\"}\n    checks, minutes = d.get(\"checks\") or {}, d.get(\"revert_minutes\")\n    kept_if = []\n    for b in checks.get(\"bgp_established\") or []:\n        n, vrf = (b.get(\"neighbor\"), b.get(\"vrf\")) if isinstance(b, dict) else (b, None)\n        kept_if.append(f\"BGP neighbour {n} Established\" + (f\" (VRF {vrf})\" if vrf else \"\"))\n    for p in checks.get(\"pings\") or []:\n        kept_if.append(f\"ping {p['target']}\" + (f\" from {p['source']}\" if p.get(\"source\") else \"\")\n                       + (f\" in VRF {p['vrf']}\" if p.get(\"vrf\") else \"\") + f\" at least {p.get('min_percent', 80)}%\")\n    kept_if.append(\"a fresh login to the router still works\")\n    inputs = {\n        \"target_json\": json.dumps({\"name\": device, \"mgmt_host\": target[\"mgmt_host\"]}),\n        \"lines_json\": json.dumps(lines),\n        \"checks_json\": json.dumps(checks),\n        \"revert_minutes\": str(minutes),\n    }\n    # `check` (no device) runs before the card; the push's Gateway timeout is the one `check` answers\n    check = {\"action\": \"check\", **inputs, \"timeout\": \"120\"}  # the lab's shortest service limit (the checkout runs in it)\n    params = {\"action\": \"push\", **inputs, \"username\": target[\"username\"]}\n    card = {\n        \"router\": device,\n        \"reason\": d.get(\"reason\"),\n        \"revert timer\": f\"{minutes} minutes\",\n        \"settle before the checks\": f\"{checks.get('settle_seconds', 75)} s\",\n        \"kept only if\": kept_if,\n        \"saving\": \"`write memory` saves the whole running configuration - with any change already on the router and \"\n                  \"not yet saved\",\n        \"lines\": lines,\n    }\n    return {\"ok\": True, \"check\": check, \"params\": params, \"card\": card}\n\n\ndef teardown_plan(d: dict, targets: dict, revert_targets: dict, revert_minutes: int, lab_edge_timeout: str) -> dict:\n    \"\"\"Tear Down's plan for one router. First call (no `removal` yet): the params of lab-edge `removal` and `absent`,\n    and whether an AWS deployment follows. Second call (with lab-edge removal's answer): config-push-revert's params\n    and the first card, through `revert_plan` with this router's own teardown checks. Pure: runCode runs this source\n    on the Gateway, with the tables and `revert_plan` written in.\"\"\"\n    name = d.get(\"target\")\n    entry, revert = (targets or {}).get(name), (revert_targets or {}).get(name)\n    if not entry or not revert:\n        return {\"ok\": False, \"message\": f\"{name} is not a router Tear Down may change (an open target with a revert target)\"}\n    target_json = json.dumps(entry[\"target\"])\n    plan = {\n        \"ok\": True,\n        \"target\": name,\n        \"aws\": entry.get(\"monitor\") == \"aws\",\n        \"removal\": {\"action\": \"removal\", \"target_json\": target_json, \"timeout\": \"120\"},\n        \"absent\": {\"action\": \"absent\", \"target_json\": target_json, \"username\": entry[\"username\"],\n                   \"timeout\": lab_edge_timeout},\n    }\n    removal = d.get(\"removal\")\n    if removal is None:\n        return plan\n    out = ((removal or {}).get(\"result\") or {}).get(\"stdout_json\") or {}\n    lines = out.get(\"lines\") if (removal.get(\"result\") or {}).get(\"return_code\") == 0 else None\n    if not lines or out.get(\"target\") != name:\n        return {\"ok\": False, \"message\": \"lab-edge removal gave no lines for \" + str(name) + \" (see removal_result)\"}\n    pushed = revert_plan({\"device\": name, \"config\": lines, \"revert_minutes\": revert_minutes,\n                          \"reason\": \"Tear Down AWS VPN: remove the router's AWS block (lab-edge removal \"\n                                    + str(out.get(\"sha256\", \"\"))[:12] + \")\",\n                          \"checks\": revert[\"teardown_checks\"]}, revert_targets)\n    if not pushed.get(\"ok\"):\n        return pushed\n    pushed[\"card\"][\"after this\"] = (\"the router is read back to prove the block is gone, then the AWS destroy is \"\n                                    \"planned for a second card\" if plan[\"aws\"] else\n                                    \"the router is read back to prove the block is gone; nothing of this target is \"\n                                    \"deployed in AWS\")\n    return {**plan, **pushed}\n\n\nprint(json.dumps(teardown_plan(json.loads(sys.stdin.read() or \"{}\"), TARGETS, REVERT_TARGETS, 8, '300')))\n",
-          "data": "$var.1f.object",
+          "code": "import json, sys\n\n\nTARGETS = {'dc1-wan01': {'target': {'name': 'dc1-wan01', 'fvrf': 'INET', 'tunnel_source': 'GigabitEthernet7', 'front_door_ip': '172.29.129.250', 'loopback_ip': '10.103.255.11', 'router_inner': '169.254.10.1/30', 'aws_inner': '169.254.10.2/30', 'vpc_cidr': '10.0.0.0/16', 'vpc_private_prefixes': ['10.0.64.0/20', '10.0.80.0/20'], 'lab_prefixes': ['10.101.0.0/16', '10.103.255.0/24'], 'local_id': 'lab-edge.lab.internal', 'remote_id': 'aws-vpn.lab.internal', 'peer_rule': 'public', 'peer_pinned': None, 'bgp_asn': 65100, 'inside_interfaces': ['GigabitEthernet5', 'GigabitEthernet6', 'Tunnel1', 'Tunnel2'], 'unzoned_interfaces': ['GigabitEthernet1', 'GigabitEthernet2', 'GigabitEthernet7'], 'mgmt_host': '10.100.0.144', 'tunnel_description': 'IPsec VTI to AWS (Hand Off AWS VPN)'}, 'username': 'itential-aws-vpn', 'monitor': 'aws'}}\nREVERT_TARGETS = {'clab-rtr1': {'mgmt_host': '10.100.2.11', 'username': 'automation', 'password_alias': 'lab-automation-password', 'teardown_checks': {'bgp_established': ['10.100.3.202', '10.100.3.3'], 'pings': [{'target': '10.100.3.202', 'source': 'Loopback0', 'min_percent': 80}, {'target': '10.100.3.3', 'min_percent': 80}], 'settle_seconds': 60}}, 'dc1-wan01': {'mgmt_host': '10.100.0.144', 'username': 'itential-aws-vpn', 'password_alias': 'dc1-wan01-aws-vpn-password', 'teardown_checks': {'bgp_established': ['10.101.2.250', '10.101.3.2', '10.103.100.2', '10.103.100.6'], 'pings': [{'target': '10.101.2.250'}, {'target': '10.101.3.2'}, {'target': '10.103.100.2'}, {'target': '10.103.100.6'}, {'target': '10.102.17.1', 'source': 'Loopback0'}, {'target': '10.102.33.1', 'source': 'Loopback0'}], 'settle_seconds': 60}}}\n\n\ndef revert_plan(d: dict, targets: dict) -> dict:\n    \"\"\"The service's params and the approval card, from the job's inputs (already through the input gate). The card\n    lists exactly what will be pushed and what must hold afterwards; the params carry the same lines.\n    Pure: runCode runs this function's own source on the Gateway, with the targets table written in.\"\"\"\n    device = d.get(\"device\")\n    target = targets.get(device)\n    if not target:\n        return {\"ok\": False, \"message\": f\"{device} is not a router this workflow may change (revert_push.targets)\"}\n    lines = [line.rstrip() for line in str(d.get(\"config\") or \"\").splitlines() if line.strip()]\n    if not lines:\n        return {\"ok\": False, \"message\": \"no configuration lines to push\"}\n    checks, minutes = d.get(\"checks\") or {}, d.get(\"revert_minutes\")\n    kept_if = []\n    for b in checks.get(\"bgp_established\") or []:\n        n, vrf = (b.get(\"neighbor\"), b.get(\"vrf\")) if isinstance(b, dict) else (b, None)\n        kept_if.append(f\"BGP neighbour {n} Established\" + (f\" (VRF {vrf})\" if vrf else \"\"))\n    for p in checks.get(\"pings\") or []:\n        kept_if.append(f\"ping {p['target']}\" + (f\" from {p['source']}\" if p.get(\"source\") else \"\")\n                       + (f\" in VRF {p['vrf']}\" if p.get(\"vrf\") else \"\") + f\" at least {p.get('min_percent', 80)}%\")\n    kept_if.append(\"a fresh login to the router still works\")\n    inputs = {\n        \"target_json\": json.dumps({\"name\": device, \"mgmt_host\": target[\"mgmt_host\"]}),\n        \"lines_json\": json.dumps(lines),\n        \"checks_json\": json.dumps(checks),\n        \"revert_minutes\": str(minutes),\n    }\n    # `check` (no device) runs before the card; the push's Gateway timeout is the one `check` answers\n    check = {\"action\": \"check\", **inputs, \"timeout\": \"120\"}  # the lab's shortest service limit (the checkout runs in it)\n    params = {\"action\": \"push\", **inputs, \"username\": target[\"username\"]}\n    card = {\n        \"router\": device,\n        \"reason\": d.get(\"reason\"),\n        \"revert timer\": f\"{minutes} minutes\",\n        \"settle before the checks\": f\"{checks.get('settle_seconds', 75)} s\",\n        \"kept only if\": kept_if,\n        \"saving\": \"`write memory` saves the whole running configuration - with any change already on the router and \"\n                  \"not yet saved\",\n        \"lines\": lines,\n    }\n    return {\"ok\": True, \"check\": check, \"params\": params, \"card\": card}\n\n\ndef teardown_plan(d: dict, targets: dict, revert_targets: dict, revert_minutes: int, lab_edge_timeout: str) -> dict:\n    \"\"\"Tear Down's plan for one router. First call (no `removal` yet): the params of lab-edge `removal` and `absent`,\n    and whether an AWS deployment follows. Second call (with lab-edge removal's answer): config-push-revert's params\n    and the first card, through `revert_plan` with this router's own teardown checks. Pure: runCode runs this source\n    on the Gateway, with the tables and `revert_plan` written in.\"\"\"\n    name = d.get(\"target\")\n    entry, revert = (targets or {}).get(name), (revert_targets or {}).get(name)\n    if not entry or not revert:\n        return {\"ok\": False, \"message\": f\"{name} is not a router Tear Down may change (an open target with a revert target)\"}\n    target_json = json.dumps(entry[\"target\"])\n    plan = {\n        \"ok\": True,\n        \"target\": name,\n        \"aws\": entry.get(\"monitor\") == \"aws\",\n        \"removal\": {\"action\": \"removal\", \"target_json\": target_json, \"timeout\": \"120\"},\n        \"absent\": {\"action\": \"absent\", \"target_json\": target_json, \"username\": entry[\"username\"],\n                   \"timeout\": lab_edge_timeout},\n    }\n    removal = d.get(\"removal\")\n    if removal is None:\n        return plan\n    out = ((removal or {}).get(\"result\") or {}).get(\"stdout_json\") or {}\n    lines = out.get(\"lines\") if (removal.get(\"result\") or {}).get(\"return_code\") == 0 else None\n    if not lines or out.get(\"target\") != name:\n        return {\"ok\": False, \"message\": \"lab-edge removal gave no lines for \" + str(name) + \" (see removal_result)\"}\n    pushed = revert_plan({\"device\": name, \"config\": lines, \"revert_minutes\": revert_minutes,\n                          \"reason\": \"Tear Down AWS VPN: remove the router's AWS block (lab-edge removal \"\n                                    + str(out.get(\"sha256\", \"\"))[:12] + \")\",\n                          \"checks\": revert[\"teardown_checks\"]}, revert_targets)\n    if not pushed.get(\"ok\"):\n        return pushed\n    after = (\"the router is read back to prove the block is gone, then the AWS destroy is planned for a second card\"\n             if plan[\"aws\"] else\n             \"the router is read back to prove the block is gone; nothing of this target is deployed in AWS\")\n    pushed[\"card\"][\"after this\"] = after\n    # lab-edge absent's read before the card: a router with none of the block gets no push. A Deploy that was never\n    # handed off leaves the router clean, and IOS refuses the `no` lines of what is not there (prod, 2026-11-06)\n    before = (d.get(\"absent_before\") or {}).get(\"result\") or {}\n    seen = before.get(\"stdout_json\") or {}\n    clean = before.get(\"return_code\") == 0 and seen.get(\"target\") == name and seen.get(\"absent\") is True\n    if clean:\n        pushed[\"card\"] = {\"router\": name, \"reason\": \"Tear Down AWS VPN: lab-edge absent finds none of the AWS block on \"\n                                                    \"the router\", \"to push\": \"nothing: no line is sent, nothing is saved\",\n                          \"after this\": after}\n    return {**plan, **pushed, \"nothing_to_remove\": clean}\n\n\nprint(json.dumps(teardown_plan(json.loads(sys.stdin.read() or \"{}\"), TARGETS, REVERT_TARGETS, 8, '300')))\n",
+          "data": "$var.e3.object",
           "safety": {
             "timeout": 30
           },
@@ -351,7 +487,7 @@
       "name": "evaluation",
       "canvasName": "evaluation",
       "summary": "push planned?",
-      "description": "the plan: which services run, with what, and whether AWS follows; the removal lines rendered",
+      "description": "the removal: lab-edge removal's lines and the push's params (nothing to push when none is there)",
       "location": "Application",
       "locationType": null,
       "app": "WorkFlowEngine",
@@ -359,8 +495,8 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 240,
-        "y": 4050
+        "x": 470,
+        "y": 4650
       },
       "variables": {
         "incoming": {
@@ -405,8 +541,8 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 730,
-        "y": 4200
+        "x": 590,
+        "y": 4800
       },
       "variables": {
         "incoming": {
@@ -433,8 +569,8 @@
       "displayName": "GatewayManager",
       "groups": [],
       "nodeLocation": {
-        "x": 740,
-        "y": 4350
+        "x": 920,
+        "y": 4950
       },
       "variables": {
         "incoming": {
@@ -463,8 +599,8 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 860,
-        "y": 4500
+        "x": 1220,
+        "y": 5100
       },
       "variables": {
         "incoming": {
@@ -509,8 +645,8 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 1080,
-        "y": 4650
+        "x": 1480,
+        "y": 5250
       },
       "variables": {
         "incoming": {
@@ -537,12 +673,12 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 760,
-        "y": 4800
+        "x": 1050,
+        "y": 5400
       },
       "variables": {
         "incoming": {
-          "str": "Tear Down the AWS VPN on __D__, step 1 of 2: remove the router's AWS block. The lines below are pushed under a revert timer and kept only if every check still passes (and a fresh login still works); then the router is read back to prove nothing of the block is left. Only after that is the AWS side planned for destruction, on a second card. Nothing is saved before the checks pass.",
+          "str": "Tear Down the AWS VPN on __D__, step 1 of 2: remove the router's AWS block. If the router has any of it (read just before this card), the lines below are pushed under a revert timer and kept only if every check still passes (and a fresh login still works); if it has none, the card has no lines and nothing is pushed. Either way the router is then read back to prove nothing of the block is left. Only after that is the AWS side planned for destruction, on a second card. Nothing is saved before the checks pass.",
           "substr": "__D__",
           "newSubstr": "$var.job.target"
         },
@@ -567,8 +703,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 0,
-        "y": 5550
+        "x": 30,
+        "y": 6150
       },
       "variables": {
         "incoming": {
@@ -599,8 +735,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": -50,
-        "y": 5700
+        "x": -30,
+        "y": 6300
       },
       "variables": {
         "incoming": {
@@ -631,8 +767,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": -80,
-        "y": 5850
+        "x": -70,
+        "y": 6450
       },
       "variables": {
         "incoming": {
@@ -663,8 +799,8 @@
       "displayName": "GatewayManager",
       "groups": [],
       "nodeLocation": {
-        "x": -90,
-        "y": 6000
+        "x": -80,
+        "y": 6600
       },
       "variables": {
         "incoming": {
@@ -699,7 +835,7 @@
       "groups": [],
       "nodeLocation": {
         "x": -80,
-        "y": 6150
+        "y": 6750
       },
       "variables": {
         "incoming": {
@@ -727,7 +863,7 @@
       "groups": [],
       "nodeLocation": {
         "x": -70,
-        "y": 6300
+        "y": 6900
       },
       "variables": {
         "incoming": {
@@ -757,8 +893,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": -180,
-        "y": 7950
+        "x": -50,
+        "y": 8550
       },
       "variables": {
         "incoming": {
@@ -768,6 +904,82 @@
         },
         "outgoing": {
           "output": "$var.job.rejected"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "e4": {
+      "name": "evaluation",
+      "canvasName": "evaluation",
+      "summary": "nothing to remove on the router?",
+      "description": "the first card: the router's removal on a Work Center card",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 1070,
+        "y": 8700
+      },
+      "variables": {
+        "incoming": {
+          "all_true_flag": true,
+          "evaluation_groups": [
+            {
+              "all_true_flag": true,
+              "evaluations": [
+                {
+                  "query": "stdout_json.nothing_to_remove",
+                  "operand_1": {
+                    "variable": "push_plan",
+                    "task": "job"
+                  },
+                  "operator": "==",
+                  "operand_2": {
+                    "variable": true,
+                    "task": "static"
+                  }
+                }
+              ]
+            }
+          ],
+          "options": {}
+        },
+        "outgoing": {
+          "return_value": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "e5": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "nothing to remove on the router",
+      "description": "the first card: the router's removal on a Work Center card",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 800,
+        "y": 8850
+      },
+      "variables": {
+        "incoming": {
+          "input": "nothing was sent to the router: lab-edge absent found none of the AWS block on it before the card",
+          "outputType": "string",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.router_state"
         },
         "error": "",
         "decorators": []
@@ -787,8 +999,8 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 990,
-        "y": 8100
+        "x": 500,
+        "y": 8850
       },
       "variables": {
         "incoming": {
@@ -815,8 +1027,8 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 90,
-        "y": 8250
+        "x": 460,
+        "y": 9000
       },
       "variables": {
         "incoming": {
@@ -843,8 +1055,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 260,
-        "y": 8400
+        "x": 500,
+        "y": 9150
       },
       "variables": {
         "incoming": {
@@ -875,8 +1087,8 @@
       "displayName": "GatewayManager",
       "groups": [],
       "nodeLocation": {
-        "x": 320,
-        "y": 8550
+        "x": 380,
+        "y": 9300
       },
       "variables": {
         "incoming": {
@@ -906,7 +1118,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 620,
-        "y": 8700
+        "y": 9450
       },
       "variables": {
         "incoming": {
@@ -952,7 +1164,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 620,
-        "y": 8850
+        "y": 9600
       },
       "variables": {
         "incoming": {
@@ -982,7 +1194,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 900,
-        "y": 9000
+        "y": 9750
       },
       "variables": {
         "incoming": {
@@ -1013,8 +1225,8 @@
       "displayName": "GatewayManager",
       "groups": [],
       "nodeLocation": {
-        "x": 900,
-        "y": 9150
+        "x": 750,
+        "y": 9900
       },
       "variables": {
         "incoming": {
@@ -1048,8 +1260,8 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 970,
-        "y": 9300
+        "x": 830,
+        "y": 10050
       },
       "variables": {
         "incoming": {
@@ -1076,8 +1288,8 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 970,
-        "y": 9450
+        "x": 980,
+        "y": 10200
       },
       "variables": {
         "incoming": {
@@ -1122,8 +1334,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 1080,
-        "y": 9600
+        "x": 1130,
+        "y": 10350
       },
       "variables": {
         "incoming": {
@@ -1152,8 +1364,8 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 890,
-        "y": 9750
+        "x": 980,
+        "y": 10500
       },
       "variables": {
         "incoming": {
@@ -1198,8 +1410,8 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 970,
-        "y": 9900
+        "x": 1420,
+        "y": 10650
       },
       "variables": {
         "incoming": {
@@ -1226,8 +1438,8 @@
       "displayName": "GatewayManager",
       "groups": [],
       "nodeLocation": {
-        "x": 1160,
-        "y": 10050
+        "x": 1100,
+        "y": 10800
       },
       "variables": {
         "incoming": {
@@ -1256,8 +1468,8 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 1420,
-        "y": 10200
+        "x": 1480,
+        "y": 10950
       },
       "variables": {
         "incoming": {
@@ -1302,8 +1514,8 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 1430,
-        "y": 10350
+        "x": 1490,
+        "y": 11100
       },
       "variables": {
         "incoming": {
@@ -1348,8 +1560,8 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 1680,
-        "y": 10500
+        "x": 1710,
+        "y": 11250
       },
       "variables": {
         "incoming": {
@@ -1394,12 +1606,12 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 1520,
-        "y": 10650
+        "x": 1540,
+        "y": 11400
       },
       "variables": {
         "incoming": {
-          "input": "torn down: the router's AWS block was removed, saved and proved gone; nothing of this target is deployed in AWS",
+          "input": "torn down: nothing of the router's AWS block is left (removed and saved, or none there - router_state says which - and proved gone); nothing of this target is deployed in AWS",
           "outputType": "string",
           "variables": ""
         },
@@ -1424,8 +1636,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 1970,
-        "y": 10650
+        "x": 1990,
+        "y": 11400
       },
       "variables": {
         "incoming": {
@@ -1452,8 +1664,8 @@
       "displayName": "GatewayManager",
       "groups": [],
       "nodeLocation": {
-        "x": 1990,
-        "y": 10800
+        "x": 2000,
+        "y": 11550
       },
       "variables": {
         "incoming": {
@@ -1482,8 +1694,8 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 1800,
-        "y": 10950
+        "x": 1810,
+        "y": 11700
       },
       "variables": {
         "incoming": {
@@ -1529,7 +1741,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 2040,
-        "y": 11100
+        "y": 11850
       },
       "variables": {
         "incoming": {
@@ -1557,7 +1769,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 2310,
-        "y": 11250
+        "y": 12000
       },
       "variables": {
         "incoming": {
@@ -1585,7 +1797,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 2160,
-        "y": 12000
+        "y": 12750
       },
       "variables": {
         "incoming": {
@@ -1617,7 +1829,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 2140,
-        "y": 12150
+        "y": 12900
       },
       "variables": {
         "incoming": {
@@ -1649,7 +1861,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 2130,
-        "y": 12300
+        "y": 13050
       },
       "variables": {
         "incoming": {
@@ -1681,7 +1893,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 2120,
-        "y": 12450
+        "y": 13200
       },
       "variables": {
         "incoming": {
@@ -1716,7 +1928,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 2110,
-        "y": 12600
+        "y": 13350
       },
       "variables": {
         "incoming": {
@@ -1744,7 +1956,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 2110,
-        "y": 12750
+        "y": 13500
       },
       "variables": {
         "incoming": {
@@ -1774,8 +1986,8 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 1770,
-        "y": 14400
+        "x": 1920,
+        "y": 15150
       },
       "variables": {
         "incoming": {
@@ -1803,7 +2015,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 2240,
-        "y": 14550
+        "y": 15300
       },
       "variables": {
         "incoming": {
@@ -1833,7 +2045,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 2260,
-        "y": 14700
+        "y": 15450
       },
       "variables": {
         "incoming": {
@@ -1863,7 +2075,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 2280,
-        "y": 14850
+        "y": 15600
       },
       "variables": {
         "incoming": {
@@ -1891,7 +2103,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 2280,
-        "y": 15000
+        "y": 15750
       },
       "variables": {
         "incoming": {
@@ -1921,7 +2133,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 2420,
-        "y": 15150
+        "y": 15900
       },
       "variables": {
         "incoming": {
@@ -1967,7 +2179,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 2430,
-        "y": 15300
+        "y": 16050
       },
       "variables": {
         "incoming": {
@@ -1997,7 +2209,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 2430,
-        "y": 15450
+        "y": 16200
       },
       "variables": {
         "incoming": {
@@ -2025,7 +2237,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 2430,
-        "y": 15600
+        "y": 16350
       },
       "variables": {
         "incoming": {
@@ -2055,7 +2267,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 2460,
-        "y": 15750
+        "y": 16500
       },
       "variables": {
         "incoming": {
@@ -2101,7 +2313,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 2710,
-        "y": 15900
+        "y": 16650
       },
       "variables": {
         "incoming": {
@@ -2133,7 +2345,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 2720,
-        "y": 16050
+        "y": 16800
       },
       "variables": {
         "incoming": {
@@ -2168,7 +2380,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 2570,
-        "y": 16200
+        "y": 16950
       },
       "variables": {
         "incoming": {
@@ -2214,11 +2426,11 @@
       "groups": [],
       "nodeLocation": {
         "x": 2480,
-        "y": 16350
+        "y": 17100
       },
       "variables": {
         "incoming": {
-          "input": "torn down: the router's AWS block was removed, saved and proved gone, and the AWS side was destroyed - nothing of the deployment is left",
+          "input": "torn down: nothing of the router's AWS block is left (removed and saved, or none there - router_state says which - and proved gone), and the AWS side was destroyed - nothing of the deployment is left",
           "outputType": "string",
           "variables": ""
         },
@@ -2243,8 +2455,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 920,
-        "y": 7500
+        "x": 960,
+        "y": 8100
       },
       "variables": {
         "incoming": {
@@ -2273,8 +2485,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 920,
-        "y": 7650
+        "x": 960,
+        "y": 8250
       },
       "variables": {
         "incoming": {
@@ -2304,7 +2516,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 2700,
-        "y": 14400
+        "y": 15150
       },
       "variables": {
         "incoming": {
@@ -2334,7 +2546,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 2700,
-        "y": 14550
+        "y": 15300
       },
       "variables": {
         "incoming": {
@@ -2364,7 +2576,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 2700,
-        "y": 14700
+        "y": 15450
       },
       "variables": {
         "incoming": {
@@ -2392,7 +2604,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 2700,
-        "y": 14850
+        "y": 15600
       },
       "variables": {
         "incoming": {
@@ -2422,7 +2634,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 2660,
-        "y": 15000
+        "y": 15750
       },
       "variables": {
         "incoming": {
@@ -2468,11 +2680,11 @@
       "groups": [],
       "nodeLocation": {
         "x": 2790,
-        "y": 15300
+        "y": 16050
       },
       "variables": {
         "incoming": {
-          "input": "the router's AWS block was removed and proved gone; the AWS destroy was rejected in Work Center, so the AWS side stays (about $1 a day) - Tear Down again to remove it",
+          "input": "nothing of the router's AWS block is left (proved gone); the AWS destroy was rejected in Work Center, so the AWS side stays (about $1 a day) - Tear Down again to remove it",
           "outputType": "string",
           "variables": ""
         },
@@ -2498,7 +2710,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 3050,
-        "y": 15150
+        "y": 15900
       },
       "variables": {
         "incoming": {
@@ -2527,8 +2739,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": -500,
-        "y": 4800
+        "x": -260,
+        "y": 5400
       },
       "variables": {
         "incoming": {
@@ -2557,7 +2769,7 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": -390,
+        "x": -290,
         "y": 3300
       },
       "variables": {
@@ -2585,8 +2797,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": -40,
-        "y": 3750
+        "x": 490,
+        "y": 4200
       },
       "variables": {
         "incoming": {
@@ -2615,8 +2827,8 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 130,
-        "y": 4200
+        "x": 290,
+        "y": 4800
       },
       "variables": {
         "incoming": {
@@ -2631,6 +2843,36 @@
         "decorators": []
       }
     },
+    "b5": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "the router could not be read",
+      "description": "where it stops before the push: nothing was sent",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 120,
+        "y": 3750
+      },
+      "variables": {
+        "incoming": {
+          "input": "lab-edge absent could not read the router before the card (see absent_before): nothing was sent to the router, nothing changed in AWS",
+          "outputType": "string",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.error"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
     "b4": {
       "name": "makeData",
       "canvasName": "makeData",
@@ -2643,8 +2885,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 630,
-        "y": 4650
+        "x": 1030,
+        "y": 5250
       },
       "variables": {
         "incoming": {
@@ -2673,8 +2915,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": -260,
-        "y": 4950
+        "x": -620,
+        "y": 5550
       },
       "variables": {
         "incoming": {
@@ -2703,8 +2945,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 230,
-        "y": 9450
+        "x": 560,
+        "y": 10200
       },
       "variables": {
         "incoming": {
@@ -2733,8 +2975,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 240,
-        "y": 9600
+        "x": 580,
+        "y": 10350
       },
       "variables": {
         "incoming": {
@@ -2763,8 +3005,8 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 670,
-        "y": 9900
+        "x": 810,
+        "y": 10650
       },
       "variables": {
         "incoming": {
@@ -2791,12 +3033,12 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 1100,
-        "y": 10350
+        "x": 1140,
+        "y": 11100
       },
       "variables": {
         "incoming": {
-          "input": "the removal was saved, but lab-edge absent could not read the router (absent_result): the AWS side was NOT touched - check the router, then Tear Down again",
+          "input": "lab-edge absent could not read the router after the removal step (absent_result; router_state says what was pushed): the AWS side was NOT touched - check the router, then Tear Down again",
           "outputType": "string",
           "variables": ""
         },
@@ -2821,12 +3063,12 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 1380,
-        "y": 10500
+        "x": 1410,
+        "y": 11250
       },
       "variables": {
         "incoming": {
-          "input": "the removal was saved, but lab-edge absent still finds part of the block (absent_result.left): the AWS side was NOT touched",
+          "input": "lab-edge absent still finds part of the block after the removal step (absent_result.left; router_state says what was pushed): the AWS side was NOT touched",
           "outputType": "string",
           "variables": ""
         },
@@ -2852,7 +3094,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 1800,
-        "y": 11400
+        "y": 12150
       },
       "variables": {
         "incoming": {
@@ -2882,7 +3124,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 1900,
-        "y": 15300
+        "y": 16050
       },
       "variables": {
         "incoming": {
@@ -2912,7 +3154,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 1990,
-        "y": 16350
+        "y": 17100
       },
       "variables": {
         "incoming": {
@@ -2941,8 +3183,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": -40,
-        "y": 8400
+        "x": 40,
+        "y": 9150
       },
       "variables": {
         "incoming": {
@@ -2971,8 +3213,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": -10,
-        "y": 8550
+        "x": 40,
+        "y": 9300
       },
       "variables": {
         "incoming": {
@@ -3037,7 +3279,7 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 90,
+        "x": -210,
         "y": 1200
       },
       "variables": {
@@ -3065,7 +3307,7 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": -150,
+        "x": 0,
         "y": 1350
       },
       "variables": {
@@ -3225,7 +3467,7 @@
       "displayName": "GatewayManager",
       "groups": [],
       "nodeLocation": {
-        "x": 110,
+        "x": -340,
         "y": 2100
       },
       "variables": {
@@ -3260,7 +3502,7 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": -40,
+        "x": -190,
         "y": 2250
       },
       "variables": {
@@ -3288,7 +3530,7 @@
       "displayName": "lab-servicenow:1.0.0",
       "groups": [],
       "nodeLocation": {
-        "x": -90,
+        "x": -240,
         "y": 2400
       },
       "variables": {
@@ -3319,7 +3561,7 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": -230,
+        "x": -80,
         "y": 2550
       },
       "variables": {
@@ -3347,7 +3589,7 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": -490,
+        "x": -340,
         "y": 2700
       },
       "variables": {
@@ -3375,7 +3617,7 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 440,
+        "x": -1040,
         "y": 2850
       },
       "variables": {
@@ -3405,8 +3647,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 680,
-        "y": 4950
+        "x": 720,
+        "y": 5550
       },
       "variables": {
         "incoming": {
@@ -3435,8 +3677,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 190,
-        "y": 5100
+        "x": 470,
+        "y": 5700
       },
       "variables": {
         "incoming": {
@@ -3465,8 +3707,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 80,
-        "y": 5400
+        "x": 140,
+        "y": 6000
       },
       "variables": {
         "incoming": {
@@ -3498,7 +3740,7 @@
       "groups": [],
       "nodeLocation": {
         "x": -90,
-        "y": 6450
+        "y": 7050
       },
       "variables": {
         "incoming": {
@@ -3530,7 +3772,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 0,
-        "y": 6600
+        "y": 7200
       },
       "variables": {
         "incoming": {
@@ -3562,7 +3804,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 70,
-        "y": 6750
+        "y": 7350
       },
       "variables": {
         "incoming": {
@@ -3594,7 +3836,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 110,
-        "y": 6900
+        "y": 7500
       },
       "variables": {
         "incoming": {
@@ -3626,7 +3868,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 140,
-        "y": 7050
+        "y": 7650
       },
       "variables": {
         "incoming": {
@@ -3661,7 +3903,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 30,
-        "y": 7200
+        "y": 7800
       },
       "variables": {
         "incoming": {
@@ -3688,8 +3930,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 290,
-        "y": 7350
+        "x": 310,
+        "y": 7950
       },
       "variables": {
         "incoming": {
@@ -3719,7 +3961,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 210,
-        "y": 6450
+        "y": 7050
       },
       "variables": {
         "incoming": {
@@ -3750,8 +3992,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 640,
-        "y": 6600
+        "x": 500,
+        "y": 7200
       },
       "variables": {
         "incoming": {
@@ -3782,8 +4024,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 760,
-        "y": 6750
+        "x": 460,
+        "y": 7350
       },
       "variables": {
         "incoming": {
@@ -3814,8 +4056,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 710,
-        "y": 6900
+        "x": 560,
+        "y": 7500
       },
       "variables": {
         "incoming": {
@@ -3847,7 +4089,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 640,
-        "y": 7050
+        "y": 7650
       },
       "variables": {
         "incoming": {
@@ -3882,7 +4124,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 640,
-        "y": 7200
+        "y": 7800
       },
       "variables": {
         "incoming": {
@@ -3909,8 +4151,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 1000,
-        "y": 7350
+        "x": 1020,
+        "y": 7950
       },
       "variables": {
         "incoming": {
@@ -3939,8 +4181,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 190,
-        "y": 5250
+        "x": 130,
+        "y": 5850
       },
       "variables": {
         "incoming": {
@@ -3969,8 +4211,8 @@
       "displayName": "lab-servicenow:1.0.0",
       "groups": [],
       "nodeLocation": {
-        "x": 180,
-        "y": 7500
+        "x": 200,
+        "y": 8100
       },
       "variables": {
         "incoming": {
@@ -4002,8 +4244,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 30,
-        "y": 7650
+        "x": 60,
+        "y": 8250
       },
       "variables": {
         "incoming": {
@@ -4036,8 +4278,8 @@
       "displayName": "lab-servicenow:1.0.0",
       "groups": [],
       "nodeLocation": {
-        "x": 0,
-        "y": 7800
+        "x": 50,
+        "y": 8400
       },
       "variables": {
         "incoming": {
@@ -4067,8 +4309,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 120,
-        "y": 7950
+        "x": 250,
+        "y": 8550
       },
       "variables": {
         "incoming": {
@@ -4098,7 +4340,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 2280,
-        "y": 11400
+        "y": 12150
       },
       "variables": {
         "incoming": {
@@ -4128,13 +4370,13 @@
       "groups": [],
       "nodeLocation": {
         "x": 2250,
-        "y": 11550
+        "y": 12300
       },
       "variables": {
         "incoming": {
           "str": "$var.c90.replacedString",
           "substr": "__M__",
-          "newSubstr": "Tear Down the AWS VPN, step 2 of 2: destroy the AWS side. The router's block is already removed and proved gone. Exactly this plan is applied (the strongSwan box, its Elastic IP, the key's secret and the VPC go); rejecting keeps it all, at about $1 a day."
+          "newSubstr": "Tear Down the AWS VPN, step 2 of 2: destroy the AWS side. Nothing of the router's block is left (proved gone). Exactly this plan is applied (the strongSwan box, its Elastic IP, the key's secret and the VPC go); rejecting keeps it all, at about $1 a day."
         },
         "outgoing": {
           "replacedString": null
@@ -4158,7 +4400,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 2190,
-        "y": 11850
+        "y": 12600
       },
       "variables": {
         "incoming": {
@@ -4190,7 +4432,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 2000,
-        "y": 12900
+        "y": 13650
       },
       "variables": {
         "incoming": {
@@ -4222,7 +4464,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 2020,
-        "y": 13050
+        "y": 13800
       },
       "variables": {
         "incoming": {
@@ -4254,7 +4496,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 2030,
-        "y": 13200
+        "y": 13950
       },
       "variables": {
         "incoming": {
@@ -4286,7 +4528,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 2040,
-        "y": 13350
+        "y": 14100
       },
       "variables": {
         "incoming": {
@@ -4318,7 +4560,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 2050,
-        "y": 13500
+        "y": 14250
       },
       "variables": {
         "incoming": {
@@ -4353,7 +4595,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 1730,
-        "y": 13650
+        "y": 14400
       },
       "variables": {
         "incoming": {
@@ -4381,7 +4623,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 2120,
-        "y": 13800
+        "y": 14550
       },
       "variables": {
         "incoming": {
@@ -4411,7 +4653,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 2300,
-        "y": 12900
+        "y": 13650
       },
       "variables": {
         "incoming": {
@@ -4443,7 +4685,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 2350,
-        "y": 13050
+        "y": 13800
       },
       "variables": {
         "incoming": {
@@ -4475,7 +4717,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 2400,
-        "y": 13200
+        "y": 13950
       },
       "variables": {
         "incoming": {
@@ -4507,7 +4749,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 2440,
-        "y": 13350
+        "y": 14100
       },
       "variables": {
         "incoming": {
@@ -4539,7 +4781,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 2480,
-        "y": 13500
+        "y": 14250
       },
       "variables": {
         "incoming": {
@@ -4574,7 +4816,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 2480,
-        "y": 13650
+        "y": 14400
       },
       "variables": {
         "incoming": {
@@ -4602,7 +4844,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 2720,
-        "y": 13800
+        "y": 14550
       },
       "variables": {
         "incoming": {
@@ -4632,7 +4874,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 2220,
-        "y": 11700
+        "y": 12450
       },
       "variables": {
         "incoming": {
@@ -4662,7 +4904,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 2100,
-        "y": 13950
+        "y": 14700
       },
       "variables": {
         "incoming": {
@@ -4694,7 +4936,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 2100,
-        "y": 14100
+        "y": 14850
       },
       "variables": {
         "incoming": {
@@ -4725,7 +4967,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 1760,
-        "y": 14250
+        "y": 15000
       },
       "variables": {
         "incoming": {
@@ -4755,7 +4997,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 2550,
-        "y": 13950
+        "y": 14700
       },
       "variables": {
         "incoming": {
@@ -4787,7 +5029,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 2550,
-        "y": 14100
+        "y": 14850
       },
       "variables": {
         "incoming": {
@@ -4818,7 +5060,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 2510,
-        "y": 14250
+        "y": 15000
       },
       "variables": {
         "incoming": {
@@ -4847,8 +5089,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": -490,
-        "y": 8100
+        "x": -740,
+        "y": 8700
       },
       "variables": {
         "incoming": {
@@ -4879,8 +5121,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 940,
-        "y": 7800
+        "x": 980,
+        "y": 8400
       },
       "variables": {
         "incoming": {
@@ -4912,7 +5154,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 630,
-        "y": 16500
+        "y": 17250
       },
       "variables": {
         "incoming": {
@@ -4944,7 +5186,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 2300,
-        "y": 16500
+        "y": 17250
       },
       "variables": {
         "incoming": {
@@ -4975,8 +5217,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": -540,
-        "y": 8250
+        "x": -590,
+        "y": 8850
       },
       "variables": {
         "incoming": {
@@ -5007,8 +5249,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 960,
-        "y": 7950
+        "x": 1010,
+        "y": 8550
       },
       "variables": {
         "incoming": {
@@ -5039,8 +5281,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": -160,
-        "y": 8100
+        "x": -100,
+        "y": 8700
       },
       "variables": {
         "incoming": {
@@ -5071,8 +5313,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 180,
-        "y": 16650
+        "x": 30,
+        "y": 17400
       },
       "variables": {
         "incoming": {
@@ -5104,7 +5346,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 1310,
-        "y": 16650
+        "y": 17400
       },
       "variables": {
         "incoming": {
@@ -5135,8 +5377,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 20,
-        "y": 16800
+        "x": -130,
+        "y": 17550
       },
       "variables": {
         "incoming": {
@@ -5167,8 +5409,8 @@
       "displayName": "GatewayManager",
       "groups": [],
       "nodeLocation": {
-        "x": 320,
-        "y": 16950
+        "x": 620,
+        "y": 17700
       },
       "variables": {
         "incoming": {
@@ -5202,8 +5444,8 @@
       "displayName": "WorkFlowEngine",
       "groups": [],
       "nodeLocation": {
-        "x": 300,
-        "y": 17100
+        "x": 0,
+        "y": 17850
       },
       "variables": {
         "incoming": {
@@ -5231,7 +5473,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 250,
-        "y": 17250
+        "y": 18000
       },
       "variables": {
         "incoming": {
@@ -5262,7 +5504,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 100,
-        "y": 17400
+        "y": 18150
       },
       "variables": {
         "incoming": {
@@ -5308,7 +5550,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 0,
-        "y": 17550
+        "y": 18300
       },
       "variables": {
         "incoming": {
@@ -5336,7 +5578,7 @@
       "groups": [],
       "nodeLocation": {
         "x": -440,
-        "y": 17700
+        "y": 18450
       },
       "variables": {
         "incoming": {
@@ -5366,8 +5608,8 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 920,
-        "y": 17850
+        "x": 620,
+        "y": 18600
       },
       "variables": {
         "incoming": {
@@ -5399,7 +5641,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 620,
-        "y": 18000
+        "y": 18750
       },
       "variables": {
         "incoming": {
@@ -5431,7 +5673,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 770,
-        "y": 18150
+        "y": 18900
       },
       "variables": {
         "incoming": {
@@ -5466,7 +5708,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 710,
-        "y": 18300
+        "y": 19050
       },
       "variables": {
         "incoming": {
@@ -5494,7 +5736,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 60,
-        "y": 18450
+        "y": 19200
       },
       "variables": {
         "incoming": {
@@ -5525,7 +5767,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 960,
-        "y": 18600
+        "y": 19350
       },
       "variables": {
         "incoming": {
@@ -5712,7 +5954,7 @@
       "displayName": "Tools",
       "groups": [],
       "nodeLocation": {
-        "x": 510,
+        "x": 210,
         "y": 750
       },
       "variables": {
@@ -5745,7 +5987,7 @@
       "groups": [],
       "nodeLocation": {
         "x": 510,
-        "y": 18750
+        "y": 19500
       }
     }
   },
@@ -5785,11 +6027,41 @@
       }
     },
     "1c": {
-      "1d": {
+      "e0": {
         "state": "success",
         "type": "standard"
       },
       "b1": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "e0": {
+      "e1": {
+        "state": "success",
+        "type": "standard"
+      },
+      "b0": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "e1": {
+      "e2": {
+        "state": "success",
+        "type": "standard"
+      },
+      "b5": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "e2": {
+      "1d": {
+        "state": "success",
+        "type": "standard"
+      },
+      "b5": {
         "state": "failure",
         "type": "standard"
       }
@@ -5825,6 +6097,12 @@
       }
     },
     "1f": {
+      "e3": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "e3": {
       "18": {
         "state": "success",
         "type": "standard"
@@ -5937,7 +6215,23 @@
       }
     },
     "15": {
+      "e4": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "e4": {
+      "e5": {
+        "state": "success",
+        "type": "standard"
+      },
       "3a": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "e5": {
+      "4a": {
         "state": "success",
         "type": "standard"
       }
@@ -6387,6 +6681,12 @@
       }
     },
     "b4": {
+      "bf": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "b5": {
       "bf": {
         "state": "success",
         "type": "standard"
@@ -7160,6 +7460,9 @@
         "type": "object"
       },
       "absent_result": {
+        "type": "object"
+      },
+      "absent_before": {
         "type": "object"
       },
       "destroy_plan_result": {

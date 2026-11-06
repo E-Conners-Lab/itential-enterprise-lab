@@ -99,6 +99,35 @@ def test_the_plan_runs_as_the_gateway_runs_it() -> None:
     assert TASKS["1b"]["variables"]["incoming"]["code"] == TASKS["18"]["variables"]["incoming"]["code"] == build.TEARDOWN_PLAN_CODE
 
 
+def _before(target: str, absent: bool, rc: int = 0) -> dict:
+    return {"result": {"return_code": rc, "stdout_json": {"action": "absent", "target": target, "absent": absent,
+                                                          "left": [] if absent else ["no interface Tunnel10"]}}}
+
+
+def test_a_router_with_none_of_the_block_gets_nothing_pushed() -> None:
+    # prod 2026-11-06: a Deploy never handed off left dc1-wan01 clean; the `no` lines were refused and it rolled back
+    d = {"target": "dc1-wan01", "removal": _removal("dc1-wan01"), "absent_before": _before("dc1-wan01", True)}
+    p = _plan(d)
+    assert p["ok"] and p["nothing_to_remove"] is True
+    assert p["card"]["to push"].startswith("nothing") and "lines" not in p["card"]
+    assert "second card" in p["card"]["after this"] and p["card"]["router"] == "dc1-wan01"
+    assert _run(build.TEARDOWN_PLAN_CODE, d) == p
+
+
+@pytest.mark.parametrize("before", [
+    None,
+    _before("dc1-wan01", False),
+    _before("dc1-wan01", True, rc=1),
+    _before("clab-rtr1", True),  # an answer for another router
+], ids=["no-read", "block-there", "read-failed", "other-router"])
+def test_anything_short_of_a_clean_read_pushes_the_removal(before: dict | None) -> None:
+    d = {"target": "dc1-wan01", "removal": _removal("dc1-wan01")}
+    if before is not None:
+        d["absent_before"] = before
+    p = _plan(d)
+    assert p["ok"] and p["nothing_to_remove"] is False and p["card"]["lines"] == ["no interface Tunnel10"]
+
+
 def test_each_routers_teardown_checks_are_the_ones_its_changes_passed() -> None:
     changes = yaml.safe_load((ROOT / "topology" / "changes" / "dc1-wan01-lab-edge.yaml").read_text())
     window = next(s for s in changes["steps"] if s["name"].startswith("management"))["checks"]
@@ -119,6 +148,22 @@ def test_each_routers_teardown_checks_are_the_ones_its_changes_passed() -> None:
 # ── the order, and nothing on the router side reaching AWS ──
 
 
+def test_the_router_is_read_before_the_removal_lines_and_the_card() -> None:
+    assert TR["1c"]["e0"]["state"] == "success" and TASKS["e0"]["variables"]["incoming"]["obj"] == "$var.job.teardown_plan"
+    assert TASKS["e1"]["variables"]["incoming"]["serviceName"] == "lab-edge"
+    assert TASKS["e1"]["variables"]["incoming"]["params"] == "$var.e0.return_data"
+    assert TASKS["18"]["variables"]["incoming"]["data"] == "$var.e3.object"  # the push plan sees the read before
+    for a, b in (("e1", "1d"), ("e1", "18"), ("e1", "2c")):
+        assert b in _reach(a), (a, b)
+
+
+def test_nothing_to_remove_skips_the_push_but_not_the_proof() -> None:
+    assert {src for src, dsts in TR.items() if "e4" in dsts} == {"15"}  # only after the first card's approval
+    assert TR["e4"]["e5"]["state"] == "success" and TR["e4"]["3a"]["state"] == "failure"
+    assert "4a" in _reach("e5") and not _reach("e5") & {"3a", "3b", "35"}
+    assert TASKS["e5"]["variables"]["outgoing"]["output"] == "$var.job.router_state"
+
+
 def test_the_router_is_removed_and_proved_before_aws_is_touched() -> None:
     path = ["1e", "17", "19", "13", "14", "2c", "3b", "33", "4b", "4d", "4e", "5b", "5f", "6e"]
     for a, b in zip(path, path[1:]):
@@ -126,7 +171,7 @@ def test_the_router_is_removed_and_proved_before_aws_is_touched() -> None:
     assert build.card_sides(TR, "2c")[1] == "a0" and build.card_sides(TR, "5f")[1] == "a2"  # Reject on each card
 
 
-@pytest.mark.parametrize("start", ["a0", "b0", "b1", "b2", "b3", "b4", "c0", "c2", "c3", "c4", "4f"])
+@pytest.mark.parametrize("start", ["a0", "b0", "b1", "b2", "b3", "b4", "b5", "c0", "c2", "c3", "c4", "4f"])
 def test_no_router_failure_or_rejection_reaches_the_aws_destroy(start: str) -> None:
     assert not _reach(start) & {"5a", "5b", "5f", "6e"}, start
 

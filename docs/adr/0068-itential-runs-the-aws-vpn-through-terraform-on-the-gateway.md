@@ -460,3 +460,15 @@ open one, because the next rotation prunes.
 day at 08:30 UTC and rotates only on the 1st of the month (UTC). A clock that cannot be read opens no task.
 `Rotate AWS VPN Key` is the same section run on demand. The section is generated into both workflows (no child jobs),
 and a test holds the two copies identical.
+
+## Amendment 2026-11-06: Tear Down reads the router before it plans a push
+
+On production a Deploy that was never handed off left dc1-wan01 without the AWS block. Tear Down still pushed the
+removal lines. IOS refused the `no` lines for objects that were not there, `config-push-revert` rolled back, and the
+AWS side was never reached (job c4f103db, the change closed unsuccessful).
+
+Tear Down now runs `lab-edge absent` before the first card. When that read answers for the same router and finds none
+of the block, the card says nothing will be pushed. Approving it skips the push and goes on to the same proof (`lab-edge
+absent` again), and then to the AWS side. Anything short of a clean read takes the push as before. A read that cannot
+run ends the job before the card with nothing sent. Both cards and the change request's states are unchanged, and the
+timed copy (Tear Down Expired) gets the same read.
