@@ -14,7 +14,7 @@ What each workflow does from start to end, for someone who is about to run one o
 | [Deploy AWS VPN](deploy-aws-vpn.md) | 15 | 142 | 2 |
 | [Verify AWS VPN](verify-aws-vpn.md) | 7 | 36 | 0 |
 | [Hand Off AWS VPN](hand-off-aws-vpn.md) | 17 | 177 | 2 |
-| [Tear Down AWS VPN](tear-down-aws-vpn.md) | 16 | 177 | 3 |
+| [Tear Down AWS VPN](tear-down-aws-vpn.md) | 18 | 184 | 3 |
 | [Check AWS Drift](check-aws-drift.md) | 8 | 75 | 2 |
 | [Get AWS VPN Status](get-aws-vpn-status.md) | 2 | 8 | 0 |
 | [Request AWS VPN Deployment](request-aws-vpn-deployment.md) | 7 | 68 | 0 |
@@ -27,7 +27,7 @@ What each workflow does from start to end, for someone who is about to run one o
 | [Drill Batfish Gate](drill-batfish-gate.md) | 8 | 44 | 0 |
 | [Rotate AWS VPN Key](rotate-aws-vpn-key.md) | 12 | 106 | 1 |
 | [Rotate AWS VPN Key Monthly](rotate-aws-vpn-key-monthly.md) | 13 | 110 | 1 |
-| [Tear Down Expired AWS VPN](tear-down-expired-aws-vpn.md) | 11 | 78 | 1 |
+| [Tear Down Expired AWS VPN](tear-down-expired-aws-vpn.md) | 13 | 85 | 1 |
 | [Run Nightly Compliance Check](run-nightly-compliance-check.md) | 1 | 3 | 0 |
 | [Back Up All Device Configs](back-up-all-device-configs.md) | 1 | 4 | 0 |
 | [Remove Branch VLAN](remove-branch-vlan.md) | 9 | 50 | 0 |

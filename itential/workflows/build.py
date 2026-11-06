@@ -5271,13 +5271,14 @@ TEARDOWN_TARGETS = {
 TEARDOWN_REVERT_MINUTES = 8
 DESTROY_PLAN_PARAMS = '{"action": "plan-destroy", "job": "new", "timeout": "900"}'
 TEARDOWN_ROUTER_MESSAGE = (
-    "Tear Down the AWS VPN on __D__, step 1 of 2: remove the router's AWS block. The lines below are pushed under a "
-    "revert timer and kept only if every check still passes (and a fresh login still works); then the router is read "
-    "back to prove nothing of the block is left. Only after that is the AWS side planned for destruction, on a second "
-    "card. Nothing is saved before the checks pass."
+    "Tear Down the AWS VPN on __D__, step 1 of 2: remove the router's AWS block. If the router has any of it (read "
+    "just before this card), the lines below are pushed under a revert timer and kept only if every check still "
+    "passes (and a fresh login still works); if it has none, the card has no lines and nothing is pushed. Either "
+    "way the router is then read back to prove nothing of the block is left. Only after that is the AWS side planned "
+    "for destruction, on a second card. Nothing is saved before the checks pass."
 )
 TEARDOWN_AWS_MESSAGE = (
-    "Tear Down the AWS VPN, step 2 of 2: destroy the AWS side. The router's block is already removed and proved gone. "
+    "Tear Down the AWS VPN, step 2 of 2: destroy the AWS side. Nothing of the router's block is left (proved gone). "
     "Exactly this plan is applied (the strongSwan box, its Elastic IP, the key's secret and the VPC go); rejecting "
     "keeps it all, at about $1 a day."
 )
@@ -5314,11 +5315,20 @@ def teardown_plan(d: dict, targets: dict, revert_targets: dict, revert_minutes: 
                           "checks": revert["teardown_checks"]}, revert_targets)
     if not pushed.get("ok"):
         return pushed
-    pushed["card"]["after this"] = ("the router is read back to prove the block is gone, then the AWS destroy is "
-                                    "planned for a second card" if plan["aws"] else
-                                    "the router is read back to prove the block is gone; nothing of this target is "
-                                    "deployed in AWS")
-    return {**plan, **pushed}
+    after = ("the router is read back to prove the block is gone, then the AWS destroy is planned for a second card"
+             if plan["aws"] else
+             "the router is read back to prove the block is gone; nothing of this target is deployed in AWS")
+    pushed["card"]["after this"] = after
+    # lab-edge absent's read before the card: a router with none of the block gets no push. A Deploy that was never
+    # handed off leaves the router clean, and IOS refuses the `no` lines of what is not there (prod, 2026-11-06)
+    before = (d.get("absent_before") or {}).get("result") or {}
+    seen = before.get("stdout_json") or {}
+    clean = before.get("return_code") == 0 and seen.get("target") == name and seen.get("absent") is True
+    if clean:
+        pushed["card"] = {"router": name, "reason": "Tear Down AWS VPN: lab-edge absent finds none of the AWS block on "
+                                                    "the router", "to push": "nothing: no line is sent, nothing is saved",
+                          "after this": after}
+    return {**plan, **pushed, "nothing_to_remove": clean}
 
 
 def destroy_left(d: dict) -> dict:
@@ -5353,21 +5363,29 @@ def teardown_section(timed: bool, failed_end: str = "workflow_end") -> tuple[dic
         **step("nothing changed yet: router_changed and aws_changed start false"),
         "10": flag("router_changed = false", "false", "router_changed", x=40),
         "11": flag("aws_changed = false", "false", "aws_changed", x=60),
-        **step("the plan: which services run, with what, and whether AWS follows; the removal lines rendered"),
+        **step("the plan: which services run, with what, and whether AWS follows"),
         "1a": task("setObjectKey", "WorkFlowEngine", "the router (the target is gated: an open one)",
                    {"obj": {}, "path": ["target"], "value": "$var.job.target"}, {"object": "$var.job.teardown_in"},
                    display="Tools", x=100),
         "1b": run_code("the plan (Python on the runner)", TEARDOWN_PLAN_CODE, "$var.job.teardown_in", "teardown_plan",
                        x=150),
         "1c": evaluate("planned?", "job", "teardown_plan", "stdout_json.ok", "==", True, x=200),
+        **step("the read before: what of the block is on the router now (lab-edge absent: show commands)"),
+        "e0": jq("lab-edge absent's params (the read before)", "$var.job.teardown_plan", "stdout_json.absent", x=210),
+        "e1": run_service("any of the block on the router? (lab-edge absent)", "lab-edge", "$var.e0.return_data",
+                          "absent_before", x=220),
+        "e2": evaluate("the read before ran?", "e1", "result", "result.return_code", "==", 0, x=230),
+        **step("the removal: lab-edge removal's lines and the push's params (nothing to push when none is there)"),
         "1d": jq("lab-edge removal's params", "$var.job.teardown_plan", "stdout_json.removal", x=250),
         "1e": run_service("the removal lines (lab-edge removal: no device)", "lab-edge", "$var.1d.return_data",
                           "removal_result", x=300),
         "17": evaluate("lab-edge removal answered?", "1e", "result", "result.return_code", "==", 0, x=325),
         "1f": set_key("the plan's input, with the removal", "$var.job.teardown_in", "removal", "$var.job.removal_result",
                       x=350),
+        "e3": set_key("the plan's input, with the read before", "$var.1f.object", "absent_before",
+                      "$var.job.absent_before", x=375),
         "18": run_code("the push's params and the first card (Python on the runner)", TEARDOWN_PLAN_CODE,
-                       "$var.1f.object", "push_plan", x=400),
+                       "$var.e3.object", "push_plan", x=400),
         "19": evaluate("push planned?", "job", "push_plan", "stdout_json.ok", "==", True, x=450),
         **step("the check: config-push-revert's own, with no device"),
         "12": jq("config-push-revert check's params", "$var.job.push_plan", "stdout_json.check", x=500),
@@ -5380,6 +5398,10 @@ def teardown_section(timed: bool, failed_end: str = "workflow_end") -> tuple[dic
         **approval("2c", "Approve removing the router's AWS block", "$var.2b.replacedString", "$var.2a.return_data",
                    "Approve", "Reject", x=750, var="approval"),
         "15": flag("rejected = false", "false", "rejected", x=775),
+        "e4": evaluate("nothing to remove on the router?", "job", "push_plan", "stdout_json.nothing_to_remove", "==",
+                       True, x=785),
+        "e5": note("nothing to remove on the router", "nothing was sent to the router: lab-edge absent found none of "
+                   "the AWS block on it before the card", "router_state", x=1100, y=900),
         **step("the push: the block removed under the revert timer, confirmed and saved, or rolled back"),
         "3a": jq("config-push-revert's params", "$var.job.push_plan", "stdout_json.params", x=800),
         "16": jq("the timeout a push needs (check's answer)", "$var.13.result", "result.stdout_json.timeout", x=825),
@@ -5404,8 +5426,9 @@ def teardown_section(timed: bool, failed_end: str = "workflow_end") -> tuple[dic
         "4c": evaluate("the proof ran?", "4b", "result", "result.return_code", "==", 0, x=1300),
         "4d": evaluate("nothing of the block left?", "4b", "result", "result.stdout_json.absent", "==", True, x=1350),
         "4e": evaluate("deployed in AWS?", "job", "teardown_plan", "stdout_json.aws", "==", True, x=1400),
-        "4f": note("the outcome: router only", "torn down: the router's AWS block was removed, saved and proved gone; "
-                   "nothing of this target is deployed in AWS", "outcome", x=1450, y=600),
+        "4f": note("the outcome: router only", "torn down: nothing of the router's AWS block is left (removed and "
+                   "saved, or none there - router_state says which - and proved gone); nothing of this target is "
+                   "deployed in AWS", "outcome", x=1450, y=600),
         **step("the AWS side: terraform plan -destroy, the second card, exactly that plan applied, the state read empty"),
         "5a": parse("the destroy plan's params", DESTROY_PLAN_PARAMS, x=1500),
         "5b": run_service("terraform plan -destroy", "terraform-run", "$var.5a.textObject", "destroy_plan_result",
@@ -5430,7 +5453,8 @@ def teardown_section(timed: bool, failed_end: str = "workflow_end") -> tuple[dic
         "63": set_key("the outputs' answer", {}, "outputs", "$var.job.outputs_result", x=2200),
         "64": run_code("anything left?", DESTROY_LEFT_CODE, "$var.63.object", "left", x=2250),
         "65": evaluate("nothing left in the state?", "64", "result", "stdout_json.empty", "==", True, x=2300),
-        "66": note("the outcome: torn down", "torn down: the router's AWS block was removed, saved and proved gone, "
+        "66": note("the outcome: torn down", "torn down: nothing of the router's AWS block is left (removed and "
+                   "saved, or none there - router_state says which - and proved gone), "
                    "and the AWS side was destroyed - nothing of the deployment is left", "outcome", x=2350),
         **step("the rejections: either card rejected ends cleanly; a rejected destroy plan is discarded"),
         "a0": flag("rejected = true (router)", "true", "rejected", x=800, y=600),
@@ -5442,7 +5466,7 @@ def teardown_section(timed: bool, failed_end: str = "workflow_end") -> tuple[dic
         "a5": run_service("discard the rejected destroy plan", "terraform-run", "$var.a4.textObject",
                           "discard_result", x=1950, y=600),
         "a8": evaluate("discarded?", "a5", "result", "result.return_code", "==", 0, x=1975, y=600),
-        "a6": note("the AWS rejection", "the router's AWS block was removed and proved gone; the AWS destroy was "
+        "a6": note("the AWS rejection", "nothing of the router's AWS block is left (proved gone); the AWS destroy was "
                    "rejected in Work Center, so the AWS side stays (about $1 a day) - Tear Down again to remove it",
                    "outcome", x=2000, y=600),
         "a7": note("the discard did not run", "the rejected destroy plan could not be discarded; it stays in the "
@@ -5456,6 +5480,8 @@ def teardown_section(timed: bool, failed_end: str = "workflow_end") -> tuple[dic
                    "nothing was sent to the router, nothing changed in AWS", "error", x=350, y=-600),
         "b3": jq("why there is no push plan", "$var.job.push_plan", "stdout_json.message", x=500, y=-1200,
                  to_job="error"),
+        "b5": note("the router could not be read", "lab-edge absent could not read the router before the card (see "
+                   "absent_before): nothing was sent to the router, nothing changed in AWS", "error", x=230, y=-600),
         "b4": note("config-push-revert refuses it", "config-push-revert's check refused the removal (see "
                    "check_result): nothing was sent to the router, nothing changed in AWS", "error", x=600, y=-600),
         "bf": flag("router_changed = false (nothing sent)", "false", "router_changed", x=650, y=-900),
@@ -5466,11 +5492,12 @@ def teardown_section(timed: bool, failed_end: str = "workflow_end") -> tuple[dic
         "c1": flag("router_changed = true (unknown)", "true", "router_changed", x=1000, y=-1200),
         "c2": jq("why the removal was not kept", "$var.3f.result", "stdout_json.message", x=1150, y=-600,
                  to_job="error"),
-        "c3": note("the proof could not run", "the removal was saved, but lab-edge absent could not read the router "
-                   "(absent_result): the AWS side was NOT touched - check the router, then Tear Down again",
+        "c3": note("the proof could not run", "lab-edge absent could not read the router after the removal step "
+                   "(absent_result; router_state says what was pushed): the AWS side was NOT touched - check the "
+                   "router, then Tear Down again",
                    "error", x=1300, y=-600),
-        "c4": note("the block is not gone", "the removal was saved, but lab-edge absent still finds part of the "
-                   "block (absent_result.left): the AWS side was NOT touched", "error", x=1350, y=-1200),
+        "c4": note("the block is not gone", "lab-edge absent still finds part of the block after the removal step "
+                   "(absent_result.left; router_state says what was pushed): the AWS side was NOT touched", "error", x=1350, y=-1200),
         "c5": note("the destroy could not be planned", "the router is clean; the Gateway could not plan the AWS "
                    "destroy (destroy_plan_result): nothing changed in AWS - Tear Down again to remove it", "error",
                    x=1600, y=-600),
@@ -5483,11 +5510,15 @@ def teardown_section(timed: bool, failed_end: str = "workflow_end") -> tuple[dic
     tr = {
         "10": _edge(**{"11": ok}), "11": _edge(**{"1a": ok}), "1a": _edge(**{"1b": ok}),
         "1b": _edge(**{"1c": ok, "b0": err}),
-        "1c": _edge(**{"1d": ok, "b1": fail}),
+        "1c": _edge(**{"e0": ok, "b1": fail}),
+        "e0": _edge(**{"e1": ok, "b0": err}),
+        "e1": _edge(**{"e2": ok, "b5": err}),
+        "e2": _edge(**{"1d": ok, "b5": fail}),
         "1d": _edge(**{"1e": ok, "b0": err}),
         "1e": _edge(**{"17": ok, "b2": err}),
         "17": _edge(**{"1f": ok, "b2": fail}),
-        "1f": _edge(**{"18": ok}),
+        "1f": _edge(**{"e3": ok}),
+        "e3": _edge(**{"18": ok}),
         "18": _edge(**{"19": ok, "b0": err}),
         "19": _edge(**{"12": ok, "b3": fail}),
         "12": _edge(**{"13": ok, "b0": err}),
@@ -5496,7 +5527,9 @@ def teardown_section(timed: bool, failed_end: str = "workflow_end") -> tuple[dic
         "2a": _edge(**{"2b": ok, "b0": err}),
         "2b": _edge(**{"2c1": ok}), **approval_edges("2c"),
         "2c": _edge(**{"15": ok, "a0": fail}),
-        "15": _edge(**{"3a": ok}),
+        "15": _edge(**{"e4": ok}),
+        "e4": _edge(**{"e5": ok, "3a": fail}),
+        "e5": _edge(**{"4a": ok}),
         "3a": _edge(**{"16": ok, "b0": err}),
         "16": _edge(**{"34": ok, "b0": err}),
         "34": _edge(**{"3b": ok}),
@@ -5541,6 +5574,7 @@ def teardown_section(timed: bool, failed_end: str = "workflow_end") -> tuple[dic
         # every failure before the push ends through one task: nothing was sent (one arrow to the end, not five)
         "b0": _edge(**{"bf": ok}), "b1": _edge(**{"bf": ok}), "b2": _edge(**{"bf": ok}), "b3": _edge(**{"bf": ok}),
         "b4": _edge(**{"bf": ok}),
+        "b5": _edge(**{"bf": ok}),
         "bf": _edge(**{"workflow_end": ok}),
         "c0": _edge(**{"c1": ok}), "c1": _edge(**{"workflow_end": ok}), "c2": _edge(**{"workflow_end": ok}),
         "c3": _edge(**{"workflow_end": ok}), "c4": _edge(**{"workflow_end": ok}), "c5": _edge(**{"workflow_end": ok}),
@@ -5581,7 +5615,8 @@ def tear_down_aws_vpn() -> dict:
               "successful": ("4f", "66", "a6")})
     return workflow(
         WF["tear_down_aws_vpn"],
-        "Tears the AWS VPN down: removes the router's AWS block under a revert timer after a Work Center approval, "
+        "Tears the AWS VPN down: removes the router's AWS block (if any is there) under a revert timer after a Work "
+        "Center approval, "
         "proves it gone, then - for a target deployed in AWS - plans the destroy, shows it on a second card and "
         "applies exactly that plan (PID S13 criterion 5, R2, ADR 0068)",
         {"target": {"type": "string", "required": True, "enum": INPUT_GATES[WF["tear_down_aws_vpn"]]["target"]["enum"],
@@ -5606,6 +5641,7 @@ def tear_down_aws_vpn() -> dict:
             "push_result": {"type": "object"},
             "push_summary": {"type": "object"},
             "absent_result": {"type": "object"},
+            "absent_before": {"type": "object"},
             "destroy_plan_result": {"type": "object"},
             "destroy_plan": {"type": "object"}, "approval_card": {"type": "object"},
             "approval_decision": {"type": ["object", "null"]}, "approval_2_card": {"type": "object"},
@@ -6666,6 +6702,7 @@ def tear_down_expired_aws_vpn() -> dict:
             "push_result": {"type": "object"},
             "push_summary": {"type": "object"},
             "absent_result": {"type": "object"},
+            "absent_before": {"type": "object"},
             "destroy_plan_result": {"type": "object"},
             "destroy_plan": {"type": "object"},
             "apply_result": {"type": "object"},
