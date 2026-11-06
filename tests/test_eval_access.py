@@ -38,6 +38,7 @@ RUN_DENY = DENY + ["WorkCenterService/*"]  # the card is the approver's
 APPROVE_DENY = DENY + ["AgentSessionManager/*"]  # the approver never runs an agent
 # ADR 0084 amendment: the job-run test account starts its four test endpoints and reads jobs and work items only
 JOBS_METHODS = {"OperationsManager/runEndpointTriggerWithPost", "OperationsManager/getJob", "OperationsManager/getJobs",
+                "WorkCenterService/getContextHistory",  # GET work-items?rootExecutionId=: finds a job's task
                 "WorkCenterService/searchWorkItems", "WorkCenterService/getWorkItem",
                 "WorkCenterService/countWorkItems"}
 JOBS_DENY = DENY + ["AgentSessionManager/*", "*/*:write"]  # work-items:write claims, completes and cancels
@@ -137,7 +138,8 @@ def test_the_job_tester_ends_no_job_and_no_work_item_and_only_reads_work_items()
     assert not methods & TASK_METHODS
     assert not methods & WORK_ITEM_WRITES
     assert {m for m in methods if m.startswith("WorkCenterService/")} == {
-        "WorkCenterService/searchWorkItems", "WorkCenterService/getWorkItem", "WorkCenterService/countWorkItems"}
+        "WorkCenterService/getContextHistory", "WorkCenterService/searchWorkItems", "WorkCenterService/getWorkItem",
+        "WorkCenterService/countWorkItems"}
     assert prod["builtin"] == [], "the only built-in Work Center role, work-items:write, also completes and cancels"
 
 

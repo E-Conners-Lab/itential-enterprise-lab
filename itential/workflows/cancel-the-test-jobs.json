@@ -213,7 +213,7 @@
           "jobIds": "$var.2a.return_data"
         },
         "outgoing": {
-          "result": null
+          "resultMessage": null
         },
         "error": "",
         "decorators": []
