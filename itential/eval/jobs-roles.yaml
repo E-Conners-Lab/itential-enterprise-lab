@@ -21,7 +21,10 @@ prod:
         - {provenance: OperationsManager, name: runEndpointTriggerWithPost} # the four test automations
         - {provenance: OperationsManager, name: getJob}
         - {provenance: OperationsManager, name: getJobs}
-        # read only: the built-in work-items:write also claims, completes and cancels, so these three are named instead
+        # read only: the built-in work-items:write also claims, completes and cancels, so the reads are named instead.
+        # getContextHistory is GET /work-center-service/work-items?rootExecutionId=<job>, how a job's task is found
+        # (measured on production 2026-11-06: without it that read answers 403; getWorkItem alone answers 200)
+        - {provenance: WorkCenterService, name: getContextHistory}
         - {provenance: WorkCenterService, name: searchWorkItems}
         - {provenance: WorkCenterService, name: getWorkItem}
         - {provenance: WorkCenterService, name: countWorkItems}

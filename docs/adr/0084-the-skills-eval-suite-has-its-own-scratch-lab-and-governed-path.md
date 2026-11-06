@@ -279,8 +279,9 @@ it ("yes, build it, and keep the lab runs") and chose the cleanup design below.
 `echo`), Fail a Test Job (one parse that errors, with no error edge), Hold a Test Job for Approval (one ViewData task
 for `eval-jobs` and `admin_group`), and Cancel the Test Jobs. None touches a device or an adapter; the cleanup's one
 runCode is the only Gateway call. A third account, `svc-eval-jobs` in `eval-jobs` (`eval_access.jobs`, oracle
-`itential/eval/jobs-roles.yaml`), may start those four endpoints, read jobs, and read work items (searchWorkItems,
-getWorkItem, countWorkItems). It holds no cancel, pause or resume method and no Work Center write: an Operations
+`itential/eval/jobs-roles.yaml`), may start those four endpoints, read jobs, and read work items with four methods:
+getContextHistory (the `GET work-items?rootExecutionId=` read that finds a job's task), searchWorkItems, getWorkItem
+and countWorkItems. It holds no cancel, pause or resume method and no Work Center write: an Operations
 Manager cancel is not limited to the caller's own jobs, so on production it could end any job, the AWS VPN's included.
 Its only way to end a test job is Cancel the Test Jobs, which reads the open jobs of the three test workflows, picks
 them again by name and status on the runner (`open_test_jobs`), and cancels exactly those. The password goes to the

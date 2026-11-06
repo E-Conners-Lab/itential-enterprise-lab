@@ -631,6 +631,8 @@ def test_the_cleanup_cancels_only_what_it_picked() -> None:
     assert "sort" not in query, "an unsorted read: the include rule (L-037) does not apply"
     cancel = [t for t in tasks.values() if t.get("name") == "cancelJobs"]
     assert len(cancel) == 1 and cancel[0]["variables"]["incoming"] == {"jobIds": "$var.2a.return_data"}
+    # the Platform's model names the output resultMessage; any other name and the job is refused at its start
+    assert cancel[0]["variables"]["outgoing"] == {"resultMessage": None}
     assert tasks["2a"]["variables"]["incoming"] == {"pass_on_null": False, "query": "stdout_json.ids",
                                                     "obj": "$var.1b.result"}
     # the runner's constants name the three test workflows only, never the cleanup itself

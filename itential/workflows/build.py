@@ -10168,8 +10168,10 @@ def skill_job_cleanup() -> dict:
         "1d": evaluate("anything to cancel?", "1b", "result", "stdout_json.any", "==", True, x=300),
         **step("the cancel: exactly those jobs"),
         "2a": jq("their ids", "$var.1b.result", "stdout_json.ids", x=400),
+        # the task's output is resultMessage: with any other name the Platform refuses to start the job (measured on
+        # production 2026-11-06: "Output: result does not match model output: resultMessage")
         "2b": task("cancelJobs", "OperationsManager", "cancel exactly those jobs", {"jobIds": "$var.2a.return_data"},
-                   {"result": None}, x=500),
+                   {"resultMessage": None}, x=500),
         "2c": jq("the outcome: canceled", "$var.1b.result", "stdout_json.done", x=600, to_job="outcome"),
         "2d": jq("the outcome: nothing to cancel", "$var.1b.result", "stdout_json.none", x=200, y=-300,
                  to_job="outcome"),
