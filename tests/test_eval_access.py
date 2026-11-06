@@ -1,5 +1,5 @@
-"""ADR 0084 unit tests: what the skills eval suite's two service accounts may do on production, and the plays that make
-them.
+"""ADR 0084 unit tests: what the skills eval suite's service accounts may do on production, and the plays that make
+them (the runner and the approver, and since the amendment of 2026-11-05 the skills workbench's job-run test account).
 
 itential/eval/run-roles.yaml (svc-eval) and approve-roles.yaml (svc-eval-approver) are the role oracles. The methods and
 the deny lists below are written here independently of those files, so an edit to an oracle cannot quietly widen what
@@ -36,6 +36,15 @@ DENY = ["*/admin", "*/apiwrite", "*/designer", "*/engineering", "*/operations", 
         "GatewayManager/*", "InventoryManager/*", "AutomationStudio/*", "WorkFlowEngine/*", "Authorization/*"]
 RUN_DENY = DENY + ["WorkCenterService/*"]  # the card is the approver's
 APPROVE_DENY = DENY + ["AgentSessionManager/*"]  # the approver never runs an agent
+# ADR 0084 amendment: the job-run test account starts its four test endpoints and reads jobs and work items only
+JOBS_METHODS = {"OperationsManager/runEndpointTriggerWithPost", "OperationsManager/getJob", "OperationsManager/getJobs",
+                "WorkCenterService/searchWorkItems", "WorkCenterService/getWorkItem",
+                "WorkCenterService/countWorkItems"}
+JOBS_DENY = DENY + ["AgentSessionManager/*", "*/*:write"]  # work-items:write claims, completes and cancels
+# what ends or takes a work item (the Platform's own WorkCenterService methods, read on production 2026-11-06)
+WORK_ITEM_WRITES = {f"WorkCenterService/{m}" for m in ("assignWorkItem", "cancelWorkItem", "cancelWorkItems",
+                                                        "claimWorkItem", "completeWorkItem", "createWorkItem",
+                                                        "releaseWorkItem")}
 # what releases or moves a held job: never the runner's
 TASK_METHODS = {"OperationsManager/finishManualTask", "OperationsManager/claimTask", "OperationsManager/assignTask",
                 "OperationsManager/cancelJobs", "OperationsManager/pauseJobs", "OperationsManager/resumeJobs",
@@ -45,6 +54,8 @@ ACCOUNTS = {
     "run": ("run-roles.yaml", "svc-eval", "eval", "SVC_EVAL_PROD_PASSWORD", "eval", RUN_METHODS, RUN_BUILTIN, RUN_DENY),
     "approve": ("approve-roles.yaml", "svc-eval-approver", "eval-approvers", "SVC_EVAL_APPROVER_PROD_PASSWORD",
                 "eval-approver", APPROVE_METHODS, APPROVE_BUILTIN, APPROVE_DENY),
+    "jobs": ("jobs-roles.yaml", "svc-eval-jobs", "eval-jobs", "SVC_EVAL_JOBS_PROD_PASSWORD", "eval-jobs", JOBS_METHODS,
+             set(), JOBS_DENY),
 }
 
 
@@ -87,7 +98,7 @@ def test_each_oracle_is_production_only_and_names_its_accounts_group(account: st
 def test_each_custom_role_holds_exactly_its_methods(account: str) -> None:
     file, _, _, _, _, methods, _, _ = ACCOUNTS[account]
     custom = _oracle(file)["prod"]["custom"]
-    assert [c["name"] for c in custom] == [{"run": "eval-run", "approve": "eval-approve"}[account]]
+    assert [c["name"] for c in custom] == [{"run": "eval-run", "approve": "eval-approve", "jobs": "eval-jobs"}[account]]
     assert _keys(custom[0]["methods"]) == methods
     assert not any("*" in m["name"] for m in custom[0]["methods"]), "exact names, never a glob"
 
@@ -117,11 +128,24 @@ def test_the_approver_cancels_no_job_and_rejects_a_card_instead() -> None:
     assert not methods & TASK_METHODS, "a waiting push is rejected through its card, which Work Center scopes"
 
 
+def test_the_job_tester_ends_no_job_and_no_work_item_and_only_reads_work_items() -> None:
+    """ADR 0084 amendment: an Operations Manager cancel reaches every job on production, so the job-run test account
+    holds none; it ends its test jobs only through Cancel the Test Jobs. It sees the approval test's work item and can
+    never claim or complete it."""
+    prod = _oracle("jobs-roles.yaml")["prod"]
+    methods = _keys([m for c in prod["custom"] for m in c["methods"]])
+    assert not methods & TASK_METHODS
+    assert not methods & WORK_ITEM_WRITES
+    assert {m for m in methods if m.startswith("WorkCenterService/")} == {
+        "WorkCenterService/searchWorkItems", "WorkCenterService/getWorkItem", "WorkCenterService/countWorkItems"}
+    assert prod["builtin"] == [], "the only built-in Work Center role, work-items:write, also completes and cancels"
+
+
 def test_the_only_delete_either_account_holds_is_the_runners_session_delete() -> None:
     deletes = {account: {k for k in _keys([m for c in _oracle(spec[0])["prod"]["custom"] for m in c["methods"]])
                          if "delete" in k.split("/")[1].lower()}
                for account, spec in ACCOUNTS.items()}
-    assert deletes == {"run": {"AgentSessionManager/deleteSession"}, "approve": set()}
+    assert deletes == {"run": {"AgentSessionManager/deleteSession"}, "approve": set(), "jobs": set()}
     # a method, not the built-in session:delete role, so the deny list's */*:delete keeps holding for every role
     assert "*:delete" in {d["name"] for d in _oracle("run-roles.yaml")["prod"]["deny"]}
 
@@ -134,13 +158,13 @@ def test_the_only_session_methods_either_custom_role_holds_are_the_runners_cance
                       if k.startswith("AgentSessionManager/")}
             for account, spec in ACCOUNTS.items()}
     assert held == {"run": {"AgentSessionManager/deleteSession", "AgentSessionManager/updateSessionState"},
-                    "approve": set()}
+                    "approve": set(), "jobs": set()}
     assert {"*:delete", "*:manage"} <= {d["name"] for d in _oracle("run-roles.yaml")["prod"]["deny"]}
 
 
-def test_the_two_accounts_share_no_group_and_neither_is_an_admin() -> None:
+def test_the_accounts_share_no_group_and_none_is_an_admin() -> None:
     groups = {VERSIONS["eval_access"][a]["group"] for a in ACCOUNTS}
-    assert groups == {"eval", "eval-approvers"}
+    assert groups == {"eval", "eval-approvers", "eval-jobs"}
     assert not groups & {"admin_group", "admins", "builders", "operators"}
     assert not groups & set(VERSIONS["automation_access"]["read"]["prod"]), "the base read groups are not eval groups"
 
@@ -178,7 +202,7 @@ def test_eval_access_is_production_only_and_writes_only_its_own_roles() -> None:
             assert "'provenance', 'equalto', 'Custom'" in json.dumps(task), "only a Custom role is ever reset"
     assert "admin_group" not in task_file.read_text()
     include = next(t for t in tasks if t.get("ansible.builtin.include_tasks") == "tasks/ldap-service-account.yml")
-    assert include["loop"] == ["run", "approve"]
+    assert include["loop"] == ["run", "approve", "jobs"]
     assert include["vars"]["svc_role_set"] == "prod" and include["vars"]["ldap_service_account_fallback"] is False
 
 

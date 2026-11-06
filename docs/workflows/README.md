@@ -41,5 +41,9 @@ What each workflow does from start to end, for someone who is about to run one o
 | [Get RESTCONF Data from a Scratch Device](get-restconf-data-from-a-scratch-device.md) | 5 | 15 | 0 |
 | [Push Configuration to a Scratch Device with Approval](push-configuration-to-a-scratch-device-with-approval.md) | 8 | 42 | 1 |
 | [Restore Baseline on a Scratch Device](restore-baseline-on-a-scratch-device.md) | 5 | 21 | 0 |
+| [Complete a Test Job](complete-a-test-job.md) | 3 | 6 | 0 |
+| [Fail a Test Job](fail-a-test-job.md) | 1 | 1 | 0 |
+| [Hold a Test Job for Approval](hold-a-test-job-for-approval.md) | 2 | 2 | 1 |
+| [Cancel the Test Jobs](cancel-the-test-jobs.md) | 3 | 10 | 0 |
 
 A workflow is listed here as soon as versions.yaml names it: its builder in `build.py` names the steps (`step(...)`), and the renderer needs nothing else.

@@ -115,8 +115,8 @@ def test_the_service_account_task_knows_the_mcp_kind_and_only_its_group_prefix()
         "password_prefix": "SVC_MCP_",
         "description": "Production MCP server service account (ADR 0083)",
     }
-    assert "svc_kind | default('copilot') in ['copilot', 'netclaw', 'mcp', 'eval', 'eval-approver']" in text
-    assert "svc_prefix in ['copilot-', 'netclaw', 'mcp-', 'eval', 'eval-approvers']" in text
+    assert "svc_kind | default('copilot') in ['copilot', 'netclaw', 'mcp', 'eval', 'eval-approver', 'eval-jobs']" in text
+    assert "svc_prefix in ['copilot-', 'netclaw', 'mcp-', 'eval', 'eval-approvers', 'eval-jobs']" in text
     access = _versions()["mcp_access"]
     assert access["group"].startswith(kind["group_prefix"]) and access[
         "password_env"

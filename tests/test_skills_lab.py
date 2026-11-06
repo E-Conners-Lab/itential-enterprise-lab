@@ -421,7 +421,7 @@ def test_ensure_secrets_fills_empty_lines_and_writes_mode_600(tmp_path: Path) ->
 
 def test_creds_file_is_private_from_the_start(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("SKILLS_LAB_JUDGE_PASSWORD", "judge-secret")
-    for name in ("SVC_EVAL_PROD_PASSWORD", "SVC_EVAL_APPROVER_PROD_PASSWORD"):
+    for name in ("SVC_EVAL_PROD_PASSWORD", "SVC_EVAL_APPROVER_PROD_PASSWORD", "SVC_EVAL_JOBS_PROD_PASSWORD"):
         monkeypatch.delenv(name, raising=False)  # a shell with .env loaded must not change the test
     dest = tmp_path / "workbench.env"
     dest.write_text("OTHER=1\n")
@@ -438,6 +438,12 @@ def test_creds_file_is_private_from_the_start(tmp_path: Path, monkeypatch: pytes
     assert values == {"OTHER": "1", "SKILLEVAL_JUDGE_USER": "judge", "SKILLEVAL_JUDGE_PASSWORD": "judge-secret",
                       "SKILLEVAL_RUNNER_USER": "svc-eval", "SKILLEVAL_RUNNER_PASSWORD": "runner-secret",
                       "SKILLEVAL_APPROVER_USER": "svc-eval-approver", "SKILLEVAL_APPROVER_PASSWORD": "approver-secret"}
+    # ADR 0084 amendment: the job-run test account joins once its password exists, under the workbench's names
+    monkeypatch.setenv("SVC_EVAL_JOBS_PROD_PASSWORD", "jobs-secret")
+    device.creds(dest)
+    values = dict(line.split("=", 1) for line in dest.read_text().splitlines())
+    assert values["SKILLEVAL_JOBS_USER"] == "svc-eval-jobs" and values["SKILLEVAL_JOBS_PASSWORD"] == "jobs-secret"
+    assert "SVC_EVAL_JOBS_PROD_PASSWORD" not in values, "never the lab's own key name"
     with pytest.raises(SystemExit, match="public repository"):
         device.creds(ROOT / "tmp-creds.env")
 

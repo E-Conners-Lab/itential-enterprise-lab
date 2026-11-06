@@ -4,7 +4,8 @@
 # delivery, 2026-10-11), and nothing in the plays set gbac before, so a replay left each new automation open. Read =
 # the tier's admin and copilot groups, plus `netclaw` on the automations NetClaw's tools start; write = admin_group.
 # ADR 0084: the skills eval suite's automations read admin_group plus ONE eval group and none of the tier's read groups
-# (eval for the agent tools, eval-approvers for the restore), so nothing outside the suite can start them. Automations
+# (eval for the agent tools, eval-approvers for the restore, eval-jobs for the amendment's job-run tests), so nothing
+# outside the suite can start them. Automations
 # listed as unmanaged (the department delivery's own) are never touched. PATCH only when the set differs.
 # Included at the end of platform.yml and of tasks/flowai-assets.yml. Needs: login, platform_local, automation_access,
 # netclaw, eval_access, dev_overlay on dev.
@@ -27,6 +28,7 @@
     aac_eval_read:
       eval: [admin_group, "{{ eval_access.run.group }}"]
       eval_runner: [admin_group, "{{ eval_access.approve.group }}"]
+      eval_jobs: [admin_group, "{{ eval_access.jobs.group }}"]
 
 - name: Automation access - the groups it names exist on this tier
   ansible.builtin.assert:
@@ -42,6 +44,8 @@
          + ([netclaw.group] if aac_autos | selectattr('name', 'in', automation_access.netclaw) | list else [])
          + (aac_eval_read.eval if aac_autos | selectattr('name', 'in', automation_access.eval) | list else [])
          + (aac_eval_read.eval_runner if aac_autos | selectattr('name', 'in', automation_access.eval_runner) | list
+            else [])
+         + (aac_eval_read.eval_jobs if aac_autos | selectattr('name', 'in', automation_access.eval_jobs) | list
             else []) }}
     missing: "{{ named | unique | reject('in', aac_group_ids) | list }}"
 
@@ -57,6 +61,7 @@
     read_names: >-
       {{ aac_eval_read.eval if item.name in automation_access.eval
          else aac_eval_read.eval_runner if item.name in automation_access.eval_runner
+         else aac_eval_read.eval_jobs if item.name in automation_access.eval_jobs
          else automation_access.read[aac_tier] + ([netclaw.group] if item.name in automation_access.netclaw else []) }}
     want:
       read: "{{ read_names | map('extract', aac_group_ids) | list }}"
@@ -88,11 +93,13 @@
     # and the assert above has proved their groups exist by then
     eval_ids: "{{ aac_eval_read.eval | map('extract', aac_group_ids) | sort }}"
     runner_ids: "{{ aac_eval_read.eval_runner | map('extract', aac_group_ids) | sort }}"
+    jobs_ids: "{{ aac_eval_read.eval_jobs | map('extract', aac_group_ids) | sort }}"
     wrong: >-
       {%- set out = [] -%}
       {%- for a in aac_after.json.data if a.name not in automation_access.unmanaged -%}
         {%- set want_read = eval_ids if a.name in automation_access.eval
                             else runner_ids if a.name in automation_access.eval_runner
+                            else jobs_ids if a.name in automation_access.eval_jobs
                             else with_netclaw if a.name in automation_access.netclaw else base -%}
         {%- set g = a.gbac | default({}) -%}
         {%- if (g.read | default([]) | sort) != want_read or (g.write | default([]) | sort) != write_ids -%}

@@ -1,0 +1,475 @@
+{
+  "name": "Cancel the Test Jobs",
+  "type": "automation",
+  "description": "Cancels the open jobs of the three test workflows and nothing else; the skills workbench's harness runs it after each run (ADR 0084 amendment)",
+  "tasks": {
+    "1a": {
+      "name": "getJobs",
+      "canvasName": "getJobs",
+      "summary": "the open jobs of the three test workflows",
+      "description": "the open test jobs: read, then picked again by name and status, so nothing else is ever canceled",
+      "location": "Application",
+      "locationType": null,
+      "app": "OperationsManager",
+      "type": "automatic",
+      "displayName": "OperationsManager",
+      "groups": [],
+      "nodeLocation": {
+        "x": 0,
+        "y": 150
+      },
+      "variables": {
+        "incoming": {
+          "queryParameters": {
+            "in": {
+              "name": "Complete a Test Job,Fail a Test Job,Hold a Test Job for Approval",
+              "status": "running,error,paused"
+            },
+            "limit": 200,
+            "include": "_id,name,status"
+          }
+        },
+        "outgoing": {
+          "result": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "1b": {
+      "name": "runCode",
+      "canvasName": "runCode",
+      "summary": "only the test workflows' open jobs (Python on the runner)",
+      "description": "the open test jobs: read, then picked again by name and status, so nothing else is ever canceled",
+      "location": "Application",
+      "locationType": null,
+      "app": "GatewayManager",
+      "type": "automatic",
+      "displayName": "GatewayManager",
+      "groups": [],
+      "nodeLocation": {
+        "x": 50,
+        "y": 300
+      },
+      "variables": {
+        "incoming": {
+          "clusterId": "lab",
+          "language": "python",
+          "code": "import json, sys\n\n\ndef open_test_jobs(d: dict) -> dict:\n    \"\"\"The jobs \"Cancel the Test Jobs\" cancels: of getJobs' answer (`data`), only those of the three test workflows\n    (`names`) that are still open (`statuses`), however the query was filtered. `ok` is false when the jobs could not\n    be read. Pure: runCode runs this function's own source on the Gateway.\"\"\"\n    rows = d.get(\"data\")\n    if not isinstance(rows, list):\n        return {\"ok\": False, \"any\": False, \"ids\": [], \"done\": \"\", \"none\": \"\"}\n    ids = sorted({str(r[\"_id\"]) for r in rows if isinstance(r, dict) and r.get(\"_id\")\n                  and r.get(\"name\") in d[\"names\"] and r.get(\"status\") in d[\"statuses\"]})\n    return {\"ok\": True, \"any\": bool(ids), \"ids\": ids,\n            \"done\": f\"Canceled {len(ids)} open job(s) of the three test workflows.\",\n            \"none\": \"No open job of the three test workflows: nothing was canceled.\"}\n\n\nprint(json.dumps(open_test_jobs({**json.loads(sys.stdin.read() or \"{}\"), **json.loads('{\"names\": [\"Complete a Test Job\", \"Fail a Test Job\", \"Hold a Test Job for Approval\"], \"statuses\": [\"running\", \"error\", \"paused\"]}')})))\n",
+          "data": "$var.1a.result",
+          "safety": {
+            "timeout": 30
+          },
+          "packages": []
+        },
+        "outgoing": {
+          "result": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "1c": {
+      "name": "evaluation",
+      "canvasName": "evaluation",
+      "summary": "the jobs read?",
+      "description": "the open test jobs: read, then picked again by name and status, so nothing else is ever canceled",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 210,
+        "y": 450
+      },
+      "variables": {
+        "incoming": {
+          "all_true_flag": true,
+          "evaluation_groups": [
+            {
+              "all_true_flag": true,
+              "evaluations": [
+                {
+                  "query": "stdout_json.ok",
+                  "operand_1": {
+                    "variable": "result",
+                    "task": "1b"
+                  },
+                  "operator": "==",
+                  "operand_2": {
+                    "variable": true,
+                    "task": "static"
+                  }
+                }
+              ]
+            }
+          ],
+          "options": {}
+        },
+        "outgoing": {
+          "return_value": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "1d": {
+      "name": "evaluation",
+      "canvasName": "evaluation",
+      "summary": "anything to cancel?",
+      "description": "the open test jobs: read, then picked again by name and status, so nothing else is ever canceled",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 210,
+        "y": 600
+      },
+      "variables": {
+        "incoming": {
+          "all_true_flag": true,
+          "evaluation_groups": [
+            {
+              "all_true_flag": true,
+              "evaluations": [
+                {
+                  "query": "stdout_json.any",
+                  "operand_1": {
+                    "variable": "result",
+                    "task": "1b"
+                  },
+                  "operator": "==",
+                  "operand_2": {
+                    "variable": true,
+                    "task": "static"
+                  }
+                }
+              ]
+            }
+          ],
+          "options": {}
+        },
+        "outgoing": {
+          "return_value": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "2a": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "their ids",
+      "description": "the cancel: exactly those jobs",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 250,
+        "y": 750
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "stdout_json.ids",
+          "obj": "$var.1b.result"
+        },
+        "outgoing": {
+          "return_data": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "2b": {
+      "name": "cancelJobs",
+      "canvasName": "cancelJobs",
+      "summary": "cancel exactly those jobs",
+      "description": "the cancel: exactly those jobs",
+      "location": "Application",
+      "locationType": null,
+      "app": "OperationsManager",
+      "type": "automatic",
+      "displayName": "OperationsManager",
+      "groups": [],
+      "nodeLocation": {
+        "x": 410,
+        "y": 900
+      },
+      "variables": {
+        "incoming": {
+          "jobIds": "$var.2a.return_data"
+        },
+        "outgoing": {
+          "result": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "2c": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "the outcome: canceled",
+      "description": "the cancel: exactly those jobs",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 540,
+        "y": 1050
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "stdout_json.done",
+          "obj": "$var.1b.result"
+        },
+        "outgoing": {
+          "return_data": "$var.job.outcome"
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "2d": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "the outcome: nothing to cancel",
+      "description": "the cancel: exactly those jobs",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": -50,
+        "y": 750
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "stdout_json.none",
+          "obj": "$var.1b.result"
+        },
+        "outgoing": {
+          "return_data": "$var.job.outcome"
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "5a": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "the jobs could not be read",
+      "description": "where it stops: jobs it could not read or a cancel the Platform refused, each with its reason",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": -240,
+        "y": 600
+      },
+      "variables": {
+        "incoming": {
+          "input": "nothing was canceled: the open test jobs could not be read",
+          "outputType": "string",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.error"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "5b": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "the cancel was refused",
+      "description": "where it stops: jobs it could not read or a cancel the Platform refused, each with its reason",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 240,
+        "y": 1050
+      },
+      "variables": {
+        "incoming": {
+          "input": "the cancel was refused: some test jobs may still be open",
+          "outputType": "string",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.error"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "workflow_start": {
+      "name": "workflow_start",
+      "summary": "workflow_start",
+      "groups": [],
+      "nodeLocation": {
+        "x": 0,
+        "y": 0
+      }
+    },
+    "workflow_end": {
+      "name": "workflow_end",
+      "summary": "workflow_end",
+      "groups": [],
+      "nodeLocation": {
+        "x": 40,
+        "y": 1200
+      }
+    }
+  },
+  "transitions": {
+    "workflow_start": {
+      "1a": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "1a": {
+      "1b": {
+        "state": "success",
+        "type": "standard"
+      },
+      "5a": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "1b": {
+      "1c": {
+        "state": "success",
+        "type": "standard"
+      },
+      "5a": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "1c": {
+      "1d": {
+        "state": "success",
+        "type": "standard"
+      },
+      "5a": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "1d": {
+      "2a": {
+        "state": "success",
+        "type": "standard"
+      },
+      "2d": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "2a": {
+      "2b": {
+        "state": "success",
+        "type": "standard"
+      },
+      "5b": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "2b": {
+      "2c": {
+        "state": "success",
+        "type": "standard"
+      },
+      "5b": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "2c": {
+      "workflow_end": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "2d": {
+      "workflow_end": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "5a": {
+      "workflow_end": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "5b": {
+      "workflow_end": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "workflow_end": {}
+  },
+  "groups": [],
+  "canvasVersion": 3,
+  "inputSchema": {
+    "type": "object",
+    "properties": {},
+    "required": []
+  },
+  "outputSchema": {
+    "type": "object",
+    "properties": {
+      "outcome": {
+        "type": "string"
+      },
+      "error": {
+        "type": "string"
+      }
+    }
+  },
+  "tags": [],
+  "preAutomationTime": 300000,
+  "sla": 600000,
+  "font_size": 12,
+  "decorators": []
+}

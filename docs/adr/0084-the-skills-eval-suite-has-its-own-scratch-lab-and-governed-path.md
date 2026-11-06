@@ -267,3 +267,26 @@ the runner's cancel and delete; `*:manage` and `*:delete` stay denied). After th
 cancels and deletes a session the administrator started (the reach, measured). Then the workbench runs its own cancel
 and delete on the two stuck sessions as `svc-eval`, and records whether the cancel answers 200, whether each session
 reaches CANCELED or stays CANCELING, and whether DELETE then accepts it.
+
+## Amendment (2026-11-05): job-run test workflows and their account
+
+**Context.** The skills workbench is building a job-execution skill and needs jobs it can start and read by hand on
+the lab Platform: one that completes, one that stays in Error, one that waits at a Work Center task. The owner approved
+it ("yes, build it, and keep the lab runs") and chose the cleanup design below.
+
+**Decision.** Four workflows, production only, behind endpoint triggers whose gbac is `admin_group` plus `eval-jobs`
+(`versions.yaml` `automation_access.eval_jobs`, `skills_lab.job_workflows`): Complete a Test Job (echoes `message` into
+`echo`), Fail a Test Job (one parse that errors, with no error edge), Hold a Test Job for Approval (one ViewData task
+for `eval-jobs` and `admin_group`), and Cancel the Test Jobs. None touches a device or an adapter; the cleanup's one
+runCode is the only Gateway call. A third account, `svc-eval-jobs` in `eval-jobs` (`eval_access.jobs`, oracle
+`itential/eval/jobs-roles.yaml`), may start those four endpoints, read jobs, and read work items (searchWorkItems,
+getWorkItem, countWorkItems). It holds no cancel, pause or resume method and no Work Center write: an Operations
+Manager cancel is not limited to the caller's own jobs, so on production it could end any job, the AWS VPN's included.
+Its only way to end a test job is Cancel the Test Jobs, which reads the open jobs of the three test workflows, picks
+them again by name and status on the runner (`open_test_jobs`), and cancels exactly those. The password goes to the
+workbench through `make skills-lab-creds` (`SKILLEVAL_JOBS_USER`, `SKILLEVAL_JOBS_PASSWORD`).
+
+**Verification.** After the replay, as `svc-eval-jobs`: each endpoint starts its job (the plain one Complete with
+`echo`, the error one in Error, the approval one running at its task); the account sees the work item and a claim or
+complete is refused; a direct cancel is refused; another automation's endpoint is refused; Cancel the Test Jobs
+cancels the open test jobs and nothing else (no other running job changes).

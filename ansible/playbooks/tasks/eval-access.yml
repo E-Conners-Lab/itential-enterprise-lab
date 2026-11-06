@@ -1,13 +1,15 @@
 ---
-# ADR 0084: the skills eval suite's two accounts on production (the scratch lab is production's; the dev tier gets
-# nothing). Included from platform-ha2-replay.yml before tasks/platform-assets.yml (the skills-lab inventory is created
+# ADR 0084: the skills eval suite's accounts on production (two, plus the amendment's job-run test account)
+# (the scratch lab is production's; the dev tier gets nothing). Included from platform-ha2-replay.yml before
+# tasks/platform-assets.yml (the skills-lab inventory is created
 # with the eval groups, and the push card's group markers are filled from them at import) and from platform.yml before
 # tasks/automation-access.yml (the scratch automations' gbac names them).
 #
 # What it writes, and nothing else:
-#  - the custom roles eval-run and eval-approve, created when absent and reset to their oracle when they differ
-#    (itential/eval/run-roles.yaml, itential/eval/approve-roles.yaml: this play's own roles)
-#  - svc-eval in the eval group and svc-eval-approver in eval-approvers in production's directory, each account's
+#  - the custom roles eval-run, eval-approve and eval-jobs, created when absent and reset to their oracle when they
+#    differ (itential/eval/run-roles.yaml, approve-roles.yaml, jobs-roles.yaml: this play's own roles)
+#  - svc-eval in the eval group, svc-eval-approver in eval-approvers and svc-eval-jobs in eval-jobs (ADR 0084
+#    amendment: the skills workbench's job-run tests) in production's directory, each account's
 #    first login and its group's assignedRoles (tasks/ldap-service-account.yml, svc_kind eval / eval-approver)
 # Needs: login, platform_local, admin_pw, eval_access (versions.yaml).
 
@@ -17,11 +19,12 @@
     fail_msg: the eval accounts exist on production only (ADR 0084); the dev tier gets nothing
     quiet: true
 
-- name: Eval access - the two oracles
+- name: Eval access - the three oracles
   ansible.builtin.set_fact:
     eva_oracles:
       run: "{{ (lookup('ansible.builtin.file', playbook_dir ~ '/../../itential/eval/run-roles.yaml') | from_yaml).prod }}"
       approve: "{{ (lookup('ansible.builtin.file', playbook_dir ~ '/../../itential/eval/approve-roles.yaml') | from_yaml).prod }}"
+      jobs: "{{ (lookup('ansible.builtin.file', playbook_dir ~ '/../../itential/eval/jobs-roles.yaml') | from_yaml).prod }}"
 
 - name: Eval access - each oracle names its account's group, eval- custom roles and exact method names
   ansible.builtin.assert:
@@ -33,11 +36,11 @@
         | select('search', '[*]') | list | length == 0
     fail_msg: "itential/eval/{{ item }}-roles.yaml names another group, a non-eval custom role or a method glob"
     quiet: true
-  loop: [run, approve]
+  loop: [run, approve, jobs]
 
-- name: Eval access - the custom roles of both oracles
+- name: Eval access - the custom roles of the three oracles
   ansible.builtin.set_fact:
-    eva_custom: "{{ eva_oracles.run.custom + eva_oracles.approve.custom }}"
+    eva_custom: "{{ eva_oracles.run.custom + eva_oracles.approve.custom + eva_oracles.jobs.custom }}"
 
 - name: Eval access - every role, page by page
   ansible.builtin.uri:
@@ -122,8 +125,8 @@
   loop_control:
     label: "{{ item.name }}"
 
-# --- The two accounts and their groups (the same task svc-copilot, svc-netclaw and svc-mcp use) -------------------
-- name: Eval access - svc-eval in eval, svc-eval-approver in eval-approvers
+# --- The three accounts and their groups (the same task svc-copilot, svc-netclaw and svc-mcp use) -------------------
+- name: Eval access - svc-eval in eval, svc-eval-approver in eval-approvers, svc-eval-jobs in eval-jobs
   ansible.builtin.include_tasks: tasks/ldap-service-account.yml
   vars:
     svc_kind: "{{ eval_access[eva_account].kind }}"
@@ -136,6 +139,6 @@
     ldap_bind_password: "{{ admin_pw }}"
     # as for svc-netclaw on production: stop instead of writing a fallback group nobody measured
     ldap_service_account_fallback: false
-  loop: [run, approve]
+  loop: [run, approve, jobs]
   loop_control:
     loop_var: eva_account
