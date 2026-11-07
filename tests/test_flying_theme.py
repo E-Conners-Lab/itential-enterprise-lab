@@ -145,7 +145,7 @@ def test_the_approval_page_lays_out_the_message_the_facts_and_the_blocks() -> No
                                 "body": HAND_OFF_BODY, "now": "2026-10-07T20:00:00Z"})["html"]
     text = visible_text(page)
     assert "Approve the router change" in text and "Hand Off the AWS VPN to dc1-wan01" in text
-    assert "target dc1-wan01" in text and "sha256 e3b0c442" in text
+    assert "Target dc1-wan01" in text and "SHA-256 e3b0c442" in text  # readable labels (card_label)
     assert "<pre class=\"block\">crypto ikev2 keyring AWS" in page and "pre-shared-key ********" in page
     assert "&quot;site&quot;: &quot;dc1&quot;" in page  # nested objects as an escaped JSON block
     assert "Approve runs exactly what this card shows" in text and "Note for the record" in text
