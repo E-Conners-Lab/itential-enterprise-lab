@@ -3291,21 +3291,46 @@ PLAN_INPUTS_SCHEMA = {
 LIFETIMES = VERSIONS["aws_vpn"]["lifetime_hours"]
 
 
+def eastern(at: datetime) -> str:
+    """A time as the owner reads it: US Eastern with the day, as "Sat Nov 7, 2:00 AM EST". The US rule since 2007,
+    worked out here because the Gateway's Python may have no time zone data: daylight time from 2:00 on the second
+    Sunday of March (07:00 UTC) to 2:00 on the first Sunday of November (06:00 UTC). Pure."""
+    at = at.astimezone(timezone.utc)
+
+    def sunday(month: int, nth: int) -> datetime:
+        first = datetime(at.year, month, 1, tzinfo=timezone.utc)
+        return first + timedelta(days=(6 - first.weekday()) % 7 + 7 * (nth - 1))
+
+    summer = sunday(3, 2) + timedelta(hours=7) <= at < sunday(11, 1) + timedelta(hours=6)
+    local = at - timedelta(hours=4 if summer else 5)
+    day = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")[local.weekday()]
+    month = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")[local.month - 1]
+    return (f"{day} {month} {local.day}, {local.hour % 12 or 12}:{local.minute:02d} "
+            f"{'PM' if local.hour >= 12 else 'AM'} {'EDT' if summer else 'EST'}")
+
+
 def expires_from(d: dict, now: datetime, choices: list) -> dict:
     """The deployment's end time from the chosen lifetime (R2b): now, to the minute, plus that many hours, as UTC
     YYYY-MM-DDTHH:MM:00Z; `none` keeps it up until Tear Down. Anything not in `choices` gives `invalid`, which the
-    input check refuses. Pure: runCode runs this source on the Gateway with the clock and the choices written in."""
+    input check refuses. `card_end`: the Deploy card's lines for it (card_message), the time in Eastern with UTC
+    beside it, and what approving an end time also approves. Pure: runCode runs this source on the Gateway with the
+    clock and the choices written in."""
     hours = d.get("lifetime_hours")
     if not isinstance(hours, str) or hours not in choices:
         return {"expires_at": "invalid", "lifetime_hours": str(hours)[:10]}
     if hours == "none":
-        return {"expires_at": "none", "lifetime_hours": hours, "ends": "none: it stays up until Tear Down"}
-    end = (now.replace(second=0, microsecond=0) + timedelta(hours=int(hours))).strftime("%Y-%m-%dT%H:%M:%SZ")
-    return {"expires_at": end, "lifetime_hours": hours, "ends": f"{end} ({hours} hours)"}
+        return {"expires_at": "none", "lifetime_hours": hours, "ends": "none: it stays up until Tear Down",
+                "card_end": "! Ends: no end time: it stays up until Tear Down"}
+    at = now.replace(second=0, microsecond=0) + timedelta(hours=int(hours))
+    end = at.strftime("%Y-%m-%dT%H:%M:%SZ")
+    return {"expires_at": end, "lifetime_hours": hours, "ends": f"{end} ({hours} hours)",
+            "card_end": f"Ends: {eastern(at)} ({at:%H:%M} UTC)\n- Approving this also approves Tear Down Expired "
+                        "AWS VPN removing it then, router first, with no further card."}
 
 
 EXPIRES_CODE = ("import json, sys\nfrom datetime import datetime, timedelta, timezone\n\n\nCHOICES = "
-                + repr(LIFETIMES["choices"]) + "\n\n\n" + inspect.getsource(expires_from)
+                + repr(LIFETIMES["choices"]) + "\n\n\n" + inspect.getsource(eastern) + "\n\n"
+                + inspect.getsource(expires_from)
                 + "\n\nprint(json.dumps(expires_from(json.loads(sys.stdin.read() or \"{}\"), datetime.now(timezone.utc), "
                 + "CHOICES)))\n")
 APPLY_TPL = '{"action": "apply", "job": "__ID__", "plan_sha256": "__SHA__", "timeout": "1800"}'
@@ -3512,8 +3537,9 @@ def change_request_section(name: str, target: str, note_ref: str, window: str, c
         s.update({
             **step(f"the change on the card: {c['label']} carries the change number; the decision is written to "
                    "the change, an approval moving it on"),
-            f"{q}0": replace("the card's message: the change number", "Change request __CHG__. __M__"
-                             + (" The requester's note (their own words, not checked): __N__" if c.get("note_ref") else ""),
+            f"{q}0": replace("the card's message: the change number", "Change: __CHG__\n__M__"
+                             + ("\n> The requester's note (their own words, not checked): __N__" if c.get("note_ref")
+                                else ""),
                              "__CHG__", "$var.job.change_number", x=0),
             f"{q}1": replace("the card's message: the rest", f"$var.{q}0.replacedString", "__M__", c["message"], x=0),
             f"{q}2": set_key("the card's body: the change number", c["body"], "change_request",
@@ -3926,15 +3952,15 @@ def deploy_aws_vpn() -> dict:
         "6e": note("the reviewed body could not be read", "the review's card body could not be read: the card shows "
                    "the plan as it is", "review_error", x=775, y=-300),
         **step("the approval: the plan, its review and the estimate on a Work Center card"),
+        # one fact per line (card_message); the requester's note last, so nothing in it reads as a fact
         "2a": replace(
             "the card's message",
-            "Deploy the AWS side of the site-to-site VPN. Estimated cost while it is up: __COST__. "
-            "It ends at __END__: approving this also approves Tear Down Expired AWS VPN removing it then, router "
-            "first, with no further card (none: it stays up until Tear Down). "
-            "The requester's note (their own words, not checked): __NOTE__",
+            "Deploy the AWS side of the site-to-site VPN.\nCost: __COST__\n__END__\n"
+            "> The requester's note (their own words, not checked): __NOTE__",
             "__NOTE__", "$var.job.change_note", x=800,
         ),
-        "2c": replace("the card's message: end time", "$var.2a.replacedString", "__END__", "$var.job.expires_at", x=850),
+        "2e": jq("the card's end line (Eastern, with UTC)", "$var.job.lifetime", "stdout_json.card_end", x=825),
+        "2c": replace("the card's message: end time", "$var.2a.replacedString", "__END__", "$var.2e.return_data", x=850),
         "2d": replace("the card's message: the estimate", "$var.2c.replacedString", "__COST__", "$var.job.plan_cost",
                       x=875),
         **approval("2b", "Approve the AWS change", "$var.2d.replacedString", "$var.job.plan_card", "Approve", "Reject",
@@ -4001,7 +4027,7 @@ def deploy_aws_vpn() -> dict:
     })
     tasks["5e"]["variables"]["outgoing"]["replacedString"] = "$var.job.outcome"
     tr = chain("1a", "1b", "1c", "14", "15", "16", "17", "11", "12", "13", "1d", "1e", "1f", "10", "60", "61", "62", "63", "64", "65", "66", "67", "68",
-               "69", "6a", "6b", "6c", "2a", "2c", "2d", *approval_ids("2b"), "2b", "3a", "3b", "3c", "3d", "3e", "3f", "30", "31",
+               "69", "6a", "6b", "6c", "2a", "2e", "2c", "2d", *approval_ids("2b"), "2b", "3a", "3b", "3c", "3d", "3e", "3f", "30", "31",
                "4a", "4b", "4c", "4d", "4e", "4f", "5a", "5b", "5d", "5e")
     tr["12"] = {"13": {"state": ok, "type": "standard"}, "8f": {"state": err, "type": "standard"}}
     tr["13"] = {"1d": {"state": ok, "type": "standard"}, "8f": {"state": fail, "type": "standard"}}
@@ -4384,11 +4410,12 @@ def verify_aws_vpn() -> dict:
 # (verify_section, the same as Verify AWS VPN's). Reject ends clean with nothing sent. The NetBox read-back is
 # dc1-wan01's and is added with its records (build step 10): no open target is monitored by AWS until then.
 SETTLE_SECONDS = 30  # the router starts IKE once Tunnel10 is up; the verify tasks read after this
-APPROVAL_MESSAGE = (
-    "Hand Off the AWS VPN to __T__: this block (SHA-256 below) is pushed under a 5-minute revert timer and saved only "
-    "if the post-read proves it and the tunnel comes up; otherwise the router rolls it back. If the router already "
-    "holds exactly this block and key version, nothing is sent and it is only saved. The pre-shared key comes from "
-    "Vault at push time and is never shown here."
+APPROVAL_MESSAGE = (  # one fact per line (card_message)
+    "Hand Off the AWS VPN to __T__: push this block (SHA-256 below) under a revert timer.\n"
+    "Revert timer: 5 minutes\n"
+    "- It is saved only if the post-read proves it and the tunnel comes up; otherwise the router rolls it back.\n"
+    "- If the router already holds exactly this block and key version, nothing is sent and it is only saved.\n"
+    "- The pre-shared key comes from Vault at push time and is never shown here."
 )
 OUTCOME_TPL = "handed off (router: __R__); Verify: __V__"
 
@@ -5042,9 +5069,10 @@ def drill_batfish_gate() -> dict:
 # checks again (BGP, pings, a fresh login), and confirms and saves - or rolls back and proves it. The outcome comes
 # from saved / rolled_back, never from the exit code alone.
 REVERT_TARGETS = VERSIONS["revert_push"]["targets"]
-REVERT_APPROVAL_MESSAGE = (
-    "Approve this change to __D__. It is pushed under a revert timer and kept only if every check below still passes "
-    "afterwards (and a fresh login still works); otherwise the router rolls it back. Nothing is saved before that."
+REVERT_APPROVAL_MESSAGE = (  # one fact per line (card_message)
+    "Approve this change to __D__, pushed under a revert timer.\n"
+    "- It is kept only if every check below still passes afterwards, and a fresh login still works.\n"
+    "- Otherwise the router rolls it back. Nothing is saved before that."
 )
 
 
@@ -5270,17 +5298,20 @@ TEARDOWN_TARGETS = {
 }
 TEARDOWN_REVERT_MINUTES = 8
 DESTROY_PLAN_PARAMS = '{"action": "plan-destroy", "job": "new", "timeout": "900"}'
-TEARDOWN_ROUTER_MESSAGE = (
-    "Tear Down the AWS VPN on __D__, step 1 of 2: remove the router's AWS block. If the router has any of it (read "
-    "just before this card), the lines below are pushed under a revert timer and kept only if every check still "
-    "passes (and a fresh login still works); if it has none, the card has no lines and nothing is pushed. Either "
-    "way the router is then read back to prove nothing of the block is left. Only after that is the AWS side planned "
-    "for destruction, on a second card. Nothing is saved before the checks pass."
+TEARDOWN_ROUTER_MESSAGE = (  # one fact per line (card_message)
+    "Tear Down the AWS VPN on __D__, step 1 of 2: remove the router's AWS block.\n"
+    "- If the router has any of it (read just before this card), the lines below are pushed under a revert timer and "
+    "kept only if every check still passes, and a fresh login still works.\n"
+    "- If it has none, the card has no lines and nothing is pushed.\n"
+    "- Either way, the router is then read back to prove nothing of the block is left.\n"
+    "- Only after that is the AWS side planned for destruction, on a second card. Nothing is saved before the checks "
+    "pass."
 )
-TEARDOWN_AWS_MESSAGE = (
-    "Tear Down the AWS VPN, step 2 of 2: destroy the AWS side. Nothing of the router's block is left (proved gone). "
-    "Exactly this plan is applied (the strongSwan box, its Elastic IP, the key's secret and the VPC go); rejecting "
-    "keeps it all, at about $1 a day."
+TEARDOWN_AWS_MESSAGE = (  # one fact per line (card_message)
+    "Tear Down the AWS VPN, step 2 of 2: destroy the AWS side.\n"
+    "! Destroys: the strongSwan box, its Elastic IP, the key's secret and the VPC\n"
+    "- Nothing of the router's block is left (proved gone).\n"
+    "- Exactly this plan is applied. Rejecting keeps it all, at about $1 a day."
 )
 
 
@@ -6328,7 +6359,7 @@ def watch_proposal(d: dict) -> dict:
                f"NAT gateway: {'on' if gate.get('nat') == 'true' else 'off'} (as the Terraform state records it)",
                "on-prem address: reused, never shown (the message names the Deploy job it comes from)"]
         started = d["deploy"]
-        reuse = " It reuses __FROM__: if that address has changed, reject the plan's card."
+        reuse = "- It reuses __FROM__: if that address has changed, reject the plan's card.\n"
     else:
         what = f"tear-down: Tear Down AWS VPN for {d['target']}"
         body = {"change_note": note, "target": d["target"]}
@@ -6346,8 +6377,8 @@ def watch_proposal(d: dict) -> dict:
                else {}),
             "the_deployment": list(gate.get("deployment") or []), "estimated_cost": gate.get("cost") or "not worked out",
             "the_run_it_starts": run}
-    message = (f"The Drift and Cost Watch proposes {what}. Why: {why}{reuse} Approve starts that run, which opens its "
-               "own change request and stops at its own Work Center card; Reject starts nothing.")
+    message = (f"The Drift and Cost Watch proposes {what}.\nWhy: {why}\n{reuse}- Approve starts that run, which opens "
+               "its own change request and stops at its own Work Center card.\n- Reject starts nothing.")
     return {"ok": True, "route": "card", "proposal": proposal, "why": why, "unavailable": failed, "body": body,
             "card": card, "message": message, "started": f"The approved {started} started: {d['job_url']}__J__. It "
                                                          "opens its own change request and stops at its own Work Center card."}
@@ -7462,11 +7493,12 @@ def card_mark() -> str:
 
 def card_page(title: str, headline: str, lede: str, elapsed: str, since: str, sections: str, number: str,
               foot: str, extra_css: str = "", decide: str = "", note_label: str = "Note for the incident",
-              brand: str = "outage response", pill: str = "Waiting for your approval") -> str:
+              brand: str = "outage response", pill: str = "Waiting for your approval", band: str = "") -> str:
     """A Work Center card's page (R6, R10): the band (title, lede, waiting pill, the outage's age), the card's own
-    sections, the decision with the engineer's note, the foot. `lede`, `sections` and `foot` are HTML the caller built
-    from escaped values; every other argument is escaped here. `extra_css` adds rules after the shared ones; `decide`
-    (HTML) replaces the decision's two lines, which speak of an incident."""
+    sections, the decision with the engineer's note, the foot. `lede`, `sections`, `foot` and `band` (more of the
+    band under the lede: an approval's chips, points and note) are HTML the caller built from escaped values; every
+    other argument is escaped here. `extra_css` adds rules after the shared ones; `decide` (HTML) replaces the
+    decision's two lines, which speak of an incident."""
     e = html.escape
     decide = decide or (f"<p>Approve runs only this fix. Reject runs nothing and leaves {e(number)} open for a person.</p>\n"
                         "<p>Either way, your note goes into the incident's work notes.</p>")
@@ -7477,7 +7509,7 @@ def card_page(title: str, headline: str, lede: str, elapsed: str, since: str, se
 <header class="band">
 <div class="brand">{card_mark()}<span><b>Elliot's Itential Lab</b>&nbsp; {e(brand)}</span></div>
 <div><h1>{e(headline)}</h1>
-<p class="lede">{lede}</p></div>
+<p class="lede">{lede}</p>{band}</div>
 <div class="status"><span class="pill">{e(pill)}</span>
 <p class="elapsed">{e(elapsed)}<small>{e(since)}</small></p></div>
 </header>
@@ -7501,64 +7533,272 @@ APPROVAL_CARD_CSS = """
   color: var(--ink); background: var(--deep); border: 1px solid var(--edge); border-radius: 10px; padding: 12px 14px;
   max-height: 520px; overflow: auto; }
 """
+# what the readable approval card (2026-11-05 layout) adds to the shared rules; only approval_card uses it, so the
+# Describe and fix-by-hand cards keep their look
+APPROVAL_READABLE_CSS = """
+.oc .facts dd.words { font-family: inherit; font-size: 14px; }
+.oc .lede { font-size: 16px; color: var(--ink); max-width: 62ch; }
+.oc .more { margin-top: 10px; color: var(--ink-soft); font-size: 14px; max-width: 62ch; }
+.oc .more.warn { color: var(--amber); }
+.oc .keyfacts { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0 0; padding: 0; list-style: none; }
+.oc .keyfacts li { background: var(--panel); border: 1px solid var(--edge); border-radius: 8px; padding: 6px 10px;
+  font-size: 13.5px; }
+.oc .keyfacts li b { color: var(--ink-soft); font-weight: 500; margin-right: 6px; }
+.oc .keyfacts li.warn { border-color: rgba(242, 177, 52, .55); }
+.oc .keyfacts li.warn b { color: var(--amber); }
+.oc .note { margin-top: 12px; color: var(--ink-soft); font-size: 14px; max-width: 62ch; }
+.oc .note q { color: var(--ink); font-style: italic; }
+.oc ul.points { margin: 0; padding-left: 1.1em; display: grid; gap: 7px; font-size: 14.5px; line-height: 1.5; }
+.oc .band ul.points { margin-top: 12px; font-size: 14px; color: var(--ink-soft); max-width: 62ch; }
+.oc ul.points li::marker { color: var(--sky); }
+.oc .callout { display: flex; gap: 10px; align-items: flex-start; background: rgba(57, 194, 122, .10);
+  border: 1px solid rgba(57, 194, 122, .45); border-radius: 10px; padding: 10px 12px; margin-bottom: 12px;
+  font-size: 14.5px; }
+.oc .callout::before { content: "\\2713"; color: var(--green); font-weight: 700; }
+.oc .callout.warn { background: rgba(242, 177, 52, .10); border-color: rgba(242, 177, 52, .55); }
+.oc .callout.warn::before { content: "!"; color: var(--amber); }
+.oc .cost { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.oc .cost .big { font-family: var(--display); font-size: 30px; font-weight: 700; color: #fff; }
+.oc .cost .sub { color: var(--ink-soft); }
+.oc .small { color: var(--ink-soft); font-size: 13px; margin-top: 8px; }
+.oc h2 small { font-family: "Avenir Next", "Segoe UI", system-ui, -apple-system, sans-serif; font-weight: 400; color: var(--ink-soft); font-size: 13px; }
+.oc details summary { cursor: pointer; color: var(--sky); margin-bottom: 8px; }
+.oc .none { color: var(--ink-soft); font-style: italic; }
+.oc code { font-family: var(--mono); font-size: .92em; background: var(--deep); border-radius: 5px; padding: 1px 5px; }
+"""
 APPROVAL_BLOCK_CHARS = 20_000
 APPROVAL_HELPER_OFFSET = (0, -300)  # canvas only: the helper row above the approval (measured: Revert 2 arrows through, Deploy and Tear Down within bounds)
-# the object keys the ViewData used to show raw, as a person reads them; anything else is capitalised as is
+# the object keys as a person reads them; any other key is shown with its underscores as spaces, capitalised
 APPROVAL_LABELS = {"block": "The block (key masked)", "lines": "The lines pushed", "netbox": "NetBox, as read back",
                    "plan": "The plan", "resources": "Resources in the plan", "summary": "Plan summary",
                    "kept only if": "Kept only if", "after this": "After this", "details": "Details",
-                   "plan_review": "Plan review (advisory: plan-reviewer has no tools and never approves)",
-                   "estimated_cost": "Estimated cost", "plan_changes": "Every change in the plan"}
+                   "plan_review": "Plan review", "estimated_cost": "Estimated cost",
+                   "plan_changes": "Every change in the plan", "changes": "Every change in the plan",
+                   "review": "The plan's attribute extract", "change_request": "Change request",
+                   "plan_counts": "Plan", "commit": "Terraform commit", "job": "Plan job", "plan_sha256": "Plan SHA-256",
+                   "sha256": "SHA-256", "action": "Terraform action", "review_withheld": "Attribute extract withheld",
+                   "secret_policies_not_validated_by_aws": "Secret policies AWS did not validate",
+                   "menu_today": "Today's menu", "what_changed_outside_terraform": "What changed outside Terraform",
+                   "the_deployment": "The deployment", "the_run_it_starts": "The run it starts"}
 # where a block goes on the card, by its key (any other key: 2). The Platform hands the body to the renderer with its
 # keys sorted (measured 2026-10-28, Deploy 1a8c577d): without this the review sat below a 53-line change list.
-APPROVAL_ORDER = {"plan_review": 0, "estimated_cost": 1, "plan_changes": 3}
+APPROVAL_ORDER = {"plan_review": 0, "estimated_cost": 1, "plan_changes": 3, "changes": 3, "review": 4, "plan": 4}
+# the facts in the order a person checks them (any other fact after these, as the body gives them)
+APPROVAL_FACT_ORDER = ("change_request", "proposal", "why", "situation", "menu_today", "target", "router", "device",
+                       "reason", "to push", "revert timer", "settle before the checks", "after this", "saving",
+                       "plan_counts", "action", "commit", "job", "plan_sha256", "sha256")
+APPROVAL_POINTS = ("plan_review", "kept only if", "the_deployment", "the_run_it_starts")  # sentences: as points
+# long machine lists, one click away: never what the card pushes (the lines, the block), which always shows
+APPROVAL_FOLDED = ("plan_changes", "changes", "review", "plan")
+APPROVAL_FOLD_LINES = 12
+APPROVAL_KINDS = {"create": "creation", "update": "update", "replace": "replacement", "destroy": "deletion"}
+# a message line that is a chip: "Key: value", "! " in front for one to check first; a longer value is a paragraph
+APPROVAL_CHIP = re.compile(r"(!\s*)?([A-Z][A-Za-z' ]{0,23}): (.+)")
+APPROVAL_CHIP_CHARS = 90
+
+
+def card_inline(text: str) -> str:
+    """Words on a card as HTML: escaped first, then the two marks a workflow may write, **bold** and `code`. Pure."""
+    out = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", html.escape(str(text)))
+    return re.sub(r"`([^`]+)`", r"<code>\1</code>", out)
+
+
+def card_message(message: str) -> tuple:
+    """An approval's message as the band shows it: (the lede, the rest), both HTML. One fact per line: the first plain
+    line is the lede; a short `Key: value` line is a chip ("! " in front marks one to check first); a `- ` line is a
+    point; `> label: words` is the requester's note, quoted, and it runs to the end of the message, so nothing a
+    requester types can read as a fact or a point; any other line is a paragraph. A one-line message is the lede
+    alone, as before. Pure."""
+    e = html.escape
+    lines = [x.strip() for x in str(message or "").splitlines() if x.strip()]
+    lede, chips, rest, points = "", [], [], []
+
+    def flush() -> None:
+        if points:
+            rest.append('<ul class="points">' + "".join(f"<li>{p}</li>" for p in points) + "</ul>")
+            points.clear()
+
+    for n, line in enumerate(lines):
+        if line.startswith(">"):
+            flush()
+            # at the label's own colon: the template's label has none, and an empty note leaves nothing after it
+            label, sep, said = " ".join([line[1:].strip(), *lines[n + 1:]]).partition(":")
+            label, said = (label.strip(), said.strip()) if sep else ("Note", label.strip())
+            words = f"<q>{e(said)}</q>" if said else '<span class="none">none given</span>'
+            rest.append(f'<p class="note">{e(label)}: {words}</p>')
+            break
+        if line.startswith("- "):
+            points.append(card_inline(line[2:].strip()))
+            continue
+        flush()
+        warn = line.startswith("!")
+        chip = APPROVAL_CHIP.fullmatch(line)
+        if chip and len(chip.group(3)) <= APPROVAL_CHIP_CHARS:
+            cls = ' class="warn"' if warn else ""
+            chips.append(f"<li{cls}><b>{e(chip.group(2))}</b>{card_inline(chip.group(3))}</li>")
+        elif not lede and not warn:
+            lede = card_inline(line)
+        elif chip:
+            rest.append(f'<p class="more{" warn" if warn else ""}"><b>{e(chip.group(2))}:</b> '
+                        f"{card_inline(chip.group(3))}</p>")
+        else:
+            rest.append(f'<p class="more{" warn" if warn else ""}">{card_inline(line.lstrip("! "))}</p>')
+    flush()
+    band = ('<ul class="keyfacts">' + "".join(chips) + "</ul>" if chips else "") + "".join(rest)
+    return lede, band
+
+
+def card_cost(text: str) -> str:
+    """An estimate as the card shows it: the amount big, what it covers beside it, the basis small underneath. Any
+    other wording ("not worked out: ...") stays as it is. Pure."""
+    said = " ".join(str(text).split())
+    m = re.fullmatch(r"about (\$[\d,]+(?:\.\d+)?) (.+)", said)
+    if not m:
+        return f"<p>{card_inline(said)}</p>"
+    head, sep, tail = m.group(2).rpartition(": ")
+    sub, fine = (head, tail) if sep else (m.group(2), "")
+    fine = fine[:1].upper() + fine[1:] + ("" if not fine or fine.endswith(".") else ".")
+    return (f'<div class="cost"><span class="big">{html.escape(m.group(1))}</span><span class="sub">'
+            f"{card_inline(sub)}</span></div>" + (f'<p class="small">{card_inline(fine)}</p>' if fine else ""))
+
+
+def card_change_line(change: dict) -> str:
+    """One planned change, as Deploy's card lists them: what Terraform does, padded, then the address. Pure."""
+    actions = [str(a) for a in change.get("actions") or []]
+    kind = ("replace" if "delete" in actions and "create" in actions else "destroy" if "delete" in actions
+            else "create" if "create" in actions else "update" if "update" in actions else "/".join(actions) or "?")
+    return f"{kind:<8} {change.get('address')}"
+
+
+def card_label(key: str) -> str:
+    """A body key as a heading: the label it has, or the key with spaces for underscores, capitalised. Pure."""
+    said = APPROVAL_LABELS.get(key) or key.replace("_", " ")
+    return said[:1].upper() + said[1:]
+
+
+def card_fact(label: str, key: str, value: str) -> str:
+    """One fact as a row: an identifier (no spaces) in the code face, words in the body face, nothing as None.
+    A Terraform commit shows its first 7 characters, as git does. Pure."""
+    if key == "commit" and re.fullmatch(r"[0-9a-f]{40}", value):
+        value = value[:7]
+    if not value.strip():
+        dd = '<dd class="none">None</dd>'
+    elif " " in value.strip():
+        dd = f'<dd class="words">{card_inline(value)}</dd>'
+    else:
+        dd = f"<dd>{html.escape(value)}</dd>"
+    return f"<dt>{html.escape(label)}</dt>{dd}"
+
+
+def card_fold(key: str, value, lines: int) -> str:
+    """What a folded list says before it opens: a plan's changes counted by kind, anything else by its lines. Pure."""
+    if key in ("plan_changes", "changes") and isinstance(value, list):
+        kinds = {}
+        for line in value:
+            word = line.split(" ", 1)[0]
+            kinds[word] = kinds.get(word, 0) + 1
+        said = " · ".join(f"{n} {APPROVAL_KINDS.get(k, k)}{'s' if n != 1 else ''}" for k, n in kinds.items())
+        return f"{said} — show every change"
+    return f"{lines} lines — show them"
 
 
 def approval_card(d: dict) -> dict:
-    """A form-based approval as the branded page (ADR 0077): the approval's message as the lede, its object laid out
-    as facts (scalars) and blocks (lines, the block, a plan), the same two buttons and the note. `header`, `message`
-    and `body` come from the workflow; everything is escaped here, blocks are capped. Pure: runCode runs this
-    function's own source on the Gateway."""
+    """A form-based approval as the branded page (ADR 0077): the message in the band (card_message: the lede, chips,
+    points, the requester's note), the object laid out as facts (scalars, a Terraform plan's three counts as one Plan
+    row with a check worked out from them), points (sentences), the estimate (the amount big) and blocks (lines, the
+    block, a plan's changes; long machine lists folded), the same two buttons and the note. `header`, `message` and
+    `body` come from the workflow; everything is escaped here, blocks are capped. Pure: runCode runs this function's
+    own source on the Gateway."""
     e = html.escape
     header = str(d.get("header") or "Approve this change")
-    message = str(d.get("message") or "")
+    lede, band = card_message(d.get("message"))
     body = d.get("body")
-    facts, blocks = [], []
+    facts, blocks, machine, counts, labels = [], [], set(), None, {}
     if isinstance(body, dict):
+        body = dict(body)
+        if all(isinstance(body.get(k), int) and not isinstance(body.get(k), bool) for k in ("add", "change", "destroy")):
+            counts = [body.pop(k) for k in ("add", "change", "destroy")]
+            action = str(body.pop("action", "plan"))
+            labels["plan_counts"] = "Destroy plan" if action == "plan-destroy" else "Plan"
+            facts.append(("plan_counts", f"{counts[0]} to add · {counts[1]} to change · {counts[2]} to destroy"))
+            if action not in ("plan", "plan-destroy"):
+                facts.append(("action", action))
         for key, value in body.items():
+            key = str(key)
+            if key == "changes" and isinstance(value, list) and all(isinstance(c, dict) for c in value):
+                value = [card_change_line(c) for c in value]
             if isinstance(value, list) and all(isinstance(i, str) for i in value):
-                blocks.append((str(key), "\n".join(value)))
+                blocks.append((key, value))
             elif isinstance(value, (dict, list)):
-                blocks.append((str(key), json.dumps(value, indent=2, sort_keys=True)))
-            elif isinstance(value, str) and ("\n" in value or len(value) > 90):
-                blocks.append((str(key), value))
+                blocks.append((key, json.dumps(value, indent=2, sort_keys=True)))
+                machine.add(key)
+            elif key == "estimated_cost" or isinstance(value, str) and "\n" in value:
+                blocks.append((key, str(value)))
             else:
-                facts.append((str(key), "" if value is None else str(value)))
+                facts.append((key, "" if value is None else str(value)))
     elif isinstance(body, str):
         blocks.append(("details", body))
     elif body is not None:
         blocks.append(("details", json.dumps(body, indent=2, sort_keys=True)))
+        machine.add("details")
+    # the plan's own numbers, never the reviewer's words: replacements count in `destroy`
+    callout = ""
+    if counts:
+        add, change, gone = counts
+        if gone:
+            callout = (f'<div class="callout warn">This plan destroys {gone} resource{"s" if gone != 1 else ""} '
+                       "(a replacement counts as one destroyed and one added).</div>")
+        elif add or change:
+            what = ((f"all {add} changes are creations" if add > 1 else "its one change is a creation") if not change
+                    else f"{add} to add, {change} to change in place")
+            callout = f'<div class="callout">Nothing is replaced or destroyed: {what}.</div>'
+        else:
+            callout = '<div class="callout">The plan changes nothing.</div>'
+    reviewed = any(k == "plan_review" for k, _ in blocks)
     sections = ""
-    if facts:
-        rows = "".join(f"<dt>{e(k)}</dt><dd>{e(v)}</dd>" for k, v in facts)
-        sections += f'<section class="panel" aria-labelledby="t-facts"><h2 id="t-facts">What this approval covers</h2>\n<dl class="facts">{rows}</dl></section>\n'
+    rank = {k: n for n, k in enumerate(APPROVAL_FACT_ORDER)}
+    facts.sort(key=lambda f: rank.get(f[0], len(rank)))
+    if facts or callout and not reviewed:
+        rows = "".join(card_fact(labels.get(k) or card_label(k), k, v) for k, v in facts)
+        sections += ('<section class="panel" aria-labelledby="t-facts"><h2 id="t-facts">What this approval covers</h2>\n'
+                     + ("" if reviewed else callout) + (f'<dl class="facts">{rows}</dl>' if rows else "")
+                     + "</section>\n")
     blocks.sort(key=lambda b: APPROVAL_ORDER.get(b[0], 2))
-    for n, (key, text) in enumerate(blocks):
-        text = text if len(text) <= APPROVAL_BLOCK_CHARS else text[:APPROVAL_BLOCK_CHARS] + "\n... (cut)"
-        label = APPROVAL_LABELS.get(key, key.replace("_", " ").capitalize())
-        sections += (f'<section class="panel" aria-labelledby="t-b{n}"><h2 id="t-b{n}">{e(label)}</h2>\n'
-                     f'<pre class="block">{e(text)}</pre></section>\n')
+    for n, (key, value) in enumerate(blocks):
+        label = e(card_label(key))
+        if key == "plan_review":
+            label += " <small>· advisory: plan-reviewer has no tools and never approves</small>"
+        if key == "estimated_cost":
+            inner = card_cost(value)
+        elif not (value if isinstance(value, list) else str(value).strip()):
+            inner = '<p class="none">None.</p>'
+        elif isinstance(value, list) and key in APPROVAL_POINTS:
+            # the check above says it from the plan's numbers, so the reviewer's same words would only repeat it
+            said = [v for v in value if not (key == "plan_review" and counts and not counts[2]
+                                            and v.lower().startswith("nothing is replaced or destroyed"))]
+            inner = '<ul class="points">' + "".join(f"<li>{card_inline(v)}</li>" for v in said) + "</ul>" if said else ""
+        else:
+            text = "\n".join(value) if isinstance(value, list) else value
+            text = text if len(text) <= APPROVAL_BLOCK_CHARS else text[:APPROVAL_BLOCK_CHARS] + "\n... (cut)"
+            inner = f'<pre class="block">{e(text)}</pre>'
+            lines = text.count("\n") + 1
+            if (key in APPROVAL_FOLDED or key in machine) and lines > APPROVAL_FOLD_LINES:
+                inner = f"<details><summary>{e(card_fold(key, value, lines))}</summary>{inner}</details>"
+        if key == "plan_review":
+            inner = callout + inner
+        sections += f'<section class="panel" aria-labelledby="t-b{n}"><h2 id="t-b{n}">{label}</h2>\n{inner}</section>\n'
     try:
         now = datetime.fromisoformat(str(d.get("now")).replace("Z", "+00:00")).astimezone(timezone.utc)
     except ValueError:
         now = datetime.now(timezone.utc)
     decide = ("<p>Approve runs exactly what this card shows. Reject runs nothing and ends the job.</p>\n"
               "<p>Your note stays on the job, for the record.</p>")
-    foot = f"Prepared by Itential at {now:%H:%M} UTC from the job's own data; the pre-shared key is never on a card."
-    page = card_page(header, header, e(message), "", "", sections, "", foot, extra_css=APPROVAL_CARD_CSS,
-                     decide=decide, note_label="Note for the record")
+    foot = (f"Prepared by Itential at {eastern(now)} ({now:%H:%M} UTC) from the job's own data; the pre-shared key is "
+            "never on a card.")
+    page = card_page(header, header, lede, "", "", sections, "", foot, extra_css=APPROVAL_CARD_CSS + APPROVAL_READABLE_CSS,
+                     decide=decide,
+                     note_label="Note for the record", brand="change approval", band=band)
     return {"html": page}
-
 
 GUIDE_CARD_CSS = """
 .oc .guide h1 { display: none; }
@@ -7804,13 +8044,23 @@ OUTAGE_FIX_CODE = _source(outage_fix, call='outage_fix(json.loads(sys.stdin.read
 OUTAGE_RESULT_CODE = _source(decision_note, outage_result, call='outage_result(json.loads(sys.stdin.read() or "{}"))')
 OUTAGE_REJECTED_CODE = _source(decision_note, outage_rejected,
                                call='outage_rejected(json.loads(sys.stdin.read() or "{}"))')
-APPROVAL_CARD_CODE = _source(outage_card_image, card_mark, card_page, approval_card,
+APPROVAL_CARD_CODE = _source(outage_card_image, card_mark, card_page, eastern, card_inline, card_message, card_cost,
+                             card_change_line, card_label, card_fact, card_fold, approval_card,
                              call='approval_card(json.loads(sys.stdin.read() or "{}"))',
-                             extra=CARD_PALETTE_SRC + "import base64\nimport html\nfrom datetime import datetime, timezone\n\n"
+                             extra=CARD_PALETTE_SRC + "import base64\nimport html\nimport re\n"
+                             "from datetime import datetime, timedelta, timezone\n\n"
                              "OUTAGE_CARD_CSS = " + repr(OUTAGE_CARD_CSS) + "\nAPPROVAL_CARD_CSS = "
-                             + repr(APPROVAL_CARD_CSS) + "\nAPPROVAL_BLOCK_CHARS = " + repr(APPROVAL_BLOCK_CHARS)
+                             + repr(APPROVAL_CARD_CSS) + "\nAPPROVAL_READABLE_CSS = " + repr(APPROVAL_READABLE_CSS)
+                             + "\nAPPROVAL_BLOCK_CHARS = " + repr(APPROVAL_BLOCK_CHARS)
                              + "\nAPPROVAL_LABELS = " + repr(APPROVAL_LABELS)
-                             + "\nAPPROVAL_ORDER = " + repr(APPROVAL_ORDER) + "\n\n\n")
+                             + "\nAPPROVAL_ORDER = " + repr(APPROVAL_ORDER)
+                             + "\nAPPROVAL_FACT_ORDER = " + repr(APPROVAL_FACT_ORDER)
+                             + "\nAPPROVAL_POINTS = " + repr(APPROVAL_POINTS)
+                             + "\nAPPROVAL_FOLDED = " + repr(APPROVAL_FOLDED)
+                             + "\nAPPROVAL_FOLD_LINES = " + repr(APPROVAL_FOLD_LINES)
+                             + "\nAPPROVAL_KINDS = " + repr(APPROVAL_KINDS)
+                             + "\nAPPROVAL_CHIP = re.compile(" + repr(APPROVAL_CHIP.pattern) + ")"
+                             + "\nAPPROVAL_CHIP_CHARS = " + repr(APPROVAL_CHIP_CHARS) + "\n\n\n")
 def change_fix_card(d: dict) -> dict:
     """The Work Center card when ServiceNow refused to update a change after the run (ADR 0085 decision 5): the state
     moves and notes change_close would have sent, to write by hand, on the branded page, one button. Every value is
