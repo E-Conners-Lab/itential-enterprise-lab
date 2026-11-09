@@ -1004,10 +1004,15 @@ def test_every_lifetime_fits_terraform_runs_bound() -> None:
 def test_the_card_shows_the_end_time_and_what_approving_it_means() -> None:
     _, tasks = _deploy()
     end = tasks["2c"]["variables"]["incoming"]
-    assert end["substr"] == "__END__" and end["newSubstr"] == "$var.job.expires_at" and end["str"] == "$var.2a.replacedString"
+    assert end["substr"] == "__END__" and end["newSubstr"] == "$var.2e.return_data" and end["str"] == "$var.2a.replacedString"
+    line = tasks["2e"]["variables"]["incoming"]
+    assert line["obj"] == "$var.job.lifetime" and line["query"] == "stdout_json.card_end"  # the end time step's own line
     assert build.card_input(tasks, "2b", 2) == "$var.2d.replacedString"  # the page's lede (ADR 0077), the estimate in
-    message = tasks["2a"]["variables"]["incoming"]["str"]
-    assert "__END__" in message and "Tear Down Expired AWS VPN" in message and "no further card" in message
+    assert "\n__END__\n" in tasks["2a"]["variables"]["incoming"]["str"]  # a line of its own (card_message)
+    timed = build.expires_from({"lifetime_hours": "24"}, NOW, CHOICES)["card_end"]
+    assert timed.startswith("Ends: ") and "Tear Down Expired AWS VPN" in timed and "no further card" in timed
+    kept = build.expires_from({"lifetime_hours": "none"}, NOW, CHOICES)["card_end"]
+    assert kept == "! Ends: no end time: it stays up until Tear Down" and "Tear Down Expired" not in kept
 
 
 def test_the_page_offers_the_same_lifetimes_with_the_same_default() -> None:

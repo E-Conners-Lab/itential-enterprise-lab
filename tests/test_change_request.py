@@ -90,7 +90,7 @@ def test_every_card_carries_the_change_number(name: str) -> None:
     for card in GUARDED[name]:
         message = tasks[f"{card}2"]["variables"]["incoming"]["value"]
         prep = message.split(".")[1][:2]  # the card's c8* / c9* tasks
-        assert tasks[f"{prep}0"]["variables"]["incoming"]["str"].startswith("Change request __CHG__.")
+        assert tasks[f"{prep}0"]["variables"]["incoming"]["str"].startswith("Change: __CHG__\n__M__")  # the first chip
         assert tasks[f"{prep}0"]["variables"]["incoming"]["newSubstr"] == "$var.job.change_number"
         body = tasks[f"{prep}2"]["variables"]["incoming"]
         assert body["path"] == ["change_request"] and body["value"] == "$var.job.change_number"
@@ -154,7 +154,9 @@ def test_tear_downs_cards_show_the_requesters_note() -> None:
         assert tasks[f"{card}2"]["variables"]["incoming"]["value"] == f"$var.{prep}5.replacedString"
         note = tasks[f"{prep}5"]["variables"]["incoming"]
         assert note["substr"] == "__N__" and note["newSubstr"] == "$var.job.change_note"
-        assert "The requester's note (their own words, not checked): __N__" in tasks[f"{prep}0"]["variables"]["incoming"]["str"]
+        # the note's line comes last, so nothing a requester types can read as a fact on the card (card_message)
+        assert tasks[f"{prep}0"]["variables"]["incoming"]["str"].endswith(
+            "\n> The requester's note (their own words, not checked): __N__")
     # Deploy's card already carries its note in its own message, and Hand Off has none: no second copy
     for name, card in (("deploy-aws-vpn.json", "2b"), ("hand-off-aws-vpn.json", "6f")):
         assert "__N__" not in json.dumps(CHANGED[name]["tasks"]), name
