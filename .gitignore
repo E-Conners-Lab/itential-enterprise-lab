@@ -93,3 +93,6 @@ venv/
 # --- ansible-lint / galaxy local install ---
 .ansible/
 *.tfplan
+
+# --- generated bundles (itential/agents/cloud_bundle.py; instance-specific, never committed) ---
+build/

@@ -354,6 +354,12 @@ mcp-access: ## svc-mcp on production: LDAP user, mcp-builders group, its access 
 agents-push: ## Push itential/agents/*.yaml prompts to the Platform (CHECK=1 to diff only)
 	$(load_env) .venv/bin/python itential/agents/push.py $(if $(CHECK),--check,) $(AGENT)
 
+# ADR 0086: the cloud Platform reads from the repo. Builds Agent Project import bundles from itential/agents/*.yaml for the
+# Platform's "Import Agent Project" (the local-model twins are skipped, tools the target lacks are listed). WORKFLOWS is a
+# JSON {workflow name: uuid} read from the target Platform and never committed; RENAME is project=newname.
+cloud-agents: ## Build cloud import bundles in build/cloud-bundles (WORKFLOWS=file.json RENAME=lab-netops=lab-netops-cloud)
+	python3 itential/agents/cloud_bundle.py $(if $(WORKFLOWS),--workflows $(WORKFLOWS),) $(if $(RENAME),--rename $(RENAME),)
+
 # Phase 7 (PID S7, ADR 0051; no Zabbix since ADR 0071). The stack on k3s, syslog forwarding on every Ubuntu machine
 # (NetBox inventory for the VMs and EVE-NG endpoints, phase2.yml for the two pre-existing machines), then the
 # governed device pushes (one Push Configuration with Approval job per router/switch; the owner approves the Work Center cards).
