@@ -202,6 +202,7 @@ once verified).
 | Why | Itential Platform and Gateway are supported only on RHEL/Rocky 8/9; Ubuntu is explicitly not supported for any Itential component ([system requirements](https://docs.itential.com/itential-platform/plan/system-requirements)). Only the two Itential VMs use it; everything else stays on Ubuntu |
 | Download | <https://dl.rockylinux.org/pub/rocky/9/images/x86_64/Rocky-9-GenericCloud-Base-9.8-20260525.0.x86_64.qcow2> (no login) |
 | Checksum | SHA256 `92c206cc6f790c61583247eefe87890f8828420662c17cacf247cec78ab4eec8` ([CHECKSUM](https://dl.rockylinux.org/pub/rocky/9/images/x86_64/Rocky-9-GenericCloud-Base-9.8-20260525.0.x86_64.qcow2.CHECKSUM)) |
+| Upstream | Rocky no longer serves 9.8 (HTTP 404 on 2026-11-25; `Rocky-9-GenericCloud-Base-9.9-20261112.0` replaced it), so the two links above are dead. The pin stays on 9.8 and the checksum above is what verifies a copy; moving to 9.9 is a separate decision (new file, new checksum). CI excludes only those two links |
 | Licence | Free |
 | Verified | 2026-09-06 |
 

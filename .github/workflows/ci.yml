@@ -102,6 +102,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+      # The --exclude of the Rocky 9.8 image below: Rocky removed it from its mirror (404 on 2026-11-25; 9.9 replaced it). The
+      # manifest still pins 9.8 by checksum and says so (docs/image-manifest.md). Only the two retired files are excluded.
       - uses: lycheeverse/lychee-action@v2
         with:
           args: >-
@@ -113,6 +115,7 @@ jobs:
             --exclude '\.lab\.internal(:|/|$)'
             --exclude '^https?://(www\.|software\.)?cisco\.com/'
             --exclude '^https?://docs\.infoblox\.com/'
+            --exclude '^https://dl\.rockylinux\.org/pub/rocky/9/images/x86_64/Rocky-9-GenericCloud-Base-9\.8-20260525\.0\.x86_64\.qcow2'
             --exclude-path verify/results
             './**/*.md'
           fail: true
