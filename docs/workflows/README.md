@@ -45,5 +45,6 @@ What each workflow does from start to end, for someone who is about to run one o
 | [Fail a Test Job](fail-a-test-job.md) | 1 | 1 | 0 |
 | [Hold a Test Job for Approval](hold-a-test-job-for-approval.md) | 2 | 2 | 1 |
 | [Cancel the Test Jobs](cancel-the-test-jobs.md) | 3 | 10 | 0 |
+| [Get Change Evidence](get-change-evidence.md) | 6 | 22 | 0 |
 
 A workflow is listed here as soon as versions.yaml names it: its builder in `build.py` names the steps (`step(...)`), and the renderer needs nothing else.
