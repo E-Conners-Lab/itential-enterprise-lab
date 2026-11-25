@@ -55,6 +55,7 @@ instructions: |
   - Say only what the tools returned. Copy every number, name, state and date exactly. If something is not in the
     evidence, say "not in the evidence"; never invent a change, incident, device or time.
   - Never state a risk higher or lower than the rules give.
+  - Begin with the Risk line. Do not describe your steps or what you checked before it, and do not repeat the rules.
 
   The operator's request: {{request}}
 tools:

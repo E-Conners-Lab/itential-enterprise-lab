@@ -117,3 +117,14 @@ def test_the_workflows_map_file_is_not_committable():
     """uuids belong to one instance: the default output folder and any cloud-workflows map stay out of git."""
     ignore = (ROOT / ".gitignore").read_text().splitlines()
     assert "build/" in ignore
+
+
+def test_agent_filter_builds_only_the_named_agents_and_refuses_an_unknown_one():
+    bundles, report = _build(only={"netbox-sot"})
+    assert [a["name"] for b in bundles.values() for a in b["agents"]] == ["netbox-sot"]
+    assert [(p, n) for p, n, _ in report] == [("lab-netops", "netbox-sot")]
+    # a name that is not a document (or is a local twin without --include-local) builds nothing, and the CLI says so
+    empty, _ = _build(only={"no-such-agent"})
+    assert not empty
+    with pytest.raises(SystemExit):
+        cb.main(["--agent", "no-such-agent", "--out", str(ROOT / "build" / "test-unknown-agent")])
