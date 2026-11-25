@@ -849,6 +849,8 @@ workflows:
   skill_job_error: Fail a Test Job # one task errors and has no error edge, so the job stays in Error
   skill_job_approval: Hold a Test Job for Approval # waits at one Work Center task its account sees but cannot complete
   skill_job_cleanup: Cancel the Test Jobs # cancels the open jobs of the three above, nothing else
+  # ADR 0087: change-risk-reviewer's evidence; reads a change request, the other open changes and incidents, the devices
+  get_change_evidence: Get Change Evidence
 
 # The names before ADR 0067. The play deletes each one it still finds on a Platform, after importing the
 # renamed documents, so a replay leaves no stale copy behind. Nothing may reuse one of these names.

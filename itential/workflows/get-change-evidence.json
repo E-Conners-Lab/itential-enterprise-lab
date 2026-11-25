@@ -1,0 +1,970 @@
+{
+  "name": "Get Change Evidence",
+  "type": "automation",
+  "description": "Collects what a change-risk review needs, reading only: the change request by its number, the other open changes, the open incidents and the lab's devices, published as one `evidence` object; change-risk-reviewer's tool (ADR 0087)",
+  "tasks": {
+    "1a": {
+      "name": "replace",
+      "canvasName": "replace",
+      "summary": "the change request's query",
+      "description": "the change: its number looked up in ServiceNow, the record reduced to its fields",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": -100,
+        "y": 600
+      },
+      "variables": {
+        "incoming": {
+          "str": "number=__N__",
+          "substr": "__N__",
+          "newSubstr": "$var.job.change"
+        },
+        "outgoing": {
+          "replacedString": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "1b": {
+      "name": "listChangeRequests",
+      "canvasName": "listChangeRequests",
+      "summary": "the change request, by its number",
+      "description": "the change: its number looked up in ServiceNow, the record reduced to its fields",
+      "location": "Adapter",
+      "locationType": "lab-servicenow:1.0.0",
+      "app": "lab-servicenow:1.0.0",
+      "type": "automatic",
+      "displayName": "lab-servicenow:1.0.0",
+      "groups": [],
+      "nodeLocation": {
+        "x": -400,
+        "y": 750
+      },
+      "variables": {
+        "incoming": {
+          "adapter_id": "servicenow-api",
+          "sysparm_query": "$var.1a.replacedString",
+          "sysparm_fields": "number,short_description,description,type,state,risk,impact,priority,start_date,end_date,cmdb_ci,assignment_group,justification,implementation_plan,backout_plan,test_plan",
+          "sysparm_display_value": "true",
+          "sysparm_limit": 1
+        },
+        "outgoing": {
+          "response": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "1c": {
+      "name": "evaluation",
+      "canvasName": "evaluation",
+      "summary": "is it a change request?",
+      "description": "the change: its number looked up in ServiceNow, the record reduced to its fields",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": -100,
+        "y": 900
+      },
+      "variables": {
+        "incoming": {
+          "all_true_flag": true,
+          "evaluation_groups": [
+            {
+              "all_true_flag": true,
+              "evaluations": [
+                {
+                  "query": "body.result[0].number",
+                  "operand_1": {
+                    "variable": "response",
+                    "task": "1b"
+                  },
+                  "operator": "contains",
+                  "operand_2": {
+                    "variable": "CHG",
+                    "task": "static"
+                  }
+                }
+              ]
+            }
+          ],
+          "options": {}
+        },
+        "outgoing": {
+          "return_value": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "1d": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "the change record",
+      "description": "the change: its number looked up in ServiceNow, the record reduced to its fields",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 200,
+        "y": 1050
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "body.result[0]",
+          "obj": "$var.1b.response"
+        },
+        "outgoing": {
+          "return_data": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "2a": {
+      "name": "replace",
+      "canvasName": "replace",
+      "summary": "the other open changes' query",
+      "description": "what else is open: the other open changes and the open incidents, a few fields each",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 450,
+        "y": 1200
+      },
+      "variables": {
+        "incoming": {
+          "str": "active=true^number!=__N__",
+          "substr": "__N__",
+          "newSubstr": "$var.job.change"
+        },
+        "outgoing": {
+          "replacedString": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "2b": {
+      "name": "listChangeRequests",
+      "canvasName": "listChangeRequests",
+      "summary": "the other open change requests",
+      "description": "what else is open: the other open changes and the open incidents, a few fields each",
+      "location": "Adapter",
+      "locationType": "lab-servicenow:1.0.0",
+      "app": "lab-servicenow:1.0.0",
+      "type": "automatic",
+      "displayName": "lab-servicenow:1.0.0",
+      "groups": [],
+      "nodeLocation": {
+        "x": 460,
+        "y": 1350
+      },
+      "variables": {
+        "incoming": {
+          "adapter_id": "servicenow-api",
+          "sysparm_query": "$var.2a.replacedString",
+          "sysparm_fields": "number,short_description,type,state,start_date,end_date,cmdb_ci",
+          "sysparm_display_value": "true",
+          "sysparm_limit": 25
+        },
+        "outgoing": {
+          "response": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "2c": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "their records",
+      "description": "what else is open: the other open changes and the open incidents, a few fields each",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 670,
+        "y": 1500
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "body.result",
+          "obj": "$var.2b.response"
+        },
+        "outgoing": {
+          "return_data": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "2d": {
+      "name": "listIncidents",
+      "canvasName": "listIncidents",
+      "summary": "the open incidents",
+      "description": "what else is open: the other open changes and the open incidents, a few fields each",
+      "location": "Adapter",
+      "locationType": "lab-servicenow:1.0.0",
+      "app": "lab-servicenow:1.0.0",
+      "type": "automatic",
+      "displayName": "lab-servicenow:1.0.0",
+      "groups": [],
+      "nodeLocation": {
+        "x": 1000,
+        "y": 1650
+      },
+      "variables": {
+        "incoming": {
+          "adapter_id": "servicenow-api",
+          "sysparm_query": "active=true",
+          "sysparm_fields": "number,short_description,priority,state,cmdb_ci",
+          "sysparm_display_value": "true",
+          "sysparm_limit": 25
+        },
+        "outgoing": {
+          "response": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "2e": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "their records",
+      "description": "what else is open: the other open changes and the open incidents, a few fields each",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 1300,
+        "y": 1800
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "body.result",
+          "obj": "$var.2d.response"
+        },
+        "outgoing": {
+          "return_data": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "3a": {
+      "name": "childJob",
+      "canvasName": "childJob",
+      "summary": "every device, reduced (List Devices from NetBox)",
+      "description": "the devices: the lab's NetBox devices, six fields each, from the workflow that already reduces them",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 1020,
+        "y": 1950
+      },
+      "variables": {
+        "incoming": {
+          "task": "",
+          "workflow": "List Devices from NetBox",
+          "variables": {
+            "filter": {
+              "task": "static",
+              "value": ""
+            }
+          },
+          "data_array": "",
+          "transformation": "",
+          "loopType": ""
+        },
+        "outgoing": {
+          "job_details": "$var.job.devices_job"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "job"
+    },
+    "3b": {
+      "name": "query",
+      "canvasName": "query",
+      "summary": "the device summary",
+      "description": "the devices: the lab's NetBox devices, six fields each, from the workflow that already reduces them",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 1020,
+        "y": 2100
+      },
+      "variables": {
+        "incoming": {
+          "pass_on_null": false,
+          "query": "summary",
+          "obj": "$var.job.devices_job"
+        },
+        "outgoing": {
+          "return_data": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "4a": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "the evidence's change",
+      "description": "the evidence: the four parts as one object the reviewer reads, published as `evidence`",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 980,
+        "y": 2250
+      },
+      "variables": {
+        "incoming": {
+          "obj": {},
+          "path": [
+            "change"
+          ],
+          "value": "$var.1d.return_data"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "4b": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "the evidence's other open changes",
+      "description": "the evidence: the four parts as one object the reviewer reads, published as `evidence`",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 950,
+        "y": 2400
+      },
+      "variables": {
+        "incoming": {
+          "obj": "$var.4a.object",
+          "path": [
+            "open_changes"
+          ],
+          "value": "$var.2c.return_data"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "4c": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "the evidence's open incidents",
+      "description": "the evidence: the four parts as one object the reviewer reads, published as `evidence`",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 920,
+        "y": 2550
+      },
+      "variables": {
+        "incoming": {
+          "obj": "$var.4b.object",
+          "path": [
+            "open_incidents"
+          ],
+          "value": "$var.2e.return_data"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "4d": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "the evidence's devices",
+      "description": "the evidence: the four parts as one object the reviewer reads, published as `evidence`",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 910,
+        "y": 2700
+      },
+      "variables": {
+        "incoming": {
+          "obj": "$var.4c.object",
+          "path": [
+            "devices"
+          ],
+          "value": "$var.3b.return_data"
+        },
+        "outgoing": {
+          "object": "$var.job.evidence"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "5a": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "ServiceNow could not be read",
+      "description": "where it stops: each way it can not gather the evidence ends the job with its reason in `error`",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 280,
+        "y": 1950
+      },
+      "variables": {
+        "incoming": {
+          "input": "ServiceNow could not be read (credential, connection or a sleeping instance): no evidence was collected; report this and do not retry",
+          "outputType": "string",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.error"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "5b": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "no such change request",
+      "description": "where it stops: each way it can not gather the evidence ends the job with its reason in `error`",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": -450,
+        "y": 1200
+      },
+      "variables": {
+        "incoming": {
+          "input": "no change request with that number was found, or ServiceNow did not answer with data (a developer instance asleep answers with a page): no evidence was collected",
+          "outputType": "string",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.error"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "5c": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "the devices could not be read",
+      "description": "where it stops: each way it can not gather the evidence ends the job with its reason in `error`",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 680,
+        "y": 2250
+      },
+      "variables": {
+        "incoming": {
+          "input": "the lab's devices could not be read from NetBox: no evidence was collected; report this and do not retry",
+          "outputType": "string",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.error"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "9a01": {
+      "name": "setObjectKey",
+      "canvasName": "setObjectKey",
+      "summary": "input to check: change",
+      "description": "the input gate: every input checked against its schema before anything runs; a refusal ends the job with nothing sent",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 0,
+        "y": 150
+      },
+      "variables": {
+        "incoming": {
+          "obj": {},
+          "path": [
+            "change"
+          ],
+          "value": "$var.job.change"
+        },
+        "outgoing": {
+          "object": null
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "9a0a": {
+      "name": "validateJsonSchema",
+      "canvasName": "validateJsonSchema",
+      "summary": "check the inputs",
+      "description": "the input gate: every input checked against its schema before anything runs; a refusal ends the job with nothing sent",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": 0,
+        "y": 300
+      },
+      "variables": {
+        "incoming": {
+          "jsonData": "$var.9a01.object",
+          "schema": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "change"
+            ],
+            "properties": {
+              "change": {
+                "type": "string",
+                "pattern": "^CHG[0-9]{7,10}$"
+              }
+            }
+          }
+        },
+        "outgoing": {
+          "result": "$var.job.input_check"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "9a0b": {
+      "name": "evaluation",
+      "canvasName": "evaluation",
+      "summary": "inputs valid?",
+      "description": "the input gate: every input checked against its schema before anything runs; a refusal ends the job with nothing sent",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "operation",
+      "displayName": "WorkFlowEngine",
+      "groups": [],
+      "nodeLocation": {
+        "x": -100,
+        "y": 450
+      },
+      "variables": {
+        "incoming": {
+          "all_true_flag": true,
+          "evaluation_groups": [
+            {
+              "all_true_flag": true,
+              "evaluations": [
+                {
+                  "query": "valid",
+                  "operand_1": {
+                    "variable": "result",
+                    "task": "9a0a"
+                  },
+                  "operator": "==",
+                  "operand_2": {
+                    "variable": true,
+                    "task": "static"
+                  }
+                }
+              ]
+            }
+          ],
+          "options": {}
+        },
+        "outgoing": {
+          "return_value": null
+        },
+        "error": "",
+        "decorators": []
+      }
+    },
+    "9a0c": {
+      "name": "makeData",
+      "canvasName": "makeData",
+      "summary": "the inputs were refused",
+      "description": "the input gate: every input checked against its schema before anything runs; a refusal ends the job with nothing sent",
+      "location": "Application",
+      "locationType": null,
+      "app": "WorkFlowEngine",
+      "type": "automatic",
+      "displayName": "Tools",
+      "groups": [],
+      "nodeLocation": {
+        "x": 200,
+        "y": 600
+      },
+      "variables": {
+        "incoming": {
+          "input": "the inputs were refused before anything ran (see input_check for which input and why): nothing was sent to a device",
+          "outputType": "string",
+          "variables": ""
+        },
+        "outgoing": {
+          "output": "$var.job.error"
+        },
+        "error": "",
+        "decorators": []
+      },
+      "actor": "Pronghorn",
+      "scheduled": false
+    },
+    "workflow_start": {
+      "name": "workflow_start",
+      "summary": "workflow_start",
+      "groups": [],
+      "nodeLocation": {
+        "x": 0,
+        "y": 0
+      }
+    },
+    "workflow_end": {
+      "name": "workflow_end",
+      "summary": "workflow_end",
+      "groups": [],
+      "nodeLocation": {
+        "x": 610,
+        "y": 2850
+      }
+    }
+  },
+  "transitions": {
+    "workflow_start": {
+      "9a01": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "1a": {
+      "1b": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "1b": {
+      "1c": {
+        "state": "success",
+        "type": "standard"
+      },
+      "5a": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "1c": {
+      "1d": {
+        "state": "success",
+        "type": "standard"
+      },
+      "5b": {
+        "state": "failure",
+        "type": "standard"
+      },
+      "5a": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "1d": {
+      "2a": {
+        "state": "success",
+        "type": "standard"
+      },
+      "5b": {
+        "state": "failure",
+        "type": "standard"
+      },
+      "5a": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "2a": {
+      "2b": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "2b": {
+      "2c": {
+        "state": "success",
+        "type": "standard"
+      },
+      "5a": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "2c": {
+      "2d": {
+        "state": "success",
+        "type": "standard"
+      },
+      "5a": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "2d": {
+      "2e": {
+        "state": "success",
+        "type": "standard"
+      },
+      "5a": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "2e": {
+      "3a": {
+        "state": "success",
+        "type": "standard"
+      },
+      "5a": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "3a": {
+      "3b": {
+        "state": "success",
+        "type": "standard"
+      },
+      "5c": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "3b": {
+      "4a": {
+        "state": "success",
+        "type": "standard"
+      },
+      "5c": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "4a": {
+      "4b": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "4b": {
+      "4c": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "4c": {
+      "4d": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "4d": {
+      "workflow_end": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "5a": {
+      "workflow_end": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "5b": {
+      "workflow_end": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "5c": {
+      "workflow_end": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "9a01": {
+      "9a0a": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "9a0a": {
+      "9a0b": {
+        "state": "success",
+        "type": "standard"
+      },
+      "9a0c": {
+        "state": "error",
+        "type": "standard"
+      }
+    },
+    "9a0b": {
+      "1a": {
+        "state": "success",
+        "type": "standard"
+      },
+      "9a0c": {
+        "state": "failure",
+        "type": "standard"
+      }
+    },
+    "9a0c": {
+      "workflow_end": {
+        "state": "success",
+        "type": "standard"
+      }
+    },
+    "workflow_end": {}
+  },
+  "groups": [],
+  "canvasVersion": 3,
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "change": {
+        "type": "string",
+        "required": true,
+        "description": "A ServiceNow change request number, e.g. CHG0030001."
+      }
+    },
+    "required": [
+      "change"
+    ]
+  },
+  "outputSchema": {
+    "type": "object",
+    "properties": {
+      "evidence": {
+        "type": "object"
+      },
+      "error": {
+        "type": "string"
+      },
+      "input_check": {
+        "type": "object"
+      }
+    }
+  },
+  "tags": [],
+  "preAutomationTime": 300000,
+  "sla": 600000,
+  "font_size": 12,
+  "decorators": []
+}

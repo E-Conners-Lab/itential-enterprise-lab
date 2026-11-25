@@ -557,6 +557,9 @@ INPUT_GATES[WF["request_aws_vpn_deployment"]] = {
 INPUT_GATES[WF["request_aws_vpn_teardown"]] = {"target": INPUT_GATES[WF["tear_down_aws_vpn"]]["target"],
                                                "change_note": CONCIERGE_NOTE_RULE}
 # NetClaw's copies check exactly what the Concierge's check
+# ADR 0087: a ServiceNow change request number, as the table's own numbering writes it; the lookup is a query string, so
+# nothing but that shape may reach it
+INPUT_GATES[WF["get_change_evidence"]] = {"change": {"type": "string", "pattern": r"^CHG[0-9]{7,10}$"}}
 INPUT_GATES[WF["netclaw_request_aws_vpn_deployment"]] = INPUT_GATES[WF["request_aws_vpn_deployment"]]
 INPUT_GATES[WF["netclaw_request_aws_vpn_teardown"]] = INPUT_GATES[WF["request_aws_vpn_teardown"]]
 # where a refusal is reported: the device workflows already say "did not run" in device_error, which the agents read
@@ -3253,6 +3256,86 @@ def netbox_devices() -> dict:
         tasks,
         transitions,
         {"summary": {"type": "object"}, "count": {"type": "number"}, "netbox_error": {"type": "string"}},
+    )
+
+
+# --- Get Change Evidence (ADR 0087): what change-risk-reviewer reads, gathered the same way every time -------------
+# Reads only. One change request by its number, the other open changes and the open incidents (so a collision or a
+# related fault shows), and the lab's devices from the existing List Devices from NetBox workflow. The agent decides which
+# devices the change names; this workflow only makes sure the facts it reasons from are complete and the same every run
+# (ADR 0046: fan-out belongs in one deterministic tool, never a loop inside a model). Only extracted fields are published:
+# an integration response carries ServiceNow's headers, a session cookie among them, so each stays on its task. A
+# hibernating developer instance answers HTTP 200 with a page, so the change is looked up by a field that only data has.
+CHANGE_FIELDS = ("number,short_description,description,type,state,risk,impact,priority,start_date,end_date,cmdb_ci,"
+                 "assignment_group,justification,implementation_plan,backout_plan,test_plan")
+OPEN_CHANGE_FIELDS = "number,short_description,type,state,start_date,end_date,cmdb_ci"
+OPEN_INCIDENT_FIELDS = "number,short_description,priority,state,cmdb_ci"
+
+
+def get_change_evidence() -> dict:
+    ok, fail, err = "success", "failure", "error"
+    tasks = sectioned({
+        **step("the change: its number looked up in ServiceNow, the record reduced to its fields"),
+        "1a": replace("the change request's query", "number=__N__", "__N__", "$var.job.change", x=0),
+        "1b": sni("listChangeRequests", "the change request, by its number",
+                  {"sysparm_query": "$var.1a.replacedString", "sysparm_fields": CHANGE_FIELDS,
+                   "sysparm_display_value": "true", "sysparm_limit": 1}, x=100),
+        "1c": evaluate("is it a change request?", "1b", "response", "body.result[0].number", "contains", "CHG", x=200),
+        "1d": jq("the change record", "$var.1b.response", "body.result[0]", x=300),
+        **step("what else is open: the other open changes and the open incidents, a few fields each"),
+        "2a": replace("the other open changes' query", "active=true^number!=__N__", "__N__", "$var.job.change", x=400),
+        "2b": sni("listChangeRequests", "the other open change requests",
+                  {"sysparm_query": "$var.2a.replacedString", "sysparm_fields": OPEN_CHANGE_FIELDS,
+                   "sysparm_display_value": "true", "sysparm_limit": 25}, x=500),
+        "2c": jq("their records", "$var.2b.response", "body.result", x=600),
+        "2d": sni("listIncidents", "the open incidents",
+                  {"sysparm_query": "active=true", "sysparm_fields": OPEN_INCIDENT_FIELDS,
+                   "sysparm_display_value": "true", "sysparm_limit": 25}, x=700),
+        "2e": jq("their records", "$var.2d.response", "body.result", x=800),
+        **step("the devices: the lab's NetBox devices, six fields each, from the workflow that already reduces them"),
+        "3a": child_job("every device, reduced (List Devices from NetBox)", WF["netbox_devices"],
+                        {"filter": {"task": "static", "value": ""}}, "devices_job", x=900),
+        "3b": jq("the device summary", "$var.job.devices_job", "summary", x=1000),
+        **step("the evidence: the four parts as one object the reviewer reads, published as `evidence`"),
+        "4a": set_key("the evidence's change", {}, "change", "$var.1d.return_data", x=1100),
+        "4b": set_key("the evidence's other open changes", "$var.4a.object", "open_changes", "$var.2c.return_data",
+                      x=1200),
+        "4c": set_key("the evidence's open incidents", "$var.4b.object", "open_incidents", "$var.2e.return_data",
+                      x=1300),
+        "4d": set_key("the evidence's devices", "$var.4c.object", "devices", "$var.3b.return_data", x=1400),
+        **step("where it stops: each way it can not gather the evidence ends the job with its reason in `error`"),
+        # ADR 0059/0066: every ServiceNow and NetBox failure has an edge out, and a read that is not data ends here
+        "5a": note("ServiceNow could not be read",
+                   "ServiceNow could not be read (credential, connection or a sleeping instance): no evidence was "
+                   "collected; report this and do not retry", "error", x=300, y=-300),
+        "5b": note("no such change request",
+                   "no change request with that number was found, or ServiceNow did not answer with data (a "
+                   "developer instance asleep answers with a page): no evidence was collected", "error", x=500,
+                   y=-300),
+        "5c": note("the devices could not be read",
+                   "the lab's devices could not be read from NetBox: no evidence was collected; report this and do "
+                   "not retry", "error", x=900, y=-300),
+    })
+    tasks["4d"]["variables"]["outgoing"] = {"object": "$var.job.evidence"}
+    tr = chain("1a", "1b", "1c", "1d", "2a", "2b", "2c", "2d", "2e", "3a", "3b", "4a", "4b", "4c", "4d")
+    # one edge per target (JSON has no duplicate keys): a ServiceNow call or the child job THROWS (error), a query or an
+    # evaluation that finds nothing is a failure; a page where the data should be (a sleeping instance) is that failure
+    for tid, to, state in (("1b", "5a", err), ("1c", "5b", fail), ("1c", "5a", err), ("1d", "5b", fail),
+                           ("1d", "5a", err), ("2b", "5a", err), ("2c", "5a", fail), ("2d", "5a", err),
+                           ("2e", "5a", fail), ("3a", "5c", err), ("3b", "5c", fail)):
+        tr[tid][to] = {"state": state, "type": "standard"}
+    for tid in ("5a", "5b", "5c"):
+        tr[tid] = t("", "workflow_end")
+    return workflow(
+        WF["get_change_evidence"],
+        "Collects what a change-risk review needs, reading only: the change request by its number, the other open "
+        "changes, the open incidents and the lab's devices, published as one `evidence` object; change-risk-reviewer's "
+        "tool (ADR 0087)",
+        {"change": {"type": "string", "required": True,
+                    "description": "A ServiceNow change request number, e.g. CHG0030001."}},
+        tasks,
+        tr,
+        {"evidence": {"type": "object"}, "error": {"type": "string"}},
     )
 
 
@@ -10495,7 +10578,7 @@ BUILDERS = (device_count, show_version, show_command, show_all, branch_vlan, bra
             ask_platform_guide, scratch_show, scratch_restconf, scratch_push, scratch_restore,
             request_aws_vpn_deployment, request_aws_vpn_teardown, netclaw_request_aws_vpn_deployment,
             netclaw_request_aws_vpn_teardown, skill_job_plain, skill_job_error, skill_job_approval,
-            skill_job_cleanup)
+            skill_job_cleanup, get_change_evidence)
 
 
 if __name__ == "__main__":

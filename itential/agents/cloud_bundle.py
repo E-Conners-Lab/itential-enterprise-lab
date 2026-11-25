@@ -101,6 +101,7 @@ def build_bundles(
     include_local: bool = False,
     rename: dict[str, str] | None = None,
     mcp_cluster: str | None = None,
+    only: set[str] | None = None,
 ) -> tuple[dict[str, dict], list[tuple[str, str, list[str]]]]:
     """({output project name: bundle}, [(project, agent, dropped tool names)])."""
     rename = rename or {}
@@ -108,6 +109,8 @@ def build_bundles(
     dropped_report: list[tuple[str, str, list[str]]] = []
     for doc in sorted(docs, key=lambda d: (d["project"], d["name"])):
         if is_local(doc) and not include_local:
+            continue
+        if only and doc["name"] not in only:
             continue
         project = rename.get(doc["project"], doc["project"])
         bundle = bundles.setdefault(
@@ -164,6 +167,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--model", default=DEFAULT_MODEL)
     ap.add_argument("--rename", action="append", default=[], metavar="OLD=NEW", help="rename a project (repeatable)")
     ap.add_argument("--include-local", action="store_true", help="keep the ollama-* twins")
+    ap.add_argument("--agent", action="append", default=[], metavar="NAME", help="build only this agent (repeatable)")
     ap.add_argument("--mcp-cluster", help="Gateway cluster id that serves the MCP tools; without it they are dropped")
     ap.add_argument("--strict", action="store_true", help="exit 1 when any tool had to be dropped")
     args = ap.parse_args(argv)
@@ -173,8 +177,11 @@ def main(argv: list[str] | None = None) -> int:
     bundles, report = build_bundles(
         load_documents(), versions["integrations"]["models"], workflows,
         profile=args.profile, model=args.model, include_local=args.include_local,
-        rename=parse_rename(args.rename), mcp_cluster=args.mcp_cluster,
+        rename=parse_rename(args.rename), mcp_cluster=args.mcp_cluster, only=set(args.agent) or None,
     )
+    unknown = set(args.agent) - {a["name"] for b in bundles.values() for a in b["agents"]}
+    if unknown:
+        raise SystemExit(f"no such agent document (or a local twin without --include-local): {', '.join(sorted(unknown))}")
 
     args.out.mkdir(parents=True, exist_ok=True)
     for project, bundle in bundles.items():
